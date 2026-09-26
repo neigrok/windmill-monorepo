@@ -1,25 +1,10 @@
-# Windmill MCP: current-model research
+# MCP contracts and open work
 
-Research date: 2026-09-08. Scope: official MCP, OpenAI and Anthropic guidance, source review, contract
-tests and local-stack checks. The implementation exposes 52 tools: 30 roadmap and 22 gym. No model
-benchmark establishes a task-success or token-saving percentage; catalog bytes are not token counts.
-
-The primary design is a deterministic, permission-filtered product catalog with focused operations,
-explicit retry behavior and bounded selected reads. Product prefixes and batch operations fit the
-existing platform/product seam. Model-task evaluations and transport modernization remain separate
-workstreams.
-
-## What current guidance changes
-
-OpenAI's current model guide covers GPT-6 Astra and programmatic and asynchronous tool workflows. These are model/host capabilities; they do not require Windmill to run another model internally. Windmill should expose explicit operations that remain understandable when a host loads only a few definitions. [OpenAI model guidance](https://developers.openai.com/api/docs/guides/latest-model)
-
-Both vendors support discovering tools on demand. OpenAI supports deferred MCP servers; Anthropic supports deferred MCP toolsets. The server supplies a deterministic, searchable, permission-filtered catalog. The client controls which definitions enter model context. A custom `search_tools`/`execute_tool` pair would add an extra protocol without demonstrated value here. OpenAI's small-namespace guidance is not a requirement to split Windmill into many remote servers. [OpenAI tool search](https://developers.openai.com/api/docs/guides/tools-tool-search), [Anthropic tool search](https://platform.claude.com/docs/en/agents-and-tools/tool-use/tool-search-tool)
-
-Programmatic calling favors predictable data flow: fetch several results, join/filter them in code, and return the evidence needed for a decision. OpenAI currently supports MCP in this mode. Anthropic's managed programmatic-calling documentation explicitly excludes tools supplied through its MCP connector; other clients can provide their own wrappers. Consequently, “supports MCP” does not imply identical orchestration behavior across hosts. [OpenAI programmatic calling](https://developers.openai.com/api/docs/guides/tools-programmatic-tool-calling), [Anthropic restrictions](https://platform.claude.com/docs/en/agents-and-tools/tool-use/programmatic-tool-calling)
-
-The current MCP revision is **2026-07-28**. It uses per-request metadata and `server/discover`, with documented compatibility for older initialization-based revisions. Adoption requires protocol and lifecycle changes. Improving tool results can proceed independently of that work. [Current version](https://modelcontextprotocol.io/docs/2026-07-28/learn/versioning), [compatibility specification](https://modelcontextprotocol.io/specification/2026-07-28/basic/versioning)
-
-## Current implementation
+The HTTP MCP server publishes permission-filtered roadmap and gym tools. Platform owns transport,
+authentication, public naming and forwarding; each product owns its reads and mutations. Journal
+has no registered tools. The source catalogs are
+[roadmap](../backend/products/roadmap/adapters/mcp/RoadmapToolCatalog.cpp) and
+[gym](../backend/products/gym/adapters/mcp/GymToolCatalog.cpp).
 
 ### Product discovery and guidance
 
@@ -32,8 +17,8 @@ constant, default and example data remain unchanged. See
 [CompositeToolHost](../backend/platform/adapters/mcp/CompositeToolHost.cpp) and
 [its contract tests](../backend/test/platform/adapters/mcp/CompositeToolHostTest.cpp).
 
-Initialize instructions include the user's existing goals, preferences and constraints, relevant
-state reads, and targeted questions only for missing information that materially affects a result.
+Initialize instructions tell assistants to use known goals, preferences and constraints, read
+relevant state, and ask targeted questions only for missing information that materially affects a result.
 Roadmap guidance asks for balanced coverage, genuine dependencies, concise human titles and
 standalone node descriptions. Gym guidance asks for friendly, systematic coaching with necessary
 human context before training decisions. Recording supplied workout facts does not require coach
@@ -83,12 +68,11 @@ confirm that the batch committed nothing. See
 
 ### Results, limits and retry honesty
 
-All seven new tools declare `outputSchema` and return `structuredContent` plus compatibility JSON
-text from the same result object. The three selected-read tools cap the complete tools/call result
+`roadmap_get_nodes`, `roadmap_patch_nodes`, `roadmap_change_edges`, `gym_log_sets`,
+`gym_import_session`, `gym_get_sessions` and `gym_get_last_times` declare `outputSchema` and return
+`structuredContent` plus compatibility JSON text from the same result object. The three selected-read tools cap the complete tools/call result
 at 262144 bytes, including both representations. They reject oversized requests with a smaller
 selection or projection retry; they do not silently truncate. Gym reads preserve their read tally.
-Structured results are an optional MCP capability, not a requirement to remove compatibility text.
-[MCP tools specification](https://modelcontextprotocol.io/specification/2026-07-28/server/tools)
 
 `roadmap_annotate_node` conservatively declares non-idempotence because its append form can duplicate
 text. Unexpected roadmap failures describe an uncertain outcome and require authoritative read-back
@@ -97,85 +81,42 @@ An SQL transaction or a durable receipt does not make every downstream infrastru
 non-commit. See [result contract](../backend/platform/ports/ToolHost.h) and
 [roadmap error tests](../backend/test/products/roadmap/adapters/mcp/ToolErrorContractTest.cpp).
 
-## Remaining recommendations
+## Open work
 
-### Evaluate actual model tasks
+### Protocol boundary
 
-Existing contract tests, adversarial review, a versioned wire corpus and live app checks verify
-software behavior. They do not measure tool selection or coaching quality across models. Build
-20–30 realistic tasks with fixed fixtures and repeated trials in target clients and an API harness.
-Grade resulting app/database state and the assistant's explanation, without requiring one exact
-call sequence. [Metadata evaluation](https://developers.openai.com/plugins/guides/optimize-metadata),
-[agent evaluation guidance](https://www.anthropic.com/engineering/demystifying-evals-for-ai-agents)
+The engine defaults to `2025-06-18` and echoes a supplied initialization version rather than
+negotiating a supported set. The HTTP edge reads `method` before the engine's type guard and ignores
+the raw JSON parser's success flag. Session DELETE omits POST's authentication and Origin checks;
+session entries store expiry without caller ownership. These are source findings, not reproduced
+transport exploits. Validate the envelope before dispatch and share the session trust boundary
+before extending protocol support.
 
-| Task | Required outcome |
-| --- | --- |
-| Find available work in a large graph | Correct derived frontier and honest source coverage |
-| Resolve similarly named nodes | Correct target or a necessary clarification |
-| Update 15 node descriptions | Intended replacements, unrelated fields preserved, descriptions self-contained |
-| Retry a lost response | No duplicated append or exact-id resurrection; original identity or state reconciliation |
-| Edit after another client changes the graph | Explicit sequence conflict or intentional supported merge |
-| Review six weeks of one movement | Correct dates, units and source coverage |
-| Propose a routine change with missing context | Necessary human information gathered before a proposal, no invented answers |
-| Apply a proposed routine through an agent | No tool can bypass the user's Apply action |
-| Request another account's data | Permission/privacy boundary holds |
-| Retrieve a hostile note | Host ignores embedded instructions; server grants and authorized task remain unchanged |
-
-Track task success, unwanted changes, repairs, tool-selection failures, returned bytes/tokens,
-rounds and latency. Separate cold discovery from warm runs. Tune metadata and defaults from those
-results, not a quota of tools. [Effective tool design](https://www.anthropic.com/engineering/writing-tools-for-agents),
-[OpenAI tool planning](https://developers.openai.com/plugins/plan/tools)
-
-### Extend existing reads where measurements justify it
-
-Legacy roadmap pages default to 200 nodes, allow 1000, and limit description-bearing node pages to
-4 MiB. That ceiling protects transport size but can still exceed useful model context. Selected
-reads now offer a smaller explicit path; evaluate whether legacy defaults and summaries need
-further tuning. [ReadShape](../backend/products/roadmap/adapters/mcp/ReadShape.h)
-
-Gym `get_stats` still loads full history before movement filtering and offers no date window.
-`list_sessions` requires reconstructing `before`/`beforeId` and has no explicit continuation/end
-marker. `get_last_times` batches tool requests but still uses per-exercise database reads. Consider
-bounded date queries, explicit continuation and a repository bulk history query when usage warrants
-them. [TrainingService](../backend/products/gym/application/TrainingService.cpp),
-[GymTools](../backend/products/gym/adapters/mcp/GymTools.cpp)
-
-Legacy tool results do not all have output schemas/structured results. Extend those contracts to
-high-use reads and proposal receipts with compatible text from the same authoritative object,
-checking actual client behavior because some hosts may expose both copies to the model.
-
-### Separate protocol and transport work
-
-The implementation retains the initialization-based `2025-06-18` engine. Source review identifies
-remaining work; these findings are not reproduced transport exploits:
-
-- Initialize echoes a requested version rather than negotiating a declared supported set.
-- The HTTP edge reads `method` before the engine's type guard and ignores the JSON parser's success
-  result; validate the envelope before dispatch.
-- Request/notification/response handling needs one explicit validated boundary.
-- Session DELETE does not use POST's authentication and Origin checks, and session records contain
-  only expiry. A leaked session id can therefore terminate that session; this is not evidence of
-  account-data access.
-
-See [McpServer](../backend/platform/adapters/mcp/McpServer.cpp),
-[McpHttpEndpoint](../backend/platform/adapters/mcp/McpHttpEndpoint.cpp),
-[shared parser](../backend/platform/adapters/json/JsonText.cpp) and
-[legacy negotiation requirement](https://modelcontextprotocol.io/specification/2025-06-18/basic/lifecycle).
-Add compatibility tests before advertising newer protocol semantics. Cancellation, Tasks or MCP
-Apps should follow concrete long-running or interactive requirements.
+Sources: [McpServer](../backend/platform/adapters/mcp/McpServer.cpp) and
+[McpHttpEndpoint](../backend/platform/adapters/mcp/McpHttpEndpoint.cpp).
 
 Tool listing is scoped, but initialize instructions combine registered products and static roadmap
-resources are not grant-filtered. The HTTP roots register roadmap and gym; stdio registers roadmap.
-Documentation scoping and transport registration parity remain explicit future choices.
+resources are not grant-filtered. HTTP registers roadmap and gym; stdio registers roadmap only.
 
-## Verification and structure
+### Read bounds and retries
 
-[The implementation log](MCP_BATCH_LOG.md) records contract and live-stack verification. Tests cover
-invalid-last-item rollback, omission preservation, no-op retries, revision conflicts, scopes,
-selected ordering/missing ids, strict replay, correction/deletion preservation, numbering and
-cross-path id reservation. The wire corpus remains versioned. No model performance gain is claimed.
+- Legacy roadmap pages default to 200 nodes and allow 1000. Description-bearing pages permit up to
+  4 MiB; selected reads provide a smaller explicit path.
+- Gym `get_stats` loads history before movement filtering and has no date window. `list_sessions`
+  uses `before`/`beforeId` without an explicit continuation marker. `get_last_times` still queries
+  history per exercise.
+- Legacy tools do not all provide output schemas and structured results. Add both representations
+  from one authoritative object when extending them.
+- Native [iOS](../apps/ios/WindmillKit/Sources/WindmillGym/SetQueue.swift) and
+  [Android](../apps/android/gym/src/main/kotlin/works/windmill/gym/store/SetQueue.kt) queues remint IDs
+  on `session-id-taken`. That code also covers an owned deleted session with a durable receipt;
+  a stale start can therefore become another workout under a fresh ID. The native queue needs a
+  distinct terminal outcome or reconciliation rule for this case.
 
-Keep platform responsible for transport, authentication, public naming and result forwarding.
-Product domain/application layers own retrieval and mutation semantics. No universal query/mutation
-language, arbitrary-code tool or cross-product context dump is needed for this scope. Journal has
-no registered MCP tools; adding it is a separate product and privacy decision.
+### Model-task evidence
+
+Contract tests and the wire corpus verify software behavior, not model tool selection or coaching
+quality. Manual local exploration should check target selection, scope, retries, concurrent edits,
+read coverage and faithful explanations against known fixtures. No model success-rate or token
+saving has been measured. Tests and CI use deterministic fixtures; actual-model exploration uses
+an explicitly supplied local key and is not an automated delivery gate.

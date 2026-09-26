@@ -1,7 +1,7 @@
 # Deploying windmill-backend
 
-CI builds one Docker image and publishes it; a second workflow puts it on the single VPS that runs
-the whole stack under `docker compose`. That second workflow runs itself, and refuses to run on
+Backend CI publishes the server and embedder images. The deploy workflow runs the stack on one
+VPS under `docker compose`. That second workflow runs itself, and refuses to run on
 anything but a SUCCESSFUL `push`-triggered Backend CI/CD on `main` — a red `ctest`, a branch, or a
 pull request all stop at the image. It deploys the sha that passed, never `:latest`, so two pushes in
 a row cannot ship each other's binary. `workflow_dispatch` deploys a chosen tag by hand, which is
@@ -29,7 +29,7 @@ also the rollback: dispatch with the older commit's sha.
 
 | Piece | File |
 | --- | --- |
-| Build (Drogon + libpqxx-from-source, compile, `ctest`) | `/Dockerfile` |
+| Build (Drogon + libpqxx, compile, `ctest`) | `backend/Dockerfile` |
 | Build + test + publish the image (on push to `main`) | `/.github/workflows/backend.yml` |
 | Deploy to the VPS (automatic on a green Backend CI/CD; renders `~/windmill/.env`) | `/.github/workflows/deploy.yml` |
 | VPS runtime topology | `deploy/docker-compose.yml` |
@@ -88,6 +88,7 @@ The deploy job creates `~/windmill/` and everything under it.
 | `DOMAIN_APP` | the single origin (SPA + path-routed backend), e.g. `example.com` |
 | `DOMAIN_API` | alias for the API host, e.g. `api.example.com` |
 | `ACME_EMAIL` | Let's Encrypt contact address |
+| `RESEND_FROM` | verified sender address |
 | `WINDMILL_MCP_ALLOWED_ORIGINS` | comma-separated Origins, or empty for all |
 
 Those two tables are the minimum that makes the deploy run, not the whole set. Every other key —
@@ -96,7 +97,8 @@ vendor credentials, admin bearers, the reminder and nudge arming pairs — is re
 `env:` but missing from the list is never written and is unsettable from GitHub. Add a key in both
 places, and describe it in `deploy/.env.example`.
 
-`GITHUB_TOKEN` (auto-provided) pushes the image to GHCR and logs the VPS in to pull it.
+`GITHUB_TOKEN` publishes the images to GHCR. The VPS pulls them anonymously, so the GHCR package
+must be public.
 
 ## Day-to-day
 
@@ -109,8 +111,8 @@ places, and describe it in `deploy/.env.example`.
   empty — an empty allow-list would make Caddy 403 the whole site.
 - **Logs**: `cd ~/windmill && docker compose logs -f server` (or `caddy`, `db`, `embedder`).
 - **Status**: `docker compose ps`.
-- **Rollback**: the image is tagged per commit — set `IMAGE_TAG=<old-sha>` in `~/windmill/.env` and
-  `docker compose up -d server`, or re-run the workflow pinning `image_tag` to that sha.
+- **Rollback**: dispatch the deploy workflow with `image_tag` set to the chosen commit SHA. Both
+  the server and `embedder-<sha>` images must exist.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied by the `migrate` one-shot on every
   deploy.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.

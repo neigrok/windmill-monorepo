@@ -15,9 +15,6 @@ unlocks whatever comes next. Everything whose subject is **the tree** lives here
 - `guidelines/` — the feature canon (decoder below).
 - `briefs.md` — the open asks to the designers.
 - `guidelines/node-progress.md` — the binary progress contract and minimal control set.
-- `readability-research.md` — how the canvas is made readable: the caption frame, the working zoom,
-  the four layout engines measured side by side, and the remaining evaluations.
-- `bubble-graduation.md` — current graduation contract, structure observations, verification and follow-ups.
 
 ## Spec codes — decoder
 
@@ -54,7 +51,7 @@ DAG editing.
 The canvas uses bubble layout: children sit on rays around their trunk parent, subtrees tuck
 inward with room for their captions, and root islands pack around the largest root. Bubble and
 the radial fallback are bundled; `?layout=radial|rings|mindmap` opens the alternatives without a UI
-switch (`readability-research.md`). Captions reserve up to 168 px, with overflow ellipsized after
+switch. Captions reserve up to 168 px, with overflow ellipsized after
 two lines. A live gallery SVG portrait must use the tree's own canvas positions.
 Social link previews can be stored or generic and are not guaranteed to match the live page
 (`guidelines/og-tree-cards.md`).

@@ -100,10 +100,10 @@ Rules for the reminder's slots:
 
 ## Dark mode
 
-These mails are **light-only** by design. Each declares `<meta name="color-scheme" content="light">`,
-its `supported-color-schemes` twin, and `color-scheme: only light` on the root/body, which tells
-Apple Mail and iOS Mail to render the designed light palette on a dark device instead of
-auto-inverting it.
+These mails are **light-only** by design. Templates must declare the light `color-scheme` and
+`supported-color-schemes` metas plus `color-scheme: only light` on root/body.
+`magic-link-fork.html` currently lacks that CSS rule; the follow-up is F23 in the design
+consistency ledger.
 
 There is deliberately no `@media (prefers-color-scheme: dark)` block: Gmail and Outlook ignore it
 and apply their own transform anyway. A dark variant would have to be paired with the color-scheme

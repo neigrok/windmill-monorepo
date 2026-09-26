@@ -204,3 +204,9 @@ JOURNEY     one question once · first run IS the real surface · first real thi
 AI REQUESTS account-metered active work needs an account · passive Echoes uses no credits
             it is an account verb: the door opens when asked for, and resumes after
 ```
+
+## Web safe areas
+
+The web shell fills `100dvh` with a `100vh` fallback, consumes the top safe-area inset and
+passes `--content-safe-area-top: 0px` to products. Standalone roadmap falls back to
+`max(env(safe-area-inset-top, 0px), 44px)`. Product content must not consume the same inset twice.

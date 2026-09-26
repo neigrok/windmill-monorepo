@@ -21,7 +21,7 @@ exist, and both retire permanently after the first save:
 
 | Element | Copy | Retires |
 |---|---|---|
-| Placeholder | "How was today?" | first keystroke |
+| Placeholder | "Start anywhere. Nothing here is graded." | first keystroke |
 | The one fact | "Only you. No prompts, no fields, nothing to fill in — write a line or a page." | first save |
 
 - **Nothing animates before you can type** (`journal.md` §3.7). The cursor is live on paint;
@@ -93,7 +93,6 @@ Neither is onboarding; both are what onboarding is *for*.
 
 ## 8. Open
 
-- Is "How was today?" too leading as a placeholder, or is a blank canvas colder than it is free?
 - Does the talk offer trigger on a **short page** or on a **late hour**?
 - Someone arriving from Roadmap or Gym already knows the house. Does their first open differ?
 - Where does the first run belong when the user skipped the shell's opening question and

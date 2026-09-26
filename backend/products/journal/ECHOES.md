@@ -1,571 +1,198 @@
 # Echoes
 
-An echo is the journal reaching back: a page saved tonight paired with older passages of the
-writer's own about the same thing, each shown as the passage itself plus how long ago it was
-written.
+An echo pairs a saved journal page with older passages from the same writer. It shows the original
+text and the time between the two pages. Echoes are automatic for signed-in writers; passive
+vendor spend has its own allowance.
 
-## What an echo is
+## Product contract
 
-- **Reaching back only.** The trigger is always a page the writer saved; `check (match_day <
-  trigger_day)` makes reaching forward unrepresentable.
-- **Always real text.** Every echo is a pair of passages that exist in the archive.
-- **Persistent and walkable.** An echo belongs to its page, so a page reached through one echo
-  carries its own.
-- **Plural, capped.** Up to 10 per page.
-
-Never inferred: that something ended, resolved or went undone; arcs or before/after judgements; mood
-scores, categories, or counts of anything the reader cannot see and check.
-
-## Rules that hold
-
-1. **An echo may only assert something the reader can check from what is on screen.** Enforced by a
-   shared low-frequency lexical anchor between the two passages: no anchor, no echo, whatever the
-   cosine says.
-2. **Nothing is inferred from absence.** Never present a list as *the* times, and never say anything
-   about the writer's life that absence alone cannot establish — that nothing was written about a
-   thing, that a subject never came back, that a stretch of the archive is empty. A total may be
-   shown only when every item it counts is on screen and tappable; a truncated list gets no number.
-   What a surface MAY say is that one named page in view carries no echo: that is a checkable fact
-   about a page on screen, and it is what the desktop margin's rest line is.
-3. **A quote is re-located by text in the live page at render, or not shown.**
+- Matches reach backward: `match_day < trigger_day`.
+- Both passages must share a low-frequency lexical anchor. Similar vectors alone are insufficient.
+- Do not infer resolutions, life events or patterns from absent entries. A total is valid only when
+  every item it counts is visible and reachable. A named page may say that it has no echo.
+- Re-locate every quote by exact text in the live page before rendering it. Do not render a quote
+  that no longer exists; compute the visible count after this check.
+- A page carries at most ten cards, with at most one card per past day. Echoes remain attached to
+  their pages, including when the reader reaches a page through another echo.
 
 ## Pipeline
 
-For each page whose body changed, whose corpus moved under it, or whose pipeline version moved:
-
-```
-1  segment    page body                    → idea units                     [Segmenter]
-2  reconcile  new passages vs. old         → carry span_id forward          [pure]
-3  embed      each passage WITHOUT a vector → vector                        [Embedder]
-4  retrieve   stratified by age band       → candidates                     [repo]
-5  select     dedup, quota, diversify      → ≤10 per trigger, ≤10 per page  [pure]
-6  curate     tonight's + candidates       → related pairs + speaker        [Curator]
-7  persist    ≤10 echoes, replacing the page's prior set                    [repo]
-```
-
-**Reconciliation runs before the embedder, and the order is the saving.** It needs nothing but
-text, so knowing which passages survived is what lets step 3 ask for the new ones alone: a carried
-passage keeps the vector storage already holds, and an appended sentence is the only thing bought.
-Reuse is gated twice — on the stored `embed_version` matching the running embedder, because a cosine
-between two embedding spaces is meaningless, and on the RAW text, because the vector is a function
-of the exact bytes the embedder was handed and not of the normalised identity `reconcile` matched
-on. The embed round trip sits between the save and the echo appearing, so this is latency and not
-only bill. `EchoSweepReport::passagesEmbedded` counts what was BOUGHT, not what the page holds.
-
-The cost of that is that **nothing re-embeds unchanged text any more**, `rejudge=1` included. A
-vector that is wrong but well-formed — a mis-ordered sidecar batch, a zero vector, which `cosine`
-reads as resonating with nothing so the passage silently produces no echo ever again — is permanent
-for that passage. The only lever is moving the embedder's version string, which re-buys the whole
-corpus; there is no narrower one.
-
-**Segmenter** (`ports/Segmenter.h`) cuts the page into idea units, one vendor call per page whose
-BYTES moved. `AnthropicSegmenter` runs `claude-sonnet-5` at effort `low`. Without an Anthropic key the
-composition root wires `RuleSegmenter` (`segment`, `SegmentRules{minWords = 6, maxAtoms = 3}`,
-pure); that deploy has no curator either, so no echo can arrive from it.
-
-**Embedder** turns a passage into a vector: the self-hosted sidecar running
-`Xenova/paraphrase-multilingual-MiniLM-L12-v2`, q8, mean-pooled, L2-normalised, 384 dims, no query
-prefix (the model is symmetric). It ran `bge-small-en-v1.5` until 2026-08-23. That model is ENGLISH,
-and the one person writing in this journal writes Russian; measured on their own 40 passages:
-
-| | paraphrase vs word-sharing impostor | the writer's true reach-back, ranked over the real corpus | median pair-cos |
-|---|---|---|---|
-| `bge-small-en-v1.5` | **9%** separation — worse than a coin | **5th**, behind three unrelated lines (z 1.18) | 0.728 |
-| `multilingual-e5-small` | 48% — chance | 1st, by 0.003 over a line about nothing | 0.850 |
-| `paraphrase-multilingual-MiniLM-L12-v2` | **76%** | **1st**, 0.610 against 0.394 (z 3.82) | 0.311 |
-
-Quantisation is not the cause (fp32 moves those to 49% and 78%). The mechanism is tokenisation: the
-same Russian passage is 135 pieces under an English WordPiece vocab and 50 under XLM-R, so bge was
-matching CHARACTER OVERLAP and scored word-sharing impostors ABOVE true paraphrases. It ranked the
-one echo this journal is known to contain first only while passages were coarse enough to share
-strings; the idea-unit grid removed that crutch and dropped it to fifth.
-
-This also settles what the absolute radii mean. Under bge, 0.80 was the ordinary distance between
-two unrelated Russian lines — the top 7.2% of all pairs — so `refrainRadius` fired on noise and
-`restatement` 0.97 had never once fired on this corpus (nothing in it reaches 0.97). Under a model
-whose median pair sits at 0.311, 0.80 is what a genuine near-duplicate scores, which is what those
-numbers always meant. `multilingual-e5-small` is disqualified twice over: chance separation, and a
-crowd@0.80 of 28 in 30, which would make every trigger a refrain and emit nothing.
-
-The browser's ⌘K search is a SEPARATE index on `bge-small-en-v1.5`, embedded on the device from page
-bodies. Nothing serves a vector across that line, so the two may differ — but the search box has the
-identical defect for the same reason, and moving it costs a ~118MB phone download. That is an open
-product call, not a technical one.
-
-**Curator** (`AnthropicCurator`, `claude-sonnet-5` at effort `low`) is one call per changed page. It
-sees tonight's passages and the selected candidates and returns, per pair, whether they genuinely
-relate plus `speaker: self | other`. It writes no copy: its job is to reject candidates that share
-vocabulary without sharing subject, and candidates about someone else's life. It grades every pairing
-on the absolute `relation` scale below and **anything under its floor (0.6) is not shown**. The
-prompt names the case that band is made of: a shared state — feeling rested, feeling ill, being
-tired, a good evening — is two evenings, not an echo.
-
-The floor is folded into `version()` beside the model, the effort and the prompt digest, written in
-thousandths as an integer so no locale's decimal point can move a stored key. It has to be: the
-floor decides which pairings come back `related`, it lives on the adapter rather than in
-`SelectionRules`, so `rulesTag` does not reach it — and left out, moving it reopened NO page. Every
-settled page kept verdicts judged under the old threshold, forever.
-
-If any of the three boundaries is unconfigured the pass is a no-op and no echo is written.
-
-## Delivery
-
-- **Live derivation** — `application/EchoDerivations` drains its queue every second and calls
-  `EchoSweep::derivePage` for one page, the one a writer just saved. This is the only way anyone
-  receives an echo.
-- **Repair pass** — `EchoSweep::run`, on a six-hour heartbeat over the last 24 hours of activity:
-  inbound reverse edges, corpus-stamp backfill, pages a vendor blip failed, and derivations the
-  per-page cap deferred.
-
-The trigger is `PageService::write` via a `PageWatcher`. A write that lost the last-writer-wins guard
-changes nothing and announces nothing. `pageSaved` never derives on the request thread: it does map
-bookkeeping under a short mutex and returns, and derivation runs on `EchoDerivations`' own trantor
-thread.
-
-`LiveDerivationRules`:
-
-| Knob | Value | Meaning |
-|---|---|---|
-| `quietMs` | 8,000 | quiet time after the last save before the page derives |
-| `materialBytes` | 400 | …unless this much new text arrived since the pending entry opened |
-| `perPageDaily` | 4 | past it the page is **deferred**: nothing written, no stamp moved, repair pass takes it |
-| `dailyWindowMs` | 24 h | the rolling window opens at the page's first derivation, so no timezone is named |
-| `pendingPerUser` | 5 pages | past it a save is not queued at all; the page's stamps never moved, so it stays owed |
-| `perUserDaily` | 40 | derivations per account per rolling day |
-
-The drain deals round-robin across accounts, not in queue order: one drain thread serves everybody.
-
-`Entitlements::sweepAllowanceFor` is the per-user AI spend ceiling, asked once per user on both
-paths. Over budget is **skipped**, not failed: stamps never advance and the page stays owed.
-
-`kSweepMonthlyAiNanos` is an internal $2.00 ceiling per account per rolling 30 days. It includes
-only passive `echo.segment` and `echo.curate` operations for Journal. Voice transcription consumes
-the account's active AI allowance and does not reduce the Echoes ceiling. Echoes remain recorded in
-the operational spend ledger but never reduce the customer's active AI allowance.
-
-No pending state is served — no progress route, no spinner. The client re-reads on its own.
-
-### A refusal is final
-
-A curator call returning `stop_reason: refusal` is the one failure that **settles** the page
-(`isSettled`, `ports/EchoRepository.h`). Every other failure — transport, rate limit, truncation,
-unreadable answer — leaves both stamps where they were, so the page comes back as owed. A refusal
-advances both stamps, and `duePages` / `duePage` additionally never reopen a row whose status is
-`refused` on corpus movement. Only an edit to that body, or a pipeline version bump, reopens it.
-
-A refused page ends carrying no echoes: `derive` calls `clearEchoes`, and the page's spans were
-already replaced before the curator was asked.
-
-Nothing is shown to the reader about any of this. The count lives in
-`EchoSweepReport::pagesRefused`, apart from `pagesFailed`, and in `journal_page_curation.status`.
-
-### Warm corpus cache
-
-`application/WarmEchoRepository` is an `EchoRepository` decorator holding the user's vector corpus
-warm, per (user, embedding version), for 15 minutes.
-
-- `replaceSpans` returns what it stored, so the warm copy is spliced rather than dropped.
-- A write under a **different** embedding version drops the entry outright.
-- A load that raced a write is returned to its caller and not kept.
-- It is exact only **within one process**. A span written by a second replica is invisible for at
-  most the TTL.
-- `corpusOf` serves at most `kCorpusSpans` (20,000) passages, the most recent. Past that the oldest
-  days stop being reachable by an echo; nothing is deleted and no page is refused.
-
-### Segmentation
-
-The page is cut into **idea units**: one thought as its writer would count it.
-
-**The model answers in NUMBERS, never in text.** The page is cut deterministically into **atoms**
-(`atomsOf`), the atoms are numbered and shown to the model, and it replies only with the atom each
-idea unit STARTS at (`{"starts":[1,3,4]}`). Units are runs of consecutive atoms, so they tile the
-page, and a unit's bytes come from the atom offsets. **The model is never given a place to put
-text**, so misquoting the writer stops being a thing to detect and becomes a thing that cannot
-happen. (It returned unit strings for a few hours on 2026-08-23, checked against the body by
-`locateUnits` — sound, and the wrong shape: that made a misquote *detectable*.)
-
-**The atom grid is what the model gets to choose among, so it is cut fine** (`kAtomGrammarVersion`,
-bumped by hand whenever a cut moves — a grammar nobody stamps is a grammar that reaches only pages
-written after it). Line breaks are hard boundaries; then terminator runs including `…`; then `;` and
-`:`; then a whitespace-wrapped dash, which in Russian is the clause joiner a comma is in English;
-then a mid-line list marker (`+ - – — •`), because a diary writes "+this +that" on one line; and as a
-last resort an atom still over `kLongAtomWords` is cut at commas leaving three words each side.
-Merging is FREE — the model can always answer `starts=[1]` — so a finer grid strictly dominates a
-coarse one and costs only input tokens, the cheap half of the bill. The grammar cut only at `.!?`
-until 2026-08-23, which collapsed four of seven realistic Russian diary bodies to a SINGLE atom.
-
-**The vendor is asked unless there is provably nothing to decide**: an empty page, or one atom of at
-most `kLongAtomWords` words. It used to skip on one atom of any length, which meant the most diluted
-page in the corpus — a long unpunctuated line carrying three thoughts — was the one page guaranteed
-never to be looked at. Measured cost of that dilution: 0.354 for the whole line against 0.950 for the
-clause inside it.
-
-**A wrong answer is repaired, not refused** (`unitsFrom`). Out of range, out of order, duplicated,
-missing the opening 1 — all fixed deterministically, and `unitsDiscarded` counts what could not be
-used. This is only safe because the answer is numbers: any partition of a page's own atoms is made of
-that page's own bytes, so the worst a confused reply can do is group thoughts badly. **One reply is
-not repairable and must not be: an empty `starts` on a page with more than one atom.** `unitsFrom`
-opens at atom 1 regardless, so a page that got NO decision would settle byte-identical to one the
-model read and judged whole. It is a failed call and the page stays owed.
-
-**The known limit of atoms:** a unit boundary can only fall where the grammar found one, so a line
-with no punctuation and under `kLongAtomWords` words is one atom and cannot be cut, where the
-free-text scheme could have split it anywhere. That is the trade the numbers bought, and the grammar
-above is how far it has been bought back.
-
-`EchoSweepReport::unitsDiscarded` counts repaired indices; above zero on an ordinary night it means
-the model is answering about a page it did not read properly.
-
-**The segmenter is asked only when the BYTES moved** — and `DuePage::bodyMoved` asks STORAGE, not a
-clock: it is true when no passage is held for this page whose `body_sha256` is the digest of this
-body AND under this segmenter version. Every path that hands back a `DuePage` asks it, `pageAt` and
-`allPages` included — the reverse edge reaches pages nothing else looked at, and one of them edited
-is one whose stored cut is of other bytes. Every other pass reads the units back out of storage and
-costs the vendor nothing.
-
-One page is asked anyway: a page holding NO passage. `replaceSpans` writes the digest onto the rows,
-so a page cut into nothing stores none and can never satisfy the test, and `derive` falls through to
-the segmenter on `stored.empty()` regardless. It costs no MONEY — `AnthropicSegmenter` returns
-before the vendor when the page has no atom — but it is a call per pass, and the only page it can
-happen to is one with nothing written on it.
-
-It compares the body's CONTENT because a stamp comparison answered a different question. Setting
-mood or energy saves immediately (`pageStore.js` `set` → `scheduleSave(0)`) with the body untouched,
-so the page HLC moved and not one byte did — and the page bought a segmenter call to re-cut
-identical text. The digest is written by `replaceSpans`, in the same transaction as the rows it
-describes, so a cut can never claim bytes that are not stored; it comes from the CALLER's body and
-never from the page row, so a save that landed mid-derivation cannot be claimed as cut. A row
-carrying no digest — one written before the column, whose page has moved since, so the backfill
-could not reach it — reads as MOVED. Unknown must never read as unchanged: that would freeze a
-page's cut against whatever the writer does to it.
-
-**A byte-identical save is still not free.** The corpus fingerprint digests each span's
-`body_stamp_ms`, and every pass rewrites this page's spans under the new stamp, so a
-mood-only save moves `corpusStamp` and every OTHER page of that writer reads as stale on the next
-repair pass — one curator call each, up to `pagesPerUser`. The page itself buys nothing; the account
-does. Nothing about a passage's identity, text or vector changed, so the stamp is answering a
-question it was not asked.
-
-`journal_page_curation` records three version strings, and both due-ness queries compare them against
-what the running build would produce (`PipelineVersions`). A SETTLED pass records all three; an
-unsettled one records only what it EARNED — and it records them after `replaceSpans`, never before,
-because these strings are a claim about what is in storage rather than about what a pass attempted.
-A pass that cut a page and then died at the embedder stored nothing, and claiming the cut there would
-make the next pass judge the old units under the new grammar's name, forever. Three strings rather
-than one, because they go stale differently:
-
-| column | what moved | what it costs |
-|---|---|---|
-| `segment_version` | the segmenter's prompt or model | the page is **cut** again — a vendor call, so it reports as `bodyMoved` |
-| `embed_version` | the embedding model | the units still stand; only their vectors are worthless |
-| `judge_version` | the curator's prompt, effort or **relation floor**, or **any `SelectionRules` knob** (folded to eight characters by `rulesTag`) | units and vectors stand; only the verdicts are stale |
-
-The columns default to empty, so a row written before them reads as derived by a pipeline that is not
-the current one and re-derives over the following passes at the ordinary per-user budget.
-
-**Add a knob to `SelectionRules` and add it to `rulesTag`, or that knob ships silently.** No version
-string covers a change to the selection *algorithm* rather than to its knobs; that is what
-`POST /v1/admin/journal/echo/sweep?rejudge=1` is for. It takes every page of every scanned writer
-instead of the ones the stamps owe. On a page whose stored cut is of the bytes it still holds it
-costs the CURATOR ALONE — no segmenter, because the page reports as body-unmoved, and no embedder,
-because every passage keeps the vector storage holds under the running embedding version. It is not
-free on every page: a page carrying NO stored passage is cut whatever `bodyMoved` says (`derive`
-falls through on `stored.empty()`), and a page whose body moved under its cut now reports as moved
-and is cut again rather than settled on units it no longer contains.
-
-A spoken page is cut exactly like a typed one: `ports/Transcriber.h` hands back a finished
-`Transcript` with no pause boundaries, and `DuePage` carries no `source` field.
-
-### Passage identity
-
-`(day, ord)` is a coordinate, not an identity. Each passage carries a stable `span_id`, minted from
-`journal_span_id_seq` at first derivation. On re-derivation `domain/SpanReconcile` matches old
-passages to new by whitespace-normalised text, carries `span_id` forward for survivors, and mints
-only for new text; duplicated text within one page is matched in document order. Echoes reference
-`span_id`, never position.
-
-Dismissals key on the **content hash of both passages**, so they survive re-derivation,
-re-segmentation and a segmenter version bump.
-
-### Retrieval
-
-`stratify` takes the corpus at least `minDayGap` days older than the trigger, then top-`perBand` by
-cosine from each age band — 7–30 d, 1–3 mo, 3–12 mo, 1–3 y, 3 y+ — so an old passage competes against
-its own era. Retrieval runs **per trigger passage** with a per-passage quota, never one pooled budget
-per page.
-
-### Selection
-
-Pure and deterministic, no model (`domain/EchoSelection.h`). `SelectionRules` holds every knob and
-nothing else may hardcode these numbers.
-
-1. **Trigger gate.** `crowd(t) = |{c : cos(t,c) >= refrainRadius}|`, excluding the trigger's own row.
-   A refrain emits nothing. The threshold is `max(refrainCrowd, ceil(refrainShare * |history|))` —
-   a SHARE of the corpus, with the absolute count as a floor for a small one. It was an absolute 5,
-   which is a gate whose behaviour is a function of how much somebody has written: measured on the
-   owner's corpus, 7.2% of it sits within 0.80 of any given passage, so the expected crowd crosses 5
-   at ~71 passages and the feature switches itself off, silently and permanently, for the writer who
-   journals most. A distributional RADIUS does not fix that — a quantile radius holds the tail
-   fraction roughly constant, so the count still grows with the corpus. Only a share does.
-2. **Drop restatements.** The same sentence again is not a memory: identical `normalizedForIdentity`
-   at any cosine, or `cos >= restatement`. The exact test is free, deterministic and
-   model-independent; the cosine stays because the curator's prompt has no restatement rule of its
-   own and would keep what an exact test lets through.
-3. **Anchor.** No shared low-frequency word, no echo — the deterministic enforcement of rule 1 in
-   *What an echo is*. `anchorsOf` decodes UTF-8 and classifies by CODEPOINT: letters and digits are
-   words, punctuation is not, and Cyrillic and Latin-1 fold case like ASCII. It classified BYTES
-   until 2026-08-23, treating everything >= 0x80 as wordly and folding ASCII only, so on a Russian
-   journal «Устал» never matched «устал» (the first word of every sentence was dead as an anchor),
-   guillemets glued into tokens, and two passages could "share" an em dash. A hard veto that fails
-   on spelling both blocks true echoes and admits false ones.
-   `AnchorVocabulary::of` then counts document frequency over the writer's own passages: a word
-   carried by at least `commonShare` of them is theirs, not an anchor. Under `vocabularyFloor`
-   passages a corpus cannot tell a habit from a coincidence, so only the built-in English list
-   applies.
-4. **Family collapse.** Cluster candidates at `cos >= familyRadius` (single-link); keep the **oldest**
-   member as representative, carrying family size. The cap is on families, not passages.
-5. **Recency quota.** At most `maxRecent` of the shown set from the last 30 days.
-6. **Spread.** At most `maxPerMonth` from any single calendar month.
-7. **Guarantee the earliest.** The oldest qualifying candidate takes a slot over the quotas and over
-   the score.
-8. **One card per past day.** On what survived the reader's dismissals, at most `maxPerMatchDay`
-   pairings survive per match day, best score first. The write side has always been day-grained — a dismissal and a quality signal are both
-   keyed `(trigger_day, match_day)` — while the read surface drew one card per SPAN pair, so two
-   units retrieved from one past page became two cards and waving one away silently retired the
-   other. A pairing dropped here is CONTINGENT (it lost to a sibling), so unlike `no_anchor` and
-   `restatement` it retracts nothing.
-9. **The page cap.** `selectForPage` takes the page's `SweepBudget::echoesPerPage` best by score —
-   every rule above bounds one trigger only, and the cap counts CARDS, because the day collapse runs
-   before it. The order is load-bearing: dismissals first (a retired pairing must not win a day and
-   silence its sibling), then the collapse, then the cap.
-
-Defaults: `minDayGap` 7, `shown` 10, `refrainRadius` 0.80, `refrainCrowd` 5, `refrainShare` 0.05,
-`maxPerMatchDay` 1, `familyRadius` 0.85,
-`restatement` 0.97, `perBand` 8, `maxRecent` 2, `maxPerMonth` 2, `commonShare` 0.25,
-`vocabularyFloor` 8. `SweepBudget`: `pagesPerUser` 40, `inboundPerPage` 20, `echoesPerPage` 10.
-
-`selectForPage` returns its pairings *and* a `TriggerTrace` per trigger carrying every candidate's
-`Fate`: `selected · not_retrieved · restatement · no_anchor · family_member · recency_quota ·
-month_quota · outranked · dismissed · same_day · page_cap`. `EchoSweep::derive` and the tuning door call the
-same function.
-
-### Re-derivation, deletion, the reverse edge
-
-**Outbound.** When a page's body changes, its passages and echoes are recomputed. The replacement is
-additive: `replaceEchoes` deletes rows whose trigger or match passage no longer exists, plus the
-pairings this pass **actively refused** (`CuratedEchoes::refused`). Two things refuse: the curator,
-asked again and answering no; and selection, for a reason intrinsic to the pair — `no_anchor` or
-`restatement`. Both hold whatever else is in the corpus that night.
-
-Everything else is kept. A quota, a family, the page cap and a refrain are contingent on the other
-candidates that night, and a pairing retrieval never handed over was never looked at, so silence
-about a row must never read as a refusal of it.
-
-**A vendor refusal is the one case that clears a page outright** (`clearEchoes`).
-
-**Inbound.** When page X's passages change, every page holding an echo into X (`where match_day = X`)
-is enqueued for re-derivation. This is the repair pass's work and not the live path's: the walk is
-unbounded, and `SweepBudget::inboundPerPage` bounds it per page. A page whose own bytes have not
-moved costs one curator call and nothing else — no cut, and no vector bought twice. One whose bytes
-HAVE moved is cut here: this walk is the only thing that looks at a page the per-user budget
-deferred, and settling it on a cut of bytes it no longer holds would lose the edit for good.
-
-**Backfill.** A user-level corpus stamp — a fingerprint of every passage the writer holds — changes
-whenever any page's passages change, INCLUDING when they are deleted. It is a
-FINGERPRINT of the writer's spans, not a clock, and it is compared for sameness rather than for
-order: it used to be `max(body_stamp_ms)`, which is monotone only while a corpus GROWS, so emptying a
-page could LOWER it and `corpus_stamp < stored` then reopened nothing at all — a corpus that shrank
-under every page made none of them due. The owner's page went from fifty bytes to empty on the day
-that was found. A page whose
-echoes were computed against an older stamp is stale and is re-derived. `derive()` compares no
-candidate sets, so a corpus bump costs one curator call per stale page; the skip that would avoid it
-is unbuilt.
-
-**Deletion** propagates at both layers: stored passage text is re-located in the live body at render
-(not found → not rendered), and a day's passage rows are replaced wholesale at the next derivation.
-Match exactly; no case-folding, no fuzzy matching.
-
-## Data model
-
-`db/schema.sql` is authoritative. The tables:
-
-| Table | Key | Holds |
-|---|---|---|
-| `journal_span` | `(user_id, span_id)` | one passage: `day`, `ord`, byte span `[lo, hi)`, text, `text_sha256` of the normalised text, `vector` as little-endian float32 `bytea`, `embed_version`, `body_stamp_ms`, `body_sha256` of the RAW body it was cut from (null = unknown, which reads as moved) |
-| `journal_echo` | `(user_id, trigger_span_id, match_span_id)` | one kept pair: `cosine`, `relation`, `match_is_self`, `curator_version`; `check (match_day < trigger_day)` |
-| `journal_echo_dismissal` | `(user_id, trigger_hash, match_hash)` | the reader retired a pairing |
-| `journal_echo_signal` | `(user_id, trigger_span_id, match_span_id, kind)` | `opened` / `useful` / `not_useful`, with the `cosine`, `relation` and `curator_version` of the pairing judged |
-| `journal_echo_offer_dismissal` | `(user_id, day)` | "not now" — the offer, not the echoes |
-| `journal_page_curation` | `(user_id, day)` | `body_stamp_ms`, `corpus_stamp`, `segment_version`, `embed_version`, `judge_version`, `status`, `attempts`, `last_error` |
-
-Indexes that carry the design: `journal_span_page (user_id, day, ord)` for the page read,
-`journal_span_hash (user_id, text_sha256)` for the dismissal join, `journal_echo_page
-(user_id, trigger_day)` for the read endpoint, `journal_echo_inbound (user_id, match_day)` for the
-reverse edge, `journal_echo_signal_page (user_id, trigger_day, kind)` for the `useful` flag on read.
-
-`status` is `ok | empty_ok | transport | rate_limited | truncated | schema_invalid | refused`. `ok`,
-`empty_ok` and `refused` advance both stamps; the rest do not. **Never advance `body_stamp_ms` on a
-failed curate.** `attempts` counts consecutive unsettled failures and is a diagnostic — nothing backs
-off on it.
-
-`relation` is an absolute score defined by the curator's prompt: 0.9+ the same specific thing,
-0.6–0.8 that thing seen later, 0.3–0.5 the same theme and not the same subject. `AnthropicCurator`
-drops anything under its floor (0.6) and stores the grade as given. `z` and `family_size` are
-computed in `domain/EchoSelection` and persisted nowhere.
-
-## Layering
-
-```
-domain/       Passage         body → atoms, unitsFrom, locateUnits     (pure)
-              SpanReconcile   old spans + new → span_id carry-forward  (pure)
-              EchoSelection   stratify, select, selectForPage, traces  (pure)
-ports/        Segmenter · Embedder · Curator · EchoRepository
-application/  EchoSweep            the seven steps — derivePage (live) · run (repair)
-              EchoDerivations      saves → derivations: debounce, caps, its own thread
-              EchoExplain          one page's derivation, for its reasons, persisting nothing
-              WarmEchoRepository   the corpus held warm, per user, behind the port
-adapters/     postgres/PgEchoRepository · llm/HttpEmbedder · llm/AnthropicCurator
-              llm/AnthropicSegmenter · http/EchoApi
-```
-
-No thread table and no lifecycle: the relation between two passages is recomputed from the passages
-themselves.
+`EchoSweep::derive` performs these steps:
+
+1. Segment a changed body into idea units.
+2. Reconcile units against stored passages to retain their `span_id` identities.
+3. Embed passages without a reusable vector.
+4. Retrieve older candidates across age bands.
+5. Select candidates using deterministic rules, dismissals and page limits.
+6. Ask the curator whether each pair relates and whether it concerns the writer.
+7. Persist spans, verdicts and the versions actually stored.
+
+The ports are `Segmenter`, `Embedder`, `Curator` and `EchoRepository`. The domain owns passage
+boundaries, identity reconciliation and selection. Adapters own vendor calls and Postgres.
+
+`AnthropicSegmenter` and `AnthropicCurator` use the model and effort configured by the composition
+root. Without a vendor key, the root supplies `RuleSegmenter` and an unconfigured curator; no echo
+pass runs. The embedder is the self-hosted multilingual sidecar described in
+[its runbook](../../../services/embedder/README.md). Browser search maintains a separate index.
+All three ports must be configured for a pass to run.
+
+### Segmentation and identity
+
+`atomsOf` cuts deterministic byte spans. The model returns only atom start indices, such as
+`{"starts":[1,3,4]}`; passage text always comes from the original body. The grammar handles line
+breaks, terminators, semicolons, colons, spaced dashes, inline list markers and commas in long atoms.
+Change `kAtomGrammarVersion` when that grammar changes.
+
+`unitsFrom` repairs duplicate, unordered and out-of-range starts. An empty start list for a page
+with multiple atoms is a failure, so that page remains due. `unitsDiscarded` reports unusable
+indices. Empty pages and a single short atom require no vendor call.
+
+Segmentation is reused when the stored raw-body digest and segmenter version match. A missing
+digest is unknown and requires a new cut. A page with no stored spans is revisited, but an empty
+body needs no vendor call. Spoken and typed pages use the same segmentation path.
+
+`SpanReconcile` matches whitespace-normalized text, preserving `span_id` for surviving passages;
+duplicates match in document order. `(day, ord)` is only a coordinate. Vector reuse additionally
+requires byte-identical passage text and the current embedding version. Dismissals use the content
+hashes of both passages, so they survive re-segmentation.
+
+### Retrieval and selection
+
+`SelectionRules` in `domain/EchoSelection.h` is the source of defaults. `selectForPage` is shared by
+the sweep and the explain endpoint.
+
+1. Retrieve the best `perBand` candidates at least `minDayGap` days older, separately from the
+   7–30 day, 1–3 month, 3–12 month, 1–3 year and 3+ year bands.
+2. Suppress a refrain when its neighbor count reaches
+   `max(refrainCrowd, ceil(refrainShare * historySize))`.
+3. Drop identical normalized text and pairs above the restatement threshold.
+4. Require a shared uncommon word. Tokenization uses Unicode code points and case folding;
+   `AnchorVocabulary` counts document frequency in the writer's passages. Below `vocabularyFloor`,
+   only the built-in English common-word list applies.
+5. Collapse similar candidates into families, represented by their oldest member; apply recency
+   and calendar-month quotas, while guaranteeing the oldest qualifying candidate a slot.
+6. Apply dismissals, keep the highest-scoring pairings per past day, then apply the page cap.
+
+The trace records each candidate's fate: selected, not retrieved, restatement, no anchor, family
+member, recency quota, month quota, outranked, dismissed, same day or page cap.
+
+The curator sees candidates chronologically without their cosine scores. It returns a relation
+score and `speaker: self | other`, never display copy. Its floor is 0.6: shared themes or generic
+states alone do not qualify. Model, effort, prompt digest and relation floor are part of its version.
+
+### Re-derivation and deletion
+
+`replaceEchoes` removes pairings with missing spans and pairings actively rejected by the curator,
+`no_anchor` or `restatement`. Losing a quota, family selection or page cap does not retract a
+previously accepted echo. A vendor refusal clears all echoes for that trigger page.
+
+The repair pass follows inbound references when a matched page changes, bounded by
+`SweepBudget::inboundPerPage`. A fingerprint of the writer's span corpus also reopens stale pages
+when passages change or disappear. A page with unchanged body bytes reuses its units and vectors.
+
+`journal_page_curation` stores three versions:
+
+| Version | Invalidates |
+|---|---|
+| `segment_version` | passage boundaries |
+| `embed_version` | vectors |
+| `judge_version` | curator verdicts and `SelectionRules` |
+
+`judgeVersion` includes every selection knob. Add a new knob to its digest. For an algorithm change
+not represented by those values, the admin sweep accepts `rejudge=1`. Rejudging reuses stored cuts
+and matching vectors; changed bodies or absent spans still require segmentation.
+
+Only `ok`, `empty_ok` and `refused` settle a page and advance its derivation stamps. Transport,
+rate-limit, truncation and schema failures leave it due. A refusal reopens only on a body edit or
+pipeline version change, not corpus movement. Version claims are recorded after the corresponding
+spans are stored. `attempts` is diagnostic and does not implement backoff.
+
+## Scheduling and limits
+
+`PageService::write` notifies `EchoDerivations` only after an accepted write. The watcher queues work
+under a short mutex; derivation runs on its own thread, round-robin across accounts. The queue drains
+every second. `LiveDerivationRules` defaults are:
+
+| Limit | Default |
+|---|---|
+| Quiet time after save | 8 seconds |
+| New text that bypasses quiet time | 400 bytes |
+| Derivations per page per rolling day | 4 |
+| Derivations per account per rolling day | 40 |
+| Pending pages per account | 5 |
+
+Deferred and unqueued pages remain due. A six-hour repair heartbeat scans accounts active in the
+last 24 hours, with 40 pages per account, 20 inbound pages per changed page and ten echoes per page.
+
+`Entitlements::sweepAllowanceFor` limits passive `echo.segment` and `echo.curate` spend to an internal
+$2 per account per rolling 30 days. Over-budget work is skipped without advancing stamps. Voice
+transcription uses the active AI allowance instead. `ai_usage` records vendor usage and outcomes;
+use it to measure cost and cache use.
+
+`WarmEchoRepository` caches a corpus per account and embedding version for 15 minutes. Span writes
+update the cache; a different embedding version evicts it, and a load that races a write is not
+cached. The repository returns at most the newest 20,000 passages. Older passages remain stored but
+cannot be retrieved by this projection.
+
+## Persistence
+
+[The schema](../../db/schema.sql) defines the tables and constraints:
+
+| Table | Purpose |
+|---|---|
+| `journal_span` | stable passage IDs, offsets, text/body digests, vectors and embedding version |
+| `journal_echo` | accepted span pairs, relation, cosine, speaker and curator version |
+| `journal_echo_dismissal` | retired pairs keyed by both content hashes |
+| `journal_echo_signal` | opened/useful/not-useful feedback with the judged model version |
+| `journal_echo_offer_dismissal` | a page's retired offer |
+| `journal_page_curation` | body/corpus stamps, pipeline versions, outcome and attempts |
+
+Vectors are little-endian float32 `bytea`. There is no thread table or inferred lifecycle. Relations
+are recomputed from the passages.
 
 ## API
 
 | Route | Purpose |
 |---|---|
-| `GET /v1/journal/echoes?from=&to=` | echoes on pages in the range, grouped by page, owner only |
-| `POST /v1/journal/echoes/{triggerDay}/offer/dismiss` | retire the offer for this page |
-| `POST /v1/journal/echoes/{triggerDay}/dismiss` | retire every pairing on this page |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/dismiss` | retire one passage pair |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/useful` | the positive signal, one pairing |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/opened` | the walk back to the older page, recorded |
-| `POST /v1/admin/journal/echo/sweep` | run one repair pass, admin token; `sinceMs` in body or query |
-| `GET /v1/admin/journal/echo/explain/{day}` | what a derivation of that page decides right now, rule by rule — admin token AND a signed-in owner |
+| `GET /v1/journal/echoes?from=&to=` | owner-only page echoes |
+| `POST /v1/journal/echoes/{triggerDay}/offer/dismiss` | retire the offer |
+| `POST /v1/journal/echoes/{triggerDay}/dismiss` | retire every pairing on a page |
+| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/dismiss` | retire a past-day pairing |
+| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/useful` | positive feedback |
+| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/opened` | record opening the older page |
+| `POST /v1/admin/journal/echo/sweep` | repair pass; admin token required; accepts `sinceMs` and `rejudge` |
+| `GET /v1/admin/journal/echo/explain/{day}` | read-only explanation; admin token and owner session required |
 
-**Route order is load-bearing.** `/{triggerDay}/offer/dismiss` is registered before
-`/{triggerDay}/{matchDay}/dismiss`: drogon matches in registration order and `{matchDay}` binds the
-literal `offer`, so the swapped order answers a decline with `400 bad date`.
+Register `offer/dismiss` before `{matchDay}/dismiss`, or Drogon binds `offer` as a date. Pair and
+page dismissal routes write content-hash dismissals and `not_useful` signals and return 204 on retry.
 
-Both dismissal doors write the same content-hash key, both record the `not_useful` signal, and both
-answer 204 however many times they are pressed. The panel-level door is one request for the whole
-page. A dismissal says two separate things with different lifetimes — the pair is retired (content
-hash, survives a rewrite) and the pairing was wrong (span-keyed judgement) — so it is two rows in two
-tables.
+The read returns `{pages, pagesWritten, floorWaived}`. Pages carry `day`, `entitled`, `offerRetired`
+and `matches`; matches carry `day`, `isSelf`, `source`, `useful`, `text`, `withheldWords` and optional
+`occurrenceHint`. Full text is served to all signed-in writers; compatibility fields remain
+`entitled: true` and `withheldWords: 0`. The occurrence hint is subordinate to the exact-text check
+and is absent when the body changed under the stored span.
 
-The read answers `{ pages: [{ day, entitled, offerRetired, matches: [...] }], pagesWritten,
-floorWaived }`. Per match: `day`, `isSelf`, `source`, `useful`, `text`, `withheldWords`, and
-`occurrenceHint` where it applies.
+The explain endpoint writes nothing. It always embeds the page's passages, calls the curator only
+with `curate=1`, and re-segments with `recut=1`. Query parameters include every selection knob,
+`echoesPerPage` and `nearest`; malformed values fall back to defaults. The response reports the
+actual rules, due state, pipeline versions, corpus size and selection trace.
 
-- **Text and ISO days, never an offset.** The client re-locates by text and formats distance itself.
-- **`occurrenceHint`** is which occurrence of that text the passage is (0 for the first). It is
-  absent when the body moved under the passage and absent under the honest cut, and it is always
-  subordinate to the text check.
-- **`pagesWritten`** is how many pages the reader has words on; the corpus floor is a rule about the
-  whole corpus and the browser cannot count pages it has not synced.
-- **`floorWaived`** is true for the owner account (`Entitlements::isOwner`), because below the floor
-  the client draws nothing at all.
-- **`useful` and `offerRetired` are served, not device-local**, and `useful` is served on both sides
-  of the honest cut.
+## Client contract
 
-### The tuning door
+Render newest matches first, calculate distance from the ISO days, and suppress marks below the
+corpus floor unless `floorWaived` is true. Label non-self and spoken passages separately. Marks
+appear in page focus, not canvas zoom. Avoid revisiting a day already in the current echo chain,
+show depth and provide a route home. There is no pending-state endpoint or progress spinner.
 
-`GET /v1/admin/journal/echo/explain/{day}` runs one page's derivation for its reasons and writes
-nothing — no span row, no echo row, no curation or corpus stamp — so it never settles a page the live
-path still owes.
+## Known limits and evaluation
 
-- **Two credentials.** The admin token opens the door; the session says whose journal it is. It
-  explains the caller's own page only.
-- **It spends.** The embedder is called for the page's passages every time. The curator is called
-  only for `?curate=1`.
-- **Every `SelectionRules` knob is a query parameter**, plus `echoesPerPage`, `nearest`, `curate` and
-  `recut`. A malformed value falls back to the configured default rather than 400ing; the rules the
-  run actually used travel back in the answer.
-- **`recut=1`** cuts the page again instead of reading back stored units — a second vendor call.
-- **`nearest=N`** reports the N closest passages retrieval never handed over as `not_retrieved`. It
-  costs one extra cosine pass over the corpus per trigger, which is why the live path asks for none.
-
-The answer also states whether the page is **due** at all, the embedding version and how many corpus
-passages are stored under it, the segmenter's passages, and what the page carries today.
-
-## Access and allowance
-
-Echoes are automatic for every signed-in writer. The read serves full passages, occurrence hints,
-and useful marks without a subscription check. The response retains `entitled: true` and
-`withheldWords: 0` for existing clients.
-
-Passive derivation never consumes the customer's active AI allowance. The operational ledger retains
-all vendor spend, and `sweepAllowanceFor` caps passive work separately.
-
-## The surface
-
-A mark on a page, not a notification. The canon defines the states; what the backend requires:
-
-- Newest first, oldest at the bottom.
-- Distance is rendered client-side from the two ISO days.
-- `count` is computed after re-location succeeds, so the mark and the card cannot disagree.
-- No marks and no offer below the corpus floor, unless the server says `floorWaived`.
-- Label non-self passages: `isSelf: false` and `source: 'spoken'` each get their own line of copy.
-- No marks at canvas zoom. Page focus only.
-- Chain hygiene: never offer a day already visited in this session; show depth; offer a way home.
-
-## Cost and scale
-
-The cosine arithmetic is free; the corpus load is not. Vectors are stored as `bytea` float32, 12.3 MB
-at 8,000 passages × 384 dims. Select vectors without page bodies. Brute force is correct at this
-scale; `pgvector` is the escape hatch behind the repository, and `WarmEchoRepository` amortises the
-load across an evening's derivations.
-
-**Both prompts are dominated by their fixed half.** The curator's system prompt measures 4,284
-characters and the segmenter's 1,475; the full-sentence Russian bodies in
-`test/products/journal/domain/PassageTest.cpp` — the only realistic diary text in the repository —
-run 86–161 bytes and 47–89 characters. So on the INPUT side the page is a few percent of what a
-segmenter call sends, and the block that never varies is nearly all of it. Output is the expensive
-half either way: thinking is on by default on this family and bills as output, and `claude-sonnet-5`
-prices output at five times input (`platform/domain/AiUsage.cpp`), so `effort` is the only real cost
-lever.
-
-Segmenter: one call per page whose bytes moved, so it also runs on pages that end up proposing
-nothing. **Its output is an integer array** — `{"starts":[1,3,4]}`, two to four elements on a
-realistic page — plus thinking. It is never given a place to put text, so it does not bill a page
-length of output and never did under this design.
-
-**No per-call token figure here has been measured.** `meterSpend` posts every reply — refusals and
-truncations included — under the operation tags `echo.curate` and `echo.segment`, so the ledger is
-where the answer lives and no figure here substitutes for it. The character counts above are
-measured from source; everything
-downstream of a tokeniser is not, and the thinking term — the term that decides the whole bill — is
-neither bounded in the source nor visible without the ledger. One query over `ai_usage` grouped by
-`operation` and `outcome` answers it, and it should be asked before any cost argument is made from
-this section.
-
-Four traps, each producing a silent failure:
-
-- **`max_tokens` caps thinking + response together.** A curator sized around its JSON output
-  truncates mid-JSON.
-- **Check `stop_reason` before reading `content`** — a refusal is HTTP 200 with empty or partial
-  content, and reaches the sweep as `refused`, which settles the page.
-- **Do not disable thinking to save money** — lower `effort` instead. On Sonnet 5 `adaptive` is the
-  only on-mode.
-- **Use structured outputs** (`output_config.format`) — it eliminates the schema-invalid branch.
-
-Whether the system prompt caches is UNKNOWN and worth knowing. Sonnet 5's minimum cacheable prefix
-is 1024 tokens; the prompt measures 4,284 characters over 682 words, which straddles that threshold
-rather than sitting under it. If it caches, the fixed block — most of every curator call's input —
-costs a tenth. `cache_read_tokens` / `cache_write_tokens` in the same `ai_usage` query settle it in
-one line. Keep the prompt byte-stable regardless — the curator folds its digest into
-`curator_version`.
-
-Present candidates to the curator **chronologically, without their cosine scores**.
-
-## Quality gates
-
-None of these has been run; `journal_echo_signal` is the collection apparatus and it is empty.
-`curator_version` rides along on every row, so the dataset separates model vintages by that column.
-
-| Gate | Threshold |
-|---|---|
-| recall@40 of retrieval, per age band, on ≥100 hand-labelled pairs | ≥0.90 above 3 months |
-| recall@40 on **different-words** pairs specifically | ≥0.60 |
-| curator precision on kept echoes, human-judged | ≥0.85 |
+- Reusing an unchanged vector also preserves a malformed but well-shaped result. Re-embedding it
+  requires an embedding version change; there is no per-passage repair command.
+- The corpus fingerprint includes body stamps, so a mood-only save can reopen other pages for
+  curation even when their candidates did not change. Candidate-set comparison is not implemented.
+- Cache coherence is local to one process; another replica's writes may remain unseen for 15 minutes.
+- Atom boundaries cannot split short unpunctuated thoughts. Browser search still uses an English
+  embedding model even when the archive contains another language.
+- Human quality evaluation is pending: retrieval recall@40 on at least 100 labeled pairs should
+  reach 0.90 for pairs older than three months and 0.60 for different-word pairs; kept-echo precision
+  should reach 0.85. `journal_echo_signal` records feedback with the curator version.

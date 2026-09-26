@@ -2,8 +2,7 @@
 
 The drawn half of the gym web canon: the Gym Figma file's **`Web · Gym`** page
 ([`466:132`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=466-132)). The written half is
-[the form contract](web-form.md) and the briefs it names. Build from these boards, in the order
-[the implementation plan](web-implementation-plan.md) sets.
+[the form contract](web-form.md) and the briefs it names. The [build contract](web-build-contract.md) maps their acceptance states.
 
 ## The page
 

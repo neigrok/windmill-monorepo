@@ -1,123 +1,95 @@
-# Windmill monorepo — structure
+# Repository structure
 
-Three products, one shared backend, one superapp per surface. The tree groups by **surface**
-(toolchain) first, then by **product**.
+Windmill has three products—roadmap, journal and gym—with one backend and one account. The
+repository groups code by surface, then product.
 
-```
-backend/     one C++ modular-monolith binary
-  platform/    shared, product-neutral: auth · oauth · billing · mcp engine · email · users ·
-               telemetry · ai spend metering · access · id/crdt primitives · http host · infra
-               (the composition-root executables)
-  products/    one module per product, each plugging its routes and optionally its MCP tools
-               into the host
-    roadmap/     the RPG skill tree
-    journal/     the night-canvas daily journal
-    gym/         the training log
-  db/          schema.sql (platform tables + per-product tables) · funnel.sql
-  test/        mirrors the source: test/platform, test/products/<p>, test/e2e, test/golden
-
-web/         one Vite/React superapp; product modules lazy-loaded behind a switcher
-  index.html · package.json · vite.config.js · test/
+```text
+backend/                    C++20 modular monolith
+  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry and AI usage
+    infra/                  composition roots for the server and standalone MCP transports
+  products/
+    roadmap/                tree domain, synchronization and roadmap adapters
+    journal/                pages, nudges, voice and echoes
+    gym/                    training log, routines, Coach and gym adapters
+  db/                       idempotent schema and analyst funnel views
+  deploy/                   Docker Compose, Caddy and production configuration
+  test/                     platform/, products/, e2e/ and golden/
+web/                        Vite/React superapp for all three products
   src/
-    main.jsx        entry
-    styles/  telemetry/   app-global, product-neutral
-    design-system/  product-neutral component library (core · forms · feedback · navigation)
-    showcase/       the routed #/showcase gallery. Separate from the design system because it
-                    exhibits products as well as primitives, and reaches each product only
-                    through `products/<p>/showcase.js` (test/shell-boundaries enforces that)
-    shell/          app frame: App.jsx (router + product switcher) · auth · billing · account ·
-                    settings · chrome · connect · feedback · marketing · pwa · apiBase ·
-                    products.js
-    products/       roadmap/  journal/  gym/
-
-apps/        native superapps, one per OS
-  ios/         SwiftUI. project.yml (XcodeGen) declares the app target; App/ is the composition
-               root; WindmillKit/ holds WindmillPlatform + WindmillJournal + WindmillGym +
-               WindmillRoadmap. Journal and gym are the built rooms; roadmap mounts a pointer to
-               where it lives. iOS-only: build and test through xcodebuild against a simulator,
-               never `swift build`
-  android/     Kotlin/Compose. Gradle modules :app :platform :gym under the same one-directional
-               rule. Gym is the built room. JVM unit tests including the ladder golden; builds via
-               the committed wrapper (./gradlew build, JDK 17+)
-
-packages/    cross-surface shared assets
-  api-contract/   wire types, the genesis-legend golden, the gym weight-ladder golden (web + iOS +
-                  Android each test against it)
-  design-tokens/  a README and nothing else. The color/space/type scales live in
-                  web/src/styles/tokens and are mirrored by hand in
-                  apps/ios/WindmillKit/Sources/WindmillPlatform/Tokens.swift and
-                  apps/android/platform/…/design/Tokens.kt
-
-services/    sidecars the backend calls out to, deployed beside it in the same compose file
-  embedder/       Node + transformers.js turning journal passages into 384-dimension vectors for
-                  echoes. It loads paraphrase-multilingual-MiniLM-L12-v2; the browser's own journal
-                  search loads bge-small-en-v1.5, and no vector crosses between them. Journal's echo
-                  pass is dark without it (backend/products/journal/ports/Embedder.h)
-
-tools/       one-shot scripts, never a product surface
-  lift-import/          imports the author's Lift training history into the gym log over the API
-  resend-webhook-probe/ sends one signed bounce for a .invalid address to prove the Resend
-                        delivery webhook is armed in prod
-
-docs/        brand-level narrative: PRODUCT_LOG (strategy) · DESIGN_BRIEFS · design/ (the written
-             canon — guidelines, briefs, the consistency ledger; the drawings live in five Figma
-             files) · LAUNCH · per-topic design and exploration notes
-.github/     backend.yml (context backend/ — test, build, push the image) · web.yml (workdir web/ —
-             test, build, rsync dist/ to the VPS) · ios.yml (build + test only) · android.yml
-             (build + test on push/PR; android-v* tags and versioned dispatches produce unpublished
-             signing inputs) · deploy.yml (successful backend main push or manual: renders ~/windmill/.env on the VPS from GitHub secrets
-             and variables, then compose up) · embedder.yml · tools.yml
-.attic/      pre-restructure repos, kept as a local recovery net (gitignored)
+    main.jsx                entry point
+    styles/                 shared tokens and global styles
+    telemetry/              product-neutral telemetry
+    design-system/          shared components
+    showcase/               component and product gallery
+    shell/                  router, product registry, account, billing and shared navigation
+    products/               roadmap/, journal/ and gym/
+  test/                     mirrors the source
+apps/
+  ios/                      SwiftUI app; XcodeGen project and WindmillKit package
+  android/                  Kotlin/Compose app; :app, :platform and :gym Gradle modules
+packages/
+  api-contract/             shared wire contracts and executable golden fixtures
+services/
+  embedder/                 HTTP sidecar for journal passage vectors
+tools/                     standalone operational tools
+  lift-import/              imports Lift training history over the gym API
+  resend-webhook-probe/     sends a signed synthetic bounce to verify webhook configuration
+docs/                       product strategy, current contracts, design canon and unresolved work
+.github/workflows/          build, test, release-input and deployment workflows
 ```
 
-A successful backend push to main publishes its image and automatically deploys that tested SHA.
-Tests and automation use deterministic LLM fakes/fixtures, never real provider calls. Actual-model
-exploration is manual and local only, using a user-provided local key; it is not a CI or deployment
-gate. Production deployment retains its normal provider configuration. On a fresh host the web deploy must land
-before the backend one — the embedder bind-mounts its model weights out of the served web directory
-(`services/embedder/README.md`).
+## Dependency rule
 
-Android CI has read-only repository access and no private signing configuration. Its signing input
-contains a non-debuggable APK, digest and source/run provenance. `apps/android/tools/release.py finalize`
-checks the downloaded input against independently supplied source/run identities, signs locally with
-the retained key, and verifies the public certificate pin and unchanged application contents. Native
-acceptance and a same-key update check precede separate publication of the public release artifacts;
-neither CI nor the finalize helper publishes a GitHub release. See `apps/android/README.md` for custody
-and installation constraints.
+**Platform is product-neutral. Products depend on platform, never the reverse or on each other.**
+Composition roots may import each product to assemble the application. Product-specific mechanisms
+stay in their product even when their names sound generic; roadmap owns its node-shaped sync and
+room machinery.
 
-## The one rule
+- **Backend:** each product declares a dependency struct and `registerRoutes` in `routes.h`.
+  `platform/infra/main.cpp` builds dependencies and mounts routes. Roadmap and gym also implement
+  `ToolHost`; `CompositeToolHost` filters their MCP tools by the caller's grant.
+- **Web:** `shell/products.js` composes product route tables and settings sections. Shared settings
+  and marketing surfaces consume that registry. Showcase reaches a product only through its
+  `showcase.js` entry point; `test/shell-boundaries` checks those imports.
+- **Native:** iOS packages depend on `WindmillPlatform`; Android products depend on `:platform`.
+  iOS implements journal and gym and points roadmap readers to web. Android implements gym.
 
-**Platform is product-neutral; products depend on platform, never the reverse; products never
-depend on each other.** A file earns a place in `platform/` (or `design-system/`, `shell/`) only if
-it is free of product vocabulary. A generic-looking mechanism that is actually shaped by one
-product stays in that product — the roadmap sync/CRDT/room cluster is node-shaped end to end.
-Reusable *patterns* are documented, not prematurely abstracted; the second consumer earns the
-abstraction.
+Raw design tokens are mirrored in `web/src/styles/tokens/`,
+`apps/ios/WindmillKit/Sources/WindmillPlatform/Tokens.swift` and
+`apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
+`PLAN_COPY`, shared subscription wording, still lives in roadmap's web settings module.
 
-## How a product plugs in
+## CI and deployment
 
-- **Backend:** each product exposes `<product>::registerRoutes(app, deps)` over a `…Deps` struct it
-  declares in its own `routes.h`; `backend/platform/infra` composes the shared host and calls each.
-  MCP tools are the second seam: a product implements `platform/ports/ToolHost.h`, classifying each
-  tool by product and access level, and `main.cpp` registers it as a `ToolModule` on the
-  `CompositeToolHost` that `McpServer` binds. That composite is the permission gate — a client's
-  grant selects which products' tools it can see and call. Roadmap and gym publish tools.
-- **Web:** each product exports a route table; `shell` composes them and renders the product
-  switcher. The shell hard-codes no product: a neutral surface asks `shell/products.js` for the
-  active product, defaulting to the first. Products register their settings sections on the route
-  table (`settingsSections: { main, data }`); `shell/settings/SettingsPage.jsx` composes them off
-  the product registry and imports no product section. The brand root is
-  `shell/marketing/BrandLanding.jsx`, which builds its doors by mapping the registry; each
-  product's landing lives in its own folder.
+| Workflow | Responsibility |
+|---|---|
+| `backend.yml` | build and run C++ tests in Docker; publish server and embedder images |
+| `web.yml` | install, test and build web; rsync trusted builds to the VPS |
+| `ios.yml` | simulator app build, crash-report tests and WindmillKit tests |
+| `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
+| `embedder.yml` | check pinned vectors and the sidecar HTTP process |
+| `tools.yml` | run the Lift importer suite |
+| `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
 
-## Open boundary edges
+Backend Postgres integration cases require `WM_PG_TEST` and a local database; the Docker CI build
+runs without one. Automated model tests use deterministic fakes and fixtures. Actual-model
+exploration is manual and local with a user-provided key.
 
-- `PLAN_COPY`, the tier vocabulary for the one brand-wide subscription, is roadmap's
-  (`web/src/products/roadmap/settings/PlanSection.jsx`).
-- `backend/platform/infra` (the composition-root executables) depend on roadmap by nature — they
-  compose it.
+The web deploy must land first on a fresh host because the embedder mounts its weights from the
+served web directory. See [deployment](backend/deploy/README.md) and
+[embedder operations](services/embedder/README.md).
 
-## Per-surface docs
+Android CI holds no private signing key and publishes no release. The local release helper verifies
+source/run identities, signs with the retained key and checks the certificate and application
+contents. Native acceptance and a same-key update check precede publication. See
+[Android releases](apps/android/README.md#ci-and-releases).
 
-Each surface keeps its own `CLAUDE.md`/`NOTES.md`/`SPEC.md` for the detail that only matters inside
-it. This file is the map between them.
+## Documentation map
+
+- [Backend rules](backend/CLAUDE.md), [local setup](backend/RUNNING.md), [roadmap spec](backend/SPEC.md),
+  [authentication](backend/AUTH.md) and [authorization](backend/AUTHZ.md).
+- [Journal architecture](backend/products/journal/ARCHITECTURE.md) and
+  [gym architecture](backend/products/gym/ARCHITECTURE.md).
+- [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
+- [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
+  `docs/design/` holds written canon; Figma holds the drawings.

@@ -58,7 +58,7 @@ once. `routes.cpp` names every path in one column; `TrainingApi.h` holds the sta
 
 ## 3. Schema
 
-One idempotent `-- ── Gym (products/gym) ──` section in `backend/db/schema.sql`. The whole file
+Table definitions and migrations live in the Gym section of [schema.sql](../../db/schema.sql). The whole file
 re-runs on every deploy under `ON_ERROR_STOP=1`, so every statement must be re-runnable; a column
 that has to change gets its own idempotent statement beside its table, and a database created before
 it must end up identically shaped to one created after.
@@ -68,34 +68,6 @@ deletion is the cascade. **All date/time work stays in SQL** (`to_timestamp`, `e
 instants cross the wire and the domain as epoch-ms `uint64`; no C++ calendar function is consulted.
 
 ### 3.1 Catalog
-
-```sql
-create table if not exists gym_exercises (
-  id          text primary key,                   -- STABLE slug; never renamed, never displayed
-  name        text not null,                      -- the mutable display string
-  pattern     text not null check (pattern in
-                ('squat','hinge','press','pull','carry','core','isolation')),
-  equipment   text not null check (equipment in
-                ('barbell','dumbbell','machine','cable','bodyweight','kettlebell')),
-  step_kg     numeric(4,2) not null default 2.5,  -- the increment; seeded and on the wire
-  created_by  uuid references users(id) on delete cascade,   -- null = catalog seed
-  created_at  timestamptz not null default now()
-);
-create table if not exists gym_exercise_names (      -- what THIS account calls a seeded movement
-  user_id     uuid not null references users(id) on delete cascade,
-  exercise_id text not null references gym_exercises(id) on delete cascade,
-  name        text not null,
-  updated_at  timestamptz not null default now(),
-  primary key (user_id, exercise_id)
-);
-create table if not exists gym_exercise_aliases (    -- prior names this account gave it
-  user_id     uuid not null references users(id) on delete cascade,
-  exercise_id text not null references gym_exercises(id) on delete cascade,
-  name        text not null,
-  created_at  timestamptz not null default now(),
-  primary key (user_id, exercise_id, name)
-);
-```
 
 - **A seed row is GLOBAL**, so never `UPDATE gym_exercises SET name` on one: a seed rename takes a
   per-account line in `gym_exercise_names`, and every read of a movement name coalesces that over the
@@ -110,40 +82,8 @@ create table if not exists gym_exercise_aliases (    -- prior names this account
 
 ### 3.2 Sessions and sets
 
-```sql
-create table if not exists gym_sessions (
-  id          text primary key,     -- CLIENT-MINTED 'ses_<hex>'; the id IS the idempotency key
-  user_id     uuid not null references users(id) on delete cascade,
-  routine_id  text references gym_routines(id) on delete set null,   -- informational
-  plan        jsonb,                -- FROZEN routine copy, composed by the SERVER; null = ad-hoc
-  started_at  timestamptz not null,
-  finished_at timestamptz,
-  closed_by   text check (closed_by in ('finish', 'stale'))          -- NULL reads as finish
-);
-create index if not exists gym_sessions_log on gym_sessions (user_id, started_at desc);
-create unique index if not exists gym_sessions_one_open on gym_sessions (user_id)
-  where finished_at is null;
-
-create table if not exists gym_sets (
-  id           text primary key,    -- client-minted 'set_<hex>'
-  session_id   text not null references gym_sessions(id) on delete cascade,
-  user_id      uuid not null references users(id) on delete cascade,
-  exercise_id  text not null references gym_exercises(id),
-  set_number   int  not null check (set_number >= 1),
-  weight_kg    numeric(6,2) not null check (weight_kg between -500 and 500),
-  reps         int  not null check (reps between 1 and 500),
-  kind         text not null default 'working' check (kind in
-                 ('warmup','working','drop','failure')),
-  rpe          numeric(3,1) check (rpe between 1 and 10),
-  note         text not null default '',
-  completed_at timestamptz not null
-);
-create index if not exists gym_sets_session on gym_sets (session_id, set_number);
-create index if not exists gym_sets_history on gym_sets (user_id, exercise_id, completed_at desc);
-```
-
 - **One open session per user**, enforced by the partial unique index, never by application memory.
-  Starting while another is open JOINS it, unless the caller states it will not (§11.4).
+  Starting while another is open JOINS it, unless the caller states it will not (`joinOpenSession: false`).
 - `started_at` / `finished_at` / `completed_at` are client wall-clock instants: offline logging makes
   the device's clock the only honest one.
 - **One row per set that currently stands.** A correction rewrites the row; a delete moves it to
@@ -162,40 +102,6 @@ create index if not exists gym_sets_history on gym_sets (user_id, exercise_id, c
   before comparing, so float noise cannot mint a record.
 
 ### 3.3 The plan
-
-```sql
-create table if not exists gym_routines (
-  id          text primary key,     -- client-minted 'rt_<hex>'
-  user_id     uuid not null references users(id) on delete cascade,
-  name        text not null,
-  position    int  not null default 0,
-  created_at  timestamptz not null default now()
-);
-create index if not exists gym_routines_user on gym_routines (user_id, position);
-alter table gym_routines add column if not exists revision int not null default 1;
-alter table gym_routines add column if not exists created_entries int;   -- lines it was BUILT with
-alter table gym_routines add column if not exists created_door text      -- null = the lifter's hand
-  check (created_door in ('mcp','ask'));
-
-create table if not exists gym_routine_entries (
-  routine_id   text not null references gym_routines(id) on delete cascade,
-  position     int  not null check (position >= 1),
-  exercise_id  text not null references gym_exercises(id),
-  rest_seconds int check (rest_seconds between 15 and 900),   -- null = client default
-  primary key (routine_id, position)
-);
-
-create table if not exists gym_routine_entry_sets (
-  routine_id text not null,
-  position   int  not null,
-  set_index  int  not null check (set_index between 1 and 20),
-  reps       int  check (reps between 1 and 100),                    -- null = max
-  weight_kg  numeric(6,2) check (weight_kg between -500 and 500),    -- null = last time's Nth set
-  primary key (routine_id, position, set_index),
-  foreign key (routine_id, position) references gym_routine_entries (routine_id, position)
-    on delete cascade
-);
-```
 
 - `revision` is the concurrency token: what a proposal is minted AGAINST, and what stops a
   read-modify-write PUT from destroying that base.
@@ -242,16 +148,6 @@ whole scheme or none, never a ladder shifted by the one missing.
 
 ### 3.4 The workout share
 
-```sql
-create table if not exists gym_session_shares (
-  session_id  text primary key references gym_sessions(id) on delete cascade,
-  user_id     uuid not null references users(id) on delete cascade,
-  token       text not null unique,
-  created_at  timestamptz not null default now(),
-  expires_at  timestamptz not null
-);
-```
-
 - **A table and not a `visibility` column**, so no owner-scoped query has a gate that can be
   forgotten. No other query names this table; the feature is three port methods.
 - **`session_id` is the primary key**, which makes the mint idempotent. An expired share is replaced
@@ -284,26 +180,6 @@ plan; `history_routine_id` retains filter identity after the living routine is d
 
 ### 3.5 Set revisions
 
-```sql
-create table if not exists gym_set_revisions (
-  revision_id  bigserial primary key,
-  set_id       text not null,                                        -- deliberately NO foreign key
-  session_id   text not null references gym_sessions(id) on delete cascade,
-  user_id      uuid not null references users(id) on delete cascade,
-  exercise_id  text not null references gym_exercises(id),
-  set_number   int  not null,
-  weight_kg    numeric(6,2) not null,
-  reps         int  not null,
-  kind         text not null,
-  rpe          numeric(3,1),
-  note         text not null default '',
-  completed_at timestamptz not null,
-  deleted      boolean not null default false,
-  replaced_at  timestamptz not null default now()
-);
-create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, replaced_at);
-```
-
 - **A correction UPDATEs the set row and appends the prior version here; a delete moves the row here
   whole, marked `deleted`.** `gym_sets` keeps its one meaning and every read stays correct by
   construction. **Nothing shows this table to a lifter**: there is no trash and no recovery route, and
@@ -323,18 +199,6 @@ create index if not exists gym_set_revisions_set on gym_set_revisions (set_id, r
 
 ### 3.6 Preferences
 
-```sql
-create table if not exists gym_preferences (
-  user_id         uuid primary key references users(id) on delete cascade,
-  units           text not null default 'kg' check (units in ('kg','lb')),
-  rest_seconds    int check (rest_seconds between 15 and 900),   -- null = no timer
-  rest_sound      boolean not null default true,
-  confirm_haptic  boolean not null default true,
-  confirm_sound   boolean not null default false,
-  updated_at      timestamptz not null default now()
-);
-```
-
 - **Units are a display transform and nothing else.** No conversion, no `lb` column: switching to `lb`
   changes what a screen prints.
 - **Defaults live on the columns AND in `domain/Preferences.h`, and must agree** —
@@ -345,47 +209,10 @@ create table if not exists gym_preferences (
 - **Not in `PgAccountFootprint`'s owned list.** That list decides whether the link door may delete an
   account, so a table on it must be data the account holds; settings are how a room is set up.
 - **The write is a whole-document `PUT`**; omitted fields take their default, and the later of two
-  writes holds the whole document — the ordering the claim replay wants (§11.6). Every refusal carries
+  writes holds the whole document — the ordering the claim replay wants. Every refusal carries
   a `code` (`preferences-unreadable` · `unknown-unit` · `rest-target`), raised by the entity.
 
 ### 3.7 The proposal ledger
-
-```sql
-create table if not exists gym_proposals (
-  id            text primary key,   -- client-minted 'prop_<hex>', the idempotency key
-  routine_id    text not null references gym_routines(id) on delete cascade,
-  user_id       uuid not null references users(id) on delete cascade,
-  intent        text not null check (intent in ('revise','remove')),
-  base_revision int  not null,
-  base_name     text not null,
-  proposed_name text not null,
-  summary       text not null default '',
-  changes       int  not null default 0,            -- `Apply all N`
-  state         text not null check (state in ('pending','applied','dismissed','superseded')),
-  door          text not null check (door in ('mcp','ask')),
-  connection    text not null default '',
-  agent         text not null default '',
-  created_at    timestamptz not null,
-  settled_at    timestamptz,
-  thread_id     text references gym_ask_threads(id) on delete set null,
-  superseded_by text                                -- the proposal that took this one's pending slot
-);
-create unique index if not exists gym_proposals_one_pending
-  on gym_proposals (routine_id, door, connection) where state = 'pending';
-
-create table if not exists gym_proposal_changes (
-  proposal_id         text not null references gym_proposals(id) on delete cascade,
-  position            int  not null check (position >= 1),
-  user_id             uuid not null references users(id) on delete cascade,
-  kind                text not null check (kind in ('kept','added','removed','retargeted')),
-  exercise_id         text not null references gym_exercises(id),
-  before_sets         jsonb,   -- the wire's `sets` array; null on an open line
-  before_rest_seconds int,
-  after_sets          jsonb,
-  after_rest_seconds  int,
-  primary key (proposal_id, position)
-);
-```
 
 - **The rows are the DOCUMENT as well as the DIFF.** Rows `1..k` are the run the routine takes on, in
   order — `kept`, `added`, `retargeted` alike — and rows `k+1..n` are the lines it takes away, so the
@@ -466,19 +293,6 @@ deletion; process exit releases the lease. See [the wire contract](../../../docs
 
 ### 3.9 Notes
 
-```sql
-create table if not exists gym_notes (
-  id          text primary key,                   -- client-minted 'note_<hex>', the idempotency key
-  user_id     uuid not null references users(id) on delete cascade,
-  position    int  not null check (position between 0 and 9),
-  title       text not null check (char_length(title) between 1 and 60),
-  body        text not null check (octet_length(body) <= 500),
-  created_at  timestamptz not null default now(),
-  updated_at  timestamptz not null default now(),
-  unique (user_id, position) deferrable initially deferred
-);
-```
-
 Notes hold the lifter's standing instructions and useful user-provided insights saved by Coach. Every
 agent holding `gym:read` can read them through `list_notes`; `save_note` requires `gym:write` and only
 appends. It deduplicates exact title/body text under the owner lock and never edits or reorders a note.
@@ -508,17 +322,6 @@ a note. The note and its receipt commit together; receipt rows cascade on accoun
 - On `PgAccountFootprint`'s owned list.
 
 ### 3.10 Bodyweight
-
-```sql
-create table if not exists gym_bodyweight (
-  user_id     uuid not null references users(id) on delete cascade,
-  date_local  date not null,
-  weight_kg   numeric(5,2) not null check (weight_kg between 20 and 400),
-  recorded_at bigint not null,
-  updated_at  timestamptz not null default now(),
-  primary key (user_id, date_local)
-);
-```
 
 A lifter's weigh-ins: one row per **local calendar day**, kilograms to two decimals. Read by every
 agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing else.
@@ -559,7 +362,7 @@ agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing e
   already forbids. `GymToolsTest` pins it off the declarations: every tool whose name or argument
   names say bodyweight is `gym:read`; Coach offers no weigh-in write.
 - On `PgAccountFootprint`'s owned list. On the phones it is local-first like sessions and replays
-  LAST in the claim (§11.6).
+  LAST in the claim.
 
 ## 4. Domain
 
@@ -1209,118 +1012,28 @@ flow. This intake guidance does not block recording supplied workout facts.
   snapshot's round trip. Pg mapper rows are `template <typename Row>` (the pqxx `row_ref`/`row`
   mac-vs-CI split).
 
-## 11. Two surfaces — the phone writes, the web reads
+## 11. Client synchronization
 
-The capture device is the **phone app** (native iOS · Android); the web app is everything else. This is
-a decision about where the product puts a control, **not a rule on the wire**: every route and every
-tool stays owner-scoped and surface-blind, because `tools/lift-import` writes sets over the same public
-API and the MCP tools write through the same services.
+The API is owner-scoped and surface-neutral. Clients, MCP tools and import scripts use the same
+services. Surface behavior and local storage belong in the [iOS](../../../apps/ios/README.md),
+[Android](../../../apps/android/README.md) and web product documentation.
 
-### 11.1 Who owns what
-
-| | Phone | Web |
-|---|---|---|
-| owns | the **open** session | everything retrospective and prospective |
-| | workout mode, keypad, ladder, sticky carry-forward, wake lock, the flush queue | the log, progression, the routines editor, MCP connect, settings, backfill |
-| writes | `gym_sessions` · `gym_sets` | `gym_routines` · `gym_routine_entries`, and past sessions only |
-
-### 11.2 The mirror
-
-Web renders the live session as it happens, in a band at the head of **Routines home**, off the
-shared read hook's poll (`useTrainingLog.js`). Routines is home on every surface, and it is already
-the screen that says whether anything is running. With no session open the band says so in words —
-*"Not training now."* over *"Workouts start on your phone."* — never a greyed-out control. It carries no
-install door: neither phone room has a store listing. **The mirror never says "resting"**: the rest
-target is device-local, so the server cannot know whether 1:47 is a rest running or a rest over, and
-the band says the digits under a label it can stand behind — *last set 1:47 ago*.
-
-### 11.3 Sync
-
-1. **Phone → server (the write).** Client-minted `set_<hex>`, offline queue, replay in any order any
-   number of times, `ON CONFLICT DO NOTHING`, flush before finish. The living statements are
-   `SetQueue.swift` and `SetQueue.kt`, which branch the 409 codes the same way: `set-id-taken`
-   re-mints, `session-id-taken` re-mints, `session-finished` drops, every other 409 is terminal and
-   said. The web holds no set queue at all.
-2. **Server → web (freshness).** No new endpoint. Web boots on the log read — which also settles a
-   stale open session — finds the open session, then polls `GET /v1/gym/sessions/{id}` every five
-   seconds while the tab is visible, stopped when hidden, refetched on `visibilitychange`.
-
-   The **weak `ETag`** is over `(startedAt, finishedAt, a fold of the sets as the reply renders them)`.
-   The fold must cover anything a poll could act on: a **correction** moves no count, no last instant
-   and no `finished_at`, so a tag built from counts would answer 304 over a weight that had changed.
-   `startedAt` leads and the stored session identity remains stable. A deleted session answers 404,
-   including when its previous tag is supplied. `If-None-Match` is read per RFC 9110 §13.1.2. The tag lives at the HTTP
-   edge (`TrainingApi.cpp`); `TrainingService` stays wire-blind and the MCP tools never see it. The 401
-   and the 404 never carry it. **No socket**: a set lands once every 60–120 seconds, and polling is
-   correct as written where a socket only becomes correct after its reconnect-and-replay path does.
-3. **Device ↔ device handoff.** `gym_sessions_one_open` plus `start`'s untargeted
-   `ON CONFLICT DO NOTHING` means a second device pressing Start **joins** the open session instead of
-   minting a phantom. Carry-forward and the rest countdown are device-local, so a handoff resumes the
-   log and not the timer — which the receiving device should say rather than fake.
-
-### 11.4 Backfill
-
-Web keeps one write door with different vocabulary: **"Add a past workout"**, never *Start*. It mints a
-session with `startedAt` in the past, finishes it in the same flow, and appends sets with past
-`completedAt`. Same routes, no new contract, no live session ever opened on a laptop.
-
-**Backfill is refused while a session is open**, and the rule is on the wire rather than in a client,
-because `lift-import` and `start_session` write through the same service:
-**`{"joinOpenSession": false}` on the start, and 409 `session-already-open` when another session is
-open.** **The join stays, and stays the default** — the handoff is built on it. Any surface may state
-either intent; the intent is never inferred from `startedAt`, which is indistinguishable from clock
-skew, and never from the id that comes back, since a differing id is precisely the handoff.
-
-### 11.5 Two rules that follow
-
-**Web does not Finish a live session.** There is no web logger and no web Finish button, so no laptop
-can close a session over a phone holding unflushed sets. The web's one destructive door is the
-retrospective discard, which the store refuses while the session is open. Between **two phones** the
-hazard remains: a Finish pressed on one over the other's unflushed sets refuses those sets forever, and
-the fallback is auto-close at four hours stamped at the last set.
-
-**The ladder is one module per language** — JS, Swift, Kotlin — and all three answer
-`packages/api-contract/gym-ladder.json` as a test, so drift fails CI. Two rules that fixture pins: **the
-assisted side is the exact mirror of the loaded side** — a step that lightens the load reads the band
-just below its **magnitude**, `bump(−w, −direction, big) == −bump(w, direction, big)` — and **rounding
-is half away from zero** in every language, because `round(−x)` must equal `−round(x)` and half-up does
-not. The server stores only what was logged plus each exercise's default step.
-
-### 11.6 The claim replay
-
-The phone rooms open signed out: a lifter trains against local routines and a local log. Delivery
-is client-side replay over ordinary routes, with no claim endpoint or anonymous server identity.
-Android first requires an explicit local-data decision, durably bound to one verified account;
-sign-in alone selects the account. An unfinished transfer blocks replay until its owner and active
-queue pass recovery. Already owned offline work resumes only for its own account. The delivery
-contract is:
-
-1. **Routines first**, idempotent by their `rt_` ids; 409 `routine-id-taken` re-mints.
-2. **Sessions sequentially, oldest first.** Per session, strictly: `start` with the client-minted id,
-   the true `startedAt`, its `routineId` if that routine landed, and **`joinOpenSession: false` — never
-   the default**. Then ALL its sets, per-(session, exercise) lane in original order — the server assigns
-   `set_number` in arrival order — then `finish` with the true local `finishedAt`. **No log or stats
-   reads interleaved mid-session**: those settle staleness.
-3. **Verdicts by code only.** 409 `session-already-open` → wait; 409 `session-id-taken` → re-mint the
-   session id AND remap that session's queued sets onto it; 401 / 404 / 5xx / offline → retry, never
-   drop; 409 `session-finished` → dropped and SAID (a `RefusedSet`, never silence). Every instant must
-   sit in `(0, 253402300799000]` — repair a broken local timestamp before replay, because the 400 it
-   earns is terminal.
-4. **Settings ride along** as one ordinary `PUT /v1/gym/preferences`; whole-document last-write-wins
-   makes the device's copy win, and order does not matter against the log.
-5. The live local session claims the same way minus the finish; the existing queue then owns it.
-6. After a session's finish confirms, the local copy is **claimed**: the server log is the truth, and
-   local reads merge server history with unclaimed-local only.
-7. **Bodyweight last**, after every session landed (iOS `TrainingStore.claimBodyweight`, Android
-   `ClaimReplay.claimBodyweight`): one `PUT /v1/gym/bodyweight/{dateLocal}` per owed local row, day
-   ascending, idempotent by the day, and one `DELETE` per deletion still owed. The server keeps
-   whichever write carries the later `recordedAt`, so a replay can never undo a correction made on
-   another device; the reply is the row that stands and the local copy takes it — unless the day
-   moved on while the reply was in flight (a newer save, a deletion), in which case what the day
-   holds now stays owed for the next pass. A `400` is the one terminal verdict: said as a
-   `RefusedClaim` and the row let go; anything else waits for another pass.
-
-The undo window is 9000 ms on every surface. Copy may change; the verdict codes may not.
+- Set writes use client-minted IDs and durable queues. Flush sets before finishing: a new set into
+  a finished session is refused. Two phones can still race a finish against another phone's queue.
+- A start joins the account's existing open session by default. Send `joinOpenSession: false` when
+  the caller needs its own session; `session-already-open` then leaves the existing workout alone.
+- Past-workout import writes the finished session atomically and leaves an open workout untouched.
+  Sequential start → sets → finish replay must also use `joinOpenSession: false`, and must not
+  interleave settling log/statistics reads.
+- Session reads carry a weak ETag over the rendered session and sets. Corrections must change the
+  tag even when set count and timestamps stay equal. Missing/deleted sessions remain 404 with an
+  old tag, and 401/404 responses carry no ETag. This is an HTTP concern in `TrainingApi`.
+- There is no anonymous server identity or claim endpoint. Devices replay records only to their
+  owning account; Android's local-data consent journal decides ownership before replay.
+- Clients branch on machine error codes, preserve refused work visibly and keep per-exercise set
+  order because the server assigns set numbers in arrival order.
+- Bodyweight replay uses `recordedAt`; newer device edits remain owed while an older response is in
+  flight. The weight ladder itself stays on clients, tested against the shared golden fixture.
 
 ## 12. Coach
 
@@ -1495,26 +1208,7 @@ remain separate. No tool reads the gym's settings.
 - **The three read/delete doors are mounted unconditionally** while `POST /v1/gym/ask` is not: a
   deployment with no vendor key keeps every conversation readable and deletable.
 
-## 13. Open items
-
-- The dogfood gate — 8 consecutive real sessions without falling back to another app, prefill
-  right on set one in ≥6 — has never been run. Its capture surfaces are `apps/android` (a sideloaded
-  APK off a GitHub Release) and `apps/ios` (builds and tests green, runnable from Xcode).
-- iOS store distribution is blocked on signing, not code: `apps/ios/project.yml` sets
-  `CODE_SIGNING_REQUIRED: NO` with no `DEVELOPMENT_TEAM`, and the declared Associated Domains
-  entitlement needs a paid Apple team. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite:
-  Sign in with Apple without `user_identities` forks accounts on the first lifter who taps *Hide My
-  Email*.
-- Set-kinds UI is an unbuilt client over columns the backend already writes.
-- Merging a typo'd custom movement onto a catalog id is an UPDATE of `gym_sets.exercise_id`, unbuilt.
-- Raising the read receipt's floor needs a session id carried through `MovementTop` and the store's
-  projection.
-- Hanging the `additionalProperties: false` check off `ToolDeclaration`, so MCP and Coach read one copy.
-- A gym mail stream, if ever wanted, is a `MailSweep` subclass plus a `Heartbeat` member and nothing
-  else (`platform/application/MailSweep.h`, `platform/application/Heartbeat.h`).
-- A gym money surface would need the tier copy (`PLAN_COPY`) that lives in roadmap.
-
-### 12.6 Streaming, pictures and interruption
+### 12.7 Streaming, pictures and interruption
 
 `docs/gym-coach-contract.md` pins the additive request, generation, snapshot and media wire shapes.
 JSON clients remain supported. Streaming clients receive authoritative full-answer snapshots with
@@ -1538,3 +1232,17 @@ committed effects through ordinary domain repositories without executing an unco
 Deleted conversation IDs remain in an account-cascaded tombstone, preventing delayed retries from
 recreating a deleted thread or its routine. Immutable routine creation receipts outlive routine
 edits/deletion and recover an uncertain action without resurrecting the routine.
+
+## 13. Open items
+
+- The dogfood gate — 8 consecutive real sessions without falling back to another app, prefill
+  right on set one in ≥6 — has never been run. Its capture surfaces are `apps/android` (a sideloaded
+  APK off a GitHub Release) and `apps/ios` (runnable from Xcode).
+- iOS store distribution is blocked on signing, not code: `apps/ios/project.yml` sets
+  `CODE_SIGNING_REQUIRED: NO` with no `DEVELOPMENT_TEAM`, and the declared Associated Domains
+  entitlement needs a paid Apple team. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite:
+  Sign in with Apple without `user_identities` forks accounts on the first lifter who taps *Hide My
+  Email*.
+- Merging a typo'd custom movement onto a catalog id is an UPDATE of `gym_sets.exercise_id`, unbuilt.
+- Some aggregate read receipts lack per-session identity (`MovementTop` and its store projection).
+- Hanging the `additionalProperties: false` check off `ToolDeclaration`, so MCP and Coach read one copy.

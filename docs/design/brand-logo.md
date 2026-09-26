@@ -49,8 +49,6 @@ launcher theming can still recolour the icon: Android 16 QPR 2 can generate them
 without a supplied monochrome layer.
 [Android theming behavior](https://developer.android.com/develop/ui/compose/system/icon_design_adaptive).
 
-Dogfood implementation: `windmill-android-logo` in tree `t_9362d9bc883e0a1e`.
-
 ## iOS follow-up
 
 Apply the approved mark to the native iOS app icon. Review its mask, small sizes, and supported
@@ -58,33 +56,3 @@ appearance variants from this source. This is separate from the web install icon
 generation and simulator/device review remain open.
 
 Dogfood follow-up: `windmill-native-logo` in tree `t_9362d9bc883e0a1e`.
-
-## Verification
-
-The web build passes 1,772 tests with no failures or skips and generates all three landing shells.
-Local browser checks cover light and dark landing headers, the sign-in dialog, static pricing,
-and all four app room selections at 320px with no horizontal overflow or overlapping header targets.
-The backend builds and the isolated preview reaches its local session endpoint with the expected
-credentialed CORS response.
-
-The Android asset review confirms all seven SVG path strings and fills match the native vector.
-Every Bézier control point falls within a 32.301dp radius, conservatively inside the 33dp safe
-radius; the circular hub fits inside it too. Vector-rendered circle, rounded-square, squircle,
-and safe-circle previews preserve the full artwork.
-
-The Android `./gradlew build` and lint pass. Debug and Release each report 1,032 cases: 1,020 passed
-and 12 skipped live-wire tests, gated on `WM_ANDROID_WIRE_TEST` and `WM_WIRE_BEARER`. Packaged
-resource inspection confirms the new vector transform and colours. Backend integration and
-physical-device launcher behavior are outside these checks.
-
-On an Android API 28 emulator, the final APK loads through `PackageManager.loadIcon` as an
-`AdaptiveIconDrawable` with a vector foreground and the exact `#FFF9F5EB` background. Its native
-Canvas render contains all seven logo colours and preserves the hill, tower, and blades under
-the system circle mask.
-
-## Android release status
-
-Android 0.7.1 contains the verified icon and is a prerelease for fresh installs. Its APK uses a
-different debug signing certificate from 0.7.0, so it cannot update an existing 0.7.0 installation
-in place. Signing repair is tracked by `android-release-signing` in dogfood tree
-`t_9362d9bc883e0a1e`.

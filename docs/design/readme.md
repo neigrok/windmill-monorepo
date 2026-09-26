@@ -1,6 +1,6 @@
 # Design canon — the written half
 
-Guidelines, briefs, and the drift ledger: what should be, and why.
+Current guidelines, feature contracts and open design gaps.
 
 The product and library drawings live in five Figma files.
 
@@ -15,9 +15,8 @@ The product and library drawings live in five Figma files.
 The approved logo is [Windmill, node 9:129](https://www.figma.com/design/v21I1eIsWkyIaN7byJ8GdV/Windmill?node-id=9-129).
 Its source and usage are recorded in `brand-logo.md`.
 
-Figma records what IS; these docs record what should be and why. A screen is drawn in Figma. A
-decision, a constraint, an open question, or the reason behind either is written here. Neither is
-the other's backup.
+Figma holds the drawings. These documents hold behavior, constraints and unresolved design questions.
+Keep current requirements; remove completed plans, verification transcripts and superseded rationale.
 
 ## Layout
 
@@ -30,7 +29,7 @@ the other's backup.
 | `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the four-layer system architecture, thumb reach, **the text budget**. |
 | `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
 | `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |
-| `gym/briefs/` | Creation briefs for the gym room. |
+| `gym/briefs/` | Current feature contracts for the gym room. |
 | `marketing/` | The landing-family briefs, the pricing story, the transactional-email spec. |
 
 ## Rules for drawing a screen

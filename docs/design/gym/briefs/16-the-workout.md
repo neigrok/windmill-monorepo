@@ -1,15 +1,13 @@
 # The workout — doing it, ending it, reading it back
 
-The largest undrawn surface in the product, and the one a lifter actually uses with a bar in their
-hands: the live logger, the finish, the session read back afterwards, and the fix.
+The live training surface: the live logger, the finish, the session read back afterwards, and the fix.
 
 Obeys `12-native-idiom.md`, `../../guidelines/text-budget.md`, `13-gestures.md`, and the rulings in
 `15-the-routine.md` that reach this far.
 
 ## The keypad stays at the rack
 
-Wave two replaced the target sheet's custom keypad with the platform's decimal keyboard, and that was
-right **there**. It is wrong here, and the difference is the whole reason this room exists.
+Planning uses the platform's numeric keyboard. Live training uses the rack keypad.
 
 A planning sheet is used sitting down, two hands, looking at the screen. The rack is one hand, sweaty,
 mid-set, at arm's length. A twelve-key pad with 64-point targets and a comma-and-point key beats a
@@ -19,8 +17,8 @@ system keyboard whose keys are sized for prose and whose layout moves between lo
 > started by removing them here too.**
 
 **And the correction is at the rack as well**, so the fix sheet raises the same keypad the logger
-does, on every surface: tapping the weight numeral or the rep value opens the pad rather than the
-system keyboard. A repair mid-session is one-handed for the same reason the set was.
+does on the phones: tapping the weight numeral or the rep value opens the pad. Web correction
+uses editable numeric fields under `../web-form.md`. A repair mid-session is one-handed for the same reason the set was.
 
 The same logic in one line: *the planning sheet knows the number it wants; the rack is where you find
 out what you can lift.*
@@ -30,9 +28,7 @@ out what you can lift.*
 The logger's bottom band holds **Log set**, and that is the screen's one primary — it is pressed
 between five and forty times a session.
 
-**Finish moves to the top chrome**, as a toolbar action. The earlier spec put it in the bottom band
-beside Log set, which is two full-strength commitments in the reach band and the failure
-`thumb-reach.md` names by name. Finishing is also the rarer act by two orders of magnitude, and the
+**Finish moves to the top chrome**, as a toolbar action.  Finishing is also the rarer act by two orders of magnitude, and the
 one you never want to hit by accident with a wet thumb.
 
 ## Finish becomes a sheet over the session it finished
@@ -104,7 +100,7 @@ both branches: without it the state reviewing a session had no route to the sess
 the session* is not a dismissal either — it declines the routine offer in place, without leaving —
 which is why that spelling stays on the one surface whose finish is not a sheet. **The phones draw
 no `Keep it` in any state**: keeping the workout is what finishing did, and a receipt is not asked
-to say so twice (ledger `4d`).
+to say so twice.
 
 **A sheet covers the room's bottom bar, so the receipt says its own refusals while it stands.**
 `FinishScreen` takes a `failure` on both phones and draws it under the control that raised it — the
@@ -234,7 +230,7 @@ reach band, which grows no inset, because `Log set` is pressed five to forty tim
 not jump when a window opens. The ledger under it gains the transient's height at its foot while it
 shows, and the set in hand is kept above it. `13-gestures.md` Law 4 has the whole of it.
 
-**The window is 9000 ms on every surface** (ledger `2m`); a board that draws a duration draws 9000.
+**The window is 9000 ms on every surface**; a board that draws a duration draws 9000.
 It is **two constants pinned equal, not one number** — the span a delete is held, and the span a said
 sentence stands — and the transient retires on the window's clock, never on a sentence's.
 
@@ -242,20 +238,16 @@ sentence stands — and the transient retires on the window's clock, never on a 
 
 Two gaps wave two left, closed here rather than inherited:
 
-- **Every board in this wave exists in Instrument and Daylight.**
+- **Every board exists in Instrument and Daylight.**
 - **Every board carrying a big numeral is drawn at three text sizes** — default, large, and the
-  largest accessibility size — because `12-native-idiom.md` asks for exactly that and no board in the
-  product has ever had it. The largest is where every hand-set fixed-width column breaks.
+  largest accessibility size — under `12-native-idiom.md`. Check fixed-width columns at the largest size.
 
 ## The strings are pinned before anything is drawn
 
-Wave two let three surfaces invent seven strings for four states because the rulings were pinned and
-the words were not. This wave enumerates its states and fixes their words **first**, and any surface
-that disagrees draws the pinned string and argues in its report.
+Every new state needs exact copy in its owning contract before it is drawn.
 
 **And every refusal has a named owner.** When a control is removed or added, the refusals it carries
-are assigned to a board on a surface before drawing starts — the rule wave two learned by losing four
-of them.
+are assigned to a board on a surface before drawing starts.
 
 **Five sentences are outstanding against that rule right now** and are recorded in the ledger as `2x`
 rather than left to drift: the set note's over-the-bound refusal, the unrated seat's label, the

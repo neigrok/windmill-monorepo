@@ -1,6 +1,6 @@
-# Training history exploration and coach sharing
+# Training history and sharing
 
-Status: implemented history and sharing contract. Local functional and density checks are recorded in [web-verification.md](web-verification.md); the per-board acceptance inventory is [web-build-contract.md](web-build-contract.md).
+The history and sharing contract. The per-board acceptance inventory is [web-build-contract.md](web-build-contract.md).
 
 ## Reading years of training
 

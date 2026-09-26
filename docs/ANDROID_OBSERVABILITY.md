@@ -1,7 +1,8 @@
 # Android observability
 
-Android errors use the Sentry Android SDK. Behavioral events use the authenticated first-party
-`POST /v1/events` intake, which stores them and forwards them to Amplitude. The Android APK contains
+Android errors use the Sentry Android SDK. Behavioral events use the first-party
+`POST /v1/events` intake, which accepts anonymous and authenticated batches, stores them and
+forwards them to Amplitude. The Android APK contains
 no Amplitude API key. `Telemetry` is injected through the application, account, HTTP transport,
 workout stores, notifications and Compose provider; tests default to `Telemetry.None`.
 
@@ -100,9 +101,7 @@ storage, a full queue or an account that never returns can prevent delivery. Sta
 Amplitude deduplicate retries; the first-party ledger can retain a retried entry more than once.
 If both telemetry destinations are unreachable, local persistence cannot itself prove delivery.
 
-## Verification and structural observations
-
-Run the release-tool suite, shared boundary and local collector tests with:
+## Local checks
 
 ```sh
 cd apps/android
@@ -110,49 +109,11 @@ python3 -m unittest discover -s tools/tests -v
 ./gradlew :platform:testDebugUnitTest
 ```
 
-`AndroidTelemetryTest` starts the real Sentry SDK against a local HTTP collector and uses the real
-first-party HTTP transport against another local collector. It checks private message exclusion,
-release/environment attribution, repeated singleton errors, numeric latency, bounded phase labels,
-connection reuse across account changes and delivery diagnostics without recursive analytics events.
-`EventQueueTest` checks retry identity, restart recovery, account isolation, offline suppression and
-one delivery report per failure streak. HTTP tests distinguish header and body timeouts, keep phases
-separate across concurrent requests, preserve an injected event listener and measure consumption and
-decode time while retaining Coach's timeout. The gym suite checks product outcomes and handled-error
-ownership.
+`AndroidTelemetryTest` exercises the real Sentry SDK and first-party HTTP transport against local
+collectors. `EventQueueTest` covers retry identity, restart recovery, account isolation, offline
+suppression and one delivery report per failure streak. HTTP tests cover concurrent diagnostics,
+listener composition, timeouts and response decoding. Release-tool tests cover signing custody,
+provenance and telemetry configuration.
 
-The 2026-09-24 full Gradle build and lint passed. Debug and Release each reported 1,332 passed tests,
-12 skipped and zero failures or errors; the 26 focused transport/telemetry tests passed without skips.
-
-The 18 release-tool tests cover signing custody, provenance, private build logs and missing telemetry
-configuration. Release configuration checks cover both the Gradle DSN gate and the signing-input
-workflow: missing or invalid DSNs fail Gradle validation, and the workflow refuses a missing DSN
-before starting the build, even when the backend DSN is configured, while keeping private signing
-configuration out of CI.
-
-Native acceptance passed for the published
-[0.8.2 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.8.2) (version code 76, source
-`70447953e7797a397c198439bdb66873aabe00bc`). It updated in place over 0.8.0 on API 37;
-`firstInstallTime` remained `2026-09-14 12:26:15`. Cold startup and a controlled fatal crash followed
-by restart passed. The published APK has SHA-256
-`ebc9005e22bf0cf9017f4bad3171fb3d65f668b76a5a0886a803b829d240a688`.
-
-[Sentry issue BACKEND-5](https://none-gcb.sentry.io/issues/147501864/) confirms native fatal-event receipt.
-An accepted event reports Android 14, release `android-0.8.2-70447953e779`, environment `production` and
-distribution `76`, with exception type and stack retained. The
-[Amplitude native profile](https://app.amplitude.com/analytics/windmill/project/597958/search/amplitude_id%3D1715052031188/activity)
-records native behavioral events, including queued events from before the crash and reboot, with
-`app_version=0.8.2`, `build=76`, `platform=android`, `environment=production` and
-`release=android-0.8.2-70447953e779`.
-
-API 37 had broken DNS during acceptance, so its delivery used a temporary localhost CONNECT proxy
-that preserved TLS. Proxy settings were restored and the proxy was stopped. A separate fresh API 34
-emulator with direct DNS and network access also produced a native fatal event; that temporary
-emulator was stopped. These checks establish native vendor receipt for the tested paths. They do
-not establish offline fatal-event persistence or delivery of every exception.
-
-The shared boundary keeps vendor APIs out of product code and makes missed outcomes testable with a
-recording `Telemetry`. Project selection stays at the build boundary so Android and backend routing
-are configured independently without changing shared error reporting or privacy filters.
-A remaining performance consideration is the small synchronous preference
-commit made for every queued event. Native end-to-end acceptance and a live vendor receipt remain
-separate checks from local collectors; build success alone is not evidence of either.
+Native crash delivery and vendor receipt require a separate installed-app check. Local collectors
+and a successful build do not establish either.

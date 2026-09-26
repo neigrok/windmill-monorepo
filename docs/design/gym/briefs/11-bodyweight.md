@@ -20,7 +20,7 @@ These are two different things and they belong in two different places.
 The age is *today*, *yesterday* or *N days ago*, counted in calendar days.
 
 **On Android the reading is a moment in the log's timeline, not a head line** (owner's ruling
-2026-09-24, board `837:14824`, `18-progress.md`): *Weighed in · 82.4 kg* sits between the sessions
+board `837:14824`, `18-progress.md`): *Weighed in · 82.4 kg* sits between the sessions
 at its own date, with the change since the previous month under it, and opens Bodyweight. The head
 of the Android log carries no number at all.
 
@@ -46,7 +46,7 @@ the mistake is visible.
 Gym once drew two chart shapes. The e1RM chart on the Record screen was **bars from zero,
 normalised to the series maximum** — and that shape could not show what progress looks like: an
 estimate climbing from 100 to 106 kg over twelve weeks is a row of equal blocks, which is why two
-of the three Record screens quietly moved their baseline (`consistency.md` `5u`). **Bars are
+of the three Record screens quietly moved their baseline. **Bars are
 retired.** The primitive ruled here — a dot per measurement on a truncated, labelled axis — serves
 both series, bodyweight and e1RM; `18-progress.md` carries the e1RM half and its own gap threshold.
 
@@ -162,7 +162,7 @@ window. So the transient **retires** rather than standing there offering *Undo* 
 chart is drawing again, and the clock that would have
 deleted the number just saved is gone. iOS also holds the instant of the withhold and checks it as
 the clock fires — the same ruling read from the other end, and the guard for a newer row that reaches
-the store some other way (ledger `4i`).
+the store some other way.
 
 **Back-dating lives inside the weigh-in sheet, and that is a consequence of the one-door rule.** If
 the chip on the log is the only place a weigh-in is entered, then the sheet it opens has to carry a

@@ -1,12 +1,7 @@
 name: Embedder CI
 
-# A gate, not a deploy: the sidecar must keep producing the vectors in check/fixture.json, because
-# every stored span carries the VERSION that made it and cosine between two embedding spaces is
-# meaningless while looking like nothing is wrong. web/scripts/fetch-model.mjs arms it because that
-# script is where the sidecar's weights come from. The browser worker is deliberately a different
-# model now (services/embedder/embedder.js), and nothing in this job reads it, so it is no longer a
-# trigger; check/browser.mjs, which proves that worker in a real browser, needs Chrome and stays a
-# manual check.
+# Checks the sidecar's versioned vectors and HTTP boundary. check/browser.mjs verifies the
+# separate browser model manually and requires Chrome.
 
 on:
   push:
@@ -63,9 +58,6 @@ jobs:
 
       # check/fixture.json was generated on darwin/arm64, so the bar here is the 0.995 cosine floor
       # rather than bit equality: onnxruntime-node's macOS and Linux builds do not agree to the bit.
-      # macOS vs Linux measured at 0.9974 under the previous model against this 0.995 floor. This
-      # model has never been run on Linux: if it lands under the floor, regenerate the fixture on the
-      # platform rather than lowering the bar.
       - name: Fixture — the six pinned sentences
         run: node check/fixture.mjs
 

@@ -19,7 +19,7 @@ Record screen — and a second room onto the same chart is two doors onto one va
 > trained in the last twelve weeks, most recently trained first. **Every card is a door to that
 > movement's Record screen.** Nothing on a card writes.
 
-> **Android (owner's ruling 2026-09-24, boards `837:14824` and `837:14932`): no strip and no head
+> **Android (boards `837:14824` and `837:14932`): no strip and no head
 > numbers. Progress is woven into the session list where it happened.** A **moment** is a quiet
 > one-line outlined card between the sessions, dated like them: *Bench Press · new best · 76 kg
 > est · up 4 kg since August* with a dot trail, *Weighed in · 82.4 kg*, or *Trained 4 of the last
@@ -264,7 +264,7 @@ The legacy stats, record and Review responses remain compatible for web, iOS and
 ## Open
 
 - **The twelve-week dot grid** (one dot per session per week, no colour, no missed marker) is out
-  for now. It is honest, but the strip and the sentence answer the question this wave asks, and a
+  for now. It is honest, but the strip and the sentence answer the progress question, and a
   grid of empty cells is one reading away from a grid of guilt.
 - **Reps at bodyweight as a series.** An assisted card could draw a dot per session of its most
   reps at bodyweight — formula-free and honest. This wave draws the facts and not the dots.

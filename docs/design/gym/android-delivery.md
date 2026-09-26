@@ -1,30 +1,29 @@
 # Android design delivery contract
 
-Read from the live Figma file on 13 September 2026; the screens graduated on 24 September 2026 (routine sheet `813:4935`, plan-only editor `820:5572`, create sheet with target `814:5104`, settings without rest `816:5410`, the woven Log `837:14824` / `837:14932`) are restated below from their canonical boards. This is an implementation contract, not completion evidence. The delivery maps **89 phone states**; [feedback-contract.md](feedback-contract.md) adds revised masters and representative Coach states, with Kind removed and no sound/haptic set-confirmation controls.
+Canonical screens: routine sheet `813:4935`, plan-only editor `820:5572`, create sheet `814:5104`, settings `816:5410`, and Log `837:14824` / `837:14932`. This is the implementation and acceptance contract. The delivery maps **89 phone states**; [feedback-contract.md](feedback-contract.md) adds revised masters and representative Coach states, with Kind removed and no sound/haptic set-confirmation controls.
 
 - [Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2)
 - [Shared components](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-3)
 - [Specifications](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9987)
 
-All waves end with a refactoring/simplification pass, adversarial review, meaningful domain/UI tests, representative emulator comparison, and an honest worklog entry. All 90 states are runtime states derived from application data, not 90 hardcoded fixture routes. Carry existing working behavior forward; failure, loading and empty behavior in Specifications also belongs to delivery.
+States derive from application data. Preserve working behavior; loading, failure and empty states in Specifications belong to the same contract.
 
-## Wave plan
+## Coverage
 
-| Wave | Unique states | Deliverable and acceptance | Complexity |
-|---|---:|---|---|
-| 1 · Foundations | 4 | Shared token-driven controls; root navigation and Settings; remove Kind controls and set-confirmation sound/haptics. Remove rest targets and alerts; preserve ordinary system gesture cues. Roots retain current functionality while later waves refine their bodies. | Medium; shared chrome affects every route. |
-| 2 · Planning | 26 | Routine list/detail/new/edit, visible menu, independent Undo, straight/ramp/open targets and both create-movement return paths. Real arbitrary input and persistent saves. | High; target draft retention, fill arithmetic and picker context. |
-| 3 · Training | 27 | Planned/free logging, queue/refusals, session walk, entry/fix, complete/partial receipts, matching readback, save as routine and public sharing. Real saved state and persistence across process/network transitions. | High; local queue and exact session identity/arithmetic. |
-| 4 · Log | 9 | Refine Log root body, records, aliases, chart interaction, pagination and bodyweight entry/correction/removal. Truthful empty/failed/partial reads. | High; data-specific charts and shared weight source. |
-| 5 · Coach/account | 20 | Refine Coach root body, conversation/history/read receipt, notes, review decisions, profile/sign-in/code/connected log. Real endpoints and state-dependent refusals. | High; asynchronous writes, account scopes and proposal gating. |
-| 6 · Native/a11y | 3 | Daylight and both notification specimens; conditional Live Update promotion plus ordinary ongoing fallback, replay-safe actions, actual insets, IME/back/reduced-motion/TalkBack/200% text behavior across all waves. | High; OS and device behavior must be verified. |
-| 7 · Simplify/release | 0 | One app-wide structural review and final simplification; no stale wrappers, dead Kind or confirmation controls; full coverage audit, Android release build and GitHub release with verified APK and honest release notes. | Cross-cutting. |
+| Area | States | Contract |
+|---|---:|---|
+| Foundations | 4 | Shared controls, navigation, system appearance and Settings |
+| Planning | 26 | Routine list/detail/editor, independent Undo, targets and movement creation |
+| Training | 27 | Planned/free logging, offline queue, correction, receipts, sharing and save as routine |
+| Log | 9 | History, movement progress, aliases and bodyweight |
+| Coach/account | 20 | Conversation, receipts, Notes, proposal decisions, account and connections |
+| Native acceptance | 3 | Daylight and notification specimens; system behavior applies across every area |
 
-The three root frames are counted once in Wave 1; Log and Coach body behavior is completed in Waves 4 and 5. Native/a11y checks are required during every wave; Wave 6 is their full-system acceptance gate.
+Root frames are counted once. Phone frames describe real states; failure and accessibility behavior
+also live in Specifications. The Figma references use Nunito, Baloo 2 and JetBrains Mono as stand-ins
+for Android system sans/display/mono roles. Use native fonts and existing platform tokens.
 
-## Wave 1 · Figma-derived implementation specification
-
-Design-context calls were made for Routines Home `656:6692`, Settings `816:5410`, and the three NavigationBar variants `659:6945`. The code returned by Figma is reference React/Tailwind; implementation is Kotlin/Compose using existing WindmillFont, WindmillSpace, WindmillRadius, GymSkin and product-neutral platform tokens where they already match. Figma annotations explicitly identify Nunito, Baloo 2 and JetBrains Mono as stand-ins for Android system sans/display/mono roles. Do not add web fonts solely to match those stand-ins.
+## Foundations
 
 ### Layout and type
 
@@ -43,7 +42,7 @@ Design-context calls were made for Routines Home `656:6692`, Settings `816:5410`
 
 Routines root: outer20dp, top8dp; list gap4; no redundant count or empty refusal slot. Bottom reach band keeps full-width Start logging56dp above NavigationBar. Routine summaries name their first movements and carry no recency. New routine is a text action; profile initial uses the actual account.
 
-Settings: back bar followed by vertically scrolling content padded20dp with20dp gaps. Units row72dp with12dp vertical padding; label16sp bold/22; segmented container152×48, fully rounded raised fill, two68×48 segments with4dp inner gap/padding. Native selected semantics must be clear. The current spec states “This phone still draws kg”; do not claim unit conversion until every weight format/input is implemented consistently. Units, then separator, Notes, Connected log, separator, Account; there is no Rest timer row, rest sheet or rest alert (canonical `816:5410`). Values, connections and email are real state. No Sound/Haptic/Set confirmation row. Profile, connections and notes retain their real routes even before Wave 5 restyles them.
+Settings: back bar followed by vertically scrolling content padded20dp with20dp gaps. Units row72dp with12dp vertical padding; label16sp bold/22; segmented container152×48, fully rounded raised fill, two68×48 segments with4dp inner gap/padding. Native selected semantics must be clear. The current spec states “This phone still draws kg”; do not claim unit conversion until every weight format/input is implemented consistently. Units, then separator, Notes, Connected log, separator, Account; there is no Rest timer row, rest sheet or rest alert (canonical `816:5410`). Values, connections and email are real state. No Sound/Haptic/Set confirmation row. Profile, connections and notes retain their real routes even through layout changes.
 
 ### Resolved shared palette
 
@@ -66,13 +65,13 @@ Settings: back bar followed by vertically scrolling content padded20dp with20dp 
 | gym/scrim | #030606 / 72% | #1A1918 / 45% |
 | state/alarm-ink | #D08268 | #A84E35 |
 
-Use inkDim for small metadata. The faint token is insufficient on Instrument surface at small text size. Gold remains reserved for true personal records. The Figma Daylight accent remains the existing iris #4C4374; the consistency ledger's F44 must be resolved deliberately, not silently “fixed” to mint during implementation.
+Use inkDim for small metadata. The faint token is insufficient on Instrument surface at small text size. Gold remains reserved for true personal records. Daylight uses iris #4C4374.
 
 ### Icons and assets
 
 The approved Routines icon is a barbell, Log is an outlined record page, and Coach is a chat outline. The Android rail uses the exact exported geometry below.
 
-The committed SVG files below preserve exact bytes exported by Figma MCP on 13 September 2026. Coach uses Plugin API SVG_STRING export of `659:6821` in NavigationBar `659:6945`, preserving the 24 × 24 viewBox and Material chat outline geometry. Routines and Log come from NavigationBar variants in component set `659:6945`, More from Routines Home `656:6692` (`677:10204`), and the chevron from Settings `816:5410` / Support row `677:10201`. Use these exact glyphs unless a native Material glyph is visually verified identical; any Android conversion must preserve the exported geometry. Selected glyphs use #5FCDB4 and unselected/secondary glyphs #B6B5AF in the Instrument source; runtime tint uses the corresponding resolved token.
+The committed SVG files below preserve Figma export geometry. Coach uses Plugin API SVG_STRING export of `659:6821` in NavigationBar `659:6945`, preserving the 24 × 24 viewBox and Material chat outline geometry. Routines and Log come from NavigationBar variants in component set `659:6945`, More from Routines Home `656:6692` (`677:10204`), and the chevron from Settings `816:5410` / Support row `677:10201`. Use these exact glyphs unless a native Material glyph is visually verified identical; any Android conversion must preserve the exported geometry. Selected glyphs use #5FCDB4 and unselected/secondary glyphs #B6B5AF in the Instrument source; runtime tint uses the corresponding resolved token.
 
 | Asset | Preserved Figma export |
 |---|---|
@@ -86,7 +85,7 @@ The committed SVG files below preserve exact bytes exported by Figma MCP on 13 S
 
 Root context supplies Material Code Connect glyph hints for ArrowBack and ChatBubble. Use matching Compose Material glyphs and proper auto-mirroring; confirm the screenshot, since Figma's code uses ArrowBack even for a rotated forward arrow. All nav glyphs stay24×24; the support chevron is8×14 inside its row. System status and gesture symbols remain Android-owned.
 
-## Wave 2 · Planning detail
+## Planning
 
 Design contexts were read from New routine `660:7420`, Target/Straight `673:2567`, Create/Ready `814:5104` and picker sheet `660:7110`. The existing `RoutineDraft`, `TargetEntry`, `PickerOptions` and controlled picker state already carry much of the behavior; keep them while simplifying the Compose structure. Full state ownership and behavioral bounds remain in the tables below.
 
@@ -115,11 +114,11 @@ Additional exact assets are exported with Plugin API SVG_STRING, with source geo
 
 The reorder export includes its48dp source frame and its original placement; do not scale the entire48dp image into a24dp icon. The search export is a stroked circle plus diagonal. Both use Instrument inkDim; tint with the resolved role. Native radio, plus/check and OS keyboard controls remain native; use an existing glyph only when it visually matches.
 
-Wave2 acceptance scenarios: new empty routine→name→add/create→target→Save; existing unchanged/empty/60-point name states; straight/ramp/open and invalid101reps; shrink/grow/open draft restoration; Ramp up and Vary by set; reorder by drag and accessibility; two independent deletions→Undo/settle/failure; query-preserving cancel and arbitrary successful movement creation from both routine and quick pickers. At200% text/visible IME, fields scroll, Cancel remains reachable, and primary commits stay reachable without overlaying input.
+Area2 acceptance scenarios: new empty routine→name→add/create→target→Save; existing unchanged/empty/60-point name states; straight/ramp/open and invalid101reps; shrink/grow/open draft restoration; Ramp up and Vary by set; reorder by drag and accessibility; two independent deletions→Undo/settle/failure; query-preserving cancel and arbitrary successful movement creation from both routine and quick pickers. At200% text/visible IME, fields scroll, Cancel remains reachable, and primary commits stay reachable without overlaying input.
 
-## Wave 3 · Training detail
+## Training
 
-Design contexts and screenshots were read for planned logger `660:7955`, free logger `662:7755`, weight sheet `657:29`, assembly `671:8688`, Fix `671:8690`, and complete receipt `660:8028`. The geometry below comes from those frames and shared logger `659:7175`. All values are reference dp/sp; native insets, content growth and nonlinear font scaling take precedence over a fixed915dp canvas. Continue using the Wave 1 palette and Android system font roles.
+Design contexts and screenshots were read for planned logger `660:7955`, free logger `662:7755`, weight sheet `657:29`, assembly `671:8688`, Fix `671:8690`, and complete receipt `660:8028`. The geometry below comes from those frames and shared logger `659:7175`. All values are reference dp/sp; native insets, content growth and nonlinear font scaling take precedence over a fixed915dp canvas. Continue using the Area 1 palette and Android system font roles.
 
 | Surface | Concrete approved UI |
 |---|---|
@@ -139,7 +138,7 @@ Links last 30 days. End sharing anytime.” The middle paragraph is aligned in F
 
 Receipt heading follows specification `673:10002`: **fewer than four actual working sets means “Ended early.”; otherwise use “Well done.”** This applies to planned and free sessions. Free receipt `662:7907` and partial receipt `660:7713` confirm the same rule; volume and planned completion do not determine the heading.
 
-Save-routine receipt `671:9519` uses a compact 28sp heading and two Working sets/Volume rows in its source frame. W3 deliberately systematizes this variant onto the shared 40sp heading and Sets/kg lifted/Movements strip above. Retain its quiet “Save a routine” section, Name field and actual performed load/reps targets below; preserve both Coach and eligible Save routine actions through scrolling at 200% text and with the IME. This is a shared-component refactor, rather than an exact geometry match for that source variant.
+Save-routine receipt `671:9519` uses a compact 28sp heading and two Working sets/Volume rows in its source frame. Use the shared 40sp heading and Sets/kg lifted/Movements strip above. Retain its quiet “Save a routine” section, Name field and actual performed load/reps targets below; preserve both Coach and eligible Save routine actions through scrolling at 200% text and with the IME. This is a shared-component refactor, rather than an exact geometry match for that source variant.
 
 Implementation seams and acceptance:
 
@@ -148,17 +147,17 @@ Implementation seams and acceptance:
 - `AssemblySheet` retains real reorder/drop and movement identity. Refactor the bordered cards and repeated set subrows into the compact summary; replace “Add next movement” with “Add movement”. Remove the redundant dynamic “Log a set of {movement}” button because tapping a row already walks there; keep the transient just-added state and accessible focus. The summary count needs current performed data and frozen routine context, not merely elapsed time.
 - `FixSheet` already retains Kind on an existing set without exposing it and replaces its body for number entry. Keep those contracts while changing “Fix this set” / “Save the fix” to “Fix set” / “Save fix”, collapsing the horizontal RPE seats into one native choice, and aligning the fields. Preserve unrated and every half-point, note byte limits/counter, historical set-number gaps, owner-specific refusal and independent deletion Undo.
 - `FinishedSession` carries session and performed sets. Derive the approved receipt projection from those real saved facts in the domain/presentation boundary; do not calculate fixture values in Compose. The existing `Finish.tiles` shows Duration/Working sets/Top e1RM and therefore cannot supply this receipt unchanged. Review may be missing while the session and sets are saved: retain the truthful review-read refusal without inventing a complete review or losing partial-set arithmetic. Dismissal must reveal this exact session, including a1/2/3-set finish and a free session.
-- Exercise all27 W3 rows through real state, including queued/offline/refused save, working-set correction, independent held deletions, finished readback, human sharing lifecycle and eligible free-session Save routine. Queue state and frozen targets survive restart. Verify the9-set2700kg fixture, partial480/960/1440kg and free460kg independently. Use small-screen and200% text captures for rack reachability, Fix with IME, and receipt scrolling; preserve reduced-motion behavior and the removed set-confirmation effects.
+- Exercise all27 training rows through real state, including queued/offline/refused save, working-set correction, independent held deletions, finished readback, human sharing lifecycle and eligible free-session Save routine. Queue state and frozen targets survive restart. Verify the9-set2700kg fixture, partial480/960/1440kg and free460kg independently. Use small-screen and200% text captures for rack reachability, Fix with IME, and receipt scrolling; preserve reduced-motion behavior and the removed set-confirmation effects.
 
 Exact additional assets: [settings.svg](assets/android/settings.svg), source instance `659:6974` in Session bar `659:6967`,24×24 viewBox; [forward.svg](assets/android/forward.svg), source `659:6860` in Routine row `659:6856`,20×20 viewBox. Both are exact Plugin API `SVG_STRING` exports with Instrument inkDim fill, preserved without path edits; runtime tint uses the resolved token. Native equivalents require a visual match, including auto-mirroring the forward action. Existing [reorder-handle.svg](assets/android/reorder-handle.svg) supplies the48dp grip. Dots are data-driven layout primitives; the approved check, plus/minus and backspace are text glyphs, so no illustrative raster assets are needed.
 
-## Wave 4 · Log, records and bodyweight detail
+## Log, records and bodyweight
 
-Design contexts and screenshots were read for all eight assigned states: movement record `656:6694`, rename `678:11447`, renamed record `678:11551`, Bodyweight `669:8306`, Weigh in `669:8329`, correction `672:2984`, empty Log `669:8352`, and workout removed `671:9521`; Log root `837:14824` supplies the body completed in this wave. Specification fragments `678:11208` and `678:11358` supply the absent/read/pagination/chart/refusal states. The [Progress brief](briefs/18-progress.md) and [Bodyweight brief](briefs/11-bodyweight.md) supply data rules and native interaction requirements; the current Figma geometry, copy, above-chart readout and return-to-latest behavior apply here. Existing W1 palette/chrome and W3 session readback/share identity remain shared.
+Reference states: movement record `656:6694`, rename `678:11447`, renamed record `678:11551`, Bodyweight `669:8306`, Weigh in `669:8329`, correction `672:2984`, empty Log `669:8352`, and workout removed `671:9521`; Log root `837:14824` supplies the root composition. Specification fragments `678:11208` and `678:11358` supply the absent/read/pagination/chart/refusal states. The [Progress brief](briefs/18-progress.md) and [Bodyweight brief](briefs/11-bodyweight.md) supply data rules and native interaction requirements; the current Figma geometry, copy, above-chart readout and return-to-latest behavior apply here. Existing shared foundation palette/chrome and training session readback/share identity remain shared.
 
 | Surface | Concrete approved UI |
 |---|---|
-| Log head | Root bar and navigation remain W1; the root bar carries no action. Scroll content has20dp horizontal padding,8dp top,12dp item gaps. The head is the month heading14sp bold/20 dim and nothing else: no loaded line, no trained-weeks line, no bodyweight row (canonical `837:14824`). Dates, durations and recency are actual data. |
+| Log head | Root bar and navigation remain shared foundation; the root bar carries no action. Scroll content has20dp horizontal padding,8dp top,12dp item gaps. The head is the month heading14sp bold/20 dim and nothing else: no loaded line, no trained-weeks line, no bodyweight row (canonical `837:14824`). Dates, durations and recency are actual data. |
 | Progress moments | No strip. A moment is a list item between sessions: 1dp outlined card,12dp corners,10/14dp padding, an8dp dot (PR gold for a new best, accent for a weigh-in, set-done olive for a month trained in full), title14sp bold/20, line12sp/17 dim, optional72×24 dot trail. Three kinds — a new best for a movement, a weigh-in, a month trained in full — at most one a week, dated like the sessions. Tap expands the same item in place: surface card,16dp corners/14dp padding, the344×90 plot, window12sp/17, best14sp bold (PR ink) and heaviest14sp/20, then Open record; a weigh-in moment opens Bodyweight. No pan or scrub inside a moment (canonical `837:14824`, `837:14932`). |
 | Session history | Group title14sp bold/20, sentence case. Reference session card80dp minimum, surface fill,16dp corners/padding,12dp gap to next item. Title18sp bold/25; supporting14sp/20, e.g. “Today · 48 min · 9 working sets”,4dp copy gap; trailing chevron. No volume/e1RM caption under the card; the supporting line carries the record line (PR ink) when the session set one. Grow and wrap instead of placing the date beside a narrow title. Keep native long-press Share/Discard and accessibility alternatives; a generic PR flag cannot color an arbitrary metric gold. |
 | Log reach / empty / removed | Full-width tonal “Weigh in”56dp,16dp corners; outer20dp, top8dp/bottom12dp above navigation. Empty body: “No sessions yet”28sp bold/39 and “Your training will land here.”16sp/22,20dp outer/vertical gap. Workout removal shows the remaining actual rows and56dp raised snackbar,16dp corners,14sp/18 status, Undo72×48. Keep Weigh in pinned while Undo is visible; the removal fragment’s omission does not override specification `678:11360`. Do not turn a held last deletion into an empty-log claim. |
@@ -177,18 +176,18 @@ Data and interaction contract:
 - Record opening shows “Reading your log…” with Back, no Rename/Retry/zero metrics/chart. Failed read shows “Record unavailable”, the specific read failure and Try again. Successful untrained read says “Nothing logged for this movement yet. The first set you log lands here.” Sparse and no-estimate states are data outcomes, not failed reads. Preserve actual names and identity through rename; trim/count60 Unicode code points, counter from48, require changed nonblank input, retain draft on failure and await the confirmed name before updating every reader. Alias behavior remains account-aware; local unclaimed names must not promise a server alias.
 - Log opening, Loaded/More, Loading, Failed and End are distinct. Loading keeps current rows and disables repeat Load older. Failure keeps current rows and offers Retry; only server End permits a first-session-date footer. First-page failure must not say No sessions yet. Bodyweight no-data and no-measurement-in90days appear only after a successful relevant read; All reveals older measurements. A pending last-entry removal may show an empty drawn series, but no false “No weigh-ins” or “no weigh-in in the last90days” claim while the store still holds it.
 - Weigh-in identity is `(account, local date)`;20–400kg inclusive, comma/point accepted, one refusal at a time: “That is not a number yet.”, “One decimal point only.”, then “Between 20 and 400 kg — check the number.” A future local date is refused with “A weigh-in is not a forecast — today or earlier.” Keep raw refused input and accessible error ownership. Save is single-flight; successful save fully closes before refreshed Log/Bodyweight readings become visible. Do not confuse a locally saved pending write with an unsaved draft. Correction, queued replay and seat changes retain identity and later-write precedence.
-- Delete awaits full sheet dismissal before its independent9-second Undo. Plot dots, every-weigh-in rows and the Log reading use the same filtered series. Writing the same day again retires its held deletion before storing the correction. Preserve store-specific settle/refusal behavior; do not claim a local-first deletion failed to remove a point when it is already off this device. Workout deletions retain the W3 independent windows, actual surviving sessions and share/readback identity.
+- Delete awaits full sheet dismissal before its independent9-second Undo. Plot dots, every-weigh-in rows and the Log reading use the same filtered series. Writing the same day again retires its held deletion before storing the correction. Preserve store-specific settle/refusal behavior; do not claim a local-first deletion failed to remove a point when it is already off this device. Workout deletions retain the training independent windows, actual surviving sessions and share/readback identity.
 
-Current implementation seams and wave acceptance:
+Current implementation seams and area acceptance:
 
 - `LogScreen` uses the pure `logTimeline` projection and `LogReadout` month grouping. The head has no numbers or movement strip. One moment expands at a time; weigh-in moments open Bodyweight. Weigh in remains pinned. Session readback movement names open Record independently of moments.
 - `RecordScreen`, `Record.page` and `RenameSheet` retain loading, rename drafts and domain facts. The shared dated plot reads the same complete progress projection used by moments; window selection changes presentation only.
 - `Bodyweight`, `ChartWindow`, `ChartRun`, `LocalBodyweight` and `TrainingStore` already own parsing, date bounds,7-day breaks, local persistence and held deletion. Reuse them. `BodyweightScreen` needs the chart surface, accent dots, and Every weigh-in list; its current correction path is dot-only. Separate successful empty data from unresolved or failed refreshes, fix the held-only empty-window claim, and share axis/point geometry with Record without sharing their different gesture meanings. The list supplies48dp accessible correction targets even when nearby plot points are too dense for disjoint48dp hit regions.
-- Native acceptance covers all eight assigned frames plus the root body, the woven timeline and expanded moment with Back position retained, sparse3-session and threshold4-session records, assisted/zero/no-estimate cases, 31-point pan and scrub, All older data, alias success/refusal/local scope, first-read failure, pagination failure with surviving rows, and each weigh-in add/correct/delete/Undo path. Verify same-day rewrite during Undo, future/invalid decimal input, oldest/latest dates, >7-day and >21-day gaps, process/seat restoration, and consistent Log/Bodyweight refresh. Compare both skins plus200% text with IME; no clipping, overlapping hit regions, fabricated metrics or fixed sheet height. Refactor after the wave and reconcile the linked briefs with these current Figma rules.
+- Native acceptance covers all eight assigned frames plus the root body, the woven timeline and expanded moment with Back position retained, sparse3-session and threshold4-session records, assisted/zero/no-estimate cases, 31-point pan and scrub, All older data, alias success/refusal/local scope, first-read failure, pagination failure with surviving rows, and each weigh-in add/correct/delete/Undo path. Verify same-day rewrite during Undo, future/invalid decimal input, oldest/latest dates, >7-day and >21-day gaps, process/seat restoration, and consistent Log/Bodyweight refresh. Compare both skins plus200% text with IME; no clipping, overlapping hit regions, fabricated metrics or fixed sheet height. Refactor after the area and reconcile the linked briefs with these current Figma rules.
 
 No new decorative SVGs are required. Reuse committed navigation/support chevron assets and matching native Back. Figma exports named Session estimates, Best session and Ellipse describe measured plot geometry: render them from the real series with Compose Canvas and semantic points, rather than committing the specimen’s fixed coordinates as an image. The Log card chevron in the approved frame is a text glyph; the existing support chevron remains the exact vector for support rows.
 
-W4 data integration contract: the existing `GET /v1/gym/stats?projection=progress` read. Existing stats, record and Review behavior remains compatible for web, iOS and MCP. The pure projection reads raw working sets before any load grouping and returns `asOf`, complete finished-working-session identities/start dates, and every movement's complete per-session facts. Each fact carries session identity/time, working-set count, actual heaviest set and an optional qualified estimated-strength set; set facts retain identity, load, reps and recorded RPE. Keep signed/zero facts and no-estimate movements. Standing best and its ladder use the same qualified reducer with deterministic identity-based ties, so equal timestamps cannot mark two standing points.
+Progress data integration contract: the existing `GET /v1/gym/stats?projection=progress` read. Existing stats, record and Review behavior remains compatible for web, iOS and MCP. The pure projection reads raw working sets before any load grouping and returns `asOf`, complete finished-working-session identities/start dates, and every movement's complete per-session facts. Each fact carries session identity/time, working-set count, actual heaviest set and an optional qualified estimated-strength set; set facts retain identity, load, reps and recorded RPE. Keep signed/zero facts and no-estimate movements. Standing best and its ladder use the same qualified reducer with deterministic identity-based ties, so equal timestamps cannot mark two standing points.
 
 Android consumes this one owner-scoped projection for Log moments, captions and the full record. It calculates local-Monday weeks from the complete session identities using the device zone, independently of Log pagination, and derives the 12-week window or complete All from the same series. Preserve record metadata/aliases/recent sets through the existing read. A stats failure keeps loaded Log rows and an honest failure; it cannot fall back to differently qualified legacy estimates, fabricate zero trained weeks or relabel a partial series All. Invalidate or refresh after finish, correction, deletion, rename and ownership changes.
 
@@ -198,7 +197,7 @@ Progress estimates preserve exact load at one rep and use the unrounded Epley va
 
 The backend seam is `Statistics`, `LogRepository`/`PgLogRepository`, `TrainingService`, `TrainingApi::stats` and `TrainingJson`; Android adds the typed read to `TrainingSyncing`/`GymHttp`, a product-domain progress projection and its `TrainingStore` cache. Keep legacy full-response tests intact. New evidence must cover non-heaviest winners, same-load ineligible sets, rep/RPE boundaries, signed/no-estimate facts, duplicate timestamps/ties, uncapped movements and old lifetime peaks, local week/DST boundaries, failure/owner invalidation, and exact agreement among all three Android displays. The existing query is already lifetime-sized; measure the additional identity/effort payload instead of adding a silent cap.
 
-## Wave 5 · Coach, Notes, review and account detail
+## Coach, Notes, review and account
 
 Design contexts were read for Coach root `656:6695` and all20 assigned phones: conversation/read receipt `669:8042` / `680:4043`; History/past/signed-out `669:8099` / `678:10531` / `669:8388`; Notes/new/editor `669:8122` / `678:11011` / `669:8145`; proposal waiting/review/applied/applied review/confirmation/turned down/turned-down review `673:9632` / `669:8168` / `673:9798` / `673:10008` / `673:9908` / `673:9854` / `673:10101`; Profile/Connected log/disclosure/sign-in/code `669:8214` / `669:8283` / `679:3916` / `669:8237` / `669:8260`. Specification fragments `678:3617`, `678:10387`, `678:11043` and `678:11123` add required availability, failure, limits, ownership and decision states. These details preserve the ownership map below.
 
@@ -260,9 +259,9 @@ stores no answer or receipt. Domain receipt types do not depend on the AskAgent 
 known typed facts and operation names; it never extracts evidence from prose or substitutes current
 log state for what an earlier answer read.
 
-## Wave 6 · Native delivery and accessibility acceptance
+## Native acceptance
 
-Design contexts were read for Daylight logger `660:8087`, promoted Live Update `657:31` and ordinary ongoing notification `657:32`, plus native specifications `663:7876`, `677:10455`, `673:10004` and `673:9992`. This section is an implementation/acceptance handoff, not device evidence. The checked Gradle files declare minSdk 26, compileSdk 36 and app targetSdk 36. Preserve all earlier wave behavior and the existing Daylight iris palette.
+Design contexts were read for Daylight logger `660:8087`, promoted Live Update `657:31` and ordinary ongoing notification `657:32`, plus native specifications `663:7876`, `677:10455`, `673:10004` and `673:9992`. This section is an implementation/acceptance handoff, not device evidence. The checked Gradle files declare minSdk 26, compileSdk 36 and app targetSdk 36. Preserve all earlier area behavior and the existing Daylight iris palette.
 
 ### Stock workout notification and truthful state
 
@@ -297,7 +296,7 @@ clock changes and reboot. Notification refreshes stay silent.
 
 ### Native interaction checks
 
-- Daylight `660:8087` is the W3 logger with resolved Daylight tokens, not a separate layout. On every root/push/sheet, use actual status, navigation, gesture and IME insets once; retain 48dp targets and the logger’s 64dp primary. Avoid app drags in system-edge regions. Use native Back cancellation/commit: IME closes before the form, sheet closes before its route, cancelled predictive Back changes no draft, and live-workout Back retains the workout. Validate the enabled manifest flag with the actual Material/Activity versions instead of assuming it animates every custom route. [Insets](https://developer.android.com/develop/ui/compose/system/insets), [predictive Back setup](https://developer.android.com/develop/ui/compose/system/predictive-back-setup)
+- Daylight `660:8087` is the training logger with resolved Daylight tokens, not a separate layout. On every root/push/sheet, use actual status, navigation, gesture and IME insets once; retain 48dp targets and the logger’s 64dp primary. Avoid app drags in system-edge regions. Use native Back cancellation/commit: IME closes before the form, sheet closes before its route, cancelled predictive Back changes no draft, and live-workout Back retains the workout. Validate the enabled manifest flag with the actual Material/Activity versions instead of assuming it animates every custom route. [Insets](https://developer.android.com/develop/ui/compose/system/insets), [predictive Back setup](https://developer.android.com/develop/ui/compose/system/predictive-back-setup)
 - Default motion follows Figma: native pressed ripple; sheets 200–240ms ease-out; row removal/Undo 240ms. The rack and pinned primary stay stationary. Reduced-motion presentation uses no travel/scale and at most the specified 150ms opacity; when system motion scale is zero, state completes without waiting for that fade. Completion retains number/check and announced save state. No coroutine may await a decorative animation to persist a set or advance a 9-second Undo deadline. [Compose MotionDurationScale](https://developer.android.com/reference/kotlin/androidx/compose/ui/MotionDurationScale)
 - Test real font-scale 2.0 on API 34/37, not a scaled screenshot: Android 14+ text scaling is nonlinear. Labels, refusals, email, targets, disclosure copy and notification actions remain understandable and reachable; body scrolls around pinned actions. TalkBack must announce name/value/unit/current/disabled/error and expose Delete, Undo, Move up/down and chart alternatives; restore focus after row movement/Undo. The elapsed timer must not announce every second or steal focus. Render disjoint minimum touch bounds rather than relying on overlapping invisible expansion. [Font scaling](https://developer.android.com/about/versions/14/features#non-linear-font-scaling), [Compose accessibility defaults](https://developer.android.com/develop/ui/compose/accessibility/api-defaults)
 
@@ -319,7 +318,7 @@ alerts are paused” line. The workout notification permission request at workou
 Dismissal persists for the active workout without changing saved training. Show workout appears
 only while that active card is hidden. A new workout or explicit Show workout can restore it. Hiding invalidates the previous set offer; explicit Show workout publishes the current rack action. System eligibility only controls whether the card can be posted.
 
-W6 completes only after the three assigned designs and cross-wave matrix have recorded native evidence or an explicit device-specific limitation. Conditional promotion is accepted when its gates and fallback are verified; omitting the ordinary notification, replay-safe Log set or in-app accessibility is not an equivalent fallback. No new decorative assets are needed: preserve existing exact Gym glyphs and let Android render notification/system chrome. Finish with one refactor of native adapters and the shared state projection; keep domain/queue ownership singular.
+Native acceptance completes only after the three assigned designs and cross-area matrix have recorded native evidence or an explicit device-specific limitation. Conditional promotion is accepted when its gates and fallback are verified; omitting the ordinary notification, replay-safe Log set or in-app accessibility is not an equivalent fallback. No new decorative assets are needed: preserve existing exact Gym glyphs and let Android render notification/system chrome. Finish with one refactor of native adapters and the shared state projection; keep domain/queue ownership singular.
 
 ## Behavior acceptance beyond the phone frames
 
@@ -340,11 +339,11 @@ W6 completes only after the three assigned designs and cross-wave matrix have re
 
 Specs sources: `673:9992` rack/nav; `673:9996` deletion; `673:10000` finish/share; `673:10004` theme/text; `674:3164` numeric; `674:3169` queue; `674:3174` receipt outcomes; `677:10445` fix/effort; `677:10450` movement/rest; `677:10455` motion; `678:10658` routine contracts; `688:214` Coach/Log/Account state fragments; `663:7876` motion/notifications. The10 retained computed text stress cases are not implementation screenshots and must not be copied as current UI.
 
-## Canonical ownership map
+## Screen map
 
-Each row must ultimately receive a runtime evidence link/test scenario in worklog or a linked verification artifact. Multiple related rows may be covered by one real scenario, but every state remains accounted for.
+Associate every row with an acceptance scenario. One scenario may cover related states.
 
-| Wave | Figma ID | Approved state |
+| Area | Figma ID | Approved state |
 |---|---|---|
 | 1 | [656:6692](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-6692) | Routines / Home |
 | 1 | [837:14824](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=837-14824) | Log / History |
@@ -436,46 +435,8 @@ Each row must ultimately receive a runtime evidence link/test scenario in worklo
 | 3 | [662:7907](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=662-7907) | Workout / Free session receipt |
 | 3 | [673:9548](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9548) | Session · Free session |
 
-## Coverage appendix
+## Acceptance
 
-The ownership map contains 89 unique states. The recorded native journeys below identify existing
-coverage; the changed Settings, routine sheet/editor, target block and woven Log require the current
-cleanliness acceptance gate in [the delivery log](../../gym-android-cleanliness-log.md). A referenced
-journey does not establish that every mapped phone was independently captured on the current APK.
-
-| Wave | States | Shared implementation and representative tests | Recorded coverage |
-|---|---:|---|---|
-| 1 | 4 | `GymRoom`, root screens, `SettingsScreen`; `GymTabsTests`, `GymRailTests`, `SettingsScreenTests` | Root navigation, settings, Instrument/Daylight, native IME and 200% text. Representative captures: `w1-final-routines-instrument`, `w1-final-settings-daylight-200`; Log/Coach content is exercised in W4/W5. |
-| 2 | 26 | `RoutinesScreen`, `RoutineBuilder`, `MovementPicker`; `PlanningWritesTests`, `TargetSheetLadderTests`, `PlanningRestorationTests` | Both movement-creation callers, target/refusal/fill states, names, reorder and independent Undo. Real stale revision and idempotent creation checks accompany captures such as `w2-planning-created`, `w2-target-ramp-applied`, `w2-independent-undo`. |
-| 3 | 27 | `LoggerScreen`, `AssemblySheet`, `KeypadSheet`, `SessionScreen`, `FixSheet`, `FinishScreen`; recovery, readout, Fix and sharing tests | Twenty-six states have representative native journeys: planned/free logging, process-restored offline sets, actual full/partial receipts, correction, saved routine and public share/revoke. `671:8691` is covered by `FixSheetStateTests.pendingSaveBlocksEditsAndDeleteThenRetainsTheDraftForRetry`; native numeric refusals are not substituted for a failed Fix write. |
-| 4 | 9 | `LogScreen`, `RecordScreen`, `RenameSheet`, `BodyweightScreen`, shared `DatedPlot`; progress, plot and bodyweight tests | Sparse/dense actual dates, held scrub/release, older peak, retained alias, native date picker, correction/process restoration, empty Log and workout Undo. Representative captures: `w4-bench-scrubbed`, `w4-renamed-record-200`, `w4-weight-process-daylight-200-ime`, `w4-preview3-workout-restored`. |
-| 5 | 20 | `AskScreen`, `CoachAnswer`, `ThreadsScreen`, `NotesScreen`, `ReviewSheet`, account/sign-in and Connections; mirrored UI, ownership and receipt tests | Final live/past answers, actual read receipts, Notes limits/full/empty/Undo, apply/turn-down/stale/removal, real code/link sign-in and approved local-data recovery. Representative captures: `w5-final-first-answer`, `w5-notes-full-undo-restored`, `w5-review-applied-reopened`, `w5-removal-cold-gone-settled`, `w5-pasted-link-signedin`. |
-| 6 | 3 | Daylight `LoggerScreen`, `WorkoutNotifications`, `GymRuntime`, shared store/queue; notification, runtime and queue tests | Actual Android9/14/17 cards and Log actions, Android9/14 lock cancel/unlock, duplicate/offline/cold/stale authority, event timestamps, dismissal/Show, permission/channel setup, both skins at200% and a representative TalkBack journey pass. Android17 promotion is observed. API26 runtime and an explicit Android17 promotion-disabled toggle journey remain unverified; ordinary native cards are exercised on Android9/14. |
-
-Specification-only Review gates for a newly received larger proposal and an active workout have
-targeted UI coverage in `ReviewSheetTests.aLaterLargerProposalMustBeReadToItsOwnEndBeforeItCanBeApplied`
-and `startingAWorkoutRemovesBothDecisionActionsUntilThatWorkoutFinishes`; corresponding native
-journeys are not recorded. Full removal has native evidence: the immediate actual decision remains
-readable, while a cold missing proposal reports terminal unavailability as specified in W5.
-
-The local Coach harness exercises real services, persistence and authentication with scripted model
-responses and locally captured mail. Controlled daily/AI-cap responses establish presentation;
-backend tests establish quota enforcement. Used-code refusal is not elapsed-time expiry evidence.
-Connected-log browser return establishes handoff/refresh, not full external web/OAuth authorization.
-Compose semantics/bounds tests and representative 200% captures do not establish a complete TalkBack
-traversal. W6 records actual bound TalkBack focus/navigation, not an exhaustive spoken traversal.
-No Kind, rest-alert or set-confirmation sound/haptic control is rendered.
-
-Capture stems and server facts are recorded in [worklog.md](../../../worklog.md). Current cleanliness
-implementation, regression, native acceptance and release status are tracked in
-[the delivery log](../../gym-android-cleanliness-log.md).
-
-## Verification contract
-
-Wave-level screenshots should compare the exact intended state at reference geometry plus one small-screen/large-text variant, with real system bars. Actual system font glyphs may differ from Figma stand-ins; hierarchy, spacing, weight, contrast, navigation, controls and copy must match. Do not use screenshot dimensions as rigid runtime constraints.
+Acceptance screenshots should compare the exact intended state at reference geometry plus one small-screen/large-text variant, with real system bars. Actual system font glyphs may differ from Figma stand-ins; hierarchy, spacing, weight, contrast, navigation, controls and copy must match. Do not use screenshot dimensions as rigid runtime constraints.
 
 Test meaningful invariants and user workflows, especially arbitrary Unicode/byte entry, undo clocks, identity/queue persistence, partial receipt arithmetic, failed writes, draft restoration, real permissions and data-dependent empty states. A green JVM suite alone does not verify native behavior. Release completion needs the built APK, install/smoke evidence, published GitHub release and downloaded-asset checksum/build version correspondence.
-
-Delivery status: the cleanliness changes are under implementation and verification. No cleanliness
-release or native acceptance is claimed here. See [the delivery log](../../gym-android-cleanliness-log.md)
-for the current gate status and [worklog.md](../../../worklog.md) for recorded commands and captures.

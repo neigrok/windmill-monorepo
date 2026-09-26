@@ -254,7 +254,7 @@ paste field uses. The link is `https://windmill.works/#/auth?token=<secret>`
 
 What the domain needs:
 
-1. **A paid Apple Developer team** (`docs/IOS_APPLE_SIGNIN.md` step 1) with **Associated Domains**
+1. **A paid Apple Developer team** ([Apple team configuration](../../docs/IOS_APPLE_SIGNIN.md)) with **Associated Domains**
    ticked on the `works.windmill.app` App ID. A free personal team cannot use this capability, so
    signing for a real device needs the paid team. Simulator and CI builds are unaffected — signing
    is off there, so the entitlement is never applied.

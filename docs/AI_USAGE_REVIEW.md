@@ -1,82 +1,68 @@
-# AI usage and subscription review
+# AI usage and billing
 
-Source audit: 8 September 2026. This review describes repository behavior, not production configuration or measured customer usage. The focused backend allowance, PostgreSQL ledger, and Echoes suite passed 116 cases with no skips against local Postgres. Provider prices were not verified. Model names and dollar constants below are repository configuration, not claims about current vendor pricing.
+This is the repository's accounting contract. Deployment keys and measured customer usage are
+separate. Model names and cost constants are configuration, not verified vendor prices.
 
-## Product decision
+## Metered work
 
-Only AI work actively requested by the user spends their AI credits. Passive Echoes processing
-and reading are included; no Echoes disable switch is needed to preserve allowance. Credits
-hide raw tokens and use a fixed value across plans; quantities and conversion remain proposals.
-The implementation inventory below identifies source behavior and gaps, not approved billing
-benefits. Roadmap AI interaction is under redesign; its existing technical identifiers and
-request counter are documented only to make that implementation traceable.
-
-## Features that spend hosted-model tokens
-
-| Product / feature | Trigger and work | Meter operation and configured model | Account allowance |
-| --- | --- | --- | --- |
-| Roadmap / turn text into a tree | Compose endpoint converts supplied text into a plan, with ordinary or streaming output. | `compose`; `claude-haiku-4-5-20251001`. [Adapter](../backend/products/roadmap/adapters/llm/AnthropicComposer.cpp), model at line 60, recording at 118 and 384. | Anonymous ledger row: the HTTP handler and composer have no caller binding, even for a signed-in browser. This does not debit an account. [HTTP handler](../backend/products/roadmap/adapters/http/ComposeApi.cpp:114). |
-| Roadmap / AI assistance | A sentence starts an agent that reads and edits the selected tree through tools. Multiple model turns can serve one request. | `tend`; `claude-sonnet-5`. [Adapter](../backend/products/roadmap/adapters/llm/AnthropicAgent.cpp:405). | Shared account spend ceiling plus separate monthly run count. Must have a configured agent and `TENDING_ENABLED=true` or `1`. [Wiring](../backend/platform/infra/main.cpp:324). |
-| Gym / Coach | Conversation about the training log; reads facts and can produce a proposal for the lifter to consider. | `ask`; `claude-opus-5`. [Adapter](../backend/products/gym/adapters/llm/AnthropicAsk.cpp:238). | Shared account ceiling plus question refill bucket. No One gate. Coach refuses during an open workout. [Service](../backend/products/gym/application/AskService.cpp:154). |
-| Journal / Echoes: passage segmentation | Automatic derivation cuts changed page text into idea units. Unchanged stored passages are reused. | `echo.segment`; default `claude-sonnet-5`. [Adapter](../backend/products/journal/adapters/llm/AnthropicSegmenter.cpp:158), [default](../backend/products/journal/adapters/llm/AnthropicSegmenter.h:20). | Passive operational spend only; excluded from the active account allowance. Derivation checks a separate internal Echoes budget. [Pipeline](../backend/products/journal/application/EchoSweep.cpp:95). |
-| Journal / Echoes: curation | Automatic derivation judges candidate connections to earlier passages. No curator call when retrieval produces no pairings. | `echo.curate`; default `claude-sonnet-5`. [Adapter](../backend/products/journal/adapters/llm/AnthropicCurator.cpp:270), [default](../backend/products/journal/adapters/llm/AnthropicCurator.h:32). | Same passive-only budget as segmentation. These are two implementation operations of one user-facing feature. |
-| Journal / Talk | Audio is sent for transcription and text is returned. | `transcribe`; `gpt-4o-transcribe`. [Adapter](../backend/products/journal/adapters/llm/OpenAiTranscriber.cpp:79), [wiring](../backend/platform/infra/main.cpp:836). | One required; shared account ceiling plus audio-byte refill bucket. [HTTP gates](../backend/products/journal/adapters/http/VoiceApi.cpp:57). Web caller exists in [journalApi](../web/src/products/journal/journalApi.js:104); no Talk/transcription caller was found in the current iOS journal source. |
-
-All six operations write through the shared spend sink. Presence in source does not prove a deployment has vendor keys or the feature enabled.
-
-### Entry points and reachability
-
-Compose is public (`POST /v1/compose`) and receives IP/global rate limits. Roadmap AI assistance uses authenticated `POST /v1/trees/{id}/tend`; its `/v1/tending` summary is independent of checkout availability. The web tree exposes AI assistance when the summary is enabled and the signed-in viewer owns the tree; shared/demo/demotion views exclude it. `paidPlansOpen()` hides the plan section, not AI assistance. [Tree gating](../web/src/products/roadmap/SkillTreeView.jsx:397), [settings registration](../web/src/products/roadmap/routes.js:87), [routes](../backend/products/roadmap/routes.cpp:144).
-
-Coach is a signed-in gym conversation on web, iOS, and Android, backed by the same account service. Its server service is constructed only when the Anthropic adapter is configured. [Wiring](../backend/platform/infra/main.cpp:375). Echo derivation is automatic on save/repair and not One-gated; its authenticated read gives full passages to every writer. Reading an already-derived echo does not start a model call. [Echo read](../backend/products/journal/adapters/http/EchoApi.cpp:266), [derivation](../backend/products/journal/application/EchoSweep.cpp:95).
-
-Talk's authenticated `POST /v1/journal/transcribe` has the explicit One gate. The web microphone action uses `EntitlementsProvider`, which derives access only from `/v1/subscription.active`; an owner grant can therefore be admitted by the server but hidden by the client. Checkout-closed copy appears in the Talk upsell. [Talk control](../web/src/products/journal/TalkButton.jsx:31), [provider](../web/src/shell/billing/EntitlementsProvider.jsx:29). A subscription page cannot repair this discrepancy with copy alone.
-
-## Work that does not spend hosted-model tokens
-
-- Journal semantic search embeds text in the browser using `Xenova/bge-small-en-v1.5`; it is local inference and has no hosted-token ledger debit. [Worker](../web/src/products/journal/search/neural/embedder.worker.js:12).
-- Echo retrieval uses the self-hosted `Xenova/paraphrase-multilingual-MiniLM-L12-v2` sidecar. It incurs infrastructure work, but has no vendor token billing or AI ledger operation. The segmenter and curator surrounding it do. [Sidecar](../services/embedder/embedder.js:14).
-- MCP exposes product tools to an external assistant. The assistant's own model usage belongs to its provider/account; ordinary Windmill MCP tool execution is not a Windmill-hosted model call. Do not put an external ChatGPT or Claude allowance into this account page.
-- Ordinary tree editing, progress updates, journal writing and reading, workout logging, statistics, exports, and notifications do not require these hosted-model adapters. Do not label the products themselves as token-consuming; identify the specific assistance feature.
-
-## Metering and limits actually implemented
-
-The account does not own a raw-token allowance. It has an internal cost-weighted ceiling. Four token fields are stored: input, output, cache read, and cache write. Per-call records also carry user, product, operation, model, run ID, iteration, and outcome. Failures can have billed usage. [Types](../backend/platform/domain/AiUsage.h:12), [persistence](../backend/platform/adapters/postgres/PgAiUsageRepository.cpp:24).
-
-| Limit | Repository rule | Window and implication |
+| Feature | Operation / configured model | Account treatment |
 | --- | --- | --- |
-| Shared account AI | Free: internal $25 equivalent; One: $50 equivalent. Sum of every product's active user-attributed `cost_floor_nanos`; passive Echo operations are excluded. | Trailing 30 days, not a calendar month or billing period. No single full reset date. [Constants](../backend/platform/domain/AiUsage.h:63), [query](../backend/platform/application/Entitlements.cpp:71). |
-| Journal derivation | Internal $2 equivalent over only `echo.segment` and `echo.curate` for that user in Journal. | Trailing 30 days; transcription does not consume this budget. [Query](../backend/platform/application/Entitlements.cpp:81). |
-| Legacy roadmap request counter | Free: 30; One: 300. Started runs count, including failed runs; refused starts do not. | Calendar month in UTC, with next-month reset and recent receipts available. [Domain](../backend/products/roadmap/domain/Tending.h:69), [service](../backend/products/roadmap/application/TendingService.cpp:84). |
-| Coach questions | Capacity 3; refills continuously at 10 questions per day. | In-memory per-account token bucket, not a midnight counter. One question refills in 2h24m. Deploy/restart loses bucket state. Zero-model-turn failures return the question. [Bucket](../backend/products/gym/application/AskService.cpp:44), [constants](../backend/products/gym/application/AskService.h:77). |
-| Talk audio | Capacity/refill 30 MiB per day; max 2 concurrent takes per account and 8 total. | Byte bucket, not an audio-minute or text-token allowance. Continuously refilled, held in memory. [Constants](../backend/products/journal/adapters/http/VoiceApi.h:26), [bucket](../backend/products/journal/adapters/http/VoiceApi.cpp:15). |
-| Process safeguard | Internal $20 equivalent per hour across vendor calls. | Trailing hour, in memory; operational availability protection, not a customer plan benefit. [Fuse](../backend/platform/domain/AiFuse.h:43). |
+| Roadmap text composition | `compose` / `claude-haiku-4-5-20251001` | Anonymous ledger entry, including signed-in requests; IP/global limits apply. |
+| Roadmap AI assistance | `tend` / `claude-sonnet-5` | Active allowance plus a monthly request count; requires a configured adapter and `TENDING_ENABLED`. |
+| Gym Coach | `ask` / `claude-opus-5` | Active allowance plus a question refill bucket; no One gate. |
+| Journal Echoes segmentation and curation | `echo.segment`, `echo.curate` / `claude-sonnet-5` | Passive operational spend, excluded from the active allowance. |
+| Journal Talk | `transcribe` / `gpt-4o-transcribe` | One required; active allowance plus an audio-byte refill bucket. |
 
-Account checks happen before starting foreground work, not as a reserved budget for each model turn. The process fuse is checked at the model boundary. A displayed remaining amount must not promise an exact number of future requests or describe these ceilings as an atomic hard reservation. [Meter wrapper](../backend/platform/adapters/llm/AnthropicClient.cpp:175).
+Adapters live under each product's `adapters/llm`; [main.cpp](../backend/platform/infra/main.cpp)
+composes them with the shared spend sink. The ledger stores user, product, operation, model,
+run/iteration, outcome and input/output/cache token counts. Failed calls can carry billed usage.
+Interrupted provider streams may contain only partial usage counts.
 
-## Subscription and account-page gaps
+Journal browser search and the self-hosted Echoes embedder perform local inference without hosted
+model token charges. External assistants pay their own model costs; ordinary Windmill MCP calls do
+not spend Windmill's hosted-model allowance.
 
-1. **No customer AI usage read API.** `/v1/tending` exposes `enabled`, `plan`, `limit`, `used`, `remaining`, `resetAtMs`, and receipts; it does not expose the shared AI budget. The usage repository has aggregate operational reporting, not a customer usage response. [Roadmap request serialization](../backend/products/roadmap/adapters/http/TendingApi.cpp), [repository contract](../backend/platform/ports/AiUsageRepository.h:59). Per-feature breakdown, shared remaining, next allowance restoration, Coach remaining, and Talk remaining need backend contracts before a design can be populated.
-2. **Checkout is closed.** `paidPlansOpen()` is false. Checkout also refuses when the configured Paddle client/price is unavailable. [Client](../web/src/shell/billing/checkout.js:19), [server](../backend/platform/adapters/paddle/BillingApi.cpp:77). A current-state screen must not offer buying a plan, tokens, or top-ups.
-3. **Subscription read is incomplete for management.** `/v1/subscription` returns subscription status, access from that status, identifiers, and optional scheduled-change time. The scheduled-change timestamp lacks action kind, so it cannot establish “Cancels on”. Access remains granted for `active`, `trialing`, and `past_due`, according to [grantsAccess](../backend/platform/domain/Billing.h:28). It does not return price, currency, current billing period, next charge, payment method, invoices, or a management URL; no cancel/resume/portal route appears in `BillingApi`. [HTTP API](../backend/platform/adapters/paddle/BillingApi.h:26), [response](../backend/platform/adapters/paddle/BillingApi.cpp:145).
-4. **Owner access differs from subscription status.** `hasWindmillOne` includes the owner-email grant; `/v1/subscription` only reads Paddle. An owner can hold One while that response says `active: false`. A unified page needs entitlement and billing provenance separately. [Entitlement](../backend/platform/application/Entitlements.cpp:63).
-5. **Automatic work has separate accounting.** Composition supplies the passive operation names to `Entitlements`. The active account query excludes them; the per-product background query includes only them. Both remain visible in operational reports. Existing ledger rows are classified by their operation, with no migration. [Queries](../backend/platform/application/Entitlements.cpp), [wiring](../backend/platform/infra/main.cpp).
-6. **Transcription cost is not priced by the current table.** `gpt-4o-transcribe` is absent from `kRates`. Unknown models store null actual cost and use the most expensive known token-rate combination for enforcement. This is not an accurate invoice or price display. No provider rates were checked in this audit. [Price table and fallback](../backend/platform/domain/AiUsage.cpp:18), [transcriber usage parsing](../backend/products/journal/adapters/llm/OpenAiTranscriber.cpp:106).
-7. **No allocation controls.** No user-configurable product budgets, spend cap, token purchases, transfers, or top-ups were found in the entitlement or billing contracts. Any such interaction is a proposed feature, not current behavior.
+## Limits
 
-## Proposed design direction
+| Limit | Repository rule |
+| --- | --- |
+| Active account AI | Internal cost ceiling of $25 for Free or $50 for One over a trailing 30 days; passive Echo operations excluded. |
+| Passive Journal AI | Separate internal $2 ceiling over `echo.segment` and `echo.curate` in a trailing 30 days. |
+| Roadmap requests | 30 for Free or 300 for One per UTC calendar month; started runs count even if they fail. |
+| Coach questions | Capacity 3, continuously refilled at 10 per day; held in memory. Zero-model-turn failures return the question. |
+| Talk audio | 30 MiB bucket refilled per day, at most two concurrent takes per account and eight per process; held in memory. |
+| Process safeguard | Internal $20 ceiling over a trailing hour, in memory, across vendor calls. |
 
-Use **Plan & usage** as the page title and **AI credits** for the shared allowance. Hide raw tokens throughout the customer experience. Proposed credits are a fixed relative unit coupled to cost-weighted usage: a request may spend a fraction or multiple credits depending on the work performed. They are not a promise that every action costs one credit. An illustrative 200-credit base allowance makes one credit 0.5% of that base; a 400-credit One allowance would preserve the current 2:1 internal ceiling ratio. These quantities and the conversion are unapproved design fixtures, not implemented plan benefits. Keep the credit value stable across plans, show the corresponding percentage against the account's own limit, and define rounding and fractional precision before implementation. Name the chargeable user-facing consumers: Roadmap assistance, Coach and Talk. Automatic Echoes is included outside the charged breakdown. Treat compose as platform-covered onboarding unless its accounting is deliberately changed.
+Sources: [Entitlements](../backend/platform/application/Entitlements.cpp),
+[AI allowance constants](../backend/platform/domain/AiUsage.h),
+[roadmap request limits](../backend/products/roadmap/domain/Tending.h),
+[Coach admission](../backend/products/gym/application/AskService.cpp),
+[Talk admission](../backend/products/journal/adapters/http/VoiceApi.h) and
+[process safeguard](../backend/platform/domain/AiFuse.h).
 
-Do not carry the legacy roadmap request count into the redesigned plan as a customer unit. A rolling credit row needs “Last 30 days” and an explanation that allowance becomes available as older usage leaves the window. Coach needs a refill concept, not a promised midnight reset. Talk cannot honestly promise minutes from the byte limit.
+Account allowance checks happen before foreground work. They do not reserve each later model turn.
+The process safeguard is checked at the provider boundary. A remaining amount therefore cannot
+promise an exact number of future requests. Rolling windows have no single full-reset date.
 
-Separate current checkout-closed designs from future subscription-management states. A future management design can include renewal amount/date, payment method, invoices, cancel/resume, and a provider-management link, but each depends on a new billing contract. A current page should identify granted access accurately and explain unavailable usage data rather than drawing a zero meter.
+## Account and billing gaps
 
-Passive Echoes is platform-covered and excluded from the active allowance. Repair transcription pricing and define a customer-safe usage response before shipping a shared credit balance. These are the structural decisions that determine whether the screen's promises are true.
+- **No shared customer usage response.** `/v1/tending` exposes the roadmap request counter and
+  receipts, not account AI spend or Coach/Talk refill state.
+- **Checkout is closed.** [paidPlansOpen](../web/src/shell/billing/checkout.js) returns false.
+  [BillingApi](../backend/platform/adapters/paddle/BillingApi.cpp) also refuses checkout without
+  its configured client and price.
+- **Effective access and billing status differ.** `hasWindmillOne` includes an owner-email grant;
+  `/v1/subscription` reflects Paddle only. The web
+  [EntitlementsProvider](../web/src/shell/billing/EntitlementsProvider.jsx) reads only that response's
+  `active` field, so an owner grant can be admitted by the server but hidden in the client.
+- **Subscription management is incomplete.** The response has status, identifiers and an optional
+  scheduled-change time, but no action kind, billing period, charge amount, payment method,
+  invoices or management URL. Cancel/resume/portal routes are absent.
+- **Transcription has no supported price entry.** `gpt-4o-transcribe` is absent from
+  [AiUsage.cpp](../backend/platform/domain/AiUsage.cpp). Unknown models retain null actual cost and
+  use the most expensive known token-rate combination for enforcement.
 
-### Follow-up priority
-
-- **P1 — truthful account contract:** expose effective One entitlement with grant provenance, distinguish read failure from Free, and define shared usage/feature windows without conflating calendar and rolling periods.
-- **P1 — metering correctness:** give transcription a supported cost model before displaying monetary or percentage claims based on it.
-- **P2 — explain local limits:** expose refill state for Coach and Talk if the page promises remaining usage or availability timing. Keep action counts separate from internal vendor-cost safeguards.
-- **P2 — paid management:** add billing-period, scheduled-action kind, provider-management and invoice contracts before rendering actionable renewal/cancel/payment controls. Keep purchasing closed until explicitly opened as product work.
+A shared credit display needs an effective-entitlement response, a customer-safe usage contract,
+a transcription cost model, and approved credit conversion and rounding. Product budgets,
+top-ups and allocation controls are not implemented. The account design is in
+[subscription usage](design/subscription-usage-proposal.md).

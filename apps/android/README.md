@@ -194,7 +194,7 @@ Exercise pages follow the finger using native Compose scrolling. Adjacent pages 
 set ledger while the rack stays fixed. Reversing or cancelling a drag preserves the selected
 exercise and rack draft; selection changes after settling. Swipes can start across the workout
 body; the ledger scrolls vertically only, and modal editors retain their gestures. Editing and logging wait
-until the selected page is settled. See [paging verification](../../docs/android-workout-paging.md).
+until the selected page is settled.
 
 The logger displays workout elapsed and time since the latest retained set, with session start as the
 second anchor before any set. The two quiet icon clocks use persisted timestamps across movements,
@@ -228,8 +228,8 @@ has no confirmation sound or vibration.
 versioned `workflow_dispatch` also produces an unpublished signing-input artifact containing a
 non-debuggable APK, SHA-256 and source/run provenance. Its transient build signature is not the
 retained release identity. CI has read-only repository permissions and receives no private signing
-configuration. `versionCode` equals the workflow run number and must exceed the published
-[`android-v0.10.0`](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.10.0) version code 108.
+configuration. `versionCode` equals the workflow run number and must exceed the highest version code previously
+published, including releases newer than the device used for acceptance.
 
 Release signing happens locally with the retained encrypted PKCS12 key and its separately retained
 password. `release-signing.json` pins only the public certificate SHA-256. `tools/release.py finalize`
@@ -239,37 +239,11 @@ unchanged application contents. Its output includes the APK, digest and provenan
 exact input bytes. It does not publish. Native acceptance and a same-key update check precede
 uploading the public artifacts to the matching GitHub release.
 
-The published [0.10.0/code108 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.10.0) uses tag `android-v0.10.0` at
-`7a419e4664a8c380bac839946fc3cc8decf64c89`, [Actions run 36055932135](https://github.com/neigrok/windmill-monorepo/actions/runs/36055932135), attempt 1, from a tag push.
-The tag build and signing-input job passed, as did [main CI run 36055927071](https://github.com/neigrok/windmill-monorepo/actions/runs/36055927071).
-The retained signature, non-debuggable package, unchanged application payload and linked provenance
-are verified. All three release assets downloaded anonymously are byte-identical to the accepted
-signed files. Inspection of the downloaded APK confirms the retained certificate,
-`works.windmill.app` package, non-debuggable flag and version 0.10.0/code108.
-The APK SHA-256 is `80d47e2ad5a48399b8cdf4aadf0218043ccd14a982f5ceff2da00f630fb71185`;
-the retained certificate SHA-256 is `e911c90024117df99a2852a0d7820889e3d8a399506a8557148af7171c63e2bb`.
-
-Final-APK checks on Android 14 verified a direct code98-to-code108 update. The actual 0.9.3 saved
-workout restored its 20 kg × 5 set, accepted one more set and retained both through restart with the
-next offer at set 3. Finishing stored 200 kg total volume; the routine opens as a sheet and the Log
-retains both the earlier 100 kg session and the new 200 kg session. An independent clean install
-saved a free-session 20 kg × 5 workout and retained its session and best moment after restart.
-Notifications stayed declined on the signed APK; the silent ongoing card and its Log set action
-were verified against the local backend on the debug build.
-
-The full build and lint passed. Each gym variant reports 1,254 tests: 1,242 executed successfully
-and 12 live-wire tests skipped without configuration. The separate configured live-wire run passed
-all 12 tests. Each platform variant passed 90 tests, and the release helper passed 18 tests.
-
-Spoken TalkBack remains unexercised, and the narrow 320dp/200% text Routines tab-label clipping
-remains a tracked follow-up. Current implementation and release evidence are in the
-[cleanliness delivery log](../../docs/gym-android-cleanliness-log.md). Coach stream evidence stays
-in the [interaction worklog](../../docs/gym-interaction-polish-log.md#android-093-release), paging
-evidence in [paging verification](../../docs/android-workout-paging.md), and earlier feedback
-verification in [the feedback execution log](../../docs/gym-feedback-execution.md).
+Spoken TalkBack acceptance remains unverified. Routines tab-label clipping at 320dp with 200% text
+is an open layout follow-up in the [design consistency ledger](../../docs/design/consistency.md).
 
 Distribution is by sideload, not an app store. In-place updates require the installed APK's signing
-identity. The historical published APKs through0.7.1 used different debug certificates; the
+identity. The historical published APKs through 0.7.1 used different debug certificates; the
 retained release key cannot update those installations in place. Uninstalling removes app data,
 including records saved only on that phone. Preserve those records before any installation change;
 signing in alone does not transfer anonymous records.

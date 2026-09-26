@@ -35,10 +35,9 @@ apps/android/local.properties
 # binary was run from, which is usually the checkout.
 uploads/
 
-# Secrets — never commit. This repo is public, so the rules cover the SHAPES a key arrives in, not
-# just the one filename we happen to use today: Vite reads .env.production/.env.development too,
-# Apple sign-in hands you an AuthKey_*.p8, and the Android release keystore is a file the CI
-# workflow base64s out of a checkout. Every example file stays tracked — those carry placeholders.
+# Secrets stay local: environment files, Apple private keys and the retained Android signing key.
+# Android CI receives no private signing key; release signing happens locally.
+# Example environment files contain placeholders and remain tracked.
 .env
 .env.*
 !.env.example

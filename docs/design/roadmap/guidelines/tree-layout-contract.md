@@ -171,7 +171,8 @@ the world origin; rings and mindmap declare `'none'`. `angular-reorder.md` owns 
 
 On the 476-step dogfood tree this puts a trunk parent and its child 3.4 node bodies apart, 93.5% of
 families on one screen, and 24–25 steps in the working window, with no two reserved boxes overlapping.
-`docs/design/roadmap/readability-research.md` is the measured record and names what it costs.
+`web/scripts/roadmap-rig/APPARATUS.md` describes the rendering checks;
+`web/scripts/benchmark-roadmap.mjs` measures deterministic layout geometry and cost.
 
 ```
 NODE_SIZE      = 56       // the one size the renderer draws today

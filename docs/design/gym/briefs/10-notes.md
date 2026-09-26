@@ -27,31 +27,6 @@ Notes contains deliberate user instructions and useful insights explicitly suppl
 conversations. Coach may append one new insight in the user's wording; it cannot edit, delete or
 reorder existing notes. The user retains those controls on the Notes screen.
 
-### Three lines that used to be here, and where they went
-
-This screen is the worked example in `../../guidelines/text-budget.md`. It carried **four** true
-sentences in a column, which is not four times as honest as one — it is a paragraph, a paragraph is
-not read, and stacking them made the product **less** honest.
-
-- *"…and nothing else you have set"* is a fact about what a connected agent cannot reach, and it is
-  said there — by the connected log's read row, which enumerates exactly what a read grant reaches
-  and names no dial (`19-connected-log.md`: the enumeration is the disclosure).
-  It is drawn nowhere else: the settings screen's Notes door carries the notes' own purpose line,
-  *what you write for Coach* (`HEAD_LINE` in `notes.js`, `Notes.purpose` in `Notes.swift`,
-  `Notes.sub` in `Notes.kt`), and no caption about the dials. Among the dials the sentence answered a
-  question no lifter asks at that door, and a caption that qualifies the whole group from under one
-  control is the drift the ledger keeps finding.
-
-  **It names what it excludes, rather than pointing.** The first draft said *"not these"*, which
-  depends entirely on which control it happens to sit beside — and it landed under the haptic and
-  sound toggles on one surface, and one divider above the notes list on another, where *"these"* read
-  as the notes it plainly does read. A caption that changes meaning with its position is not a
-  caption, it is a bug. Naming the thing costs one word and works anywhere on the screen.
-- *"Ten notes, 500 bytes each"* moved to **the moment it bites**. A lifter with two notes does not
-  need the ceiling.
-- *"Drag to reorder"* was **structure explaining itself** under a drag handle. Only the part a handle
-  cannot show survives: **"Top note wins."**
-
 ## The shape
 
 A note is **a title and a body**. Nothing else. No tags, no folders, no colours. Both stored
@@ -84,8 +59,6 @@ bites" is not a location:
   never for prose, and this line is a sentence with a number in it. It is set in the body face on
   every surface, like any other sentence.
 
-  *(An earlier draft of this brief justified the numerals by the mono face. That was wrong — the
-  string is right for the other reason.)*
 
 Every surface draws both.
 
@@ -122,7 +95,7 @@ notes"*, and the read receipt keeps its promise that every answer states what it
 
 ## Where it lives
 
-**Notes is its own screen**, not a section between the units toggle and the rest timer.
+**Notes is its own screen**, reached from Coach and gym settings.
 
 That is not tidiness. The honesty line has to be literally true, and on a screen that also holds the
 dials a line about what Coach reads *here* would be a lie, because Coach reads none of them. A rule
@@ -165,26 +138,12 @@ would mint a second. Between the two the room draws no rows and the Add row, on 
 A third candidate — *what my body is doing* — is deliberately not offered. It is a record about a
 body, and `11-bodyweight.md` is where facts about a body are recorded.
 
-## How Coach writes one, and what that costs
+## Coach saves
 
-Not silently, and not directly. Coach proposes a note the same way it proposes a routine change: a
-card in the thread, the diff in a sheet, **Apply**, and a receipt line back in the conversation. The
-diff is per line, before and after; a note the lifter has never written renders as an addition, every
-line green.
-
-**This is a new kind of proposal, not a reuse, and the brief says so rather than letting a build
-discover it.** The existing proposal is routine-shaped all the way down — its head carries a required
-routine id, its rows carry an exercise and target fields, and the guarantee that only one can be
-pending is a database index over that routine id. A note has none of those, and making the column
-optional does not extend the index, because null values do not collide. Pending note proposals would
-be unbounded.
-
-So the write needs its own subject, identifier, pending-uniqueness rule, base version, apply route and
-preview. **Reading notes needs none of it and lands first.**
-
-**Why it is an intent** is the reason the domain actually uses, not tense: *something already stands
-that this write would overwrite*. A routine is nothing but a plan for next time, and creating one is
-still a record.
+Coach may append useful user-provided insights directly, with a truthful saved-note receipt.
+It must not overwrite, delete or reorder existing notes. Stable save identities make retries
+recover the same result; exact title/body matches reuse a note. The account cap still applies.
+The lifter keeps edit and delete controls.
 
 ## The rest
 

@@ -1,11 +1,6 @@
 # Native idiom — how the three surfaces are allowed to differ
 
-Gym ships on web, iOS and Android. The two phones used to be **the same custom drawing at two
-sizes**: the same hand-rolled capsule rail, the same bottom-drawn back row, the same bespoke switch,
-the same hand-built list — differing on about sixty arbitrary numbers and agreeing on nothing
-structural.
-
-This brief is the rule that replaced that, and the rule is built.
+Gym ships on web, iOS and Android. Use platform controls and navigation patterns.
 
 ## The law
 

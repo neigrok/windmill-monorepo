@@ -1,23 +1,17 @@
 # The routine — building it, changing it, starting it
 
-This brief redraws the screen a lifter *works* on, which is the heaviest in the product: the routine
-editor and the home it opens from share `Routines.jsx`, and the editor still stacks the target sheet
-and the movement picker over a draft nothing has saved.
+Routine creation, editing and starting. Web layout follows `../web-design.md`; Android composition
+follows `../android-delivery.md`. Targets share `17-set-targets.md`.
 
 Everything here obeys three documents already written: `12-native-idiom.md`,
 `../../guidelines/text-budget.md`, and `13-gestures.md`.
 
-## The naming step dies
+## Name
 
 There is no interstitial on any surface, and no suggestion chips anywhere.
 
 > **The name is the editor's first field.** Tapping *New routine* opens the editor with an empty name
 > field already focused and the keyboard up.
-
-A modal that exists to collect one string, before a screen that has a field for that string, is a
-screen we invented. No suggestion chips either — a lifter naming their own training block does not
-need three guesses from us, and `01-context.md` says this room is uninterested in helping you feel
-clever.
 
 **Save waits for a name, and that is the domain's rule rather than ours.** `Routine.cpp:40` refuses a
 routine with an empty name outright — *"a routine needs a name"* — so the choice is between gating Save
@@ -25,9 +19,7 @@ and inventing a name on the lifter's behalf. We do not invent one: this product 
 and then attribute it to a person, which is the same rule that keeps a conversation's title the first
 message verbatim.
 
-So Save is disabled until the field has a character. That is a field with the keyboard already up, not
-a screen — the interstitial existed because a name is required, and the requirement survives while the
-screen does not.
+So Save is disabled until the field has a character. That is a field with the keyboard already up, with no intermediate naming screen.
 
 ## The target sheet is typed
 
@@ -62,19 +54,17 @@ drops them.
 actually reasoning about, and it is drawn there already. In a planning sheet you know the number you
 want; you do not step to it.
 
-## Which kills the third overlay
+## Numeric entry
 
 The editor opens the target sheet, and the target sheet's third layer is **the platform's own
 decimal keyboard** on every surface. Two layers, no custom keypad, no DOM-sibling workaround.
 
 The keypad itself is not gone from the product — it is a **rack** control and stays there
-(`16-the-workout.md`), raised from the logger and from the fix sheet on every surface. What the
-planning sheet inherited from it is the refusals, pinned below.
+(`16-the-workout.md`), raised from the logger and from the fix sheet on the phones. Web uses numeric fields. The planning refusals are pinned below.
 
-## The editor after the cuts
+## Editor
 
-- **Nav bar** carries the way back and *Save*. Nothing else is a header button — except on iOS,
-  where an overflow beside Save holds Duplicate, which copies the draft.
+- **Nav bar** carries the way back and *Save*.
 - **The name** is the first field.
 - **The movements** are a list: reorder by dragging the handle, **by pressing ArrowUp / ArrowDown on
   it, or by tapping it once to pick the row up and once more where it goes**, swipe or `×` to
@@ -83,8 +73,7 @@ planning sheet inherited from it is the refusals, pinned below.
   discards the unsaved draft with no question, so the name is part of the sheet's own control rather
   than an anchor.
 - **Add movement** is the last row of that list, not a floating button.
-- **Duplicate** has one home and it is the routine **row's** overflow, the menu that also carries
-  **Delete** (`13-gestures.md` Law 1). The editor draws neither, save iOS's copy of the draft above.
+- **Delete** belongs to the routine row. No surface offers Duplicate.
 - **History** stays a section on iOS. **Web and Android editors draw none**: the routine is the
   plan, so the editor is the name and the movements, and what changed a routine is read in Coach's
   threads. The Web · Gym editor boards and Android board `820:5572` carry this composition.
@@ -112,12 +101,8 @@ double-tapping it is who the single-pointer criterion is about, and a keyboard p
 rather than that (`13-gestures.md` Law 1). iOS reorders through the platform's `.onMove`
 (`RoutineBuilderScreens.swift:117`), which declares its own alternative.
 
-> **Android reorders a draft on the handle's tap, and declares the rest.** Each row's drag-handle
-> icon picks the row up on a tap and places it on a tap at another row's handle — the same
-> pick-up / place-down the web's grip answers, in the same words — and *Move up* / *Move down* are
-> custom accessibility actions rather than a drawn menu, with the move said once on a polite live
-> region under the list (`ui/RoutineBuilder.kt`, `RoutineDraft.moving`). No long press, and no new
-> dependency (ledger `3p`, closed).
+Android provides native drag reordering with continuous scrolling and Move up / Move down
+accessibility actions in `ui/RoutineBuilder.kt`.
 
 **A movement's record has a drawn door that does not cost a draft.** A routine line for a
 never-logged movement is a first-class state here, and every other route on the web to that
@@ -129,8 +114,6 @@ web's editor rows are not doors, so the routines home's head draws a **Movements
 **New** (`Routines.jsx:67`) — the only drawn way there to the movement chooser, and the one door to
 a never-trained movement's record, and to Rename on it, that no proposal has to be standing for.
 
-That is roughly twenty-one buttons down to the way back, *Save*, *Add movement* — and, on iOS, an
-overflow.
 
 ## The movement picker
 
@@ -153,7 +136,7 @@ they want does not exist yet, and sending them elsewhere to make it loses the se
 `rememberSaveable` slot on Android, `.gym-sheet-catch` over the rows on the web. So Cancel comes back
 to the rows with the typed query still in the field and the frozen six unshuffled, and on the phones
 the create step gets its own frame with its own keyboard inset rather than competing with the
-picker's height cap (ledger `2u`). It keeps the **two questions** it has always asked on every
+picker's height cap. It keeps the **two questions** it has always asked on every
 surface — the name, with the cap and counter below it, and *How is it loaded?* Where the refusal is said still splits by
 surface and is meant to: iOS holds the step up until the log answers and says it there, Android
 closes the picker first and says it on the room's transient.
@@ -173,7 +156,7 @@ A routine on the routines list is a **door**, and a door does not restate what i
 > targets and the settled history are read one tap deeper, on the routine's own screen, which is the
 > only screen that draws them.
 
-**Android diverges here, by the owner's ruling of 2026-09-24 (boards `813:4935`, `820:5572`).** A
+**Android composition (boards `813:4935`, `820:5572`).** A
 routine on Android is the plan and nothing else. The list row's meta line **names the first
 movements** — `Bench Press · Barbell Row` — instead of counting them, and carries no trained-ago.
 Tapping a row raises a **bottom sheet** over the list: the name, the plan without rest lines,
@@ -183,7 +166,7 @@ routine never links to any history. iOS keeps the pushed screen with History for
 (`RoutineScreen.swift:113`, `:185`); the drift is in `../../consistency.md`.
 
 What that tie looks like is each surface's own, and the standing card is the one that names the
-proposal (ledger `3o`): the web draws one card per waiting routine at the head of the list
+proposal: the web draws one card per waiting routine at the head of the list
 and nothing on the row itself (`ProposalCard` in `Proposals.jsx`, `RoutinesList` in
 `Routines.jsx`); both phones give the
 waiting routine's row the accent border (`RoutinesScreen.swift:232`, `ui/RoutinesScreen.kt:301`) and
@@ -227,13 +210,7 @@ the sheet's scrolling plan (`RoutineSheet` in `ui/RoutinesScreen.kt`).
 
 ## The strings, pinned
 
-Three surfaces drew this wave in parallel and invented **seven different strings for four new states**,
-because the rulings were pinned and the words were not. Every new state a wave creates needs its words
-decided before anything is drawn, or each surface will decide them separately and all three will be
-defensible.
-
-**The typed field's refusals** — these were the custom keypad's, and removing it left them homeless on
-all three surfaces. They live inline under the field, one at a time:
+Every new state needs exact copy before drawing. Field refusals appear inline, one at a time:
 
 | when | the words |
 |---|---|

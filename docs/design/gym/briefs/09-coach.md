@@ -4,8 +4,6 @@ Coach is the second door onto the engine an MCP-connected agent already reaches.
 own Claude or ChatGPT connects it and never opens this room. A lifter without one opens Coach, which
 asks the same questions of the same tools.
 
-The room's name matches the paid line, which has always called it the coach.
-
 ## What the name does not buy
 
 Coach uses the owner’s supplied system prompt: friendly, informal, direct and grounded in the lifter’s records. It reads user data before deciding, asks when needed and saves useful user-provided insights to Notes. It limits its questions to wellbeing and general health. Notes retain the lifter’s instructions and stated context.
@@ -107,10 +105,8 @@ write is already going. So it is the sentence while the diff is unseen and nothi
 seen, whatever the request is doing.
 
 **Both channels, on both phones: the pixels, and the control that is refusing.** iOS hands
-VoiceOver the button's `accessibilityHint` and hides the drawn row from the semantics tree, so the
-sentence is said once. Android puts it on the Apply box as `stateDescription` **and** leaves the
-drawn row in the tree while the gate is shut, so TalkBack meets it twice — the same fact on one
-channel twice, which is what this programme is against (ledger `4m`).
+VoiceOver the button's `accessibilityHint`; Android uses `stateDescription`. Hide the duplicate
+visual refusal from semantics so the gate is announced once.
 
 **Kept rows have one shape everywhere.** Changed rows at full weight; every run of kept rows as a
 collapsed count **in its own place** — *"and 7 lines unchanged"*, *"and 1 line unchanged"* — tappable
@@ -191,10 +187,8 @@ server can stand behind: the diff rows carry an exercise id and never a movement
 5 × 3 at 90"* is reachable only when exactly one field of one movement moved. That is a special
 case, never the shape of the rule.
 
-**A proposal outcome and a chronological receipt turn are distinct.** Web restores the inline
-outcome from the proposal's stored state. Phone return receipts remain ephemeral; the separate
-thread ledger row is deferred in `../BUILD.md`, B12. No surface invents a historical conversation
-turn from a transient receipt.
+**History must use stored evidence.** Restore proposal outcomes from their recorded state; do not
+invent a historical conversation turn from a transient return receipt.
 
 ## The verbs
 
@@ -207,7 +201,7 @@ Coach can create a routine when the lifter requests it. Read relevant goals, con
 | remove a routine | The existing review including retained logged sets |
 | save a useful insight | An appended note and a truthful saved-note step; the lifter controls later edits/deletion |
 
-**Never proposable, at any grant level, this wave or later:** logging a set, fixing a set, deleting a
+**Never proposable, at any grant level:** logging a set, fixing a set, deleting a
 set, finishing a workout, discarding a session, writing a bodyweight.
 
 **A verb does not ship without a phrase.** A tool the step line has no phrase for prints nothing, on
@@ -238,7 +232,7 @@ Limits are contextual. The empty room leads directly to its composer without a s
 
 A retained conversation has no lifetime question cap. History opens that same editable conversation, including after the fifth question. Backend model-context bounds are independent of visible retained history. Generating, stopped and interrupted answers keep their truthful partial state and completed action receipts.
 
-The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The owner’s exact replacement prompt is installed; live-model tone acceptance is recorded separately in the execution log.
+The full quiet-room, copying, image attachment and streaming contract is [feedback-contract.md](../feedback-contract.md). The owner’s supplied prompt is preserved by the implementation.
 
 ## The two stances, pinned
 

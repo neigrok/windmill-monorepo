@@ -1,6 +1,6 @@
 # Gym feedback contract
 
-Status: implementation contract, 19 September 2026. Figma drawings describe the intended UI; source changes and runtime verification are recorded separately. This contract governs the feedback deltas to [Android delivery](android-delivery.md), the gym briefs and [the implementation plan](../../gym-feedback-plan.md).
+Current layout and interaction requirements, alongside [Android delivery](android-delivery.md) and the gym briefs.
 
 ## Structure and density
 
@@ -62,10 +62,15 @@ Review both skins, small screens, keyboard open/closed, long text and the larges
 
 Figma edits reuse existing masters for routine rows, logger, composer and native chrome. State specimens share these controls; redundant copies and obsolete captions are removed in the same design pass. This document's acceptance cases are requirements, not test results.
 
-## Drawings and evidence
+## Drawings
 
 Updated Android masters: [routine row](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=659-6856), [workout clocks](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=740-100), [composer](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=741-99). Current root and workout frames retain their existing URLs. [Coach feedback specimens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=744-3787) show More, Copy, photo draft, streaming and interruption, with Daylight references. [Resumed conversation](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=678-10531) now includes the shared composer.
 
 The clock icon comes from the subscribed Material kit; the stopwatch uses Google’s official Material outlined timer SVG. The attachment specimen uses an equipment photo from [LSG Fitness](https://www.lsgfitness.com.au/blogs/news/getting-started-with-weight-training) as an attributed design fixture, not a bundled product asset. The displayed response is illustrative fixture copy and is not the requested replacement system prompt.
 
-Figma screenshots were inspected for compact routines, empty Coach, resumed history, photo draft, Copy, streaming and first/later-set clocks. These include Instrument and Daylight visual checks. They are static design checks, not native interaction or model-output verification. [Android design verification](feedback-verification.md) separates inspected native captures, source-only findings and remaining layout checks; implementation owners record interaction results separately.
+## Unchecked acceptance
+
+- Web photo-picker upload acceptance remains unverified. Exercise real selection, upload,
+  preview/remove/retry and authenticated image reads.
+- Authenticated iOS photo-picker and Coach conversation acceptance remains unverified.
+  Android acceptance does not establish those platform behaviors.

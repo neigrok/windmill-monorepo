@@ -9,13 +9,13 @@ be used on a phone.
 
 ## 1. The three bands
 
-Measured on a 402 × 874 logical frame (the design frame for all Windmill phone boards):
+Use logical units (CSS px, iOS pt, Android dp), actual safe insets and the smallest supported frame:
 
 | Band | Where | Holds | Never holds |
 |---|---|---|---|
-| **Top** — identity | safe top → ~120px | the shell capsule, the screen title, one context/meta line, a back affordance | a primary button, a destructive button, a required input |
-| **Middle** — the reading band | ~120px → ~600px | the content, and any explanatory copy, **vertically centred when the content is short** | the primary action, if the body does not fill it |
-| **Bottom** — the reach band | last ~230px, above the tab rail | primary action, secondary action, the input being filled, keypads, steppers, ladders | long explanatory prose |
+| **Top** — identity | safe top → safe top + 60 | the shell capsule, the screen title, one context/meta line, a back affordance | a primary button, a destructive button, a required input |
+| **Middle** — the reading band | between identity and reach bands | the content, and any explanatory copy, **vertically centred when the content is short** | the primary action, if the body does not fill it |
+| **Bottom** — the reach band | 230 units above the bottom safe inset; controls clear the tab rail | primary action, secondary action, the input being filled, keypads, steppers, ladders | long explanatory prose |
 
 A thumb line sits at **46% of frame height**: everything a user has to hit while standing,
 tired, one-handed, sits below it.

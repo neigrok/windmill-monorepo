@@ -1,37 +1,8 @@
-# Set targets — the scheme, the ladder, and the slot it fills at the rack
+# Set targets
 
-The target sheet asks one question per movement — *how many sets, of how many reps, at what load* —
-and can only hear one answer. A lifter whose day is a ramp (60 × 5 · 80 × 5 · 90 × 3 · 100 × 1) or a
-top set with back-offs cannot write it down, so they write `5 × 5 · 80` and remember the rest. This
-brief gives every set its own line, keeps `5 × 5 · 80` one gesture, and follows the line to the rack,
-the mirror, the review sheet and the tool an agent calls.
-
-Obeys `12-native-idiom.md`, `13-gestures.md`, `15-the-routine.md` (which this brief amends where it
-says so), `16-the-workout.md`, `09-coach.md` and `../../guidelines/text-budget.md`.
-
-## What is wrong today, honestly
-
-The owner's words: *the ± button is useless; there is no way to make a pyramid; the target is not
-shown during the exercise; Coach and MCP cannot write one.*
-
-Read against the shipped sheet (`TargetEntry.swift`, `RoutineBuilder.kt` `TargetSheet`,
-`Routines.jsx` `TargetSheet`), all four hold:
-
-- **The `±` is a full-size control on every movement for a state almost no movement has.** It flips
-  a load negative for band-assisted work, which is a real state (`Routine.cpp:26`) — but it is drawn
-  beside a barbell's weight field, where a negative load is nonsense, and it is the most prominent
-  thing on the sheet after the fields. Its accessible name, *Flip the sign — band-assisted*, is the
-  one honest line about it, and it is the line nobody sighted reads.
-- **One triple per line.** `targetSets · targetReps · targetWeightKg` is a straight scheme and
-  nothing else. A ramp, a pyramid, a top set with back-offs, a drop set, an AMRAP last set — none
-  of them is a routine line, so none of them reaches the plan snapshot, the prefill, the diff or an
-  agent.
-- **The rack reads the triple once and then stops.** The set line's tail says ` · target 5 @ 82.5`
-  for every set; the prefill takes the plan's numbers for the first set and *today's last set*
-  after that (`Prefill.of`, `Training.kt:670`), so even a plan that could say *set 4 is 100* would
-  be overruled by set 3.
-- **The tool cannot say it.** `entryArray()` in `GymToolCatalog.cpp` declares the triple, so an
-  agent asked for a 5/3/1 week can only answer with prose.
+A movement target is an ordered scheme of up to twenty sets. Straight sets, ramps, pyramids and
+back-off sets use the same stored shape. Native entry follows this contract; web composition
+and numeric controls follow `../web-form.md`.
 
 ## The object — one scheme, two zooms
 
@@ -83,12 +54,7 @@ reaching for that field means.
 **While Sets is empty the other two fields are disabled and the ladder is not drawn**, and the one
 sentence *You decide the numbers at the rack.* stands above the fields as it does today. Retyping a
 count brings the same rows back — the ladder was hidden, not thrown away — and only the commit of
-an open line drops it. That is the whole of the open line, and it retires two refusals:
-*Clear reps and weight first — an open line names neither* and *Name the sets first — an open line
-names neither* have nothing left to refuse. A field that is disabled cannot be typed into, and a
-clear that keeps the rows cannot destroy anything. **`15-the-routine.md`'s two illegal-shape
-sentences are struck by this brief**; the domain's refusal (`Routine.cpp:18`) stays as the last
-line of defence and is never reached from a phone.
+an open line drops it. The domain still validates the submitted shape at the boundary.
 
 ### Set by set — the ladder
 
@@ -299,69 +265,23 @@ One fixture, drawn on every board:
   four. `../web-form.md` drops it on web, where the ladder is the count; the two surfaces disagree
   until an owner rules, and the disagreement is ledgered as F38.
 
-## The boards — owed to the Gym file
+## Drawings
 
-The Figma MCP was not reachable when this brief was written, so the boards are specified here and
-owed on the Gym file (`vdmdiKWrmZoS1FtcvJRf6O`), in a section **`Set targets · 2026-09-08`** on the
-page the recolour exploration lives on (`431:2`), below *Option 3*. Every board is cloned from its
-canon ancestor so the chrome, the fonts (Nunito for prose and labels, JetBrains Mono for every
-numeral) and the variable bindings (`gym/*`, `state/*`, `weight/ink`) are inherited, and every
-board is drawn in Instrument and Daylight. The fixture is the one above.
+Use the current maps in `../web-build-contract.md` and `../android-delivery.md`. Logger targets
+follow `16-the-workout.md`; the retired horizontal-strip proposals are not implementation references.
 
-1. **`iOS · Target sheet — straight`** (393 × 852, from `254:478`). The editor behind, dimmed; the
-   sheet at `.large` with its grabber. Head: `Bench Press` / `1 of 5 · Push A`, `Done` trailing.
-   Section head `EVERY SET` in the eyebrow style; the row of three fields Sets `3` · Reps `8` ·
-   Weight `60 kg` (the `±` absent — barbell). Section head `SET BY SET` with `Fill` trailing in
-   the accent. Three ladder rows, 52 pt each in the inset-grouped list: ordinal `1` in the faint
-   ink, then `8` and `60 kg` as inline fields in the 24 pt numeral face, inset separators. Last
-   row `Add set` with `sf/plus.circle`. Below the list the commit **`Set · 3 × 8 · 60`**, full
-   width, 54 pt, accent fill, pinned above the home indicator.
-2. **`iOS · Target sheet — set by set`** (from board 1). `Back Squat` / `1 of 2 · Lower A`. Head
-   fields Sets `5`, Reps and Weight empty with the placeholder `varies` in the faint ink. Five
-   rows `60 × 5 · 80 × 5 · 90 × 3 · 100 × 1 · 80 × 5`, row 3's weight field focused with the
-   caret. Commit **`Set · 5 sets`**.
-3. **`iOS · Target sheet — the Fill menu`** (from board 2): the `Menu` open under `Fill`, two items
-   `Ramp up` with `sf/arrow.up.right` and `Match set 1` with `sf/equal`.
-4. **`iOS · Target sheet — cleared`** (from board 2): Sets empty reading `open`, Reps and Weight
-   disabled at the dimmed ink, *You decide the numbers at the rack.* above the fields, no ladder,
-   the commit reading `Set · open`.
-5. **`Android · Target sheet — set by set`** (412 × 915, from `253:142`). The `ModalBottomSheet`
-   with its drag handle; `Back Squat` / `1 of 2 · Lower A`; `Every set` as an M3 list subhead;
-   three `OutlinedTextField`s Sets `5` · Reps (placeholder `varies`) · Weight (placeholder
-   `varies`), no `±`; subhead `Set by set` with a `TextButton` `Fill` trailing; five `ListItem`
-   rows each holding the ordinal and two compact `OutlinedTextField`s; `Add set` as the last
-   row; `FilledButton` **`Set · 5 sets`**. The Gboard decimal pad drawn under it, as the ancestor
-   does. The board notes the swipe's custom action `Delete` by hand (`13-gestures.md` Law 1).
-6. **`Android · Logger — set 3 of 5, the slot strip`** (412 × 915, from `313:361`). Title
-   `Lower A`; `Back Squat`, the set line `Set 3 of 5 · target 3 @ 90` with the tail in the target
-   ink; the slot strip in the reading region: `60 × 5 ✓` and `80 × 5 ✓` in the set-done ink,
-   `90 × 3` outlined in the accent, `100 × 1` and `80 × 5` in the faint ink; the numeral `90`,
-   reps `3`, the ladder pills off the 90 band, `Log set`.
-7. **`iOS · Logger — set 3 of 5, the slot strip`** (393 × 852, from `433:86` on the same page):
-   the same fixture on the iOS logger, the strip where the TODAY rows stand.
-8. **`Web · Mirror — the slots`** (1440 × 900, from `432:713`): the mirrored session's set list as
-   slot rows, landed rows full and the three to come dim, the plan line `5 × 1–5 · 60–100`.
-9. **`Review — one set moved`** (a 393 × 852 iOS review from `123:2` and a 412 × 915 Android one
-   from `124:364`): `Proposal · Lower A`, *Coach wrote:* one line, one retargeted row reading
-   `Back Squat · set 4 · 100 × 1 → 102.5 × 1`, *and 1 line unchanged*, the band `Apply` · the gate ·
-   the promise · *Turn this down*.
-10. **`READ ME · Set targets`** on the section's own `gym/canvas` ground: the object in one
-    paragraph, the readout formula, the fixture, and the two struck sentences.
-
-## Ruled
-
-Ratified whole, with these overrides:
+## Implementation requirements
 
 - **One wire shape.** The triple is gone: a line's target is `sets: [{reps?, weightKg?}]` on the
   wire, in the store (a child table of set rows) and in every domain; an open line is an entry with
   no `sets`. No reader keeps a compressed spelling.
 - **The `±` is drawn on a bodyweight movement's load fields on every surface, regardless of the
   keyboard** — nothing reads the IME.
-- **Ramp up and Match set 1 are built**, not proposals.
+- **Ramp up and Match set 1** are available in the Fill menu.
 - **Keep-as-routine on Finish transcribes the working sets per set**; the count / modal / max
   flattening goes with the triple.
 - Per-set notes, percent-of-top and a lower deviation trigger stay unbuilt.
-- **Pinned in the build, on every surface:** a scheme of one set prints the scheme formula
+- **Shared behavior:** a scheme of one set prints the scheme formula
   (`1 × 5 · 100`); a placeholder stands as the top of a mixed column (`5–max`, `60–last`); a set
   past the plan has no target and the set line carries no tail; Ramp up needs three rows and snaps
   the loads between the ends onto the plate grid; while a refusal stands the commit is disabled

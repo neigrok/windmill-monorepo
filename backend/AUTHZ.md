@@ -108,8 +108,8 @@ because a pre-routing advice that returns a response binds to the observer overl
 dropped. The sync join point runs ahead of routing, so the order is rate-limit → authenticate →
 authorize → handler.
 
-**Operator action:** set a GitHub secret `WINDMILL_MCP_TOKEN` (e.g. `openssl rand -hex 32`) so prod
-enforces MCP auth. An empty token leaves `/mcp` open behind a startup warning.
+`WINDMILL_MCP_TOKEN` is an optional shared bearer fallback. The production composition root always
+wires OAuth and personal MCP keys, so an empty shared token still requires one of those credentials.
 
 ## Still open
 
