@@ -64,6 +64,8 @@ targets:
       testTargets:
         - WindmillUITests
         - WindmillCrashReportTests
+    # App/ carries Assets.xcassets: AppIcon is the single 1024pt universal icon, brand-mark.svg on
+    # the cream ground of web/public/icon-512.png, opaque and square — the system draws the corners.
     sources:
       - path: App
     dependencies:
@@ -81,8 +83,11 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
         MARKETING_VERSION: "0.1.0"
         CURRENT_PROJECT_VERSION: "1"
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         # No team is configured here on purpose: a simulator build needs none, and hard-coding
         # someone's personal team id into the repo is how a project stops building for everyone else.
+        # The release workflow (.github/workflows/ios-release.yml) supplies the team and turns
+        # signing on from its own command line.
         CODE_SIGNING_REQUIRED: "NO"
         CODE_SIGNING_ALLOWED: "NO"
         ENABLE_USER_SCRIPT_SANDBOXING: "YES"
@@ -122,6 +127,12 @@ targets:
       properties:
         CFBundleDisplayName: Windmill
         CFBundleShortVersionString: $(MARKETING_VERSION)
+        # Spelled out, or XcodeGen writes the literal value and a build number passed on the
+        # command line never reaches the bundle.
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        # The app uses only the system's own TLS, which is exempt; saying so here answers App Store
+        # Connect's export-compliance question for every build.
+        ITSAppUsesNonExemptEncryption: false
         UILaunchScreen:
           UIColorName: ""
         UISupportedInterfaceOrientations:

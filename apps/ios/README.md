@@ -11,6 +11,7 @@ project.yml          the app target, declared (XcodeGen). Windmill.xcodeproj is 
 App/
   WindmillApp.swift  the composition root — the only file that knows all three products exist
   CrashReports.swift  dedicated iOS Sentry configuration and privacy scrub
+  Assets.xcassets    the app icon — web/public/brand-mark.svg on the cream ground, 1024pt, opaque
 Tests/App/           app integration tests, including crash report routing and privacy
 WindmillKit/         the Swift package: everything that isn't the app bundle
   Sources/
@@ -76,8 +77,26 @@ removed before delivery. Memory introspection, screenshots, view hierarchies, ne
 replay, performance tracing and automatic session tracking are disabled. The Sentry dependency
 lives in the app bundle; product libraries do not depend on it.
 
-CI builds and tests the app but does not upload dSYMs. Production crash frames require the matching
-release dSYMs to be uploaded to the iOS Sentry project before they can be fully symbolicated.
+Neither CI nor the release workflow uploads dSYMs to Sentry. Production crash frames require the
+matching release dSYMs to be uploaded to the iOS Sentry project before they can be fully symbolicated.
+
+## Release
+
+`.github/workflows/ios-release.yml` archives a signed Release build and uploads it to App Store
+Connect. It runs when iOS CI passes on a push to `main`, building the commit CI tested, and it can be
+run by hand:
+
+```sh
+gh workflow run ios-release.yml
+```
+
+A processed build appears in TestFlight, where the internal testing group can install it. Its build
+number is the release workflow's run number; its version is `MARKETING_VERSION` in `project.yml`,
+bumped by hand. Signing is automatic, driven by an App Store Connect API key: the workflow passes the
+team, turns signing on and supplies `IOS_SENTRY_DSN` on the `xcodebuild` command line, so
+`project.yml` never names a team. It reads the `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN` repository secrets. The app declares
+`ITSAppUsesNonExemptEncryption` false, so a build needs no export-compliance answer.
 
 ## The rooms
 
@@ -297,7 +316,7 @@ be tested without the file on the domain and a signed build.
 - **The connected-log grant is made and ended on the web** — `Connect a tool` and
   `Manage connections` are browser doors; the screen itself reads the grants and keys and draws
   the state (`docs/design/gym/briefs/19-connected-log.md`).
-- **No app icon or launch asset.**
+- **No launch asset.**
 - **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
   of three products have no phone-side state to report.
 - **Gym's drag-to-reorder, the jump sheet's swipe-to-drop and the refusal row's swipe-to-dismiss are
