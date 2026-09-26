@@ -153,6 +153,9 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
   the routine name where `gym/briefs/16-the-workout.md` uses *Well done.* or *Ended early.*, and
   board 02d labels the Routines primary *Start logging* where `gym/briefs/12-native-idiom.md` uses
   *Just start logging*. Choose one of each and align the other.
+- **6u · Journal ink notes.** iOS draws no ink-notes layer over the first-open canvas
+  (`JournalRoom.swift`), bundles no Caveat font, and has no room menu to carry *Show ink notes*
+  (6a). Canon: `journal/onboarding.md` §2 and `guidelines/superapp-shell.md` §3.
 
 ## Roadmap
 
