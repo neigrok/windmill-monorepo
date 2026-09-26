@@ -25,7 +25,6 @@ Keep current requirements; remove completed plans, verification transcripts and 
 | `consistency.md` | The drift ledger — canon-vs-code disagreements. Start here for consistency work. |
 | `brand-foundations.md` | Brand direction, voice, visual foundations, iconography, and the standing font and logo policies. |
 | `brand-logo.md` | Approved logo source, exported assets, usage, and native icon follow-ups. |
-| `brand-identity-brief.html` | Identity direction and asset requirements around the approved windmill logo. |
 | `guidelines/` | Brand-wide: motion language, the superapp shell and journey, the four-layer system architecture, thumb reach, **the text budget**. |
 | `roadmap/` | Feature guidelines and the open-asks briefs. The largest set. |
 | `journal/` | Product canon (`journal.md`), the mood and energy scales (`scales.md`), first-run canon (`onboarding.md`). |

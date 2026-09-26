@@ -24,7 +24,8 @@ rejected for structure. Validity is a read model, not a gate.
   `InvalidTree` on a duplicate id, a dangling prerequisite or a cycle. Indexes the DAG, the topo
   order, ancestry and the render model.
 - `Legend` — up to 6 kinds per tree, one per hue, sorted by `rank` then id. A tree created with no
-  kinds is seeded with three: build · learn · milestone.
+  kinds is seeded with three: build · learn · milestone. A PUT omitting kinds on an existing tree
+  preserves its legend.
 
 Derived read models:
 
@@ -54,6 +55,8 @@ converges across devices and a stale mark cannot resurrect it. `markedAt` is the
 the moment the mark was recorded and is the only instant a reader may date a step by; the HLC
 beside it orders writes and is never served back as a time.
 
+Compatibility inputs `active` and `inProgress` normalize to `none` in progress and authored seeds.
+
 One status per node is structural. "Complete only when every prerequisite is complete" is
 advisory: the mark is recorded either way and the outcome reports `prerequisitesMet` so a surface
 can warn. `outOfOrder` is the marker's word that the inversion was meant; it is part of the status
@@ -67,7 +70,7 @@ All traffic flows through the server: one convergent lattice per tree, with the 
 Replicas never merge with each other.
 
 - **LWW register** (`Lww<T>`) — highest HLC wins. HLC text is `physicalMs:counter:actor`; the
-  empty string is unset.
+  unset sentinel is `0:0:`.
 - **Element set** (`ElementSet`) — add-biased: present iff added and no strictly-later remove
   cancelled it. A tie between add and remove favours add.
 - **Join** — `LooseGraph::join(GraphState)` folds a partial state entry by entry, field by field.
@@ -176,8 +179,9 @@ opens rooms on demand, hands out `strandFor(treeId)`, persists (`persist`) and e
 
 Rules:
 
-- Never hold a room's strand across a Postgres call, and never hold two strands at once — the
-  strands are a fixed stripe array shared by unrelated tree ids.
+- Hold the tree's strand across mutation and persistence; `RoomRegistry::persist` releases its
+  room-map mutex before database I/O. Never hold two strands at once: they are a fixed stripe array
+  shared by unrelated tree ids.
 - `accessOf(treeId)` answers authorization from the stored row; ask it **before** `open()`, which
   drags the whole lattice off disk and pins it.
 - Persist before acking, so an ack attests durability. Within a persist the lattice is saved
@@ -186,9 +190,13 @@ Rules:
   room reaches the true state and head and new writes never collide on `seq`. Under the save-then-
   land ordering that tail is empty; it is read for trees saved before the ordering held.
 - The room clock mints a unique `(ms, counter)` per write, so writes to one tree are totally
-  ordered and the actor tiebreak is moot.
+  ordered and the actor tiebreak is moot. It observes loaded and replayed stamps before minting;
+  `AppliedOp.actor` records authorship independently of the clock actor `srv`.
 - Sparse persistence: `dirtyState()` exports only entries dirtied since `markClean()`. `replay()`
   flips the room to all-dirty.
+- Tree content reads use the room; the registry list reads persisted rows without opening rooms.
+  Forks snapshot the source room's graph and legend, clear authored progress baselines, and start
+  a fresh op log with `forked_from` provenance.
 
 ## Authorization
 
@@ -299,6 +307,11 @@ Rules:
   rows are not yet backfilled. Nothing new depends on it.
 - `tree_ops` scales with edits, not nodes. `ActivityFeed` projects it, and `open()` replays its
   tail past the stored head to bring a room up to date.
+- Tree deletion writes `deleted_at` and retires its room. Reads exclude deleted rows and save never
+  clears the tombstone. Recreating the caller's own deleted ID returns `Creation::retired`, so a
+  client can stop replaying it instead of reminting an ID.
+- Progress upserts compare numeric `(stamp_ms, stamp_counter)` strictly; a tie loses without
+  consulting the actor. Clears retain a stamped `none` row.
 - The og-image and og-video rows carry no FK to `trees`: they are addressed by tree id and read
   behind the tree's own visibility gate, so a stray row is simply unreachable.
 
@@ -311,3 +324,12 @@ Indexes that exist because their query runs on every render: `trees_owner` (the 
 - A tombstoned node's edges are retained for resurrection and nothing compacts them, so the
   lattice grows monotonically.
 - `label` is LWW, so a concurrent rename drops the loser.
+- A second server process can collide on `(tree_id, seq)`; room heads and presence are local and
+  the server clock actor is not instance-qualified. Run one writer per database.
+- `TreeRoom::appliedOpIds_` grows without a bound; `tree_ops` also enforces durable op-ID uniqueness.
+- `ActivityFeed::displayActor` recognizes `dev` and guest IDs, but renders real user UUIDs as the
+  tree itself. Offline flushes retain only one coarse headline for the coalesced gestures.
+
+Cross-surface coverage and offline durability are specified in
+[graph sync](../docs/GRAPH_SYNC_DESIGN.md). The
+[golden corpus](test/golden/SCHEMA.md) does not yet test the real C++ and JavaScript implementations.

@@ -12,13 +12,15 @@ Visibility-gated read, owner-only write, per-user progress. The two predicates a
   on `canRead`: a `private` tree is its owner's alone, an `unlisted` or `public` one is readable by
   anyone holding the id. A denial is byte-identical to an absent tree, so no id can be probed for
   existence. `GET …/progress` serves the **owner's** overlay to every reader, under the same gate.
-- **Document writes** (`PUT`, `POST …/fork`, WS `cmd`/`undo`/`redo`, every mutating MCP tool) require
+- **Document writes** (`PUT`, WS `subgraph`, structural MCP tools) require
   a session (anonymous → `401`) and gate on `canWrite`, which is ownership and nothing else. **A tree
   is born owned** — the owner is written by the same insert that creates the row (create, fork, `PUT`
   of an absent id) — so there is no instant at which a row exists without one. **An unowned tree is
   nobody's to write**: the seeded demo tree (`t_9e407a96b5330ebe`, `owner_id NULL`, `public`) is
   world-readable and editable by no one. Every write path runs `canRead` first, so a refusal never
   confirms that a private id names something; a readable tree the caller does not own answers `403`.
+- **Forks** require read access to the source and create a new tree owned by the recipient; they do
+  not require write access to the source.
 - **Progress marks** (WS `progress`, MCP `set_progress`) are not document writes and are not
   owner-gated. They gate on `canRead` alone, and each caller writes only their own per-user overlay
   (`node_progress` is keyed by `user_id`). Any signed-in reader may mark any tree they can read — the

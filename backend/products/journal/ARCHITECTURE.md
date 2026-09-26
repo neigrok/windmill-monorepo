@@ -123,8 +123,7 @@ has no port.
   `WarmEchoRepository` keeps the second derivation of an evening from re-loading the corpus.
 - `EchoSweep` runs every six hours as the repair path: inbound reverse edges, corpus-stamp backfill,
   failed pages, deferred derivations.
-- The entitlement is asked in the read, not in the sweep: the sweep derives for everyone and
-  `EchoApi` decides how much of a passage a reader is handed.
+- Echoes are derived for every signed-in writer and `EchoApi` serves full passages.
 - `HttpEmbedder` talks to the self-hosted `services/embedder` sidecar, running
   `Xenova/paraphrase-multilingual-MiniLM-L12-v2`. Page text does not leave for an embedding. It
   does leave for the curator, which is Anthropic's — that call needs the zero-retention, no-training
@@ -155,8 +154,8 @@ and consume only an internal passive-work budget.
 | `GET /v1/journal/pages` | every page | owner |
 | `PUT /v1/journal/page/{date}` | LWW upsert carrying the HLC stamp. A body past `kMaxPageBytes` is 413, before storage and before the revision trail | owner |
 | `POST /v1/journal/transcribe` | one-shot voice → `{ text }` | owner, Windmill One |
-| `GET /v1/journal/echoes?from=&to=` | every echo on the pages in a range, grouped by page, plus `pagesWritten`. Entitlement decides how much of a passage comes back | owner |
-| `POST /v1/journal/echoes/{triggerDay}/offer/dismiss` | retire the upgrade offer on this page, keeping every echo | owner |
+| `GET /v1/journal/echoes?from=&to=` | full echoes on the pages in a range, grouped by page, plus `pagesWritten` | owner |
+| `POST /v1/journal/echoes/{triggerDay}/offer/dismiss` | compatibility route recording a retired offer, keeping every echo | owner |
 | `POST /v1/journal/echoes/{triggerDay}/dismiss` | retire every pairing on this page in one request | owner |
 | `POST /v1/journal/echoes/{triggerDay}/{matchDay}/dismiss` | retire one passage pair | owner |
 | `POST /v1/journal/echoes/{triggerDay}/{matchDay}/useful` | the reader's explicit positive answer | owner |
@@ -166,7 +165,7 @@ and consume only an internal passive-work budget.
 | `POST /v1/journal/nudge/pause` · `/unsubscribe` | the credential is the secret in the user's mail; POST-only; 204 either way | mail secret |
 | `POST /v1/admin/journal/nudge/sweep` | operator rehearsal (`dryRun`/`asOfMs`) | `JOURNAL_NUDGE_ADMIN_TOKEN` |
 | `GET /v1/admin/journal/echo/explain/{day}` | one page's derivation run for its reasons, writing nothing; explains the signed-in caller's own page | admin token + owner |
-| `POST /v1/admin/journal/echo/sweep` | operator rehearsal of one repair pass. Its one knob is `sinceMs` | `JOURNAL_ECHO_ADMIN_TOKEN` |
+| `POST /v1/admin/journal/echo/sweep` | repair pass; accepts `sinceMs` and `rejudge` | `JOURNAL_ECHO_ADMIN_TOKEN` |
 
 Register the offer-dismissal route **before** the `{matchDay}` pair route. Drogon matches in
 registration order and `{matchDay}` binds the literal `offer`. Do not sort that block.

@@ -46,10 +46,4 @@ The proposed controls use shared Button instances, Roadmap Skill Node instances,
 
 Separate AI generation from roadmap mutation: request intent and scope; prepare a revision-bound proposal; review; apply atomically; receipt and one undo. Keep provider spend distinct from customer chargeability. The customer activity record needs request identity, product, exact credit debit, status and restoration timing. Background work has no customer debit. Legacy wire identifiers can remain compatibility details without appearing in product language.
 
-This phase does not implement or test those backend guarantees. They are prerequisites for promoting the interaction proposal to the live product.
-
-## Verification and canon reconciliation
-
-All three 402 × 874 proposal screens were rendered and visually inspected. The simplification pass keeps one prompt, one concrete before/after review and one result receipt; shared components provide the node and button vocabulary. Figma links connect Preview changes, Revise, Apply changes and Undo. The applying state is specified in this brief rather than claimed as a fourth drawing. No application guarantees or browser interactions were tested by this design phase.
-
-Bounded existing drawings were reconciled alongside the proposal: the Roadmap Room AI entry labels and annotations; Marketing landing and static-page AI pricing copy; and Journal full-echo reader and access specimens. Four Journal payment sheets are now included echo readers, with the complete passage taken from `web/src/products/journal/echoes/fixtures.js`. The Night echo reader and margin, and the desktop pricing specimen were rendered for visual inspection. This is not a claim that every historical drawing in every file was audited; unrelated frame structures remain untouched.
+These backend guarantees are prerequisites for promoting the interaction proposal to the live product.

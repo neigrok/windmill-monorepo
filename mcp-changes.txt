@@ -1,6 +1,0 @@
-Windmill MCP — friction ledger.
-
-Open ergonomic defects on the MCP surface. One line each: the friction, then what would fix
-it. Log new friction here as you hit it; delete an entry when it ships.
-
-(No open entries.)

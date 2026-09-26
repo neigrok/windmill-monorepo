@@ -77,46 +77,19 @@ bearer and an email address ride cloud backup, device-to-device transfer and `ad
 device in the clear. A phone whose Keystore refuses keeps nothing rather than falling back to
 plaintext.
 
-## The room
+## Gym
 
-The three roots are Routines, Log and Coach. Routines supports named plans and direct logging;
-a workout starts only when the lifter chooses a start action. Log reads performed workouts,
-movement records and weigh-ins. Coach and Notes require an account, while local training and
-settings remain available signed out.
+Routines, Log and Coach are the three roots. Workouts begin only on an explicit start action.
+Manual training and settings work signed out; Coach and Notes require an account. Gym supplies
+settings and connected-log destinations through product-neutral `ShellActions`; the account sheet
+dismisses before navigating. Product UI rules live in [gym design](../../docs/design/gym/briefs/00-README.md).
 
-The account sheet receives Gym settings and Connected log destinations through product-neutral
-`ShellActions`. Gym owns their route callbacks; the sheet finishes dismissal before navigation.
-`GymRoom` retains the originating tab and Back stack. Settings is reached from the account sheet
-or the active workout’s gear. It contains units, Notes,
-Connected log and Account. There is no Kind or set-confirmation sound/haptic control. Selecting lb
-retains the explicit notice that this phone still displays kg.
-
-Routines open a plan sheet over their caller. The sheet offers Start workout and Edit routine;
-routine history is not part of the sheet or editor. Row menus offer Delete. The Log weaves a pure,
-weekly-capped moment projection among sessions; only one moment expands at a time, and Weigh in
-stays pinned. A session's movement names keep Record reachable independently of moments.
-
-Coach's current and retained conversations share `AskScreen`, `CoachComposer` and `CoachAnswer`.
-History is editable and paged. Long press, a tap or the accessibility Copy action copies either
-speaker's text, including partial answers; an answer copies as plain text. Answers render as
-Markdown blocks (`CoachMarkdown` in `domain/`: headings, lists, code, bold, italic), with an
-unclosed marker styling the text to the end of its block while the answer streams. Server-sent
-generation snapshots arrive about once a second; `CoachPresentation` paces the new text of a
-running answer over the observed interval and corrects the scroll offset in the layout phase, so
-the end is followed with no lag and no animation. Stop, interruption and retry preserve partial
-words and completed routine receipts. Readers who scroll back keep their place and can jump to the
-latest message.
-
-The native photo picker accepts one image with an optional caption. `CoachPhotos` applies orientation
-and encodes JPEG/PNG within 4096 pixels per edge and 5 MiB. Attachment uploads and retained-image reads
-use authenticated HTTP bodies, without credentials in URLs. `LocalCoach` keeps account-scoped drafts,
-photo bytes, request IDs and partial generations across process death. Retry retains the original
-request and attachment IDs; terminal completion or conversation deletion clears pending storage.
-Factual read receipts remain attached to the answer, and creation receipts open the actual routine.
-New chat abandons the local draft and pending request; server history and completed actions remain.
-Routine edits still require human Apply. Notes, Connected log, New chat and Account live in More;
-account limits appear only when they refuse an action.
-
+Coach uses the same renderer for current and retained conversations. `LocalCoach` persists
+account-scoped drafts, request ids, attachments and partial generations through process death.
+Retries retain request and attachment identity; Stop preserves partial words and completed
+receipts. Routine edits require human Apply. Retained images use authenticated HTTP bodies,
+never credential-bearing URLs. `CoachPhotos` normalizes orientation and limits JPEG/PNG to
+4096 pixels per edge and 5 MiB. New chat clears the pending local request; server history remains.
 
 **The room opens and works signed out**: sessions, routines, movements, weigh-ins and gym's own
 settings live on the device in `LocalLog` + `SetQueue` + `LocalBodyweight` + `LocalPreferences`. The six barbell movements —
@@ -188,38 +161,25 @@ reachable by no seat, replayed to no account, deleted by nothing. The decision i
 once, so no later launch decides it differently. Gym's settings section is the one door out, and it
 requires the local-data decision; a signed-out decision opens its bound sign-in flow. iOS attributes legacy files using its Keychain session.
 
-## Native workout surface
+## Workout runtime
 
-Exercise pages follow the finger using native Compose scrolling. Adjacent pages show their own
-set ledger while the rack stays fixed. Reversing or cancelling a drag preserves the selected
-exercise and rack draft; selection changes after settling. Swipes can start across the workout
-body; the ledger scrolls vertically only, and modal editors retain their gestures. Editing and logging wait
-until the selected page is settled.
+`GymRuntime` is shared by the activity and notification receivers. Receivers restore local state
+without starting HTTP authentication. The queue commits an offered set, consumed action and event
+timestamp together before reporting success. Rack edits, movement/account changes and finish
+invalidate old actions. Log set requires unlock and current action identity.
 
-The logger displays workout elapsed and time since the latest retained set, with session start as the
-second anchor before any set. The two quiet icon clocks use persisted timestamps across movements,
-accepted offline sets, edits and relaunch; deletion and Undo recalculate the second anchor. Their
-readings freeze at session finish. The pair wraps when large text needs more width.
+The ongoing workout notification shows routine, movement, rack and set count. Eligible systems
+may promote it to a Live Update. Dismissing hides it for that workout; Show workout restores it.
+Exercise paging uses native Compose scrolling; rack edits and logging wait for a settled page.
 
-The application owns one local workout runtime. Notification receivers restore that same runtime
-without starting HTTP authentication. The queue commits the exact offered set, consumed action
-and its event timestamp together before reporting success, and the set is sent at once. Editing
-the rack, changing movement, finishing or changing account makes old actions ineligible.
+Workout elapsed and time since the latest retained set derive from saved timestamps, survive
+relaunch and freeze at finish. There is no rest target, alert, exact-alarm permission or set
+confirmation sound/vibration. The phone displays kilograms even when the account preference is lb.
 
-Android renders a stock ongoing workout card with routine, movement, rack and set counter. Supported systems may
-promote it to a Live Update; eligibility, user permission and actual promotion are separate facts.
-The ordinary card uses the same workout state. Log set requires unlock and current action identity.
-Dismissing the card hides it for that workout; Show workout in settings is
-the explicit way to restore it.
-
-Android has no rest target, rest alert or exact-alarm permission. The logger retains workout elapsed
-and time since the latest set. Preference and routine writes preserve unowned server fields at the
-HTTP boundary through a fresh preservation read before each replacement; an unavailable read
-prevents the write. The saved-workout decoder ignores the four retired version-1 control keys
-(`rest`, `attemptedRest`, `alertAccess`, `restAlerts`) without interpreting their values or rewriting
-the file on open. Future versions, other unknown control fields and malformed current fields keep
-the queue read-only; reconnect reports recovery instead of attempting to resume writes. Logging
-has no confirmation sound or vibration.
+Preference and routine replacements first read and preserve server-owned fields; failed reads
+prevent writes. The saved-workout decoder accepts the four retired version-1 keys (`rest`,
+`attemptedRest`, `alertAccess`, `restAlerts`) without interpreting them. Future versions, unknown
+control fields and malformed current fields leave the queue read-only for recovery.
 
 ## CI and releases
 

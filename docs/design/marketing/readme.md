@@ -36,8 +36,7 @@ client constraints. Splitting them by trigger would fracture what makes them con
 
 ## Not here
 
-- **Foundations and the brand identity brief** — `../brand-foundations.md`,
-  `../brand-identity-brief.html`.
+- **Foundations and logo assets** — `../brand-foundations.md`, `../brand-logo.md`.
 - **Anything whose subject is the tree** — `../roadmap/`. A landing may embed a demo tree, but
   the tree's own canon (layout contract, node states, share cards) lives there.
 - **AI assistance mechanics** — `../roadmap/guidelines/ai-assistance.md`. `pricing.md` prices AI assistance; it

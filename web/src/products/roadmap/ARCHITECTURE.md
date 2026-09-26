@@ -189,9 +189,7 @@ node's children sit on rays around it inside its enclosing circle, every child f
 post-order tuck slides rigid subtrees along their ray until footprints or resting trunk edges touch, or
 discs come within three quarters of a body of air rim to rim, so a step with a short name or none never
 sits on its neighbour; islands settle by front-chain circle packing with the largest root pinned at the
-origin. It is the engine measured closest on the reader's own complaint — a trunk parent and child 3.4
-bodies apart, 24–25 steps in the working window — and the only one whose whole-tree fit clears the 6 px
-body floor by itself. It has no shared center or depth ring, so the minimap reads as a constellation.
+origin. It has no shared center or depth ring, so the minimap reads as a constellation.
 Siblings reorder around their trunk parent within an open fan; packed root islands have no drag reorder.
 
 The tuck has a deterministic work ceiling, `max(1,000,000, 2048 × nodeCount)`, counting subtree
@@ -220,132 +218,47 @@ An engine that reserves a caption's seat reads `model/footprint.js`: `footprintO
 disc-plus-caption box in world units, estimated from the label's length alone (6.65 px per character, at
 most two 20 px lines inside 168 px), never DOM-measured, so every device lays the tree out byte-identically.
 
-## `scene/`  (raw WebGL2)
+## `scene/` (raw WebGL2)
 
-- `glcore.js` — link a program, resolve uniform/attrib locations, upload a canvas as a texture.
-- `Camera2D.js` — a pure ortho 2D camera; world↔screen is scale (`zoom`) + translate, Y-down.
-  `screenToWorld` is the exact inverse of the shader projection, so picking is pixel-accurate. It carries
-  the **working zoom** (`WORKING_ZOOM` from `theme.js`, `PHONE_WORKING_ZOOM` on a phone via
-  `setWorkingZoom`): every `focus` / `glideTo` floors there and `fitToView` caps there. The zoom floor is
-  dynamic — half the smaller of the fit zoom of `setFitBounds` and the working zoom — for wheel,
-  pinch, buttons, `restore` and glides. Tiny trees therefore keep room to zoom out from All steps.
-  `setInsets({top,right,bottom,left})` names the chrome-covered px per side, and `centreFor` /
-  `visibleViewport` / `fitZoomFor` centre focus, fit and glide inside what is left. Also `pan`, `zoomAt`
-  (cursor-anchored), `zoomBy`, `panTo`, `glideTo(x, y, zoom, {force})`, `launchInertia`, `update(dt)`.
-- `NodeBatch.js` — **one instanced draw** for every node: a base quad drawn N times with per-instance
-  attributes (offset, colour, tier, form, glow seed, selection, icon cell, plus the ceremony and
-  feedback animation stamps). The body is procedural (disc + gradient + ring); the glow pulses from
-  `uTime`; the icon atlas is tinted per tier and fades out across the band where the DOM icons take
-  over. `moveInstances(moves)` writes every mover into the offsets array and uploads the one range they
-  span — one `bufferSubData` a frame, however many nodes a settle is gliding.
-- `ConnectorBatch.js` — **one draw** for all edges, bézier ribbons in one buffer, bowed by
-  `edgeCurve.js` — the one curve the ribbon and the caption placer both read. A branch inherits its
-  source: once that node is complete it lights in the source's kind hue with a GPU colour/growth sweep
-  driven by `uTime`. `setStates` rewrites only the grow attributes; `moveNodes(moves)` re-tessellates
-  every edge touching a mover once, however many of its ends moved, and uploads the one vertex range
-  they span.
-- `IconAtlas.js` — rasterizes lucide glyphs (through the app's `Icon` registry) into an alpha-mask
-  canvas atlas (192px cells) for the far/mid LOD, re-uploading once async glyph decode completes. It
-  remembers every name it was asked for, glyph or none, so `syncIconAtlas` can tell a name with no glyph
-  from one it has never seen and rebuilds only for the second.
-- `captionLayout.js` — captions, decided, pure: `wrapCaption` (at most two 20 px lines inside the
-  160 px text column, word-broken, the second line ellipsised, a blank label has no caption),
-  `captionRankLimit(zoom)` — the last priority named at this zoom, keyed on the body as DRAWN (never
-  under the 6 px floor, so the rule follows the dot on screen): from 18 px everyone, from 12 px the
-  frontier, and below that the landmarks alone — and `CaptionPlacer` — priority selected > hovered >
-  the selected's trunk family > anchors (crowned roots and branch heads of eight or more, biggest
-  subtree first) > available > the rest. Seats are tried last-seat-first, then below → above →
-  right → left, against one 64 px collision grid holding three kinds of obstacle — the names already
-  placed and the corners chrome holds, the disc rims, and the ribbons drawn across the canvas — inside
-  the inset-reduced viewport. A caption takes a seat clear of all three; finding none it takes one that
-  only crosses a ribbon, since a name on a branch beats a step with no name. The selected and hovered
-  captions are never dropped at all, and a crowned root below the working view is a landmark: it may
-  cover dots and threads to be named where it stands, but never another name. Hysteresis: 200 ms of unbroken placement before a caption shows, 200 ms
-  of unbroken loss before it goes, held in place meanwhile; records survive `setModel`, so a live edit
-  never blinks. Pool 96, candidate cap 288.
-- `edgeCurve.js` — the bow: `bendOf(from, to)` (hashed from the two ids, never from coordinates),
-  `controlPoint` and `pointOnCurve`. Read by the ribbon tessellator and by the placer, so a caption
-  keeps clear of the branch that is actually drawn.
-- `picking.js` — the pick rule, pure over the grid and the camera: the disc itself always takes the hit;
-  beyond it a screen-px floor reaches out (24 px for a pointer, 44 px for touch), never past halfway to
-  the nearest other node, and a point among steps too crowded to tell apart reports `crowded`.
-- `NodeOverlay.js` — DOM above the canvas. The abstract `NodeOverlay` owns the container, a fixed pool
-  of absolutely-positioned elements moved by CSS `transform` so a frame costs no layout, and `dispose`.
-  `LabelOverlay` mirrors `captionLayout.js`: it measures each label once with a 2D-canvas `measureText`
-  under the live caption font (re-measured when `document.fonts` finishes loading), keeps one element
-  per captioned node id (`data-node-id`), toggles `st-label--shown` for the 150 ms fade and re-runs
-  itself on a settle timer at the next fade deadline; an unchanged camera costs no allocation, and
-  `markMoved()` — what the scene calls when the discs move under a still camera — re-places on the next
-  frame without arming a timer, so a whole settle frame costs one flag. The
-  halo behind the glyphs (`--st-label-halo`) is pinned to the scene's clear colour by `setTheme`.
-  `IconOverlay` (live `<Icon>` SVG cross-fading in as the baked atlas fades out) keeps its own
-  nearest-64 placement, LOD-gated by zoom.
-- `AffordanceLayer.js` — the edit chrome: a plus chip + ports fading onto the **selected** node
-  (hover shows no structure). The plus sits on the outward rim, ports at the widest gaps;
-  repositioned per frame. A grace window keeps it reachable just after a deselect. The plus fires
-  `onCreate`; each port starts a `ConnectGesture`.
-- `EdgeChrome.js` — the selected-edge chrome: a clicked branch turns bark and grows two endpoint
-  handles plus a midpoint × (delete). Selection-gated, not hover.
-- `ConnectGesture.js` — dragging a dependency from a port or an edge handle: a dashed SVG ghost
-  follows the cursor; the target rings olive (valid) or brick with a loop warning. The whole
-  cycle-closing set is collected up front and faded to 30%, and that same set is the cyclic
-  predicate, so a faded node can never take the drop.
-- `MarqueeOverlay.js` · `ReorderSlot.js` · `ArrivalChevron.js` — the Shift-drag rubber band, the
-  dashed insertion ring for angular reorder, the viewport-edge pill pointing at off-screen births.
-- `edgeKey.js` — an edge has no id; its identity is the ordered `(from, to)` pair. The one place that
-  folds those into a stable key and back, so React selection and the GPU highlight cannot disagree.
-- `input/` — `InputController` owns the canvas listeners, pointer capture and single-pointer
-  bookkeeping, drives two-finger pinch, and forwards down/drag/move/up/leave to the active `Tool`.
-  `tools.js` holds the `Tool` contract, `NavigateTool` (drag-pan + inertia, click-select, throttled
-  hover — the viewer behaviour and the editing default) and `ReadOnlyTool` (1:1 pan, tap-select, no
-  fling). `reorderGeometry.js` is the angular-reorder math, pure.
-- `SkillTreeScene.js` — the orchestrator: the GL context, the `Camera2D`, both batches, the
-  `IconAtlas`, every overlay, the `CeremonyDirector`, the `InputController`. Its **rAF loop** advances
-  `uTime` and the camera, steps any settle glide, considers the pending auto-frame, repositions every
-  overlay on a frame that moved, emits the viewport to `subscribeViewport` listeners (the minimap)
-  and draws the two batches — no throttle. A `MutationObserver` on `data-theme` re-resolves
-  `sceneTheme` live and re-sends every cached colour (batch uniforms, glyph tints, chip pills).
+`SkillTreeScene` owns the GL context, `Camera2D`, two GPU batches, overlays, the
+`CeremonyDirector` and `InputController`. React supplies models, state changes, selection and
+viewport insets through the scene API; it does not touch GL. The frame loop advances the camera
+and motion, repositions overlays, emits viewport changes and draws both batches. Theme changes
+re-resolve `sceneTheme` and update GPU and DOM colours together.
 
-  Motion surface, armed by the React shell and owned by the loop:
-  - **arrival** — `setModel` paints the tree dim and hands the director a BFS ring plan from the
-    crowned root. `setArrivalNoun` / `setArrivalSummary` / `suppressArrivalToast` are one-shot intents
-    consumed by that plan.
-  - **return recap** — `armReturnRecap(sinceIds, summary)` before the model installs makes the next
-    state push replay only the steps finished since the last visit, cascading parent→child by depth.
-  - **settle** — `applyModel` diffs positions and glides every displaced node to its new seat,
-    staggered nearest-the-change first, through `moveNodes` — one batch a frame, so the captions and
-    both GPU buffers follow the discs in step. `finishSettle` lands them instantly when a pointer arrives.
-  - **auto-frame** — a completion off the canvas moves the camera: the ceremony glides to the step that
-    rose, and a glide with no zoom of its own floors at the working zoom. A birth never yanks it — the
-    chevron points at it, and only a plainly idle viewer with nothing selected gets one capped breath
-    outward, once the settle has landed.
+| Module | Responsibility |
+|---|---|
+| `Camera2D.js` | World/screen coordinates, inset-aware fit, working zoom, pan and inertia. |
+| `NodeBatch.js` | One instanced draw for all node bodies and atlas glyphs. |
+| `ConnectorBatch.js` | One draw for all ribbons; moving nodes update their connected edges once. |
+| `IconAtlas.js` | Rasterized glyphs for distant views; `IconOverlay` supplies close-up SVGs. |
+| `captionLayout.js` | Pure caption wrapping, priority, collision placement and visibility hysteresis. |
+| `NodeOverlay.js` | DOM labels keyed by node id and nearby icon slots; uses the live camera. |
+| `edgeCurve.js` | Shared curve geometry for connector drawing and caption collisions. |
+| `picking.js` | Disc hits, screen-pixel hit floors and crowded-node detection. |
+| `input/` | Canvas listeners, pointer capture, pinch and the active navigation/edit tool. |
+| `AffordanceLayer.js`, `EdgeChrome.js`, `ConnectGesture.js` | Node ports, edge handles and dependency gestures. |
+| `edgeKey.js` | Ordered `(from, to)` identity shared by React and GPU selection. |
 
-  Public API (renderer-agnostic, so the React shell never touches GL): `setModel`, `applyModel`,
-  `applyStates`, `moveNode` / `moveNodes`, `fitToView` (All steps — the whole tree inside the visible
-  area, capped at the working zoom), `focusWorking(id | null, {instant})` (Focus — the working zoom over
-  a step's trunk family, or the step alone when that box does not fit the frame), `focusNode`,
-  `frameNodes`, `panTo`, `zoomBy`, `setWorkingZoom`,
-  `setViewportInsets` (chrome-covered px per side plus the corner blocks, handed to the camera and the
-  captions),
-  `setReorderHint` (`'ring'` and `'parent-arc'` arm the angular reorder, `'none'` disarms it),
-  `suppressArrival` (one-shot, before
-  `setModel`), `getViewpoint` / `restoreViewpoint`, `subscribeViewport`, `getBounds`, `getViewport`,
-  `resize`, `start`, `stop`, `dispose`; selection (`select` / `selectEdge` — node and edge selection are
-  mutually exclusive — `setSelection`, `setSelectedSet`, `toggleSelect`, `hover`, `pick(x, y,
-  pointerType)`, `zoomIntoCrowd`, `pickEdge`, `projectEdge`); previews (`previewKind` / `restoreKind`,
-  `previewDeleteCost` / `clearDeleteCost`, `setFaded`, `highlightKind`, `spotlightNode`, `pulseNode`).
+Captions prioritize selected and hovered nodes, then their family, landmarks and available steps.
+Placement avoids labels, chrome, discs and ribbons inside the visible viewport. Selected and
+hovered labels remain visible even when collision-free space runs out. Caption records survive
+model updates; visibility uses `st-label--shown`, not `display`.
 
-  Hit testing is `picking.js`. A tap that lands among nodes too crowded to tell apart is not a miss —
-  `zoomIntoCrowd` glides the working view in around it, and the tools try it before edge picking and
-  before clearing the selection.
+Picking always accepts the drawn disc. Outside it, pointer/touch floors stop halfway to the
+nearest neighbour. A crowded hit invokes `zoomIntoCrowd` before edge picking or deselection.
+`viewportInsets` supplies both covered edges and corner obstacles to the camera and captions.
 
-Perf rules: constant draw calls regardless of node count. The only per-node JS in the animation loop is
-the overlay pass on a frame that moved, and every scan it makes is bounded by what is on screen or by
-the grid's occupancy — never by the tree's extent: `SpatialGrid` walks its nodes rather than the cells a
-query covers whenever the query is the wider of the two, and the placer stages only the ribbon runs that
-cross the caption area. `captionLayout.test.js` pins the cost at the working zoom, mid-zoom and the
-whole-tree fit. A settle uploads one range per GPU buffer per frame; instanced attribute updates flag
-their buffer rather than reallocating.
+The director sequences arrival and completion ceremonies. `applyModel` settles displaced nodes
+through one batch update per frame; interaction can finish that settle immediately. Births use an
+off-screen chevron and may widen an idle view without pulling an active reader away. Reduced
+motion freezes pulses and snaps growth.
+
+Draw-call count is independent of node count. Spatial queries fall back to scanning stored nodes
+when a cell query would cost more. Settles upload one range per GPU buffer per frame rather than
+reallocating; caption work is bounded by visible candidates and grid occupancy.
+`captionLayout.test.js` checks working, intermediate and whole-tree views. GPU timing must be
+measured separately from the headless capture rig.
 
 ## `sync/`  (the lattice is truth)
 
@@ -404,42 +317,14 @@ selectable for manual copying. Owners can make a shared roadmap private again.
 
 ## `SkillTreeView.jsx` + overlay UI
 
-Runs the pipeline above, hands the tree to a `SyncSession`, and hosts every overlay around the
-canvas. Each edit is dispatched as one gesture (`collab.dispatch({kind, …})`), materialized into
-stamped writes, joined into the lattice, persisted, and — when live — sent as one frame; the new
-projection comes back through `onTreeChanged` → `syncStructure()` (re-derive, re-validate,
-`scene.applyModel`), the *same* path another device's frame takes. Keys: ⌘Z/⇧⌘Z →
-`SyncSession.undo`/`redo`, ⌫/Delete on the selection, Esc deselects, F → Focus (the working zoom on
-the selection, else the frontier), 0 → All steps; a `selectedId` → `scene.setSelection` effect keeps
-the canvas chrome in step with React, and a `viewportInsets(...)` memo → `scene.setViewportInsets`
-effect tells the camera and the captions what the dock, sheet and lane cover.
+The view loads the model, constructs and disposes the scene, owns resize observation and hosts
+canvas chrome. Every edit is dispatched once through `SyncSession`; local and remote changes both
+return through `onTreeChanged` → `syncStructure()` → `scene.applyModel`.
 
-Its controllers are hooks, each over the pure model or feature package it drives:
-`ui/tree/useLegend.js`, `ui/tree/useWorkspace.js`, `activity/useActivity.js`.
-
-Wires:
-
-- A full-viewport `<canvas className="st-canvas">`; constructs `SkillTreeScene` in an effect,
-  `setModel` + `start()`, `dispose()` on unmount, `resize()` on container resize (ResizeObserver).
-  The scene is held in state so overlay children can subscribe once it exists.
-- Overlay UI, built from `src/design-system`:
-  - `ui/ControlBar.jsx` — the wordmark linking home, the tree identity plaque (`TreeSwitcher` docks
-    into `titleSlot`, else a static title), and on the right the Ask AI chip (owner of an armed tree
-    only), the Activity / "Next · N" chip with its unseen badge, Share, Reset edits, the shortcuts
-    button and the zoom-out / zoom-in / **Focus** / **All steps** group (the two camera verbs, as
-    text). Key hints come from `shortcuts/shortcutMap.js`, never a duplicated literal.
-  - `ui/StepPanel.jsx` — the one docked panel, slid in on pick: inline-editable name, the state
-    block, six kind swatches (hover previews through `scene.previewKind`, click commits), the
-    prerequisite checklist, the per-node workspace and History, and an isolated Delete whose hover
-    dims the cost through `scene.previewDeleteCost`.
-  - `ui/tree/KindLegend.jsx` — the on-canvas colour key that is also its own editor; the parent docks
-    it bottom-left and supplies each kind's count.
-  - `ui/Minimap.jsx` — two stacked canvases: a dots layer redrawn only on node/state/bounds change,
-    a viewport rectangle redrawn every frame from `scene.subscribeViewport`. Click to `panTo`.
-  - `activity/ActivityFeed.jsx` + `ui/NextUp.jsx` — the docked feed, led by the ready-work section.
-  - `presence/PresenceLayer.jsx`, `tending/TendBar.jsx`, `share/ShareDialog.jsx`,
-    `ui/HonestyChrome.jsx`, and on small screens `list/ListView.jsx` plus `ui/mobile/`.
-- All node-state transitions go through `UnlockRules.derive` — never hand-set a node state.
+Selection and `viewportInsets(...)` effects keep React, the camera and captions aligned. Legend,
+workspace and activity hooks wrap their pure feature models. The control bar, step panel, minimap,
+activity feed and mobile/list surfaces consume that same projection. Keyboard bindings come from
+`shortcuts/shortcutMap.js`; all node-state transitions come from `UnlockRules.derive`.
 
 ## Conventions
 

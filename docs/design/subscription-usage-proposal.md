@@ -50,14 +50,6 @@ Use the shared button hover and 0.97 press treatment; transition state colors in
 
 Mobile web remains one column; detail and management are separate destinations. Cancellation and confirmation actions belong in a pinned bottom action area above the safe inset. Screen readers announce a single remaining-credit value and the window, not every bar segment. Buttons need at least 44px hit areas, keyboard focus and stable back navigation. No custom native iOS or Android components are claimed by these mobile-web drawings.
 
-## Structure and verification
-
-The page reuses the existing semantic theme, spacing and radius variables, Baloo 2 / Nunito / JetBrains Mono styles, and Button instances. Account / Usage row is one local component with editable Title, Detail and Value properties. Desktop groups allowance and activity in two columns; mobile uses the same hierarchy in one column.
-
-The design simplification pass consolidates repeated feature rows, removes passive-feature controls and separate request-count meters, and keeps raw token details out of the UI. New controls remain on the isolated proposal page; the published foundations are unchanged.
+## Implementation dependencies
 
 Implementation follow-up: account usage contract, metering correctness and subscription management must land before the future example can become a live account page. The dogfood task is account-usage-contract, connected to subscription-allowance-design.
-
-Verification is performed on the revised frames after the active-request policy update.
-
-The four changed account views were rendered and visually inspected after revision; the management sheet remains as verified in the preceding pass. The account proposal page has no obsolete request-unit wording or automatic-echo controls. The activity fixture still reconciles to 128 used and 272 remaining, with Journal representing voice only. The simplification removes an entire settings control and separate quota card rather than compensating with explanatory warnings.

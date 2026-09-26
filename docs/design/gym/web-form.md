@@ -109,9 +109,8 @@ Feedback class throughout — immediate, never queued, inside the ceilings of
 
 ## The boards
 
-Every state is drawn at 1440 and 390, bound to `gym/*` variables, on the fixtures of `web-design.md`.
-Instrument covers every state. Daylight is drawn for Routines; the remaining Daylight matrix belongs
-to implementation wave W8.
+Every state is drawn at 1440 and 390, bound to `gym/*` variables, on the fixtures of `log-exploration.md`.
+Compare every state in both Instrument and Daylight; `web-build-contract.md` owns the acceptance map.
 
 1. **Plan** — Routines, Routines empty, Routine editor (desktop split · narrow), Target sheet
    (straight · ladder · open), New routine, stale-save recovery.

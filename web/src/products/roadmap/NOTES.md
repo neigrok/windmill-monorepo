@@ -6,9 +6,9 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 ## Rendering and overlays
 
 - Verify actual pixels on screen, not proxy signals (draw-call counts, picking logic, "it compiles").
-- Verify animated surfaces by evaluating in-page (`Runtime.evaluate` / `javascript_tool`), never by
-  screenshot: the extension's screenshot and `read_page` wait for an idle page, which never comes
-  under the perpetual rAF loop.
+- The scene runs a continuous animation loop; browser checks must wait for explicit scene state
+  rather than page idleness. The [capture rig](../../../scripts/roadmap-rig/APPARATUS.md) provides
+  settled-scene screenshots and DOM measurements.
 - Never route a per-frame value and a React-state value through one throttled callback.
 - Overlay chrome is positioned from the render loop with the live camera, never a cached one: a
   cached camera is unset until the first overlay pass, so on a still camera chips stack at (0,0).
@@ -20,8 +20,7 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
 - `SpatialGrid` reaches every cell a query covers, so the screen-px hit floors (24 px pointer / 44 px
   touch, divided by zoom) stay correct at any zoom — but a query asking for more cells than the grid
   holds walks the nodes instead. Without that bound a single caption pass at the whole-tree fit sweeps
-  the whole query box: ~126,000 cells for the dogfood tree's 476 nodes, tens of millions on a
-  5,000-step radial tree, whose bounds are 459k wu.
+  the whole query box: many empty cells at a whole-tree fit.
 - The icon pool is assigned by distance-rank recomputed each frame (`within` + sort → slice 64). An
   icon crossing a rank boundary makes two pooled elements swap nodes mid-pan. Captions are not pooled
   that way: an element stays with its node id while the caption is on screen.
@@ -71,29 +70,12 @@ Live gotchas and open items for `web/src/products/roadmap/`. How the package wor
   `setSelectedSet(selectedIds)`, because a mixed selection has one node with `selectedId === null`.
 - Every delete path clears its own selection set.
 
-## The layout engine under everything
+## Layout
 
-- The default is **bubble** (`layout/index.js`). `?layout=radial|rings|mindmap` still opens the others;
-  nothing in the UI offers the switch.
-- Bubble and radial are statically imported; rings and mindmap load on demand. `loadLayoutEngine`
-  answers a failed alternative import with radial, and `layoutTree` answers a throwing layout with it.
-  The result includes the effective engine beside its positions: use that identity for camera storage
-  and reorder hints. Radial's own failure propagates.
-- Every picture of a tree takes its engine from `pageLayoutEngine()` and runs it through `layoutTree` — the
-  canvas, `quests/QuestThumb.jsx` and `paste/GhostSkeleton.jsx` — sharing the selected layout and its
-  fallback policy. Both pictures paint a beat after their
-  frame does, into a box CSS already reserved (the quest thumb's wrap is a fixed 148 px), so nothing moves
-  when the picture lands. Neither caches across mounts.
-- A quest whose plan is mostly one chain reads as a diagonal string in the 236×128 thumbnail —
-  bubble hangs a chain off one ray. It is what the canvas will draw, so it is
-  honest; if the shelf wants density back, that is a thumbnail framing question, not a layout one.
-- The angular sibling drag is armed from the engine's own `reorder` static (`model/ports.js`): `'ring'`
-  sweeps about the world origin, `'parent-arc'` about the node's trunk parent, `'none'` disarms.
-  `BubbleLayoutEngine` declares `'parent-arc'`: only children with siblings can reorder, with no slot
-  beyond the open fan. Root islands have no parent arc and no drag reorder.
-- The `marketing/` scenes are hand-placed coordinates, not engine output — they draw a radial burst and
-  they differ from what the app draws. The design follow-up is **F50** in
-  `docs/design/consistency.md`; the boards owe a redraw.
+The current engines and fallback contract are in [ARCHITECTURE.md](ARCHITECTURE.md).
+Canvas, quest thumbnails and paste ghosts all use `pageLayoutEngine()` and `layoutTree`; engine
+identity governs saved cameras and reorder gestures. Marketing scenes use hand-placed coordinates;
+the redraw remains F50 in the [design ledger](../../../../docs/design/consistency.md).
 
 ## Open
 

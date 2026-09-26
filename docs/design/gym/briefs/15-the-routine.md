@@ -1,6 +1,6 @@
 # The routine — building it, changing it, starting it
 
-Routine creation, editing and starting. Web layout follows `../web-design.md`; Android composition
+Routine creation, editing and starting. Web layout follows `../web-form.md`; Android composition
 follows `../android-delivery.md`. Targets share `17-set-targets.md`.
 
 Everything here obeys three documents already written: `12-native-idiom.md`,

@@ -294,8 +294,7 @@ export class SyncSession {
     this.noteDrained();
   }
 
-  // Stamped, folded and persisted before anything is sent, so a mark that never reaches the socket
-  // is merely uncovered and the next flush carries it.
+  // Queue the local snapshot before sending; an unacknowledged mark remains in the derived outbox.
   markProgress(nodeId, status) {
     const now = Date.now();
     if (!this.progress.mark(nodeId, status, this.clock.tick(now), now)) return this.progress.overlay();
@@ -385,7 +384,7 @@ export class SyncSession {
   apply(writes) {
     this.lattice.join(writes);
     this.emitTree();
-    this.persistNow();                     // durable before the wire; the outbox catches offline edits
+    this.persistNow();                     // queue the local snapshot; pending edits remain in the lattice
     if (this.phase === 'live') this.send(writes);
   }
 

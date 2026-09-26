@@ -26,7 +26,7 @@ the sails independently.
 The logo has no approved monochrome or alternative wordmark variant. Text-only brand treatments
 remain appropriate in email, where the header must stay readable with images blocked.
 
-## Structure observation
+## Asset derivation
 
 The mark and lockup share one Figma source, and web consumers share one rendering module. Keep
 raster icons derived from the compact SVG to avoid geometry drifting between sizes. The outlined

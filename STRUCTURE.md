@@ -66,6 +66,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/`,
 | `backend.yml` | build and run C++ tests in Docker; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
 | `ios.yml` | simulator app build, crash-report tests and WindmillKit tests |
+| `ios-release.yml` | archive and upload the tested iOS main-push commit to App Store Connect, or release manually |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |

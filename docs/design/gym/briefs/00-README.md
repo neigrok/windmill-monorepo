@@ -20,7 +20,7 @@ Read `01-context.md` first.
 
 ## The web boards
 
-The web is drawn on the Gym file's `Web · Gym` page (`466:132`); `../web-design.md` reads it and
+The web is drawn on the Gym file's `Web · Gym` page (`466:132`); `../web-build-contract.md` maps its states and
 `../web-form.md` is the form its boards obey.
 
 ## Scope

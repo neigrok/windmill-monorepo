@@ -258,6 +258,37 @@ Apple stays dark until all four land: `configured()` is false and `/v1/auth/appl
 rather than half-working. The client secret is minted per exchange (ES256, one-hour life) rather
 than stored, so there is no long-lived secret to rotate.
 
+### Apple sign-in activation
+
+The iOS button is disabled by `WMAppleSignInEnabled: false` in
+[project.yml](../apps/ios/project.yml). The deployment workflow and Compose service do not forward
+the four Apple environment variables.
+
+Activation requires an Apple Developer app identifier and key for `works.windmill.app`, the team's
+signing configuration and `com.apple.developer.applesignin` entitlement. Add all four inputs to the
+deployment secret bindings, environment renderer and Compose environment before enabling the
+button. The private-key transport must preserve PEM newlines; the current renderer writes
+single-line values. Setting GitHub secrets alone is insufficient because
+[deploy.yml](../.github/workflows/deploy.yml) replaces the server environment.
+
+Verify first authorization, an existing account and a relay-email account from a signed app.
+Unsigned simulator launches and unit tests cannot verify Apple's flow. Identity resolution and
+account linking use the rules above.
+
+## MCP OAuth consent
+
+`/oauth/authorize` validates the request and redirects to the web `/#/oauth/authorize` route.
+[OAuthConsent.jsx](../web/src/shell/auth/OAuthConsent.jsx) requires a session, reads the registered
+client from `/v1/oauth/client`, checks the redirect against its registered URIs, and displays the
+requested product scopes. It posts the unchanged `client_id`, `redirect_uri`, `code_challenge`,
+`resource`, `scope` and `state`, plus `approve`, to `/v1/oauth/decision` and follows its returned
+`redirect`. A lapsed session returns to sign-in; an invalid request requires restarting from the
+MCP client.
+
+The server revalidates the redirect and owns codes, PKCE and tokens. The screen handles no token or
+code exchange. MCP transport, credentials and scopes are documented in the
+[adapter contract](products/roadmap/adapters/mcp/README.md).
+
 ## The Resend templates
 
 `ResendEmailSender` calls `POST https://api.resend.com/emails` with a stored template id —

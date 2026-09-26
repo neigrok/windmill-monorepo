@@ -1,8 +1,7 @@
 # Windmill iOS
 
-One Swift superapp for the whole brand. `journal`, `roadmap` and `gym` are module libraries mounted
-by a single app over a shared `WindmillPlatform` — the native mirror of `web/`. One sign-in, one
-subscription.
+One SwiftUI app for journal and gym, with a roadmap link to the web. Product libraries depend on
+`WindmillPlatform`; the app composes them under one account.
 
 ## Layout
 
@@ -39,9 +38,9 @@ From the command line (what CI runs):
 xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 
-# from apps/ios/WindmillKit — the package's own scheme, not one of the project's
-cd WindmillKit && xcodebuild test -scheme WindmillKit-Package \
-  -destination 'platform=iOS Simulator,name=iPhone 17'
+# the package's own scheme, run without changing the caller's directory
+(cd WindmillKit && xcodebuild test -scheme WindmillKit-Package \
+  -destination 'platform=iOS Simulator,name=iPhone 17')
 
 # the UI tests (UITests/), which need a booted simulator and drive real touches
 xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
@@ -98,168 +97,48 @@ team, turns signing on and supplies `IOS_SENTRY_DSN` on the `xcodebuild` command
 `ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN` repository secrets. The app declares
 `ITSAppUsesNonExemptEncryption` false, so a build needs no export-compliance answer.
 
-## The rooms
+## Product and storage boundaries
 
-**Journal** follows the web canon: one continuous scroll, oldest at the top, today at the bottom,
-restore (never animate) to the bottom on open, a gap drawn as a gap, mood and energy optional
-always, and exactly one thing that moves on its own — today's ember.
+Journal owns the daily canvas; gym owns workout entry, routines, the log and Coach. Roadmap opens
+its web surface. Product UI rules live in [design canon](../../docs/design/readme.md); gym's shared
+data rules live in [its backend architecture](../../backend/products/gym/ARCHITECTURE.md).
 
-**Roadmap** is mounted and renders one line about where it works today plus a door to it.
+Manual writing and training work signed out. Device storage is keyed by account, with a separate
+anonymous store. Journal uses versioned page files; gym uses a shelf, set queue and bodyweight
+store. Anonymous work is claimed on sign-in. A store for one account cannot read another's data.
+Legacy files without an account are attributed to the stored session or quarantined.
 
-**Gym** owns the open session — workout mode, the ladder, the keypad and the offline queue
-(`backend/products/gym/ARCHITECTURE.md` §11). The web mirrors and backfills.
-The catalog ships in the app (`DeviceCatalog.seeded`, the same 64 rows as `backend/db/schema.sql`)
-because signed out there is no catalog read to make.
+A launch without a network keeps the last-known account unverified. Rooms reconnect on
+`Account.seat` (user and verification state), and the platform reverifies on foreground. Only a
+confirmed 401 signs out. Offline workout starts keep their original id and timestamp for replay;
+sets drain before and after session claims. Queue refusals use machine codes, never sentence text.
 
-Its containers are the platform's. A `TabView` carries Routines · The log · Coach, each tab holding
-its own `NavigationStack` whose path the room owns (`GymRoom.paths`) — so a screen pushed in one tab
-is that tab's, and a session opening or closing unwinds all three rather than leaving a stack
-standing behind a live logger. Routines and Log seat the capsule leading and the You seat trailing in their
-own toolbars. Coach keeps History and More in its toolbar; More contains Notes, Connected log,
-Account and New chat. The logger keeps the capsule and You, with Finish beside the seat, because a
-live session replaces the tabs. The finish is a `.sheet` over the session it just closed, presented only once the log answers
-that the session is closed, so dismissing it leaves the lifter in the workout they finished.
-Dismissing writes nothing — the session was saved before the sheet appeared — so the one way out is a
-toolbar `Done`, drawn in every state. The receipt's one primary is `Share with Coach`, drawn only when
-Coach can be reached (signed in, and Coach on this deployment): it takes the sheet down, opens a fresh
-conversation on the Coach tab and sends `Check my last session.` through the room's one send path
-(`GymRoom.ask`), so the thread is titled by it and every refusal is drawn as usual. The card's one
-write is its own: `Save routine`, whose refusal is drawn under it because the sheet covers the room's
-line. `Discard session` is the session detail page's and the log row's, never the receipt's. The
-rack's keypad and ladder stay where they are, and the fix sheet raises that same keypad off its
-weight numeral and its rep count, because a correction at the rack is one-handed too; the routine
-target sheet is `TargetEntry.Draft` — a head of three typed fields (Sets · Reps · Weight) over a
-ladder of one row per set, up to twenty, each naming its own reps and load — whose bands are the
-routine's (sets 1–20, reps 1–100) and not the live logger's, which are `KeypadEntry`'s. Both refuse
-in the same four sentences; only the reps band differs. `±` is drawn on a bodyweight movement's load
-fields alone. At the rack the logged column is the slot strip (`LiveLines.slots`): landed sets as
-lifted, the current slot outlined in the accent, the rest faint, and the set line's tail is that
-slot's own.
+Gym's `TrainingStore.start` owns every workout start. The finish sheet appears after persistence;
+dismissing it writes nothing. Workout elapsed and time since the latest set derive from saved
+timestamps and freeze at finish. Routine targets and live rack entry have separate validation
+bands. The device catalogue supplies stable movement ids before an authenticated catalogue read.
 
-An open line — a movement with no set target — says what that means in one sentence,
-`You decide the numbers at the rack.`, drawn in the target sheet while the line is open and **once**
-beneath any list of a routine's movements holding an open row — and while a target sheet stands over
-that list, the SHEET owns the sentence and the list's copy steps aside, so one state is described
-once. The word `open` in a row's target column is what says which rows they are. In the sheet the
-sentence sits ABOVE the head's fields,
-beside `Never logged — these are your numbers.`: everything drawn under a field is that field's own
-note. A list OF ROUTINES carries neither, because it is a list of routines: a card names the routine,
-whether it is `untested`, how many movements it holds, when it was last trained, and what is waiting
-on it. The movements, their targets and that routine's settled history — its newest twenty proposals,
-not every one it ever had — are read one tap deeper, on the routine's own screen.
+Coach requires an account. Questions, request ids, attachment ids and partial replies persist
+under that account; retries retain identity. Stop preserves partial text and completed actions.
+The native picker accepts one image, normalizes it to JPEG within 4096 pixels per edge and 5 MiB,
+and retains a private copy through upload retries. Retained images use authenticated storage.
 
-The movement picker opens on six and then hands over the whole catalogue. The six are this log's own
-— the movements the most of its newest fifty sessions named (`PickerOptions.mostTrained`, counted off
-`store.recent`), topped up in order from the shared opener list so a phone with no log still sees six
-— and only a TYPED query is capped, at seven rows. The fifty-session window is cut once and held for
-the life of the picker (`PickerOptions.window`, held in `@State`), so a claim or a poll landing
-underneath cannot reshuffle the six under a thumb already reaching for one of them. The cut is made
-on the first read that HELD something rather than on the first render: a picker opened in the moment
-before the log answers has frozen nothing, and takes the answer that lands under it. The section is headed
-`The six`; the catalogue under the gap needs no head of its own. Minting a movement the catalogue
-does not hold is drawn OVER this picker rather than in place of it, and the picker owns that step —
-so cancelling comes back to the rows with the typed query still in the field, and a mint that lands
-picks what it made.
+Email sign-in uses a six-digit code; pasted web magic links are also accepted. Sign in with Apple
+is gated by configuration. See [Apple setup](../../backend/AUTH.md#apple-sign-in-activation) and
+[account linking](../../backend/AUTH.md).
 
-Rules that hold across the rooms:
+## Shell
 
-- **Writing works before there is an account.** Every write lands on the device first and is marked
-  owed; signing in *claims* what is there (additive, per page, by HLC stamp). Offline says `offline
-  · saved here`; signed out says `saved on this device`.
-- **Device storage is per seat.** Journal's page cache is one file per seat
-  (`windmill-journal-pages-v2-u.<userId>.json`, `-v2-anon.json` signed out — the `v2` is the scale
-  version, bumped when the shape of a stored page changes); gym's shelf, queue and weigh-ins
-  (`windmill-gym-bodyweight.json`) are one set of rows per seat. A store opened for one seat cannot
-  read another's. The one carry is anonymous work, which follows the person who signs in — the claim
-  replays settings, movements, routines, sessions, then bodyweight last.
-- **Nothing starts by itself.** A gym session begins only on *Start workout* or *Just start
-  logging*. Home is the Routines list (tabs: Routines · The log · Coach); a fresh install offers
-  **Build a routine** as the primary. Every start goes through `TrainingStore.start`.
-- **Tell set-queue refusals apart by their machine `code`, never by their sentence**
-  (`SetQueue.swift`'s `Verdict`): a spent id means re-mint and send again; a finished session and a
-  workout the log no longer holds mean the set can never land; every other 400/409 is terminal in
-  the log's own words.
-- **A launch with no signal is not a sign-out.** The platform keeps the last-known user beside the
-  session secret; `restore()` answers an *unverified* signed-in seat when the log cannot be reached,
-  rooms connect under it off the device copies (`AccountCopy`, `DeviceCatalog`, `LocalLog`), and the
-  seat is asked again on every foreground. Rooms key their connect on `Account.seat` — (user,
-  verified). Only a definitive 401 ends a session.
-- **Offline, Start composes the workout on the device** under the id and instant the attempt wore,
-  so the claim's start is a replay. On connect the queue's owed sets go out before the claim's first
-  start and again after it: a start settles the log's stale open session as a read does.
+`ProductModule` supplies the room, hub line, entry wording and device holdings. The shell owns the
+hub, capsule, account seat and appearance; products own their navigation and palettes. A room with
+`hostsTopChrome` seats `CapsuleButton` and `YouSeat` in its own toolbar. Other rooms receive the
+shell's safe-area inset. `roomChrome` supplies the skin; `roomDepth` reserves the home edge gesture
+for the root, leaving deeper navigation to the product.
 
-**Sign in with Apple is the primary door**, with the emailed six-digit code beside it. Email is the
-only door that keeps one account across phone and browser, and a magic link pasted from the web is
-how a Hide My Email account folds into an existing one (`backend/AUTH.md`). Apple is gated off
-until it is configured — see `docs/IOS_APPLE_SIGNIN.md`.
-
-## The shell — hub + capsule
-
-Built to the Shell page of the Windmill · Design System Figma file (`qoOwNbWOYE1GFi0yR5uGY2`).
-
-- **The shell owns** the hub and its card order · the capsule (38pt, top-left, one lane every app
-  reserves) · tap = switcher, edge-swipe right = home at the room's root and nowhere deeper, nothing
-  else · the You seat, last slot in
-  every app's bar, past a hairline · You and Windmill One, always clay, One reachable only from You.
-- **Each app owns** its nav bar, tabs and gestures below the capsule · its skin, including a dark
-  default · its own settings · the one line it lends the hub.
-
-Two rules order the hub: doors sit **low**, so the registry is written most-important-first and
-rendered bottom-up, making reach order the priority order; and **live work outranks planned work**,
-so a product whose `hubLine` is `running` sinks below everything else. That is the only rank change
-the hub makes. The first-run entry question orders by registry, being read top-down as a question.
-
-The capsule lane is reserved with a safe-area inset rather than an overlay, so an app cannot forget
-it — unless the room declares `hostsTopChrome`, which says it draws a bar across the top itself and
-seats `CapsuleButton` leading and `YouSeat` trailing in that bar's own toolbar. Gym does; journal and
-roadmap do not. A room says what colour it is with `roomChrome(_:)` and the shell dresses the capsule
-to match.
-
-A room also says how deep it stands, with `roomDepth(_:)` — written once, at its root. The shell reads
-it to decide what its leading edge means: home at 0, the room's own back below it, where the shell's
-gesture is not attached at all. `UITests/RoomEdgeGestureUITests.swift` is what settles that on a
-simulator, because only a real touch can.
-
-**Appearance** (You → Light · Dark · System) is the one place light-or-dark is chosen, for the whole
-app including every room. A room owns its palette but not the choice. The shell states the scheme
-**twice** and both are load-bearing: `preferredColorScheme` travels up to the window (flipping the
-UIKit traits and every adaptive token) but does not write `\.colorScheme` back into the subtree that
-declared it — only the environment override reaches the rooms. No call site branches, because the
-role tokens are aliases onto an *adaptive* neutral ramp, the same structure `tokens/colors.css` uses
-under `[data-theme="dark"]`: `surfaceCanvas` IS `neutral50`, in both skins.
-
-## The journey
-
-Built to `docs/design/guidelines/superapp-shell.md` §9: cold launch → one question → straight into
-that app → the first real thing → the house, once.
-
-- **The one question** is the first screen, once ever: three doors in plain verbs, each in its
-  product's skin, one skip.
-- **A door says what it needs before it is chosen.** Roadmap's card carries that under its own
-  sentence (`ProductModule.caveat`, read off `presence`); a room here with a wall in it says so in
-  `EntryDoor.caveat`. Journal and gym have none.
-- **Launch reopens the last room you stood in.** Going home clears it.
-- **The house fires on the first capsule tap after something real exists**, and never again.
-- **Signed-out You states what is at stake** — "on this device · Journal · 2 pages". Products
-  holding nothing are absent rather than shown as zero.
-- **Journal's one teaching card** appears after the first page is saved and retires when answered.
-
-Active AI requests require an account. Roadmap AI assistance is being redesigned; its allowance is not announced yet. Automatic Journal echoes are free and outside the active AI allowance. Everything done by hand works signed out. Roadmap's "Plant it" opens the door at that tap and resumes after
-(`docs/design/roadmap/guidelines/auth.md` §2). Gym's `Connect a tool` reads `Sign in first` while signed
-out and opens You; nothing resumes after the sign-in (see Known gaps).
-
-Coach uses one editable renderer for fresh and reopened conversations. History and message pages
-load older rows explicitly. Before sending, the device atomically saves the question and request ID
-under the signed-in account; retries retain that identity through timeouts and refusals. Replies
-stream as authoritative revisions. Stop preserves partial text and completed actions; a new message
-continues after a stopped reply. Reading earlier messages pauses automatic scrolling and exposes
-Jump to latest. Long press either speaker’s text for Copy; accessibility services expose the same action.
-
-Coach accepts one photo with an optional caption. The native picker normalizes images to JPEG, at
-most 4096 pixels on either edge and 5 MiB. A private device copy and upload ID stay with that account’s
-conversation draft through cancellation, failure and retry. Sent images reopen through authenticated
-storage. Photo uploads offer progress, Cancel upload, Retry upload and Remove photo. Durable routine
-creation results remain visible even when an answer fails or is stopped.
+The hub renders registry priority from the bottom and gives running work the lowest seat. Launch
+restores the last room. The first-use question and house introduction are device-local, once-only
+state in `FirstRun.swift`. Appearance applies both `preferredColorScheme` to the window and an
+environment override to the rooms; adaptive platform tokens supply their colours.
 
 ## Universal links
 
@@ -273,7 +152,7 @@ paste field uses. The link is `https://windmill.works/#/auth?token=<secret>`
 
 What the domain needs:
 
-1. **A paid Apple Developer team** ([Apple team configuration](../../docs/IOS_APPLE_SIGNIN.md)) with **Associated Domains**
+1. **A paid Apple Developer team** ([Apple team configuration](../../backend/AUTH.md#apple-sign-in-activation)) with **Associated Domains**
    ticked on the `works.windmill.app` App ID. A free personal team cannot use this capability, so
    signing for a real device needs the paid team. Simulator and CI builds are unaffected — signing
    is off there, so the entitlement is never applied.
@@ -319,22 +198,15 @@ be tested without the file on the domain and a signed build.
 - **No launch asset.**
 - **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
   of three products have no phone-side state to report.
-- **Gym's drag-to-reorder, the jump sheet's swipe-to-drop and the refusal row's swipe-to-dismiss are
-  built but never performed.** No synthetic touch covers those three yet. The gestures that ARE
-  driven on a simulator by `WindmillUITests`: the shell's edge-swipe home, the set row's
-  swipe-to-delete and its refusal of a full swipe, the logger's horizontal walk between movements,
-  and the log row's long press.
+- Native gesture acceptance is incomplete. `UITests/` covers shell edge navigation, set deletion,
+  movement paging and log-row long press; routine reorder, jump-sheet drop and refusal dismissal
+  still need direct acceptance.
 - **Dynamic Type coverage is partial.** Routine list names and metadata, workout clocks and the
   contextual Coach ceiling use scalable type. The workout clock pair wraps vertically when needed.
   Other gym text still uses fixed point sizes, including the routine editor, so the room remains
   mixed at accessibility sizes.
-- **The gym tab bar's selected state is the system's, not the room's.** On iOS 26 the tab bar paints
-  its own labels — measured #FFFFFF selected against #F6F3FA unselected, **1.10:1** — and ignores
-  `.tint`, `UITabBarAppearance` and `unselectedItemTintColor` alike. What separates the selected tab
-  there is the capsule the system draws behind it (#47444A on #262328, 1.62:1) and the filled symbol.
-  The room applies no tint of its own to the `TabView`: `.tint` is an environment value, so one put
-  there for the bar repaints every control in all three tabs and every sheet they raise, and it buys
-  nothing on that OS. The room's `.tint(GymSkin.accent)` holds everywhere instead.
+- The gym tab bar uses the system selected state; selection contrast and accessibility need native
+  acceptance. Product tint stays on the room rather than the entire `TabView`.
 - **Quarantined pages and workouts have no door.** A device file written before per-seat storage is
   attributed to the session the device was holding; a phone holding none quarantines them (journal:
   `windmill-journal-pages-v2-unclaimed.json`; gym: a shelf and queue key no seat can name). Releasing

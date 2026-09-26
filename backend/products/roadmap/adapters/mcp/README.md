@@ -128,8 +128,8 @@ both speak JSON-RPC 2.0, protocol version `2025-06-18`:
     minutes, refreshed on use.
   - `GET` — would open a server→client SSE stream; there is none, so `405`.
   - `DELETE` — ends a session.
-  - The `Origin` header is validated (DNS-rebinding protection); a client that sends no Origin
-    is not a browser and passes. `windmill_mcp_http` also serves `/healthz`; in `windmill_server`
+  - `POST` validates a supplied `Origin` header; requests without one pass that check.
+    `windmill_mcp_http` also serves `/healthz`; in `windmill_server`
     the liveness probe is the app root (`deploy/docker-compose.yml`).
 
 The deployed HTTP transport is `windmill_server`: `main.cpp` registers `McpHttpEndpoint` on the
@@ -426,3 +426,21 @@ owner. `WINDMILL_MCP_USER` is the fallback identity only.
 - **Clock.** An MCP write is stamped by the tree's room clock (`TreeRoom::nextStamp`, wall time
   from the `Clock` port), the same HLC domain a socket write joins, so the two are directly
   comparable and can never collide on a stamp.
+
+## Open work
+
+- `McpServer` defaults to `2025-06-18` and echoes a requested version without negotiating a
+  supported set. `McpHttpEndpoint` reads `method` before the engine's type guard and ignores the
+  raw JSON parser's success flag. Validate the envelope before dispatch.
+- Session DELETE lacks POST's authentication and Origin checks, and session entries store expiry
+  without caller ownership. These are source findings, not reproduced transport exploits.
+- Tool lists are grant-filtered; combined initialize instructions and static roadmap resources
+  are not. HTTP registers roadmap and gym; stdio registers roadmap only.
+- Legacy tools do not all expose output schemas and structured results. Extend both from one
+  result object. Description-bearing legacy read pages still allow 4 MiB; exact selected reads
+  provide the smaller bounded path.
+
+Contract tests and the wire corpus check software behavior, not model tool selection or coaching
+quality. Actual-model exploration remains manual and local with an explicitly supplied key; useful
+checks include target selection, scope, retries, concurrent edits, read coverage and faithful
+explanations. No model success-rate or token saving has been measured.

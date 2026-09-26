@@ -977,40 +977,17 @@ flow. This intake guidance does not block recording supplied workout facts.
 
 ## 10. Composition
 
-- **CMake:** `windmill_gym` = the `domain/*.cpp` plus the seven `application/*Service.cpp`, linking
-  `windmill_platform PUBLIC`; adapters + `routes.cpp` folded in via `target_sources` under the
-  `Drogon_FOUND AND libpqxx_FOUND` guard; `windmill_gym` on the four `target_link_libraries` lines
-  (domain tests, server, adapters tests, mcp tests). Tests are **appended to the existing executables**
-  — a new binary means editing the Dockerfile's `--target` list.
-- **Dockerfile:** untouched. `windmill_server` statically absorbs the lib; `schema.sql` rides at
-  `/app/db/schema.sql`.
-- **main.cpp:** the seven Pg repositories, the seven services, `GymTools` and `GymDeps` (which also
-  carries the system clock, for `BodyweightApi`'s forecast gate). The core is
-  built **up with the MCP surface**, because the composite host is constructed before the server takes
-  traffic and gym's tools have to be in it (`ToolModule{*gymTools, gym::gymInstructions()}`); the
-  `gym::registerRoutes(app, gymDeps)` mount stays down with the other products'. One core, two doors:
-  the tools and the routes hold the *same* services, so a rule cannot be true on one surface and not
-  the other. `appBaseUrl` exists to turn a minted share token into a URL; `*tokens` exists to mint that
-  token from the same mint that makes a session cookie. Tending is deliberately NOT given the
-  composite. Gym arms no ticker, reads no env var and contributes nothing to the mail list.
-- **`PgAccountFootprint`'s owned list** carries `gym_sessions`, `gym_sets`, `gym_set_revisions`,
-  `gym_routines`, `gym_proposals`, `gym_proposal_changes`, `gym_session_shares`, `gym_ask_threads`,
-  `gym_ask_turns`, `gym_ask_generations`, `gym_routine_creations`, `gym_notes`, `gym_bodyweight` and `gym_exercise_names` / `gym_exercise_aliases` on
-  `user_id`, plus
-  `gym_exercises` on `created_by`. That last column is `created_by` and **not** `user_id` precisely
-  because the 64 seeds carry it NULL — a probe matching the seeds would report every account non-empty
-  and break the delete door. `gym_preferences` is deliberately off the list.
-- **Tests** live in `test/products/gym/` mirroring the tree, with full assertions. `GymToolsTest` rides
-  in `windmill_mcp_tests`; the rest are in the domain and adapters binaries. Targets unique to this
-  surface: the whole (tool → level) table pinned in order, `tools/list` shrinking to exactly what a
-  grant named, a stranger refused by the same one fact an absent row gets, a replayed client-minted id
-  answering with the stored row, and every refusal sentence pinned whole. Pure targets: every
-  `autoCloseAt` branch; `Set` bounds (negative weight legal, reps 0 illegal, unknown kind thrown);
-  `Exercise` bounds; `Routine` bounds; start idempotency (replay, double-tap two-id join, stale
-  auto-close on start, the join that keeps the open session's own plan, the replay and join that
-  outlive a deleted routine); append numbering; strict-parse/clamped-read of `SetKind`; the plan
-  snapshot's round trip. Pg mapper rows are `template <typename Row>` (the pqxx `row_ref`/`row`
-  mac-vs-CI split).
+`windmill_gym` links the domain and application layers to `windmill_platform`; CMake adds adapters
+and routes when Drogon and libpqxx are available. Tests live in `test/products/gym/` and join the
+existing domain, MCP and adapter executables. Build and portability rules live in
+[backend rules](../../CLAUDE.md).
+
+`platform/infra/main.cpp` builds the repositories and services once, shares them between `GymTools`
+and `GymDeps`, and registers the tools before accepting traffic. The composition root supplies the
+clock, app URL and token generator. Gym owns no mail sweep.
+
+`PgAccountFootprint` checks gym-owned rows by `user_id`, and custom exercises by `created_by` so
+shared catalog seeds do not count as account data. Preferences do not count toward the footprint.
 
 ## 11. Client synchronization
 
@@ -1040,37 +1017,13 @@ services. Surface behavior and local storage belong in the [iOS](../../../apps/i
 `ports/AskAgent.h` · `application/AskService` · `adapters/llm/AnthropicAsk` · `adapters/http/AskApi` ·
 `domain/ReadReceipt` · `domain/Thread` · `platform/adapters/llm/AgentLoop.h`
 
-A lifter with an agent of their own connects it over MCP; a lifter without one opens **Coach**, which
-asks the same questions of the same tools. Two doors, one core, differing in transport, prompt and who
-pays. The room is named for what the paid-line copy has always called it (`terms.html:94`,
-`privacy.html:103`, `YouScreen.swift:41`). **The word names the room and nothing else** — the share a
-lifter hands to a human coach is *"Share this workout"*, because *session* already names an auth
-session and one visit to the gym.
+Coach uses the same services and tools as external MCP assistants through a restricted host.
+Machine identifiers retain `Ask` (`AskService`, `/v1/gym/ask`, `ask-*` error codes); user-facing
+copy calls it Coach. Clients preserve server error text and branch on machine codes.
 
-The identifiers still spell it `Ask` — `AskService`, `AskApi`, `gym_ask_threads`, `/v1/gym/ask`, the
-`ask-*` verdict codes, the wire's `from: "ask"` and the `door: "ask"` provenance. That is deliberate:
-those are machine tokens, and renaming a route and four tables buys nothing a lifter can see. The
-**strings** name the room Coach, and since a client must never rewrite server text, `AskApi` sends
-these bytes to all three clients (the typographic apostrophe, everywhere):
-
-| status · code | sentence |
-|---|---|
-| 400 | `that isn’t a conversation Coach can answer` |
-| 409 `ask-thread-taken` | `that conversation id is already in use — start a new one` |
-| 400 | `ask something about your training` |
-| 400 | `that question is longer than Coach takes` |
-| 400 | `that question has characters Coach can’t store` |
-| 409 `ask-session-open` | `finish your workout first — Coach reads a log that has stopped moving` |
-| 429 `ask-daily-limit` | `the next question frees up in a couple of hours` |
-| 429 `ask-out-of-budget` | `this account has reached its AI ceiling for the last 30 days. Coach will answer again as that window rolls on` |
-| 503 `ask-busy` | `Coach is busy. Try again in a moment` |
-| 503 `ask-not-configured` | `Coach isn’t part of this Windmill. Your log is still yours to read.` |
-| 502 | `Coach didn’t answer. Try again in a moment` |
-| 401 | `sign in to open your training log` |
-
-There is no lifetime conversation ceiling. The account ration is ten questions per day with a
-three-question burst; the temporary limit message states the retry path. The JSON wire's `from` enum
-is `"lifter" | "ask"`. The design canon is `docs/design/gym/briefs/09-coach.md`.
+The [Coach contract](../../../docs/gym-coach-contract.md) defines request identity, conversations,
+streaming, pictures, Stop and durable note saves. The design canon is
+[the Coach brief](../../../docs/design/gym/briefs/09-coach.md).
 
 ### 12.1 The narrowing
 
@@ -1235,14 +1188,15 @@ edits/deletion and recover an uncertain action without resurrecting the routine.
 
 ## 13. Open items
 
-- The dogfood gate — 8 consecutive real sessions without falling back to another app, prefill
-  right on set one in ≥6 — has never been run. Its capture surfaces are `apps/android` (a sideloaded
-  APK off a GitHub Release) and `apps/ios` (runnable from Xcode).
-- iOS store distribution is blocked on signing, not code: `apps/ios/project.yml` sets
-  `CODE_SIGNING_REQUIRED: NO` with no `DEVELOPMENT_TEAM`, and the declared Associated Domains
-  entitlement needs a paid Apple team. `apple-identity` (`backend/AUTH.md`) is a hard prerequisite:
-  Sign in with Apple without `user_identities` forks accounts on the first lifter who taps *Hide My
-  Email*.
-- Merging a typo'd custom movement onto a catalog id is an UPDATE of `gym_sets.exercise_id`, unbuilt.
+- Native dogfood acceptance requires eight consecutive real sessions without another app, with
+  correct first-set prefill in at least six. Distribution and signing requirements live in the
+  [iOS](../../../apps/ios/README.md) and [Android](../../../apps/android/README.md) runbooks.
+- Merging a custom movement onto a catalog ID is unbuilt.
 - Some aggregate read receipts lack per-session identity (`MovementTop` and its store projection).
-- Hanging the `additionalProperties: false` check off `ToolDeclaration`, so MCP and Coach read one copy.
+- MCP `get_stats` loads history before movement filtering and has no date window; `list_sessions`
+  exposes `before`/`beforeId` without a continuation marker; `get_last_times` queries per exercise.
+- Native set queues remint IDs on `session-id-taken`, which also covers an owned deleted session
+  with a durable receipt. A stale start can therefore become another workout under a fresh ID.
+  The queues need a distinct terminal outcome or reconciliation rule.
+- Coach duplicates the unknown-argument check instead of using the platform's `ToolDeclaration`
+  validation shared by MCP and roadmap assistance.

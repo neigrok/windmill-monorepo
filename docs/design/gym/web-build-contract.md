@@ -4,6 +4,10 @@
 
 Acceptance requires running local web with live fixture data, at 1440 and 390, checked against each board. A code change or a passing unit test alone does not qualify a board as Built. The status-node column identifies the instance to update after that evidence exists.
 
+The form rules live in [web-form.md](web-form.md); history, sharing and synthetic data live in
+[log-exploration.md](log-exploration.md). The page groups Start, Components, Plan, Record,
+Coach & Notes, and Share. Superseded boards leave the page.
+
 ## Shared frame and measurements
 
 All authenticated boards inherit the shared frame. The shared app header is 52px high, with a 30px Windmill mark, centered Home/Roadmap/Journal/Gym links and a 30px account avatar. Side insets are 16px desktop and 12px at widths up to 480px. Routines, The log and Coach sit in a 64px bottom panel with a subtle top border; their group is centered horizontally, with 32px gaps and 50px touch targets. Active controls use brand ink, inactive controls faint ink. Pushed pages retain the bottom navigation. The runtime header consumes the top safe-area inset; the bottom panel consumes the bottom safe-area inset. Content scrolls in the space between them.
@@ -68,10 +72,9 @@ plain/tinted contrast pairs are canvas 5.92/5.13, card 6.76/5.79 and raised 5.25
 
 Feedback follows web-form.md: row hover 150ms, underline 180ms, number change 280ms, add 280ms, remove 180ms, saved readout 900ms, proposal transition 280ms. Reduced motion preserves colour changes and removes movement.
 
-## Implementation decisions
+## State requirements
 
 - Two boards explicitly depict Daylight Routines (`476:1082` and `476:1115`). Every other board is exported and compared using both Instrument and Daylight mode tokens. The shared shadow and warning bindings added for content parity are local to the Gym file and are not published.
-- The implementation uses current mode tokens in both themes. Temporary Figma mode overrides are restored after exporting the references.
 - The Routines open menus in Instrument and Daylight contain Log past followed by Delete.
 - Literal catalog spelling is current data: the editor/default fixture says Chin Up while some record fixtures say Chin-up. Do not rename backend records to imitate fixture typography.
 - Native time inputs keep the user's system clock convention while editing. Backfill shows its selected value in a 24-hour resting label and the stored-hour disclosure.
@@ -190,5 +193,3 @@ status instance; the acceptance column defines the state to compare.
 | Share / Setup / Entire history · live / 390 | `513:2054` | **Ready** · `804:5991` | Sharing | Entire history · live scope controls; include/exclude disclosure; Preview before create. |
 | Share / Setup / Entire history · snapshot / 1440 | `508:1353` | **Ready** · `804:5976` | Sharing | Entire history · snapshot scope controls; include/exclude disclosure; Preview before create. |
 | Share / Setup / Entire history · snapshot / 390 | `508:1407` | **Ready** · `804:5979` | Sharing | Entire history · snapshot scope controls; include/exclude disclosure; Preview before create. |
-
-## Runtime evidence gate
