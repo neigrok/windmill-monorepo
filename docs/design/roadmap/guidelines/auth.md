@@ -11,7 +11,8 @@ staying signed out never blocks building one.
 ## 1. The method set
 
 - **Magic link leads.** "Email me a link" on the web, "Email me a code" on the native
-  apps — same door, same mint, the credential shaped for the surface (§3).
+  apps — same door, same mint, the credential shaped for the surface (§3). On iOS, Continue with
+  Apple leads and email is the second door (`../../guidelines/superapp-flow.md` §6).
 - **Google is a quiet secondary** — a ghost button below the primary, rendered as Google's
   official button. Same account either way, keyed by email.
 - **Passwords never exist.** No reset flows, no strength meters.

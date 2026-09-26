@@ -28,12 +28,13 @@ Use minutes/seconds below one hour and hours/minutes/seconds thereafter without 
 
 ## Coach conversation
 
-The initial room opens directly to the composer. Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. Do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
+The initial room opens directly to the composer, with one exception: on iOS, Gym's first open with no routines draws **Set up your routines**, its three starters and its two escapes above the composer, and the starters leave after the first send ([Coach](briefs/09-coach.md)). Keep Coach as the native title, History as a navigation action, and a 48 dp/44 pt More menu. More contains Notes, Connected log and Account, and New chat when a conversation exists. Beyond that first open, do not stack greetings, empty-state headings, repeated capability text, suggestions, connection pitches or permanent correction instructions. Composer placeholder: “Ask about your training”.
 
 The composer is fixed above the navigation/keyboard inset while the conversation scrolls. Notes/connection details remain available in their destinations. Show allowance, access, connection and generation failures when they affect an action, with a concrete recovery. Preserve factual read receipts and creation/proposal results; optional tool detail stays collapsed. Keep existing human Apply semantics on each surface. Coach may create a routine when requested; routine edits continue through their existing proposal path. The owner's supplied prompt is preserved verbatim in the Coach implementation. Coach may also append useful new user-provided insights to Notes; existing notes remain under the user's edit and delete controls.
 
 | State | UI and action |
 | --- | --- |
+| First open (iOS, no routines) | Set up your routines, three starters, Just log · Build it myself, and the composer; signed out, one quiet “5 questions without an account.” line |
 | Empty | Empty reading region and composer; no unsolicited message |
 | History | Retained conversations; selecting a row opens that same editable conversation; ordinary rows show a date, and creation/proposal rows add one concise outcome |
 | Resumed | Ordered existing messages, unchanged conversation identity, active composer, New chat in More |
@@ -45,14 +46,15 @@ The composer is fixed above the navigation/keyboard inset while the conversation
 | Generating | Incremental text, Stop in Send’s existing target; no raw tool trace or internal reasoning |
 | Interrupted | Preserve partial answer; “Response interrupted.” and Retry; completed action receipts remain |
 | Stopped | Preserve partial answer; “Response stopped.”; completed actions are not described as undone |
-| At limit | Server’s accurate refusal and available recovery; New chat never implies an account limit resets |
+| At limit | Server’s accurate refusal and available recovery; New chat never implies a limit resets |
+| Allowance used (iOS, signed out) | “You’ve used the 5 questions Coach answers without an account.” once, then Continue with Apple · Use email instead; draft and conversation kept |
 | Routine created | Factual “Routine created” receipt with the actual routine name and Open routine |
 
 Copy returns only the message's visible textual content, preserving line breaks. It excludes timestamps, hidden metadata, receipt controls and image filenames. Do not offer an empty text Copy for an attachment-only message. Partial text remains copyable. Proposal actions stay separate from message context menus.
 
 Android history omits the redundant Your conversations caption and ordinary Read only/no changes proposed status. “Read only” must not imply a retained conversation cannot continue. A created routine has one outcome fact: “Created {routine}” when named, otherwise the actual count of routines created. Preserve meaningful proposal outcomes and conversation receipts; do not repeat the same state as both a badge and a subtitle.
 
-Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Sent images reopen from private authenticated storage. Do not fake an image asset or promise unsupported file types in the drawing.
+Use native photo pickers and menus. The attachment control is an accessible Add photo icon. Send accepts a photo with optional text. An attachment-only first conversation uses Photo as its neutral title. Signed in, sent images are kept privately with the account's conversation and reopen from authenticated storage. Signed out on iOS, a photo is sent to Coach to read and stored only on the phone; the server keeps no copy. Do not fake an image asset or promise unsupported file types in the drawing.
 
 While streaming, follow new text only when already at the end. Reading older messages preserves position; a quiet Jump to latest affordance appears when needed. Retry/reconnect reattach to the existing logical turn, preserving ordered text and completed tool effects. Stop stops generation and does not reverse a completed routine creation or Apply.
 

@@ -55,12 +55,18 @@ receipt, opens a fresh conversation and sends that exact question through the no
 Show the normal waiting, allowance and failure states. There is no separate finish-receipt quota;
 [Coach](09-coach.md) owns the current limits. The user action starts the conversation.
 
+Signed out on iOS, the primary is **Keep this log** under *This log is only on this phone.*; it
+opens the Keep sheet (`../../guidelines/superapp-flow.md` §6). Signed in, no Keep offer is drawn.
+iOS offers Apple Health on the receipt as one switch, *Add this workout there too*; turning it on
+raises Apple's Health sheet.
+
 **Share this workout** is the read-only human-sharing action on session detail and the Log row;
 it does not appear beside Share with Coach on the receipt.
 
 iOS has one toolbar **Done** plus native sheet dismissal. Android uses Back, scrim and handle.
-Phones need no Keep it button: finishing has already kept the workout. Web's slight-session branch
-retains its **Keep it** exit and **Just keep the session** declines only the routine offer.
+Phones need no Keep it exit: finishing has already kept the workout, and iOS's Keep this log is the
+sign-in offer, not that exit. Web's slight-session branch retains its **Keep it** exit and **Just
+keep the session** declines only the routine offer.
 
 ## Save as routine
 

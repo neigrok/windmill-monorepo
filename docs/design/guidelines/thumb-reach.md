@@ -13,7 +13,7 @@ Use logical units (CSS px, iOS pt, Android dp), actual safe insets and the small
 
 | Band | Where | Holds | Never holds |
 |---|---|---|---|
-| **Top** — identity | safe top → safe top + 60 | the shell capsule, the screen title, one context/meta line, a back affordance | a primary button, a destructive button, a required input |
+| **Top** — identity | safe top → safe top + 60 | the room menu, the screen title, one context/meta line, a back affordance | a primary button, a destructive button, a required input |
 | **Middle** — the reading band | between identity and reach bands | the content, and any explanatory copy, **vertically centred when the content is short** | the primary action, if the body does not fill it |
 | **Bottom** — the reach band | 230 units above the bottom safe inset; controls clear the tab rail | primary action, secondary action, the input being filled, keypads, steppers, ladders | long explanatory prose |
 
@@ -29,7 +29,7 @@ tired, one-handed, sits below it.
   of a decision; the buttons that commit it live in the bottom band, pinned, so they do not
   move when the body scrolls.
 - **A primary or destructive action in a top corner.** With a phone in one hand there is no
-  top-right. A **destination** is not an action: the shell's capsule and the You seat live there, and
+  top-right. A **destination** is not an action: the room menu and the account button live there, and
   so may a planning door the lifter is sitting down to take — never one they need mid-set.
 - **A destructive action above the reach band** — it belongs at the bottom too, but as the
   *secondary* slot, never as the widest target.

@@ -1,122 +1,164 @@
-# The journey — entry, anonymous use, and per-app onboarding (S2)
+# The journey — the iOS first run, signed out and signed in
 
-Companion to `guidelines/superapp-shell.md`. That doc rules the chrome between the apps; this
-one rules how a person gets in, what they can do before they have an account, and what each
-app's first run must be. The web product's auth conduct (`roadmap/guidelines/auth.md`) is the
-parent; iOS only adds where the first run differs on a phone.
+Companion to `guidelines/superapp-shell.md`, which rules the frame between the rooms; this doc rules
+how a person gets into the iOS app, what works before they have an account, and what each room's
+first run must be. The drawings of record, including the state matrix and the flow map, are the Figma
+page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+
+Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is
+`roadmap/guidelines/front-door.md` and `starter-quests.md`; Journal's first run is
+`journal/onboarding.md`; Android's gym is `gym/android-delivery.md`.
 
 ---
 
 ## 1. The principle
 
-You arrive, you make one real thing, and only then does the app admit it has three rooms. An
-account is an *adoption* of what you already made, never a gate in front of making it.
+Open on a choice, not a pitch. Make one real thing; only then does the app offer to keep it. An
+account is an *adoption* of what is already on the phone, never a gate in front of making it.
 
-First launch is five beats: open → one question → the app → the first artifact → the house,
-once. Signing in is a sixth beat that may never happen, and the product is complete without it.
+**Login is never forced, so signed out and signed in are two first-class states.** The state matrix
+lists every screen in both states; where they differ, both boards are drawn side by side.
 
-## 2. Where the journey starts
+## 2. Launch
 
-**Not the hub.** First launch shows one question — "What do you want to do first?" — in three
-plain verbs (plan something big · write tonight · log a workout), plus a skip.
+- **The launch screen is the first screen's ground colour, nothing else.** No logo, no splash.
+- **A cold launch with no last room on the phone** — the first launch, or the first after signing
+  out — opens **Where to start?**.
+- **A signed-in cold launch skips it** and reopens the last room. A signed-out launch after the
+  first reopens the last room too.
+- A deep link opens its room directly.
 
-- **One tap goes straight into that app's first run.** The chosen room is remembered as the
-  launch destination.
-- **The skip ("just show me around") lands on the hub**, which is then allowed to be empty.
-- **No splash, no value proposition, no carousel.**
-- **No account, no permissions on this screen.**
-- **Returning launches reopen the last room you stood in**, signed in or not. The hub is a
-  place you go, never a toll gate.
+## 3. Where to start?
 
-## 3. Signed out is a first-class state
+> **Where to start?**
+> Two rooms, no account needed. Switch any time.
 
-- **Everything done by hand works**: all three apps, unlimited editing, every read, and every
-  device feature that doesn't require an identity. Nothing is disabled, dimmed, or
-  countdown-limited. Account-metered AI assistance is requested separately and needs an account (`superapp-shell.md` §9a).
-- **Local is the truth** until a claim happens; the shell states this **once**, in You: *"your
-  trees, entries and sets live on this device."*
-- **The You screen is the only unprompted mention of signing in.** Account verbs the user
-  initiates (share a tree, use a second device, ask AI, restore a purchase) open the same door
-  and **resume the action afterwards**.
-- **Never**: on launch · on a timer · after N edits · on exit intent · as a banner · as "save
-  your work". **Nothing counts declines** — no cooldowns, no escalation, no third-ask copy.
-- **Windmill One is not shown while signed out.**
-- Sign-out keeps local copies editable, no confirmation dialog (`auth.md` §4).
+- **Two room doors, Journal and Gym**, each in its room's own colours with one line: *Write
+  tonight's page* · *Log today's training*. One tap opens that room's first run and makes it the
+  last room.
+- **A quiet Sign in** under the doors, for someone returning on a new phone (§4).
+- **No account wall, no skip, no permissions, no carousel.**
+- After a sign-out it adds one line, once: *Signed out. Nothing of yours is left on this phone.*
 
-**Every first run reaches a real artifact with zero agent calls.** Roadmap: starter quests +
-blank tree. Gym: the three ready routine templates. Journal: the cursor. The template path is
-the floor, not the escape hatch — if the agent is unavailable for any reason, the first run
-still completes.
+## 4. Returning on a new phone
 
-## 4. The claim
+Where to start? → **Sign in** → a sheet, *Pick up where you left off* · *Your pages and log come back
+to this phone.*, with the same door as Keep (§6) → **Bringing it back**.
 
-Mechanics are `auth.md`'s: one door, no passwords, adoption is additive and uncelebrated. The
-door's order differs on iOS:
+- **Bringing it back shows real per-room counts** as records arrive (*64 of 142 pages*,
+  *31 of 38 workouts*), with a system activity indicator per row. Never a fake progress bar.
+- **The last room — the one holding the newest record — opens as soon as its own data is in**,
+  and says so (*Opening Gym as soon as it's ready.*). The other room keeps arriving behind it.
 
-1. **Sign in with Apple leads on iOS**; "Email me a code" is the quiet secondary below it, and
-   takes the primary treatment when Apple sign-in is not configured. **Google does not appear in
-   the native app at all** — its flow is a browser redirect the app does not implement. The web
-   door leads with the magic link, Google secondary: same account, keyed by email.
-2. The door is a sheet, opened from You or from the action that needed it.
-3. On success, the sheet dismisses **back into what the user was doing**.
-4. Local work becomes the account's by union; nothing merges by content.
+## 5. Signed out is a first-class state
 
-## 5. Onboarding, per app
+- **Everything done by hand works**: both rooms, unlimited writing and logging, every read, and
+  every device feature that needs no identity. Nothing is disabled, dimmed or countdown-limited.
+- **What is made signed out lives on this phone**, and the product says so where it is true: the
+  Keep offer (§6) and You (*Not signed in · Everything lives on this phone*, with what the phone
+  holds).
+- **Coach answers 5 questions per phone without an account**, once, never refilling
+  (`gym/briefs/09-coach.md`).
+- **Windmill One is never shown signed out.**
+- **The only unprompted mentions of signing in** are Where to start?'s quiet Sign in, the Keep
+  offer after the first real thing, and You. An account verb the person starts — connecting a
+  tool, Notes, a Coach question past the allowance — opens the same door and **resumes the action
+  afterwards**.
+- **Never**: on launch · on a timer · after N edits · on exit intent · as a banner · as "save your
+  work" · in urgency colours. **Nothing counts declines.**
 
-Each app owns its own first run. All three follow the same three rules:
+## 6. Keep — the sign-in door
+
+**Sign-in is offered only after the first real thing exists, as a Keep offer the person opens
+themselves.**
+
+- **Where it appears, signed out:** a quiet *Only on this phone* · **Keep it** row under a kept
+  journal page and under the routines Coach created; on the gym finish receipt, **Keep this log**
+  under *This log is only on this phone.*
+- **The Keep sheet names the value in the room's words** — the work is backed up and open on the
+  web. In Journal: *Keep your pages* · *They live only on this phone. Sign in to back them up and
+  open them on the web.*
+- **Continue with Apple leads** — the system button, white on dark, black on light. **Use email
+  instead** is the second door: one `.oneTimeCode` field, the address with **Change**, *It works
+  once and lasts 15 minutes.*, and an honest resend countdown. Google does not appear in the iOS
+  app.
+- **The footnote guards against a forked account:** *Signed up with email before? Use email, so
+  it stays one account.*
+- **On success the sheet dismisses back into what the person was doing.** The phone's work joins
+  the account by union; nothing merges by content.
+- **Signed in, no Keep offer is ever shown.** A quiet *backed up* takes its place: the journal
+  page's meta line ends *backed up*, the room menu's You row reads *<name> · backed up*, and You
+  shows Backup with its state.
+
+## 7. Sign out
+
+From You, signed in: **Sign out** raises one alert — *Sign out?* · *Your pages and log stay in
+your account and leave this phone.* · **Cancel** · **Sign out** (destructive). Confirming returns to
+Where to start? with its signed-out line (§3).
+
+## 8. Each room's first run
 
 > **One prompt · one tap to something real · nothing to dismiss.**
 
-- The first run **is the real surface** with its opening move filled in. No tours, no coach
-  marks, no progress dots, no "you're all set" screen.
-- **At most one screen** before real work.
-- **No permission is requested before the feature that needs it** — notifications are asked for
-  when a reminder is set, never during the first run.
-- Every setting an app might want at setup is **inferred, deferred, or carried inline** with
-  the first real action.
-- Onboarding copy **retires after the first artifact** and never returns.
+- **At most two screens before the core action**: Where to start?, then the room.
+- The first run **is the real surface** with its opening move filled in. No carousels, no progress
+  dots, no "you're all set" screen.
+- Every first run can reach a real thing with zero agent calls: beside Coach's starters, Gym keeps
+  **Just log** and **Build it myself**.
 
-| App | The prompt | One tap to | Carried inline | Retires when |
-|---|---|---|---|---|
-| **Roadmap** | "What are you working toward?" — one sentence, three example chips, blank-tree escape | a planted tree | nothing | the tree exists |
-| **Journal** | The cursor, already blinking, with "How was today?" as placeholder | writing; mood/energy stay optional chips | the privacy fact, one line | the first entry is saved |
-| **Gym** | "How do you train?" — three ready routine templates, or one sentence the agent turns into a routine | a routine, with today's day chosen, one tap from the logger | kg/lb toggle, and a "just log freely" escape | the first set is logged |
+**Journal** — `journal/onboarding.md`.
 
-Gym starts with a routine, not a movement: the logger's advantage is prefill — target sets,
-target reps, last time's weight — and none of it exists until a routine does.
+**Gym is Coach-led, in both states.** A first open with no routines lands in Coach:
 
-**Routines are agent-writable and MCP-writable.** "4 days, upper/lower, no deadlifts, 45
-minutes" is an active AI request in the proposed onboarding flow. Account-metered requests
-use shared AI credits; request counts do not define the unit.
-Because a routine is a plain artifact, the same call belongs on the hosted MCP server
-(`roadmap/guidelines/mcp-connect.md`), so a coach's plan, a Claude conversation or a script can
-write a routine that appears on this screen. Two requirements follow: a routine written by an
-agent is **indistinguishable from a hand-built one** (same shape, same editability, no
-read-only "AI plan" mode), and it **lands editable, never auto-started**.
+> **Set up your routines**
+> Built from what you bring.
 
-## 6. The house — shown once
+- Three starters: **Add a screenshot** · **Describe your program** · **Share your goal**.
+- Two quiet escapes: **Just log** (straight to the logger) · **Build it myself** (the routine
+  editor).
+- Signed out, one quiet line under the starters: *5 questions without an account.* Signed in, the
+  same room with no allowance line.
+- Coach creates the routines: one truthful creation receipt per routine, each with **Open
+  routine**, which opens the routine with **Start workout**. The goal path asks only the materially
+  missing questions, answered with chips.
+- With routines, Gym opens on Routines.
 
-After the first real artifact, a sheet introduces the other two rooms: *"Your tree is planted.
-Windmill has two other rooms."* One line each, same account, nothing to install.
+The full contract is `gym/briefs/09-coach.md`.
 
-- **Introduced, not sold.** No feature lists, no screenshots, no "try it free".
-- **Once, ever.** Dismissing returns to work; the rooms remain in the switcher.
-- If the user skipped to the hub at §2, this sheet never fires.
+## 9. The first real thing
 
-## 7. What this doc requires of the build
+The first kept page and the first logged set are each **marked once**: the system success haptic
+plus an SF Symbols Draw On check. No congratulation copy, no celebration, no count.
 
-1. The launch destination is **persisted per device** (last room), and survives sign-in,
-   sign-out and app updates.
-2. Each app exposes a **first-run complete** signal, so the shell knows when to fire the house
-   sheet and when to retire onboarding copy.
-3. Anonymous identity is **stable across app updates** — a lost local identity is lost user
-   work, the one unrecoverable failure in this flow.
-4. The claim is **resumable**: whatever opened the door is re-entered after success, with its
-   state intact.
+## 10. Permissions
 
-## 8. Held open
+**A permission is asked only from the feature's own tap.** No pre-permission screen.
 
-- Does the skip land on the hub, or on Roadmap as a default room?
-- Does the house sheet fire on the first capsule tap instead of on the first artifact?
-- Notification permission: after the first entry, or never until the user sets a reminder
-  themselves (currently the stricter second).
+- **Journal's nudge** is offered in context, with the writing rhythm it saw
+  (`journal/onboarding.md` §3). Only its **Nudge me then** tap reaches Apple's notification alert;
+  **Not now** retires the offer.
+- **Apple Health** is offered on the gym finish receipt, as one switch (*Add this workout there
+  too*). Turning it on raises Apple's Health sheet.
+- The photo picker needs no permission.
+
+## 11. What this requires of the build
+
+1. **The last room is persisted per device**, survives app updates and sign-in, and is cleared by
+   sign-out.
+2. **Anonymous identity is stable across app updates** — a lost local identity is lost user work,
+   the one unrecoverable failure in this flow.
+3. **The Keep door is resumable**: whatever opened it is re-entered after success, with its state
+   intact.
+4. **Bringing it back** needs each room's total and newest-record date before records stream, so
+   the last room can open as soon as its own data is in.
+5. **Sign-out's removal from the phone** must wait for, or report, the unsent outbox.
+
+The backend dependencies of signed-out Coach are in `consistency.md` (6k–6n).
+
+## 12. Held open
+
+- **Keep offer timing** in Journal: once mood and energy are answered, or straight after the first
+  kept page.
+- **The first signed-out finish receipt carries two offers**, Keep this log and Apple Health. Keep
+  both, or move Apple Health to the second workout.
+- **Sign out with unsent changes**: wait for the outbox, or warn and allow.

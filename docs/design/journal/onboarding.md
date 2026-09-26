@@ -1,14 +1,19 @@
 # Journal — the first run (P9)
 
 The onboarding canon for Journal. Parent canon: `journal.md` (rules, vocabulary, motion);
-shell flow: `../guidelines/superapp-flow.md` §5.
+shell flow: `../guidelines/superapp-flow.md` §8.
 
 ---
 
 ## 1. The principle
 
-> **Journal has no onboarding screen. It has a cursor.** Everything else appears later, on a
-> trigger, once the user's own writing has made it relevant.
+> **Journal opens on a live cursor, with a one-time onboarding layer over the real canvas.**
+> Everything else appears later, on a trigger, once the user's own writing has made it relevant.
+
+The layer shows once per install, only on a first open with no pages. It never blocks writing: the
+first keystroke dissolves it, and it can be reopened later. It points only at what is on that screen
+and works. Its direction is open; the candidates are drawn in section *2b · Journal onboarding* of the
+Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
 The product cannot demonstrate its value in a first session — an echo needs months, the week
 needs a week, the nudge needs a rhythm. The first run's only job is: **get one page written,
@@ -16,8 +21,8 @@ and be worth reopening.**
 
 ## 2. Session one — the whole screen
 
-The canvas opens at today, cursor placed, keyboard **not** raised. Exactly two pieces of copy
-exist, and both retire permanently after the first save:
+The canvas opens at today, cursor placed, keyboard **not** raised. Beside the onboarding layer
+(§1), exactly two pieces of copy exist, and both retire permanently after the first save:
 
 | Element | Copy | Retires |
 |---|---|---|
@@ -29,7 +34,7 @@ exist, and both retire permanently after the first save:
 - **The keyboard is not raised for the user.**
 - **Mood and energy are visible and unasked** — the strip is there, dimmed, asking nothing.
 - **"saved" is stated in mono**, never a button, never a spinner.
-- No account, no permission, no tour, no dismissible anything.
+- No account, no permission.
 
 ## 3. The schedule — what appears when
 
@@ -44,9 +49,10 @@ it for good. Nothing counts declines.
 | **The week** | first Sunday with 3+ pages behind it |
 | **Search** | never announced — it lives in the chrome from day one and explains itself when used |
 
-**Never during the first run:** Echoes (needs a corpus), sign-in (the shell's, from You
-only), the notification permission (asked *after* "yes", never before), and anything about the
-other two rooms (the shell's house sheet owns that).
+**Never during the first run:** Echoes (needs a corpus), sign-in (the shell's Keep offer comes
+only after the first kept page — `../guidelines/superapp-flow.md` §6), the notification
+permission (asked *after* "yes", never before), and anything about the other rooms (the room
+menu lists them).
 
 **Never at all:** streaks, scores, percentages, "you missed 3 days", a congratulation for
 showing up, a first-page celebration, a prompt library, a required mood check-in — and any
@@ -94,6 +100,4 @@ Neither is onboarding; both are what onboarding is *for*.
 ## 8. Open
 
 - Does the talk offer trigger on a **short page** or on a **late hour**?
-- Someone arriving from Roadmap or Gym already knows the house. Does their first open differ?
-- Where does the first run belong when the user skipped the shell's opening question and
-  browsed to Journal from the hub — same screen, or does the hub's card carry the invitation?
+- Someone arriving from another room already knows the app. Does their first open differ?

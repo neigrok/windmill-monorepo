@@ -144,7 +144,7 @@ game metaphor entirely** — nothing is unlocked, earned, or planted here.
   and `--surface-card` directly, so the design system's ramps still resolve inside it while
   the shell, settings and the other two products are untouched. This is the house pattern; gym
   follows it. Native: `JournalSkin` is scoped to the room and `roomChrome(_:)` is the single
-  value it reports outward, so the shell can dress the capsule it lays over the room.
+  value it reports outward, so the shell can dress the chrome it lays over the room.
 - **No `data-brand` is involved.** `JournalApp.jsx` sets `data-theme` on `.journal-root`, and
   that is the whole wiring.
 - The lit hue comes from `--lamp-*`, never from a kind token — journal has no kinds, and a
@@ -175,7 +175,7 @@ One product, four shells:
 | **Installed (PWA)** | The reference web experience. Push, app icon, no browser chrome |
 | **Mobile web** | Same canvas inside browser chrome. The app's tab bar sits *above* the browser toolbar; one install offer, stating plainly that a tab can't receive nudges |
 | **Desktop web** | Gutter + scroll-following margin + month rail, ⌘K, select-to-search, print |
-| **Native (iOS)** | The journal room inside the Windmill superapp (`apps/ios`), entered from the hub. Same canvas, same canon. The shell owns two seats and nothing else — the capsule top-left and the You seat at the end of journal's own bar; journal owns everything below them, including the night default. Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
+| **Native (iOS)** | The journal room inside the Windmill superapp (`apps/ios`), entered from Where to start? or the room menu. Same canvas, same canon. The shell owns the room menu top-left and the account button top-right (`guidelines/superapp-shell.md`); journal owns everything below them, including the night default. Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
 
 Phone is primary. Breakpoints: 744 / 1024 / 1440.
 

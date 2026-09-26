@@ -5,7 +5,7 @@ Read `01-context.md` first.
 | Brief | Holds |
 |---|---|
 | `01-context.md` | Who the lifter is, the thesis, the vocabulary, the feeling. Start here. |
-| `09-coach.md` | The Coach room and the four beats of the propose–review–apply loop. |
+| `09-coach.md` | The Coach room, its first open and signed-out allowance, and the four beats of the propose–review–apply loop. |
 | `10-notes.md` | Notes — the context a lifter writes *for* Coach, and who else can read it. |
 | `11-bodyweight.md` | Bodyweight — the reading, the writing, and the chart that refuses to interpret. |
 | `12-native-idiom.md` | How web, iOS and Android are allowed to differ, platform controls and type. |

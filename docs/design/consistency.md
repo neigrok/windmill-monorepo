@@ -25,6 +25,58 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
 
+## iOS first run
+
+Canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and
+the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+
+- **6a · Rooms and shell chrome.** `WindmillApp.swift` registers `RoadmapModule()`, and the shell
+  still draws the hub (`HubView.swift`), the W capsule and its switcher sheet (`Shell.swift`) and
+  the one-time House sheet (`FirstRun.swift`). Canon: two rooms and the room menu; all four are
+  retired.
+- **6b · Where to start.** `EntryQuestionView` asks *What do you want to do first?* over three cards
+  with a *Just show me around* skip and no Sign in door; its cards paint hard-coded hexes, and Gym's
+  are grey-blue rather than verdigris. Canon: *Where to start?*, two doors in the rooms' own
+  colours and a quiet Sign in.
+- **6c · Returning on a new phone.** Sign-in has no *Bringing it back* arrival with per-room counts
+  and does not open the room holding the newest record as soon as its data is in.
+- **6d · Sign in with Apple is off.** `project.yml` sets `WMAppleSignInEnabled: false`, so
+  `SignInDoor` leads with email, and its Hide My Email copy asks for a pasted web link instead of
+  the canon footnote *Signed up with email before? Use email, so it stays one account.*
+- **6e · Keep offers.** Signed out, `RoutinesScreen` draws the claim card (*Your log is saved on
+  this device.*) before any routine or workout exists. Journal has no Keep row, the finish receipt
+  has no Keep this log, there is no Keep sheet, and nothing signed in says *backed up*.
+- **6f · You and sign-out.** `YouScreen` shows the Windmill One row signed out, has no Erase data,
+  and signs out with no confirmation under a footer saying what you've written *stays on this
+  device, editable*. Canon: no One signed out, Erase data, and the sign-out alert *Your pages and
+  log stay in your account and leave this phone.*
+- **6g · Gym first open and Coach signed out.** Gym opens on the Routines empty state (Build a
+  routine · Just start logging), not the Coach-led *Set up your routines*; signed out, Coach is a
+  wall (`Ask.needsSignIn`, pinned by `AskTests.swift`). Canon: the starters, the escapes and the
+  5-question allowance.
+- **6i · Gold primaries.** `actionCapsule(.primary)` fills `gold400` (`Tokens.swift`). Canon:
+  terracotta for the shell and Journal, verdigris in Gym, never gold for a CTA
+  (`brand-foundations.md`).
+- **6j · Permission offers.** iOS has no journal nudge offer and no Apple Health switch on the
+  finish receipt; neither notification nor HealthKit authorization exists in `apps/ios`.
+- **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
+  bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
+  30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
+  that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
+  log is not on the server.
+- **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
+  Signed out they must land on the phone's anonymous shelf (`LocalLog.swift`) with a stable,
+  retry-safe identity and be adopted once on sign-in, without duplicates.
+- **6m · Backend: signed-out photos.** A sent photo is kept in private storage with the account's
+  conversation. Signed out it must be sent inline for Coach to read and not persisted server-side;
+  the phone keeps the only copy.
+- **6n · Backend: the conversation on sign-in.** A signed-out conversation must move to the account
+  on sign-in with the same identity, receipts included, so the chat continues where it stopped.
+- **6o · First-run boards against the gym briefs.** Boards 13a/13b title the finish receipt with
+  the routine name where `gym/briefs/16-the-workout.md` uses *Well done.* or *Ended early.*, and
+  board 02d labels the Routines primary *Start logging* where `gym/briefs/12-native-idiom.md` uses
+  *Just start logging*. Choose one of each and align the other.
+
 ## Roadmap
 
 - **1e · Available-node treatment.** `tree-layout-contract.md` and the DOM specimen specify a

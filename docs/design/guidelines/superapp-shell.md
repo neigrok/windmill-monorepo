@@ -1,102 +1,98 @@
-# The superapp shell — hub + capsule (native)
+# The superapp shell
 
-The contract for the Windmill iOS shell: what the shell owns, what each app owns, and the two
-gestures between them.
+The frame around the rooms. Sections 1–5, 7, 8 and 10 and You in §6 govern the iOS shell, which
+carries two rooms, Journal and Gym; Roadmap does not appear on iOS. §6's Appearance rules and §9's
+AI-request rules govern every surface, and the last section governs the web shell's safe areas.
+Android carries Gym alone and draws no shell between rooms.
 
-> Journal's own canon is `journal/journal.md`. Auth is `roadmap/guidelines/auth.md`. Pricing is
-> `marketing/guidelines/pricing.md`. This file governs only the frame around them.
+> How someone arrives is `guidelines/superapp-flow.md`. Journal's canon is `journal/journal.md`;
+> Gym's is `gym/briefs/`. Web auth is `roadmap/guidelines/auth.md`. Pricing is
+> `marketing/guidelines/pricing.md`. The drawings of record are the Figma page
+> [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
 ---
 
-## 1. No tab bar
+## 1. Two rooms, no app-level tab bar
 
-All three products ship as rooms in one app, and each brings its own internal navigation. The
-switch between rooms costs one reserved seat, never a bottom bar — the bottom bar stays the
-app's.
+Each room brings its own navigation, and there is no app-level tab bar: the bottom of the screen
+belongs to the room. Gym keeps its own tabs — **Routines · The log · Coach**. Journal has none.
 
 ## 2. The shell owns
 
-1. **The hub**, and the order its cards take (§3).
-2. **The capsule** — 38pt, top-left, one lane every app reserves and none of them paints.
-3. **Two gestures, and nothing else**: tap the capsule = the switcher; edge-swipe right = home **at
-   the root of a room's navigation stack**. One push deep that edge is the room's own back, and the
-   shell's gesture is not attached there at all.
-4. **The You seat** — the trailing slot of the room's own bar, past a hairline, so it reads as the
-   shell's and not the app's. Where a room hosts its own **top** bar, both shell doors sit in it —
-   capsule leading, seat trailing — because a native tab bar has no fourth slot and an avatar
-   jammed into one is not something either platform draws.
-5. **You and Windmill One**, always clay whatever room you came from — and One is reachable
-   **only** from You.
+1. **The room menu** at the top-left (§3).
+2. **You** (§6).
+3. The screens before a room: **Where to start?** and **Bringing it back** (`superapp-flow.md`).
+4. **The Keep sheet**, the one sign-in door (`superapp-flow.md` §6).
 
-## 3. The hub — the front door
+Nothing else. There is no hub, no capsule, no switcher sheet, no sheet that introduces the other
+room, and no gesture of the shell's own.
 
-Cold launch lands here. A deep link skips it entirely.
+## 3. The room menu
 
-- **Three living doors**, each in its own skin, each showing the one line that decides whether
-  you go in. The skin tells you which room you are walking into.
-- **The doors sit low, in thumb reach.** The greeting can be out of reach; the doors cannot.
-  They stack from the bottom up, so **the reach order is the priority order**.
-- **Live work outranks planned work.** A product with something running sinks to the *bottom*
-  of the stack so its CTA lands under the thumb. This is the only rank change the hub makes.
-- **No plan meter here.** Billing lives in You, and nowhere else.
-- A fourth sibling is one more card here and one more row in the switcher. Nothing else moves.
+The room's name, top-left, is a native `Menu` (a glass button with a chevron). Tapping it lists
+**Journal · Gym · You**:
 
-**Each app lends the hub exactly one line** — an eyebrow, a headline, an optional meta, and
-whether it is running. The shell never reaches into a product for state; it asks, and the
-product answers. A product with no phone-side state yet says where it *does* work rather than
-implying a room that opens onto nothing.
+- the room you are in carries the checkmark;
+- each room row is its name, its symbol and at most one short line;
+- the You row's line is the account state: *Not signed in* signed out, *<name> · backed up*
+  signed in.
 
-## 4. Inside an app — two reserved seats
+The menu is the only way between rooms inside the app. It never carries a count, a badge or an
+unread total. A third room is one more row here and one more door on Where to start?; nothing
+else moves.
 
-**Top-left: the capsule.** Tap opens the switcher; edge-swipe right goes home **at the root of the
-room's navigation stack** — one push deep that edge is the room's own back. It wears a **dot** when
-another app has something running — never a count, never a number. The shell reserves that lane over
-a room that does not host its own top bar; a room that does draws the capsule itself, leading in its
-own bar, and the shell lays none over it.
+## 4. Inside a room
 
-**The trailing seat: You.** The trailing slot of the room's own bar, past a hairline — same right
-edge whatever the app's chrome. Journal has no tabs and no top bar of its own, so its one bottom bar
-takes that seat; gym hosts its own top bar and seats You trailing in it, on every stack root and in
-the logger.
+- **Top-left: the room menu.** Every room reserves that seat on its stack roots; one push deep the
+  seat holds the room's own back button.
+- **Top-right: the account button**, the trailing item where a room's root draws one, past the
+  room's own actions. It opens You.
+- Everything below the top bar is the room's.
 
-**The switcher** is a sheet: rooms sit **lowest** (the most-tapped thing under the thumb), Home
-is the small line above them, and Windmill One is not in it at all. Each row carries the app's
-own line, and the room you are in reads "you're here".
+## 5. Each room owns
 
-## 5. Each app owns
+- Its nav bar items after the room menu, its tabs, and its gestures.
+- **Its palette** — the lamp on paper or ink-black for Journal, iris on pietra or verdigris on
+  verdigris-grey stone for Gym. The shell does not invent a room's colours; it only says *light or
+  dark*, and the room maps that onto its own place.
+- **Its own settings.** You lists them and walks you in; it never absorbs them.
+- The line it lends its room-menu row.
 
-- Its nav bar, its tabs, and its gestures **below the capsule**.
-- **Its palette** — terracotta on Tuscan earth or near-black, the lamp on paper or ink-black, iris on
-  pietra or verdigris on verdigris-grey stone. The
-  shell does not invent a room's colours; it only says *light or dark*, and the room maps that
-  onto its own place.
-- **Its own settings.** You lists them and walks you in; it never absorbs them. Per-app
-  preferences never leak up into the shell's screens.
-- The one line it lends the hub.
+**A room reports its skin outward exactly once**, so the shell can dress the chrome it lays over
+that room. It must be a live value rather than a constant on the product: journal's skin is night
+*or* day by the writer's choice. In the build this is `roomChrome(_:)`. Everything else about a
+room's appearance stays inside the room.
 
-**A room reports its skin outward exactly once**, so the shell can dress the capsule it lays
-over that room and nothing else. It must be a live value rather than a constant on the product:
-journal's skin is night *or* day by the writer's choice. In the build this is `roomChrome(_:)`.
-Everything else about a room's appearance stays inside the room.
+## 6. You & Appearance
 
-## 6. You & Windmill One
+**You** is a sheet with **Done**, reached from the room menu's last row or the account button.
 
-**You** — profile, the plan row, appearance, the one nudge, doors into each app's settings,
-connected tools, sessions and data, sign out. It mirrors the web settings home, with one
-difference of place: on web, Appearance is not on the settings page. On `/app` it is in the
-account seat's pop-up — a Light · Dark · System bar above the menu rows. On every marketing page
-— the four landings and the dressed static pages — it is a two-segment Light · Dark toggle at the
-head of the nav's right cluster, and the seat's pop-up there draws no Appearance row. The You screen's Appearance row is the
+- **Signed out:** *Not signed in · Everything lives on this phone*, the Apple/email door with its
+  footnote (`superapp-flow.md` §6), **On this phone** with each room's real counts, Settings
+  (Appearance and each room's settings), and **Erase data**.
+- **Signed in:** the name and how they signed in, **Your data** (Backup with its state, On the
+  web), Settings, **Sign out** (`superapp-flow.md` §7) and **Delete account**.
+
+**Windmill One** is one shared plan for actively requested AI assistance; credits do not pay for
+passive Echoes or ordinary product use. Purchasing is closed and allowance quantities remain a
+proposal (`marketing/guidelines/pricing.md`). **It never appears while signed out**, and signed in
+it appears nowhere but You. You is always clay, whatever room opened it.
+
+On the web, the settings home is `roadmap/guidelines/auth.md` §5, with one difference of place:
+Appearance is not on the settings page. On `/app` it is in the account seat's pop-up — a
+Light · Dark · System bar above the menu rows. On every marketing page — the four landings and the
+dressed static pages — it is a two-segment Light · Dark toggle at the head of the nav's right
+cluster, and the seat's pop-up there draws no Appearance row. The iOS You Appearance row is the
 phone's mirror of the seat's bar.
 
-**Appearance is chosen in one place per page, for the whole app.** Light · Dark · System,
-System by default. It sets the hub, the switcher, You, Windmill One, every sheet, **every room**
-and every marketing page. A room still owns its *palette* — journal answers dark with its night
-canvas and light with warm paper, gym answers with pietra or verdigris-grey stone — but it does
-not own the *choice*, and no room carries a theme control of its own; a landing is not a room,
-and its nav toggle is the one control on that page. "System" is not a third palette; it is the
-absence of an override. One stored choice (`windmill:appearance`) feeds every web page; the
-seat's bar and the nav toggle read and write the same key.
+**Appearance is chosen in one place per page, for the whole app.** Light · Dark · System, System
+by default. It sets You, every sheet, **every room** and every marketing page. A room still owns
+its *palette* — journal answers dark with its night canvas and light with warm paper, gym answers
+with pietra or verdigris-grey stone — but it does not own the *choice*, and no room carries a theme
+control of its own; a landing is not a room, and its nav toggle is the one control on that page.
+"System" is not a third palette; it is the absence of an override. One stored choice
+(`windmill:appearance`) feeds every web page; the seat's bar and the nav toggle read and write the
+same key.
 
 **The marketing-page toggle.** A visitor who lands on pricing or terms first can choose there,
 without an account and without opening a pop-up.
@@ -120,9 +116,9 @@ without an account and without opening a pop-up.
   the way back to following the system is the seat's bar on `/app`.
 - **Keys.** Arrow keys move between the two segments, as in the seat's bar.
 
-**State the scheme twice: once as the window's `preferredColorScheme`, once as an environment
-override down the tree.** `preferredColorScheme` travels *up* to the window — it flips the
-UIKit traits but does not write `\.colorScheme` back into the subtree that declared it, so a
+**On iOS, state the scheme twice: once as the window's `preferredColorScheme`, once as an
+environment override down the tree.** `preferredColorScheme` travels *up* to the window — it flips
+the UIKit traits but does not write `\.colorScheme` back into the subtree that declared it, so a
 room reading the environment would otherwise see the system's answer. Only the environment
 override reaches the rooms.
 
@@ -130,79 +126,50 @@ No call site branches on the skin: the role tokens are aliases onto an *adaptive
 exactly as `tokens/colors.css` re-authors the ramp under `[data-theme="dark"]` and lets every
 role follow. `surfaceCanvas` IS `neutral50` in both skins.
 
-**Windmill One** is one shared plan for actively requested AI assistance. Credits do not pay
-for passive Echoes or ordinary product use. Purchasing is closed and allowance quantities
-remain a proposal; see `../marketing/guidelines/pricing.md`.
-
-Both are **always clay**, whatever room you came from, and both are one tap away: the avatar on
-the hub, or the You seat at the end of any app's bar.
-
 ## 7. Honesty rules for this frame
 
-1. **Never a mock room.** A product with no native surface yet renders one true line about
-   where it does work and a door to it — not a placeholder screen, and not a "coming soon".
-2. **Never a number we don't have.** A plan meter, a digest line or a streak is drawn only when
-   the data behind it is real.
-3. **The dot is the only thing the capsule says.** Something is running elsewhere. It never
-   carries a count, a badge, or an unread total.
-4. **No walls.** Auth canon §2 governs the shell too: the app opens on the product, not on a
-   sign-in screen, and signing in *claims* what is already there. The You seat is the only
-   unprompted mention of sign-in in the whole app.
+1. **Never a number we don't have.** Counts on Bringing it back and On this phone come from real
+   records. A plan meter, a digest line or a streak is drawn only when the data behind it is real.
+2. **No walls.** The app opens on a choice of rooms or on the last room, never on a sign-in screen,
+   and signing in *keeps* what is already there (`superapp-flow.md`).
+3. **No urgency.** No countdown styling, no urgency colour, no "only 1 left" — the Coach
+   allowance included.
 
 ## 8. Held open
 
-- **The daily digest** — a hub top card if it earns its place, never a fourth surface.
-- **Quick capture** from a long-press on the capsule.
-- **A fourth sibling** — one more hub card, one more switcher row.
+- **Gym in light appearance on iOS.** The shell follows the system; iOS gym defines only its dark
+  Instrument palette (`consistency.md` F4).
 
-## 9. The journey — how someone arrives
+## 9. Active AI requests and accounts
 
-Full spec: `guidelines/superapp-flow.md`. The shape: **cold launch → one question → straight
-into that app → the first real thing → the house, once.**
+These rules hold on every surface.
 
-- **Nothing is gated.** No account wall, no splash pitch, no "save your work" nudge, no tour,
-  no coach marks, no progress dots, no second onboarding screen, and no permission asked before
-  the feature that needs it. Nothing counts how many times anyone declined anything.
-- **The first screen is one question** — "What do you want to do first?" — three rooms in plain
-  verbs, one skip. It runs once, ever. A deep link skips it entirely.
-- **Onboarding is the real surface with its first move filled in.**
-- **Launch reopens the last room you stood in**, not the hub.
-- **The house sheet fires once**, after the first real thing exists.
-- **Signing in is an adoption** of what is already there, offered from You, from share, and
-  from a second device, and it resumes whatever you were doing. Never unprompted.
-- **The one honest line** — "your stuff lives on this device" — is stated once, in You.
-
-### 9a. Active AI requests and accounts
-
-**Account-metered AI assistance requires an account.** The door opens when the person asks
-for that work and resumes the request afterwards. Public text import is currently anonymous;
-it cannot debit an account until attribution is defined. Passive Echoes uses no AI credits.
-
-- Everything a person does **by hand** works signed out, forever — writing, planting steps,
-  logging sets, editing, and every read. Journal's first run spends nothing.
-- **Roadmap's "Plant it" and Gym's "Build my routine" are account verbs.** They open the door
-  at the moment they are asked for and **resume after** — the pattern `auth.md` §2 defines for
-  Share, Invite and Connect.
-- Both first runs keep a no-account path: **"Start from a blank tree instead"** and **"Just log
-  freely"** / a ready routine. Those are how the rooms work without the agent, not a downgrade.
+- **Everything a person does by hand works signed out** — writing, logging sets, building
+  routines, planting steps, editing and every read.
+- **Account-metered AI assistance needs an account, with one exception:** on iOS, Coach answers
+  5 questions per phone without one, once, never refilling (`gym/briefs/09-coach.md`). When an
+  action needs an account — an account verb, or a Coach question past the allowance — the door
+  opens at that moment and the action resumes afterwards.
+- Public text import on the web is anonymous; it cannot debit an account until attribution is
+  defined.
+- Passive Echoes use no AI credits.
+- Every first run still reaches a real thing with zero agent calls: Journal's cursor, Gym's
+  **Just log** and **Build it myself**, the roadmap's starter quests and blank tree.
 
 ## 10. Constants — copy into the build
 
 ```
-FRONT DOOR  hub on cold launch · deep link skips it · doors low, stacked bottom-up
-            reach order = priority order · running sinks to the bottom · no plan meter
-CAPSULE     38pt · top-left · one reserved lane · tap = switcher
-            edge-swipe right = home at a room's stack root only · deeper it is the room's back
-            dot when another app is running · never a count
-YOU SEAT    trailing slot of the room's own top bar, past a hairline · same right edge everywhere
-SWITCHER    rooms lowest · Home above them · Windmill One never in it
-SHARED      You and Windmill One always clay · One reachable only from You
-APP OWNS    its bar, tabs, gestures below the capsule · its skin incl. dark default
-            its own settings · the one line it lends the hub · its skin reported outward once
-JOURNEY     one question once · first run IS the real surface · first real thing · house once
-            launch reopens the LAST ROOM · claim is adoption, never unprompted
-AI REQUESTS account-metered active work needs an account · passive Echoes uses no credits
-            it is an account verb: the door opens when asked for, and resumes after
+ROOMS       iOS: Journal · Gym · Roadmap is web only · no app-level tab bar
+ROOM MENU   the room name, top-left · native Menu · Journal · Gym · You
+            checkmark on the room you are in · You row = Not signed in | <name> · backed up
+            never a count or a badge
+ACCOUNT     trailing account button on a room's root · opens You
+RETIRED     hub · capsule · switcher sheet · house sheet · shell gestures
+YOU         signed out: the door, On this phone, Erase data · no Windmill One
+            signed in: Backup, On the web, Sign out, Delete account · always clay
+APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
+            its menu line · its skin reported outward once
+AI REQUESTS account-metered · iOS Coach: 5 questions per phone, once, without an account
 ```
 
 ## Web safe areas

@@ -116,7 +116,8 @@ The restated rule, true on all three surfaces:
 ## The account seat
 
 The account seat is the trailing item of the room's top bar, separated from product actions.
-iOS also carries the shell capsule at the leading edge; Android has no room-switching capsule.
+iOS carries the room menu — the room's name as a native `Menu` — at the leading edge; Android
+carries Gym alone and has no room menu.
 Rooms that host their own top bar declare that to the shell so it does not add a second top inset.
 The shared contract is in `../../guidelines/superapp-shell.md`.
 
@@ -186,7 +187,7 @@ Only where the device's capability differs.
 
 The phone holds the offline queue, so only the phone finishes a session. The phone has a haptic
 engine. The web has a keyboard and a wide column. Android has no shell chrome and a system back
-gesture; iOS has a shell capsule and an edge swipe.
+gesture; iOS has the room menu and the navigation stack's edge swipe back.
 
 **Divergence in vocabulary, palette values, motion physics or refusal codes is a defect**, not a
 surface speaking. The copy may change between surfaces only where the capability it describes
