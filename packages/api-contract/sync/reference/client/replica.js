@@ -1,7 +1,8 @@
 // §2.5 the client's local store for one replica, and D-3 the device holding replicas. Scopes are keyed
 // by wire reference; `toJSON` is the corpus's canonical form.
 
-import { observedPair } from '../core/clock.js';
+import { Offset, observedPair } from '../core/clock.js';
+import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST } from '../core/digest.js';
 import { Stamp } from '../core/stamp.js';
 import { compactRow, compareRecords, recordKey, sortedMap } from '../core/rows.js';
@@ -38,7 +39,6 @@ export function freshMeta(replica, state, account) {
     serverEpoch: null,
     ackThrough: 0,
     authPaused: false,
-    liveHint: false,
   };
   if (account !== undefined) meta.account = account;
   return meta;
@@ -97,6 +97,16 @@ export class Replica {
   observe(stamps) {
     this.meta.hlc = observedPair(this.meta.hlc, stamps);
     for (const stamp of stamps) this.meta.hlcHigh = Stamp.max(this.meta.hlcHigh, stamp);
+  }
+
+  // §10.4: a response's offset sample from the device clocks' readings {send, recv} around the request.
+  // A request that straddles a clock jump yields none, and the offset is kept.
+  takeOffsetSample(serverTime, { send, recv }, limits = CONSTANTS) {
+    const taken = Offset.take({ samples: this.meta.offsetSamples, clockReading: this.meta.clockReading }, { serverTime, send, recv }, limits);
+    if (taken === null) return;
+    this.meta.offsetSamples = taken.samples;
+    this.meta.clockReading = taken.clockReading;
+    this.meta.serverOffsetMs = Offset.choose(taken.samples);
   }
 
   // §2.5 admittedHigh: the greatest stamp in any row the server sent or in an acked entry.
@@ -169,19 +179,21 @@ export class Replica {
   }
 }
 
-// D-3 one device's database: any number of replicas, one of them active. The active replica is held by
-// reference, since re-identify changes a replica's id.
+// D-3 one device's database: any number of replicas, one of them active, and §2.5 DeviceMeta
+// ({forkGuard?, pendingSignIn?}). The active replica is held by reference: re-identify changes its id.
 export class Device {
   constructor(json) {
+    this.meta = structuredClone(json.meta ?? {});
     this.replicas = json.replicas.map((replica) => new Replica(replica));
     this.activeReplica = this.replica(json.active);
   }
 
   toJSON() {
-    return {
-      active: this.activeReplica?.id ?? null,
-      replicas: [...this.replicas].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((replica) => replica.toJSON()),
-    };
+    const out = {};
+    if (Object.keys(this.meta).length) out.meta = sortedMap(structuredClone(this.meta));
+    out.active = this.activeReplica?.id ?? null;
+    out.replicas = [...this.replicas].sort((a, b) => (a.id < b.id ? -1 : a.id > b.id ? 1 : 0)).map((replica) => replica.toJSON());
+    return out;
   }
 
   replica(id) {

@@ -344,7 +344,7 @@ TEST(journal_put_with_a_malformed_stamp_is_400_not_500) {
   h.signIn("s-live");
   Json::Value body(Json::objectValue);
   body["body"] = "hi";
-  body["stamp"] = "x:0:dev";   // parseHlc throws on the non-numeric ms — a client 400, never a 500
+  body["stamp"] = "x:0:dev";   // not a D-1 stamp — a client 400, never a 500
 
   drogon::HttpResponsePtr response = sendPut(h.api, putRequest(body, "s-live"), "2026-07-27");
 

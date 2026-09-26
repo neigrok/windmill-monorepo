@@ -14,6 +14,32 @@ if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
   message(STATUS "No CMAKE_BUILD_TYPE set — defaulting to RelWithDebInfo (an -O0 build overflows drogon's worker stack)")
 endif()
 
+# The sync contract (packages/api-contract/sync): the registries the sync engine embeds and the golden
+# corpus its tests replay. The Docker build receives it as the named context `contract` and points
+# this at it (Dockerfile).
+set(WM_API_CONTRACT_DIR "${CMAKE_SOURCE_DIR}/../packages/api-contract" CACHE PATH "The api-contract package that holds sync/")
+if(NOT EXISTS "${WM_API_CONTRACT_DIR}/sync/probe.registry.json")
+  message(FATAL_ERROR "No sync contract at ${WM_API_CONTRACT_DIR}/sync: set WM_API_CONTRACT_DIR to the api-contract package")
+endif()
+
+# Embeds a sync registry file as `std::string_view <namespace>::<function>()`, from the template
+# platform/domain/sync/RegistryText.cpp.in. The file is a configure dependency, so an edit re-embeds
+# it and a binary carries exactly the registry it was built and tested with.
+function(wm_embed_registry target namespace function file)
+  file(READ "${file}" WM_REGISTRY_TEXT)
+  string(FIND "${WM_REGISTRY_TEXT}" ")wmregistry\"" delimiter)
+  if(NOT delimiter EQUAL -1)
+    message(FATAL_ERROR "${file} holds the raw-string delimiter )wmregistry\"")
+  endif()
+  set(WM_REGISTRY_SOURCE "${file}")
+  set(WM_REGISTRY_NAMESPACE "${namespace}")
+  set(WM_REGISTRY_FUNCTION "${function}")
+  set(generated "${CMAKE_BINARY_DIR}/generated/${target}_${function}.cpp")
+  configure_file("${CMAKE_SOURCE_DIR}/platform/domain/sync/RegistryText.cpp.in" "${generated}" @ONLY)
+  set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${file}")
+  target_sources(${target} PRIVATE "${generated}")
+endfunction()
+
 # Windmill is one modular-monolith backend behind a brand of products. `windmill_platform` is
 # the product-neutral core (auth, oauth, billing, the MCP transport engine, the vendor edges);
 # `windmill_roadmap` is the skill-tree product (trees, the sync/room cluster, the roadmap tools)
@@ -30,6 +56,13 @@ add_library(windmill_platform
   platform/domain/Mail.cpp
   platform/domain/MailArming.cpp
   platform/domain/OAuth.cpp
+  platform/domain/sync/Jcs.cpp
+  platform/domain/sync/Digest.cpp
+  platform/domain/sync/Registry.cpp
+  platform/domain/sync/Record.cpp
+  platform/domain/sync/Lattice.cpp
+  platform/domain/sync/FractionalIndex.cpp
+  platform/domain/sync/Identity.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
   platform/application/OAuthService.cpp
@@ -135,6 +168,13 @@ add_executable(windmill_domain_tests
   test/main.cpp
   test/platform/domain/AccessTest.cpp
   test/platform/domain/AiUsageTest.cpp
+  test/platform/domain/IdsTest.cpp
+  test/platform/domain/sync/JcsTest.cpp
+  test/platform/domain/sync/DigestTest.cpp
+  test/platform/domain/sync/RegistryTest.cpp
+  test/platform/domain/sync/LatticeTest.cpp
+  test/platform/domain/sync/FractionalIndexTest.cpp
+  test/platform/domain/sync/CorpusTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
   test/platform/domain/MailTest.cpp
@@ -145,6 +185,7 @@ add_executable(windmill_domain_tests
   test/platform/application/OAuthServiceTest.cpp
   test/platform/application/McpKeyServiceTest.cpp
   test/platform/application/MailSweepTest.cpp
+  test/products/roadmap/domain/IdsTest.cpp
   test/products/roadmap/domain/LooseGraphTest.cpp
   test/products/roadmap/domain/LegendTest.cpp
   test/products/roadmap/domain/SubgraphTest.cpp
@@ -200,6 +241,10 @@ add_executable(windmill_domain_tests
   test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/application/BodyweightServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
+# The probe registry is test-only (a product nobody ships), and the corpus is read from the contract
+# at run time, so the runner sees every file the contract holds.
+wm_embed_registry(windmill_domain_tests wm::probe registryText "${WM_API_CONTRACT_DIR}/sync/probe.registry.json")
+target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CORPUS_DIR="${WM_API_CONTRACT_DIR}/sync/corpus")
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)

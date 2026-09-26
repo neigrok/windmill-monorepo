@@ -5,9 +5,18 @@
   "description": "The machine-readable registry of engine.md §2.4: every synced type, field and command, and each product's device-scope rows. Swift, Kotlin, JS and C++ code generation reads this format.",
   "type": "object",
   "additionalProperties": false,
-  "required": ["registry", "version", "minVersion", "products", "types", "commands"],
+  "required": [
+    "registry",
+    "version",
+    "minVersion",
+    "products",
+    "types",
+    "commands"
+  ],
   "properties": {
-    "$schema": { "type": "string" },
+    "$schema": {
+      "type": "string"
+    },
     "registry": {
       "description": "The registry's name.",
       "type": "string",
@@ -26,22 +35,39 @@
     "products": {
       "description": "Each product the registry declares, keyed by product name.",
       "type": "object",
-      "propertyNames": { "$ref": "#/$defs/productName" },
-      "additionalProperties": { "$ref": "#/$defs/product" }
+      "propertyNames": {
+        "$ref": "#/$defs/productName"
+      },
+      "additionalProperties": {
+        "$ref": "#/$defs/product"
+      }
     },
     "types": {
       "type": "array",
-      "items": { "$ref": "#/$defs/type" }
+      "items": {
+        "$ref": "#/$defs/type"
+      }
     },
     "commands": {
       "type": "array",
-      "items": { "$ref": "#/$defs/command" }
+      "items": {
+        "$ref": "#/$defs/command"
+      }
     }
   },
   "$defs": {
-    "productName": { "type": "string", "pattern": "^[a-z][a-z0-9]*$" },
-    "typeName": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" },
-    "fieldName": { "type": "string", "pattern": "^[a-z][A-Za-z0-9]*$" },
+    "productName": {
+      "type": "string",
+      "pattern": "^[a-z][a-z0-9]*$"
+    },
+    "typeName": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]*$"
+    },
+    "fieldName": {
+      "type": "string",
+      "pattern": "^[a-z][A-Za-z0-9]*$"
+    },
     "regex": {
       "description": "An anchored ECMAScript regular expression without flags.",
       "type": "string",
@@ -55,7 +81,12 @@
     "origins": {
       "description": "Who may write the type by a delta outside a command, or call the command (D-23). A type's origins always include replica (§2.4).",
       "type": "array",
-      "items": { "enum": ["replica", "server"] },
+      "items": {
+        "enum": [
+          "replica",
+          "server"
+        ]
+      },
       "minItems": 1,
       "uniqueItems": true
     },
@@ -66,28 +97,44 @@
         "surfaces": {
           "description": "The surfaces that carry the product; a bound replica subscribes the product scopes of the products its surface carries (§7.9).",
           "type": "array",
-          "items": { "enum": ["web", "ios", "android"] },
+          "items": {
+            "enum": [
+              "web",
+              "ios",
+              "android"
+            ]
+          },
           "uniqueItems": true
         },
         "device": {
           "description": "The rows of the product's device scope `device/<product>` (D-4, §2.5 DeviceRow): never sent and never merged, moved at sign-in and deleted at sign-out (§7.10).",
           "type": "object",
-          "propertyNames": { "$ref": "#/$defs/fieldName" },
-          "additionalProperties": { "$ref": "#/$defs/deviceRow" }
+          "propertyNames": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/deviceRow"
+          }
         }
       }
     },
     "deviceRow": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["keyPattern"],
+      "required": [
+        "keyPattern"
+      ],
       "properties": {
-        "keyPattern": { "$ref": "#/$defs/regex" },
+        "keyPattern": {
+          "$ref": "#/$defs/regex"
+        },
         "localOnly": {
           "description": "A synced record may reference this row as `localOnly`: the content stays on the device that holds the row, and no sign-in uploads it.",
           "type": "boolean"
         },
-        "value": { "$ref": "#/$defs/domain" }
+        "value": {
+          "$ref": "#/$defs/domain"
+        }
       }
     },
     "key": {
@@ -96,13 +143,21 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["ref"],
-          "properties": { "ref": { "$ref": "#/$defs/typeName" } }
+          "required": [
+            "ref"
+          ],
+          "properties": {
+            "ref": {
+              "$ref": "#/$defs/typeName"
+            }
+          }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["tuple"],
+          "required": [
+            "tuple"
+          ],
           "properties": {
             "tuple": {
               "type": "array",
@@ -110,10 +165,17 @@
               "items": {
                 "type": "object",
                 "additionalProperties": false,
-                "required": ["name", "ref"],
+                "required": [
+                  "name",
+                  "ref"
+                ],
                 "properties": {
-                  "name": { "$ref": "#/$defs/fieldName" },
-                  "ref": { "$ref": "#/$defs/typeName" }
+                  "name": {
+                    "$ref": "#/$defs/fieldName"
+                  },
+                  "ref": {
+                    "$ref": "#/$defs/typeName"
+                  }
                 }
               }
             }
@@ -124,23 +186,44 @@
     "type": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type", "scope", "identity", "life", "origins", "fields"],
+      "required": [
+        "type",
+        "scope",
+        "identity",
+        "life",
+        "origins",
+        "fields"
+      ],
       "properties": {
-        "type": { "$ref": "#/$defs/typeName" },
-        "scope": { "$ref": "#/$defs/scope" },
+        "type": {
+          "$ref": "#/$defs/typeName"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
         "identity": {
           "description": "The identity class (D-8).",
-          "enum": ["minted", "derived", "keyed", "singleton"]
+          "enum": [
+            "minted",
+            "derived",
+            "keyed",
+            "singleton"
+          ]
         },
         "idSpace": {
           "description": "Minted and derived types: ids unique within the scope, or across every scope of the type (§4.2 `foreign`).",
-          "enum": ["scope", "global"]
+          "enum": [
+            "scope",
+            "global"
+          ]
         },
         "idPattern": {
           "description": "Every id of the type matches it (§6.1 step 2). A tuple-keyed type has none: each part matches its referenced type's pattern.",
           "$ref": "#/$defs/regex"
         },
-        "key": { "$ref": "#/$defs/key" },
+        "key": {
+          "$ref": "#/$defs/key"
+        },
         "singletonId": {
           "description": "A singleton's one fixed id.",
           "type": "string"
@@ -149,19 +232,33 @@
           "description": "A derived type's label rule (D-26): the fallback id base for a label with no alphanumeric byte.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["fallback"],
+          "required": [
+            "fallback"
+          ],
           "properties": {
-            "fallback": { "type": "string", "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$" }
+            "fallback": {
+              "type": "string",
+              "pattern": "^[a-z0-9]+(-[a-z0-9]+)*$"
+            }
           }
         },
         "seeded": {
           "description": "A minted type whose ids may be seeded (D-8): `<seed>-<n>` with a seed of at most seedMax characters and 1 <= n <= ordinalMax, fitting idPattern.",
           "type": "object",
           "additionalProperties": false,
-          "required": ["seedMax", "ordinalMax"],
+          "required": [
+            "seedMax",
+            "ordinalMax"
+          ],
           "properties": {
-            "seedMax": { "type": "integer", "minimum": 1 },
-            "ordinalMax": { "type": "integer", "minimum": 1 }
+            "seedMax": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "ordinalMax": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         "life": {
@@ -174,17 +271,26 @@
         },
         "deadRows": {
           "description": "Types with life: a dead row is kept in the typed table, or deleted with sync_spent keeping its id (§2.2, §6.10).",
-          "enum": ["keep", "spent"]
+          "enum": [
+            "keep",
+            "spent"
+          ]
         },
         "governs": {
           "description": "The type's records each govern a scope of this kind, created and killed with the record (D-5, §6.1 step 15).",
           "const": "tree"
         },
-        "origins": { "$ref": "#/$defs/origins" },
+        "origins": {
+          "$ref": "#/$defs/origins"
+        },
         "fields": {
           "type": "object",
-          "propertyNames": { "$ref": "#/$defs/fieldName" },
-          "additionalProperties": { "$ref": "#/$defs/field" }
+          "propertyNames": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/field"
+          }
         },
         "cap": {
           "description": "The ceiling on alive records of the type in one scope, enforced by the growth rule (D-24, §6.1 step 12).",
@@ -194,53 +300,160 @@
         "visibleWhen": {
           "description": "Types without life: the record is visible iff one of these fields holds a value other than null or \"\" (§2.4, §7.6).",
           "type": "array",
-          "items": { "$ref": "#/$defs/fieldName" },
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          },
           "minItems": 1,
           "uniqueItems": true
         },
         "primary": {
           "description": "A record of this type in the product scope makes the account hold records in the product (§9.2 holdsRecords).",
           "const": true
+        },
+        "mint": {
+          "description": "How a CSPRNG id of a minted or derived type is minted (D-8): the prefix, then `length` characters drawn uniformly from `alphabet`. Every minted id matches idPattern.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "prefix",
+            "alphabet",
+            "length"
+          ],
+          "properties": {
+            "prefix": {
+              "type": "string"
+            },
+            "alphabet": {
+              "type": "string",
+              "minLength": 2
+            },
+            "length": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
         }
       },
       "allOf": [
         {
-          "if": { "properties": { "identity": { "enum": ["minted", "derived"] } } },
+          "if": {
+            "properties": {
+              "identity": {
+                "enum": [
+                  "minted",
+                  "derived"
+                ]
+              }
+            }
+          },
           "then": {
-            "required": ["idSpace", "idPattern", "revivable", "deadRows"],
-            "properties": { "life": { "const": true } }
+            "required": [
+              "idSpace",
+              "idPattern",
+              "revivable",
+              "deadRows",
+              "mint"
+            ],
+            "properties": {
+              "life": {
+                "const": true
+              }
+            }
           }
         },
         {
-          "if": { "properties": { "identity": { "const": "derived" } } },
-          "then": { "required": ["derive"] }
+          "if": {
+            "properties": {
+              "identity": {
+                "const": "derived"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "derive"
+            ]
+          }
         },
         {
-          "if": { "properties": { "identity": { "const": "singleton" } } },
-          "then": { "required": ["singletonId", "idPattern"], "properties": { "life": { "const": false } } }
+          "if": {
+            "properties": {
+              "identity": {
+                "const": "singleton"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "singletonId",
+              "idPattern"
+            ],
+            "properties": {
+              "life": {
+                "const": false
+              }
+            }
+          }
         },
         {
-          "if": { "properties": { "identity": { "const": "keyed" }, "life": { "const": true } } },
-          "then": { "required": ["deadRows"] }
+          "if": {
+            "properties": {
+              "identity": {
+                "const": "keyed"
+              },
+              "life": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "deadRows"
+            ]
+          }
         },
         {
-          "if": { "not": { "required": ["key"] } },
-          "then": { "required": ["idPattern"] }
+          "if": {
+            "not": {
+              "required": [
+                "key"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "idPattern"
+            ]
+          }
         }
       ]
     },
     "field": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["kind", "writer"],
+      "required": [
+        "kind",
+        "writer"
+      ],
       "properties": {
         "kind": {
           "description": "The field kind (D-9).",
-          "enum": ["lww", "ranked", "fww", "const", "time", "serial", "text"]
+          "enum": [
+            "lww",
+            "ranked",
+            "fww",
+            "const",
+            "time",
+            "serial",
+            "text"
+          ]
         },
         "writer": {
           "description": "`server`: only the server writes the field; a client-origin delta writing it is refused invalid (§4.4).",
-          "enum": ["client", "server"]
+          "enum": [
+            "client",
+            "server"
+          ]
         },
         "ref": {
           "description": "The field holds an id of this type (D-10).",
@@ -252,11 +465,22 @@
         },
         "unit": {
           "description": "The unit of `min` and `max`: Unicode code points or UTF-8 bytes. A string value is measured itself; any other value by its JCS encoding.",
-          "enum": ["chars", "bytes"]
+          "enum": [
+            "chars",
+            "bytes"
+          ]
         },
-        "min": { "type": "integer", "minimum": 0 },
-        "max": { "type": "integer", "minimum": 1 },
-        "domain": { "$ref": "#/$defs/domain" },
+        "min": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "max": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "domain": {
+          "$ref": "#/$defs/domain"
+        },
         "quantum": {
           "description": "A number field's step: an integer, or 1/k for an integer k (0.01, 0.1, 0.5). Clients round to it half away from zero; the server refuses a value off it.",
           "type": "number",
@@ -265,24 +489,104 @@
         "serialNext": {
           "description": "A serial field numbers new records 1 + the maximum over alive records sharing these fields (§6.1 step 11).",
           "type": "array",
-          "items": { "$ref": "#/$defs/fieldName" },
+          "items": {
+            "$ref": "#/$defs/fieldName"
+          },
           "uniqueItems": true
         },
         "rank": {
           "description": "A ranked field's domain: each value's integer rank (§3.2 joinRanked).",
           "type": "object",
           "minProperties": 1,
-          "additionalProperties": { "type": "integer" }
+          "additionalProperties": {
+            "type": "integer"
+          }
+        },
+        "opens": {
+          "description": "On a server-written field of a tree-scoped singleton: the values that open the tree to every reader (D-4).",
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "minItems": 1,
+          "uniqueItems": true
         }
       },
       "allOf": [
-        { "if": { "properties": { "kind": { "const": "ranked" } } }, "then": { "required": ["rank"] } },
         {
-          "if": { "properties": { "kind": { "const": "serial" } } },
-          "then": { "required": ["serialNext"], "properties": { "writer": { "const": "server" } } }
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "ranked"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "rank"
+            ]
+          }
         },
-        { "if": { "properties": { "kind": { "const": "text" } } }, "then": { "required": ["unit", "max"] } },
-        { "if": { "required": ["parent"] }, "then": { "required": ["ref"] } }
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "serial"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "serialNext"
+            ],
+            "properties": {
+              "writer": {
+                "const": "server"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "text"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "unit",
+              "max"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "parent"
+            ]
+          },
+          "then": {
+            "required": [
+              "ref"
+            ]
+          }
+        },
+        {
+          "if": {
+            "required": [
+              "opens"
+            ]
+          },
+          "then": {
+            "properties": {
+              "writer": {
+                "const": "server"
+              }
+            }
+          }
+        }
       ]
     },
     "domain": {
@@ -291,62 +595,141 @@
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
-            "type": { "const": "string" },
-            "nullable": { "type": "boolean" },
-            "enum": { "type": "array", "items": { "type": "string" }, "minItems": 1, "uniqueItems": true },
-            "pattern": { "$ref": "#/$defs/regex" },
-            "unit": { "enum": ["chars", "bytes"] },
-            "min": { "type": "integer", "minimum": 0 },
-            "max": { "type": "integer", "minimum": 1 }
+            "type": {
+              "const": "string"
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "enum": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              },
+              "minItems": 1,
+              "uniqueItems": true
+            },
+            "pattern": {
+              "$ref": "#/$defs/regex"
+            },
+            "unit": {
+              "enum": [
+                "chars",
+                "bytes"
+              ]
+            },
+            "min": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "max": {
+              "type": "integer",
+              "minimum": 1
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
-            "type": { "const": "number" },
-            "nullable": { "type": "boolean" },
-            "integer": { "type": "boolean" },
-            "min": { "type": "number" },
-            "max": { "type": "number" }
+            "type": {
+              "const": "number"
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "integer": {
+              "type": "boolean"
+            },
+            "min": {
+              "type": "number"
+            },
+            "max": {
+              "type": "number"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type"],
+          "required": [
+            "type"
+          ],
           "properties": {
-            "type": { "enum": ["boolean", "fracKey", "stamp", "id", "json"] },
-            "nullable": { "type": "boolean" }
+            "type": {
+              "enum": [
+                "boolean",
+                "fracKey",
+                "stamp",
+                "id",
+                "json"
+              ]
+            },
+            "nullable": {
+              "type": "boolean"
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "items"],
+          "required": [
+            "type",
+            "items"
+          ],
           "properties": {
-            "type": { "const": "array" },
-            "nullable": { "type": "boolean" },
-            "items": { "$ref": "#/$defs/domain" },
-            "maxItems": { "type": "integer", "minimum": 0 }
+            "type": {
+              "const": "array"
+            },
+            "nullable": {
+              "type": "boolean"
+            },
+            "items": {
+              "$ref": "#/$defs/domain"
+            },
+            "maxItems": {
+              "type": "integer",
+              "minimum": 0
+            }
           }
         },
         {
           "type": "object",
           "additionalProperties": false,
-          "required": ["type", "properties"],
+          "required": [
+            "type",
+            "properties"
+          ],
           "properties": {
-            "type": { "const": "object" },
-            "nullable": { "type": "boolean" },
+            "type": {
+              "const": "object"
+            },
+            "nullable": {
+              "type": "boolean"
+            },
             "properties": {
               "type": "object",
-              "propertyNames": { "$ref": "#/$defs/fieldName" },
-              "additionalProperties": { "$ref": "#/$defs/domain" }
+              "propertyNames": {
+                "$ref": "#/$defs/fieldName"
+              },
+              "additionalProperties": {
+                "$ref": "#/$defs/domain"
+              }
             },
-            "required": { "type": "array", "items": { "$ref": "#/$defs/fieldName" }, "uniqueItems": true }
+            "required": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/fieldName"
+              },
+              "uniqueItems": true
+            }
           }
         }
       ]
@@ -354,40 +737,90 @@
     "command": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["name", "scope", "origins", "serverInternal", "args"],
+      "required": [
+        "name",
+        "scope",
+        "origins",
+        "serverInternal",
+        "args"
+      ],
       "properties": {
-        "name": { "type": "string", "pattern": "^[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*$" },
-        "scope": { "$ref": "#/$defs/scope" },
-        "origins": { "$ref": "#/$defs/origins" },
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9]*\\.[a-z][A-Za-z0-9]*$"
+        },
+        "scope": {
+          "$ref": "#/$defs/scope"
+        },
+        "origins": {
+          "$ref": "#/$defs/origins"
+        },
         "serverInternal": {
           "description": "Only the server calls it; a replica's call is refused forbidden (§6.1 step 3).",
           "type": "boolean"
         },
         "args": {
           "type": "object",
-          "propertyNames": { "$ref": "#/$defs/fieldName" },
-          "additionalProperties": { "$ref": "#/$defs/argument" }
+          "propertyNames": {
+            "$ref": "#/$defs/fieldName"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/argument"
+          }
         },
         "predicts": {
           "description": "The types whose records the command's client prediction may carry (§7.1 `predict`).",
           "type": "array",
-          "items": { "$ref": "#/$defs/typeName" },
+          "items": {
+            "$ref": "#/$defs/typeName"
+          },
           "uniqueItems": true
+        },
+        "beforePull": {
+          "description": "A server-internal command that runs before every pull of its scope, in its own admission (§6.7).",
+          "type": "boolean"
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "beforePull": {
+                "const": true
+              }
+            },
+            "required": [
+              "beforePull"
+            ]
+          },
+          "then": {
+            "properties": {
+              "serverInternal": {
+                "const": true
+              }
+            }
+          }
+        }
+      ]
     },
     "argument": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["type"],
+      "required": [
+        "type"
+      ],
       "properties": {
         "type": {
           "description": "`time`: device-produced epoch ms, clamped like a time field. `instant`: epoch ms the user chose, refused invalid beyond the skew bound. `ref<t>`: an id of type t, rewritten by write maps and followed by dependent folding (§2.4, §7.7).",
           "type": "string",
           "pattern": "^(json|time|instant|ref<[a-z][A-Za-z0-9]*>)$"
         },
-        "optional": { "type": "boolean" },
-        "domain": { "$ref": "#/$defs/domain" }
+        "optional": {
+          "type": "boolean"
+        },
+        "domain": {
+          "$ref": "#/$defs/domain"
+        }
       }
     }
   }

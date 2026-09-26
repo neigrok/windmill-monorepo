@@ -62,6 +62,13 @@ export function hunksOf(script) {
   return hunks;
 }
 
+const WHITESPACE = /^\s+$/;
+
+// A hunk whose every deleted and inserted token is whitespace.
+function isWhitespaceOnly(base, hunk) {
+  return [...base.slice(hunk.start, hunk.end), ...hunk.tokens].every((token) => WHITESPACE.test(token));
+}
+
 function touches(x, y) {
   return x.start <= y.end && y.start <= x.end;
 }
@@ -105,9 +112,14 @@ export function diff3(baseText, headText, mineText) {
     const mines = region.hunks.filter((hunk) => hunk.side === 'mine');
     const H = sideText(base, region.start, region.end, heads);
     const M = sideText(base, region.start, region.end, mines);
+    const headBlank = heads.every((hunk) => isWhitespaceOnly(base, hunk));
+    const mineBlank = mines.every((hunk) => isWhitespaceOnly(base, hunk));
     if (mines.length === 0) out.push(H);
     else if (heads.length === 0) out.push(M);
     else if (H === M) out.push(H);
+    else if (headBlank && mineBlank) out.push(H);
+    else if (headBlank) out.push(M);
+    else if (mineBlank) out.push(H);
     else if (H === '') out.push(M);
     else if (M === '') out.push(H);
     else {

@@ -1832,7 +1832,7 @@
     }
   },
   {
-    "name": "a run delete that also deletes one of its laps leaves that lap to the client delta",
+    "name": "a run delete that also deletes one of its laps: the consequence writes that lap too, and its server stamp wins",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -2122,7 +2122,7 @@
               "t": "lap",
               "id": "lap00001",
               "born": "1200:0:r_aaaaaaaaaaaa",
-              "lifeStamp": "5000:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "1200000:5:srv",
               "seq": 7
             },
             {

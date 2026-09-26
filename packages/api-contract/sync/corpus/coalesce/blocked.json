@@ -21,7 +21,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -191,7 +190,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -351,7 +349,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -524,7 +521,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -714,7 +710,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -819,7 +814,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -945,7 +939,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1088,7 +1081,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1227,7 +1219,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1372,7 +1363,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1536,7 +1526,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1681,7 +1670,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1845,7 +1833,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1998,7 +1985,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2165,7 +2151,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2310,7 +2295,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2466,7 +2450,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2619,7 +2602,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {

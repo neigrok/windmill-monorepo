@@ -21,7 +21,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -30,7 +29,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -216,8 +214,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
             },
             "outbox": [
               {
@@ -390,7 +392,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -429,7 +430,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -643,8 +643,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -889,7 +893,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -898,7 +901,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -1013,8 +1015,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
             },
             "outbox": [
               {
@@ -1091,7 +1097,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1130,7 +1135,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -1266,8 +1270,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1399,7 +1407,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1408,7 +1415,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -1554,8 +1560,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
             },
             "outbox": [
               {

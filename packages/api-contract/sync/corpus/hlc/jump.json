@@ -1,0 +1,92 @@
+[
+  {
+    "name": "clocks that move together did not jump",
+    "input": {
+      "before": {
+        "wall": 1000,
+        "mono": 50,
+        "boot": "b1"
+      },
+      "after": {
+        "wall": 6000,
+        "mono": 5050,
+        "boot": "b1"
+      }
+    },
+    "expect": {
+      "jumped": false
+    }
+  },
+  {
+    "name": "a drift of exactly CLOCK_JUMP_MS is not a jump",
+    "input": {
+      "before": {
+        "wall": 1000,
+        "mono": 50,
+        "boot": "b1"
+      },
+      "after": {
+        "wall": 7000,
+        "mono": 5050,
+        "boot": "b1"
+      }
+    },
+    "expect": {
+      "jumped": false
+    }
+  },
+  {
+    "name": "the wall clock set forward past CLOCK_JUMP_MS jumped",
+    "input": {
+      "before": {
+        "wall": 1000,
+        "mono": 50,
+        "boot": "b1"
+      },
+      "after": {
+        "wall": 7001,
+        "mono": 5050,
+        "boot": "b1"
+      }
+    },
+    "expect": {
+      "jumped": true
+    }
+  },
+  {
+    "name": "the wall clock set back jumped",
+    "input": {
+      "before": {
+        "wall": 100000,
+        "mono": 50,
+        "boot": "b1"
+      },
+      "after": {
+        "wall": 40000,
+        "mono": 5050,
+        "boot": "b1"
+      }
+    },
+    "expect": {
+      "jumped": true
+    }
+  },
+  {
+    "name": "a reboot in between is a jump, whatever the readings",
+    "input": {
+      "before": {
+        "wall": 1000,
+        "mono": 50,
+        "boot": "b1"
+      },
+      "after": {
+        "wall": 6000,
+        "mono": 5050,
+        "boot": "b2"
+      }
+    },
+    "expect": {
+      "jumped": true
+    }
+  }
+]

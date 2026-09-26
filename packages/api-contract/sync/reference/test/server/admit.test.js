@@ -44,8 +44,7 @@ test('admission never changes the state it was given', () => {
 });
 
 // §11.2 #4: the lattice fields after admitting a set of plain intents none of which is refused are the
-// same in every order. The records exist beforehand, and every op is one §4.3 applies in every order:
-// a tag takes at most one delete, since a second delete onto `dead =` answers ok without applying.
+// same in every order. The records exist beforehand; revives and deletes of a tag interleave freely.
 test('any permutation of non-refused plain intents yields equal lattice fields', () => {
   const board = 'b_00000001';
   const born = '100:0:r_seed';
@@ -66,17 +65,13 @@ test('any permutation of non-refused plain intents yields equal lattice fields',
     const rng = new Rng(seed);
     const stamp = () => `${200 + rng.int(4)}:${rng.int(2)}:${rng.pick(actors)}`;
     const intents = [];
-    const deleted = new Set();
     for (let i = 0; i < 9; i += 1) {
       const kind = rng.int(5);
       if (kind === 0) {
         const field = rng.pick(Object.keys(values));
         intents.push({ scope: 'self/probe', d: [{ t: 'card', id: rng.pick(['card0001', 'card0002']), born, f: { [field]: [rng.pick(values[field]), stamp()] } }] });
       } else if (kind === 1) {
-        const id = rng.pick(['oak', 'ash']);
-        const state = deleted.has(id) ? 'alive' : rng.pick(['alive', 'dead']);
-        if (state === 'dead') deleted.add(id);
-        intents.push({ scope: `tree/${board}`, d: [{ t: 'tag', id, born, life: [state, stamp()] }] });
+        intents.push({ scope: `tree/${board}`, d: [{ t: 'tag', id: rng.pick(['oak', 'ash']), born, life: [rng.pick(['alive', 'dead']), stamp()] }] });
       } else if (kind === 2) {
         intents.push({ scope: `tree/${board}`, d: [{ t: 'link', id: [rng.pick(['oak', 'ash']), rng.pick(['oak', 'ash'])], life: [rng.pick(['alive', 'dead']), stamp()] }] });
       } else if (kind === 3) {
@@ -111,9 +106,7 @@ test('any permutation of non-refused plain intents yields equal lattice fields',
   }
 });
 
-// The order dependence §4.3 leaves: a delete onto `dead =` is ok without applying, so the dead life
-// stamp is the first admitted, and a revive stamped between the two deletes lands in one order only.
-test('two deletes of a revivable record keep the first admitted stamp, so a revive between them depends on order', () => {
+test('§4.3: a delete onto dead = joins, so two deletes and a revive between them land alike in any order', () => {
   const board = 'b_00000001';
   const born = '100:0:r_seed';
   const base = serverState({
@@ -129,6 +122,7 @@ test('two deletes of a revivable record keep the first admitted stamp, so a revi
     for (const intent of order) state = admit({ state, registry, product, origin: { kind: 'replica', account: 'A' }, intent, serverNow: 10_000 }).state;
     return state.row(`tree:${board}`, 'tag', 'oak').life;
   };
-  assert.deepEqual(lifeAfter([early, late, revive]), ['alive', '201:0:r_cccccccccccc']);
-  assert.deepEqual(lifeAfter([late, early, revive]), ['dead', '202:0:r_aaaaaaaaaaaa']);
+  for (const order of [[early, late, revive], [late, early, revive], [revive, early, late], [early, revive, late]]) {
+    assert.deepEqual(lifeAfter(order), ['dead', '202:0:r_aaaaaaaaaaaa']);
+  }
 });

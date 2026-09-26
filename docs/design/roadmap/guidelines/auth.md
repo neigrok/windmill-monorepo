@@ -70,7 +70,7 @@ count.
   | Account already owns trees | **Asked once.** Sign-in asks whether to add the trees made signed out or discard them; Discard asks once more before it deletes. Added trees sit beside the account's: nothing merges by content, and same-name trees coexist |
   | Same tree known on both | Merged field by field; the newest edit to each field wins |
   | Second device signs in | Account trees flow down; trees made signed out on it follow the two rows above |
-  | Sign out | The account's trees leave this device. Instant when every change has reached the account; otherwise the confirmation states how many have not and offers **Keep** or **Discard** |
+  | Sign out | The account's trees leave this device. Instant when the account has confirmed every change; otherwise the confirmation states how many it has not and offers **Keep** or **Discard** (from this device) |
   | Sign back in, same account | The account's own changes — made offline while signed in, or kept at sign-out — sync up as a plain sync, never asked about |
 
 - **One question, only where it has an answer.** An account that owns no trees takes the trees
@@ -137,7 +137,7 @@ owns:
 | Rate-limited | "That's a few links in a row" · "Check your spam folder first — or try again in 10 minutes." |
 | Unreachable | "Can't reach windmill.works" · "Your trees are safe on this device." · "Retry" |
 | Claim chip | "Syncing your trees…" → "Synced" |
-| Sign-in question · sign-out with unsent changes | `../../guidelines/superapp-flow.md` §6–7, with *this device* for *this phone* |
+| Sign-in question · sign-out with unconfirmed changes | `../../guidelines/superapp-flow.md` §6–7, with *this device* for *this phone* |
 | Expired session | "Your sign-in expired. Everything's still here — sign in to keep syncing." |
 | Delete | "Delete in 30 days" · "Account closing · {date}" · "Sign in any time before then to undo." |
 

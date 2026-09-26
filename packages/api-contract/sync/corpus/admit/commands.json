@@ -2806,7 +2806,7 @@
     }
   },
   {
-    "name": "probe.sweep from a server origin ends every open run with one stamp",
+    "name": "probe.tick from a server origin ends every open run started TICK_AFTER_MS ago, with one stamp",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -2829,7 +2829,7 @@
             "state": "alive",
             "seq": 4,
             "counters": {},
-            "digest": "d08095da62367cabaeec6b56f6cbd9e1138374af15996b52804fc39d386202b6"
+            "digest": "10403aa4aa0b214166dc779c32fafea0396faa484bdcbb2948f06f824a3cf2b7"
           }
         },
         "rows": {
@@ -2857,13 +2857,13 @@
               "id": "run00003",
               "life": [
                 "alive",
-                "1200:0:srv"
+                "999000:0:srv"
               ],
-              "born": "1200:0:srv",
+              "born": "999000:0:srv",
               "f": {
                 "startedAt": [
-                  1200,
-                  "1200:0:srv"
+                  999000,
+                  "999000:0:srv"
                 ]
               },
               "seq": 3,
@@ -2902,7 +2902,7 @@
       "intent": {
         "scope": "self/probe",
         "cmd": {
-          "name": "probe.sweep",
+          "name": "probe.tick",
           "args": {}
         }
       },
@@ -2935,7 +2935,7 @@
             "state": "alive",
             "seq": 5,
             "counters": {},
-            "digest": "10bc58ac53970030c98e598a886d814c0c5caa5c38bbd48ab375d0234d2d4512"
+            "digest": "37c054dd92c6a9792e23a0bd63a38db0428a6a4f4405348e8d80967a6246dcc1"
           }
         },
         "rows": {
@@ -2967,22 +2967,18 @@
               "id": "run00003",
               "life": [
                 "alive",
-                "1200:0:srv"
+                "999000:0:srv"
               ],
-              "born": "1200:0:srv",
+              "born": "999000:0:srv",
               "f": {
-                "endedAt": [
-                  1000000,
-                  "1000000:0:srv"
-                ],
                 "startedAt": [
-                  1200,
-                  "1200:0:srv"
+                  999000,
+                  "999000:0:srv"
                 ]
               },
-              "seq": 5,
+              "seq": 3,
               "rc": 3000,
-              "ru": 1000000
+              "ru": 3000
             },
             {
               "t": "run",
@@ -3007,6 +3003,6743 @@
               "ru": 4000
             }
           ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy creates the board, and writes the source title, tags and links into the new tree at its own seq",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "fa154e478065e1b3c6690456a47c68e35801cf4d8ee1c9d0b44882f413c16099",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy replayed by its receipt is ok with the board and its born",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "fa154e478065e1b3c6690456a47c68e35801cf4d8ee1c9d0b44882f413c16099",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "fa154e478065e1b3c6690456a47c68e35801cf4d8ee1c9d0b44882f413c16099",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy of another account's public tree copies its title but not its visibility",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000b",
+            "dst": "b_00000003"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000003",
+            "born": "1000000:0:srv"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "882658cb9ba1b694e0c401837f60685658e28d8670c74d838a3fa2b514da98d5"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "7908256f0b3f4f694cdafc6b1b0f84f0d2e31fa97569f37cacbe42f6be9ef65f",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000003": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2700:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000003": "b_0000000b"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy of a revived tag creates it born at its life stamp, so the copy keeps its life",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 6,
+            "counters": {},
+            "digest": "1c61608fa31567293aca30858fc4d4e7a2d3a4059a444ddd086b85219e4e71a9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "tag",
+              "id": "pine",
+              "life": [
+                "alive",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2050:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Pine",
+                  "2900:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 6,
+              "rc": 6000,
+              "ru": 6000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_00000002"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3,
+        "write": [
+          {
+            "t": "board",
+            "id": "b_00000002",
+            "born": "1000000:0:srv"
+          }
+        ]
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 6,
+            "counters": {},
+            "digest": "1c61608fa31567293aca30858fc4d4e7a2d3a4059a444ddd086b85219e4e71a9",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "6e11c7de380fc5fd4dacb2247d51f47f62f443beb581b4a8056a77cb4fa0aa50",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "tag",
+              "id": "pine",
+              "life": [
+                "alive",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2050:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Pine",
+                  "2900:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 6,
+              "rc": 6000,
+              "ru": 6000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "pine",
+              "life": [
+                "alive",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2800:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Pine",
+                  "2900:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy of an absent tree is not-found",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000f",
+            "dst": "b_00000003"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "not-found"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy of another account's private tree is not-found",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000c",
+            "dst": "b_00000003"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "not-found"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy of a dead tree is not-found",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000d",
+            "dst": "b_00000003"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "not-found"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy onto a board id alive in the scope is id-taken",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000b",
+            "dst": "b_00000001"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-taken"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy onto a board id of another account is id-taken",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_00000001",
+            "dst": "b_0000000b"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-taken"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 3000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "probe.copy onto a dead board id is id-taken",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "fa154e478065e1b3c6690456a47c68e35801cf4d8ee1c9d0b44882f413c16099",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "cmd": {
+          "name": "probe.copy",
+          "args": {
+            "src": "b_0000000b",
+            "dst": "b_00000004"
+          }
+        }
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-taken"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c528658ccafdba24c8201596a5cf359c122203926c0b0c100bf11d950ad5830b"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "a110d407f514f8b7f5754c49d3b0117ffc6029d0023c16243cdf855c6169660a"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {},
+            "digest": "239ef56d132c08daf29076b9946a401d7b310b48462e5a5ed0228dc23d56930b",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "fa154e478065e1b3c6690456a47c68e35801cf4d8ee1c9d0b44882f413c16099",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          },
+          "tree:b_00000004": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000004",
+            "deadAt": 2950
+          },
+          "tree:b_0000000b": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "a32ec8bba2ac160b8044fabd677b4389a373960ff01a63745bc669f3178f8653",
+            "governedBy": "acct:B/probe#board#b_0000000b"
+          },
+          "tree:b_0000000c": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0c610e5ebcd721357d371480ddc594ef26bef16ebf93db7a6f4ff0a585fbd8d6",
+            "governedBy": "acct:B/probe#board#b_0000000c"
+          },
+          "tree:b_0000000d": {
+            "kind": "tree",
+            "owner": "B",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:B/probe#board#b_0000000d",
+            "deadAt": 2900
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000004",
+              "life": [
+                "dead",
+                "2950:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2040:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "2000:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2000:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000c",
+              "life": [
+                "alive",
+                "2010:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2010:0:r_bbbbbbbbbbbb",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_0000000d",
+              "life": [
+                "dead",
+                "2900:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2020:0:r_bbbbbbbbbbbb",
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2150:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2150:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000002": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "strength": [
+                  3,
+                  "2300:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_0000000b": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Theirs",
+                  "2000:0:r_bbbbbbbbbbbb"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "fir",
+              "life": [
+                "alive",
+                "2700:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "f": {
+                "label": [
+                  "Fir",
+                  "2100:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_0000000c": [
+            {
+              "t": "tag",
+              "id": "yew",
+              "life": [
+                "alive",
+                "2100:0:r_bbbbbbbbbbbb"
+              ],
+              "born": "2100:0:r_bbbbbbbbbbbb",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "copies": {
+            "acct:A/probe": {
+              "b_00000002": "b_00000001"
+            }
+          }
         }
       }
     }

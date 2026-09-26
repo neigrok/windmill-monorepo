@@ -1,5 +1,5 @@
-// §7.10 the replica lifecycle (sign-in by the lineage rule, sign-out, discard), §7.11 re-identify and
-// §7.5 step 1's epoch change. R99 leaves one decision kind: the signed-out decision.
+// §7.10 the replica lifecycle (sign-in by the lineage rule, sign-out, discard), §7.11 the fork guard
+// and re-identify, §7.3's engine start and §7.5 step 1's epoch change.
 
 import { moveEntry, REPLICA_MACHINE, transition } from '../core/machines.js';
 import { recordKey, stampsOf } from '../core/rows.js';
@@ -14,6 +14,11 @@ export function reidentify(replica, ctx) {
   for (const entry of replica.entries()) if (entry.state === 'sent') moveEntry(replica, ctx.ended, entry, 'reidentify');
 }
 
+// D-2: the engine instance takes a fresh actor at every process launch and at every re-identify.
+export function renewActor(ctx) {
+  ctx.actor = ctx.newActor();
+}
+
 export function epochChange(replica, ctx, epoch) {
   replica.meta.serverEpoch = epoch;
   for (const cursor of Object.values(replica.cursors)) cursor.cursor = null;
@@ -22,6 +27,28 @@ export function epochChange(replica, ctx, epoch) {
     if (entry.state === 'acked' && entry.resultEpoch !== epoch) moveEntry(replica, ctx.ended, entry, 'epoch');
   }
   reidentify(replica, ctx);
+  renewActor(ctx);
+}
+
+// §7.3 and §7.11 at engine start: every held entry is released, the instance takes a new actor, and a
+// native store (options.backupGuard given: the backup-excluded copy, or null when missing) whose
+// forkGuard differs from that copy re-identifies every replica under a new forkGuard. A store without
+// a forkGuard mints its first. Web runs no fork guard and passes no backupGuard.
+// Answers {actor, reidentified, pendingSignIn?}; a pending sign-in is resumed by the caller.
+export function engineStart(device, ctx, options = {}) {
+  for (const replica of device.replicas) releaseAll(replica, ctx.registry, ctx.ended);
+  renewActor(ctx);
+  let reidentified = false;
+  if (Object.hasOwn(options, 'backupGuard')) {
+    if (device.meta.forkGuard !== undefined && options.backupGuard !== device.meta.forkGuard) {
+      for (const replica of device.replicas) reidentify(replica, ctx);
+      reidentified = true;
+    }
+    if (device.meta.forkGuard === undefined || reidentified) device.meta.forkGuard = ctx.newForkGuard();
+  }
+  const answer = { actor: ctx.actor, reidentified };
+  if (device.meta.pendingSignIn) answer.pendingSignIn = device.meta.pendingSignIn;
+  return answer;
 }
 
 function entriesOf(registry, replica, product) {
@@ -55,6 +82,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {} }) {
     .filter((product) => holdsRecords[product] && anon && entriesOf(registry, anon, product).length > 0)
     .map((product) => ({ kind: 'signed-out', product, count: anonCount(registry, anon, product) }));
   if (due.some((decision) => decisions[decision.product] !== 'add' && decisions[decision.product] !== 'discard')) {
+    device.meta.pendingSignIn = { account };
     return { complete: false, due };
   }
 
@@ -93,19 +121,20 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {} }) {
   for (const entry of target.outbox) entry.lineage = account;
   observeEntries(target);
   target.meta.authPaused = false;
+  delete device.meta.pendingSignIn;
   device.activeReplica = target;
   return { complete: true, due };
 }
 
-// Sign-out of the active bound replica. Acked entries are admitted and resolve as every scope is
-// unsubscribed; with entries left and no choice, answers {unsent} so the product can ask Keep or Discard.
+// Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS): acked entries resolve; with entries left
+// and no choice, answers {unsent, ready, sent} (Discard cannot recall a sent entry that may have landed).
 export function signOut(device, ctx, { choice } = {}) {
   const bound = device.activeReplica;
   releaseAll(bound, ctx.registry, ctx.ended);
   for (const entry of bound.entries()) if (entry.state === 'acked') moveEntry(bound, ctx.ended, entry, 'resolve');
-  const unsent = bound.outbox.length;
-  if (unsent > 0 && choice !== 'keep' && choice !== 'discard') return { complete: false, unsent };
-  if (unsent === 0 || choice === 'keep') {
+  const counts = { unsent: bound.outbox.length, ready: bound.entries().filter((entry) => entry.state === 'ready').length, sent: bound.entries().filter((entry) => entry.state === 'sent').length };
+  if (counts.unsent > 0 && choice !== 'keep' && choice !== 'discard') return { complete: false, ...counts };
+  if (counts.unsent === 0 || choice === 'keep') {
     bound.meta.state = transition(REPLICA_MACHINE, 'bound', 'sign-out-keep', 'dormant');
     bound.confirmed = {};
     bound.spentIds = {};
@@ -119,7 +148,7 @@ export function signOut(device, ctx, { choice } = {}) {
     device.remove(bound);
   }
   device.activeReplica = device.anonReplica() ?? device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: 'anon' }));
-  return { complete: true, unsent };
+  return { complete: true, ...counts };
 }
 
 export function discardUnsent(device, ctx, replica) {

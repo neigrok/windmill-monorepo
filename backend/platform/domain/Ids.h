@@ -1,7 +1,10 @@
 #pragma once
 
 #include <algorithm>
+#include <charconv>
 #include <cstdint>
+#include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -43,50 +46,77 @@ struct Hlc {
   bool isSet() const { return physicalMs != 0 || counter != 0 || !actor.empty(); }
 };
 
-// "physicalMs:counter:actor". The actor keeps any ':' it contains, and the unset sentinel
-// round-trips as "0:0:".
+// "physicalMs:counter:actor". The actor keeps any ':' it contains, and the unset stamp is "0:0:".
 inline std::string toString(const Hlc& hlc) {
   return std::to_string(hlc.physicalMs) + ":" + std::to_string(hlc.counter) + ":" + hlc.actor;
 }
 
-inline Hlc parseHlc(std::string_view text) {
-  auto first = text.find(':');
-  auto second = text.find(':', first + 1);
-  if (first == std::string_view::npos || second == std::string_view::npos) return Hlc{};
-  Hlc hlc;
-  hlc.physicalMs = std::stoull(std::string(text.substr(0, first)));
-  hlc.counter = static_cast<std::uint32_t>(std::stoul(std::string(text.substr(first + 1, second - first - 1))));
-  hlc.actor = std::string(text.substr(second + 1));
+// D-1, strictly: ms below 2^53 and counter below 2^32, each in decimal without a sign or a leading
+// zero, then an actor of 1-64 printable ASCII bytes (0x20-0x7E) that may hold ':'. "0:0:" is the unset
+// stamp, the only one without an actor. Any other text is not a stamp.
+inline std::optional<Hlc> parseHlc(std::string_view text) {
+  const std::size_t first = text.find(':');
+  const std::size_t second = first == std::string_view::npos ? first : text.find(':', first + 1);
+  if (second == std::string_view::npos) return std::nullopt;
+
+  auto decimal = [](std::string_view digits, std::uint64_t limit) -> std::optional<std::uint64_t> {
+    if (digits.empty() || (digits.size() > 1 && digits.front() == '0')) return std::nullopt;
+    std::uint64_t value = 0;
+    const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), value);
+    if (error != std::errc{} || end != digits.data() + digits.size() || value >= limit) return std::nullopt;
+    return value;
+  };
+  const std::optional<std::uint64_t> ms = decimal(text.substr(0, first), std::uint64_t{1} << 53);
+  const std::optional<std::uint64_t> counter = decimal(text.substr(first + 1, second - first - 1), std::uint64_t{1} << 32);
+  if (!ms || !counter) return std::nullopt;
+
+  const std::string_view actor = text.substr(second + 1);
+  const bool printable = std::all_of(actor.begin(), actor.end(), [](char c) { return c >= 0x20 && c <= 0x7E; });
+  if (!printable || actor.size() > 64) return std::nullopt;
+  const Hlc hlc{*ms, static_cast<std::uint32_t>(*counter), std::string(actor)};
+  if (actor.empty() && hlc.isSet()) return std::nullopt;
   return hlc;
 }
 
-// One per replica: mints strictly increasing stamps under a fixed actor and folds every remote
-// stamp it observes, so a write minted after seeing a tombstone dominates it.
+// §10.2, one per replica: mints strictly increasing stamps under a fixed actor and folds every remote
+// stamp it observes, so a write minted after seeing a tombstone dominates it. The state is the pair
+// (ms, counter) a replica persists; the actor belongs to the engine instance using it.
 class HlcClock {
 public:
-  explicit HlcClock(std::string actor) : actor_(std::move(actor)) {}
+  struct State {
+    std::uint64_t ms = 0;
+    std::uint32_t counter = 0;
 
-  Hlc tick(std::uint64_t wallMs) {
-    std::uint64_t ms = std::max(wallMs, lastMs_);
-    counter_ = (ms == lastMs_) ? counter_ + 1 : 0;
-    lastMs_ = ms;
-    return Hlc{ms, counter_, actor_};
+    bool operator==(const State&) const = default;
+  };
+
+  explicit HlcClock(std::string actor) : actor_(std::move(actor)) {}
+  HlcClock(std::string actor, State state) : actor_(std::move(actor)), state_(state) {}
+
+  // A physical time ahead of the clock resets the counter; otherwise the counter counts on, and a
+  // counter past 2^32 - 1 carries into the next millisecond.
+  Hlc tick(std::uint64_t physNowMs) {
+    if (physNowMs > state_.ms) {
+      state_ = State{physNowMs, 0};
+    } else if (state_.counter == std::numeric_limits<std::uint32_t>::max()) {
+      state_ = State{state_.ms + 1, 0};
+    } else {
+      ++state_.counter;
+    }
+    return Hlc{state_.ms, state_.counter, actor_};
   }
 
   void observe(const Hlc& stamp) {
-    if (!stamp.isSet()) return;
-    if (stamp.physicalMs > lastMs_ || (stamp.physicalMs == lastMs_ && stamp.counter > counter_)) {
-      lastMs_ = stamp.physicalMs;
-      counter_ = stamp.counter;
-    }
+    if (std::pair(stamp.physicalMs, stamp.counter) > std::pair(state_.ms, state_.counter))
+      state_ = State{stamp.physicalMs, stamp.counter};
   }
 
   const std::string& actor() const { return actor_; }
+  State state() const { return state_; }
 
 private:
   std::string actor_;
-  std::uint64_t lastMs_ = 0;
-  std::uint32_t counter_ = 0;
+  State state_{};
 };
 
 }

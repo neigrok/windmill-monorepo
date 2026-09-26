@@ -265,7 +265,7 @@ function access() {
       origin: B,
       intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { title: ['this title is too long', s(5000, 0, OTHER)] } }]),
     }),
-    admitted('a server-internal command from a replica is forbidden', { state: baseState(), intent: { scope: 'self/probe', cmd: { name: 'probe.sweep', args: {} } } }),
+    admitted('a server-internal command from a replica is forbidden', { state: baseState(), intent: { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } } }),
     admitted('a server origin writing a type whose origins exclude it is forbidden', { state: tree, origin: SERVER_A, intent: intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', f: { done: [false, null] } }]) }),
     admitted('a server origin writes the owner tree with a minted stamp', { state: tree, origin: SERVER_A, intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { visibility: ['public', null] } }]) }),
   ];
@@ -295,6 +295,11 @@ function identity() {
     scopes: { [PROBE_A]: productScope('A') },
     rows: { [PROBE_A]: [run('run00001', {}), lap('lap00001', {})] },
   });
+  const days = serverState({
+    scopes: { [PROBE_A]: productScope('A') },
+    rows: { [PROBE_A]: [row({ t: 'day', id: '2026-09-01', life: ['alive', s(1000)], f: { score: [7, s(1000)] }, seq: 1 })] },
+    spent: { [PROBE_A]: [{ t: 'day', id: '2026-09-02', lifeStamp: s(1200), seq: 2 }] },
+  });
   const cmd = (d) => probe(d);
   return [
     admitted('create onto none applies', { state: base, intent: cmd([create('card', 'card0005', s(5000), { title: 'New' })]) }),
@@ -314,7 +319,9 @@ function identity() {
     admitted('delete of a foreign id is ok without a change', { state: base, intent: cmd([{ t: 'card', id: 'cardbbbb', born: s(1000), life: ['dead', s(5000)] }]) }),
     admitted('delete of alive with equal born applies and spends the id', { state: base, intent: cmd([{ t: 'card', id: 'card0001', born, life: ['dead', s(5000)] }]) }),
     admitted('delete of alive with another born is ok without a change', { state: base, intent: cmd([{ t: 'card', id: 'card0001', born: s(999), life: ['dead', s(5000)] }]) }),
-    admitted('delete of dead with equal born is ok without a change', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1500), life: ['dead', s(5000)] }]) }),
+    admitted('delete of dead with equal born joins: a newer death stamp moves the spent row', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1500), life: ['dead', s(5000)] }]) }),
+    admitted('delete of dead with equal born joins: an older death stamp leaves it, ok without a change', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1500), life: ['dead', s(1600)] }]) }),
+    admitted('delete of a dead revivable record joins: a newer death stamp moves the kept row', { state: deadTag, intent: intent(`tree/${BOARD}`, [{ t: 'tag', id: 'elm', born: s(2100), life: ['dead', s(5000)] }]) }),
     admitted('delete of dead with another born is ok without a change', { state: spentCard, intent: cmd([{ t: 'card', id: 'card0002', born: s(1400), life: ['dead', s(5000)] }]) }),
     admitted('revive of none is unknown-record', { state: base, intent: cmd([{ t: 'card', id: 'card0005', born: s(4000), life: ['alive', s(5000)] }]) }),
     admitted('revive of a foreign id is unknown-record', { state: base, intent: cmd([{ t: 'card', id: 'cardbbbb', born: s(1000), life: ['alive', s(5000)] }]) }),
@@ -330,6 +337,10 @@ function identity() {
     admitted('a keyed put older than the stored death is ok without a change', { state: deadTag, intent: intent(`tree/${BOARD}`, [{ t: 'link', id: ['elm', 'yew'], life: ['alive', s(2700)] }]) }),
     admitted('a keyed put newer than the stored death makes it alive again', { state: deadTag, intent: intent(`tree/${BOARD}`, [{ t: 'link', id: ['elm', 'yew'], life: ['alive', s(5000)] }]) }),
     admitted('a keyed put removing an alive record kills it (dead row kept thin)', { state: tree, intent: intent(`tree/${BOARD}`, [{ t: 'link', id: ['oak', 'ash'], life: ['dead', s(5000)] }]) }),
+    admitted('a keyed put onto none of a spent type creates it', { state: days, intent: cmd([{ t: 'day', id: '2026-09-03', life: ['alive', s(5000)], f: { score: [4, s(5000)] } }]) }),
+    admitted('a keyed put removing a record of a spent type deletes its row and spends it without a born', { state: days, intent: cmd([{ t: 'day', id: '2026-09-01', life: ['dead', s(5000)] }]) }),
+    admitted('a keyed put newer than a spent death makes it alive again, drops the spent row, and sets rc', { state: days, intent: cmd([{ t: 'day', id: '2026-09-02', life: ['alive', s(5000)], f: { score: [9, s(5000)] } }]) }),
+    admitted('a keyed put older than a spent death is ok without a change', { state: days, intent: cmd([{ t: 'day', id: '2026-09-02', life: ['alive', s(1100)], f: { score: [9, s(1100)] } }]) }),
     admitted('a keyed write without life creates on none', { state: tree, intent: intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'ash', f: { done: [true, s(5000)] } }]) }),
     admitted('a singleton write applies', { state: tree, intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { title: ['Plan B', s(5000)] } }]) }),
     admitted('a const field rewritten under another stamp to another value is invalid', {
@@ -421,8 +432,12 @@ function commands() {
   const twoOpen = serverState({
     clock: { ms: 1100, counter: 0 },
     scopes: { [PROBE_A]: productScope('A') },
-    rows: { [PROBE_A]: [run('run00001', {}), run('run00003', { born: SRV(1200), startedAt: 1200, seq: 3 }), run('run00004', { born: SRV(1300), startedAt: 1300, endedAt: 1400, seq: 4 })] },
+    rows: { [PROBE_A]: [run('run00001', {}), run('run00003', { born: SRV(NOW - 1000), startedAt: NOW - 1000, seq: 3 }), run('run00004', { born: SRV(1300), startedAt: 1300, endedAt: 1400, seq: 4 })] },
   });
+  const copying = copyState();
+  const copy = (src, dst) => ({ scope: 'self/probe', cmd: { name: 'probe.copy', args: { src, dst } } });
+  const copied = new ServerState(copying);
+  const afterCopy = admit({ state: copied, registry, product, origin: A, intent: copy(BOARD, 'b_00000002'), serverNow: NOW }).state.toJSON();
   return [
     admitted('probe.start creates the run with a receipt and a write map', { state: empty, intent: start({ id: 'run00001', label: 'Go', startedAt: 5000, join: true }) }),
     admitted('probe.start without a label writes only startedAt', { state: empty, intent: start({ id: 'run00001', startedAt: 5000, join: true }) }),
@@ -446,10 +461,66 @@ function commands() {
     admitted('probe.end of a dead run is record-dead', { state: deadRun, intent: end({ runId: 'run00001', endedAt: 5000 }) }),
     admitted('probe.end before the run started is invalid', { state: base, intent: end({ runId: 'run00001', endedAt: 1099 }) }),
     admitted('probe.end of an ended run is ok without a change', { state: ended, intent: end({ runId: 'run00001', endedAt: 5000 }) }),
-    admitted('probe.sweep from a server origin ends every open run with one stamp', { state: twoOpen, origin: SERVER_A, intent: { scope: 'self/probe', cmd: { name: 'probe.sweep', args: {} } } }),
+    admitted('probe.tick from a server origin ends every open run started TICK_AFTER_MS ago, with one stamp', { state: twoOpen, origin: SERVER_A, intent: { scope: 'self/probe', cmd: { name: 'probe.tick', args: {} } } }),
+    admitted('probe.copy creates the board, and writes the source title, tags and links into the new tree at its own seq', { state: copying, intent: copy(BOARD, 'b_00000002') }),
+    admitted('probe.copy replayed by its receipt is ok with the board and its born', { state: afterCopy, intent: copy(BOARD, 'b_00000002') }),
+    admitted('probe.copy of another account\'s public tree copies its title but not its visibility', { state: copying, intent: copy('b_0000000b', 'b_00000003') }),
+    admitted('probe.copy of a revived tag creates it born at its life stamp, so the copy keeps its life', {
+      state: copyState([row({ t: 'tag', id: 'pine', life: ['alive', s(2800)], born: s(2050), f: { label: ['Pine', s(2900)] }, seq: 6 })]),
+      intent: copy(BOARD, 'b_00000002'),
+    }),
+    admitted('probe.copy of an absent tree is not-found', { state: copying, intent: copy('b_0000000f', 'b_00000003') }),
+    admitted('probe.copy of another account\'s private tree is not-found', { state: copying, intent: copy('b_0000000c', 'b_00000003') }),
+    admitted('probe.copy of a dead tree is not-found', { state: copying, intent: copy('b_0000000d', 'b_00000003') }),
+    admitted('probe.copy onto a board id alive in the scope is id-taken', { state: copying, intent: copy('b_0000000b', BOARD) }),
+    admitted('probe.copy onto a board id of another account is id-taken', { state: copying, intent: copy(BOARD, 'b_0000000b') }),
+    admitted('probe.copy onto a dead board id is id-taken', { state: afterCopy, intent: copy('b_0000000b', 'b_00000004') }),
     admitted('a run created by a plain delta is invalid', { state: empty, intent: probe([create('run', 'run00001', s(5000), { startedAt: 5000 })]) }),
     admitted('a run created by a server-origin delta is invalid', { state: empty, origin: SERVER_A, intent: probe([{ t: 'run', id: 'run00001', born: null, life: ['alive', null], f: { startedAt: [5000, null] } }]) }),
   ];
+}
+
+// A's board b_00000001 (its tree: title, two tags, a link, a dead tag, then `ownRows`) and A's spent
+// board b_00000004; B's public b_0000000b (a revived tag), private b_0000000c and dead b_0000000d.
+function copyState(ownRows = []) {
+  const bTree = (id) => `tree:${id}`;
+  return serverState({
+    clock: { ms: 3000, counter: 0 },
+    scopes: {
+      [PROBE_A]: productScope('A'),
+      [PROBE_B]: productScope('B'),
+      [TREE]: treeScope('A', BOARD),
+      [bTree('b_0000000b')]: treeScope('B', 'b_0000000b'),
+      [bTree('b_0000000c')]: treeScope('B', 'b_0000000c'),
+      [bTree('b_0000000d')]: treeScope('B', 'b_0000000d', { state: 'dead', deadAt: 2900 }),
+      'tree:b_00000004': treeScope('A', 'b_00000004', { state: 'dead', deadAt: 2950 }),
+    },
+    rows: {
+      [PROBE_A]: [
+        row({ t: 'board', id: BOARD, life: ['alive', s(2000)], born: s(2000), seq: 1 }),
+        row({ t: 'board', id: 'b_00000004', life: ['dead', s(2950)], born: s(2040), seq: 2 }),
+      ],
+      [PROBE_B]: [
+        row({ t: 'board', id: 'b_0000000b', life: ['alive', s(2000, 0, OTHER)], born: s(2000, 0, OTHER), seq: 1 }),
+        row({ t: 'board', id: 'b_0000000c', life: ['alive', s(2010, 0, OTHER)], born: s(2010, 0, OTHER), seq: 2 }),
+        row({ t: 'board', id: 'b_0000000d', life: ['dead', s(2900, 0, OTHER)], born: s(2020, 0, OTHER), seq: 3 }),
+      ],
+      [TREE]: [
+        row({ t: 'meta', id: 'meta', f: { title: ['Plan', s(2000)] }, seq: 1 }),
+        row({ t: 'tag', id: 'oak', life: ['alive', s(2100)], born: s(2100), f: { label: ['Oak', s(2100)] }, seq: 2 }),
+        row({ t: 'tag', id: 'ash', life: ['alive', s(2200)], born: s(2200), f: { label: ['Ash', s(2200)] }, seq: 3 }),
+        row({ t: 'link', id: ['oak', 'ash'], life: ['alive', s(2300)], f: { strength: [3, s(2300)] }, seq: 4 }),
+        row({ t: 'tag', id: 'elm', life: ['dead', s(2600)], born: s(2150), f: { label: ['Elm', s(2150)] }, seq: 5 }),
+        ...ownRows,
+      ],
+      [bTree('b_0000000b')]: [
+        row({ t: 'meta', id: 'meta', f: { title: ['Theirs', s(2000, 0, OTHER)], visibility: ['public', SRV(2500)] }, seq: 1 }),
+        row({ t: 'tag', id: 'fir', life: ['alive', s(2700, 0, OTHER)], born: s(2100, 0, OTHER), f: { label: ['Fir', s(2100, 0, OTHER)] }, seq: 2 }),
+      ],
+      [bTree('b_0000000c')]: [row({ t: 'tag', id: 'yew', life: ['alive', s(2100, 0, OTHER)], born: s(2100, 0, OTHER), seq: 1 })],
+    },
+    spent: { [PROBE_A]: [] },
+  });
 }
 
 function check() {
@@ -504,7 +575,7 @@ function check() {
       state: withLaps,
       intent: probe([{ t: 'run', id: 'run00001', born: SRV(1100), life: ['dead', s(1000)] }]),
     }),
-    admitted('a run delete that also deletes one of its laps leaves that lap to the client delta', {
+    admitted('a run delete that also deletes one of its laps: the consequence writes that lap too, and its server stamp wins', {
       state: withLaps,
       intent: probe([{ t: 'run', id: 'run00001', born: SRV(1100), life: ['dead', s(5000)] }, { t: 'lap', id: 'lap00001', born: s(1200), life: ['dead', s(5000)] }]),
     }),
@@ -593,6 +664,10 @@ function lifecycle() {
     admitted('a governing create onto its dead id is ok without a change', { state: deadBoard, intent: probe([create('board', BOARD, s(2000))]) }),
     admitted('a revive of a dead governing record is id-spent', { state: deadBoard, intent: probe([{ t: 'board', id: BOARD, born: s(2000), life: ['alive', s(9500)] }]) }),
     admitted('a new governing id after a death creates a new scope', { state: deadBoard, intent: probe([create('board', 'b_00000003', s(9500))]) }),
+    admitted('a command writing into a scope it creates (a copy of an empty tree) leaves the new scope at seq 0 with digest 0', {
+      state: serverState({ scopes: { [PROBE_A]: productScope('A'), 'tree:b_00000005': treeScope('A', 'b_00000005') }, rows: { [PROBE_A]: [row({ t: 'board', id: 'b_00000005', life: ['alive', s(2000)], born: s(2000), seq: 1 })] } }),
+      intent: { scope: 'self/probe', cmd: { name: 'probe.copy', args: { src: 'b_00000005', dst: 'b_00000006' } } },
+    }),
   ];
 }
 
@@ -663,6 +738,17 @@ function serverStamps() {
       origin: SERVER_A,
       intent: probe([{ t: 'card', id: 'card0009', born: null, life: ['alive', null], f: { title: ['Srv', null], tier: ['draft', null] } }]),
     }),
+    admitted('a server delta observes a same-intent client delta on its register, so the server delta wins', {
+      state: serverState({ clock: { ms: 1300, counter: 0 }, scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [run('run00001', {}), lap('lap00001', {})] } }),
+      intent: probe([
+        { t: 'run', id: 'run00001', born: SRV(1100), life: ['dead', s(NOW)] },
+        { t: 'lap', id: 'lap00001', born: s(1200), life: ['dead', s(NOW + 200_000, 4)] },
+      ]),
+    }),
+    admitted('a consequence stamped after the join observes a stored future (admissible) stamp it overwrites, so the server write wins', {
+      state: serverState({ clock: { ms: 1300, counter: 0 }, scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [run('run00001', {}), lap('lap00001', { born: s(1200), life: ['alive', s(NOW + 250_000, 3)] })] } }),
+      intent: probe([{ t: 'run', id: 'run00001', born: SRV(1100), life: ['dead', s(NOW)] }]),
+    }),
     admitted('a server write refused at identity mints nothing', {
       state: future,
       origin: SERVER_A,
@@ -695,6 +781,8 @@ function requests() {
     sequence('a replay with other arguments is request-conflict', base, [call({}), call({ args: { titles: ['One', 'Three'] }, intents: [createCard('card0001', 'One'), createCard('card0003', 'Three')] })]),
     sequence('a call running within its lease answers request-running', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS - 1 })]),
     sequence('a call running past its lease is taken over and resumes after its stored parts', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
+    sequence('a transient failure of admit 2 leaves the row running, so a retry within the lease is request-running', base, [call({ transientAt: 2 }), call({ serverNow: NOW + 1 })]),
+    sequence('after a transient failure the lease lapses, and the call resumes after its stored part', base, [call({ transientAt: 2 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
     sequence('a refused admit ends the call with that result', base, [
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')] },
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')], serverNow: NOW + 1 },
@@ -702,7 +790,7 @@ function requests() {
   ];
 }
 
-// §6.1 step 10's bound, shrunk through `input.limits`: the joined row as it will be stored, at the next
+// §6.1 step 9's bound, shrunk through `input.limits`: the joined row as it will be stored, at the next
 // seq with rc, ru and text revs, and never a text base.
 function recordBound() {
   const empty = serverState({ scopes: { [PROBE_A]: productScope('A') } });

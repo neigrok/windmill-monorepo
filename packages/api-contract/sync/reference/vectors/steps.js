@@ -1,6 +1,7 @@
 // The client-step language of corpus/README.md ("Client steps"). Each step answers one snapshot in
 // `returns`; a throwing step answers {throws: true} and changes nothing, being one local transaction.
 
+import { steadyTiming } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
 import { scopeDigest } from '../core/digest.js';
 import { TransitionError } from '../core/machines.js';
@@ -8,7 +9,7 @@ import { compareRecords, isAlive } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
 import { CommitError, commit } from '../client/commit.js';
 import { release, releaseAll, releaseDue, undo } from '../client/hold.js';
-import { anonCount, discardUnsent, epochChange, reidentify, signIn, signOut } from '../client/lifecycle.js';
+import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
 import { Device } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../client/sender.js';
@@ -51,36 +52,62 @@ export function assertReachable(deviceJson) {
   }
 }
 
-export function runSteps({ device: deviceJson, ids = [], steps, limits }) {
+// Queues the steps draw from in order: replica ids, instance actors, fork guards and CSPRNG draws.
+class Queues {
+  constructor({ ids = [], actors = [], forkGuards = [], draws = [] }) {
+    this.lists = { ids: [...ids], actors: [...actors], forkGuards: [...forkGuards], draws: [...draws] };
+  }
+
+  take(name) {
+    if (this.lists[name].length === 0) throw new Error(`the vector uses more ${name} than it lists`);
+    return this.lists[name].shift();
+  }
+
+  snapshot() {
+    return structuredClone(this.lists);
+  }
+
+  restore(lists) {
+    this.lists = lists;
+  }
+}
+
+export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, actor = ACTOR, steps, limits }) {
   assertReachable(deviceJson);
   let device = new Device(structuredClone(deviceJson));
   const ended = [];
   const telemetry = [];
-  const queue = [...ids];
+  const queues = new Queues({ ids, actors, forkGuards, draws });
   const returns = [];
   const answer = (value) => returns.push(structuredClone(value));
   let gestures = 0;
+  let current = actor;
   let lastPush = null;
   let lastPull = null;
   for (const step of structuredClone(steps)) {
-    const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, queue: [...queue], gestures };
+    const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, queues: queues.snapshot(), gestures, current };
+    const stepActor = step.actor ?? current;
     const ctx = {
       registry,
-      actor: step.actor ?? ACTOR,
+      actor: stepActor,
       deviceNow: step.deviceNow ?? 0,
       ended,
       telemetry,
       appVersion: step.appVersion ?? '1',
       nextGestureId: () => `g${(gestures += 1)}`,
-      newReplicaId: () => {
-        if (queue.length === 0) throw new Error('the vector minted more replica ids than it lists');
-        return queue.shift();
+      newReplicaId: () => queues.take('ids'),
+      newActor: () => queues.take('actors'),
+      newForkGuard: () => queues.take('forkGuards'),
+      draw: (size) => {
+        const index = queues.take('draws');
+        if (index >= size) throw new Error(`draw ${index} is not below ${size}`);
+        return index;
       },
       limits: { ...CONSTANTS, ...limits },
     };
     try {
       const replica = device.activeReplica;
-      const timing = { tSend: step.tSend ?? ctx.deviceNow, tRecv: step.tRecv ?? ctx.deviceNow };
+      const timing = step.send ? { send: step.send, recv: step.recv } : steadyTiming(step.tSend ?? ctx.deviceNow, step.tRecv ?? ctx.deviceNow);
       switch (step.op) {
         case 'commit':
           answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
@@ -107,7 +134,7 @@ export function runSteps({ device: deviceJson, ids = [], steps, limits }) {
           answer(onPushResponse(replica, ctx, lastPush, step.response, timing) ?? null);
           break;
         case 'hello':
-          onHello(replica, step.response, timing);
+          onHello(replica, ctx, step.response, timing);
           answer(null);
           break;
         case 'pull':
@@ -136,7 +163,11 @@ export function runSteps({ device: deviceJson, ids = [], steps, limits }) {
           break;
         case 'reidentify':
           reidentify(replica, ctx);
+          renewActor(ctx);
           answer(null);
+          break;
+        case 'engineStart':
+          answer(engineStart(device, ctx, Object.hasOwn(step, 'backupGuard') ? { backupGuard: step.backupGuard } : {}));
           break;
         case 'epochChange':
           epochChange(replica, ctx, step.epoch);
@@ -155,13 +186,15 @@ export function runSteps({ device: deviceJson, ids = [], steps, limits }) {
         default:
           throw new Error(`unknown step ${step.op}`);
       }
+      if (ctx.actor !== stepActor) current = ctx.actor;
     } catch (error) {
       if (!(error instanceof CommitError) && !(error instanceof TransitionError)) throw error;
       device = new Device(before.device);
       ended.length = before.ended;
       telemetry.length = before.telemetry;
-      queue.splice(0, queue.length, ...before.queue);
+      queues.restore(before.queues);
       gestures = before.gestures;
+      current = before.current;
       answer({ throws: true });
     }
   }
@@ -169,7 +202,9 @@ export function runSteps({ device: deviceJson, ids = [], steps, limits }) {
 }
 
 export function stepsVector(name, input) {
-  if (input.limits === undefined) delete input.limits;
+  for (const key of ['limits', 'ids', 'actors', 'forkGuards', 'draws', 'actor']) {
+    if (input[key] === undefined || (Array.isArray(input[key]) && input[key].length === 0)) delete input[key];
+  }
   const out = runSteps(input);
   const expect = { returns: out.returns, device: out.device, ended: out.ended };
   if (out.telemetry.length) expect.telemetry = out.telemetry;

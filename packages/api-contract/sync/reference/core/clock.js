@@ -49,13 +49,28 @@ export function observedPair(pair, stamps) {
   return stamps.reduce((high, stamp) => maxPair(high, Stamp.pairOf(stamp)), pair);
 }
 
+// The readings {send, recv} around a request, of device clocks that never jumped: monotonic ms equal to
+// wall ms, one boot.
+export function steadyTiming(tSend, tRecv) {
+  return { send: { wall: tSend, mono: tSend, boot: 'boot-1' }, recv: { wall: tRecv, mono: tRecv, boot: 'boot-1' } };
+}
+
 export const Offset = {
-  sample({ serverTime, tSend, tRecv }) {
-    return { offset: serverTime - Math.floor((tSend + tRecv) / 2), rtt: tRecv - tSend };
+  // One response, with the device clocks' readings at send and at receipt, taken into the kept
+  // samples and the stored reading. Answers null (no sample) when send and receive straddle a jump;
+  // a receive reading that jumped from the stored one discards the earlier samples.
+  take({ samples, clockReading }, { serverTime, send, recv }, limits = CONSTANTS) {
+    if (Offset.jumped(send, recv, limits)) return null;
+    const sample = { offset: serverTime - Math.floor((send.wall + recv.wall) / 2), rtt: recv.mono - send.mono };
+    const kept = clockReading !== undefined && Offset.jumped(clockReading, recv, limits) ? [] : samples;
+    return { samples: [...kept, sample].slice(-limits.OFFSET_SAMPLES), clockReading: recv };
   },
 
-  record(samples, sample, limits = CONSTANTS) {
-    return [...samples, sample].slice(-limits.OFFSET_SAMPLES);
+  // Two {wall, mono, boot} readings of the device's clocks: the wall clock jumped when the device booted
+  // in between, or moved more than CLOCK_JUMP_MS apart from the monotonic clock.
+  jumped(before, after, limits = CONSTANTS) {
+    if (before.boot !== after.boot) return true;
+    return Math.abs((after.wall - before.wall) - (after.mono - before.mono)) > limits.CLOCK_JUMP_MS;
   },
 
   choose(samples) {

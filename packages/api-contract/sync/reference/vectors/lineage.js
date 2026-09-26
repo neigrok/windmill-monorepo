@@ -60,6 +60,13 @@ function signIns() {
       device: device(ANON, anonWithWork()),
       steps: [{ op: 'signIn', account: 'A', holdsRecords: holds, deviceNow: 4000 }],
     }),
+    stepsVector('an incomplete sign-in records pendingSignIn; the sign-in that completes clears it', {
+      device: device(ANON, anonWithWork()),
+      steps: [
+        { op: 'signIn', account: 'A', holdsRecords: holds, deviceNow: 4000 },
+        { op: 'signIn', account: 'A', holdsRecords: holds, decisions: { probe: 'add' }, deviceNow: 4100 },
+      ],
+    }),
     stepsVector('the signed-out decision answered add rebinds the anon replica under A', {
       device: device(ANON, anonWithWork()),
       steps: [{ op: 'signIn', account: 'A', holdsRecords: holds, decisions: { probe: 'add' }, deviceNow: 4000 }],
@@ -148,6 +155,58 @@ function signOuts() {
   ];
 }
 
+const FORK_GUARD = 'fg_00000001';
+
+// A bound replica with one sent entry and one ready one, under A.
+function boundBusy() {
+  return replicaAfter({ ...freshMeta(BOUND, 'bound', 'A') }, [
+    commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Sent' } }], undefined, 3000),
+    { op: 'push', deviceNow: 3001 },
+    commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { tier: 'draft' } }], undefined, 3002),
+  ]);
+}
+
+// §7.3, §7.11 and D-2 at engine start.
+function starts() {
+  return [
+    stepsVector('engine start releases every held entry, and the instance takes a fresh actor that its next commit uses (web: no fork guard)', {
+      device: device(ANON, anonWithWork()),
+      actors: ['r_cccccccccccc'],
+      steps: [{ op: 'engineStart', deviceNow: 4000 }, commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'After start' } }], undefined, 4001)],
+    }),
+    stepsVector('a forkGuard equal to its backup-excluded copy keeps every replica id', {
+      device: { ...device(BOUND, boundBusy()), meta: { forkGuard: FORK_GUARD } },
+      actors: ['r_cccccccccccc'],
+      steps: [{ op: 'engineStart', backupGuard: FORK_GUARD, deviceNow: 4000 }],
+    }),
+    stepsVector('a missing backup-excluded copy re-identifies every replica under a new forkGuard', {
+      device: { ...device(BOUND, boundBusy(), dormant(DORMANT_B, 'B')), meta: { forkGuard: FORK_GUARD } },
+      ids: [NEW, 'rp_000000000000000000000000000000c2'],
+      actors: ['r_cccccccccccc'],
+      forkGuards: ['fg_00000002'],
+      steps: [{ op: 'engineStart', backupGuard: null, deviceNow: 4000 }, { op: 'push', deviceNow: 4001 }],
+    }),
+    stepsVector('a backup-excluded copy that differs re-identifies every replica too', {
+      device: { ...device(BOUND, boundBusy()), meta: { forkGuard: FORK_GUARD } },
+      ids: [NEW],
+      actors: ['r_cccccccccccc'],
+      forkGuards: ['fg_00000002'],
+      steps: [{ op: 'engineStart', backupGuard: 'fg_00000009', deviceNow: 4000 }],
+    }),
+    stepsVector('a store without a forkGuard mints its first and re-identifies nothing', {
+      device: device(ANON, anonWithWork()),
+      actors: ['r_cccccccccccc'],
+      forkGuards: ['fg_00000001'],
+      steps: [{ op: 'engineStart', backupGuard: null, deviceNow: 4000 }],
+    }),
+    stepsVector('engine start answers a pending sign-in for the caller to resume', {
+      device: device(ANON, anonWithWork()),
+      actors: ['r_cccccccccccc'],
+      steps: [{ op: 'signIn', account: 'A', holdsRecords: { probe: true }, deviceNow: 4000 }, { op: 'engineStart', deviceNow: 5000 }],
+    }),
+  ];
+}
+
 export function files() {
-  return { 'lineage/signin.json': signIns(), 'lineage/signout.json': signOuts() };
+  return { 'lineage/signin.json': signIns(), 'lineage/signout.json': signOuts(), 'lineage/start.json': starts() };
 }

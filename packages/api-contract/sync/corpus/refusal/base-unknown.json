@@ -21,7 +21,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -58,7 +57,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -161,8 +159,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/overlay/b_00000001": [
@@ -257,7 +259,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -294,7 +295,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -452,8 +452,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/overlay/b_00000001": [
@@ -553,7 +557,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -590,7 +593,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -693,8 +695,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/overlay/b_00000001": [

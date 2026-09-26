@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import test from 'node:test';
+import { steadyTiming } from '../../core/clock.js';
 import { CONSTANTS } from '../../core/constants.js';
 import { jcs } from '../../core/jcs.js';
 import { intentDigest } from '../../core/wire.js';
@@ -9,7 +10,7 @@ import { release, releaseAll } from '../../client/hold.js';
 import { signIn, signOut } from '../../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../client/puller.js';
 import { Device } from '../../client/replica.js';
-import { nextPush, onPushResponse } from '../../client/sender.js';
+import { nextPush, onHello, onPushResponse } from '../../client/sender.js';
 import { reconcile } from '../../client/subscriptions.js';
 import { deathFrameFor, hello, pull } from '../../server/pull.js';
 import { push } from '../../server/push.js';
@@ -39,7 +40,9 @@ for (const file of transcripts) {
         assert.equal(jcs(out.response), jcs(line.response), `step ${line.step}`);
         state = out.state;
       } else if (line.http === 'pull') {
-        assert.equal(jcs(pull({ state, registry, account: line.account, request: line.request, serverNow: line.serverNow })), jcs(line.response), `step ${line.step}`);
+        const out = pull({ state, registry, product, account: line.account, request: line.request, serverNow: line.serverNow });
+        assert.equal(jcs(out.response), jcs(line.response), `step ${line.step}`);
+        state = out.state;
       } else if (line.http === 'hello') {
         assert.equal(jcs(hello({ state, registry, account: line.account, serverTime: line.serverNow })), jcs(line.response), `step ${line.step}`);
       } else if (line.server === 'load') {
@@ -56,15 +59,23 @@ for (const file of transcripts) {
     const ids = structuredClone(header.ids);
     const ended = Object.fromEntries(Object.keys(devices).map((name) => [name, []]));
     let gestures = 0;
+    const actors = Object.fromEntries(Object.keys(devices).map((name) => [name, [...(header.actors[name] ?? [ACTOR])]]));
+    const current = Object.fromEntries(Object.entries(actors).map(([name, list]) => [name, list.shift()]));
+    const unused = () => {
+      throw new Error('the transcript lists none');
+    };
     const ctx = (name, deviceNow) => ({
       registry,
-      actor: header.actors[name] ?? ACTOR,
+      actor: current[name],
       deviceNow,
       ended: ended[name],
       telemetry: [],
       appVersion: '1',
       nextGestureId: () => `g${(gestures += 1)}`,
       newReplicaId: () => ids[name].shift(),
+      newActor: () => actors[name].shift(),
+      newForkGuard: unused,
+      draw: unused,
       limits: CONSTANTS,
     });
     for (const line of lines) {
@@ -73,12 +84,14 @@ for (const file of transcripts) {
         assert.equal(jcs(ended), jcs(line.ended));
         continue;
       }
-      if (line.server === 'load' || line.http === 'hello') continue;
+      if (line.server === 'load') continue;
       const device = devices[line.device];
       const replica = device.activeReplica;
       const context = ctx(line.device, line.deviceNow);
-      const timing = { tSend: line.deviceNow, tRecv: line.deviceNow };
-      if (line.do) {
+      const timing = steadyTiming(line.deviceNow, line.deviceNow);
+      if (line.http === 'hello') {
+        onHello(replica, context, line.response, timing);
+      } else if (line.do) {
         const { args } = line;
         let out = null;
         if (line.do === 'commit') out = commit(replica, context, args.scope, args.changes ?? [], args.opts ?? {});
@@ -100,6 +113,7 @@ for (const file of transcripts) {
       } else if (line.frame) {
         assert.equal(onFrame(replica, context, line.frame), line.returns, `step ${line.step}`);
       }
+      current[line.device] = context.actor;
     }
   });
 }

@@ -51,6 +51,10 @@ export function files() {
         ['resolved', 'discard'],
         ['sent', 'recover', 'acked'],
         [null, 'commit', 'sent'],
+        ['sent', 'cancel'],
+        ['acked', 'cancel'],
+        ['ready', 'rewind'],
+        ['acked', 'rewind'],
       ]),
     ],
     'machine/replica.json': [

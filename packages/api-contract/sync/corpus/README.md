@@ -38,7 +38,7 @@ written from this README alone needs no other file than `../probe.registry.json`
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
 | server | `identity/table.json`, `admit/`, `text/`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `machine/scope.json` |
-| client | `hlc/offset.json`, `fracindex/`, `view/`, `commit/`, `coalesce/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
+| client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `coalesce/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
 
 ## The probe product
 
@@ -49,15 +49,18 @@ journal.
 | Type | Scope | Identity | Life | Covers |
 |---|---|---|---|---|
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
+| `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
 | `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row; cap 3; guarded saves; primary |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
-| `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, which opens the tree to every reader when `unlisted` or `public` (D-4) |
+| `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, whose `opens` values `unlisted` and `public` open the tree to every reader (D-4) |
 | `tag` | `tree/<T>` | derived, fallback `tag`, scope id space | revivable, keep | D-26 ids, revive, thin dead rows and spent ids on clients |
 | `link` | `tree/<T>` | keyed `[from, to]`, each `ref<tag>` | yes, keep | keyed with life, a tuple key, `strength` lww (an edit carries the drawn life register unchanged) |
 | `mark` | `self/overlay/<T>` | keyed `ref<tag>` | none; `visibleWhen [done, memo]` | keyed without life, `memo` text (≤ 40 bytes), replica origin only |
 
-Device scope `device/probe`: rows `rack` and `picture:<id>` (`localOnly`).
+Device scope `device/probe`: rows `rack` and `picture:<id>` (`localOnly`). Every minted or derived type
+declares its `mint` recipe: `board` is `b_` and 8 of `0-9a-f`; `card`, `run` and `lap` are 16 base-62
+characters; `tag` is 12 of `0-9a-z`.
 
 **Commands** (all in `self/probe`):
 
@@ -72,17 +75,35 @@ Device scope `device/probe`: rows `rack` and `picture:<id>` (`localOnly`).
 - `probe.end {runId: ref<run>, endedAt: instant}` — absent or `foreign` → `unknown-record`; dead →
   `record-dead`; `endedAt < startedAt` → `invalid`; already ended → `ok`, no change, write `[]`; otherwise
   `endedAt` at the server stamp, write `[{t: "run", id: runId, f: {endedAt}}]`.
-- `probe.sweep {}` — server-internal. Every open run gets `endedAt := serverNow`; write `[]`.
+- `probe.copy {src: ref<board>, dst: ref<board>}` — replica and server origin; predicts `board`. A
+  command that writes into a scope it creates (§6.1 step 14).
+  1. A receipt for `dst` naming the same `src`: `ok`, no change; write `[{t: "board", id: dst, born}]`
+     when that board is alive, otherwise `[]`.
+  2. `src`'s tree is not readable by the caller (absent, dead, or private to another account) →
+     `not-found`, the same answer for all three (INV-7(e)).
+  3. `dst`'s board id state is not `none` → `id-taken`.
+  4. Otherwise create board `dst` at the server stamp, which creates `tree:dst` (step 15); record the
+     receipt `dst → src`; and write into `tree:dst` (step 14, with that scope's own seq and digest)
+     `src`'s `meta.title` register and every alive `tag` and `link` of `tree:src`, ids and registers
+     as stored. A tag arrives as a create born at its life stamp (`life` as stored, `born :=` that
+     life's stamp), so a revived tag keeps its life. `visibility` is not copied. Write
+     `[{t: "board", id: dst, born}]`.
+  The copy receipt is the command's replay rule (it skips the guards).
+- `probe.tick {}` — server-internal, `beforePull`: it runs in its own admission before every pull of
+  `self/probe` (§6.7). Every open run whose `startedAt ≤ serverNow − 600000` gets
+  `endedAt := serverNow` at the server stamp; write `[]`.
 
-A command's `ok` result always carries `write`, possibly `[]`. Receipts live in the server state as
-`product.receipts[<scope key>][<called id>] = <resolved id>`.
+A command's `ok` result always carries `write`, possibly `[]`. Start receipts live in the server state
+as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy receipts as
+`product.copies[<scope key>][<dst>] = <src>`.
 
-**Checks** (§6.1 step 9):
+**Checks** (§6.1 step 10, on the joined records):
 
 - A `run` create that does not come from `probe.start` → `invalid`.
-- A `run` whose death this intent applies kills every alive `lap` with that `runId` that the intent does
-  not itself touch, in the same seq, at the server stamp (§10.3: the tick observes the laps' stored life
-  stamps).
+- A `run` whose joined life turns dead (alive before the intent, dead after) kills every alive `lap`
+  with that `runId`, the laps the intent itself deletes included, in the same seq, at the stamp of
+  step 9's next pass (§10.3: it observes the laps' stored life stamps and the intent's client stamps, so
+  the server delta wins).
 - **Text revisions**: the probe keeps one superseded head per `(record, field)`; an older rev is gone
   (`base-unknown`).
 
@@ -123,12 +144,24 @@ apply the ops in order; `stamps` holds the tick results.
 
 ### `hlc/offset.json` — client
 
-`input: {samples: [{serverTime, tSend, tRecv}, …]}` (responses in arrival order) ·
-`expect: {samples: [{offset, rtt}, …], serverOffsetMs}`.
-- `offset = serverTime − floor((tSend + tRecv) / 2)`, `rtt = tRecv − tSend` (§10.4).
-- Only the last `OFFSET_SAMPLES` samples are kept.
+`input: {responses: [{serverTime, send, recv}, …]}` (responses in arrival order; `send` and `recv` are
+the device clocks' readings `{wall, mono, boot}` at send and at receipt) · `expect: {samples: [{offset,
+rtt}, …], serverOffsetMs, clockReading}`.
+- `offset = serverTime − floor((send.wall + recv.wall) / 2)`, `rtt = recv.mono − send.mono` (§10.4).
+- A response whose `send` and `recv` jumped (`hlc/jump.json`) yields no sample and changes nothing.
+- Each sample stores its `recv` as `clockReading`. When the stored `clockReading` and a sample's `recv`
+  jumped, the sample replaces every earlier one. Only the last `OFFSET_SAMPLES` samples are kept.
+  `clockReading` is `null` before the first sample.
 - `serverOffsetMs` is the offset of the kept sample with the lowest `rtt`; on equal `rtt` the latest
   sample wins; with no sample it is 0.
+
+### `hlc/jump.json` — client
+
+`input: {before: {wall, mono, boot}, after: {wall, mono, boot}}` (two readings of the device's wall and
+monotonic clocks, in ms, and its boot) · `expect: {jumped}`: true iff the boots differ or
+`|(after.wall − before.wall) − (after.mono − before.mono)| > CLOCK_JUMP_MS` (§10.4). The engine
+compares a response's send and receive readings (a jump yields no sample), then its receive reading
+with the stored `meta.clockReading` (a jump discards the earlier samples).
 
 ### `jcs/values.json` — all
 
@@ -226,18 +259,20 @@ and fields hash as received.
 intent not yet enqueued (intent) or a replica not yet created (replica). With `to`, the answer is
 `to` iff the table allows that target; without it, the table's first target. The terminal intent
 outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
-- intent: `commit`, `coalesce`, `release`, `undo`, `number`, `fold`, `target-merged`, `ok`,
+- intent: `commit`, `coalesce`, `cancel`, `release`, `undo`, `number`, `fold`, `target-merged`, `ok`,
   `recover` (clock-skew, base-unknown), `refuse`, `orphan-ok`, `transport`, `reidentify`,
-  `skew-return`, `resolve`, `epoch`, `discard`;
+  `skew-return`, `rewind`, `resolve`, `epoch`, `discard`;
 - replica: `first-launch`, `sign-in`, `sign-out-keep`, `sign-out-discard`, `discard`, `reidentify`
   (keeps the state; `deleted` is a replica removed from the device);
 - scope: `first-write`, `governing-create`, `governing-delete`, `horizon`.
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
-`ready`); `coalesce` is both a commit that coalesces at once and "create and delete cancel";
+`ready`); `coalesce` is both a commit that coalesces at once and "a never-numbered create or revive
+cancelled by a later delete"; `cancel` is "folded with such a cancel" (to `coalesced`, no notice);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
-request"; `skew-return` is "an earlier entry's `clock-skew` recovery"; `resolve` is every
-`acked → resolved` row; `epoch` is "epoch change, when `resultEpoch ≠ epoch`".
+request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
+one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
+row; `epoch` is "epoch change, when `resultEpoch ≠ epoch`".
 
 ### `text/tokens.json` — server
 
@@ -262,10 +297,19 @@ with a quadratic table of remaining distances.
   replacement tokens (a pure insertion has `start = end`).
 - Hunks of both sides are sorted by `(start, end, head first)` and chained into regions while the
   next hunk touches the region (`hunk.start ≤ region.end`).
-- Stable base tokens outside regions are emitted once. A region of one side emits that side's
-  text. A region of both sides compares `H` and `M`, each side's text over the region's base range:
-  equal → once; `H` empty → `M`; `M` empty → `H`; otherwise `rtrim(H) + "\n\n" + ltrim(M)`, trimming
-  the whitespace set above, and `conflict` is true.
+- A hunk is *whitespace-only* when every token it deletes or inserts is whitespace.
+- Stable base tokens outside regions are emitted once. With `H` and `M` each side's text over the
+  region's base range, a region emits, taking the first rule that applies:
+  1. the changed side's text, when only one side has hunks in it;
+  2. `H`, when `H = M`;
+  3. `H`, when every hunk of both sides is whitespace-only;
+  4. the other side's text, when every hunk of one side is whitespace-only (a word change beats a
+     whitespace edit, and so does a deletion);
+  5. the other side's text, when `H` or `M` is empty;
+  6. otherwise a conflict: `rtrim(H) + "\n\n" + ltrim(M)`, trimming the whitespace set above, and
+     `conflict` is true.
+- Edits to neighbouring words, which a stable whitespace token separates, never share a region, so
+  they merge.
 
 ### `text/merge.json` — server
 
@@ -320,7 +364,17 @@ type ServerStateJson = {
 origin = {kind: 'replica', account, replica, n} | {kind: 'server', account}
 ```
 
-Run §6.1 steps 1–16 for one intent (no push bookkeeping: `replicas` and `results` are untouched).
+Run §6.1 steps 1–16 for one intent (no push bookkeeping: `replicas` and `results` are untouched), in
+this order: 9 Join (server stamps, joins, text merges, the record bound), 10 Product check on the
+joined records (appended server deltas pass steps 5, 6 and 9 again), then the parent rule on the joined
+records, 11 Serial, 12 Caps, 13 Apply to the intent's scope, 15 Lifecycle, 14 writes into the scopes
+the intent created (each with its own `seq`, 1 when anything was written, and digest), 16 Result.
+- **Server stamps** (§10.3): each pass of step 9 that has server deltas with null stamps ticks the
+  server clock once, after observing every register those deltas write, as stored and as a same-intent
+  client delta writes it. The first pass also stamps the write map, so a command's deltas and its write
+  map share one stamp, and a delta that step 10 appends takes a later one.
+- A dead record of a non-revivable type keeps no fields (G1): the join drops them, so a put carrying a
+  field onto a spent keyed row whose death out-stamps it changes nothing.
 `result` is `{s: 'ok', seq, write?, detail?}` or `{s: 'refused', code, detail?}`; `write` is present
 whenever the intent carries a command, `[]` included. A refusal leaves `expect.state` equal to
 `input.state`. In a server-origin intent every stamp position (life, born, register) is `null`;
@@ -333,16 +387,16 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 | `identity.json` | every §4.3 cell through admission, keyed puts and singleton writes, §4.4's const and time rule |
 | `guards.json` | step 7, the replay rule, a command replay skipping guards |
 | `commands.json` | the probe commands |
-| `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life is dead; a null server stamp counts as newest) |
+| `check.json` | the parent rule and the run-delete consequence (laps die only when the run's joined life turns dead) |
 | `serial.json`, `caps.json`, `lifecycle.json`, `text.json` | steps 11, 12, 15 and §6.11 through admission |
-| `server-stamps.json` | §10.3: one tick per intent, after observing the stored registers the server deltas overwrite |
+| `server-stamps.json` | §10.3: one tick per pass of step 9, after observing the registers the server deltas write, as stored and as a same-intent client delta writes them |
 
 The parent rule is checked against the joined records of the intent, so a lap under a run the same
 intent creates is admitted and a lap under a run it deletes is `parent-dead`.
 
 ### admit/record-bound.json (server)
 
-§6.1 step 10's bound is measured on the joined row as step 13 would store it:
+§6.1 step 9's bound is measured on the joined row as step 13 would store it:
 - at `seq = scope.seq + 1`;
 - with `rc` (kept from the stored row, else `serverNow`) and `ru = serverNow`;
 - with every newly merged text's `rev` = that seq.
@@ -360,7 +414,9 @@ Text bases never count. The vectors admit a row whose stored encoding is exactly
 Run §6.3 for each call in order against the evolving state: `digest = sha256(jcs({tool, args}))`;
 admit k is part k, each in its own transaction, and every intent carries `gestureId = requestId`.
 The call stops at its first refusal, which is its result. `crashAfter: k` ends the call right after
-part k commits (the row stays `running`); its result is `null`. A stored row with another digest →
+part k commits (the row stays `running`); its result is `null`. `transientAt: k` makes admit k fail
+transiently (rolled back): the row stays `running` with the parts before k (none when k is 1, since
+the row is stored by the first admit's transaction), and the result is `null`. A stored row with another digest →
 `request-conflict`; `done` → its result; `running` with `serverNow − startedAt < REQUEST_LEASE_MS` →
 `request-running`; older → taken over (`startedAt := serverNow`) and resumed after the stored parts.
 
@@ -413,10 +469,14 @@ configure a limit skips those vectors.
 
 ```ts
 {name, input: {state, account: string|null, request: PullRequest, serverNow, limits?: {PULL_PAGE_BYTES}},
-       expect: {response: {status: 200, body: PullResponse}}}
+       expect: {response: {status, body}, state?, live?}}
 {name, input: {state, account: string|null, serverTime}, expect: {response: {status: 200, body: Hello}}}
 ```
 
+- Before each requested scope's page, pull runs every `beforePull` command of the scope's kind in its own
+  admission, as the scope owner's server origin, when the scope exists and the principal can read it.
+  `expect.state` and `expect.live` (the admissions' live events) appear when that changed the state.
+- More than `PULL_MAX_SCOPES` scopes → `400 malformed`, and no state change.
 - A page's rows are cut when the next row's JCS would take the page past `PULL_PAGE_BYTES`, keeping at
   least one row. Vectors with `input.limits` shrink it to show paging; a runner that cannot configure
   the page size skips them.
@@ -453,11 +513,13 @@ A transcript is one JSON object per line. Line 1 is the header:
 
 ```ts
 {transcript, about, registry: 'probe', server: ServerStateJson, devices: {[name]: DeviceJson},
- ids: {[name]: string[]}, actors: {[name]: string}}
+ ids: {[name]: string[]}, actors: {[name]: string[]}}
 ```
 
-`ids[name]` are the replica ids the device mints, in order; `actors[name]` its engine actor (default
-`r_aaaaaaaaaaaa`). Gesture ids are `g1, g2, …` counted across the whole transcript. Every later line
+`ids[name]` are the replica ids the device mints, in order; `actors[name]` its engine actors, the first
+at the start and the next at each re-identify or engine start (D-2). A `hello` line also gives the
+device its offset sample, and a pull line's server step runs the scopes' `beforePull` commands, so it
+can change the server state. Gesture ids are `g1, g2, …` counted across the whole transcript. Every later line
 has `step`, counting the lines after the header from 1, and is one of:
 
 - **client action** `{device, do, args, deviceNow, returns}`: `do` is a client step (`commit`,
@@ -483,7 +545,8 @@ A **server runner** seeds its store from the header, replays every `http` line i
 `account`, `serverNow` and `inject`, asserts each `response` by JCS, applies `load` lines, and asserts
 the `end` line's `server`. A **client runner** builds each device from the header, performs client
 actions, and for each `http` line asserts that its engine sends exactly `request` at `deviceNow`,
-then feeds `response` (unless `lost`) with `tSend = tRecv = deviceNow`; it feeds frames, asserts
+then feeds `response` (unless `lost`) with both clock readings `{wall: deviceNow, mono: deviceNow,
+boot: 'boot-1'}`; it feeds frames, asserts
 `returns`, and asserts the `end` line's `devices` and `ended`.
 
 | File | Covers |
@@ -502,11 +565,12 @@ Client vectors drive one device through **client steps**. `reference/vectors/ste
 
 ### Client steps
 
-Input: `{device, ids, steps}`.
+Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
 
-- `device`: `{active, replicas: [Replica]}`, where `active` is the id of the replica the steps act on.
+- `device`: `{meta?, active, replicas: [Replica]}`, where `active` is the id of the replica the steps act
+  on and `meta` is §2.5 `DeviceMeta` `{forkGuard?, pendingSignIn?: {account}}`, present when not empty.
 - A Replica is `{meta, confirmed?, spentIds?, cursors?, staging?, known?, outbox?, notices?, device?}`:
-  - `meta`: §2.5 `ReplicaMeta`, excluding `forkGuard`.
+  - `meta`: §2.5 `ReplicaMeta`; `clockReading` `{wall, mono, boot}` is present once a sample was taken.
   - `confirmed`: `{scopeRef: [Row]}`.
   - `spentIds`: `{scopeRef: [{t, id, born}]}`.
   - `cursors`: `{scopeRef: {cursor, digest, booted, digestStop?, mismatchReset?}}`. `mismatchReset` is
@@ -521,8 +585,15 @@ Input: `{device, ids, steps}`.
 
   Absent parts are empty. Rows sort by `t`, then by the UTF-8 bytes of `jcs(id)`. The outbox sorts by
   `commitOrder`.
-- `ids`: replica ids the steps mint, in order. They are consumed by sign-in creating a replica,
-  sign-out creating the anon replica, re-identify and an epoch change.
+- `actor`: the engine instance's actor at the start (default `r_aaaaaaaaaaaa`); a step's own `actor`
+  overrides it for that step only (another tab).
+- Queues, each consumed in order; a vector fails when one runs out:
+  - `ids`: replica ids (sign-in creating a replica, sign-out creating the anon replica, re-identify);
+  - `actors`: the instance's next actor (D-2). `engineStart`, a `reidentify` step, a 409 and an epoch
+    change each make the instance take the next one, and later steps without their own `actor` commit
+    under it;
+  - `forkGuards`: the next `DeviceMeta.forkGuard` that `engineStart` mints;
+  - `draws`: CSPRNG draws, each an index below the alphabet's length (§7.1 step 5, D-8).
 - `limits` (optional): constants overriding `constants.json` for the vector, e.g. `{PUSH_MAX_BYTES: 150}`.
   A runner that cannot shrink a limit skips the vector.
 - Every input device is **reachable**: no dead confirmed row (a dead row deletes it, §7.5); every scope
@@ -532,8 +603,10 @@ Input: `{device, ids, steps}`.
 - `steps`: applied in order to the active replica.
   - Every step may carry `deviceNow` (default 0), `actor` (default `r_aaaaaaaaaaaa`) and `appVersion`
     (default `"1"`).
-  - `pushResponse` and `pullResponse` also carry `tSend` and `tRecv` (default `deviceNow`), for the
-    §10.4 offset sample.
+  - A response step (`pushResponse`, `pullResponse`, `hello`) also carries the device clocks'
+    readings for the §10.4 offset sample: either `send` and `recv`, each `{wall, mono, boot}`, or
+    `tSend` and `tRecv` (default `deviceNow`), which stand for `{wall: tSend, mono: tSend, boot:
+    'boot-1'}` and `{wall: tRecv, mono: tRecv, boot: 'boot-1'}`.
   - `physNow` is `deviceNow + meta.serverOffsetMs`.
 
 Expect: `{returns, device, ended, telemetry?}`.
@@ -541,13 +614,12 @@ Expect: `{returns, device, ended, telemetry?}`.
 - `returns` holds one value per step, `null` for a step that returns nothing.
 - `device` is the device after the last step.
 - `ended` lists the entries that reached a terminal outcome, in order: `{localId, outcome, event, orphanOf?}`.
-  - `event` is the §8.1 machine event: `commit`, `coalesce`, `release`, `undo`, `number`, `fold`,
-    `target-merged`, `ok`, `recover`, `refuse`, `orphan-ok`, `transport`, `reidentify`,
-    `skew-return`, `resolve`, `epoch` or `discard`.
+  - `event` is the §8.1 machine event (`machine/intent.json`).
   - `orphanOf` names the refused entry whose notice holds this entry's content (a folded or orphaned
     dependent).
 - `telemetry` lists `{event: 'sync-digest-mismatch', kind, seq}` events, `kind` being `product`,
-  `tree` or `overlay`, and is present only when any were emitted.
+  `tree` or `overlay`, and `{event: 'sync-push-malformed'}` events, one per push answered 400. It is
+  present only when any were emitted.
 
 | op | args | spec | returns |
 |---|---|---|---|
@@ -557,21 +629,28 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `releaseDue` | `deviceNow` | §7.3 timer: every held entry with `releaseAt ≤ deviceNow` | `null` |
 | `undo` | `gestureId` | §7.3 | `true` iff every entry of the gesture was held |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
-| `pushResponse` | `response` | §7.4, for the last `push` | `{halve: true}` after a 413 on several intents (the next `push` passes half the count as `limit`), else `null` |
+| `pushResponse` | `response` | §7.4, for the last `push` | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample | `null` |
+| `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors | the PullRequest |
 | `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found` |
 | `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found` or `ignored` |
 | `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
 | `signIn` | `account, holdsRecords, decisions?` | §7.10 | `{complete, due: [{kind, product, count}]}` |
-| `signOut` | `choice?` (`keep` or `discard`) | §7.10 | `{complete, unsent}` |
+| `signOut` | `choice?` (`keep` or `discard`) | §7.10 | `{complete, unsent, ready, sent}` |
 | `discardUnsent` | `replica` | §7.10 | `null` |
-| `reidentify` | — | §7.11 | `null` |
+| `reidentify` | — | §7.11 | `null`; the instance takes the next actor |
 | `epochChange` | `epoch` | §7.5 step 1 | `null` |
 | `anonCount` | `replica, product` | §7.10 | `{type: count}` |
 | `view` | `scope, withHeld` | §7.6 | `{records, capCount}` |
 
 A response is `{status, body}`, as the reference server answers it (§9.3, §9.4).
+
+`engineStart` releases the held entries of every replica and takes the next actor. `backupGuard` is the
+fork guard's backup-excluded copy on iOS and Android (`null` when missing); a web store runs no fork
+guard and passes none. A store without a `forkGuard` mints its first; one whose `forkGuard` differs from
+the copy, or whose copy is missing, re-identifies every replica and mints a new one. A pending sign-in
+is answered for the caller to resume.
 
 **Changes** (`commit`):
 
@@ -604,7 +683,8 @@ A response is `{status, body}`, as the reference server answers it (§9.3, §9.4
 - `commitOrder` is 1 plus the greatest in the outbox (1 when the outbox is empty). Sign-in appends
   moved entries after the target's own, keeping their order.
 - A held entry's `releaseAt` is `deviceNow + HOLD_MS`; any other entry's is 0.
-- Every entry carries `stamp`, the gesture's stamp, which the clock-skew restamp replaces.
+- Every entry carries `stamp`, the gesture's stamp. Only a clock-skew restamp replaces it; a write-map
+  restamp leaves it.
 
 **Notices.** A notice is `{id: 'notice:<localId>', scope, code, detail?, content: {d?, cmd?, dependents?}, at}`.
 `dependents` lists the content `{d?, cmd?}` of each dependent, folded or orphaned. The local too-large
@@ -612,13 +692,18 @@ notice of §7.1 step 8 is `notice:<gestureId>/0`, the local id of the gesture's 
 
 **Sender.** Every response carrying `serverTime` yields an offset sample: every push status, every
 pull response, and hello. After a one-intent 400 or 413 the entry ends `refused` (`invalid` or
-`too-large`) with its notice, and `nextN` rewinds to that entry's `n`, which the server never
-processed. A pull answered 401 sets `authPaused`, as a push does. An entry records `numbered: true` the
-first time it is numbered, and keeps it.
+`too-large`) with its notice, `nextN` rewinds to that entry's `n`, which the server never processed,
+and every later sent entry returns to ready (event `rewind`); an orphan ends without its own notice,
+and dependents fold. A 400 or 413 on several intents is one answer for the request, `{limit}`, and no
+notice. Every 400 emits `sync-push-malformed`. A pull answered 401 sets `authPaused`, as a
+push does. An entry records `numbered: true` the first time it is numbered, and keeps it.
 
-**Offsets.** A sample is `offset = serverTime − floor((tSend + tRecv) / 2)` with
-`rtt = tRecv − tSend`. The replica keeps the last `OFFSET_SAMPLES` samples, and `serverOffsetMs` is
-the offset of the lowest-RTT sample, the latest on a tie.
+**Offsets.** A sample is `offset = serverTime − floor((send.wall + recv.wall) / 2)` with
+`rtt = recv.mono − send.mono`. The replica keeps the last `OFFSET_SAMPLES` samples, and
+`serverOffsetMs` is the offset of the lowest-RTT sample, the latest on a tie. A response whose `send`
+and `recv` jumped (`hlc/jump.json`) takes no sample and keeps the offset. Each sample stores its `recv`
+as `meta.clockReading`; when the stored reading and a sample's `recv` jumped, the sample replaces every
+earlier one.
 
 **Observing.** Every stamp the replica receives raises both `meta.hlc` (as §10.2 `observe`) and
 `hlcHigh`. That covers row stamps, write-map stamps, and the stamps of entries moved at sign-in.
@@ -641,9 +726,14 @@ write-map stamps.
 ### commit/*.json
 
 - `deltas.json`: deltas and stamps.
-- `ids.json`: minted, seeded and derived ids.
+- `ids.json`: minted, seeded and derived ids. A create without `id` mints one by its type's `mint`: the
+  prefix, then `length` characters `alphabet[draw]` from the `draws` queue; a derived create without
+  `id` and `label` mints the same way. A minted id already taken (in `drawn`, or spent) is drawn again.
 - `guards.json`: guards read from `stored`.
-- `grouping.json`: intents, holds, lineage, device rows and the scope check.
+- `grouping.json`: intents, holds, lineage, device rows, the scope check, and caps (§7.1 step 8): a
+  gesture that, applied to `stored`, raises a capped type's visible count above its cap and above the
+  count before answers `{refused: 'cap'}` and writes nothing (no entry, notice, clock write or gesture
+  id); a held delete still occupies its slot. A too-large gesture writes only its notice, no clock.
 - `throws.json`: commits that throw. The step answers `{throws: true}` and writes nothing, the clock
   included: a commit is one local transaction.
 
@@ -651,12 +741,16 @@ write-map stamps.
 
 - `join.json`: intents that join.
 - `blocked.json`: intents that do not.
-- `cancel.json`: a create or revive joined with a delete.
+- `cancel.json`: a create or revive joined with a delete, and the dependents it folds.
 
 The target E is the last *earlier* entry, in commit order, touching the intent's record. A join
 removes E iff E's delta had made the record alive (a create or a revive), E was never numbered (an
 entry ever sent may be on the server), and the joined life is dead. An update joined with a delete
 keeps the delete. No intent joins, or is joined by, an entry carrying `orphanOf`.
+
+A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
+and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.
+A sent entry is left as it is.
 
 ### hold/*.json
 
@@ -709,13 +803,21 @@ Command results with the server's write map:
 The probe has no keyed type whose key names a command-resolved type, so no vector rewrites a key
 part through a write map. The reference does rewrite them.
 
-### lineage/signin.json, lineage/signout.json
+### lineage/signin.json, lineage/signout.json, lineage/start.json
 
 - `holdsRecords` is `{product: boolean}`, as hello answers it (§9.2).
 - `decisions` is `{product: 'add' | 'discard'}`.
 - The one decision kind is `signed-out` (R99).
 - A due decision's `count` is `anonCount`.
-- A sign-in clears `authPaused` on the replica it binds.
+- A sign-in clears `authPaused` on the replica it binds. An incomplete one records
+  `DeviceMeta.pendingSignIn`; the completing one clears it.
+- Sign-out runs after the runner's flush (bounded by `SIGNOUT_FLUSH_MS`, I/O outside the step): it
+  releases holds, resolves acked entries, and answers the ready and sent entries it still holds.
+  Discard ends them `discarded` (it cannot recall a sent entry that may have landed); Keep purges
+  confirmed rows, spent ids, cursors, staging, known scopes and device rows.
+- `start.json`: `engineStart` on web; with an equal backup copy; with a missing or different copy
+  (every replica re-identified, a new `forkGuard`, then a push under the new id); a first launch
+  minting the first `forkGuard`; a pending sign-in answered.
 
 ### pull/pages.json
 

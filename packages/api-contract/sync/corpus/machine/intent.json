@@ -77,6 +77,28 @@
     }
   },
   {
+    "name": "held --cancel--> coalesced",
+    "input": {
+      "from": "held",
+      "event": "cancel",
+      "to": "coalesced"
+    },
+    "expect": {
+      "to": "coalesced"
+    }
+  },
+  {
+    "name": "ready --cancel--> coalesced",
+    "input": {
+      "from": "ready",
+      "event": "cancel",
+      "to": "coalesced"
+    },
+    "expect": {
+      "to": "coalesced"
+    }
+  },
+  {
     "name": "held --fold--> refused",
     "input": {
       "from": "held",
@@ -191,6 +213,17 @@
     "input": {
       "from": "sent",
       "event": "skew-return",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "sent --rewind--> ready",
+    "input": {
+      "from": "sent",
+      "event": "rewind",
       "to": "ready"
     },
     "expect": {
@@ -400,6 +433,46 @@
       "from": null,
       "event": "commit",
       "to": "sent"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: sent --cancel--> any",
+    "input": {
+      "from": "sent",
+      "event": "cancel"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: acked --cancel--> any",
+    "input": {
+      "from": "acked",
+      "event": "cancel"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: ready --rewind--> any",
+    "input": {
+      "from": "ready",
+      "event": "rewind"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: acked --rewind--> any",
+    "input": {
+      "from": "acked",
+      "event": "rewind"
     },
     "expect": {
       "error": true

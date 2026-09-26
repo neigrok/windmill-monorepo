@@ -3,6 +3,7 @@
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
+import { steadyTiming } from '../../core/clock.js';
 import { compareRecords, isAlive, latticeOf } from '../../core/rows.js';
 import { commit } from '../../client/commit.js';
 import { onPullResponse, pullRequest } from '../../client/puller.js';
@@ -72,12 +73,14 @@ test('after results and a pull to the head, drawn equals the server rows', () =>
       for (let request = nextPush(replica, ctx); request; request = nextPush(replica, ctx)) {
         const out = push({ state: server, registry, product, account: 'A', request, serverNow: now });
         server = out.state;
-        onPushResponse(replica, ctx, request, out.response, { tSend: now, tRecv: now });
+        onPushResponse(replica, ctx, request, out.response, steadyTiming(now, now));
       }
       for (let more = true; more;) {
         const request = pullRequest(replica, Object.keys(SCOPES));
-        const response = pull({ state: server, registry, account: 'A', request, serverNow: now });
-        onPullResponse(replica, ctx, request, response, { tSend: now, tRecv: now });
+        const pulled = pull({ state: server, registry, product, account: 'A', request, serverNow: now });
+        server = pulled.state;
+        const response = pulled.response;
+        onPullResponse(replica, ctx, request, response, steadyTiming(now, now));
         more = response.body.pages.some((page) => page.more);
       }
       assert.deepEqual(replica.outbox, [], `seed ${seed} round ${round}: outbox drained`);

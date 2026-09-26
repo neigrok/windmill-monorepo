@@ -4677,7 +4677,7 @@
       "intent": {
         "scope": "self/probe",
         "cmd": {
-          "name": "probe.sweep",
+          "name": "probe.tick",
           "args": {}
         }
       },

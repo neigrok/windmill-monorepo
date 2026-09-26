@@ -25,7 +25,7 @@ web/                        Vite/React superapp for all three products
     products/               roadmap/, journal/ and gym/
   test/                     mirrors the source
 apps/
-  ios/                      SwiftUI app; XcodeGen project and WindmillKit package
+  ios/                      Sync/: WindmillSync, the SwiftPM package of the sync engine client
   android/                  Kotlin/Compose app; :app, :platform and :gym Gradle modules
 packages/
   api-contract/             shared wire contracts and executable golden fixtures
@@ -51,11 +51,10 @@ room machinery.
 - **Web:** `shell/products.js` composes product route tables and settings sections. Shared settings
   and marketing surfaces consume that registry. Showcase reaches a product only through its
   `showcase.js` entry point; `test/shell-boundaries` checks those imports.
-- **Native:** iOS packages depend on `WindmillPlatform`; Android products depend on `:platform`.
-  iOS implements journal and gym and points roadmap readers to web. Android implements gym.
+- **Native:** Android products depend on `:platform`; Android implements gym. iOS holds the sync
+  engine client, which names no product.
 
-Raw design tokens are mirrored in `web/src/styles/tokens/`,
-`apps/ios/WindmillKit/Sources/WindmillPlatform/Tokens.swift` and
+Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
 `PLAN_COPY`, shared subscription wording, still lives in roadmap's web settings module.
 
@@ -65,7 +64,7 @@ Raw design tokens are mirrored in `web/src/styles/tokens/`,
 |---|---|
 | `backend.yml` | build and run C++ tests in Docker; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
-| `ios.yml` | simulator app build, crash-report tests and WindmillKit tests |
+| `ios.yml` | `swift test` of the WindmillSync package on macOS and its iOS simulator build |
 | `ios-release.yml` | archive and upload the tested iOS main-push commit to App Store Connect, or release manually |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |

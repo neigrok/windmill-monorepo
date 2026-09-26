@@ -4,9 +4,9 @@
 import { Clock, maxPair } from '../core/clock.js';
 import { sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
-import { recordKey } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
 import { baseTextKey } from './commit.js';
+import { Dependents, commandRefs, isEmpty, removeDependent } from './dependents.js';
 
 function isQueued(entry) {
   return entry.state === 'held' || entry.state === 'ready';
@@ -97,97 +97,25 @@ function recoverBase(replica, ctx, refused) {
   moveEntry(replica, ctx.ended, refused, 'recover');
 }
 
-// A record is (scope, t, id): a ref names a record in the scope its type lives in, relative to the
-// referencing scope's tree.
-function scopedKey(scope, t, id) {
-  return `${scope}|${recordKey(t, id)}`;
-}
-
-function scopeOfType(registry, fromScope, t) {
-  const kind = registry.type(t)?.scope;
-  if (kind?.startsWith('product:')) return `self/${kind.slice('product:'.length)}`;
-  const tree = fromScope.split('/').pop();
-  return kind === 'tree' ? `tree/${tree}` : `self/overlay/${tree}`;
-}
-
-function createdBy(registry, scope, deltas) {
-  const created = new Set();
-  const governed = new Set();
-  for (const delta of deltas) {
-    if (delta.life?.[0] !== 'alive' || delta.born === undefined || delta.life[1] !== delta.born) continue;
-    created.add(scopedKey(scope, delta.t, delta.id));
-    if (registry.type(delta.t)?.governs === 'tree') {
-      governed.add(`tree/${delta.id}`);
-      governed.add(`self/overlay/${delta.id}`);
-    }
-  }
-  return { created, governed };
-}
-
-function refsOf(registry, delta) {
-  const values = Object.fromEntries(Object.entries(delta.f ?? {}).map(([name, register]) => [name, register[0]]));
-  return registry.type(delta.t).referencesOf(delta.id, values);
-}
-
-function commandRefs(registry, cmd) {
-  const def = registry.command(cmd.name);
-  const refs = [];
-  for (const [name, arg] of Object.entries(def?.args ?? {})) {
-    const t = /^ref<(.+)>$/.exec(arg.type)?.[1];
-    if (t && typeof cmd.args[name] === 'string') refs.push({ t, id: cmd.args[name], name });
-  }
-  return refs;
-}
-
-// §7.7 step 3: later deltas and commands that touch or name a record `refused` created, or target a
-// scope its governing record creates, transitively. A queued dependent is removed into the notice; a
-// sent entry that is wholly dependent is an orphan, in the notice; a partly dependent one stays.
+// §7.7 step 3: a queued dependent's dependent part is removed into the notice; a sent entry that is
+// wholly dependent is an orphan, in the notice; a partly dependent sent entry stays as it is.
 function foldDependents(replica, ctx, refused) {
-  const { registry } = ctx;
-  const { created, governed } = createdBy(registry, refused.scope, deltasOf(refused));
-  const names = (scope, t, id) => created.has(scopedKey(scopeOfType(registry, scope, t), t, id));
-  const dependsOn = (entry, delta) => governed.has(entry.scope)
-    || created.has(scopedKey(entry.scope, delta.t, delta.id))
-    || refsOf(registry, delta).some((ref) => names(entry.scope, ref.t, ref.id));
-  const commandDepends = (entry) => entry.intent.cmd !== undefined
-    && (governed.has(entry.scope) || commandRefs(registry, entry.intent.cmd).some((ref) => names(entry.scope, ref.t, ref.id)));
-  const absorb = (scope, deltas) => {
-    const next = createdBy(registry, scope, deltas);
-    for (const key of next.created) created.add(key);
-    for (const tree of next.governed) governed.add(tree);
-  };
+  const dependents = new Dependents(ctx.registry, refused.scope, deltasOf(refused));
   const folded = [];
   for (const entry of replica.entries().filter((other) => other.commitOrder > refused.commitOrder)) {
-    const removed = (entry.intent.d ?? []).filter((delta) => dependsOn(entry, delta));
-    const cmdGone = commandDepends(entry);
-    if (removed.length === 0 && !cmdGone) continue;
+    const part = dependents.of(entry);
+    if (!part.any) continue;
     if (entry.state === 'sent') {
-      const whole = removed.length === (entry.intent.d ?? []).length && (entry.intent.cmd === undefined || cmdGone);
-      if (!whole) continue;
-      absorb(entry.scope, deltasOf(entry));
+      if (!part.whole) continue;
+      dependents.absorb(entry.scope, deltasOf(entry));
       folded.push(contentOf(entry));
       entry.orphanOf = refused.localId;
       continue;
     }
     if (!isQueued(entry)) continue;
-    absorb(entry.scope, [...removed, ...(cmdGone ? entry.predict ?? [] : [])]);
-    const content = {};
-    if (removed.length) content.d = removed;
-    if (cmdGone) content.cmd = entry.intent.cmd;
-    folded.push(content);
-    const kept = (entry.intent.d ?? []).filter((delta) => !removed.includes(delta));
-    const removedKeys = new Set(removed.map((delta) => recordKey(delta.t, delta.id)));
-    if (kept.length) entry.intent.d = kept;
-    else delete entry.intent.d;
-    if (entry.intent.guard) {
-      entry.intent.guard = entry.intent.guard.filter((guard) => !removedKeys.has(recordKey(guard.t, guard.id)));
-      if (entry.intent.guard.length === 0) delete entry.intent.guard;
-    }
-    if (cmdGone) {
-      delete entry.intent.cmd;
-      delete entry.predict;
-    }
-    if (entry.intent.d === undefined && entry.intent.cmd === undefined) {
+    dependents.absorb(entry.scope, [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])]);
+    folded.push(removeDependent(entry, part));
+    if (isEmpty(entry)) {
       entry.orphanOf = refused.localId;
       moveEntry(replica, ctx.ended, entry, 'fold');
     }

@@ -86,7 +86,7 @@ Subgraph subgraphFromJson(const Json::Value& root) {
 
   if (root.isMember("title") && root["title"].isObject()) {
     subgraph.title = Lww<std::string>{root["title"].get("v", "").asString(),
-                                      parseHlc(root["title"].get("at", "").asString())};
+                                      roadmapStamp(root["title"].get("at", "").asString())};
   }
 
   if (root.isMember("coverage") && root["coverage"].isObject()) subgraph.coverage = versionVectorFromJson(root["coverage"]);
@@ -97,7 +97,7 @@ Subgraph subgraphFromJson(const Json::Value& root) {
 VersionVector versionVectorFromJson(const Json::Value& object) {
   VersionVector vector;
   if (!object.isObject()) return vector;
-  for (const std::string& actor : object.getMemberNames()) vector.marks[actor] = parseHlc(object[actor].asString());
+  for (const std::string& actor : object.getMemberNames()) vector.marks[actor] = roadmapStamp(object[actor].asString());
   return vector;
 }
 

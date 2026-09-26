@@ -1,11 +1,19 @@
 // The probe product's server rules (its Appendix A): commands, `check`, and one kept text revision.
 // corpus/README.md states the same rules.
 
-import { joinLife } from '../core/merge.js';
+import { isAlive } from '../core/rows.js';
 import { Refusal } from '../server/admit.js';
+
+export const TICK_AFTER_MS = 600_000;
 
 function isOpen(run) {
   return run.life[0] === 'alive' && (run.f?.endedAt === undefined || run.f.endedAt[0] === null);
+}
+
+function receipts(ctx, book) {
+  ctx.productState[book] ??= {};
+  ctx.productState[book][ctx.scopeKey] ??= {};
+  return ctx.productState[book][ctx.scopeKey];
 }
 
 export class ProbeProduct {
@@ -13,15 +21,10 @@ export class ProbeProduct {
     this.revisionsKept = 1;
   }
 
-  receiptsOf(ctx) {
-    ctx.productState.receipts ??= {};
-    ctx.productState.receipts[ctx.scopeKey] ??= {};
-    return ctx.productState.receipts[ctx.scopeKey];
-  }
-
   isReplay(ctx, cmd) {
-    if (cmd.name !== 'probe.start') return false;
-    return Object.hasOwn(this.receiptsOf(ctx), cmd.args.id);
+    if (cmd.name === 'probe.start') return Object.hasOwn(receipts(ctx, 'receipts'), cmd.args.id);
+    if (cmd.name === 'probe.copy') return receipts(ctx, 'copies')[cmd.args.dst] === cmd.args.src;
+    return false;
   }
 
   runCommand(ctx, cmd) {
@@ -30,17 +33,19 @@ export class ProbeProduct {
         return this.start(ctx, cmd.args);
       case 'probe.end':
         return this.end(ctx, cmd.args);
-      case 'probe.sweep':
-        return this.sweep(ctx);
+      case 'probe.copy':
+        return this.copy(ctx, cmd.args);
+      case 'probe.tick':
+        return this.tick(ctx);
       default:
         throw new Refusal('invalid');
     }
   }
 
   start(ctx, args) {
-    const receipts = this.receiptsOf(ctx);
-    if (Object.hasOwn(receipts, args.id)) {
-      const resolved = receipts[args.id];
+    const started = receipts(ctx, 'receipts');
+    if (Object.hasOwn(started, args.id)) {
+      const resolved = started[args.id];
       const run = ctx.stored('run', resolved);
       if (!run || run.life[0] !== 'alive') return { deltas: [], write: [] };
       const entry = { t: 'run', id: resolved, born: run.born };
@@ -50,10 +55,10 @@ export class ProbeProduct {
     const open = ctx.rowsOf('run').find(isOpen);
     if (open) {
       if (args.join !== true) throw new Refusal('invalid');
-      receipts[args.id] = open.id;
+      started[args.id] = open.id;
       return { deltas: [], write: [{ t: 'run', id: open.id, from: args.id, born: open.born }] };
     }
-    receipts[args.id] = args.id;
+    started[args.id] = args.id;
     const f = { startedAt: [args.startedAt, null] };
     const written = { startedAt: null };
     if (args.label !== undefined) {
@@ -79,26 +84,53 @@ export class ProbeProduct {
     };
   }
 
-  sweep(ctx) {
-    const deltas = ctx.rowsOf('run').filter(isOpen)
+  // Creates board `dst` and writes into its new tree (§6.1 step 14) the source tree's title, tags and
+  // links as stored; a tag arrives as a create born at its life stamp, so a revived tag keeps its
+  // life. An unreadable source answers not-found alike whether absent, dead or private.
+  copy(ctx, { src, dst }) {
+    const copies = receipts(ctx, 'copies');
+    if (copies[dst] === src) {
+      const board = ctx.stored('board', dst);
+      return { deltas: [], write: board && isAlive(board) ? [{ t: 'board', id: dst, born: board.born }] : [] };
+    }
+    if (!ctx.readableTree(src)) throw new Refusal('not-found');
+    if (ctx.idState('board', dst).state !== 'none') throw new Refusal('id-taken');
+    copies[dst] = src;
+    const into = [];
+    for (const row of ctx.treeRows(src)) {
+      if (row.t === 'meta' && row.f?.title) into.push({ t: 'meta', id: row.id, f: { title: row.f.title } });
+      if ((row.t === 'tag' || row.t === 'link') && isAlive(row)) {
+        const delta = { t: row.t, id: row.id, life: row.life };
+        if (row.born !== undefined) delta.born = row.life[1];
+        if (row.f) delta.f = row.f;
+        into.push(delta);
+      }
+    }
+    return {
+      deltas: [{ t: 'board', id: dst, life: ['alive', null], born: null }],
+      into: [{ scopeKey: `tree:${dst}`, deltas: into }],
+      write: [{ t: 'board', id: dst, born: null }],
+    };
+  }
+
+  // Runs before every pull of the product scope (beforePull): open runs started TICK_AFTER_MS ago end.
+  tick(ctx) {
+    const deltas = ctx.rowsOf('run')
+      .filter((run) => isOpen(run) && run.f.startedAt[0] <= ctx.serverNow - TICK_AFTER_MS)
       .map((run) => ({ t: 'run', id: run.id, born: run.born, f: { endedAt: [ctx.serverNow, null] } }));
     return { deltas, write: [] };
   }
 
-  // Product rules over the intent's applied changes: runs are created only by probe.start, and a run
-  // whose joined life is dead kills its alive laps in the same seq. A null (server) stamp is newest.
-  check(ctx, changes) {
+  // Product rules on the joined records: runs are created only by probe.start, and a run this intent
+  // kills kills its alive laps in the same seq, a lap the intent itself deletes included.
+  check(ctx, records) {
     const appended = [];
-    for (const change of changes) {
-      if (change.delta.t !== 'run') continue;
-      if (change.op === 'create' && change.source !== 'command') throw new Refusal('invalid');
-      if (change.op !== 'delete') continue;
-      const { life } = change.delta;
-      const joined = life[1] === null ? life : joinLife(ctx.stored('run', change.delta.id)?.life, life);
-      if (joined[0] !== 'dead') continue;
+    for (const record of records) {
+      if (record.type.type !== 'run') continue;
+      if (record.op === 'create' && record.source !== 'command') throw new Refusal('invalid');
+      if (!record.original || !isAlive(record.original) || isAlive(record.after)) continue;
       for (const lap of ctx.rowsOf('lap')) {
-        if (lap.life[0] !== 'alive' || lap.f?.runId?.[0] !== change.delta.id) continue;
-        if (changes.some((other) => other.delta.t === 'lap' && other.delta.id === lap.id)) continue;
+        if (lap.life[0] !== 'alive' || lap.f?.runId?.[0] !== record.after.id) continue;
         appended.push({ t: 'lap', id: lap.id, born: lap.born, life: ['dead', null] });
       }
     }

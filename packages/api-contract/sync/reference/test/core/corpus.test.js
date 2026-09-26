@@ -60,11 +60,12 @@ const RUNNERS = {
     }
     return { stamps, clock: running.pair };
   },
-  'hlc/offset.json': ({ samples }) => {
-    let kept = [];
-    for (const response of samples) kept = Offset.record(kept, Offset.sample(response), CONSTANTS);
-    return { samples: kept, serverOffsetMs: Offset.choose(kept) };
+  'hlc/offset.json': ({ responses }) => {
+    let kept = { samples: [], clockReading: undefined };
+    for (const response of responses) kept = Offset.take(kept, response, CONSTANTS) ?? kept;
+    return { samples: kept.samples, serverOffsetMs: Offset.choose(kept.samples), clockReading: kept.clockReading ?? null };
   },
+  'hlc/jump.json': ({ before, after }) => ({ jumped: Offset.jumped(before, after, CONSTANTS) }),
   'jcs/values.json': (input) => attempt(() => ({ jcs: jcs(input.bits !== undefined ? doubleOf(input.bits) : JSON.parse(input.json)) })),
   'join/lww.json': ({ a, b }) => ({ join: orNull(joinLww(orAbsent(a), orAbsent(b))) }),
   'join/fww.json': ({ a, b }) => ({ join: orNull(joinFww(orAbsent(a), orAbsent(b))) }),

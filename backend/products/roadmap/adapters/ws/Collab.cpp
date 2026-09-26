@@ -21,15 +21,6 @@ constexpr double kWsBurst = 100.0;      // short-burst allowance
 constexpr std::uint64_t kMaxSkewMs = 5 * 60 * 1000;  // a frame stamped past now+5min is refused whole
 constexpr unsigned kMaxMarksPerFrame = 2000;
 
-// parseHlc throws on a non-numeric stamp; nullopt keeps that a refusable frame, not a throw.
-std::optional<Hlc> readHlc(const std::string& text) {
-  try {
-    return parseHlc(text);
-  } catch (const std::exception&) {
-    return std::nullopt;
-  }
-}
-
 // Reject codes are a stable wire contract: clients branch on `code`, never on `reason`.
 constexpr char kNoSuchTree[] = "no-such-tree";
 constexpr char kServerError[] = "server-error";
@@ -157,7 +148,7 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
 void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::string& treeId, const Json::Value& request) {
   const Principal& principal = principalOf(conn);
 
-  // versionVectorFromJson throws past 64 bits, and an unanswered subscribe waits forever.
+  // versionVectorFromJson throws on a mark that is not a stamp, and an unanswered subscribe waits forever.
   VersionVector clientVector;
   try {
     clientVector = versionVectorFromJson(request["vector"]);
@@ -347,7 +338,7 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
   for (const Json::Value& mark : marks) {
     const NodeId node{mark.get("node", "").asString()};
     const std::optional<ProgressStatus> status = parseProgressStatus(mark.get("status", "").asString());
-    const std::optional<Hlc> at = readHlc(mark.get("at", "").asString());
+    const std::optional<Hlc> at = parseHlc(mark.get("at", "").asString());
     // A mark missing any of the three cannot be merged by anyone: refuse the whole frame.
     if (node.empty() || !status || !at || !at->isSet())
       return refuse(kBadFrame, "a mark needs a node, a status and a stamp");

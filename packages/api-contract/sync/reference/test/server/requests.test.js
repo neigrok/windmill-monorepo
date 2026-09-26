@@ -35,7 +35,7 @@ test('a replay of a done call answers its result and changes nothing', () => {
 
 test('a crashed call is running within its lease and is taken over after it', () => {
   const crashed = call(base(), { crashAfter: 1 });
-  assert.equal(crashed.result, undefined);
+  assert.equal(crashed.result, null);
   assert.equal(crashed.state.requests.A['req-1'].state, 'running');
   const early = call(crashed.state, { serverNow: 1_000_000 + CONSTANTS.REQUEST_LEASE_MS - 1 });
   assert.deepEqual(early.result, { s: 'refused', code: 'request-running' });

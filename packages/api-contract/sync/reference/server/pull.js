@@ -6,6 +6,7 @@ import { jcs } from '../core/jcs.js';
 import { compareFeed, compareRecords, isAlive, isVisible, thinRow } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
 import { accessOf, scopeKeyOf } from './access.js';
+import { admit } from './admit.js';
 
 export function refOfKey(key) {
   if (key.startsWith('tree:')) return `tree/${key.slice('tree:'.length)}`;
@@ -67,7 +68,7 @@ function pageOf(state, registry, key, cursor, limits) {
 function pullOne(state, registry, account, ref, cursorText, limits) {
   const target = scopeKeyOf(registry, ref, account);
   if (target === null) return { scope: ref, kind: 'not-found' };
-  const access = accessOf(state, target, account);
+  const access = accessOf(registry, state, target, account);
   if (!access.read) return { scope: ref, kind: access.gone ? 'gone' : 'not-found' };
   const scope = state.scope(target.key);
   let cursor = null;
@@ -86,9 +87,35 @@ function pullOne(state, registry, account, ref, cursorText, limits) {
   return out;
 }
 
-export function pull({ state, registry, account, request, serverNow, limits = CONSTANTS }) {
-  const pages = request.scopes.map(({ scope, cursor }) => pullOne(state, registry, account ?? null, scope, cursor, limits));
-  return { status: 200, body: { serverTime: serverNow, epoch: state.epoch, pages } };
+// Runs each beforePull command of a scope the principal can read, in its own admission as the scope
+// owner's server origin, before the scope's snapshot; an absent scope has no records and runs none.
+function beforePull(state, registry, product, account, ref, serverNow, limits) {
+  const target = scopeKeyOf(registry, ref, account);
+  const scope = target === null ? undefined : state.scope(target.key);
+  if (scope === undefined || !accessOf(registry, state, target, account).read) return { state, live: [] };
+  let current = state;
+  const live = [];
+  for (const command of registry.beforePullCommands(registry.scopeKindOf(ref))) {
+    const outcome = admit({ state: current, registry, product, origin: { kind: 'server', account: scope.owner }, intent: { scope: ref, cmd: { name: command.name, args: {} } }, serverNow, limits });
+    current = outcome.state;
+    live.push(...liveEventsOf(current, outcome, limits));
+  }
+  return { state: current, live };
+}
+
+// Answers {state, response, live}: the state after the beforePull admissions, and their live events.
+export function pull({ state, registry, product, account, request, serverNow, limits = CONSTANTS }) {
+  const head = { serverTime: serverNow, epoch: state.epoch };
+  if (request.scopes.length > limits.PULL_MAX_SCOPES) return { state, response: { status: 400, body: { ...head, error: 'malformed' } }, live: [] };
+  let current = state;
+  const live = [];
+  const pages = request.scopes.map(({ scope, cursor }) => {
+    const ran = beforePull(current, registry, product, account ?? null, scope, serverNow, limits);
+    current = ran.state;
+    live.push(...ran.live);
+    return pullOne(current, registry, account ?? null, scope, cursor, limits);
+  });
+  return { state: current, response: { status: 200, body: { serverTime: serverNow, epoch: current.epoch, pages } }, live };
 }
 
 // §6.8 the frame a committed change sends to every subscriber still holding read access.
@@ -100,11 +127,11 @@ export function liveFrameOf(state, key, changedRows, limits = CONSTANTS) {
   return frame;
 }
 
-// One admission's live events in order: the change frame of its scope, then a death event per scope
-// it killed. A subscriber receives a death event as deathFrameFor answers it.
+// One admission's live events in order: a change frame per scope it wrote (its own scope, then the
+// scopes it created), then a death event per scope it killed. A subscriber receives a death event as
+// deathFrameFor answers it.
 export function liveEventsOf(state, outcome, limits = CONSTANTS) {
-  const events = [];
-  if (outcome.changed.length) events.push({ key: outcome.scopeKey, frame: liveFrameOf(state, outcome.scopeKey, outcome.changed, limits) });
+  const events = outcome.writes.map(({ key, rows }) => ({ key, frame: liveFrameOf(state, key, rows, limits) }));
   for (const key of outcome.killed) events.push({ key, dead: true });
   return events;
 }

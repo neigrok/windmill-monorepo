@@ -22,19 +22,27 @@ node --test reference/test/           # unit, property, replay-fuzz and regenera
 FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 ```
 
-## Registry format beyond §2.4
+## The registry format
 
-`registry.schema.json` carries what code generation needs and §2.4's sketch leaves out:
+`registry.schema.json` is the authoritative registry format (engine.md D-7, §2.4). A registry declares:
 
 - a root with `registry`, `version` (the `Sync-Schema` header, `hello.schema`), `minVersion`
-  (`hello.minSchema`) and `products`;
-- per product, its `surfaces` (§7.9) and its device-scope rows (`device`, with `keyPattern` and
-  `localOnly`);
-- `key` for keyed types: a `ref` to another type, or a `tuple` of named refs whose JCS is the identity;
-- `singletonId`, `derive.fallback` (D-26) and `seeded` (`seedMax`, `ordinalMax`, D-8);
-- field `min` beside `max`, and `domain` as a structured value shape (string, number, boolean,
-  fracKey, stamp, id, json, array, object; each `nullable`) where §2.4 has a string;
-- command arguments as `{type, optional?, domain?}` and a command's `predicts`.
+  (`hello.minSchema`) and `products`, each with its `surfaces` (§7.9) and its device-scope rows
+  (`device`, with `keyPattern` and `localOnly`);
+- types, with `mint` (the CSPRNG recipe: prefix, alphabet, length), `seeded`, `key` (a `ref`, or a
+  `tuple` of named refs whose JCS is the identity), `singletonId` and `derive.fallback`;
+- fields, with `min`, `max`, a structured `domain`, and `opens` (the values of a tree singleton's
+  server-written field that open the tree to every reader, D-4);
+- commands, with arguments `{type, optional?, domain?}`, `predicts`, and `beforePull` (a
+  server-internal command run before every pull of its scope, §6.7).
+
+## What the reference does not model
+
+The reference is a pure, single-threaded model of the deterministic core. It does not model what no
+single-threaded run can observe: the global lock order, the per-scope mutex and the Postgres lock
+modes of §6.1 step 3, publishing frames before the mutex is released (§6.8), the sender's backoff and
+503 sleep (§7.4), the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the
+sign-out step) and web tab leadership (§7.8).
 
 ## Reference layout
 
@@ -47,7 +55,7 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 | `core/rows.js`, `core/wire.js` | §9.1 rows and deltas, §6.2 intent digest, §9.4 cursors |
 | `core/digest.js` | §6.12 |
 | `core/fracindex.js` | D-25, its drop position |
-| `core/derive.js` | D-26, D-8 seeded ids |
+| `core/derive.js` | D-26, D-8 seeded and minted ids |
 | `core/machines.js` | §8 |
 | `server/state.js`, `server/access.js` | §2.1 tables, D-4 access |
 | `server/identity.js` | §4 |
@@ -59,8 +67,9 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 | `client/views.js` | §7.6 |
 | `client/commit.js`, `client/coalesce.js`, `client/hold.js` | §7.1, §7.2, §7.3 |
 | `client/sender.js`, `client/puller.js` | §7.4, §7.5 |
+| `client/dependents.js` | §7.7 step 3's dependents, which a refusal and a §7.2 cancel both fold |
 | `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps |
 | `client/subscriptions.js` | §7.9 |
-| `client/lifecycle.js` | §7.10, §7.11 |
+| `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor) |
 | `vectors/` | corpus builders, one per corpus directory; `steps.js` is the client-step language |
 | `test/fuzz/` | §11.3 the replay simulator |

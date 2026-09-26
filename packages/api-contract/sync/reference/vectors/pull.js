@@ -1,11 +1,12 @@
-// pull/serve.json: §6.7 pages the server answers for a request, and §9.2 hello. A vector may shrink
-// PULL_PAGE_BYTES through `input.limits` to show paging on small states.
+// pull/serve.json: §6.7 pages the server answers for a request, after its scopes' beforePull commands,
+// and §9.2 hello. A vector may shrink PULL_PAGE_BYTES through `input.limits` to show paging.
 
 import { CONSTANTS } from '../core/constants.js';
 import { Cursor } from '../core/wire.js';
+import { TICK_AFTER_MS } from '../probe/product.js';
 import { hello, pull } from '../server/pull.js';
 import { ServerState } from '../server/state.js';
-import { overlayScope, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
+import { overlayScope, product, productScope, registry, row, serverState, st, treeScope, vector } from './fixtures.js';
 
 const NOW = 1_000_000;
 const PROBE_A = 'acct:A/probe';
@@ -14,11 +15,16 @@ const TREE = `tree:${BOARD}`;
 const OVERLAY_A = `acct:A/overlay/${BOARD}`;
 const SRV = (ms) => `${ms}:0:srv`;
 
+// expect.state and expect.live appear when a beforePull admission changed the state.
 function pulled(name, { state, account, request, serverNow = NOW, limits }) {
   const input = { state, account, request, serverNow };
   if (limits) input.limits = limits;
-  const response = pull({ state: new ServerState(state), registry, account, request, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
-  return vector(name, input, { response });
+  const out = pull({ state: new ServerState(state), registry, product, account, request, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+  const expect = { response: out.response };
+  const after = out.state.toJSON();
+  if (JSON.stringify(after) !== JSON.stringify(new ServerState(state).toJSON())) expect.state = after;
+  if (out.live.length) expect.live = out.live;
+  return vector(name, input, expect);
 }
 
 function helloed(name, { state, account, serverTime = NOW }) {
@@ -38,7 +44,7 @@ function state({ visibility, dead = false } = {}) {
         row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { title: ['One', st(1000)] }, seq: 1 }),
         row({ t: 'board', id: BOARD, life: dead ? ['dead', st(9000)] : ['alive', st(2000)], born: st(2000), seq: dead ? 7 : 2 }),
         row({ t: 'card', id: 'card0003', life: ['alive', st(3000)], born: st(3000), f: { title: ['Three', st(3000)] }, seq: 4 }),
-        row({ t: 'run', id: 'run00001', life: ['alive', SRV(3500)], born: SRV(3500), f: { startedAt: [3500, SRV(3500)] }, seq: 4 }),
+        row({ t: 'run', id: 'run00001', life: ['alive', SRV(3500)], born: SRV(3500), f: { startedAt: [NOW - 1000, SRV(3500)] }, seq: 4 }),
         row({ t: 'card', id: 'card0002', life: ['alive', st(2500)], born: st(2500), f: { title: ['Two', st(4000)] }, seq: 5 }),
       ],
       [TREE]: [
@@ -50,6 +56,29 @@ function state({ visibility, dead = false } = {}) {
       [OVERLAY_A]: [row({ t: 'mark', id: 'oak', f: { done: [true, st(2400)] }, seq: 1 })],
     },
     spent: { [PROBE_A]: [{ t: 'card', id: 'card0009', born: st(1500), lifeStamp: st(2600), seq: 3 }] },
+  });
+}
+
+// Two open runs in A's product scope: one started TICK_AFTER_MS before NOW, one a second ago.
+function ticking() {
+  return serverState({
+    scopes: { [PROBE_A]: productScope('A') },
+    rows: {
+      [PROBE_A]: [
+        row({ t: 'run', id: 'run0000st', life: ['alive', SRV(NOW - TICK_AFTER_MS)], born: SRV(NOW - TICK_AFTER_MS), f: { startedAt: [NOW - TICK_AFTER_MS, SRV(NOW - TICK_AFTER_MS)] }, seq: 1 }),
+        row({ t: 'run', id: 'run0000fr', life: ['alive', SRV(NOW - 1000)], born: SRV(NOW - 1000), f: { startedAt: [NOW - 1000, SRV(NOW - 1000)] }, seq: 2 }),
+      ],
+    },
+    clock: { ms: NOW - 1000, counter: 0 },
+  });
+}
+
+// A keyed day that died (a spent row without born) after an alive one was written.
+function days() {
+  return serverState({
+    scopes: { [PROBE_A]: productScope('A') },
+    rows: { [PROBE_A]: [row({ t: 'day', id: '2026-09-01', life: ['alive', st(1000)], f: { score: [7, st(1000)] }, seq: 1 })] },
+    spent: { [PROBE_A]: [{ t: 'day', id: '2026-09-02', lifeStamp: st(1200), seq: 2 }] },
   });
 }
 
@@ -117,6 +146,19 @@ function serve() {
     pulled('another account\'s overlay of a dead public tree answers as the tree does to it: not-found', { state: deadOpen, account: 'B', request: request(`self/overlay/${BOARD}`) }),
     pulled('an absent product scope is an empty live page at seq 0 with digest 0', { state: plain, account: 'B', request: request('self/probe') }),
     pulled('an absent product scope with a cursor past seq 0 is reset', { state: plain, account: 'B', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 3 })) }),
+    pulled('beforePull: probe.tick ends a run started TICK_AFTER_MS ago before the page, and leaves a fresh one open', {
+      state: ticking(),
+      account: 'A',
+      request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 2 })),
+    }),
+    pulled('a tree has no beforePull command in the probe: another account\'s public tree is served as it is', { state: open, account: 'B', request: request(`tree/${BOARD}`) }),
+    pulled('a live page carries a keyed spent row thin, without a born', { state: days(), account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 1 })) }),
+    pulled('a boot leaves out a keyed spent row', { state: days(), account: 'A', request: request('self/probe') }),
+    pulled('a request of more than PULL_MAX_SCOPES scopes is malformed', {
+      state: plain,
+      account: 'A',
+      request: { scopes: Array.from({ length: CONSTANTS.PULL_MAX_SCOPES + 1 }, (_, i) => ({ scope: `tree/b_${String(i).padStart(8, '0')}`, cursor: null })) },
+    }),
     pulled('a signed-out principal reads a public tree and nothing of its own', {
       state: open,
       account: null,

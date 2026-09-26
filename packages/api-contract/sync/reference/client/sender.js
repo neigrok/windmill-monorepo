@@ -1,18 +1,18 @@
 // §7.4 the sender: numbering ready entries into a push, and the push response, one local transaction
-// per result. Timing (tSend, tRecv) is the device clock around the request, for the offset (§10.4).
+// per result. Timing {send, recv} is the device clocks' readings around the request, for the offset
+// sample (§10.4).
 
-import { Offset } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { stampsOf } from '../core/rows.js';
 import { intentDigest } from '../core/wire.js';
-import { epochChange, reidentify } from './lifecycle.js';
+import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { applyWriteMap, onRefused } from './refusal.js';
 
 // Numbers ready entries in commit order up to the batch limits, stopping after the first command
-// entry, and never while a command entry is sent. `limit` (after a multi-intent 413) sends at most
-// that many sent entries and numbers none beyond them. Answers the push request, or null.
+// entry, and never while a command entry is sent. `limit` (after a several-intent 400 or 413) sends at
+// most that many sent entries and numbers none beyond them. Answers the push request, or null.
 export function nextPush(replica, ctx, { limit } = {}) {
   const limits = ctx.limits ?? CONSTANTS;
   const maxIntents = Math.min(limits.PUSH_MAX_INTENTS, limit ?? Infinity);
@@ -42,35 +42,34 @@ export function nextPush(replica, ctx, { limit } = {}) {
   return { replica: meta.replica, ackThrough: meta.ackThrough, intents: batch.map((entry) => entry.intent) };
 }
 
-function recordOffset(replica, body, timing) {
-  const sample = Offset.sample({ serverTime: body.serverTime, ...timing });
-  replica.meta.offsetSamples = Offset.record(replica.meta.offsetSamples, sample);
-  replica.meta.serverOffsetMs = Offset.choose(replica.meta.offsetSamples);
-}
-
-// A push response, one local transaction per result. Answers {halve: true} after a 413 on several
-// intents, so the caller's next nextPush passes half the count as `limit`; otherwise nothing.
+// A push response, one local transaction per result. After a 400 or 413 on several intents it answers
+// {limit}, ⌈count/2⌉, which the caller's next nextPush passes to resend the first half by n; otherwise
+// nothing. Every 400 emits sync-push-malformed. After a 409 or an epoch change the instance takes a new
+// actor (§7.11).
 export function onPushResponse(replica, ctx, request, response, timing) {
   const { meta } = replica;
   const { status, body } = response;
-  if (body?.serverTime !== undefined) recordOffset(replica, body, timing);
+  if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (status === 401) {
     meta.authPaused = true;
     return undefined;
   }
   if (status === 409) {
     reidentify(replica, ctx);
+    renewActor(ctx);
     return undefined;
   }
-  if ((status === 400 || status === 413) && request.intents.length === 1) {
+  if (status === 400 || status === 413) {
+    if (status === 400) ctx.telemetry.push({ event: 'sync-push-malformed' });
+    if (request.intents.length > 1) return { limit: Math.ceil(request.intents.length / 2) };
     const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === request.intents[0].n);
     if (entry) {
       meta.nextN = entry.n;
+      for (const later of replica.entries()) if (later.state === 'sent' && later.n > entry.n) moveEntry(replica, ctx.ended, later, 'rewind');
       onRefused(replica, ctx, entry, { s: 'refused', code: status === 400 ? 'invalid' : 'too-large' }, body);
     }
     return undefined;
   }
-  if (status === 413) return { halve: true };
   if (status !== 200) return undefined;
 
   meta.serverEpoch ??= body.epoch;
@@ -97,6 +96,6 @@ export function onPushResponse(replica, ctx, request, response, timing) {
 }
 
 // §10.4: every response carrying serverTime yields an offset sample, hello included.
-export function onHello(replica, response, timing) {
-  if (response.body?.serverTime !== undefined) recordOffset(replica, response.body, timing);
+export function onHello(replica, ctx, response, timing) {
+  if (response.body?.serverTime !== undefined) replica.takeOffsetSample(response.body.serverTime, timing, ctx.limits);
 }

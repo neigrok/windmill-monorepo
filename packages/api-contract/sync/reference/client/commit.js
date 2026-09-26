@@ -3,14 +3,14 @@
 
 import { Clock } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
-import { derive } from '../core/derive.js';
+import { derive, mintId } from '../core/derive.js';
 import { jcs, sameJson } from '../core/jcs.js';
 import { INTENT_MACHINE, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
 import { recordKey } from '../core/rows.js';
 import { roundToQuantum } from '../core/values.js';
 import { coalesce } from './coalesce.js';
-import { drawn, stored } from './views.js';
+import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
 export class CommitError extends Error {}
 
@@ -19,8 +19,8 @@ export function baseTextKey(t, id, field) {
 }
 
 class DeltaBuilder {
-  constructor({ registry, replica, scope, stamp, physNow, drawnView }) {
-    Object.assign(this, { registry, replica, scope, stamp, physNow, drawnView });
+  constructor({ registry, replica, scope, stamp, physNow, drawnView, draw }) {
+    Object.assign(this, { registry, replica, scope, stamp, physNow, drawnView, draw });
     this.chosen = new Set();
     this.baseTexts = {};
   }
@@ -75,11 +75,20 @@ class DeltaBuilder {
     return taken;
   }
 
+  // §7.1 step 5: the change's id; else a derived id from its label (D-26); else an id minted by the
+  // type's mint (D-8), drawn again while taken.
+  idOf(type, change) {
+    if (change.id !== undefined) return change.id;
+    const taken = this.takenIds(type);
+    if (type.identity === 'derived' && change.label !== undefined) return derive(change.label, type.derive.fallback, taken);
+    let id = mintId(type, this.draw);
+    while (taken.has(id)) id = mintId(type, this.draw);
+    return id;
+  }
+
   create(type, change) {
     if (!type.hasBorn) throw new CommitError(`${type.type} is created by put or write`);
-    const id = type.identity === 'derived' && change.id === undefined
-      ? derive(change.label, type.derive.fallback, this.takenIds(type))
-      : change.id;
+    const id = this.idOf(type, change);
     this.chosen.add(id);
     if (this.drawnView.has(recordKey(type.type, id))) return null;
     const delta = { t: type.type, id, born: this.stamp, life: ['alive', this.stamp] };
@@ -226,8 +235,22 @@ function groupIntents(scope, deltas, guards, opts, gestureId) {
   return intents;
 }
 
-// ctx: {registry, actor, deviceNow, ended, nextGestureId?, limits?}. Answers {localIds, stamp} or {refused}.
-// A throw writes nothing: the stamp is written back only once every delta is built.
+// §7.1 step 8: the growth rule on `stored` with the gesture applied; a held delete still occupies its slot.
+function exceedsCap(registry, storedView, deltas) {
+  const after = new Map(storedView);
+  for (const delta of deltas) foldDelta(after, registry, delta);
+  return [...new Set(deltas.map((delta) => delta.t))].some((t) => {
+    const cap = registry.type(t).cap;
+    if (cap === undefined) return false;
+    const count = visibleCount(registry, after, t);
+    return count > cap && count > visibleCount(registry, storedView, t);
+  });
+}
+
+// ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits}. `changes` is a list, or a
+// function of the views {drawn, stored} called in this transaction. Answers {localIds, stamp} or
+// {refused}. A throw or a cap refusal writes nothing, and a too-large refusal writes only its notice: the
+// clock is written back once the commit is accepted.
 export function commit(replica, ctx, scope, changes, opts = {}) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
@@ -241,13 +264,15 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
   const stamp = clock.tick();
 
   const drawnView = drawn(replica, registry, scope);
-  const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView });
-  const deltas = changes.map((change) => builder.delta(change)).filter((delta) => delta !== null);
+  const storedView = stored(replica, registry, scope);
+  const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, draw: ctx.draw });
+  const gesture = typeof changes === 'function' ? changes({ drawn: drawnView, stored: storedView }) : changes;
+  const deltas = gesture.map((change) => builder.delta(change)).filter((delta) => delta !== null);
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
-  const guards = guardsOf(opts, deltas, stored(replica, registry, scope));
+  if (exceedsCap(registry, storedView, deltas)) return { refused: 'cap' };
+  const guards = guardsOf(opts, deltas, storedView);
   const gestureId = opts.gestureId ?? ctx.nextGestureId();
   const intents = groupIntents(scope, deltas, guards, opts, gestureId);
-  replica.meta.hlc = clock.pair;
 
   const oversize = intents.find((intent) => Buffer.byteLength(jcs(intent), 'utf8') > limits.PUSH_MAX_BYTES);
   if (oversize) {
@@ -258,6 +283,7 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
     return { refused: 'too-large' };
   }
 
+  replica.meta.hlc = clock.pair;
   const firstOrder = replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {
     const state = transition(INTENT_MACHINE, null, 'commit', opts.hold ? 'held' : 'ready');

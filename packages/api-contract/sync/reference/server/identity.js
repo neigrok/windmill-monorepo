@@ -50,7 +50,7 @@ const TABLE = {
     foreign: () => OK,
     'alive=': () => APPLY,
     'alive≠': () => OK,
-    'dead=': () => OK,
+    'dead=': () => APPLY,
     'dead≠': () => OK,
   },
   revive: {

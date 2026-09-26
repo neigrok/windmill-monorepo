@@ -87,10 +87,8 @@ void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   // Three reads behind one path, most specific first: since, then from/to, then everything.
   const std::string since = req->getParameter("since");
   if (!since.empty()) {
-    Hlc cursor;
-    try {
-      cursor = parseHlc(since);
-    } catch (const std::exception&) {
+    const std::optional<Hlc> cursor = parseHlc(since);
+    if (!cursor) {
       cb(error(drogon::k400BadRequest, "bad cursor"));
       return;
     }
@@ -103,7 +101,7 @@ void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
       if (parsed.ec == std::errc{} && parsed.ptr == last && value > 0) limit = std::min(value, 1000);
     }
     Json::Value body(Json::objectValue);
-    body["pages"] = toJson(pages_->since(*caller, cursor, limit));
+    body["pages"] = toJson(pages_->since(*caller, *cursor, limit));
     cb(jsonResponse(body));
     return;
   }

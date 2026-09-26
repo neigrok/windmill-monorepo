@@ -2,13 +2,14 @@
 // header; every later line is one client action, one HTTP exchange, one live frame or one server load,
 // in the order they happened (corpus/README.md, "Protocol transcripts").
 
+import { steadyTiming } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
 import { commit } from '../client/commit.js';
 import { release, releaseAll } from '../client/hold.js';
 import { signIn, signOut } from '../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
 import { Device, Replica } from '../client/replica.js';
-import { nextPush, onPushResponse } from '../client/sender.js';
+import { nextPush, onHello, onPushResponse } from '../client/sender.js';
 import { reconcile } from '../client/subscriptions.js';
 import { deathFrameFor, hello, pull } from '../server/pull.js';
 import { push } from '../server/push.js';
@@ -29,33 +30,48 @@ function anonDevice(id) {
   return new Device({ active: id, replicas: [Replica.fresh({ replica: id, state: 'anon' }).toJSON()] }).toJSON();
 }
 
+// A device's instance actors: its first actor, then one fresh actor for each re-identify (D-2).
+function actorsOf(base) {
+  return [base, ...[1, 2, 3].map((k) => `${base.slice(0, -1)}${k}`)];
+}
+
 class Stage {
   constructor(transcript, about, { server, devices, ids = {}, actors = {} }) {
     this.server = new ServerState(server);
     this.devices = Object.fromEntries(Object.entries(devices).map(([name, json]) => [name, new Device(json)]));
     this.ids = Object.fromEntries(Object.entries(ids).map(([name, list]) => [name, [...list]]));
-    this.actors = actors;
+    const queues = Object.fromEntries(Object.keys(devices).map((name) => [name, actorsOf(actors[name] ?? ACTOR)]));
+    this.current = Object.fromEntries(Object.entries(queues).map(([name, list]) => [name, list[0]]));
+    this.actorQueues = Object.fromEntries(Object.entries(queues).map(([name, list]) => [name, list.slice(1)]));
     this.ended = Object.fromEntries(Object.keys(devices).map((name) => [name, []]));
-    this.lines = [{ transcript, about, registry: registry.name, server: this.server.toJSON(), devices: structuredClone(devices), ids: structuredClone(ids), actors }];
+    this.lines = [{ transcript, about, registry: registry.name, server: this.server.toJSON(), devices: structuredClone(devices), ids: structuredClone(ids), actors: queues }];
     this.gestures = 0;
   }
 
-  ctx(name, deviceNow) {
-    return {
+  // The context of one client call; the device keeps the actor the call leaves (a re-identify renews it).
+  call(name, deviceNow, act) {
+    const take = (list, what) => {
+      const next = list?.shift();
+      if (next === undefined) throw new Error(`${name} has no ${what} left`);
+      return next;
+    };
+    const ctx = {
       registry,
-      actor: this.actors[name] ?? ACTOR,
+      actor: this.current[name],
       deviceNow,
       ended: this.ended[name],
       telemetry: [],
       appVersion: '1',
       nextGestureId: () => `g${(this.gestures += 1)}`,
-      newReplicaId: () => {
-        const next = this.ids[name]?.shift();
-        if (next === undefined) throw new Error(`${name} has no replica id left`);
-        return next;
-      },
+      newReplicaId: () => take(this.ids[name], 'replica id'),
+      newActor: () => take(this.actorQueues[name], 'actor'),
+      newForkGuard: () => take(undefined, 'fork guard'),
+      draw: () => take(undefined, 'draw'),
       limits: CONSTANTS,
     };
+    const out = act(ctx);
+    this.current[name] = ctx.actor;
+    return out;
   }
 
   line(fields) {
@@ -65,17 +81,20 @@ class Stage {
   // A client action in the client-steps vocabulary.
   do(name, op, args, deviceNow) {
     const device = this.devices[name];
-    const ctx = this.ctx(name, deviceNow);
     const replica = device.activeReplica;
-    let out = null;
-    if (op === 'commit') out = commit(replica, ctx, args.scope, args.changes ?? [], args.opts ?? {});
-    else if (op === 'release') out = release(replica, registry, ctx.ended, replica.entry(args.localId));
-    else if (op === 'releaseAll') releaseAll(replica, registry, ctx.ended);
-    else if (op === 'signIn') out = signIn(device, ctx, args);
-    else if (op === 'signOut') out = signOut(device, ctx, args);
-    else if (op === 'reconcile') reconcile(replica, ctx, args.scopes);
-    else if (op === 'load') this.devices[name] = new Device(structuredClone(args.device));
-    else throw new Error(`unknown action ${op}`);
+    const out = this.call(name, deviceNow, (ctx) => {
+      if (op === 'commit') return commit(replica, ctx, args.scope, args.changes ?? [], args.opts ?? {});
+      if (op === 'release') return release(replica, registry, ctx.ended, replica.entry(args.localId));
+      if (op === 'releaseAll') return releaseAll(replica, registry, ctx.ended) ?? null;
+      if (op === 'signIn') return signIn(device, ctx, args);
+      if (op === 'signOut') return signOut(device, ctx, args);
+      if (op === 'reconcile') return reconcile(replica, ctx, args.scopes) ?? null;
+      if (op === 'load') {
+        this.devices[name] = new Device(structuredClone(args.device));
+        return null;
+      }
+      throw new Error(`unknown action ${op}`);
+    });
     this.line({ device: name, do: op, args, deviceNow, returns: out });
     return out;
   }
@@ -89,8 +108,7 @@ class Stage {
   // applies it. Change frames and death frames (§6.8) go to the listed subscribers of each scope.
   push(name, { serverNow, deviceNow = serverNow, authenticated = true, budget, fault = [], lost = false, frames = [] }) {
     const replica = this.devices[name].activeReplica;
-    const ctx = this.ctx(name, deviceNow);
-    const request = nextPush(replica, ctx);
+    const request = this.call(name, deviceNow, (ctx) => nextPush(replica, ctx));
     if (request === null) throw new Error(`${name} has nothing to push`);
     const account = authenticated ? this.account(name) : null;
     const out = push({
@@ -111,38 +129,47 @@ class Stage {
     if (Object.keys(inject).length) fields.inject = inject;
     if (lost) fields.lost = true;
     this.line(fields);
-    if (!lost) onPushResponse(replica, ctx, request, out.response, { tSend: deviceNow, tRecv: deviceNow });
-    for (const event of out.live) {
-      for (const subscriber of frames) {
+    if (!lost) this.call(name, deviceNow, (ctx) => onPushResponse(replica, ctx, request, out.response, steadyTiming(deviceNow, deviceNow)));
+    this.deliver(out.live, frames, deviceNow);
+    return out.response;
+  }
+
+  // Change frames and death frames (§6.8) to the listed subscribers of each scope.
+  deliver(live, subscribers, deviceNow) {
+    for (const event of live) {
+      for (const subscriber of subscribers) {
         const owner = event.key.startsWith('acct:') ? event.key.slice('acct:'.length).split('/')[0] : null;
         if (owner !== null && owner !== this.account(subscriber)) continue;
         this.frame(subscriber, event.frame ?? deathFrameFor(this.server, event.key, this.account(subscriber)), deviceNow);
       }
     }
+  }
+
+  // One pull: the server runs the scopes' beforePull commands, then answers the pages.
+  pull(name, scopes, { serverNow, deviceNow = serverNow, frames = [] }) {
+    const replica = this.devices[name].activeReplica;
+    const request = pullRequest(replica, scopes);
+    const account = this.account(name);
+    const out = pull({ state: this.server, registry, product, account, request, serverNow });
+    this.server = out.state;
+    const sent = structuredClone({ request, response: out.response });
+    const outcomes = this.call(name, deviceNow, (ctx) => onPullResponse(replica, ctx, request, out.response, steadyTiming(deviceNow, deviceNow)));
+    this.line({ device: name, http: 'pull', account, serverNow, deviceNow, ...sent, returns: outcomes });
+    this.deliver(out.live, frames, deviceNow);
     return out.response;
   }
 
-  pull(name, scopes, { serverNow, deviceNow = serverNow }) {
-    const replica = this.devices[name].activeReplica;
-    const ctx = this.ctx(name, deviceNow);
-    const request = pullRequest(replica, scopes);
-    const account = this.account(name);
-    const response = pull({ state: this.server, registry, account, request, serverNow });
-    const sent = structuredClone({ request, response });
-    const outcomes = onPullResponse(replica, ctx, request, response, { tSend: deviceNow, tRecv: deviceNow });
-    this.line({ device: name, http: 'pull', account, serverNow, deviceNow, ...sent, returns: outcomes });
-    return response;
-  }
-
+  // A hello: the device takes its offset sample from the answer (§10.4).
   hello(name, { serverNow, account }) {
     const response = hello({ state: this.server, registry, account, serverTime: serverNow });
+    this.call(name, serverNow, (ctx) => onHello(this.devices[name].activeReplica, ctx, response, steadyTiming(serverNow, serverNow)));
     this.line({ device: name, http: 'hello', account, serverNow, deviceNow: serverNow, request: {}, response });
     return response.body;
   }
 
   frame(name, frame, deviceNow) {
     const sent = structuredClone(frame);
-    const outcome = onFrame(this.devices[name].activeReplica, this.ctx(name, deviceNow), frame);
+    const outcome = this.call(name, deviceNow, (ctx) => onFrame(this.devices[name].activeReplica, ctx, frame));
     this.line({ device: name, frame: sent, deviceNow, returns: outcome });
     return outcome;
   }

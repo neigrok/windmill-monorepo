@@ -15,7 +15,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   const add = (message) => errors.push(`${path}: ${message}`);
   const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v);
   const known = new Set(['$schema', '$id', 'title', 'description', '$defs', '$ref', 'type', 'properties', 'required', 'additionalProperties',
-    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'minItems', 'minProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
+    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'minItems', 'minLength', 'minProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
   for (const keyword of Object.keys(schema)) if (!known.has(keyword)) throw new Error(`the test validator lacks ${keyword}`);
   if (schema.$ref) {
     const target = schema.$ref.replace('#/', '').split('/').reduce((node, key) => node[key], root);
@@ -29,6 +29,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   if (schema.const !== undefined && JSON.stringify(schema.const) !== JSON.stringify(value)) add(`expected ${JSON.stringify(schema.const)}`);
   if (schema.enum && !schema.enum.some((option) => JSON.stringify(option) === JSON.stringify(value))) add(`not one of ${JSON.stringify(schema.enum)}`);
   if (typeof value === 'string' && schema.pattern && !new RegExp(schema.pattern, 'u').test(value)) add(`does not match ${schema.pattern}`);
+  if (typeof value === 'string' && schema.minLength !== undefined && [...value].length < schema.minLength) add(`shorter than ${schema.minLength}`);
   if (typeof value === 'number') {
     if (schema.minimum !== undefined && value < schema.minimum) add(`below ${schema.minimum}`);
     if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) add(`not above ${schema.exclusiveMinimum}`);
@@ -65,6 +66,7 @@ function broken(edit) {
 }
 
 const card = (registry) => registry.types.find((type) => type.type === 'card');
+const command = (registry, name) => registry.commands.find((entry) => entry.name === name);
 
 test('the probe registry is valid against registry.schema.json', () => {
   assert.deepEqual(errorsOf(SCHEMA, PROBE), []);
@@ -86,6 +88,10 @@ test('registry.schema.json refuses broken registries', () => {
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
     'an unanchored id pattern': broken((r) => { card(r).idPattern = '[a-z]+'; }),
     'a quantum of zero': broken((r) => { card(r).fields.size.quantum = 0; }),
+    'a minted type without its mint': broken((r) => { delete card(r).mint; }),
+    'a mint alphabet of one character': broken((r) => { card(r).mint.alphabet = 'a'; }),
+    'an opens field a client writes': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.writer = 'client'; }),
+    'a beforePull command that is not server-internal': broken((r) => { command(r, 'probe.tick').serverInternal = false; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.notDeepEqual(errorsOf(SCHEMA, registry), [], name);
 });
@@ -96,7 +102,11 @@ test('the Registry refuses what the schema cannot express', () => {
     'origins without replica': broken((r) => { card(r).origins = ['server']; }),
     'a revivable type whose dead rows are spent': broken((r) => { card(r).revivable = true; }),
     'serialNext naming an unknown field': broken((r) => { r.types.find((t) => t.type === 'lap').fields.no.serialNext = ['ghost']; }),
-    'a server-internal command a replica may call': broken((r) => { r.commands[2].origins = ['replica', 'server']; }),
+    'a server-internal command a replica may call': broken((r) => { command(r, 'probe.tick').origins = ['replica', 'server']; }),
+    'a mint whose ids miss idPattern': broken((r) => { card(r).mint.length = 4; }),
+    'a mint alphabet outside idPattern': broken((r) => { card(r).mint.alphabet = 'ab!'; }),
+    'opens on a field of a product-scope type': broken((r) => { card(r).fields.claim.opens = ['x']; card(r).fields.claim.writer = 'server'; }),
+    'opens values outside the domain': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.opens = ['secret']; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.throws(() => new Registry(registry), RegistryError, name);
 });
@@ -108,4 +118,11 @@ test('scope references map to registry scope kinds', () => {
     ['product:probe', 'overlay', 'tree', 'device', null, null, null, null],
   );
   assert.deepEqual(['self/probe', 'tree/b_00000001', 'self/overlay/b_00000001', 'device/probe'].map((ref) => registry.productOfRef(ref)), ['probe', 'probe', 'probe', 'probe']);
+});
+
+test('the registry exposes the opening field and the before-pull commands', () => {
+  const registry = new Registry(PROBE);
+  assert.deepEqual(registry.opening, { type: 'meta', id: 'meta', field: 'visibility', values: ['unlisted', 'public'] });
+  assert.deepEqual(registry.beforePullCommands('product:probe').map((entry) => entry.name), ['probe.tick']);
+  assert.deepEqual(registry.beforePullCommands('tree'), []);
 });

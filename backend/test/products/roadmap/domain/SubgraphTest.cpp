@@ -9,43 +9,6 @@ static NodeId nid(const char* s) { return NodeId{std::string(s)}; }
 static KindId kid(const char* s) { return KindId{std::string(s)}; }
 static Hlc at(std::uint64_t ms, const char* actor = "a") { return Hlc{ms, 0, actor}; }
 
-TEST(hlc_text_round_trips_including_the_unset_sentinel) {
-  Hlc stamp{1770000000123ull, 7, "u_42#r_8f31c2"};
-  CHECK_EQ(parseHlc(toString(stamp)), stamp);
-  CHECK_EQ(toString(Hlc{}), std::string("0:0:"));
-  CHECK_EQ(parseHlc("0:0:"), Hlc{});
-  CHECK_FALSE(parseHlc("0:0:").isSet());
-}
-
-TEST(hlc_clock_ticks_are_strictly_monotone_even_when_wall_time_goes_backward) {
-  HlcClock clock("a");
-  Hlc first = clock.tick(100);
-  Hlc second = clock.tick(100);   // same wall ms → counter advances
-  Hlc third = clock.tick(50);     // wall ms went backward → still dominates
-  Hlc fourth = clock.tick(200);   // wall ms jumps forward → counter resets, still dominates
-  CHECK(second > first);
-  CHECK(third > second);
-  CHECK(fourth > third);
-  CHECK_EQ(fourth.physicalMs, 200ull);
-  CHECK_EQ(fourth.counter, 0u);
-}
-
-TEST(hlc_clock_observe_makes_the_next_tick_dominate_the_observed_stamp) {
-  HlcClock clock("a");
-  Hlc remote{5000, 3, "b"};
-  clock.observe(remote);
-  Hlc next = clock.tick(10);  // local wall time is far behind the observed stamp
-  CHECK(next > remote);       // the receive rule: a write after seeing a tombstone beats it
-}
-
-TEST(distinct_replica_actors_never_tie) {
-  HlcClock tabOne("u_42#r_aaa");
-  HlcClock tabTwo("u_42#r_bbb");
-  Hlc a = tabOne.tick(100);
-  Hlc b = tabTwo.tick(100);   // same user, same wall ms, different replica nonce
-  CHECK_FALSE(a == b);        // the uniqueness precondition holds across tabs
-}
-
 TEST(version_vector_observe_and_cover) {
   VersionVector vector;
   vector.observe(Hlc{5, 0, "a"});

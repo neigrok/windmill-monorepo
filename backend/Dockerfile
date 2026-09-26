@@ -8,6 +8,10 @@
 # The build boundary lives here: Drogon and libpqxx are the messy vendor deps, so we
 # resolve them once in a fat builder and ship a slim runtime that carries only the two
 # binaries, the schema, and the shared libraries ldd actually reports.
+#
+# The context is backend/, which cannot see the sync contract the build embeds and the tests
+# replay, so the build takes it as a second, named context:
+#   docker buildx build --build-context contract=packages/api-contract backend
 
 ########################  builder  ########################
 # Official Drogon image: Ubuntu 22.04, Drogon prebuilt as a static lib with a working
@@ -33,12 +37,14 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
+COPY --from=contract sync/probe.registry.json /contract/sync/probe.registry.json
+COPY --from=contract sync/corpus /contract/sync/corpus
 
 # Configure once, then build the two service binaries plus every test suite. The guard
 # in CMakeLists only defines these targets when Drogon + libpqxx are found, so a failed
 # dependency resolution surfaces as "unknown target" here, not a silent skip. Every suite
 # ctest registers must be listed, or ctest fails on a missing executable, not a red test.
-RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_mcp_http windmill_domain_tests windmill_mcp_tests windmill_adapters_tests
 

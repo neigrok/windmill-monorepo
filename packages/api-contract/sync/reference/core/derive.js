@@ -41,3 +41,16 @@ export function parseSeeded(id) {
   if (!ORDINAL.test(ordinal)) return null;
   return { seed: id.slice(0, cut), n: Number(ordinal) };
 }
+
+// D-8 a CSPRNG id by the type's mint: the prefix, then `length` characters of the alphabet, each
+// `alphabet[draw(alphabet.length)]`, where draw answers a uniform integer below its argument.
+export function mintId(type, draw) {
+  const { prefix, alphabet, length } = type.mint;
+  let id = prefix;
+  for (let k = 0; k < length; k += 1) {
+    const index = draw(alphabet.length);
+    if (!Number.isInteger(index) || index < 0 || index >= alphabet.length) throw new SeededIdError(`draw ${index} is outside 0..${alphabet.length - 1}`);
+    id += alphabet[index];
+  }
+  return id;
+}

@@ -50,12 +50,18 @@ class ServerScript {
     return this;
   }
 
+  withActors(actors) {
+    this.input.actors = actors;
+    return this;
+  }
+
   pullRound({ deviceNow, scopes, serverNow = deviceNow }) {
     this.add({ op: 'pull', scopes, deviceNow });
     const out = runSteps(this.input);
     const request = out.returns[out.returns.length - 1];
-    const response = pull({ state: this.server, registry, account: 'A', request, serverNow });
-    return this.add({ op: 'pullResponse', response, deviceNow, tSend: deviceNow, tRecv: deviceNow });
+    const pulled = pull({ state: this.server, registry, product, account: 'A', request, serverNow });
+    this.server = pulled.state;
+    return this.add({ op: 'pullResponse', response: pulled.response, deviceNow, tSend: deviceNow, tRecv: deviceNow });
   }
 
   vector(name) {
@@ -96,10 +102,13 @@ function server() {
 }
 
 const CLIENT_PROBE = { 'self/probe': [...CARDS, row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 })] };
+// A client that has not yet pulled the server's third card: its stored view allows a create the
+// server's growth rule refuses `cap`.
+const CLIENT_BEHIND = { 'self/probe': [...CARDS.slice(0, 2), row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 })] };
 const newCard = (id) => ({ op: 'create', t: 'card', id, f: { title: 'Fourth' } });
 
 function folds() {
-  const script = () => new ServerScript({ device: device(CLIENT_PROBE), server: server() });
+  const script = () => new ServerScript({ device: device(CLIENT_BEHIND), server: server() });
   return [
     script()
       .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
@@ -174,6 +183,7 @@ function folds() {
       .vector('a sent entry only partly dependent is no orphan: its own refusal writes a notice with its full content'),
     script()
       .withIds(['rp_00000000000000000000000000000002'])
+      .withActors(['r_cccccccccccc'])
       .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
       .push(5000)
       .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Newer' } }], undefined, 5001))
@@ -184,7 +194,7 @@ function folds() {
       .pushRound({ deviceNow: 5005 })
       .vector('an edit never joins an orphan: the orphan ends without a notice, the edit ends in its own'),
     new ServerScript({
-      device: device({ ...CLIENT_PROBE, 'tree/b_00000002': [row({ t: 'tag', id: 'oak', life: ['alive', st(1000)], born: st(1000), f: { label: ['Oak', st(1000)] }, seq: 1 })] }),
+      device: device({ ...CLIENT_BEHIND, 'tree/b_00000002': [row({ t: 'tag', id: 'oak', life: ['alive', st(1000)], born: st(1000), f: { label: ['Oak', st(1000)] }, seq: 1 })] }),
       server: server(),
     })
       .add(commitStep(TREE, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], undefined, 5000))
@@ -200,7 +210,7 @@ const SKEW = 400_000;
 const skewed = (deviceNow) => deviceNow + SKEW;
 
 function restamps() {
-  const script = (meta) => new ServerScript({ device: device(CLIENT_PROBE, meta), server: server() });
+  const script = (meta) => new ServerScript({ device: device(CLIENT_BEHIND, meta), server: server() });
   return [
     script()
       .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, skewed(4999)))
@@ -336,8 +346,10 @@ function transports() {
   const rename = (id, title, deviceNow) => commitStep('self/probe', [{ op: 'update', t: 'card', id, f: { title } }], undefined, deviceNow);
   const answer = (status, body, deviceNow) => ({ op: 'pushResponse', deviceNow, tSend: deviceNow - 10, tRecv: deviceNow, response: { status, body } });
   const base = () => device(CLIENT_PROBE);
+  const reading = (wall, mono, boot = 'boot-1') => ({ wall, mono, boot });
+  const hello = (deviceNow, send, recv, serverTime) => ({ op: 'hello', deviceNow, send, recv, response: { status: 200, body: { ...at(serverTime), schema: 1, minSchema: 1 } } });
   return [
-    stepsVector('a one-intent 400 refuses the entry invalid with a notice and rewinds nextN to its n', {
+    stepsVector('a one-intent 400 refuses the entry invalid with a notice, rewinds nextN to its n and emits sync-push-malformed', {
       device: base(),
       steps: [rename('card0001', 'Bad', 5000), { op: 'push', deviceNow: 5000 }, answer(400, { ...at(5020), error: 'malformed' }, 5030), rename('card0002', 'Next', 5040), { op: 'push', deviceNow: 5040 }],
     }),
@@ -345,31 +357,85 @@ function transports() {
       device: base(),
       steps: [rename('card0001', 'Huge', 5000), { op: 'push', deviceNow: 5000 }, answer(413, { ...at(5020), error: 'request-too-large' }, 5030)],
     }),
-    stepsVector('a 413 on several intents answers halve, and the next push sends half of them', {
+    stepsVector('a 413 on three intents answers limit 2, and the next push resends the first two by n', {
       device: base(),
-      steps: [rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), rename('card0003', 'Three', 5002), { op: 'push', deviceNow: 5003 }, answer(413, { ...at(5020), error: 'request-too-large' }, 5030), { op: 'push', deviceNow: 5040, limit: 1 }],
+      steps: [rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), rename('card0003', 'Three', 5002), { op: 'push', deviceNow: 5003 }, answer(413, { ...at(5020), error: 'request-too-large' }, 5030), { op: 'push', deviceNow: 5040, limit: 2 }],
+    }),
+    stepsVector('a one-intent 400 on a tag create returns the sent link keyed by it to ready and folds it into the one notice', {
+      device: device({ ...CLIENT_PROBE, [TREE]: [TAGS[0]] }),
+      steps: [
+        commitStep(TREE, [{ op: 'create', t: 'tag', id: 'ash', f: { label: 'Ash' } }], undefined, 5000),
+        commitStep(TREE, [{ op: 'put', t: 'link', id: ['ash', 'elm'] }], undefined, 5001),
+        { op: 'push', deviceNow: 5002 },
+        answer(400, { ...at(5020), error: 'malformed' }, 5030),
+        { op: 'push', deviceNow: 5040, limit: 1 },
+        answer(400, { ...at(5050), error: 'malformed' }, 5060),
+        { op: 'push', deviceNow: 5070 },
+      ],
     }),
     stepsVector('a 401 pauses the sender and still takes an offset sample', {
       device: base(),
       steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(401, { ...at(8020), error: 'unauthenticated' }, 5030), { op: 'push', deviceNow: 5040 }],
     }),
-    stepsVector('a 409 re-identifies after taking an offset sample', {
+    stepsVector('a 409 re-identifies after taking an offset sample, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],
+      actors: ['r_cccccccccccc'],
       steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(409, { ...at(8020), error: 'gap' }, 5030), { op: 'push', deviceNow: 5040 }],
+    }),
+    stepsVector('a 400 on two intents answers limit 1 and emits sync-push-malformed, with no notice', {
+      device: base(),
+      steps: [rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), { op: 'push', deviceNow: 5002 }, answer(400, { ...at(5020), error: 'malformed' }, 5030), { op: 'push', deviceNow: 5040, limit: 1 }],
+    }),
+    stepsVector('a one-intent 400 after halving refuses its entry, rewinds nextN to its n and returns the later sent entry to ready', {
+      device: base(),
+      steps: [
+        rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001),
+        { op: 'push', deviceNow: 5002 },
+        answer(400, { ...at(5020), error: 'malformed' }, 5030),
+        { op: 'push', deviceNow: 5040, limit: 1 },
+        answer(400, { ...at(5050), error: 'malformed' }, 5060),
+        { op: 'push', deviceNow: 5070 },
+      ],
+    }),
+    stepsVector('a sample after the wall clock jumps against the monotonic clock replaces every earlier sample', {
+      device: base(),
+      steps: [
+        hello(5030, reading(5010, 80), reading(5030, 100), 9020),
+        hello(6030, reading(6000, 1070), reading(6030, 1100), 10_020),
+        hello(90_040, reading(90_000, 1160), reading(90_040, 1200), 11_020),
+      ],
+    }),
+    stepsVector('a sample after a reboot replaces every earlier sample, and a steady clock keeps them', {
+      device: base(),
+      steps: [
+        hello(5030, reading(5010, 80), reading(5030, 100), 9020),
+        hello(6030, reading(6000, 1070), reading(6030, 1100), 10_020),
+        hello(7040, reading(7000, 0, 'boot-2'), reading(7040, 40, 'boot-2'), 11_020),
+      ],
+    }),
+    stepsVector('a response to a request that straddles a clock jump takes no sample, and the next sample replaces the earlier ones', {
+      device: base(),
+      steps: [
+        hello(5030, reading(5010, 80), reading(5030, 100), 9020),
+        hello(95_000, reading(6000, 1070), reading(95_000, 1100), 10_020),
+        hello(95_140, reading(95_100, 1200), reading(95_140, 1240), 11_020),
+      ],
     }),
     stepsVector('hello takes an offset sample', {
       device: base(),
       steps: [{ op: 'hello', deviceNow: 5030, tSend: 5010, tRecv: 5030, response: { status: 200, body: { ...at(9020), schema: 1, minSchema: 1 } } }],
     }),
-    stepsVector('re-identify mints a replica id, restarts n at 1 and returns sent entries to ready', {
+    stepsVector('re-identify mints a replica id, restarts n at 1 and returns sent entries to ready, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],
+      actors: ['r_cccccccccccc'],
       steps: [rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), { op: 'push', deviceNow: 5002 }, { op: 'reidentify', deviceNow: 5003 }, { op: 'push', deviceNow: 5004 }],
     }),
-    stepsVector('an epoch change nulls every cursor, returns acked entries of another epoch to ready and re-identifies', {
+    stepsVector('an epoch change nulls every cursor, returns acked entries of another epoch to ready and re-identifies, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],
+      actors: ['r_cccccccccccc'],
       steps: [
         rename('card0001', 'One', 5000),
         { op: 'push', deviceNow: 5000 },

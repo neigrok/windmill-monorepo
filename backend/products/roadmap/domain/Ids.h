@@ -2,6 +2,8 @@
 
 #include "platform/domain/Ids.h"
 
+#include <optional>
+#include <stdexcept>
 #include <string_view>
 
 namespace wm {
@@ -22,6 +24,14 @@ inline bool wellFormedTreeId(std::string_view id) {
     if ((c < '0' || c > '9') && (c < 'a' || c > 'f')) return false;
   }
   return true;
+}
+
+// Roadmap stores and sends a register never written as "" (schema.sql's `*_hlc` defaults, an absent
+// wire field) as well as "0:0:". Any other text must be a D-1 stamp.
+inline Hlc roadmapStamp(std::string_view text) {
+  if (text.empty()) return Hlc{};
+  if (std::optional<Hlc> stamp = parseHlc(text)) return *stamp;
+  throw std::invalid_argument("a roadmap stamp is ms:counter:actor");
 }
 
 }

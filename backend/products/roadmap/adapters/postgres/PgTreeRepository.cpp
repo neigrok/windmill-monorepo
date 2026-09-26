@@ -84,7 +84,7 @@ void upsertSlice(pqxx::work& txn, const TreeId& tree, const GraphState& state, c
 // pqxx names the row type row_ref on macOS and row on CI's Linux, so these accessors pin the
 // .template dance to one place.
 std::string text(const auto& row, const char* column) { return row[column].template as<std::string>(); }
-Hlc stamp(const auto& row, const char* column) { return parseHlc(text(row, column)); }
+Hlc stamp(const auto& row, const char* column) { return roadmapStamp(text(row, column)); }
 
 NodeStateEntry nodeFromRow(const auto& row) {
   NodeStateEntry node;
@@ -125,7 +125,7 @@ GraphState graphRows(pqxx::work& txn, const TreeId& tree) {
   for (const auto& row : edges) {
     state.edges.push_back(EdgeStateEntry{
         Edge{NodeId{row["from_id"].as<std::string>()}, NodeId{row["to_id"].as<std::string>()}},
-        parseHlc(row["added_hlc"].as<std::string>()), parseHlc(row["removed_hlc"].as<std::string>())});
+        roadmapStamp(row["added_hlc"].as<std::string>()), roadmapStamp(row["removed_hlc"].as<std::string>())});
   }
   return state;
 }
@@ -140,18 +140,18 @@ LegendState legendRows(pqxx::work& txn, const TreeId& tree) {
   for (const auto& row : kinds) {
     KindStateEntry kind;
     kind.id = KindId{row["kind_id"].as<std::string>()};
-    kind.createdAt = parseHlc(row["created_hlc"].as<std::string>());
-    kind.deletedAt = parseHlc(row["deleted_hlc"].as<std::string>());
+    kind.createdAt = roadmapStamp(row["created_hlc"].as<std::string>());
+    kind.deletedAt = roadmapStamp(row["deleted_hlc"].as<std::string>());
     kind.hue = parseColor(row["hue"].as<std::string>()).value_or(NodeColor::terracotta);
-    kind.hueAt = parseHlc(row["hue_hlc"].as<std::string>());
+    kind.hueAt = roadmapStamp(row["hue_hlc"].as<std::string>());
     kind.label = row["label"].as<std::string>();
-    kind.labelAt = parseHlc(row["label_hlc"].as<std::string>());
+    kind.labelAt = roadmapStamp(row["label_hlc"].as<std::string>());
     kind.description = row["description"].as<std::string>();
-    kind.descriptionAt = parseHlc(row["description_hlc"].as<std::string>());
+    kind.descriptionAt = roadmapStamp(row["description_hlc"].as<std::string>());
     kind.crossBranchExempt = row["cross_branch_exempt"].as<bool>();
-    kind.crossBranchExemptAt = parseHlc(row["cross_branch_exempt_hlc"].as<std::string>());
+    kind.crossBranchExemptAt = roadmapStamp(row["cross_branch_exempt_hlc"].as<std::string>());
     kind.rank = row["rank"].as<double>();
-    kind.rankAt = parseHlc(row["rank_hlc"].as<std::string>());
+    kind.rankAt = roadmapStamp(row["rank_hlc"].as<std::string>());
     legend.kinds.push_back(std::move(kind));
   }
   return legend;
@@ -239,7 +239,7 @@ std::optional<StoredTree> PgTreeRepository::load(const TreeId& tree) {
 
   std::optional<UserId> owner;
   if (!row["owner_id"].is_null()) owner = UserId{row["owner_id"].as<std::string>()};
-  Lww<std::string> title{row["title"].as<std::string>(), parseHlc(row["title_hlc"].as<std::string>())};
+  Lww<std::string> title{row["title"].as<std::string>(), roadmapStamp(row["title_hlc"].as<std::string>())};
   return StoredTree{std::move(state), std::move(legend), std::move(title),
                     static_cast<Seq>(row["head_seq"].as<long long>()), std::move(owner),
                     parseVisibility(row["visibility"].as<std::string>()),

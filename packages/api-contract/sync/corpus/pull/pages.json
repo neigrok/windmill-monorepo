@@ -21,13 +21,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -171,8 +169,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -279,13 +281,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -423,8 +423,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "tree/b_00000001": [
@@ -519,7 +523,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -572,7 +575,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -686,8 +688,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -807,7 +813,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -860,7 +865,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -1055,8 +1059,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1163,14 +1171,12 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "outbox": []
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -1416,8 +1422,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1524,7 +1534,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1595,7 +1604,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -1666,8 +1674,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1762,13 +1774,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -2131,8 +2141,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2276,13 +2290,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -2353,8 +2365,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "known": {
               "tree/b_0000000b": "not-found"
@@ -2387,13 +2403,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -2633,8 +2647,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5004,
+                "mono": 5004,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2741,7 +2759,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2776,7 +2793,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -2889,8 +2905,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 6000,
+                "mono": 6000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2967,13 +2987,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -3425,8 +3443,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5004,
+                "mono": 5004,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -3585,13 +3607,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -4111,8 +4131,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -4230,7 +4254,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "outbox": [
@@ -4302,7 +4325,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -4446,8 +4468,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -4594,7 +4620,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -4677,7 +4702,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -4753,8 +4777,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -4869,7 +4897,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -4952,7 +4979,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -5145,8 +5171,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -5260,7 +5290,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -5343,7 +5372,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -5536,8 +5564,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -5657,7 +5689,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -5740,7 +5771,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -6033,8 +6063,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -6159,13 +6193,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -6341,8 +6373,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -6449,13 +6485,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -6631,8 +6665,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -6739,13 +6777,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -6901,8 +6937,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -7009,13 +7049,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -7191,8 +7229,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -7299,13 +7341,11 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "pull",
@@ -7569,8 +7609,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5000,
+                "mono": 5000,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -7680,7 +7724,6 @@
               "serverEpoch": null,
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             }
           }
@@ -7870,6 +7913,9 @@
           "tRecv": 5003,
           "deviceNow": 5003
         }
+      ],
+      "actors": [
+        "r_cccccccccccc"
       ]
     },
     "expect": {
@@ -7972,8 +8018,12 @@
               "serverEpoch": "ep-2",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [

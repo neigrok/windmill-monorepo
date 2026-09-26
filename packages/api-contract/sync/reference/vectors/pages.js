@@ -75,7 +75,9 @@ class PullScript {
 
   respond({ serverNow, limits = CONSTANTS, edit = (response) => response }) {
     const { index, request } = this.lastRequest('pull');
-    const response = edit(pull({ state: this.server, registry, account: 'A', request, serverNow, limits }));
+    const pulled = pull({ state: this.server, registry, product, account: 'A', request, serverNow, limits });
+    this.server = pulled.state;
+    const response = edit(pulled.response);
     return this.add({ op: 'pullResponse', response, tSend: this.input.steps[index].deviceNow, tRecv: serverNow, deviceNow: serverNow });
   }
 
@@ -140,7 +142,7 @@ function boots() {
     new PullScript({ device: device({ outbox: [] }), server: server() })
       .pull(['self/probe'], 5000)
       .respond({ serverNow: 5000 })
-      .add({ op: 'pullResponse', response: pull({ state: new ServerState(server()), registry, account: 'A', request: { scopes: [{ scope: 'self/probe', cursor: null }] }, serverNow: 5000 }), tSend: 5000, tRecv: 5000, deviceNow: 5000 })
+      .add({ op: 'pullResponse', response: pull({ state: new ServerState(server()), registry, product, account: 'A', request: { scopes: [{ scope: 'self/probe', cursor: null }] }, serverNow: 5000 }).response, tSend: 5000, tRecv: 5000, deviceNow: 5000 })
       .vector('a page requested under an older cursor is dropped as stale'),
   ];
 }
@@ -268,6 +270,7 @@ function epochs() {
     .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0002', f: { title: 'Waiting' } }], deviceNow: 5002 });
   restored.server = new ServerState(server({ epoch: 'ep-2' }));
   restored.input.ids = ['rp_00000000000000000000000000000002'];
+  restored.input.actors = ['r_cccccccccccc'];
   return [
     restored.pullRound(['self/probe'], { serverNow: 5003 })
       .vector('a response of a new epoch changes epoch first, and its pages, requested under old cursors, are stale'),

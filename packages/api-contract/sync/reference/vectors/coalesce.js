@@ -145,8 +145,51 @@ function blocked() {
   ];
 }
 
+const BOARD_ROW = row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 1 });
+const ELM = row({ t: 'tag', id: 'elm', life: ['alive', st(950)], born: st(950), f: { label: ['Elm', st(950)] }, seq: 1 });
+
 function cancels() {
   return [
+    stepsVector('a cancelled board takes its tree and overlay writes with it, silently: each ends coalesced by cancel', {
+      device: device({ 'self/probe': [CARD] }),
+      steps: [
+        commitStep('self/probe', [{ op: 'create', t: 'board', id: 'b_00000002' }], undefined, 5000),
+        commitStep('tree/b_00000002', [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], undefined, 5001),
+        commitStep('tree/b_00000002', [{ op: 'create', t: 'tag', label: 'First step' }], undefined, 5002),
+        commitStep('self/overlay/b_00000002', [{ op: 'write', t: 'mark', id: 'first-step', f: { done: true } }], undefined, 5003),
+        commitStep('self/probe', [{ op: 'delete', t: 'board', id: 'b_00000002' }], { hold: true }, 5004),
+        { op: 'releaseAll', deviceNow: 14004 },
+      ],
+    }),
+    stepsVector('a cancelled tag takes the link keyed by it and the mark on it with it, silently', {
+      device: device({ 'self/probe': [BOARD_ROW], [TREE]: [ELM] }),
+      steps: [
+        commitStep(TREE, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], undefined, 5000),
+        commitStep(TREE, [{ op: 'put', t: 'link', id: ['oak', 'elm'], f: { strength: 3 } }], undefined, 5001),
+        commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'look here' } }], undefined, 5002),
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], { hold: true }, 5003),
+        { op: 'releaseAll', deviceNow: 14003 },
+      ],
+    }),
+    stepsVector('a cancel removes only the dependent part of an entry: its independent deltas stay ready', {
+      device: device({ 'self/probe': [BOARD_ROW], [TREE]: [ELM] }),
+      steps: [
+        commitStep(TREE, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], undefined, 5000),
+        commitStep(TREE, [{ op: 'put', t: 'link', id: ['oak', 'elm'] }, { op: 'update', t: 'tag', id: 'elm', f: { label: 'Elm tree' } }], { atomic: true }, 5001),
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], { hold: true }, 5002),
+        { op: 'releaseAll', deviceNow: 14002 },
+      ],
+    }),
+    stepsVector('a cancel leaves a sent dependent as it is', {
+      device: device({ 'self/probe': [BOARD_ROW], [TREE]: [ELM] }),
+      steps: [
+        commitStep(TREE, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], { hold: true }, 5000),
+        commitStep(TREE, [{ op: 'put', t: 'link', id: ['oak', 'elm'] }], undefined, 5001),
+        { op: 'push', deviceNow: 5002 },
+        { op: 'release', localId: 'g1/0', deviceNow: 5003 },
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5004),
+      ],
+    }),
     stepsVector('a create and a delete of the same record, both unsent, cancel', {
       device: device(),
       steps: [
@@ -157,6 +200,7 @@ function cancels() {
     stepsVector('a create returned to ready by an epoch change is never cancelled: a later delete joins it and is still sent', {
       device: device(),
       ids: ['rp_00000000000000000000000000000002'],
+      actors: ['r_cccccccccccc'],
       steps: [
         commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Kept' } }], undefined, 5000),
         { op: 'push', deviceNow: 5000 },

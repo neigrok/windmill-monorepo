@@ -53,6 +53,13 @@ return values with no crash. That is why the default build type is forced.
 Every test file is named by hand in one of three `add_executable` lists in `CMakeLists.txt`. A test
 file not in a list never runs.
 
+The sync engine's domain (`platform/domain/sync/`) is built against the sync contract in
+`../packages/api-contract/sync`, which CMake finds through `WM_API_CONTRACT_DIR`: the domain tests
+embed its probe registry and replay its golden corpus, one case per vector
+(`test/platform/domain/sync/CorpusTest.cpp`). A corpus file with no runner is a named skipped case,
+and a file nobody claims fails. The image build receives the contract as the named context
+`contract` (`Dockerfile`, `.github/workflows/backend.yml`).
+
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the
 roadmap tree engine: the loose-graph model, the sync contract, the socket frames and the tables.
 

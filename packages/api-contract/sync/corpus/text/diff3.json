@@ -96,14 +96,74 @@
     }
   },
   {
-    "name": "touching changes on both sides conflict: a word and the space after it",
+    "name": "each side's copy of a repeated word survives (INV-12 counts tokens, not kinds)",
+    "input": {
+      "base": "a b c",
+      "head": "a b b c",
+      "mine": "a b c b"
+    },
+    "expect": {
+      "text": "a b b c b",
+      "conflict": false
+    }
+  },
+  {
+    "name": "whitespace-only on both sides never conflicts: head's whitespace",
+    "input": {
+      "base": "a b",
+      "head": "a  b",
+      "mine": "a\tb"
+    },
+    "expect": {
+      "text": "a  b",
+      "conflict": false
+    }
+  },
+  {
+    "name": "a word change beats a whitespace-only edit touching it (head's word)",
     "input": {
       "base": "a b c",
       "head": "a x c",
       "mine": "a b  c"
     },
     "expect": {
-      "text": "a x\n\nb  c",
+      "text": "a x c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "a word change beats a whitespace-only edit touching it (mine's word)",
+    "input": {
+      "base": "a b c",
+      "head": "a b  c",
+      "mine": "a x c"
+    },
+    "expect": {
+      "text": "a x c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "a deletion beats a whitespace-only edit inside it",
+    "input": {
+      "base": "keep this part end",
+      "head": "keep end",
+      "mine": "keep  this part end"
+    },
+    "expect": {
+      "text": "keep end",
+      "conflict": false
+    }
+  },
+  {
+    "name": "a word change on both sides still conflicts beside a whitespace edit",
+    "input": {
+      "base": "a b c",
+      "head": "a x  c",
+      "mine": "a y c"
+    },
+    "expect": {
+      "text": "a x\n\ny c",
       "conflict": true
     }
   },
@@ -192,7 +252,7 @@
     }
   },
   {
-    "name": "both sides rewrite one word and widen a space: one region, a conflict",
+    "name": "both sides rewrite one word, each widening a space: a conflict",
     "input": {
       "base": "a b c",
       "head": "a x  c",

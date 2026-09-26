@@ -34,8 +34,8 @@ test('access follows D-4 for owner, other account and signed-out principal', () 
     rows: { [`tree:${board}`]: visibility ? [row({ t: 'meta', id: 'meta', f: { visibility: [visibility, '1:0:srv'] }, seq: 1 })] : [] },
   }));
   const answers = (at) => ['A', 'B', null].map((account) => [
-    accessOf(at, { kind: 'tree', key: `tree:${board}`, tree: board }, account),
-    accessOf(at, { kind: 'overlay', key: `acct:${account}/overlay/${board}`, tree: board }, account),
+    accessOf(registry, at, { kind: 'tree', key: `tree:${board}`, tree: board }, account),
+    accessOf(registry, at, { kind: 'overlay', key: `acct:${account}/overlay/${board}`, tree: board }, account),
   ]);
   assert.deepEqual(answers(state()), [
     [{ read: true, write: true }, { read: true, write: true, create: false }],
@@ -55,5 +55,5 @@ test('access follows D-4 for owner, other account and signed-out principal', () 
     [{ refusal: 'not-found', read: false, gone: false }, { refusal: 'not-found', read: false, gone: false }],
     [{ refusal: 'not-found', read: false, gone: false }, { refusal: 'not-found', read: false, gone: false }],
   ]);
-  assert.deepEqual(accessOf(state(), { kind: 'product', key: 'acct:B/probe' }, 'B'), { read: true, write: true, create: true });
+  assert.deepEqual(accessOf(registry, state(), { kind: 'product', key: 'acct:B/probe' }, 'B'), { read: true, write: true, create: true });
 });

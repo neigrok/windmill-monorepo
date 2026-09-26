@@ -1,7 +1,8 @@
 // §11.3 the deterministic replay simulator: devices running the reference client against the reference
-// server over a network that drops, duplicates, delays and reorders, with process death, clock error,
-// holds and undo, two tabs, sign-in and sign-out, 401, poison, epoch change and restored or cloned
-// stores. `check()` states the invariants after quiescence.
+// server over a network that drops, duplicates, delays and reorders, with process death and reboots,
+// clock error and device clock jumps, holds and undo, two tabs, sign-in and sign-out, 401, 400 and 413
+// envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()` states the
+// invariants after quiescence.
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../../core/constants.js';
@@ -12,7 +13,7 @@ import { compareRecords, isAlive, isVisible, recordKey } from '../../core/rows.j
 import { ProbeProduct } from '../../probe/product.js';
 import { commit } from '../../client/commit.js';
 import { releaseAll, releaseDue, undo, undoOffered } from '../../client/hold.js';
-import { reidentify, signIn, signOut } from '../../client/lifecycle.js';
+import { engineStart, signIn, signOut } from '../../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../../client/puller.js';
 import { Device, Replica } from '../../client/replica.js';
 import { reconcile, subscriptionsOf } from '../../client/subscriptions.js';
@@ -28,15 +29,22 @@ export const PROBE_REGISTRY = Registry.fromFile(fileURLToPath(new URL('../../../
 
 const WORDS = ['oak', 'ash', 'elm', 'fir', 'yew', 'bay', 'box', 'ivy'];
 
+// A device: a web browser with two tabs (no fork guard), or a phone with one app process whose fork
+// guard's backup-excluded copy is `backupGuard`. `pushLimit` is the last push answer's halving limit.
 class SimDevice {
   constructor(world, { name, account, signedIn, skew, tabs }) {
     this.world = world;
     this.name = name;
     this.account = account;
     this.skew = skew;
-    this.tabs = Array.from({ length: tabs }, (_, index) => `r_${name}${index}`.padEnd(14, 'x'));
+    this.boot = 1;
+    this.bootAt = world.now;
+    this.native = tabs === 1;
+    this.actorsMinted = 0;
+    this.tabs = Array.from({ length: tabs }, (_, index) => this.freshActor(index));
     const first = signedIn ? Replica.fresh({ replica: world.replicaId(), state: 'bound', account }) : Replica.fresh({ replica: world.replicaId(), state: 'anon' });
     this.store = new Device({ active: first.id, replicas: [first.toJSON()] });
+    this.backupGuard = null;
     this.tokenValid = true;
     this.ended = [];
     this.telemetry = [];
@@ -52,6 +60,11 @@ class SimDevice {
     return this.store.activeReplica;
   }
 
+  freshActor(tab) {
+    this.actorsMinted += 1;
+    return `r_${`${this.name}${tab}n${this.actorsMinted.toString(36)}`.padEnd(12, 'x')}`;
+  }
+
   ctx(tab = 0) {
     return {
       registry: this.world.registry,
@@ -62,8 +75,33 @@ class SimDevice {
       appVersion: '1',
       nextGestureId: () => `${this.name}-g${++this.gestures}`,
       newReplicaId: () => this.world.replicaId(),
+      newActor: () => {
+        this.tabs[tab] = this.freshActor(tab);
+        return this.tabs[tab];
+      },
+      newForkGuard: () => this.world.forkGuard(),
+      draw: (size) => this.world.rng.int(size),
       limits: CONSTANTS,
     };
+  }
+
+  // §7.3 and §7.11: a process launch releases holds, renews every tab's actor and, on a phone, checks
+  // the fork guard against its backup-excluded copy, which it then rewrites.
+  start() {
+    const outcome = engineStart(this.store, this.ctx(), this.native ? { backupGuard: this.backupGuard } : {});
+    for (let tab = 1; tab < this.tabs.length; tab += 1) this.tabs[tab] = this.freshActor(tab);
+    if (this.native) this.backupGuard = this.store.meta.forkGuard;
+    return outcome;
+  }
+
+  // The device's clocks: the wall clock follows the skew, the monotonic clock counts real time since boot.
+  reading() {
+    return { wall: this.ctx().deviceNow, mono: this.world.now - this.bootAt, boot: `${this.name}-boot${this.boot}` };
+  }
+
+  reboot() {
+    this.boot += 1;
+    this.bootAt = this.world.now;
   }
 
   signedAccount() {
@@ -106,6 +144,10 @@ export class World {
     this.serverSnapshots = [];
     this.deviceSnapshots = new Map();
     this.poison = new Set();
+    this.malformed = new Map();
+    // A server whose push byte limit sits below the clients' answers larger requests 413: a batch halves,
+    // and a lone intent is refused too-large.
+    this.serverLimits = faults && this.rng.chance(0.3) ? { ...CONSTANTS, PUSH_MAX_BYTES: 400 } : CONSTANTS;
     this.deadForever = new Set();
     this.violations = [];
     this.log = [];
@@ -115,11 +157,17 @@ export class World {
       new SimDevice(this, { name: 'pa', account: 'A', signedIn: false, skew: this.rng.int(1_200_000) - 600_000, tabs: 1 }),
       new SimDevice(this, { name: 'pb', account: 'B', signedIn: true, skew: this.rng.int(600_000) - 300_000, tabs: 1 }),
     ];
+    for (const device of this.devices) device.start();
   }
 
   replicaId() {
     this.replicas += 1;
     return `rp_${String(this.replicas).padStart(32, '0')}`;
+  }
+
+  forkGuard() {
+    this.ids += 1;
+    return `fg_${String(this.ids).padStart(8, '0')}`;
   }
 
   id(prefix) {
@@ -174,14 +222,27 @@ export class World {
       if (outcome.localIds) device.committed.push(...outcome.localIds);
       return outcome;
     };
-    const choice = this.rng.int(14);
+    const choice = this.rng.int(16);
     const cards = alive('card');
     const runs = alive('run');
     const boards = alive('board');
-    if (choice === 0 && capCount(replica, registry, 'self/probe', 'card') < 3) {
+    if (choice === 0) {
       const list = cards.map((card) => ({ id: card.id, key: card.f?.ord?.[0] })).filter((member) => member.key);
       const ord = dropKey({ stored: list, drawn: list, moved: '', above: list.length ? [...list].sort(compareMembers).pop().id : null });
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'card', id: this.id('card'), f: { title: this.rng.pick(WORDS), ord, tier: 'draft' } }]));
+      const id = this.rng.chance(0.5) ? this.id('card') : undefined;
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'card', id, f: { title: this.rng.pick(WORDS), ord, tier: 'draft' } }]));
+    }
+    if (choice === 14) {
+      const day = `2026-09-0${1 + this.rng.int(5)}`;
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'put', t: 'day', id: day, present: this.rng.chance(0.75), f: this.rng.chance(0.7) ? { score: this.rng.int(11) } : {} }]));
+    }
+    if (choice === 15 && boards.length) {
+      const dst = `b_${this.ids.toString(16).padStart(8, '0')}`;
+      this.ids += 1;
+      return record(commit(replica, ctx, 'self/probe', [], {
+        cmd: { name: 'probe.copy', args: { src: this.rng.pick(boards).id, dst } },
+        predict: [{ op: 'create', t: 'board', id: dst }],
+      }));
     }
     if (choice === 1 && cards.length) {
       const card = this.rng.pick(cards);
@@ -236,7 +297,7 @@ export class World {
       this.ids += 1;
       return record(commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'board', id }], { atomic: true }));
     }
-    if (choice === 12 && runs.length && capCount(replica, registry, 'self/probe', 'card') < 3) {
+    if (choice === 12 && runs.length) {
       const run = this.rng.pick(runs);
       return record(commit(replica, ctx, 'self/probe', [
         { op: 'create', t: 'card', id: this.id('card'), f: { title: this.rng.pick(WORDS), tier: 'draft' } },
@@ -295,9 +356,9 @@ export class World {
   startPush(device) {
     if (device.pushing) return;
     const replica = device.replica;
-    const request = nextPush(replica, device.ctx());
+    const request = nextPush(replica, device.ctx(), device.pushLimit === undefined ? {} : { limit: device.pushLimit });
     if (!request) return;
-    device.pushing = { kind: 'push', device, replica, replicaId: replica.id, request: structuredClone(request), tSend: device.ctx().deviceNow, id: this.id('m') };
+    device.pushing = { kind: 'push', device, replica, replicaId: replica.id, request: structuredClone(request), send: device.reading(), id: this.id('m') };
     this.network.push({ ...device.pushing, phase: 'request' });
   }
 
@@ -307,7 +368,7 @@ export class World {
     if (scopes.length === 0) return;
     reconcile(device.replica, device.ctx(), scopes);
     const request = pullRequest(device.replica, scopes);
-    device.pulling = { kind: 'pull', device, replica: device.replica, request: structuredClone(request), tSend: device.ctx().deviceNow, id: this.id('m') };
+    device.pulling = { kind: 'pull', device, replica: device.replica, request: structuredClone(request), send: device.reading(), id: this.id('m') };
     device.wantsPull = false;
     this.network.push({ ...device.pulling, phase: 'request' });
   }
@@ -341,7 +402,10 @@ export class World {
         return this.faults && this.rng.chance(0.03) ? 'transient' : null;
       };
       const budget = this.faults && this.rng.chance(0.2) ? 1 + this.rng.int(2) : Infinity;
-      const out = push({ state: this.server, registry: this.registry, product: this.product, account, request: message.request, serverNow: this.now, budget, faultOf });
+      const malformed = account !== null && message.request.intents.some((intent) => this.rejects(intent));
+      const out = malformed
+        ? { state: this.server, response: { status: 400, body: { serverTime: this.now, epoch: this.server.epoch, error: 'malformed' } }, live: [] }
+        : push({ state: this.server, registry: this.registry, product: this.product, account, request: message.request, serverNow: this.now, budget, faultOf, limits: this.serverLimits });
       this.server = out.state;
       this.count(`http ${out.response.status}${out.response.body.error ? ` ${out.response.body.error}` : ''}`);
       for (const result of out.response.body.results ?? []) this.count(result.s === 'ok' ? (result.write?.some((w) => w.from) ? 'ok with a joining write map' : 'ok') : `refused ${result.code}`);
@@ -352,23 +416,28 @@ export class World {
       this.network.push({ ...message, phase: 'reply', response: out.response, tRecvServer: this.now });
       return;
     }
-    const response = account === null
-      ? { status: 401, body: { serverTime: this.now, epoch: this.server.epoch, error: 'unauthenticated' } }
-      : pull({ state: this.server, registry: this.registry, account, request: message.request, serverNow: this.now });
-    this.network.push({ ...message, phase: 'reply', response });
+    if (account === null) {
+      this.network.push({ ...message, phase: 'reply', response: { status: 401, body: { serverTime: this.now, epoch: this.server.epoch, error: 'unauthenticated' } } });
+      return;
+    }
+    const pulled = pull({ state: this.server, registry: this.registry, product: this.product, account, request: message.request, serverNow: this.now });
+    this.server = pulled.state;
+    this.watchDeaths();
+    for (const event of pulled.live) this.broadcast(event);
+    this.network.push({ ...message, phase: 'reply', response: pulled.response });
   }
 
   reply(message) {
     const { device } = message;
     const replica = device.replica;
-    const timing = { tSend: message.tSend, tRecv: device.ctx().deviceNow };
+    const timing = { send: message.send, recv: device.reading() };
     if (message.kind === 'push') {
       if (device.pushing?.id !== message.id) return;
       device.pushing = null;
       if (replica !== message.replica || replica.id !== message.replicaId) return;
       const before = this.contentsOf(device, message.response);
       const from = device.ended.length;
-      onPushResponse(replica, device.ctx(), message.request, message.response, timing);
+      device.pushLimit = onPushResponse(replica, device.ctx(), message.request, message.response, timing)?.limit;
       this.checkRefusals(device, before, from);
       return;
     }
@@ -408,7 +477,16 @@ export class World {
     this.network = this.network.filter((message) => message.device !== device || message.phase === 'request');
     device.pushing = null;
     device.pulling = null;
-    releaseAll(device.replica, this.registry, device.ended);
+    if (this.rng.chance(0.3)) device.reboot();
+    device.start();
+  }
+
+  // An intent the server's schema rejects, decided once per intent: every request carrying it is
+  // answered 400, and the sender isolates it by halving (§7.4).
+  rejects(intent) {
+    const key = jcs(intent);
+    if (!this.malformed.has(key)) this.malformed.set(key, this.faults && this.rng.chance(0.01));
+    return this.malformed.get(key);
   }
 
   signOutOrIn(device) {
@@ -465,8 +543,7 @@ export class World {
     this.note(`${device.name} store restored from a snapshot`);
     device.restore(saved);
     this.network = this.network.filter((message) => message.device !== device || message.phase === 'request');
-    if (device.tabs.length === 1) for (const replica of device.store.replicas) reidentify(replica, device.ctx());
-    releaseAll(device.replica, this.registry, device.ended);
+    device.start();
   }
 
   clone(device) {
@@ -474,7 +551,8 @@ export class World {
     const copy = new SimDevice(this, { name: `c${this.devices.length}`, account: device.account, signedIn: false, skew: device.skew, tabs: 1 });
     copy.restore(device.snapshot());
     copy.gestures = device.gestures + 5000;
-    for (const replica of copy.store.replicas) reidentify(replica, copy.ctx());
+    copy.backupGuard = null;
+    copy.start();
     this.devices.push(copy);
     this.note(`${device.name} cloned as ${copy.name}`);
   }
@@ -559,7 +637,7 @@ export class World {
     for (const device of this.devices) {
       device.tokenValid = true;
       device.replica.meta.authPaused = false;
-      releaseAll(device.replica, this.registry, device.ended);
+      device.start();
       if (device.replica.meta.state === 'anon') {
         const holds = hello({ state: this.server, registry: this.registry, account: device.account, serverTime: this.now }).body.holdsRecords;
         signIn(device.store, device.ctx(), { account: device.account, holdsRecords: holds, decisions: { probe: 'add' } });
@@ -652,10 +730,10 @@ export class World {
       if (!key.startsWith('tree:') || scope.owner === 'B') continue;
       const open = ['unlisted', 'public'].includes(this.server.row(key, 'meta', 'meta')?.f?.visibility?.[0]);
       if (open && scope.state === 'alive') continue;
-      const page = pull({ state: this.server, registry: this.registry, account: 'B', request: { scopes: [{ scope: `tree/${key.slice(5)}`, cursor: null }] }, serverNow: this.now }).body.pages[0];
+      const page = pull({ state: this.server, registry: this.registry, product: this.product, account: 'B', request: { scopes: [{ scope: `tree/${key.slice(5)}`, cursor: null }] }, serverNow: this.now }).response.body.pages[0];
       answers.add(jcs(page).replace(key.slice(5), 'T'));
     }
-    const absent = pull({ state: this.server, registry: this.registry, account: 'B', request: { scopes: [{ scope: 'tree/b_ffffffff', cursor: null }] }, serverNow: this.now }).body.pages[0];
+    const absent = pull({ state: this.server, registry: this.registry, product: this.product, account: 'B', request: { scopes: [{ scope: 'tree/b_ffffffff', cursor: null }] }, serverNow: this.now }).response.body.pages[0];
     answers.add(jcs(absent).replace('b_ffffffff', 'T'));
     if (answers.size > 1) this.violations.push(`INV-7 existence answers differ: ${[...answers].join(' | ')}`);
   }

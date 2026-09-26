@@ -35,6 +35,10 @@ const CARD2 = row({ t: 'card', id: 'card0002', life: ['alive', st(1100)], born: 
 const RUN = row({ t: 'run', id: 'run00001', life: ['alive', st(1300, 0, 'srv')], born: st(1300, 0, 'srv'), f: { startedAt: [1300, st(1300, 0, 'srv')] }, seq: 3 });
 const BOARD_ROW = row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 });
 const PROBE = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW] };
+const CARD3 = row({ t: 'card', id: 'card0003', life: ['alive', st(1200)], born: st(1200), f: { title: ['Three', st(1200)] }, seq: 5 });
+const FULL = { 'self/probe': [CARD, CARD2, CARD3, RUN, BOARD_ROW] };
+const B62 = '0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz';
+const drawsOf = (alphabet, text) => [...text].map((char) => alphabet.indexOf(char));
 const TREE_ROWS = [
   row({ t: 'link', id: ['oak', 'elm'], life: ['alive', st(1000)], seq: 1 }),
   row({ t: 'meta', id: 'meta', f: { title: ['Plan', st(1000)] }, seq: 2 }),
@@ -176,6 +180,26 @@ function ids() {
       device: device(bound()),
       steps: [commitStep(TREE, [{ op: 'create', t: 'tag', id: 'k3x9q2', f: { label: 'Random' } }])],
     }),
+    stepsVector('a create without an id mints one by its type\'s mint: the prefix, then one drawn alphabet character each', {
+      device: device(bound()),
+      draws: drawsOf(B62, 'Qz9vK2mX7pL4cR8w'),
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'card', f: { title: 'Minted' } }])],
+    }),
+    stepsVector('a governing id mints its prefix and its own alphabet', {
+      device: device(bound()),
+      draws: drawsOf('0123456789abcdef', '3fa9c1e0'),
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'board' }])],
+    }),
+    stepsVector('a derived create with neither id nor label mints its id', {
+      device: device(bound({ confirmed: { 'self/probe': [BOARD_ROW] } })),
+      draws: drawsOf('0123456789abcdefghijklmnopqrstuvwxyz', 'k3x9q2w8e7r6'),
+      steps: [commitStep(TREE, [{ op: 'create', t: 'tag', f: { label: 'Unnamed' } }])],
+    }),
+    stepsVector('a minted id already taken in the views is drawn again', {
+      device: device(bound({ confirmed: { 'self/probe': [row({ t: 'card', id: 'aaaaaaaaaaaaaaaa', life: ['alive', st(1000)], born: st(1000), f: { title: ['Taken', st(1000)] }, seq: 1 })] } })),
+      draws: [...drawsOf(B62, 'aaaaaaaaaaaaaaaa'), ...drawsOf(B62, 'bbbbbbbbbbbbbbbb')],
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'card', f: { title: 'Second draw' } }])],
+    }),
     stepsVector('seeded ids are minted ids of the form <seed>-<n>', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [
@@ -229,12 +253,40 @@ function grouping() {
     predict: [{ op: 'create', t: 'run', id: 'run00009', f: { label: 'Go', startedAt: 5000 } }],
   };
   return [
-    stepsVector('an intent over PUSH_MAX_BYTES is not enqueued: the commit answers too-large and writes one notice (limits shrink PUSH_MAX_BYTES)', {
+    stepsVector('an intent over PUSH_MAX_BYTES is not enqueued: the commit answers too-large and writes one notice and no clock (limits shrink PUSH_MAX_BYTES)', {
       device: device(bound({ confirmed: PROBE })),
       limits: { PUSH_MAX_BYTES: 150 },
       steps: [commitStep('self/probe', [
         { op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno', body: 'a longer body text' } },
         { op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } },
+      ], { atomic: true })],
+    }),
+    stepsVector('a create beyond a cap is refused at commit: cap, with nothing written, no notice and no tick', {
+      device: device(bound({ confirmed: FULL })),
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fourth' } }])],
+    }),
+    stepsVector('a held delete still occupies its slot: a create while it waits is refused cap', {
+      device: device(bound({ confirmed: FULL })),
+      steps: [
+        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, 5000),
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fourth' } }], undefined, 5001),
+      ],
+    }),
+    stepsVector('once the delete is released and acked its slot is free: the create fits', {
+      device: device(bound({ confirmed: FULL })),
+      steps: [
+        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, 5000),
+        { op: 'releaseAll', deviceNow: 5001 },
+        { op: 'push', deviceNow: 5002 },
+        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 6 }] } } },
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fourth' } }], undefined, 5004),
+      ],
+    }),
+    stepsVector('a gesture creating one card and deleting another at the cap passes the growth rule', {
+      device: device(bound({ confirmed: FULL })),
+      steps: [commitStep('self/probe', [
+        { op: 'create', t: 'card', id: 'card0009', f: { title: 'Fourth' } },
+        { op: 'delete', t: 'card', id: 'card0001' },
       ], { atomic: true })],
     }),
     stepsVector('a plain gesture over two records is two intents with one stamp and one gesture id', {

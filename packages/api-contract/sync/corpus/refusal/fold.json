@@ -21,7 +21,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -63,24 +62,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -97,14 +78,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -214,8 +194,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -266,31 +250,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -359,7 +325,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -401,24 +366,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -435,14 +382,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -594,8 +540,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -646,31 +596,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -791,7 +723,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -833,24 +764,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -867,14 +780,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -1080,8 +992,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1132,31 +1048,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -1312,7 +1210,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1354,24 +1251,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -1388,14 +1267,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -1564,8 +1442,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5004,
+                "mono": 5004,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -1616,31 +1498,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -1777,7 +1641,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -1819,24 +1682,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -1853,14 +1698,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -2023,8 +1867,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5004,
+                "mono": 5004,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2075,31 +1923,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -2225,7 +2055,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2267,24 +2096,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -2301,14 +2112,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -2451,8 +2261,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2503,31 +2317,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -2650,7 +2446,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -2692,24 +2487,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -2726,14 +2503,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -2898,8 +2674,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -2950,31 +2730,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -3066,7 +2828,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -3108,24 +2869,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -3142,14 +2885,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -3330,8 +3072,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -3382,31 +3128,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -3496,7 +3224,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -3538,24 +3265,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -3572,14 +3281,13 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -3787,8 +3495,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -3839,31 +3551,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -3969,7 +3663,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -4011,24 +3704,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -4045,7 +3720,7 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             }
@@ -4172,6 +3847,9 @@
           "tSend": 5005,
           "tRecv": 5005
         }
+      ],
+      "actors": [
+        "r_cccccccccccc"
       ]
     },
     "expect": {
@@ -4268,7 +3946,7 @@
           "localIds": [
             "g3/0"
           ],
-          "stamp": "5005:0:r_aaaaaaaaaaaa"
+          "stamp": "5005:0:r_cccccccccccc"
         },
         {
           "replica": "rp_00000000000000000000000000000002",
@@ -4302,7 +3980,7 @@
                   "f": {
                     "title": [
                       "Later edit",
-                      "5005:0:r_aaaaaaaaaaaa"
+                      "5005:0:r_cccccccccccc"
                     ]
                   }
                 }
@@ -4326,7 +4004,7 @@
                 "ms": 5005,
                 "counter": 0
               },
-              "hlcHigh": "5005:0:r_aaaaaaaaaaaa",
+              "hlcHigh": "5005:0:r_cccccccccccc",
               "admittedHigh": "0:0:",
               "serverOffsetMs": 0,
               "offsetSamples": [
@@ -4342,8 +4020,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 2,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5005,
+                "mono": 5005,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -4394,31 +4076,13 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ]
             },
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               }
             },
@@ -4482,7 +4146,7 @@
                       "f": {
                         "title": [
                           "Later edit",
-                          "5005:0:r_aaaaaaaaaaaa"
+                          "5005:0:r_cccccccccccc"
                         ]
                       }
                     }
@@ -4536,7 +4200,6 @@
               "serverEpoch": "ep-1",
               "ackThrough": 0,
               "authPaused": false,
-              "liveHint": false,
               "account": "A"
             },
             "confirmed": {
@@ -4578,24 +4241,6 @@
                   "ru": 2000
                 },
                 {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
-                },
-                {
                   "t": "board",
                   "id": "b_00000001",
                   "life": [
@@ -4632,7 +4277,7 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               },
               "tree/b_00000002": {
@@ -4644,7 +4289,6 @@
           }
         ]
       },
-      "ids": [],
       "steps": [
         {
           "op": "commit",
@@ -4792,8 +4436,12 @@
               "serverEpoch": "ep-1",
               "ackThrough": 1,
               "authPaused": false,
-              "liveHint": false,
-              "account": "A"
+              "account": "A",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
             },
             "confirmed": {
               "self/probe": [
@@ -4844,24 +4492,6 @@
                   "seq": 2,
                   "rc": 2000,
                   "ru": 2000
-                },
-                {
-                  "t": "card",
-                  "id": "card0003",
-                  "life": [
-                    "alive",
-                    "1003:0:r_aaaaaaaaaaaa"
-                  ],
-                  "born": "1003:0:r_aaaaaaaaaaaa",
-                  "f": {
-                    "title": [
-                      "Card 3",
-                      "1003:0:r_aaaaaaaaaaaa"
-                    ]
-                  },
-                  "seq": 3,
-                  "rc": 3000,
-                  "ru": 3000
                 }
               ],
               "tree/b_00000002": [
@@ -4888,7 +4518,7 @@
             "cursors": {
               "self/probe": {
                 "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
-                "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
                 "booted": true
               },
               "tree/b_00000002": {

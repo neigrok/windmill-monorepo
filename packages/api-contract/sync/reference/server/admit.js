@@ -1,5 +1,5 @@
 // §6.1 admit(origin, intent), a pure fail-fast pipeline: the result and the next state, or the given
-// state on a refusal. Null stamps in server-built deltas are minted at step 10 (§10.3).
+// state on a refusal. Null stamps in server-built deltas are minted at step 9 (§10.3).
 
 import { Clock } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
@@ -29,16 +29,18 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Answers {result, state, writes, killed}: `writes` lists each changed scope's applied rows, the
+// intent's scope first, then scopes it created (§6.1 step 14); `killed` the scopes a death killed.
 export function admit({ state, registry, product, origin, intent, serverNow, limits = CONSTANTS }) {
   const admission = new Admission({ work: state.clone(), registry, product, origin, intent: structuredClone(intent), serverNow, limits });
   try {
     const result = admission.run();
-    return { result, state: admission.work, changed: admission.appliedRows, killed: admission.killed, scopeKey: admission.scopeKey };
+    return { result, state: admission.work, writes: admission.writes, killed: admission.killed };
   } catch (error) {
     if (!(error instanceof Refusal)) throw error;
     const result = { s: 'refused', code: error.code };
     if (error.detail !== undefined) result.detail = error.detail;
-    return { result, state, changed: [], killed: [], scopeKey: admission.scopeKey };
+    return { result, state, writes: [], killed: [] };
   }
 }
 
@@ -48,7 +50,8 @@ class Admission {
     this.fromServer = origin.kind === 'server';
     this.changes = [];
     this.records = new Map();
-    this.appliedRows = [];
+    this.writes = [];
+    this.changed = [];
     this.killed = [];
   }
 
@@ -59,13 +62,14 @@ class Admission {
     this.admitDeltas(this.intent.d ?? [], this.fromServer ? 'server' : 'client');
     this.checkGuards();
     this.runCommand();
-    this.checkProduct();
     this.join();
+    this.checkProduct();
     this.checkParents();
     this.assignSerials();
     this.checkCaps();
-    this.apply();
+    this.apply(this.scopeKey);
     this.applyLifecycle();
+    this.applyCreatedScopes();
     return this.result();
   }
 
@@ -181,7 +185,7 @@ class Admission {
 
   // Step 3: access, the scope a write may create, and the origin rules.
   lockScope() {
-    const access = accessOf(this.work, this.target, this.origin.account);
+    const access = accessOf(this.registry, this.work, this.target, this.origin.account);
     if (!access.write) throw new Refusal(access.refusal);
     if (access.create) {
       const fields = { kind: this.target.kind, owner: this.origin.account };
@@ -199,6 +203,8 @@ class Admission {
     if ((def.serverInternal && !this.fromServer) || !def.origins.includes(originKind)) throw new Refusal('forbidden');
   }
 
+  // What a product's commands and checks read: the intent scope's rows, and another tree's rows when
+  // its scope is readable by the origin (a command that reads another scope, INV-7(e)).
   context() {
     const { work, registry, scopeKey } = this;
     return {
@@ -209,20 +215,22 @@ class Admission {
       idState: (t, id) => work.idState(registry, scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
       rowsOf: (t) => work.rowsOf(scopeKey).filter((row) => row.t === t),
+      readableTree: (tree) => accessOf(registry, work, { kind: 'tree', key: `tree:${tree}`, tree }, this.origin.account).read === true,
+      treeRows: (tree) => work.rowsOf(`tree:${tree}`),
     };
   }
 
   // Steps 5 and 6 for one group of deltas: the id states, §4.3, and §4.4's const and time rule.
-  admitDeltas(deltas, source) {
+  admitDeltas(deltas, source, scopeKey = this.scopeKey) {
     for (const delta of deltas) {
       const type = this.registry.type(delta.t);
       const op = opOf(type, delta);
-      const idState = this.work.idState(this.registry, this.scopeKey, type, delta.id);
+      const idState = this.work.idState(this.registry, scopeKey, type, delta.id);
       const decision = decide(type, op, idState, delta.born);
       if (decision.verdict === 'refuse') throw new Refusal(decision.code);
       if (decision.verdict === 'ok') continue;
       if (source === 'client') this.checkConstAndTime(type, delta);
-      this.changes.push({ type, delta: structuredClone(delta), op, idState, source });
+      this.changes.push({ type, delta: structuredClone(delta), op, idState, source, scopeKey });
     }
   }
 
@@ -251,37 +259,41 @@ class Admission {
     }
   }
 
-  // Step 8.
+  // Step 8. A command's writes into a scope the same intent creates (`into`) wait for step 14.
   runCommand() {
     const cmd = this.intent.cmd;
     if (!cmd) return;
     const outcome = this.product.runCommand(this.context(), cmd);
     this.admitDeltas(outcome.deltas, 'command');
+    for (const { scopeKey, deltas } of outcome.into ?? []) this.admitDeltas(deltas, 'command', scopeKey);
     this.write = outcome.write;
     this.detail = outcome.detail;
   }
 
-  // Step 9: the product's rules; the server deltas they append pass steps 5 and 6.
-  checkProduct() {
-    this.admitDeltas(this.product.check(this.context(), this.changes), 'check');
-  }
-
-  // Step 10: server stamps (§10.3), record joins, text merges and the record bound.
+  // Step 9, one pass: a server stamp for the pass's server deltas (§10.3), then the record joins, text
+  // merges and record bound. A dead record of a non-revivable type keeps no fields (G1), so it joins to
+  // its stored form.
   join() {
     this.mintServerStamp();
+    this.records = new Map();
     for (const change of this.changes) {
-      const key = recordKey(change.delta.t, change.delta.id);
+      const key = `${change.scopeKey}|${recordKey(change.delta.t, change.delta.id)}`;
       const known = this.records.get(key);
-      const before = known ? known.after : this.work.stored(this.scopeKey, change.delta.t, change.delta.id);
+      const before = known ? known.after : this.work.stored(change.scopeKey, change.delta.t, change.delta.id);
       const after = { t: change.delta.t, id: change.delta.id, ...joinRecord(change.type, before ? latticeOf(before) : {}, latticeOf(change.delta)) };
       if (before?.x) after.x = structuredClone(before.x);
       if (before?.v || change.delta.v) after.v = { ...(before?.v ?? {}), ...(change.delta.v ?? {}) };
       const { texts, revisions } = this.mergeTexts(change, before);
       if (Object.keys(texts).length) after.x = { ...(after.x ?? {}), ...texts };
-      const typedBefore = known ? known.typedBefore : this.work.row(this.scopeKey, change.delta.t, change.delta.id);
-      if (this.storedBytes(after, typedBefore) > this.limits.MAX_RECORD_BYTES) throw new Refusal('too-large');
+      if (!isAlive(after) && !change.type.revivable) for (const part of ['f', 'x', 'v']) delete after[part];
+      const typedBefore = known ? known.typedBefore : this.work.row(change.scopeKey, change.delta.t, change.delta.id);
+      if (this.storedBytes(change.scopeKey, after, typedBefore) > this.limits.MAX_RECORD_BYTES) throw new Refusal('too-large');
       this.records.set(key, {
+        scopeKey: change.scopeKey,
         type: change.type,
+        delta: change.delta,
+        op: change.op,
+        source: change.source,
         original: known ? known.original : before,
         typedBefore,
         isNew: known ? known.isNew : change.idState.state === 'none' || change.idState.state === 'foreign',
@@ -292,23 +304,31 @@ class Admission {
   }
 
   // The joined row's encoding as step 13 would store it: at the next seq, with rc, ru and new text revs.
-  storedBytes(after, typedBefore) {
-    const seq = this.scope.seq + 1;
+  storedBytes(scopeKey, after, typedBefore) {
+    const seq = (this.work.scope(scopeKey)?.seq ?? 0) + 1;
     const x = after.x && Object.fromEntries(Object.entries(after.x).map(([name, text]) => [name, { ...text, rev: text.rev ?? seq }]));
     const row = compactRow({ ...after, x, seq, rc: typedBefore ? typedBefore.rc : this.serverNow, ru: this.serverNow });
     return Buffer.byteLength(jcs(row), 'utf8');
   }
 
+  // §10.3 for one pass of step 9: the clock observes every register the pass's unstamped server deltas
+  // write, as stored and as a same-intent client delta writes it, then ticks once; the stamp fills their
+  // nulls. The first pass also fills the write map, so a delta step 10 appends is stamped in a later
+  // pass, after observing every stamp it could lose to.
   mintServerStamp() {
-    const serverChanges = this.changes.filter((change) => change.source !== 'client');
-    const needsStamp = serverChanges.some((change) => stampsOf(change.delta).includes(null))
-      || (this.write ?? []).some((entry) => entry.born === null || Object.values(entry.f ?? {}).includes(null));
-    if (!needsStamp) return;
+    const serverChanges = this.changes.filter((change) => change.source !== 'client' && stampsOf(change.delta).includes(null));
+    const mapNeeds = !this.mapStamped && (this.write ?? []).some((entry) => entry.born === null || Object.values(entry.f ?? {}).includes(null));
+    if (serverChanges.length === 0 && !mapNeeds) return;
     const clock = new Clock(this.work.clock, 'srv', () => this.serverNow);
     for (const change of serverChanges) {
-      const stored = this.work.stored(this.scopeKey, change.delta.t, change.delta.id);
-      if (change.delta.life && stored?.life) clock.observe(stored.life[1]);
-      for (const name of Object.keys(change.delta.f ?? {})) if (stored?.f?.[name]) clock.observe(stored.f[name][1]);
+      const { t, id, life, f } = change.delta;
+      const others = [this.work.stored(change.scopeKey, t, id), ...this.changes
+        .filter((other) => other.source === 'client' && other.scopeKey === change.scopeKey && other.delta.t === t && sameJson(other.delta.id, id))
+        .map((other) => other.delta)];
+      for (const other of others) {
+        if (life && other?.life) clock.observe(other.life[1]);
+        for (const name of Object.keys(f ?? {})) if (other?.f?.[name]) clock.observe(other.f[name][1]);
+      }
     }
     const stamp = clock.tick();
     this.work.clock = clock.pair;
@@ -317,10 +337,21 @@ class Admission {
       if (delta.born === null) delta.born = stamp;
       for (const [name, register] of Object.entries(delta.f ?? {})) if (register[1] === null) delta.f[name] = [register[0], stamp];
     }
+    if (this.mapStamped) return;
+    this.mapStamped = true;
     for (const entry of this.write ?? []) {
       if (entry.born === null) entry.born = stamp;
       for (const name of Object.keys(entry.f ?? {})) if (entry.f[name] === null) entry.f[name] = stamp;
     }
+  }
+
+  // Step 10: the product's rules on the joined records; the server deltas they append pass steps 5, 6
+  // and 9 (a second pass, with its own stamp).
+  checkProduct() {
+    const appended = this.product.check(this.context(), [...this.records.values()]);
+    if (appended.length === 0) return;
+    this.admitDeltas(appended, 'check');
+    this.join();
   }
 
   mergeTexts(change, before) {
@@ -333,7 +364,7 @@ class Admission {
         stored,
         base: write.base,
         mine: write.text,
-        revisionText: (rev) => this.work.revisionsOf(this.scopeKey, change.delta.t, change.delta.id, name).find((r) => r.rev === rev)?.text,
+        revisionText: (rev) => this.work.revisionsOf(change.scopeKey, change.delta.t, change.delta.id, name).find((r) => r.rev === rev)?.text,
       });
       if (merge.refuse) throw new Refusal(merge.refuse);
       if (lengthIn(field.unit, merge.text) > field.max) throw new Refusal('too-large');
@@ -345,16 +376,17 @@ class Admission {
     return { texts, revisions };
   }
 
-  // Step 9's parent rule, over the joined records: a create or update whose parent is not alive.
+  // Step 10's parent rule, over the joined records: a create or update whose parent is not alive; a
+  // parent created in the same intent counts.
   checkParents() {
     for (const change of this.changes) {
       if (change.op !== 'create' && change.op !== 'update') continue;
       const name = change.type.parentField;
       if (!name) continue;
-      const record = this.records.get(recordKey(change.delta.t, change.delta.id)).after;
+      const record = this.records.get(`${change.scopeKey}|${recordKey(change.delta.t, change.delta.id)}`).after;
       const ref = change.type.field(name).ref;
       const parentId = record.f?.[name]?.[0];
-      const parent = this.records.get(recordKey(ref, parentId))?.after ?? this.work.stored(this.scopeKey, ref, parentId);
+      const parent = this.records.get(`${change.scopeKey}|${recordKey(ref, parentId)}`)?.after ?? this.work.stored(change.scopeKey, ref, parentId);
       if (!parent || !isAlive(parent)) throw new Refusal('parent-dead');
     }
   }
@@ -369,7 +401,7 @@ class Admission {
       for (const name of type.serialFieldNames) {
         if (after.v?.[name] !== undefined) continue;
         const next = type.field(name).serialNext;
-        const peers = [...this.work.rowsOf(this.scopeKey), ...numbered]
+        const peers = [...this.work.rowsOf(record.scopeKey), ...numbered]
           .filter((row) => row.t === after.t && isAlive(row) && !sameJson(row.id, after.id))
           .filter((row) => next.every((field) => sameJson(row.f?.[field]?.[0], after.f?.[field]?.[0])));
         after.v = { ...(after.v ?? {}), [name]: 1 + Math.max(0, ...peers.map((row) => row.v?.[name] ?? 0)) };
@@ -378,59 +410,78 @@ class Admission {
     }
   }
 
-  // Step 12: the growth rule.
+  // Step 12: the growth rule, per scope, on the capped types.
   checkCaps() {
     this.counts = {};
-    for (const type of new Set([...this.records.values()].map((record) => record.type))) {
+    for (const record of this.records.values()) {
+      const { type, scopeKey } = record;
       if (type.cap === undefined) continue;
-      const before = this.scope.counters[type.type] ?? 0;
-      let after = before;
-      for (const record of this.records.values()) {
-        if (record.type !== type) continue;
-        after += (isAlive(record.after) ? 1 : 0) - (record.original && isAlive(record.original) ? 1 : 0);
+      const counts = (this.counts[scopeKey] ??= {});
+      counts[type.type] ??= this.work.scope(scopeKey)?.counters[type.type] ?? 0;
+      counts[type.type] += (isAlive(record.after) ? 1 : 0) - (record.original && isAlive(record.original) ? 1 : 0);
+    }
+    for (const [scopeKey, counts] of Object.entries(this.counts)) {
+      for (const [t, after] of Object.entries(counts)) {
+        const { cap } = this.registry.type(t);
+        const before = this.work.scope(scopeKey)?.counters[t] ?? 0;
+        if (after > cap && after > before) throw new Refusal('cap', { type: t, cap });
       }
-      if (after > type.cap && after > before) throw new Refusal('cap', { type: type.type, cap: type.cap });
-      this.counts[type.type] = after;
     }
   }
 
-  // Step 13: seq, counters, typed rows, spent ids, text revisions, rc/ru and the scope digest.
-  apply() {
-    this.changed = [...this.records.values()].filter((record) => !sameJson(comparable(record.original), comparable(record.after)));
-    if (this.changed.length === 0) return;
-    const seq = ++this.scope.seq;
-    Object.assign(this.scope.counters, this.counts);
-    for (const record of this.changed) {
+  // Step 13 for one scope: seq, counters, typed rows, spent ids, text revisions, rc/ru and the digest.
+  apply(scopeKey) {
+    const changed = [...this.records.values()]
+      .filter((record) => record.scopeKey === scopeKey && !sameJson(comparable(record.original), comparable(record.after)));
+    this.changed.push(...changed);
+    if (changed.length === 0) return;
+    const scope = this.work.scope(scopeKey);
+    const seq = ++scope.seq;
+    Object.assign(scope.counters, this.counts[scopeKey] ?? {});
+    const rows = [];
+    for (const record of changed) {
       const { type, typedBefore, after } = record;
       for (const name of Object.keys(after.x ?? {})) if (after.x[name].rev === null) after.x[name].rev = seq;
-      for (const revision of record.revisions) this.work.keepRevision(this.scopeKey, revision, this.product.revisionsKept);
+      for (const revision of record.revisions) this.work.keepRevision(scopeKey, revision, this.product.revisionsKept);
       const stamped = { ...after, seq, rc: typedBefore ? typedBefore.rc : this.serverNow, ru: this.serverNow };
       const dead = !isAlive(after);
       let typedAfter;
       if (dead && !type.revivable && type.deadRows === 'spent') {
-        this.work.deleteRow(this.scopeKey, after.t, after.id);
+        this.work.deleteRow(scopeKey, after.t, after.id);
         const spent = { t: after.t, id: after.id, lifeStamp: after.life[1], seq };
         if (after.born !== undefined) spent.born = after.born;
-        this.work.putSpent(this.scopeKey, spent);
-        this.appliedRows.push(thinRow(stamped));
+        this.work.putSpent(scopeKey, spent);
+        rows.push(thinRow(stamped));
       } else {
-        typedAfter = compactRow(dead && !type.revivable ? { ...stamped, f: undefined, x: undefined, v: undefined } : stamped);
-        this.work.putRow(this.scopeKey, typedAfter);
-        this.work.deleteSpent(this.scopeKey, after.t, after.id);
-        this.appliedRows.push(dead ? thinRow(typedAfter) : typedAfter);
+        typedAfter = compactRow(stamped);
+        this.work.putRow(scopeKey, typedAfter);
+        this.work.deleteSpent(scopeKey, after.t, after.id);
+        rows.push(dead ? thinRow(typedAfter) : typedAfter);
       }
-      this.scope.digest = replaceRow(this.scope.digest, typedBefore, typedAfter);
+      scope.digest = replaceRow(scope.digest, typedBefore, typedAfter);
+    }
+    this.writes.push({ key: scopeKey, rows });
+  }
+
+  // Step 14: a command's writes into scopes this intent created, each at that scope's seq and digest.
+  applyCreatedScopes() {
+    const targets = [...new Set(this.changes.map((change) => change.scopeKey).filter((key) => key !== this.scopeKey))].sort();
+    for (const key of targets) {
+      if (!this.created.includes(key)) throw new Error(`a command wrote into ${key}, which this intent did not create`);
+      this.apply(key);
     }
   }
 
   // Step 15: a governing record's create inserts its scope; its death kills the scope and its overlays.
   applyLifecycle() {
-    for (const record of this.changed ?? []) {
+    this.created = [];
+    for (const record of this.changed) {
       if (record.type.governs !== 'tree') continue;
       const treeKey = `tree:${record.after.id}`;
       const wasAlive = record.original !== undefined && isAlive(record.original);
       if (isAlive(record.after) && !wasAlive && this.work.scope(treeKey) === undefined) {
         this.work.insertScope(treeKey, { kind: 'tree', owner: this.origin.account, governedBy: `${this.scopeKey}#${record.type.type}#${record.after.id}` });
+        this.created.push(treeKey);
       }
       if (!isAlive(record.after) && wasAlive) {
         for (const key of Object.keys(this.work.scopes).sort()) {

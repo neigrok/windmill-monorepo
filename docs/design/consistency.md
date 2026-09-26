@@ -53,10 +53,14 @@ apps store carries across.
   (`400 notes-order-mismatch`, `PgNotesRepository::reorderNotes`).
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
-  account's synced data off the device. When changes have not reached the account, the confirmation
-  states how many and offers **Keep** (hidden on the device, sent at the same account's next
-  sign-in) or **Discard** (destructive), and Where to start?'s signed-out line has a kept-changes
-  variant. No app counts unsent changes or offers Keep or Discard.
+  account's synced data off the device. When the account has not confirmed some changes, the
+  confirmation states how many and offers **Keep** (hidden on the device, sent at the same
+  account's next sign-in) or **Discard** (destructive, from this device only), and Where to
+  start?'s signed-out line has a kept-changes variant. No app counts unconfirmed changes or offers
+  Keep or Discard.
+  - The copy must stay within what the engine can guarantee. The count is ready plus sent entries,
+    and a sent change may already be in the account, which Discard cannot recall; so the alert
+    says *haven't been confirmed* and *discard them from this phone*, never *for good*.
   - iOS signs out with no confirmation under a footer saying what you've written *stays on this
     device, editable* (`YouScreen.swift`, 6f).
   - Android signs out from the You sheet with no confirmation (`YouSheet.kt`).
@@ -66,7 +70,7 @@ apps store carries across.
     (`localTrees.js`), which deletes every account-stamped registry row, sync blob and per-tree
     store. The web journal keeps the account's pages on disk under their own key, hidden
     (`pageStore.js` `forget`, `pageCache.js`); web gym keeps no local log.
-  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unsent-changes variant;
+  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unconfirmed-changes variant;
     board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
     lists sign-out with unsent changes as open question 8; the Android *Account / Profile* board
     ([`669:8214`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8214)) draws no confirmation. The web's confirmation is not drawn.
@@ -100,6 +104,12 @@ apps store carries across.
     in.*, true only for an account with no gym records; the first-run READ ME line `174:4274` says
     signed-out work *moves to the account on sign-in* with no question. No surface draws the sign-in
     question or its Discard confirmation.
+- **7f · Notes stored verbatim.** `gym/briefs/10-notes.md` stores a note's title and body
+  *verbatim* but bounds them *after trim*; the domain kit's example (`../foundation/domain-kit.md`)
+  trims and NFC-normalises before saving. Rule whether a saved note is normalised.
+- **7g · Notes account-only.** `10-notes.md` makes notes account-only (signed out, Notes is a
+  sign-in door); `../foundation/mobile/gym_coach.md` Appendix C gives `save_note` `seats: any`, so a
+  signed-out Coach turn could write one. Rule which holds.
 
 ## iOS first run
 
@@ -125,7 +135,7 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
 - **6f · You and sign-out.** `YouScreen` shows the Windmill One row signed out, has no Erase data,
   and signs out with no confirmation under a footer saying what you've written *stays on this
   device, editable*. Canon: no One signed out, Erase data, and the sign-out alert *Your pages and
-  log stay in your account and leave this phone.*, with its unsent-changes variant (7c).
+  log stay in your account and leave this phone.*, with its unconfirmed-changes variant (7c).
 - **6g · Gym first open and Coach signed out.** Gym opens on the Routines empty state (Build a
   routine · Just start logging), not the Coach-led *Set up your routines*; signed out, Coach is a
   wall (`Ask.needsSignIn`, pinned by `AskTests.swift`). Canon: the starters, the escapes and the

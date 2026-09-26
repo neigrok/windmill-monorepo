@@ -14,7 +14,6 @@ Json::Value edgeJson(const Edge& edge) {
 }
 
 std::string hlcText(const Hlc& at) { return toString(at); }
-Hlc hlcFromText(const std::string& text) { return parseHlc(text); }
 }
 
 Json::Value linksToJson(const std::vector<Link>& links) {
@@ -303,36 +302,36 @@ GraphState graphStateFromJson(const Json::Value& root) {
   for (const Json::Value& n : root["nodes"]) {
     NodeStateEntry node;
     node.id = NodeId{n["id"].asString()};
-    node.createdAt = hlcFromText(n.get("createdAt", "").asString());
-    node.deletedAt = hlcFromText(n.get("deletedAt", "").asString());
+    node.createdAt = roadmapStamp(n.get("createdAt", "").asString());
+    node.deletedAt = roadmapStamp(n.get("deletedAt", "").asString());
     node.label = n.get("label", "").asString();
-    node.labelAt = hlcFromText(n.get("labelAt", "").asString());
+    node.labelAt = roadmapStamp(n.get("labelAt", "").asString());
     node.icon = n.get("icon", "").asString();
-    node.iconAt = hlcFromText(n.get("iconAt", "").asString());
+    node.iconAt = roadmapStamp(n.get("iconAt", "").asString());
     node.color = parseColor(n.get("color", "terracotta").asString()).value_or(NodeColor::terracotta);
-    node.colorAt = hlcFromText(n.get("colorAt", "").asString());
+    node.colorAt = roadmapStamp(n.get("colorAt", "").asString());
     node.order = n.get("order", "").asString();
-    node.orderAt = hlcFromText(n.get("orderAt", "").asString());
+    node.orderAt = roadmapStamp(n.get("orderAt", "").asString());
     if (n.isMember("position") && n["position"].isObject()) {
       Vec2 position;
       position.x = n["position"].get("x", 0.0).asDouble();
       position.y = n["position"].get("y", 0.0).asDouble();
       node.position = position;
     }
-    node.positionAt = hlcFromText(n.get("positionAt", "").asString());
+    node.positionAt = roadmapStamp(n.get("positionAt", "").asString());
     if (n.isMember("status") && n["status"].isString()) node.status = normalizeSeedStatus(n["status"].asString());
-    node.statusAt = hlcFromText(n.get("statusAt", "").asString());
+    node.statusAt = roadmapStamp(n.get("statusAt", "").asString());
     node.description = n.get("description", "").asString();
-    node.descriptionAt = hlcFromText(n.get("descriptionAt", "").asString());
+    node.descriptionAt = roadmapStamp(n.get("descriptionAt", "").asString());
     if (n.isMember("links")) node.links = linksFromJson(n["links"]);
-    node.linksAt = hlcFromText(n.get("linksAt", "").asString());
+    node.linksAt = roadmapStamp(n.get("linksAt", "").asString());
     state.nodes.push_back(std::move(node));
   }
   for (const Json::Value& e : root["edges"]) {
     EdgeStateEntry edge;
     edge.edge = Edge{NodeId{e["from"].asString()}, NodeId{e["to"].asString()}};
-    edge.addedAt = hlcFromText(e.get("addedAt", "").asString());
-    edge.removedAt = hlcFromText(e.get("removedAt", "").asString());
+    edge.addedAt = roadmapStamp(e.get("addedAt", "").asString());
+    edge.removedAt = roadmapStamp(e.get("removedAt", "").asString());
     state.edges.push_back(std::move(edge));
   }
   return state;
@@ -365,18 +364,18 @@ LegendState legendStateFromJson(const Json::Value& kinds) {
   for (const Json::Value& k : kinds) {
     KindStateEntry kind;
     kind.id = KindId{k["id"].asString()};
-    kind.createdAt = hlcFromText(k.get("createdAt", "").asString());
-    kind.deletedAt = hlcFromText(k.get("deletedAt", "").asString());
+    kind.createdAt = roadmapStamp(k.get("createdAt", "").asString());
+    kind.deletedAt = roadmapStamp(k.get("deletedAt", "").asString());
     kind.hue = parseColor(k.get("hue", "terracotta").asString()).value_or(NodeColor::terracotta);
-    kind.hueAt = hlcFromText(k.get("hueAt", "").asString());
+    kind.hueAt = roadmapStamp(k.get("hueAt", "").asString());
     kind.label = k.get("label", "").asString();
-    kind.labelAt = hlcFromText(k.get("labelAt", "").asString());
+    kind.labelAt = roadmapStamp(k.get("labelAt", "").asString());
     kind.description = k.get("description", "").asString();
-    kind.descriptionAt = hlcFromText(k.get("descriptionAt", "").asString());
+    kind.descriptionAt = roadmapStamp(k.get("descriptionAt", "").asString());
     kind.crossBranchExempt = k.get("crossBranchExempt", false).asBool();
-    kind.crossBranchExemptAt = hlcFromText(k.get("crossBranchExemptAt", "").asString());
+    kind.crossBranchExemptAt = roadmapStamp(k.get("crossBranchExemptAt", "").asString());
     kind.rank = k.get("rank", 0.0).asDouble();
-    kind.rankAt = hlcFromText(k.get("rankAt", "").asString());
+    kind.rankAt = roadmapStamp(k.get("rankAt", "").asString());
     state.kinds.push_back(std::move(kind));
   }
   return state;

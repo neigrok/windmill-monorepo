@@ -1,7 +1,5 @@
 // D-4 scopes and access: a wire reference maps to a server key for the principal, and read and write
-// access follow the key's kind; an overlay answers as its tree does.
-
-const OPEN_VISIBILITY = new Set(['unlisted', 'public']);
+// access follow the key's kind; a tree opens through the registry's `opens` field (§2.4).
 
 export function scopeKeyOf(registry, ref, account) {
   const kind = registry.scopeKindOf(ref);
@@ -13,15 +11,16 @@ export function scopeKeyOf(registry, ref, account) {
   return { key: `acct:${account}/${parts[1]}`, kind: 'product', product: parts[1], owner: account };
 }
 
-function treeIsOpen(state, treeKey) {
-  const meta = state.row(treeKey, 'meta', 'meta');
-  const visibility = meta?.f?.visibility?.[0];
-  return OPEN_VISIBILITY.has(visibility);
+function treeIsOpen(registry, state, treeKey) {
+  const opening = registry.opening;
+  if (opening === null) return false;
+  return opening.values.includes(state.row(treeKey, opening.type, opening.id)?.f?.[opening.field]?.[0]);
 }
 
 // The access answer for one principal (null when signed out) on one scope: which refusal a write
-// meets, which answer a read meets, and whether an absent scope is created by the write.
-export function accessOf(state, target, account) {
+// meets, which answer a read meets, and whether an absent scope is created by the write. An overlay
+// answers as its tree does.
+export function accessOf(registry, state, target, account) {
   if (target.kind === 'product') {
     const scope = state.scope(target.key);
     return { read: true, write: true, create: scope === undefined };
@@ -31,7 +30,7 @@ export function accessOf(state, target, account) {
   if (tree === undefined) return { refusal: 'not-found', read: false };
   const owner = tree.owner === account;
   if (tree.state === 'dead') return { refusal: owner ? 'scope-dead' : 'not-found', read: false, gone: owner };
-  const readable = owner || treeIsOpen(state, treeKey);
+  const readable = owner || treeIsOpen(registry, state, treeKey);
   if (!readable) return { refusal: 'not-found', read: false };
   if (target.kind === 'tree') return owner ? { read: true, write: true } : { read: true, write: false, refusal: 'forbidden' };
   return { read: true, write: true, create: state.scope(target.key) === undefined };

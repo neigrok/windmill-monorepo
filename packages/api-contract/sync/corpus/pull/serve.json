@@ -34,7 +34,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -139,7 +139,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -306,7 +306,7 @@
                   "born": "3500:0:srv",
                   "f": {
                     "startedAt": [
-                      3500,
+                      999000,
                       "3500:0:srv"
                     ]
                   },
@@ -336,7 +336,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394",
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8",
               "total": 5
             }
           ]
@@ -379,7 +379,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -484,7 +484,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -630,7 +630,7 @@
               "cursor": "eyJhIjo1LCJlIjoiZXAtMSIsImsiOlsiYm9hcmQiLCJiXzAwMDAwMDAxIl0sIm0iOiJib290IiwicyI6Mn0",
               "more": true,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394",
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8",
               "total": 5
             }
           ]
@@ -673,7 +673,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -778,7 +778,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -918,7 +918,7 @@
                   "born": "3500:0:srv",
                   "f": {
                     "startedAt": [
-                      3500,
+                      999000,
                       "3500:0:srv"
                     ]
                   },
@@ -930,7 +930,7 @@
               "cursor": "eyJhIjo1LCJlIjoiZXAtMSIsImsiOlsicnVuIiwicnVuMDAwMDEiXSwibSI6ImJvb3QiLCJzIjo0fQ",
               "more": true,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394",
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8",
               "total": 5
             }
           ]
@@ -973,7 +973,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -1078,7 +1078,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -1212,7 +1212,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394",
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8",
               "total": 5
             }
           ]
@@ -1255,7 +1255,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -1360,7 +1360,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -1485,7 +1485,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
               "more": true,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394",
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8",
               "total": 2
             }
           ]
@@ -1528,7 +1528,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -1633,7 +1633,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -1780,7 +1780,7 @@
                   "born": "3500:0:srv",
                   "f": {
                     "startedAt": [
-                      3500,
+                      999000,
                       "3500:0:srv"
                     ]
                   },
@@ -1810,7 +1810,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             }
           ]
         }
@@ -1852,7 +1852,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -1957,7 +1957,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -2091,7 +2091,7 @@
               "cursor": "eyJlIjoiZXAtMSIsImsiOlsiY2FyZCIsImNhcmQwMDAzIl0sIm0iOiJsaXZlIiwicyI6NH0",
               "more": true,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             }
           ]
         }
@@ -2133,7 +2133,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -2238,7 +2238,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -2360,7 +2360,7 @@
                   "born": "3500:0:srv",
                   "f": {
                     "startedAt": [
-                      3500,
+                      999000,
                       "3500:0:srv"
                     ]
                   },
@@ -2372,7 +2372,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
               "more": true,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             }
           ]
         }
@@ -2414,7 +2414,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -2519,7 +2519,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -2653,7 +2653,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             }
           ]
         }
@@ -2695,7 +2695,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -2800,7 +2800,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -2912,7 +2912,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             }
           ]
         }
@@ -2954,7 +2954,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -3059,7 +3059,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -3261,7 +3261,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -3366,7 +3366,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -3566,7 +3566,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -3671,7 +3671,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -3840,7 +3840,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -3945,7 +3945,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -4080,7 +4080,7 @@
               "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
               "more": false,
               "seq": 5,
-              "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+              "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
             },
             {
               "scope": "tree/b_00000001",
@@ -4179,7 +4179,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -4284,7 +4284,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -4433,7 +4433,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -4538,7 +4538,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -4687,7 +4687,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -4792,7 +4792,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -4941,7 +4941,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -5046,7 +5046,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -5195,7 +5195,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -5300,7 +5300,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -5449,7 +5449,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -5554,7 +5554,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -5703,7 +5703,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -5808,7 +5808,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -5957,7 +5957,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -6062,7 +6062,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -6211,7 +6211,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -6316,7 +6316,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -6465,7 +6465,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -6570,7 +6570,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -6719,7 +6719,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -6824,7 +6824,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -6973,7 +6973,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -7078,7 +7078,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -7227,7 +7227,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -7332,7 +7332,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -7481,7 +7481,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -7586,7 +7586,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -7796,7 +7796,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -7901,7 +7901,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -8060,7 +8060,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "e14032248b43a3ce6726cce371aa9528d8b407b30285397a95005a31ce7e0a22"
+            "digest": "07b01f78e2e494499a5274aa06bc9d86718753d99acd64d7ef25b6f27d678d46"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -8166,7 +8166,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -8316,7 +8316,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "e14032248b43a3ce6726cce371aa9528d8b407b30285397a95005a31ce7e0a22"
+            "digest": "07b01f78e2e494499a5274aa06bc9d86718753d99acd64d7ef25b6f27d678d46"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -8422,7 +8422,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -8572,7 +8572,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "e14032248b43a3ce6726cce371aa9528d8b407b30285397a95005a31ce7e0a22"
+            "digest": "07b01f78e2e494499a5274aa06bc9d86718753d99acd64d7ef25b6f27d678d46"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -8678,7 +8678,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -8828,7 +8828,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "e14032248b43a3ce6726cce371aa9528d8b407b30285397a95005a31ce7e0a22"
+            "digest": "07b01f78e2e494499a5274aa06bc9d86718753d99acd64d7ef25b6f27d678d46"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -8934,7 +8934,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -9087,7 +9087,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -9192,7 +9192,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -9346,7 +9346,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -9451,7 +9451,7 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
                   "3500:0:srv"
                 ]
               },
@@ -9566,7 +9566,235 @@
     }
   },
   {
-    "name": "a signed-out principal reads a public tree and nothing of its own",
+    "name": "beforePull: probe.tick ends a run started TICK_AFTER_MS ago before the page, and leaves a fresh one open",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 999000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "6fb836828cc0395ca99018a66b1d27d8cf192cea889fcf1cd6cf0b014f12a0aa"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "run",
+              "id": "run0000fr",
+              "life": [
+                "alive",
+                "999000:0:srv"
+              ],
+              "born": "999000:0:srv",
+              "f": {
+                "startedAt": [
+                  999000,
+                  "999000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "run",
+              "id": "run0000st",
+              "life": [
+                "alive",
+                "400000:0:srv"
+              ],
+              "born": "400000:0:srv",
+              "f": {
+                "startedAt": [
+                  400000,
+                  "400000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "scopes": [
+          {
+            "scope": "self/probe",
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "pages": [
+            {
+              "scope": "self/probe",
+              "kind": "rows",
+              "rows": [
+                {
+                  "t": "run",
+                  "id": "run0000st",
+                  "life": [
+                    "alive",
+                    "400000:0:srv"
+                  ],
+                  "born": "400000:0:srv",
+                  "f": {
+                    "endedAt": [
+                      1000000,
+                      "1000000:0:srv"
+                    ],
+                    "startedAt": [
+                      400000,
+                      "400000:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 1000,
+                  "ru": 1000000
+                }
+              ],
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+              "more": false,
+              "seq": 3,
+              "digest": "b929a2bf069f34705e650540a700030f31f5f7a561cf56b30ef0f15421981ecf"
+            }
+          ]
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "b929a2bf069f34705e650540a700030f31f5f7a561cf56b30ef0f15421981ecf"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "run",
+              "id": "run0000fr",
+              "life": [
+                "alive",
+                "999000:0:srv"
+              ],
+              "born": "999000:0:srv",
+              "f": {
+                "startedAt": [
+                  999000,
+                  "999000:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "run",
+              "id": "run0000st",
+              "life": [
+                "alive",
+                "400000:0:srv"
+              ],
+              "born": "400000:0:srv",
+              "f": {
+                "endedAt": [
+                  1000000,
+                  "1000000:0:srv"
+                ],
+                "startedAt": [
+                  400000,
+                  "400000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 1000,
+              "ru": 1000000
+            }
+          ]
+        }
+      },
+      "live": [
+        {
+          "key": "acct:A/probe",
+          "frame": {
+            "op": "change",
+            "scope": "self/probe",
+            "epoch": "ep-1",
+            "seq": 3,
+            "digest": "b929a2bf069f34705e650540a700030f31f5f7a561cf56b30ef0f15421981ecf",
+            "rows": [
+              {
+                "t": "run",
+                "id": "run0000st",
+                "life": [
+                  "alive",
+                  "400000:0:srv"
+                ],
+                "born": "400000:0:srv",
+                "f": {
+                  "endedAt": [
+                    1000000,
+                    "1000000:0:srv"
+                  ],
+                  "startedAt": [
+                    400000,
+                    "400000:0:srv"
+                  ]
+                },
+                "seq": 3,
+                "rc": 1000,
+                "ru": 1000000
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a tree has no beforePull command in the probe: another account's public tree is served as it is",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -9600,7 +9828,7 @@
             "counters": {
               "card": 3
             },
-            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
           },
           "tree:b_00000001": {
             "kind": "tree",
@@ -9705,7 +9933,1038 @@
               "born": "3500:0:srv",
               "f": {
                 "startedAt": [
-                  3500,
+                  999000,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "dead",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 3
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "request": {
+        "scopes": [
+          {
+            "scope": "tree/b_00000001",
+            "cursor": null
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "pages": [
+            {
+              "scope": "tree/b_00000001",
+              "kind": "rows",
+              "rows": [
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "2000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "visibility": [
+                      "public",
+                      "2500:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "2100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "2100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "2100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "life": [
+                    "dead",
+                    "2700:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "2200:0:r_aaaaaaaaaaaa",
+                  "seq": 3
+                }
+              ],
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+              "more": false,
+              "seq": 4,
+              "digest": "d31c74558c36633e836e32c595a6a92109a40c9ae4500cc5c03c9d199099b4f5",
+              "total": 3,
+              "header": {
+                "owner": {
+                  "name": "Ann"
+                }
+              }
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a live page carries a keyed spent row thin, without a born",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "c7ac217ef7715293bc2a88e75386984ddf9cb8473f883e402efe5398623e66ec"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "day",
+              "id": "2026-09-01",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "score": [
+                  7,
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "day",
+              "id": "2026-09-02",
+              "lifeStamp": "1200:0:r_aaaaaaaaaaaa",
+              "seq": 2
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "scopes": [
+          {
+            "scope": "self/probe",
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "pages": [
+            {
+              "scope": "self/probe",
+              "kind": "rows",
+              "rows": [
+                {
+                  "t": "day",
+                  "id": "2026-09-02",
+                  "life": [
+                    "dead",
+                    "1200:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 2
+                }
+              ],
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+              "more": false,
+              "seq": 2,
+              "digest": "c7ac217ef7715293bc2a88e75386984ddf9cb8473f883e402efe5398623e66ec"
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a boot leaves out a keyed spent row",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "c7ac217ef7715293bc2a88e75386984ddf9cb8473f883e402efe5398623e66ec"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "day",
+              "id": "2026-09-01",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "score": [
+                  7,
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "day",
+              "id": "2026-09-02",
+              "lifeStamp": "1200:0:r_aaaaaaaaaaaa",
+              "seq": 2
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "scopes": [
+          {
+            "scope": "self/probe",
+            "cursor": null
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "pages": [
+            {
+              "scope": "self/probe",
+              "kind": "rows",
+              "rows": [
+                {
+                  "t": "day",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "score": [
+                      7,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ],
+              "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+              "more": false,
+              "seq": 2,
+              "digest": "c7ac217ef7715293bc2a88e75386984ddf9cb8473f883e402efe5398623e66ec",
+              "total": 1
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a request of more than PULL_MAX_SCOPES scopes is malformed",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "729fa498a82eb85ae6c5f557af05dbf135cf64d16d8cceea05c92de120491d89",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "2500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2500:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "3000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "3000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "3000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  999000,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "dead",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 3
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "scopes": [
+          {
+            "scope": "tree/b_00000000",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000001",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000002",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000003",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000004",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000005",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000006",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000007",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000008",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000009",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000010",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000011",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000012",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000013",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000014",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000015",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000016",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000017",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000018",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000019",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000020",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000021",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000022",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000023",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000024",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000025",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000026",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000027",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000028",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000029",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000030",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000031",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000032",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000033",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000034",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000035",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000036",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000037",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000038",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000039",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000040",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000041",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000042",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000043",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000044",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000045",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000046",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000047",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000048",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000049",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000050",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000051",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000052",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000053",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000054",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000055",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000056",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000057",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000058",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000059",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000060",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000061",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000062",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000063",
+            "cursor": null
+          },
+          {
+            "scope": "tree/b_00000064",
+            "cursor": null
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "error": "malformed"
+        }
+      }
+    }
+  },
+  {
+    "name": "a signed-out principal reads a public tree and nothing of its own",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "645775ac9f29414d9a2f2e50e4520f58ecaf48331253766ca7d0b65aac6d56b8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "d31c74558c36633e836e32c595a6a92109a40c9ae4500cc5c03c9d199099b4f5",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "2500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2500:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "3000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "3000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "3000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  999000,
                   "3500:0:srv"
                 ]
               },

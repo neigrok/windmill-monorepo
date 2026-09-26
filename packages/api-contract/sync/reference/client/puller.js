@@ -1,7 +1,6 @@
 // §7.5 the puller: pages and frames, one local transaction each, boots into staging, resolution and
 // the digest check. The client reads its cursors' mode, key and seq, which §7.5 needs.
 
-import { Offset } from '../core/clock.js';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { moveEntry } from '../core/machines.js';
 import { compactRow, isAlive, recordKey, stampsOf } from '../core/rows.js';
@@ -128,11 +127,7 @@ export function applyPage(replica, ctx, requested, page) {
 
 export function onPullResponse(replica, ctx, request, response, timing) {
   const { body } = response;
-  if (body?.serverTime !== undefined) {
-    const sample = Offset.sample({ serverTime: body.serverTime, ...timing });
-    replica.meta.offsetSamples = Offset.record(replica.meta.offsetSamples, sample);
-    replica.meta.serverOffsetMs = Offset.choose(replica.meta.offsetSamples);
-  }
+  if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (response.status === 401) replica.meta.authPaused = true;
   if (response.status !== 200) return [];
   if (replica.meta.serverEpoch === null) replica.meta.serverEpoch = body.epoch;

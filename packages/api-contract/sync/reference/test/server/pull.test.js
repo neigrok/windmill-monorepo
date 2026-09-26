@@ -14,8 +14,10 @@ const read = (path) => JSON.parse(readFileSync(new URL(`../../../corpus/${path}`
 
 test('pull/serve.json replays through pull', () => {
   for (const { name, input, expect } of read('pull/serve.json')) {
-    const response = pull({ state: new ServerState(input.state), registry, account: input.account, request: input.request, serverNow: input.serverNow, limits: { ...CONSTANTS, ...(input.limits ?? {}) } });
-    assert.equal(jcs(response), jcs(expect.response), name);
+    const out = pull({ state: new ServerState(input.state), registry, product, account: input.account, request: input.request, serverNow: input.serverNow, limits: { ...CONSTANTS, ...(input.limits ?? {}) } });
+    assert.equal(jcs(out.response), jcs(expect.response), name);
+    assert.equal(jcs(out.state.toJSON()), jcs(expect.state ?? input.state), name);
+    assert.equal(jcs(out.live), jcs(expect.live ?? []), name);
   }
 });
 
@@ -66,7 +68,9 @@ test('paging through writes ends at the head holding exactly the alive rows, wit
     let page;
     for (let round = 0; round < 200; round += 1) {
       const limits = { ...CONSTANTS, PULL_PAGE_BYTES: 100 + rng.int(400) };
-      page = pull({ state, registry, account: 'A', request: { scopes: [{ scope: 'self/probe', cursor }] }, serverNow: 2_000_000, limits }).body.pages[0];
+      const out = pull({ state, registry, product, account: 'A', request: { scopes: [{ scope: 'self/probe', cursor }] }, serverNow: 2_000_000, limits });
+      state = out.state;
+      page = out.response.body.pages[0];
       for (const row of page.rows) {
         const key = recordKey(row.t, row.id);
         if (isAlive(row)) held.set(key, row);
