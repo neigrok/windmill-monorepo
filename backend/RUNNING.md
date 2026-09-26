@@ -136,23 +136,9 @@ result, message-state flags, fixed parser/provider error categories and cancella
 They do not retain raw bodies, prompts, thinking or credentials. An HTTP 200 can carry an SSE error;
 zero observed tokens on an interrupted call do not prove that the provider billed nothing.
 
-## Roadmap tree endpoints
+## API contracts
 
-The roadmap tree surface only — the server also serves auth, oauth, billing, MCP keys, reminders, the
-share/gallery pages, and all of journal's and gym's routes, each in its product's `routes.cpp`.
-
-| Method | Path | Body / result |
-| --- | --- | --- |
-| POST | `/v1/trees` | `{ title?, nodes?, kinds?, id? }` → `{ treeId, existed }`. The body is the starting `TreeData`; send none for a blank tree with the default legend. A supplied `id` must be `t_` + 16 lowercase hex. `409 id-taken` names somebody else's tree; `409 id-retired` names one you deleted — let that one go, never re-plant it under a fresh id |
-| GET | `/v1/trees` | → `{ trees[] }` — the caller's roadmaps, newest first: `{ id, title, total, done, createdAt, updatedAt, dominantKind? }`, times in epoch ms |
-| DELETE | `/v1/trees/:id` | → `204`. Owner-only soft-delete |
-| GET | `/v1/trees/:id` | → `{ seq, data, state, createdAt, visibility, mine }`. `data.kinds` is the legend, `state` the full CRDT state, `createdAt` the planting time in epoch ms — the week-N card counts from it, never the calendar week |
-| PUT | `/v1/trees/:id` | `TreeData` → `{ seq, data }`. Whole-document write; seeds the default legend on a new tree |
-| POST | `/v1/trees/:id/fork` | `{ id?, title? }` → `{ seq, data }`. Copies nodes, edges and kinds verbatim, progress cleared |
-| GET | `/v1/trees/:id/progress` | → `{ marks: [{ node, status, at, markedAt, outOfOrder? }] }` — the **owner's** progress, not the caller's |
-| GET | `/v1/trees/:id/diagnostics` | → `{ cycles[], dangling[], selfEdges[], smells[], maskedWork[] }` |
-| GET | `/v1/trees/:id/activity` | `?since=&limit=` → `{ events[] }`, a human feed from `tree_ops` |
-
-Every row is gated by `canRead`/`canWrite` (`platform/domain/Access.h`): a private tree is owner-only
-and answers `404` to everyone else; unlisted and public read alike. Planting, listing, writing,
-deleting and forking need a session — an anonymous caller gets `401`.
+[The roadmap spec](SPEC.md) documents the tree HTTP and WebSocket surfaces. Journal and gym keep
+contracts in their [journal](products/journal/ARCHITECTURE.md) and
+[gym](products/gym/ARCHITECTURE.md) architecture documents; each product's `routes.cpp` registers its
+current endpoints.

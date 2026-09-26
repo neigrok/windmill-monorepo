@@ -25,7 +25,7 @@ cd web && npm run dev
 Env comes from `backend/.env` (gitignored; `.env.example` documents every variable). Do not paste
 a multi-variable incantation onto the command line.
 
-- Stop the server **by port**: `lsof -ti tcp:<port> | xargs kill`. Never `pkill -f windmill_server`
+- Stop the server **by port**: `lsof -ti tcp:<port> -sTCP:LISTEN | xargs kill`. Never `pkill -f windmill_server`
   — several agents share this machine and it takes all of their backends too.
 - **Pin the two ports: backend 8088, vite 5173.** Outside a production build
   `web/src/shell/apiBase.js` falls back to `http://localhost:8088` (and
@@ -104,50 +104,15 @@ surgery in SQL:
 is invisible until restart once the server has opened that room. Arrange ownership before the room
 is first opened rather than editing rows and restarting.
 
-## Driving the DOM
+## Browser checks
 
-The Chrome extension can't inject into these pages. Headless Chrome + CDP needs no dependencies:
-Node 20 has `WebSocket` behind `node --experimental-websocket`, so a ~40-line raw-CDP driver does
-navigation, phone emulation, taps, typing and screenshots. Launch with `--headless=new
---remote-debugging-port=9222 --user-data-dir=<scratch>`.
+Use the [roadmap capture rig](../../../web/scripts/roadmap-rig/APPARATUS.md) for authenticated
+desktop/phone screenshots, selection checks and caption measurements. It waits for explicit scene
+settlement; the canvas's continuous animation loop makes page-idle checks unsuitable.
 
-- **`Emulation.setDeviceMetricsOverride` is per-CDP-session.** Reconnecting drops it and you
-  silently measure the desktop layout. Set it in the session that navigates.
-- Return values through `JSON.stringify` inside the page — `returnByValue` chokes deep-serializing
-  DOM objects (`className` on an SVG element is not a string).
-- Guard every probe field on its own and log the failing expression; one null element otherwise
-  kills the run with a bare `TypeError: Illegal invocation`.
-- **A focused input needs `Emulation.setFocusEmulationEnabled {enabled:true}`.** Headless Chrome
-  hands the page no window focus, so `.focus()` commits but no `:focus` styling paints.
-
-### Firefox
-
-`brew install --cask firefox`, then `--headless --window-size=W,H --screenshot <path> <url>` for a
-settled page. Firefox has no CDP; the remote agent speaks WebDriver BiDi, so `/json/version` 404s
-and a CDP driver hangs.
-
-```sh
-firefox --remote-debugging-port=9223 --profile <scratch> about:blank   # logs the ws:// URL
-```
-
-- Connect to `ws://127.0.0.1:<port>/session`, then `session.new` → `browsingContext.getTree` →
-  `browsingContext.navigate|setViewport|captureScreenshot`, `script.evaluate`.
-- **Always `session.end` before closing the socket.** Closing the WS alone leaves the session live
-  and the next connect dies on "Maximum number of active sessions".
-- `--screenshot` fires on the load event, so it cannot catch an animation. Drive BiDi and sleep.
-
-### The WebGL canvas
-
-- Extension screenshots time out on this page; `javascript_tool` works. Capture the canvas from
-  inside the page and inside `requestAnimationFrame` (double-rAF) — there is no
-  `preserveDrawingBuffer`, so a grab outside it reads back black.
-- The extension blocks returning big base64 strings; POST captures to a local HTTP sink (python
-  `http.server` on 127.0.0.1) and Read the PNGs.
-- A hidden tab has rAF suspended — activate it via AppleScript (`tell application "Google Chrome" …`)
-  before capturing.
-- macOS Reduce Motion propagates into the app and turns all motion into snaps by design. Check
-  `matchMedia('(prefers-reduced-motion: reduce)').matches` before judging animation. The live scene
-  instance is reachable through React fiber internals from `canvas.st-canvas`.
+The rig uses SwiftShader and cannot establish hardware frame rate. Use a hardware-backed browser
+for timing and native interactions. Check the reduced-motion preference before judging animation.
+Keep browser sessions bound to the same test account as the local MCP server.
 
 ## Signing in without mail
 
@@ -156,11 +121,11 @@ the magic-link flow:
 
 ```sh
 SECRET=$(openssl rand -hex 24); HASH=$(printf '%s' "$SECRET" | shasum -a 256 | awk '{print $1}')
-UID=$(uuidgen | tr 'A-Z' 'a-z')
+PROBE_USER_ID=$(uuidgen | tr 'A-Z' 'a-z')
 NOW=$(python3 -c "import time;print(int(time.time()*1000))")
-psql windmill -q -c "INSERT INTO users (id,email) VALUES ('$UID','probe-$RANDOM@example.com')"
+psql windmill -q -c "INSERT INTO users (id,email) VALUES ('$PROBE_USER_ID','probe-$RANDOM@example.com')"
 psql windmill -q -c "INSERT INTO sessions (token_hash,user_id,expires_ms) \
-  VALUES ('$HASH','$UID',$((NOW+86400000)))"
+  VALUES ('$HASH','$PROBE_USER_ID',$((NOW+86400000)))"
 # either header works — the caller seam reads the cookie OR the bearer:
 curl -s localhost:8088/v1/gym/exercises -H "Authorization: Bearer $SECRET"
 ```
@@ -170,7 +135,8 @@ Deleting the `users` row cascades to sessions and to every product's rows. Prefi
 
 ## Gym — driving the training log
 
-Everything is owner-scoped and idempotent by client-minted id, so a script can be replayed freely.
+Use a dedicated test account and unique probe IDs. Retries keep the same ID and payload; inspect
+refusals before continuing.
 
 ```sh
 C="Authorization: Bearer $SECRET"; J='content-type: application/json'
@@ -216,9 +182,9 @@ Traps:
 - **One open session per user** (a partial unique index); an idle one auto-closes four hours after
   its last set, not after its start. `closedItself` on the log row is inferred from `finished_at`
   landing on the last set's instant — there is no column.
-- **A replayed create is a 200 with the stored row everywhere** — sessions, sets, routines, custom
-  movements. Only an id already spent by another account is a 409. A **new** set into a finished
-  session is refused `409 session-finished`, so flush before you finish.
+- Valid create retries return the stored row. Reserved/deleted IDs and changed import payloads
+  can still conflict; ownership alone does not determine replay. A new set in a finished session
+  receives `409 session-finished`, so flush before finishing.
 - Tell the 409s apart by the machine `code`, never the sentence: `session-finished` ·
   `set-id-taken` · `session-id-taken` · `session-already-open` · `routine-id-taken` ·
   `exercise-id-taken` · `session-open` (discarding a running workout).

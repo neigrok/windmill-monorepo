@@ -16,9 +16,9 @@ offers a checkout, and `BillingApi` answers 503 while no Paddle price id is conf
 
 This is a monorepo grouped by surface, then product. **Read `STRUCTURE.md` for the layout and the
 one dependency rule** (platform is product-neutral; products depend on platform, never the reverse;
-products never depend on each other). Each surface keeps its own `CLAUDE.md`/`NOTES.md`
-(`backend/CLAUDE.md`, `web/CLAUDE.md`); each product documents itself in its own
-`ARCHITECTURE.md`. The principles below apply brand-wide.
+products never depend on each other). Backend and web keep their rules in `CLAUDE.md`; native
+setup lives in each app's `README.md`. Product architecture lives beside the implementation.
+The principles below apply brand-wide.
 
 ## Mission
 
@@ -91,7 +91,7 @@ fits naturally, and leave the surrounding area better than the scope demanded.
 ## Workflow
 
 - Act autonomously; do not wait for approval on work that follows from the plan.
-- Stage changes at the end of a phase. Commit and push both repos once a phase is implemented,
+- Stage changes at the end of a phase. Commit and push the monorepo once a phase is implemented,
   reviewed and verified — house-voice messages, `Co-Authored-By` footer.
 - Every wave goes through the gauntlet before it ships: adversarial review of the diff → one fix
   pass → e2e on the local stack (`.claude/skills/verify`) → push.

@@ -14,7 +14,7 @@ Routine detail/editor, movement picker, log/detail, finish, progress and setting
 
 ## Workout clocks
 
-Show one compact, non-interactive clock pair in the reading region below movement identity and above the set records. Use a native outlined clock for workout elapsed and stopwatch for since-set elapsed, each 16 dp with a 6 dp gap to 14 sp tabular numbers; separate the metrics by 16 dp. Use ink-dim in both skins. The pair has no visible labels, timer cards, target, countdown or progress ring, and replaces the logger’s displayed rest-target/elapsed block. It introduces no chime or rest setting. Existing optional Android rest-alert preferences and notification runtime remain; this feedback does not remove them. Keep the weight/reps controls and Log set the dominant content.
+Show one compact, non-interactive clock pair in the reading region below movement identity and above the set records. Use a native outlined clock for workout elapsed and stopwatch for since-set elapsed, each 16 dp with a 6 dp gap to 14 sp tabular numbers; separate the metrics by 16 dp. Use ink-dim in both skins. The pair has no visible labels, timer cards, target, countdown or progress ring, and replaces the logger’s displayed rest-target/elapsed block. It introduces no chime or rest setting. Android has no rest-target preferences or alerts; its workout notification follows `android-delivery.md`. Keep the weight/reps controls and Log set the dominant content.
 
 | Reading | Anchor | Accessible name |
 | --- | --- | --- |

@@ -1,6 +1,6 @@
 # Training history and sharing
 
-The history and sharing contract. The per-board acceptance inventory is [web-build-contract.md](web-build-contract.md).
+The history and sharing contract. Acceptance requirements are [web-build-contract.md](web-build-contract.md).
 
 ## Reading years of training
 
@@ -18,7 +18,7 @@ Sharing is read-only and scoped explicitly to the entire history or a date range
 
 The link grants access to anyone who possesses it; the UI states this plainly. AI Coach conversations and private Notes are excluded. Only completed workout data is in scope. Any future optional notes or bodyweight sharing must be enforced by the server, not hidden only in the UI. No real share link is created by the Figma prototype.
 
-## Implemented contract
+## Data and navigation
 
 - `GET /history` applies date, movement and routine filters to the whole authorized history. Stable descending cursors page at most 200 workouts; totals, facets and local year/month counts cover the complete filtered scope.
 - Selection and filters travel in the URL. Owner index offsets survive movement-record and correction navigation. A deep link loads the required pages before bringing its selected workout into view.

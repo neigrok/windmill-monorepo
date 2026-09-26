@@ -72,6 +72,9 @@ Raw design tokens are mirrored in `web/src/styles/tokens/`,
 | `tools.yml` | run the Lift importer suite |
 | `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
 
+Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
+their consumers, and web retains its email README because a test reads it.
+
 Backend Postgres integration cases require `WM_PG_TEST` and a local database; the Docker CI build
 runs without one. Automated model tests use deterministic fakes and fixtures. Actual-model
 exploration is manual and local with a user-provided key.

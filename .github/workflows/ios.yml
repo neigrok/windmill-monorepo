@@ -11,11 +11,13 @@ on:
       - 'apps/ios/**'
       - 'packages/api-contract/**'
       - '.github/workflows/ios.yml'
+      - '!apps/ios/**/*.md'
   pull_request:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/**'
       - '.github/workflows/ios.yml'
+      - '!apps/ios/**/*.md'
   workflow_dispatch:
 
 concurrency:

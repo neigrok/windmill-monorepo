@@ -49,6 +49,12 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 ## Journal
 
+- **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
+  compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
+  pending entry-frequency and focus/caret checks. Preserve independent optional integers 0–10,
+  null versus zero, Clear, keyboard-up suppression and 44px targets; update `journal.md` and
+  `scales.md` together only when a replacement is chosen.
+
 - **F22 · Landing accent.** `marketing/landingHead.js` still uses `#C29A4E`; the live day
   accent is `#986B1E`. Align the crawlable shell and verify CTA contrast.
 - **F28 · Echo layout drawings.** Above the margin breakpoint, the echo form is margin-only.
@@ -86,6 +92,13 @@ classification. Historical warmups remain readable and do not consume planned wo
 Targets are references: actual weight/reps remain independent for every set, including extra or
 skipped sets and substituted movements.
 
+### Open concepts
+
+- **Strength tree.** Determine whether a gym-to-roadmap handoff helps lifters following a written
+  program. Before designing screens, choose authorship, an evidence-based unlock rule and the
+  smallest useful surface; “not yet” remains valid. Any integration must preserve product
+  independence and must not introduce XP, levels, badges or streaks into gym. Tracking: `strength-tree`.
+
 ### Native and web differences
 
 - **5m · iOS logger.** Android uses the [quiet ledger](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)
@@ -97,9 +110,12 @@ skipped sets and substituted movements.
 - **Workout display names.** The API's optional `routineName` changes a corrected workout's
   display name independently of its frozen plan. Native session readers need to prefer it,
   including an explicitly empty name for a free session.
-- **F38 · Target count.** Web uses the ladder as its count; native target entry retains Sets.
-  Decide whether the difference is intentional. Android target-entry alternatives remain in
-  `gym/android-cleanliness-options.md`; preserve the shared `TargetBlock` contract until chosen.
+- **F38 · Target entry.** Web uses the ladder as its count; native entry retains Sets. Decide
+  whether that difference is intentional. [Android alternatives](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=815-5196)
+  compare grouped steppers, copy-down, wheels, typed schemes, recalled schemes and sliders.
+  Recalled schemes backed by grouped steppers are the design recommendation; the current create
+  sheet uses grouped steppers. Preserve `TargetBlock(scheme, onChange)` until device tests cover
+  varied reps/loads, keyboard, focus and TalkBack.
 - **4k · Leaving drafts.** Reconcile the unsaved-routine exit policy across web, iOS and Android.
   Cover native Back, Cancel, navigation away and restored drafts before choosing confirmation rules.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
@@ -158,7 +174,7 @@ skipped sets and substituted movements.
   shortcuts, contextual rail, public-reader chrome, back glyphs, sheet scrims and the empty-filter
   Log footer. Preserve Rename, More movement facts and contextual Log/Workout actions where a
   drawing omits them. Content implementation does not close complete-screen acceptance.
-  Tracking: `gym-web-navigation-parity-deferred`. Board status IDs remain in `gym/web-build-contract.md`.
+  Tracking: `gym-web-navigation-parity-deferred`. Figma owns the board status markers.
 
 ## Marketing and email
 
@@ -169,8 +185,8 @@ skipped sets and substituted movements.
 - **0m · First paint.** `appBoot.js` does not reset the browser's body margin before the main
   stylesheet arrives. Check and remove the resulting landing layout shift.
 - **F23 / F24 · Email templates.** `magic-link-fork.html` lacks the light-only CSS rule used by
-  the other templates. `magic-link-signup.html` uses double-brace URL interpolation while the
-  other templates use raw triple braces. Reconcile both with the email contract.
+  the other templates. The dormant `magic-link-signup` asset pair uses double-brace URL
+  interpolation; remove or reconcile it before use. The signup asset is not selected by the sender.
 - **F25 · Changelog.** The public changelog contains only July entries. Keep its material-change
   record consistent with the commitment in Terms.
 - **F27 · Nudge template.** `ResendNudgeSender.cpp` references `journal-nudge`, but no template

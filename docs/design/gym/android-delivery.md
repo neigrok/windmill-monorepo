@@ -1,6 +1,6 @@
 # Android design delivery contract
 
-Canonical screens: routine sheet `813:4935`, plan-only editor `820:5572`, create sheet `814:5104`, settings `816:5410`, and Log `837:14824` / `837:14932`. This is the implementation and acceptance contract. The delivery maps **89 phone states**; [feedback-contract.md](feedback-contract.md) adds revised masters and representative Coach states, with Kind removed and no sound/haptic set-confirmation controls.
+Canonical screens: routine sheet `813:4935`, plan-only editor `820:5572`, create sheet `814:5104`, settings `816:5410`, and Log `837:14824` / `837:14932`. This is the implementation and acceptance contract. [feedback-contract.md](feedback-contract.md) adds revised masters and representative Coach states, with Kind removed and no sound/haptic set-confirmation controls.
 
 - [Screens](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=56-2)
 - [Shared components](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-3)
@@ -8,20 +8,9 @@ Canonical screens: routine sheet `813:4935`, plan-only editor `820:5572`, create
 
 States derive from application data. Preserve working behavior; loading, failure and empty states in Specifications belong to the same contract.
 
-## Coverage
-
-| Area | States | Contract |
-|---|---:|---|
-| Foundations | 4 | Shared controls, navigation, system appearance and Settings |
-| Planning | 26 | Routine list/detail/editor, independent Undo, targets and movement creation |
-| Training | 27 | Planned/free logging, offline queue, correction, receipts, sharing and save as routine |
-| Log | 9 | History, movement progress, aliases and bodyweight |
-| Coach/account | 20 | Conversation, receipts, Notes, proposal decisions, account and connections |
-| Native acceptance | 3 | Daylight and notification specimens; system behavior applies across every area |
-
-Root frames are counted once. Phone frames describe real states; failure and accessibility behavior
-also live in Specifications. The Figma references use Nunito, Baloo 2 and JetBrains Mono as stand-ins
-for Android system sans/display/mono roles. Use native fonts and existing platform tokens.
+Figma uses Nunito, Baloo 2 and JetBrains Mono as stand-ins for Android system sans/display/mono
+roles. Runtime uses native fonts and existing platform tokens. The Screens page owns its frame
+inventory; the requirements below cover loading, failure, empty and accessibility states too.
 
 ## Foundations
 
@@ -88,7 +77,7 @@ Root context supplies Material Code Connect glyph hints for ArrowBack and ChatBu
 ## Planning
 
 Planning uses the shared `RoutineDraft`, `TargetEntry`, `PickerOptions` and `TargetBlock`.
-The target-entry alternatives remain open in [android-cleanliness-options.md](android-cleanliness-options.md).
+The target-entry choice remains open under F38 in the [consistency ledger](../consistency.md).
 
 | Surface | Concrete approved UI |
 |---|---|
@@ -231,7 +220,7 @@ Account-to-settings route contract:
 
 Coach and account acceptance:
 
-- All20 phones plus Coach root must receive runtime evidence. Exercise quiet empty and actual arbitrary questions; successful structured response plus exact expanded receipt; history open/resume/new; signed-out/unavailable/actual allowance refusal/interrupted/read-failed; note empty/new/edit/Unicode/byte refusal/full/reorder/delete/Undo; proposal close-unresolved, apply, turn-down Keep it/confirm, decided reopen, stale diff, late larger diff, request failure, full removal and active-workout block; account destinations, sign-in/code/resend/expired/pasted link, explicit claim/Not mine/Undo and real/failed connections. Verify process/seat restoration and no duplicate sends or decisions. Compare Instrument and Daylight, IME and200% text; content scrolls,48dp targets stay disjoint, email/refusals/diff values wrap and all pinned actions remain reachable.
+- Exercise quiet empty and actual arbitrary questions; successful structured response plus exact expanded receipt; history open/resume/new; signed-out/unavailable/actual allowance refusal/interrupted/read-failed; note empty/new/edit/Unicode/byte refusal/full/reorder/delete/Undo; proposal close-unresolved, apply, turn-down Keep it/confirm, decided reopen, stale diff, late larger diff, request failure, full removal and active-workout block; account destinations, sign-in/code/resend/expired/pasted link, explicit claim/Not mine/Undo and real/failed connections. Verify process/seat restoration and no duplicate sends or decisions. Compare Instrument and Daylight, IME and200% text; content scrolls,48dp targets stay disjoint, email/refusals/diff values wrap and all pinned actions remain reachable.
 
 Exact new source asset: [open-in-new.svg](assets/android/open-in-new.svg), exported with SVG_STRING from Connected log vector `672:9762` in `669:8283`. Figma node geometry is24×24; its stroke-inclusive SVG viewBox is0 0 26 26, with1.8 round-cap/round-join path and Instrument onAccent stroke #1B1408. Preserve these exported bytes/geometry during Android conversion and tint through onAccent; do not substitute the existing unmatched16dp glyph. Reuse committed chevron/reorder/nav assets elsewhere. The composer arrow is native rendered text from the source and needs no new vector.
 
@@ -313,7 +302,7 @@ alerts are paused” line. The workout notification permission request at workou
 Dismissal persists for the active workout without changing saved training. Show workout appears
 only while that active card is hidden. A new workout or explicit Show workout can restore it. Hiding invalidates the previous set offer; explicit Show workout publishes the current rack action. System eligibility only controls whether the card can be posted.
 
-Native acceptance completes only after the three assigned designs and cross-area matrix have recorded native evidence or an explicit device-specific limitation. Conditional promotion is accepted when its gates and fallback are verified; omitting the ordinary notification, replay-safe Log set or in-app accessibility is not an equivalent fallback. No new decorative assets are needed: preserve existing exact Gym glyphs and let Android render notification/system chrome. Keep domain and queue ownership singular.
+Native acceptance requires the cross-area matrix to have recorded native evidence or an explicit device-specific limitation. Conditional promotion is accepted when its gates and fallback are verified; omitting the ordinary notification, replay-safe Log set or in-app accessibility is not an equivalent fallback. No new decorative assets are needed: preserve existing exact Gym glyphs and let Android render notification/system chrome. Keep domain and queue ownership singular.
 
 ## Shared behavior contracts
 
@@ -333,102 +322,6 @@ failed writes and lapsed auth; dismissing a notice does not discard queued sets.
 Sign-in codes are single-use for 15 minutes; resend shows the actual 30-second delay.
 
 Specs sources: `673:9992` rack/nav; `673:9996` deletion; `673:10000` finish/share; `673:10004` theme/text; `674:3164` numeric; `674:3169` queue; `674:3174` receipt outcomes; `677:10445` fix/effort; `677:10450` movement/rest; `677:10455` motion; `678:10658` routine contracts; `688:214` Coach/Log/Account state fragments; `663:7876` motion/notifications. The10 retained computed text stress cases are not implementation screenshots and must not be copied as current UI.
-
-## Screen map
-
-Associate every row with an acceptance scenario. One scenario may cover related states.
-
-| Area | Figma ID | Approved state |
-|---|---|---|
-| 1 | [656:6692](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-6692) | Routines / Home |
-| 1 | [837:14824](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=837-14824) | Log / History |
-| 4 | [837:14932](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=837-14932) | Log / Moment expanded |
-| 1 | [656:6695](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-6695) | Coach / Home |
-| 2 | [813:4935](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=813-4935) | Routines / Detail |
-| 2 | [660:7359](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7359) | Routines / Empty |
-| 2 | [660:7420](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7420) | Routines / New routine |
-| 2 | [820:5572](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=820-5572) | Routines / Edit |
-| 2 | [656:6698](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-6698) | Routines / Add movement |
-| 2 | [673:2567](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-2567) | Routines / Target / Straight |
-| 2 | [674:3179](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=674-3179) | Routines / Target / Ramp |
-| 2 | [674:3307](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=674-3307) | Routines / Target / Open |
-| 2 | [674:3419](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=674-3419) | Routines / Target / Invalid reps |
-| 2 | [675:2973](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=675-2973) | Routines / Target / Fill menu |
-| 2 | [678:3372](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-3372) | Routines / Target / Ramp up |
-| 2 | [678:3494](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-3494) | Routines / Target / Match set 1 |
-| 2 | [674:3537](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=674-3537) | Routines / Edit / Ramp applied |
-| 2 | [674:3563](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=674-3563) | Routines / Edit / Open applied |
-| 2 | [677:9879](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=677-9879) | Routines / Edit / Empty name |
-| 2 | [677:9932](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=677-9932) | Routines / Edit / Name limit |
-| 2 | [676:9711](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=676-9711) | Routines / Manage / Row menu |
-| 2 | [677:10114](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=677-10114) | Routines / Manage / Copy in list |
-| 2 | [676:9731](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=676-9731) | Routines / Manage / Deleted · undo |
-| 2 | [676:9767](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=676-9767) | Routines / Manage / Deleted · settled |
-| 2 | [669:8424](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8424) | Create · Routine · Empty |
-| 2 | [814:5104](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=814-5104) | Create · Routine · Ready |
-| 2 | [670:8634](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=670-8634) | Create · Added to routine |
-| 2 | [669:8838](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8838) | Create · Quick · Empty |
-| 2 | [669:9004](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-9004) | Create · Quick · Ready |
-| 2 | [670:8693](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=670-8693) | Create · Ready to log |
-| 4 | [656:6694](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=656-6694) | Log / Movement record |
-| 4 | [678:11447](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-11447) | Record / Rename |
-| 4 | [678:11551](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-11551) | Record / Renamed · alias kept |
-| 4 | [669:8306](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8306) | Log / Bodyweight |
-| 4 | [669:8329](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8329) | Log / Weigh-in sheet |
-| 4 | [672:2984](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=672-2984) | Log / Correct weigh-in |
-| 4 | [669:8352](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8352) | Log / Empty |
-| 4 | [671:9521](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-9521) | Log · Workout removed |
-| 5 | [669:8042](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8042) | Coach / Conversation · Push A |
-| 5 | [680:4043](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=680-4043) | Coach / Read receipt expanded |
-| 5 | [669:8099](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8099) | Coach / History |
-| 5 | [678:10531](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-10531) | Coach / Past conversation |
-| 5 | [669:8388](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8388) | Coach / Signed out |
-| 5 | [669:8122](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8122) | Coach / Notes |
-| 5 | [678:11011](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=678-11011) | Notes / New note |
-| 5 | [669:8145](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8145) | Coach / Note editor |
-| 5 | [673:9632](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9632) | Coach / Proposal waiting |
-| 5 | [669:8168](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8168) | Coach / Review |
-| 5 | [673:9798](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9798) | Coach / Proposal applied |
-| 5 | [673:10008](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-10008) | Coach / Applied review |
-| 5 | [673:9908](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9908) | Coach / Turn down confirmation |
-| 5 | [673:9854](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9854) | Coach / Proposal turned down |
-| 5 | [673:10101](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-10101) | Coach / Turned-down review |
-| 1 | [816:5410](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=816-5410) | Account / Gym settings |
-| 5 | [669:8214](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8214) | Account / Profile |
-| 5 | [669:8283](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8283) | Account / Connected log |
-| 5 | [679:3916](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=679-3916) | Connected log / How this works |
-| 5 | [669:8237](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8237) | Account / Sign in |
-| 5 | [669:8260](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=669-8260) | Account / Email code |
-| 3 | [660:7955](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7955) | Train · 01 · Bench / Set 1 |
-| 3 | [659:7176](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=659-7176) | Train · 02 · Bench / Set 2 |
-| 3 | [659:7243](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=659-7243) | Train · 03 · Bench / Set 3 |
-| 3 | [659:7310](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=659-7310) | Train · 04 · Overhead Press / 3 of 9 |
-| 3 | [671:8688](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8688) | Training · This session |
-| 3 | [671:8689](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8689) | Training · Saved offline |
-| 3 | [657:29](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=657-29) | Train · 05 · Weight sheet |
-| 3 | [671:9516](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-9516) | Training · Weight refused |
-| 3 | [671:9517](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-9517) | Training · Reps refused |
-| 3 | [662:7669](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=662-7669) | Workout / Pick movement |
-| 3 | [662:7755](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=662-7755) | Workout / Free session |
-| 3 | [662:7831](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=662-7831) | Workout / One set logged |
-| 6 | [660:8087](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-8087) | Train · Daylight / Set 1 |
-| 6 | [657:31](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=657-31) | Proposal · Android Live Update |
-| 6 | [657:32](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=657-32) | Proposal · Ongoing notification |
-| 3 | [671:8687](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8687) | Session · Readback |
-| 3 | [671:8690](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8690) | Session · Fix set |
-| 3 | [671:8691](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8691) | Session · Fix refused |
-| 3 | [671:8692](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-8692) | Session · Set removed |
-| 3 | [671:9520](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-9520) | Session · Share workout |
-| 3 | [660:8028](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-8028) | Train · Completed example / 9 sets |
-| 3 | [660:7713](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7713) | Train · Finish early / 1 set |
-| 3 | [660:7775](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7775) | Train · Finish early / 2 sets |
-| 3 | [660:7837](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=660-7837) | Train · Finish early / 3 sets |
-| 3 | [671:9519](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=671-9519) | Finish · Save routine |
-| 3 | [673:9326](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9326) | Session · Push A / 1 set |
-| 3 | [673:9400](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9400) | Session · Push A / 2 sets |
-| 3 | [673:9474](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9474) | Session · Push A / 3 sets |
-| 3 | [662:7907](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=662-7907) | Workout / Free session receipt |
-| 3 | [673:9548](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/Windmill-Gym?node-id=673-9548) | Session · Free session |
 
 ## Acceptance
 

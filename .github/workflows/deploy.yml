@@ -93,7 +93,7 @@ jobs:
           # Cloudflare's edge ranges, fetched live, falling back to the committed compose default
           # rather than a second copy of the list. Must never render empty: an empty remote_ip matcher
           # makes Caddy 403 every request, Cloudflare's included.
-          cf_default=$(sed -n 's/^ *CF_IPS: "\${CF_IPS:-\(.*\)}"$/\1/p' backend/deploy/docker-compose.yml)
+          cf_default=$(sed -n 's/^ *CF_IPS: "[$]{CF_IPS:-\(.*\)}"$/\1/p' backend/deploy/docker-compose.yml)
           if [ -z "$cf_default" ]; then
             echo "Refusing to render — cannot read the committed CF_IPS default out of backend/deploy/docker-compose.yml"
             exit 1

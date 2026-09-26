@@ -72,23 +72,14 @@ glance, which a column of `1 2 3 4 5` never did.
 three-tick rail — and expands on click. A movement whose sets disagree prints its rows, because the
 difference *is* the content. This is the rule that empties the workout reader.
 
-## What comes off
+## Controls
 
-| off | on |
-|---|---|
-| the `#` / `Set` ordinal column | the rail |
-| `Every set` / `Set by set` toggle | both sections on the sheet, always — `briefs/17-set-targets.md` forbids the mode |
-| the `Sets` field in the head | the ladder is the count; `Add set` is its last row, delete is its trailing `×` |
-| `Remove` as a word, nine times | one `×` at the row's trailing edge, faint until the row is hovered or focused |
-| `Edit` on a routine card | the card is the door; `⋯` on hover holds Delete |
-| `kg` on every row | once, in the column head |
-| `3 movements · 9 sets` **and** the movement names | the names, with the set count as a rail grouped per movement |
-| `Plan here. Train on your phone.` under every visit | the phone fact belongs where a lifter reaches for a Start that is not there, once |
-| a filter pill that reads its own name when set | a set filter reads its value — `2024`, `Bench Press` — and carries a clearing `×` |
-
-Dropping the `Sets` field costs the lifter who wants six sets two taps of `Add set` instead of one
-keystroke. The sheet opens on three rows, which is the common count, so the tax falls on the outlier
-and buys a field and a column back on every sheet.
+- Both Every set and Set by set remain visible on web; the ladder supplies the count.
+- Add set is last. A trailing `×` removes a row and appears on hover or focus.
+- The routine card opens its editor; More holds Log past and Delete.
+- Movement names and grouped set rails provide the routine summary without a repeated count line.
+- Units appear once per column. A selected filter shows its value with a clearing `×`.
+- Explain phone-only logging at the relevant entry point, without a permanent planning caption.
 
 ## Microinteraction
 
@@ -110,7 +101,7 @@ Feedback class throughout — immediate, never queued, inside the ceilings of
 ## The boards
 
 Every state is drawn at 1440 and 390, bound to `gym/*` variables, on the fixtures of `log-exploration.md`.
-Compare every state in both Instrument and Daylight; `web-build-contract.md` owns the acceptance map.
+Compare every state in both Instrument and Daylight; `web-build-contract.md` owns acceptance requirements.
 
 1. **Plan** — Routines, Routines empty, Routine editor (desktop split · narrow), Target sheet
    (straight · ladder · open), New routine, stale-save recovery.

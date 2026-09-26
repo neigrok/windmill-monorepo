@@ -246,6 +246,11 @@ document and joins it as one write. Inbound models are suffixed `Request`, outbo
 A tree id is `t_` plus 16 lowercase hex characters (`wellFormedTreeId`); a client-supplied id
 (claim-create, fork) must match byte for byte.
 
+`POST /v1/trees` accepts initial `TreeData` plus an optional client-minted `id` and returns
+`{treeId, existed}`. Retrying an owned existing ID returns `existed: true`. Another account's ID
+returns `409 id-taken`; the caller's deleted ID returns `409 id-retired`. A client must not retry
+that deleted tree under a fresh ID.
+
 `/v1/gallery` and `/gallery` are anonymous-allowed; a session only adds the two facts a row wears
 about its reader and never changes which trees are listed. `/v1/compose` is anonymous-allowed
 (the birth canvas has no account) behind a rate limit. The reminders pause POST carries no

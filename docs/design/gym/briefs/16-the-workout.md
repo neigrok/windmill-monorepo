@@ -1,262 +1,92 @@
-# The workout — doing it, ending it, reading it back
+# Workouts
 
-The live training surface: the live logger, the finish, the session read back afterwards, and the fix.
+Live logging, finish and correction. [Android delivery](../android-delivery.md) owns the native
+logger geometry; [interaction polish](../interaction-polish.md) owns its pager arbitration.
+[Feedback](../feedback-contract.md) owns elapsed-clock anchors and Coach states;
+[gestures](13-gestures.md) owns deletion and Undo.
 
-Obeys `12-native-idiom.md`, `../../guidelines/text-budget.md`, `13-gestures.md`, and the rulings in
-`15-the-routine.md` that reach this far.
+## Logger and correction
 
-## The keypad stays at the rack
+The phone owns the live session and durable offline queue. **Log set** is the one primary,
+pinned in the bottom reach band; **Finish** is a toolbar action. Web reads the live session and
+corrects saved data but never starts or finishes a live session.
 
-Planning uses the platform's numeric keyboard. Live training uses the rack keypad.
+Live entry and Fix share the phone's rack keypad. Planning uses the platform numeric keyboard;
+web correction uses editable numeric fields. Preserve large targets and the weight-band ladder.
+The keypad shows `kg` for load, **whole reps** for reps and
+**Enter a number, or cancel to keep {n}** for an empty buffer. Use the routine brief's numeric
+refusals with the performed-rep range of 1–99. Accept comma and point; label the sign control
+**Flip the sign — band-assisted** and backspace **Delete**.
 
-A planning sheet is used sitting down, two hands, looking at the screen. The rack is one hand, sweaty,
-mid-set, at arm's length. A twelve-key pad with 64-point targets and a comma-and-point key beats a
-system keyboard whose keys are sized for prose and whose layout moves between locales.
+Android uses the quiet ledger: movement identity, Previous/Next controls, exercise position when
+there is more than one movement, elapsed clocks, and a vertical set ledger above the fixed rack.
+History prefills the rack without a repeated Last time line. Logged rows open Fix; planned rows
+have no action. The current row identifies its target without repeating the rack draft.
+Warmups read `W` and do not consume planned working-set numbers. Spoken row names include position,
+state, load and reps. Keep the current row visible above the rack and any transient.
 
-> **The ladder and the keypad are rack controls. They stay. Nobody should "finish the job" wave two
-> started by removing them here too.**
+iOS retains its horizontal slot strip and last-time line; reconciliation is consistency entry 5m.
+Web and Android entry/correction omit Kind: new sets are Working and corrections preserve stored
+classification. iOS retains its kind picker. Targets remain references, independent of actual
+load/reps and extra, skipped or substituted sets.
 
-**And the correction is at the rack as well**, so the fix sheet raises the same keypad the logger
-does on the phones: tapping the weight numeral or the rep value opens the pad. Web correction
-uses editable numeric fields under `../web-form.md`. A repair mid-session is one-handed for the same reason the set was.
+A successful log persists and sends immediately, with no after-log Undo. Correction and deletion
+begin from its logged row. Before the first send, edits change the queued body; once sending has
+begun, correction/delete queues behind the append. Finish waits for every outstanding session
+write. Show local-only or failed delivery beside the affected set and preserve recovery.
 
-The same logic in one line: *the planning sheet knows the number it wants; the rack is where you find
-out what you can lift.*
+The two clocks count up from saved timestamps: workout start and latest valid session-wide set,
+falling back to start. No visible clock labels, rest target or target bar; accessible names remain.
+Android has no rest-target preferences or alerts.
 
-## One primary action, and Finish is not it
+## Finish receipt
 
-The logger's bottom band holds **Log set**, and that is the screen's one primary — it is pressed
-between five and forty times a session.
+Phones present a sheet over the finished session's detail page; dismissal returns to that workout.
+Web's finish route reviews a past workout and remains a screen, with a route back to session
+detail or Log when the session cannot be found.
 
-**Finish moves to the top chrome**, as a toolbar action.  Finishing is also the rarer act by two orders of magnitude, and the
-one you never want to hit by accident with a wet thumb.
+Phones use **Well done.** for ordinary sessions and **Ended early.** below four working sets.
+Show actual workout totals and performed movements; a true PR receives one emphasized line.
+Do not substitute unperformed plan values or fabricate a workout-wide estimate.
 
-## Finish becomes a sheet over the session it finished
+**Share with Coach** is the primary only when signed in and Coach is available. Its disclosure is:
+**Sends Coach one line — “Check my last session.” — and opens the answer.** It dismisses the
+receipt, opens a fresh conversation and sends that exact question through the normal send path.
+Show the normal waiting, allowance and failure states. There is no separate finish-receipt quota;
+[Coach](09-coach.md) owns the current limits. The user action starts the conversation.
 
-The receipt owns a major offer (*keep this as a routine*) and, on the phones, one hand-off (*Share
-with Coach*), and it must not be a dead end while it does.
+**Share this workout** is the read-only human-sharing action on session detail and the Log row;
+it does not appear beside Share with Coach on the receipt.
 
-> **It is a sheet presented over the session it just closed.** Dismissing it leaves you in the
-> workout you finished, which is where you wanted to be.
+iOS has one toolbar **Done** plus native sheet dismissal. Android uses Back, scrim and handle.
+Phones need no Keep it button: finishing has already kept the workout. Web's slight-session branch
+retains its **Keep it** exit and **Just keep the session** declines only the routine offer.
 
-Built that way on **both phones**, and they earn the second sentence the same way: the room pushes
-the closed session **before** the receipt rises, so what the sheet comes down onto is that workout's
-own detail page. iOS presents it from `.sheet(item: $finished)` on the room and sets
-`paths[.log] = [.session(…)]` inside `close()`; Android presents the same `finished` slot as the
-room's `ModalBottomSheet` and sets `away = listOf(Away.Session(…))` in its own `close()`. Back is no
-longer claimed for it on Android: `backMeans` returns four meanings besides `LeaveTheApp`, and the
-receipt is not among them, because a sheet answers back by coming down (`GymRoom.kt`).
+## Save as routine
 
-The web's `#/gym/finish/<id>` is a review of a past workout rather than the end of a live one — the
-web starts no sessions — so it is a screen, and **three of its four branches open with the room's one
-back**: `<Back href={sessionHref(id)}>Session detail</Back>` above the title on the ready state,
-slight and ordinary alike, and above the retry line on a failed read;
-`<Back href="#/gym/log">The log</Back>` where the session is not in the log. The fourth is the read
-still running, which draws its one quiet line and no back, because it is not yet a place to be sent
-back from.
+Keep the offer beneath the primary. Transcribe actual working sets per set using the scheme
+contract. Apply the routine editor's 60-code-point cap and blank-name predicate; do not add a
+counter to the receipt. Show **Name it to save it.** only for an empty name, never during a write.
 
-**The head is the one congratulation the room makes.** On both phones the receipt opens *Well done.*
-on an ordinary session and *Ended early.* on a slight one — fewer than four working sets — because a
-congratulation on two sets would be a small lie. The subtitle and the *when* line say what was done
-and when; the readout under them is the same readout on every state, and the PR line inside it stays
-the one loud line (`01-context.md`). The web's review screen keeps its own head, since it reviews a
-past workout rather than ending a live one.
+Save is single-flight and retries preserve identity. A successful phone save replaces the form
+with **Kept as {name}.**; web uses **{name} is in your routines.** in the room transient.
+Show a refusal beside the form while the sheet stands, or in the room transient if it was dismissed.
 
-**One primary, and it is a hand-off: `Share with Coach`.** Drawn on both branches directly under the
-readout, as the receipt's only full-strength button — `skin.accent` on iOS, `PrimaryButton` on
-Android — with one caption in the secondary ink beneath it, the same bytes on both phones: *Sends
-Coach one line — “Check my last session.” — and opens the answer.* It names the room, which is the
-only thing the word *coach* names here (`01-context.md`); the link a lifter hands a human coach is
-*Share this workout*, and **that card is not on the receipt** — it stays on the session detail page
-and in the log row's long press, because two share verbs on one receipt is the two-meanings
-confusion the room refuses. The primary is drawn only when Coach can be reached — signed in, and
-Coach present on this deployment, the same predicate the Coach tab's root reads — and when it
-cannot, nothing stands in its place: the receipt is the head, the readout, the routine offer and the
-dismissal.
+Phones put Discard session on session detail and the Log row, not the receipt. Web's slight branch
+may expose it. Discard uses the independent nine-second delete window with Undo and no confirmation.
 
-**Tapping it is one tap, and it keeps every rule Coach already has.** The receipt comes down first;
-the room opens a fresh conversation — the reset *Ask something new* performs — and switches to the
-Coach tab; then it sends *Check my last session.*, exact bytes, through the same send path a typed
-question takes. So the thread's title is that sentence verbatim (`09-coach.md` Threads), the
-four-per-thread and ten-per-day ceilings apply, and every refusal is drawn by the exchange the
-lifter already knows — the waiting state stands the instant the tab shows, not when the answer
-lands. Nothing else rides along: no session id, since Coach's own `list_sessions` reads newest
-first and the agent finds the workout itself. Coach still does not speak first — the lifter's tap
-sent the line. On iOS the closed session stays pushed on the log tab's own stack, so leaving Coach
-for the log lands on the workout; Android keeps one stack for every tab, so the hand-off's reset pops
-it and the log lands on its list, the finished workout in the top row.
+## Feedback and acceptance
 
-**Exactly one dismissal per state, in the platform's own words.** On iOS it is a toolbar `Done` in
-`.confirmationAction`, beside the drag indicator the sheet already declares, drawn on every state,
-slight and ordinary alike — nothing here writes, so it is a toolbar action rather than a second
-commitment in the reach band (`12-native-idiom.md`). A top corner is where
-`../../guidelines/thumb-reach.md` §2 forbids an action, and this is the exception that section names
-itself: dismissing a receipt is a door taken sitting down after the workout, never one needed
-mid-set, and the sheet keeps its swipe in the reach band besides. On Android nothing is drawn for
-it: the sheet comes down by back, the scrim or the handle. **The web's ordinary state draws none —
-the head back is the way out — and its slight branch draws `Keep it`** (`.gym-short-keep` in
-`Finish.jsx`), an anchor that leaves for the routines home, which is why the head back had to serve
-both branches: without it the state reviewing a session had no route to the session. Its *Just keep
-the session* is not a dismissal either — it declines the routine offer in place, without leaving —
-which is why that spelling stays on the one surface whose finish is not a sheet. **The phones draw
-no `Keep it` in any state**: keeping the workout is what finishing did, and a receipt is not asked
-to say so twice.
+The room transient survives navigation, floats above the reach band and never moves Log set.
+Reserve reading space beneath it. Its lifetime follows the delete deadline, independently of
+ordinary message duration. Full semantics belong to [gestures](13-gestures.md).
 
-**A sheet covers the room's bottom bar, so the receipt says its own refusals while it stands.**
-`FinishScreen` takes a `failure` on both phones and draws it under the control that raised it — the
-keep that the log would not take — rather than in the bottom band every other refusal in the room
-lands in. The write outlives the sheet, though, so a keep refused after the receipt has been
-dismissed falls back to that band on both phones rather than being drawn nowhere. And **why
-`Save routine` is grey is said where it is grey**: *Name it to save it.*, the routine editor's own
-words, drawn on the finish card on all three surfaces and **on the empty name only**, never while the
-write is in flight, where it would name a cause that is not the one holding the button. **One
-sentence at a time, the empty field first**, on both phones: a field just cleared is why the button is
-dead now, and a refusal the log raised before it cannot be raised again while Save cannot be pressed.
-
-**And a keep that succeeds is answered too, on every surface.** The keep is the one thing the receipt
-does that writes, so it owes an answer either way. Both phones draw *Kept as {name}.* where the form
-stood, in the same words to the byte (`Finish.keptAs` on each), because the form is gone by then and
-the room's own note line is behind the sheet. The web has no sheet over that band, so it says it
-there, in the transient's own words — *{name} is in your routines.* (`Finish.jsx`). **A drawn line
-where a sheet covers the room, the room's transient where it does not**: that is the split, and it is
-the only reason two sentences exist for one fact.
-
-**Two taps on `Save routine` keep one routine, on all three surfaces.** The log mints no id for a
-routine, so a second tap is a second routine and not a replay of the first — which is why the button
-cannot be left live across the write. Both phones hold an in-flight flag beside the one the routine
-editor's Save already had — `keepingRoutine` next to `savingRoutine` in each room — and the web
-returns early while `saving` and holds one minted id in a ref for the whole card, so its second press
-is a replay even if it lands.
-
-**The offer keeps its place inside it**, under the primary: the keep-as-routine card, and *Kept as
-{name}.* where its form stood. **No discard stands on the phones' receipt.** The destructive door
-lives on the session the sheet comes down onto — `Discard session` on the session detail page and
-in the log row's long press (`13-gestures.md`) — and the web's slight branch draws its own. **Discard
-asks nothing**, wherever it is drawn. It withholds the session for the same nine seconds every other
-delete in the room is held for, puts the transient's *Undo* beside it, and sends nothing until the
-clock closes — so no confirmation dialog and no *There is no undoing it.* exist on any surface. A
-question in front of an act that has a way back is the ceremony `13-gestures.md` Law 2 refuses.
-
-## The two clock readings
-
-The logger displays workout elapsed and time since the latest valid set together, counting up. Before any set both use the session start. The compact icon-and-number pair has no visible labels or target bar; spoken names remain. Persisted timestamps, accepted offline sets, deletion/Undo and relaunch semantics are fixed in [feedback-contract.md](../feedback-contract.md).
-
-Android has no rest targets or alerts. The displayed elapsed pair is derived from the saved workout and sets.
-
-## The set kind gets a control that costs no trip
-
-Warmup · working · drop · failure are columns the backend has always written. Only working sets
-count toward anything, so a lifter who cannot mark a warmup is feeding the wrong numbers into every
-stat the product shows them.
-
-It belongs on the set being logged, not in a sheet: the kind is a property of the rep you are about
-to do, and choosing it must not cost a trip. Built that way on both phones — all four kinds one tap
-away in place. On Android it is an `AssistChip` on the set line, labelled by the kind's wire word
-and opening a `DropdownMenu` of the four, the armed one carrying a check (`KindChip` in
-`LoggerScreen.kt`; spoken *Set kind*, state the wire word); on iOS a `Menu` holding a `Picker`
-(`LoggerScreen.swift:363-366`). **The default is working**, because it always is, and the control
-disarms itself the moment a set lands so a warmup toggle left on cannot file the working sets after
-it as ramp-ups.
-
-## The Android logger is the ruled shape
-
-The live screen has one canon and Android draws it; iOS's logger still draws the older shape and
-follows in its own wave (ledger `5m`). The web starts no sessions and has no logger to follow. Read
-against `LoggerScreen.kt`, top to bottom:
-
-- **The chrome is the platform's.** A centred top bar: `Finish` as the navigation action, the
-  routine's name as the title — `Free session` when there is none, `Readout.noRoutine`, the same
-  bytes the log's rows and the finish sheet draw on all three surfaces — and a settings gear
-  (*Gym settings*) that opens the room's settings screen. A planning door in a top corner is what
-  `../../guidelines/thumb-reach.md` §2 allows there: a destination, not an action.
-- **Two regions.** The page is the B+ Quiet ledger ([Figma 805:4536](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)):
-  a pinned head — `‹` name `›`, `Exercise 1 / 3` under the name, the clocks — over the set ledger,
-  which is the only thing that scrolls, vertically. Compose's `HorizontalPager` translates the page
-  with the finger while the rack — `Weight`, the ladder, `Reps`, `Log set` — stays fixed. One native
-  horizontal scroll owner covers the workout body, including the rack. Reversing the drag restores
-  the current movement and draft; selection and departure prompts change only when a destination
-  settles. Editing and logging are disabled during motion.
-- **The head steps the walk.** `‹` and `›` are 48 dp buttons in ink named *Previous movement* /
-  *Next movement*; at the walk's ends the missing one is dimmed and inert. The title opens the
-  session and carries the same two steps as custom actions. `Exercise 1 / 3` (spoken *Exercise 1
-  of 3*, `LiveLines.place`) is drawn only for a walk of two or more.
-- **Last time is not drawn.** History prefills the rack (`Prefill.of`) and nothing else on the
-  screen names it.
-- **Two elapsed readings.** A quiet clock/stopwatch pair follows movement identity. Workout time runs from session start; since-set runs from the latest valid session-wide set or start. No target card or rest caption is drawn. Accessible names carry the meaning without live-announcing every tick.
-- **Unsynced and refused work is said, never hidden.** The stranded band (`LiveLines.onThisDeviceLine`)
-  keeps its sentences with a cloud-off glyph, and the refusal rows keep theirs, above the ledger.
-  This is the only prose on the screen, and it exists only while something is wrong.
-- **The ledger** (`LiveLines.slots`): column labels `Set · kg · Reps`, then one row per set — what
-  landed, warmups where they were lifted, the set in hand, then every planned set still to come. A
-  landed row recedes in dim ink with a small ✓ after its index and is a door to the same `FixSheet`
-  the session screen raises. A set no send has carried yet is fixed or deleted in the queue it waits
-  in (`TrainingStore.fixSet`, `deleteSet`), so the corrected body is what lands; from its first send
-  a set may already be on the log, so its fix and its delete are filed in the queue behind that
-  send and stand on the phone at once, offline included — the walk replays the append, then sends
-  the change once the log answers. A set whose append or correction a walk could not land carries a
-  cloud-off glyph — a row without it is synced or on its way — and Finish waits for every write the
-  session still owes, a delete included. A warmup reads `W` and takes no number. The set in
-  hand is the one accented row, slim, with a teal rail: `Set 3 · target 90 × 3` and `↓` — the rack is
-  its editor, so it repeats none of the draft's numbers; past the plan, or with no plan, it reads
-  `Set 7` alone. Planned rows wait in plain ink and are no door. No status word is printed: each
-  row's TalkBack description carries it — *Set 1, logged, 60 kg, 8 reps*, *Set 3, current, target
-  90 kg, 3 reps*, *Set 4, planned, 100 kg, 1 rep*. A landed set, and a page becoming the one in hand,
-  bring the set in hand into view just above the rack; when no planned set follows it, *Add
-  movement* comes into view with it whenever both fit. *Add movement* sits at the ledger's foot, the
-  free session's one way to a next movement, and opens the picker directly. The `Set` column is as
-  wide as a two-digit index and its ✓ measure at the lifter's text size, so kg and Reps stand in one
-  line down every row.
-- **The rack.** `Weight` over the numeral and its unit, one node (*Weight 20 kg*, *type a weight*)
-  that raises the rack keypad; four **equal** ladder pills whose labels are the golden's by weight
-  band (`Ladder.labels`), never a fixed ±1/±5; `Reps` over the numeral (*Reps 5*, *type the reps*)
-  between two filled circles named *one rep fewer* / *one rep more*; and one full-width primary
-  reading **`Log set`** with no echo — the two numerals stand directly above it. The rack stands on a
-  raised surface panel with 24 dp top corners and a thin teal top edge. `Log set` sends the set at
-  once and offers no *Undo*: a set is corrected or deleted from its ledger row. While a finish is
-  in flight the primary is drawn disabled under the same label.
-**The keypad's own words**, pinned here so nothing holds them by test alone: a valid load's line is
-its unit, `kg` (`WEIGHT_UNIT` in `logger/entry.js`, `KeypadEntry.weightUnit` in `KeypadSheet.swift`,
-`KeypadEntry.weightHint` in `KeypadSheet.kt`); a valid rep count's is *whole reps*; the empty-buffer
-line is *Enter a number, or cancel to keep {n}*; the refusals are `15-the-routine.md`'s four with
-this screen's 1–99 band; and the two glyphs are named *Flip the sign — band-assisted* and *Delete*.
-No hint about separators stands under the pad on any surface.
-
-## The undo lives on the transient
-
-Built, on the screen that owns it: the drawn *Undo* is out of the logger's set row on every surface,
-and one transient per platform — hosted by the room, not by a screen — carries both the action and
-the fact that a window is open, and retires itself when the last clock closes. It floats above the
-reach band, which grows no inset, because `Log set` is pressed five to forty times a session and may
-not jump when a window opens. The ledger under it gains the transient's height at its foot while it
-shows, and the set in hand is kept above it. `13-gestures.md` Law 4 has the whole of it.
-
-**The window is 9000 ms on every surface**; a board that draws a duration draws 9000.
-It is **two constants pinned equal, not one number** — the span a delete is held, and the span a said
-sentence stands — and the transient retires on the window's clock, never on a sentence's.
-
-## Drawn in both skins, and at three text sizes
-
-Two gaps wave two left, closed here rather than inherited:
-
-- **Every board exists in Instrument and Daylight.**
-- **Every board carrying a big numeral is drawn at three text sizes** — default, large, and the
-  largest accessibility size — under `12-native-idiom.md`. Check fixed-width columns at the largest size.
-
-## The strings are pinned before anything is drawn
-
-Every new state needs exact copy in its owning contract before it is drawn.
-
-**And every refusal has a named owner.** When a control is removed or added, the refusals it carries
-are assigned to a board on a surface before drawing starts.
-
-**Five sentences are outstanding against that rule right now** and are recorded in the ledger as `2x`
-rather than left to drift: the set note's over-the-bound refusal, the unrated seat's label, the
-refusal a second walk gets while a deviation is still pending, what deleting a conversation keeps,
-and the transient's count line. Three of the five belong to screens this brief owns.
+Review both Instrument and Daylight, plus default, large and largest supported text sizes for
+screens containing large numerals. Verify narrow columns, keyboard/queue failures, fixed action
+reach, correction, finish, duplicate Save, deletion/Undo and sheet dismissal. Each new refusal
+needs concrete copy and an owning state; unresolved strings remain in the consistency ledger.
 
 ## Open
 
-- **Whether a drop set needs to name its parent.** The column exists; the relationship does not.
-- **What the logger shows when the queue is behind**, on iOS. Android answers it above — the
-  stranded band in the reading region and a cloud-off glyph on the stalled pill, nothing in the
-  rack — and iOS's logger answers it its own way until it follows (`5m`).
+- Whether a drop set needs to name a parent; classification alone carries no relationship.
+- iOS logger and delayed-queue presentation alignment under consistency entry 5m.

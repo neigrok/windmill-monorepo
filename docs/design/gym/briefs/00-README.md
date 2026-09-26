@@ -5,17 +5,17 @@ Read `01-context.md` first.
 | Brief | Holds |
 |---|---|
 | `01-context.md` | Who the lifter is, the thesis, the vocabulary, the feeling. Start here. |
-| `08-G7-strength-tree.md` | Gym × roadmap, as a concept. **Open** — it may still come back as "not yet". |
 | `09-coach.md` | The Coach room and the four beats of the propose–review–apply loop. |
 | `10-notes.md` | Notes — the context a lifter writes *for* Coach, and who else can read it. |
 | `11-bodyweight.md` | Bodyweight — the reading, the writing, and the chart that refuses to interpret. |
-| `12-native-idiom.md` | How web, iOS and Android are allowed to differ, and the six things that must land first. |
+| `12-native-idiom.md` | How web, iOS and Android are allowed to differ, platform controls and type. |
 | `13-gestures.md` | What the platform already knows how to do — the five laws, and the withheld delete every swipe-to-delete rides on. |
 | `14-live-activity.md` | The lock screen — a second window onto the same queue, and the one act worth doing from it. |
-| `15-the-routine.md` | Building, changing and starting a routine — the heaviest screen, and five of the ten cuts. |
+| `15-the-routine.md` | Creating, editing and starting routines. |
 | `16-the-workout.md` | The live logger, the finish, the session read back — and why the keypad stays at the rack. |
+| `17-set-targets.md` | Ordered schemes, entry, readouts, prefill and review. |
 | `18-progress.md` | Progress — the movement strip on the log, the one chart primitive for e1RM, and the consistency sentence. |
-| `19-connected-log.md` | The connected log — the grant as three rows, one caption, one action, one disclosure; and the CSV export removed everywhere. |
+| `19-connected-log.md` | The connected log — the grant as three rows, one caption, one action, one disclosure; and its read/write disclosure. |
 | `20-past-workout.md` | The web's past workout — pick a routine, get it filled the way the rack fills it, change what differed, save once; and the default time it shows before storing. |
 
 ## The web boards

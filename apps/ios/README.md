@@ -5,62 +5,57 @@ One SwiftUI app for journal and gym, with a roadmap link to the web. Product lib
 
 ## Layout
 
-```
-project.yml          the app target, declared (XcodeGen). Windmill.xcodeproj is GENERATED, not committed
-App/
-  WindmillApp.swift  the composition root — the only file that knows all three products exist
-  CrashReports.swift  dedicated iOS Sentry configuration and privacy scrub
-  Assets.xcassets    the app icon — web/public/brand-mark.svg on the cream ground, 1024pt, opaque
-Tests/App/           app integration tests, including crash report routing and privacy
-WindmillKit/         the Swift package: everything that isn't the app bundle
-  Sources/
-    WindmillPlatform/  account · wire · session · the ProductModule seam · tokens · shell chrome
-    WindmillJournal/   the night canvas
-    WindmillRoadmap/   mounted, not built here — says where it does live
-    WindmillGym/       the training log
-  Tests/               mirrors Sources/
-```
+| Path | Responsibility |
+|---|---|
+| `project.yml` | XcodeGen app/test configuration; `Windmill.xcodeproj` is generated. |
+| `App/` | App composition, assets and dedicated Sentry configuration/privacy filtering. |
+| `Tests/App/`, `UITests/` | App integration tests and simulator UI tests. |
+| `WindmillKit/Sources/WindmillPlatform/` | Account, transport, session, product interface, tokens and shell. |
+| `WindmillKit/Sources/WindmillJournal/` | Journal's daily canvas. |
+| `WindmillKit/Sources/WindmillGym/` | Training log, routines and Coach. |
+| `WindmillKit/Sources/WindmillRoadmap/` | Link to the web product. |
+| `WindmillKit/Tests/` | Package tests, mirroring Sources. |
 
-Each product depends on `WindmillPlatform`, never on another product (`STRUCTURE.md`). Enforced by
-the compiler: the dependency does not exist in `Package.swift`.
+`Package.swift` enforces product dependencies on platform, never on another product.
+See [repository structure](../../STRUCTURE.md) and [design canon](../../docs/design/readme.md).
 
-## Build
+## Build and test
 
 ```sh
-brew install xcodegen                 # once
-cd apps/ios && xcodegen generate      # after any change to project.yml
+brew install xcodegen
+cd apps/ios
+xcodegen generate       # repeat after project.yml changes
 open Windmill.xcodeproj
 ```
 
-From the command line (what CI runs):
+Choose an installed iPhone simulator (`xcrun simctl list devices available`). For example:
 
 ```sh
 xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 
-# the package's own scheme, run without changing the caller's directory
 (cd WindmillKit && xcodebuild test -scheme WindmillKit-Package \
   -destination 'platform=iOS Simulator,name=iPhone 17')
 
-# the UI tests (UITests/), which need a booted simulator and drive real touches
+# App tests, including UITests on a booted simulator
 xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
   -destination 'platform=iOS Simulator,name=iPhone 17'
 ```
 
-- `swift build` does not work: the package is iOS-only (`platforms: [.iOS(.v17)]`) and the UI uses
-  modifiers no other platform has. Build and test against a simulator.
-- If `xcodebuild` reports it needs Xcode, point the toolchain at it for the run:
-  `DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer xcodebuild …`.
-- `WMApiBaseURL` in `project.yml` is empty, meaning the production host. Set it to
-  `http://localhost:8088` for the local backend; the ATS local-networking exception is declared.
-- The `WindmillGym` ladder suite reads `packages/api-contract/gym-ladder.json` out of the checkout,
-  so the whole monorepo must be present.
+The package targets iOS 17+; use a simulator instead of `swift build`. Set
+`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` if the selected toolchain cannot find
+Xcode. Keep the full monorepo: gym tests read `packages/api-contract/gym-ladder.json` directly.
+`WMApiBaseURL` in `project.yml` defaults to production; `http://localhost:8088` uses the local
+backend with the declared ATS local-networking exception.
 
-## Crash reports
+[CI](../../.github/workflows/ios.yml) chooses an available iPhone simulator, builds the app,
+runs crash-report tests and tests WindmillKit. The full UI suite requires a separate run.
 
-The app uses Sentry Cocoa with the dedicated iOS project's `IOS_SENTRY_DSN` build setting.
-Release builds require it; Debug builds without it send no crash reports. It never reads the
-backend's `SENTRY_DSN`. CI reads the `IOS_SENTRY_DSN` repository secret only on trusted runs.
+## Crash reports and releases
+
+The app bundle owns Sentry Cocoa; product packages do not depend on it. `IOS_SENTRY_DSN` targets
+the dedicated iOS project and is required for Release. Debug without it sends no crash reports;
+CI supplies the repository secret only on trusted runs.
 
 ```sh
 xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
@@ -70,147 +65,85 @@ xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
   -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:WindmillCrashReportTests
 ```
 
-Crash reports retain exception types and stacks, release/build and device diagnostics. Exception
-messages, mechanism descriptions/data, user identity, request data, breadcrumbs, extras and custom contexts are
-removed before delivery. Memory introspection, screenshots, view hierarchies, network tracking,
-replay, performance tracing and automatic session tracking are disabled. The Sentry dependency
-lives in the app bundle; product libraries do not depend on it.
+Reports retain exception types/stacks and release/build/device diagnostics. Messages, mechanism
+data, identity, requests, breadcrumbs, extras and custom contexts are removed. Memory inspection,
+screenshots, view hierarchies, network tracking, replay, tracing and automatic session tracking
+are disabled. Neither CI nor release uploads dSYMs; upload matching release dSYMs to the iOS
+Sentry project for symbolication.
 
-Neither CI nor the release workflow uploads dSYMs to Sentry. Production crash frames require the
-matching release dSYMs to be uploaded to the iOS Sentry project before they can be fully symbolicated.
+[iOS release](../../.github/workflows/ios-release.yml) archives the main-push commit that passed
+CI and uploads it to App Store Connect. Manual dispatch: `gh workflow run ios-release.yml`.
+Build number is the release workflow run number; bump `MARKETING_VERSION` in `project.yml` by
+hand. Automatic signing uses repository secrets `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
+`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN`. TestFlight availability requires successful signing,
+upload and App Store Connect processing.
 
-## Release
+## Product, account and storage boundaries
 
-`.github/workflows/ios-release.yml` archives a signed Release build and uploads it to App Store
-Connect. It runs when iOS CI passes on a push to `main`, building the commit CI tested, and it can be
-run by hand:
+Manual writing and training work signed out. Journal uses versioned page files; gym uses a shelf,
+set queue and bodyweight store. Each is keyed by account with a separate anonymous store.
+Anonymous work is claimed on verified sign-in. Legacy files are attributed to the stored session
+or quarantined. Unverified accounts keep their own local room; only confirmed 401 responses sign
+out. Foreground retries verification, and rooms reconnect on account/verification changes.
 
-```sh
-gh workflow run ios-release.yml
-```
+Gym's `TrainingStore.start` owns all workout starts. Offline starts retain their ids and timestamps;
+sets drain before and after claims. Queue refusals use machine codes. The finish sheet appears
+after persistence and its dismissal writes nothing. Workout clocks use saved timestamps and freeze
+at finish. Live rack entry and routine targets have separate validation bands. Bundled movement
+ids let signed-out workouts use the backend catalogue's identities.
 
-A processed build appears in TestFlight, where the internal testing group can install it. Its build
-number is the release workflow's run number; its version is `MARKETING_VERSION` in `project.yml`,
-bumped by hand. Signing is automatic, driven by an App Store Connect API key: the workflow passes the
-team, turns signing on and supplies `IOS_SENTRY_DSN` on the `xcodebuild` command line, so
-`project.yml` never names a team. It reads the `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
-`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN` repository secrets. The app declares
-`ITSAppUsesNonExemptEncryption` false, so a build needs no export-compliance answer.
+Coach persists account-scoped questions, request/attachment ids and partial replies. Retries retain
+identity; Stop preserves partial text and completed actions. The native picker retains one image,
+normalized to JPEG within 4096 pixels per edge and 5 MiB, through upload retries. Retained images
+use authenticated storage. See [gym data rules](../../backend/products/gym/ARCHITECTURE.md) and
+[Coach's conversation contract](../../docs/gym-coach-contract.md).
 
-## Product and storage boundaries
-
-Journal owns the daily canvas; gym owns workout entry, routines, the log and Coach. Roadmap opens
-its web surface. Product UI rules live in [design canon](../../docs/design/readme.md); gym's shared
-data rules live in [its backend architecture](../../backend/products/gym/ARCHITECTURE.md).
-
-Manual writing and training work signed out. Device storage is keyed by account, with a separate
-anonymous store. Journal uses versioned page files; gym uses a shelf, set queue and bodyweight
-store. Anonymous work is claimed on sign-in. A store for one account cannot read another's data.
-Legacy files without an account are attributed to the stored session or quarantined.
-
-A launch without a network keeps the last-known account unverified. Rooms reconnect on
-`Account.seat` (user and verification state), and the platform reverifies on foreground. Only a
-confirmed 401 signs out. Offline workout starts keep their original id and timestamp for replay;
-sets drain before and after session claims. Queue refusals use machine codes, never sentence text.
-
-Gym's `TrainingStore.start` owns every workout start. The finish sheet appears after persistence;
-dismissing it writes nothing. Workout elapsed and time since the latest set derive from saved
-timestamps and freeze at finish. Routine targets and live rack entry have separate validation
-bands. The device catalogue supplies stable movement ids before an authenticated catalogue read.
-
-Coach requires an account. Questions, request ids, attachment ids and partial replies persist
-under that account; retries retain identity. Stop preserves partial text and completed actions.
-The native picker accepts one image, normalizes it to JPEG within 4096 pixels per edge and 5 MiB,
-and retains a private copy through upload retries. Retained images use authenticated storage.
-
-Email sign-in uses a six-digit code; pasted web magic links are also accepted. Sign in with Apple
-is gated by configuration. See [Apple setup](../../backend/AUTH.md#apple-sign-in-activation) and
+Email sign-in accepts a six-digit code or pasted magic link. Apple sign-in is configuration-gated;
+see [activation](../../backend/AUTH.md#apple-sign-in-activation) and
 [account linking](../../backend/AUTH.md).
 
 ## Shell
 
-`ProductModule` supplies the room, hub line, entry wording and device holdings. The shell owns the
-hub, capsule, account seat and appearance; products own their navigation and palettes. A room with
-`hostsTopChrome` seats `CapsuleButton` and `YouSeat` in its own toolbar. Other rooms receive the
-shell's safe-area inset. `roomChrome` supplies the skin; `roomDepth` reserves the home edge gesture
-for the root, leaving deeper navigation to the product.
-
-The hub renders registry priority from the bottom and gives running work the lowest seat. Launch
-restores the last room. The first-use question and house introduction are device-local, once-only
-state in `FirstRun.swift`. Appearance applies both `preferredColorScheme` to the window and an
-environment override to the rooms; adaptive platform tokens supply their colours.
+`ProductModule` supplies room, hub line, entry wording and device holdings. The shell owns the hub,
+capsule, account and appearance; products own navigation and palettes. `hostsTopChrome` places
+`CapsuleButton` and `YouSeat` inside the product toolbar; other rooms receive a safe-area inset.
+`roomDepth` reserves the home edge gesture for a root view. Launch restores the last room; first-use
+state is device-local in `FirstRun.swift`. Appearance supplies both window and room overrides.
 
 ## Universal links
 
-The repo half is written; the domain half is not in this repo, so a tapped link does not reach the
-app. `project.yml` declares `com.apple.developer.associated-domains` = `applinks:windmill.works`;
-`Shell.swift`'s `onOpenURL` hands the URL to `AuthStore.arrived(from:)`, which verifies the token
-and adopts the session (a URL with no token is ignored, a refusal opens the door with the sentence
-in it); `MagicLink.token(in:)` reads the token out of the **fragment**, the same function the door's
-paste field uses. The link is `https://windmill.works/#/auth?token=<secret>`
-(`backend/platform/application/AuthService.cpp`).
+The app declares `applinks:windmill.works` and routes `onOpenURL` through `AuthStore.arrived`.
+`MagicLink.token(in:)` reads the fragment of `https://windmill.works/#/auth?token=<secret>`.
+`WMUniversalLinksEnabled` is false; the repository contains no domain association file.
 
-What the domain needs:
+Activation requires a paid Apple Developer team with Associated Domains enabled for
+`works.windmill.app`, plus `https://windmill.works/.well-known/apple-app-site-association`, served
+as JSON over HTTPS without redirects or authentication:
 
-1. **A paid Apple Developer team** ([Apple team configuration](../../backend/AUTH.md#apple-sign-in-activation)) with **Associated Domains**
-   ticked on the `works.windmill.app` App ID. A free personal team cannot use this capability, so
-   signing for a real device needs the paid team. Simulator and CI builds are unaffected — signing
-   is off there, so the entitlement is never applied.
-2. **`https://windmill.works/.well-known/apple-app-site-association`**, served as
-   `Content-Type: application/json`, over HTTPS, with no redirect and no auth. It belongs beside the
-   site's other static files.
+```json
+{ "applinks": { "details": [
+    { "appIDs": ["TEAMID.works.windmill.app"],
+      "components": [ { "/": "/", "#": "/auth?token=*" } ] } ] } }
+```
 
-   ```json
-   { "applinks": { "details": [
-       { "appIDs": ["TEAMID.works.windmill.app"],
-         "components": [ { "/": "/", "#": "/auth?token=*" } ] } ] } }
-   ```
-
-   The token is in the fragment, so the claim has to be a `#` component. A path claim would have to
-   be `"/": "/"` — the whole site — and the app would swallow the gallery, shared trees and pricing.
-   Apple's globs treat `?` as a single-character wildcard, so this also matches `/authXtoken=…`.
-3. **Flip `WMUniversalLinksEnabled` to true in `project.yml`.** No code reads the flag; it is the
-   declared truth of whether the domain half exists.
-
-`WindmillPlatformTests` covers the token parser and the arrival handling. The routing itself cannot
-be tested without the file on the domain and a signed build.
+Keep the fragment condition: a root-path-only claim would also open unrelated site links in the
+app. The `?` glob matches any single character. After deployment, set `WMUniversalLinksEnabled`
+true in `project.yml`; it records configuration state and is not read by app code. Token parsing
+and arrival handling have package tests; routing needs a signed build and deployed association.
 
 ## Known gaps
 
-- **The day marker does not pin.** SwiftUI pins `LazyVStack` section headers to the scroll view's
-  bounds, which include the status bar, so a pinned marker parks behind the clock. Markers are
-  inline; the fix is a top anchor or a `List`-backed canvas.
-- **Journal search, voice, echoes, nudges and the week are not here.**
-- **Sign in with Apple is off** (`WMAppleSignInEnabled`), and **universal links are not live**.
-- **`ProductModule` has no settings slot** (`room`, `hubLine`, `entry`, `holdings`), so gym's
-  settings hang off a row at the foot of Routines rather than from You.
-- **`ShellActions` cannot open the sign-in door** (`openYou`, `openSwitcher`, `goHome` only), so
-  Gym's `Sign in first` opens You — one tap longer than the design.
-- **Choosing `lb` changes nothing this app draws.** The setting is account-level and gym stores
-  kilograms either way, but the ladder and keypad here are kilogram instruments. The row says so.
-- **Workout clocks count up.** The logger shows elapsed workout time and time since the latest
-  retained set, or since start before the first set. They derive from persisted timestamps,
-  including offline sets, and freeze at finish. This product sends no rest notifications and carries
-  the settings document’s `restSeconds` and `restSound` through untouched.
-- **The connected-log grant is made and ended on the web** — `Connect a tool` and
-  `Manage connections` are browser doors; the screen itself reads the grants and keys and draws
-  the state (`docs/design/gym/briefs/19-connected-log.md`).
-- **No launch asset.**
-- **The plan meter in You and the hub's summary line are not drawn** — no entitlements call, and two
-  of three products have no phone-side state to report.
-- Native gesture acceptance is incomplete. `UITests/` covers shell edge navigation, set deletion,
-  movement paging and log-row long press; routine reorder, jump-sheet drop and refusal dismissal
-  still need direct acceptance.
-- **Dynamic Type coverage is partial.** Routine list names and metadata, workout clocks and the
-  contextual Coach ceiling use scalable type. The workout clock pair wraps vertically when needed.
-  Other gym text still uses fixed point sizes, including the routine editor, so the room remains
-  mixed at accessibility sizes.
-- The gym tab bar uses the system selected state; selection contrast and accessibility need native
-  acceptance. Product tint stays on the room rather than the entire `TabView`.
-- **Quarantined pages and workouts have no door.** A device file written before per-seat storage is
-  attributed to the session the device was holding; a phone holding none quarantines them (journal:
-  `windmill-journal-pages-v2-unclaimed.json`; gym: a shelf and queue key no seat can name). Releasing
-  them takes a human with an account, and this app has no journal settings surface to ask from.
-- **The device's files are not excluded from backup.** They carry the default data protection class
-  (complete-until-first-user-authentication, the same accessibility as the Keychain session), so at
-  rest they are no weaker than the credential — but they ride an iCloud or iTunes backup.
+- Journal lacks search, voice, Echoes, nudges and week view. Day markers are inline; pinning them
+  to the current scroll bounds places them behind the status bar.
+- Apple sign-in and universal-link activation are disabled in `project.yml`.
+- `ProductModule` has no settings slot, so gym settings live under Routines. `ShellActions` cannot
+  open sign-in directly; Coach's sign-in action opens You first. The plan meter and hub summaries
+  are incomplete, and there is no launch asset.
+- Gym renders kilograms even when the account prefers lb. Clocks count up; there are no rest
+  notifications. Settings preserve server `restSeconds` and `restSound` without using them.
+- Connected-log grants are created/revoked on web; iOS displays connection state and web links.
+- Native gesture acceptance remains incomplete for routine reorder, jump-sheet drop and refusal
+  dismissal. Dynamic Type support is partial; the routine editor still uses fixed sizes. Tab
+  selection contrast and accessibility require native acceptance.
+- Quarantined pages and workouts have no recovery UI. Device files use default data protection
+  and remain included in iCloud/iTunes backup.

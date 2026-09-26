@@ -10,11 +10,13 @@ on:
       - 'services/embedder/**'
       - 'web/scripts/fetch-model.mjs'
       - '.github/workflows/embedder.yml'
+      - '!services/embedder/**/*.md'
   pull_request:
     paths:
       - 'services/embedder/**'
       - 'web/scripts/fetch-model.mjs'
       - '.github/workflows/embedder.yml'
+      - '!services/embedder/**/*.md'
   workflow_dispatch:
 
 concurrency:

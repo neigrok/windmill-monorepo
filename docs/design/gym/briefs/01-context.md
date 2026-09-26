@@ -21,15 +21,15 @@ The training log is an endpoint the lifter's own Claude or ChatGPT reads over MC
 their last twelve weeks of squats, drafts next block's progression, and the change arrives in gym as
 a typed diff they tap to apply. **The model proposes, the human applies.**
 
-`Coach` is a second door onto the same engine, for a lifter with no agent of their own. It reads and
-proposes, never writes: it cannot touch a logged set or a frozen plan snapshot, it has no
-personality, no encouragement, no streaks, and it does not speak first. Approving a proposal happens
-over the conversation and returns to it — the four beats are in `09-coach.md`.
+`Coach` is a second door onto the same engine. It can create requested routines and append useful
+user-provided insights to Notes. Changes to existing routines require human Apply; Coach cannot
+edit logged sets or frozen plans. Its tone is friendly, informal and grounded in training records,
+without unsolicited check-ins, grades or streaks. The conversation contract is `09-coach.md`.
 
 ## The two surfaces
 
-The phone owns the **open** session — workout mode, keypad, ladder, sticky carry-forward, rest
-timer, wake lock, the offline flush queue. All of it needs a device that is with you, awake, and
+The phone owns the **open** session — workout mode, keypad, ladder, sticky carry-forward, elapsed
+clocks, wake lock, the offline flush queue. All of it needs a device that is with you, awake, and
 able to log in a basement with no signal.
 
 The web owns everything retrospective and prospective — the log, routines, MCP connect, settings,
@@ -72,15 +72,9 @@ Windmill already ships a user-facing session in the account, and this file uses 
 visit to the gym. The finish receipt's primary, **"Share with Coach"**, names the room and nothing
 else, which is why the human-coach link is not drawn beside it (`16-the-workout.md`).
 
-Naming the room Coach buys it no personality: no encouragement, no grade, no streak, and it does not
-speak first. `09-coach.md` holds what Coach is and what it refuses.
-
 ## The feeling
 
-Roadmap is ceremony and unlocking. Journal is quiet and warm. Gym is matter-of-fact — a tool that
-respects that you are tired and holding a bar. Calm, dense, legible at arm's length, and not in the
-business of cheering you on. The room makes exactly one congratulation, and it is the finish
-receipt's head on the phones — *Well done.* over the workout just closed, *Ended early.* when it was
-slight — and the one line allowed to be loud inside it is a genuine PR, which gets one line
-(`16-the-workout.md`). Everywhere else the room is matter-of-fact: no grade, no streak, no
-encouragement.
+Roadmap is ceremony and unlocking; journal is quiet and warm. Gym's controls are matter-of-fact,
+dense and legible at arm's length. The phone finish receipt permits **Well done.** or
+**Ended early.**, plus one emphasized line for a true PR (`16-the-workout.md`). Keep factual
+progress distinct from Coach's supportive conversation; neither uses grades or streaks.

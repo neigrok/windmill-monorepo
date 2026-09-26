@@ -10,11 +10,15 @@ on:
       - 'web/**'
       - 'packages/**'
       - '.github/workflows/web.yml'
+      - '!web/**/*.md'
+      - 'web/emails/README.md'
   pull_request:
     paths:
       - 'web/**'
       - 'packages/**'
       - '.github/workflows/web.yml'
+      - '!web/**/*.md'
+      - 'web/emails/README.md'
   workflow_dispatch:
 
 concurrency:

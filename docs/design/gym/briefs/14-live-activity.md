@@ -1,122 +1,36 @@
-# The lock screen — a second window onto the same queue
+# Workout on the lock screen
 
-A workout is open. The phone is face-down on a bench, and the lifter picks it up between sets. Today
-they unlock, find the app, and read the logger. A Live Activity puts three facts on the glass — which
-movement, how long since the last set, what the next set will be — and lets the one act that matters
-happen from there.
+A lock-screen surface reads the phone's existing workout and durable queue. It must never become
+a second writer. Logging uses the same domain command, owner and action identity as the app.
 
-The phone owns the open session because it holds the offline queue. **A Live Activity does not change
-that. It is a second window onto the same device's queue, and the whole design turns on keeping it a
-window rather than letting it become a second writer.**
+## iOS design
 
-## Authentication on iOS
+The proposed presentations are the Lock Screen banner and Dynamic Island compact, expanded and
+minimal forms. Show the current movement, elapsed time since the last set, rest-target bar and
+prefilled next set. The time counts up; a target is a reference, never a countdown instruction.
+The in-app logger's two clocks remain governed by [feedback](../feedback-contract.md).
 
-> On a locked device, buttons and toggles are inactive, and the system does not perform an action
-> unless the person authenticates.
+**Log set** is the only action and requires device authentication. Reading remains available while
+locked. Do not promise that tapping a locked control writes without unlocking. Finish, Undo and PR
+announcements stay in the app. A timed Undo control must not remain available after its deadline.
 
-**The reading is free; the writing needs the phone unlocked.** The movement, the clock and the bar
-are legible on a locked screen with no authentication at all. **Log set** is inert until the phone
-has recognised the lifter.
+Bind each displayed logging offer to one pre-minted set ID. Repeated taps replay that offer; only
+advancing to the next set creates a new ID. Validate owner, session and current offer before every
+write. Show unsynced work honestly.
 
-On a phone you pick up and look at, that is a glance and then a tap — still far less than unlock,
-find the app, tap. On a phone lying flat on a bench, in bad light, or with a face the sensor cannot
-read, the button does nothing until it can.
+The activity stale date follows the workout's four-hour idle limit, and a stale presentation must
+remove the logging action. Verify stale rendering, over-target progress, truncation, the circular
+presentation and locked-action behavior on the supported device matrix before accepting this
+surface. Static drawings do not establish these behaviors.
 
-That is a real limit and it goes first rather than in a footnote, because a designer who does not
-know it will draw a one-tap action that is really two.
+## Android contract
 
-## What it shows
+The current notification implementation and acceptance matrix belong to
+[Android delivery](../android-delivery.md#native-acceptance). It uses a stock ongoing notification,
+requests Live Update promotion where eligible and retains an ordinary-notification fallback.
+Promotion remains conditional on platform, user and OEM settings.
 
-The open session as an instrument: the movement, the time since the last set, the bar against the
-rest target, and the next set already filled in. One action.
-
-Four presentations — the Lock Screen banner, and the Dynamic Island compact, expanded and minimal.
-The hero is the clock. There is one accent-coloured control and no second one.
-
-## The clock, and the rule that does not bind here
-
-The web mirror never says "resting", because a server cannot know whether 1:47 is a rest running or a
-rest over. **That rule does not bind this surface, because its premise is false here** — the activity
-runs on the device that holds the rest target. Refusing to say something true would be a different
-dishonesty.
-
-So the activity **may** name the target and **does**, on the bar.
-
-**But the number still counts up, and reads as time since the last set** — the same reading the web
-prints. Three reasons, and the API constraint is the least of them:
-
-1. **One vocabulary.** Divergence in vocabulary is a defect; copy may change between surfaces only
-   where the capability changed. What changed is *knowing the target*, so the target appears as a new
-   fact. The number that was already there does not change meaning between surfaces.
-2. **A countdown to zero tells you what to do, and gym does not.** Rest is over when you pick the bar
-   up, not when a number reaches zero, and a lock screen showing you `0:00` is the closest this
-   product would come to nagging. A filling bar says *you are there* without giving an instruction.
-3. **A countdown has a mode to flip**, and a suspended app cannot flip it.
-
-### The in-app reading
-
-The logger’s two count-up clocks follow [feedback-contract.md](../feedback-contract.md): elapsed workout and elapsed since the latest valid set, falling back to workout start. The logger pair does not draw a target bar. Existing native activity/notification rest-target presentation and optional Android alert behavior are separate, retained contracts.
-
-## The one button
-
-**Log set, at the number already shown.** That is gym's craft claim — the number is right before you
-touch it — made physical, and the only thing worth doing without opening anything.
-
-**Finishing is not here.** The finish carries an offer and a destructive door, and a workout
-ended by accident on a lock screen is one somebody has to repair.
-
-**Undo is not here either**, and the reason is a capability rather than a preference: a Live Activity
-control cannot retire itself when a nine-second window closes, and the act still available afterwards
-is a deletion, not an undo. A button that quietly changes meaning is worse than no button.
-
-**No personal record is announced on this surface.** One PR gets one line, in the room, once.
-
-### The same button twice
-
-**Idempotency does not cover this on its own**, and that is worth stating plainly because it is the
-kind of thing a build assumes. Every gym write is idempotent by a client-minted id — but two taps
-would mint *two ids*, and two ids are two sets.
-
-> **So the app mints the id and hands it to the button as part of the activity's state.** A second tap
-> carries the same id and lands as a replay of the first. A new id is minted only when the activity
-> advances to the next set.
-
-## Lifecycle, and a limit that never bites
-
-The platform allows an activity eight hours active and twelve in total. **Gym closes a stale session
-after four hours, stamped at the last set — so gym's own rule always fires first** and the platform
-limit is only ever a backstop. The activity's stale date is set to exactly that four-hour mark, which
-leaves a stale face with no button; a set arriving after it would be refused by the server anyway.
-
-**Unsynced work is said, never hidden.** A set sitting in the offline queue says so on the card, in
-the room's own words.
-
-## Android Live Update proposal
-
-Android supports promoted ongoing notifications called **Live Updates**. Google's
-[current guidance](https://developer.android.com/develop/ui/views/notifications/live-update)
-includes user-started workouts. Gym's proposed presentation shows the movement, next set and
-count-up rest, with **Log set** as its one action. The status chip may use a positive chronometer.
-
-Use a standard notification layout, without custom RemoteViews or a colorized card. Promotion
-depends on platform support, user settings and OEM eligibility; a standard ongoing notification
-is the fallback. Respect dismissal rather than reposting the activity.
-
-The design is a proposal, not a shipped capability. Implementation must verify SDK and dependency
-support, the background execution strategy, authentication for the logging action, and replay
-safety against the same device queue. Android does not have a Dynamic Island.
-
-## What this costs
-
-A widget extension target and a small shared library, plus one key on the app target. **No
-entitlement** — so unlike some capabilities, this does not deepen the existing signing blocker. There
-is no Live-Activity-specific App Store guideline to satisfy.
-
-## Open
-
-- **Five simulator checks before any board is called finished**, listed in the spec: how a stale date
-  actually re-renders, what a progress view does past the end of its range, a one-point layout margin
-  against the truncation threshold, the circular presentation, and **what a tap on an inactive
-  locked-screen button actually shows the lifter**. Nothing here has been run on a device.
-- **Android background execution and permissions.** Choose an execution strategy appropriate to
-  logging and elapsed time; do not request a sensor permission for a feature that reads no sensor.
+Show the actual routine, movement and offered load/reps; no rest target or chronometer is drawn.
+Log set opens the logger through an authenticated, replay-safe action into the same durable queue.
+Respect dismissal, preserve in-app logging when notifications are denied, and use actual system
+chrome. There is no foreground service, sensor permission, rest alert or Dynamic Island.

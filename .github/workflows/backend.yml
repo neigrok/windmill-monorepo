@@ -10,11 +10,15 @@ on:
       - 'backend/**'
       - 'services/embedder/**'
       - '.github/workflows/backend.yml'
+      - '!backend/**/*.md'
+      - '!services/embedder/**/*.md'
   pull_request:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
       - '.github/workflows/backend.yml'
+      - '!backend/**/*.md'
+      - '!services/embedder/**/*.md'
   workflow_dispatch:
 
 concurrency:

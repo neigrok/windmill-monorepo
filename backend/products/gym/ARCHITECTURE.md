@@ -10,7 +10,7 @@ application/ · adapters/{json,postgres,http,mcp,llm}` — and plugs in through 
 
 The backend owns the durable set write, exercise identity, the reads the device cannot fake (the
 log, last-time prefill, the finish review, a movement's record, the statistics engine, the workout
-share), the notes a lifter writes for Coach, twenty-two MCP tools behind the platform grant gate, and
+share), the notes a lifter writes for Coach, MCP tools behind the platform grant gate, and
 the proposal ledger.
 
 Device-side and never here: the weight ladder, workout mode, and the prefill
@@ -535,23 +535,12 @@ truth in one round trip — and where there is no row it is entitled to, a refus
 
 ## 6. Ports
 
-Seven structs, each file carrying its own DTOs. `LogRepository`: `open` · `session` · `setOf` ·
-`lastActivity` · `insertSession` · `close` · `insertSet` · `appendSets` · `importSession` · `sessions` · `updateSet` · `deleteSet` · `log` ·
-`setsOf` · `lastTime` · `lastSets` · `historyFor` · `movementHistory` · `trainingLog` ·
-`deleteSession` · `insertShare` · `revokeShare` · `sharedSession`.
-`CatalogRepository`: `catalog` · `insertExercise` · `renameExercise`. `ProgramRepository`: `routines`
-· `routine` · `routineHistory` · `insertRoutine` · `replaceRoutine` · `deleteRoutine` plus the ledger.
-`NotesRepository`: `notes` · `saveNote` · `deleteNote` · `reorderNotes`, every
-refusal a value (`NoteWriteOutcome`: `full`, `idTaken`; `NotesOrderOutcome`: `mismatch`), the
-whole-order rule decided once in `domain/Note.h` (`namesEveryNoteOnce`) for the fake and the SQL.
-`BodyweightRepository`: `entries` (inclusive `BodyweightRange`, day ascending) · `latest` · `save`
-(answers the row that stands) · `remove` — no refusal value at all, because the only
-rule (the later `recordedAt` wins) is answered by the row rather than refused.
+Each repository declares its DTOs and typed outcomes in `ports/`. The aggregate boundaries are
+listed in [Layout](#2-layout).
 
-- **Every method that can resolve a row carries the credential that may see it** — a `UserId`
-  everywhere but `sharedSession`, where an unguessable token stands in its place, and where revoked,
-  expired and never-minted are one value so nothing above can tell them apart and neither can a
-  prober. That includes `setOf`: a client-minted id is a guess anyone can make. `insertSet`'s
+- **Every row read carries its credential:** a `UserId` for owner reads or an unguessable token
+  for public shares. Revoked, expired and unknown tokens return the same empty result. `setOf`
+  also requires the owner; a client-minted ID is not a credential. `insertSet`'s
   read-back is scoped to `(id, session_id)`, so an id spent outside this session resolves to nothing
   rather than to that row.
 - **Every refusal crosses the port as a value** — `SetInsertOutcome` (`idTaken`, `unknownExercise`,
@@ -660,10 +649,9 @@ history — the review is always read *after* the finish, so without it every se
 the record would vanish on the first read. Nothing is stored; the review is recomputed on every call,
 which keeps it right when a set arrives late from a flush queue, and is why there is no `ReviewService`.
 
-**The statistics engine** (`trainingLog` + the pure `statistics`) — `GET /v1/gym/stats`, no parameters.
-**It is an engine and not a room**: no client draws a statistics surface, its readers are the record
-page's rules and any agent asking the long question, and it must not be cleaned up as orphaned.
-Three statements in one transaction:
+**The statistics engine** (`trainingLog` + the pure `statistics`) — the default
+`GET /v1/gym/stats` response and MCP `get_stats`. Its repository reads three projections in one
+transaction:
 
 - The **series** is `DISTINCT ON (exercise_id, started_at, id)` over the working sets of finished
   sessions, keeping the heaviest with the most reps — `TopSet`'s rule, in SQL because it is an
@@ -681,9 +669,10 @@ Three statements in one transaction:
 **Finished sessions only**, and this is one of the doors that settle staleness — or a workout the
 four-hour rule ended would be a hole in the chart.
 
-**Cut, and staying cut:** muscle-group volume and any taxonomy for it, streaks, any cardio or duration
-axis, volume **as a metric** (a headline, a tracked series, a ranking key), and any grade, score,
-percentage or green/red. That refusal is of volume as a metric, not of the log's tonnage caption.
+`GET /v1/gym/stats?projection=progress` uses `progressHistory` and the pure `statsProgress` to
+serve performed facts by session and movement. Web's Progress cards and movement charts consume
+this projection; the [history contract](../../../packages/api-contract/gym-history.md) describes
+its use in filtered history and shares.
 
 **The workout share** — two owner-scoped doors and the one unauthenticated read.
 `GET /v1/gym/shared/{token}` resolves the token to one session and its sets; the token is the whole
@@ -697,95 +686,25 @@ the frozen plan itself does not travel.
 
 ### 8.1 HTTP routes
 
-Seven adapters mirror the seven ports, plus `AskApi`. `routes.cpp` names every path in this order.
+[routes.cpp](routes.cpp) is the route inventory; the HTTP adapters parse requests and map typed
+outcomes to responses. Owner routes require a session. Public workout and history reads use a
+share token and return the same 404 for absent, revoked or expired links.
 
-| Method & path | Purpose |
-|---|---|
-| `GET  /v1/gym/exercises` | the catalog (seeds + own customs), each under the name THIS account calls it |
-| `GET  /v1/gym/exercises/last` | the picker's meta — `{exerciseId, weightKg, reps, at}` per trained movement, none for the rest |
-| `POST /v1/gym/exercises` | create — `{id, name, pattern, equipment, stepKg?}` |
-| `PATCH /v1/gym/exercises/{id}` | rename — `{name}` and nothing else |
-| `GET  /v1/gym/exercises/{id}/record` | a movement's record: two tiles, twelve weeks of bars, the record ladder, recent days, the days of the program that name it — ONE read |
-| `POST /v1/gym/sessions` | start — `{id, startedAt, joinOpenSession?, routineId?}`, idempotent |
-| `POST /v1/gym/sessions/import` | a past workout whole — `{id, startedAt, finishedAt, routineId?, sets: [0–200 × the append body]}`, field-strict; one transaction, the routine frozen as the plan and never edited, the open session untouched. `201` `{session, sets}` as `GET /v1/gym/sessions/{id}` reads it, `200` for an exact replay; `409 session-overlap` `{sessionId, session}` for a span crossing a finished session, `409 session-id-taken` / `set-id-taken` (another account's id, or this account's id with a different body), `409 session-deleted` for a replay of a discarded import, `404 no such routine`, `400` with the sentence otherwise (`400 unknown-exercise`) |
-| `POST /v1/gym/sessions/{id}/sets` | append — `{id, exerciseId, weightKg, reps, completedAt, kind?, rpe?, note?}` |
-| `PATCH /v1/gym/sessions/{id}/sets/{setId}` | fix — `{weightKg?, reps?, kind?, rpe?, note?}`; answers the stored row. An absent field leaves the stored value, `rpe: null` clears an rpe (band 1–10, kept to one decimal by the column) and `note: ""` clears a note (`kMaxSetNoteBytes` = 4000 BYTES). `404 set-not-found` covers absent, another account's and this account's set in another workout, is decided BEFORE any value is read, and writes nothing — a fix cannot create a set; `400 fix-unreadable` covers a field a fix may not carry (`exerciseId`, `completedAt`, `setNumber`) and every value the store cannot hold. **No MCP tool at any level** |
-| `DELETE /v1/gym/sessions/{id}/sets/{setId}` | delete — `204`, and `204` on retry; refuses nothing. **No MCP tool at any level** |
-| `POST /v1/gym/sessions/{id}/finish` | close — `{finishedAt}`, idempotent |
-| `GET  /v1/gym/sessions?before=&beforeId=&limit=` | the log, newest first |
-| `GET  /v1/gym/sessions/{id}` | one session with its sets; 200s carry a weak `ETag`, a matching `If-None-Match` answers 304; settles staleness |
-| `GET  /v1/gym/sessions/{id}/review` | the finish surface — three facts, at most one record, the comparison |
-| `DELETE /v1/gym/sessions/{id}` | discard — `204`; `409 session-open` while it is still running |
-| `GET  /v1/gym/last?exercise=` | last-time prefill |
-| `GET  /v1/gym/routines` | the plan, most recently trained first — each carrying `revision` and the `pendingProposal` waiting on it |
-| `POST /v1/gym/routines` | create — the whole document, idempotent on its id |
-| `GET  /v1/gym/routines/{id}` | one routine plus its `history`; the LIST read carries none of it |
-| `PUT  /v1/gym/routines/{id}` | replace — the whole document. Moves `revision` and supersedes pending proposals only when the document or the name moved. May name the `revision` it read; a day that moved answers `409 routine-stale` unless the bytes already stand |
-| `DELETE /v1/gym/routines/{id}` | `204`; entries, proposals and change rows cascade, sessions keep their snapshots |
-| `GET  /v1/gym/proposals` | the ledger, newest first; `?routineId=`, `?state=pending` |
-| `GET  /v1/gym/proposals/{id}` | one proposal with its typed diff |
-| `POST /v1/gym/proposals/{id}/apply` | **the tap.** All of it or none, against the frozen base revision. `{proposal, routine?}` — `routine` absent when the proposal removed it. `409 proposal-superseded` carries one of three sentences (§3.7) |
-| `POST /v1/gym/proposals/{id}/dismiss` | no reason asked for, nothing changed; stays in the routine's history. The same three sentences, ending `…so it was not turned down` |
-| `GET  /v1/gym/preferences` | the one read in gym that cannot 404: no row means the DEFAULTS |
-| `PUT  /v1/gym/preferences` | replace it whole; omitted fields take their default |
-| `GET  /v1/gym/notes` | `{notes:[{id, position, title, body, updatedAt}]}`, position ascending; an empty account is `{notes:[]}` |
-| `PUT  /v1/gym/notes` | `{order:[id…]}` — the whole order, every note exactly once; `400 notes-order-mismatch` otherwise |
-| `PUT  /v1/gym/notes/{id}` | `{title, body}` — upsert on the client-minted id: append last, replay, or edit in place. `409 notes-full` at ten, `409 note-id-taken` for another account's id; the three bound refusals are 400s with the entity's sentence |
-| `DELETE /v1/gym/notes/{id}` | `204`, and `204` on retry; the notes after it close the gap |
-| `GET  /v1/gym/bodyweight?from=&to=` | `{entries:[{dateLocal, weightKg, recordedAt}], latest}`, day ascending, both bounds inclusive and optional; `latest` is the newest day whatever the window, `null` for an account that never weighed in; `400 could not read that date` for a bound that is not a calendar day |
-| `PUT  /v1/gym/bodyweight/{dateLocal}` | `{weightKg, recordedAt}` — upsert on the day; answers `{entry}` as it STANDS, the incoming write only when its `recordedAt` is at or after the stored one. `400`, no code, decided in this order: `could not read that date` (the day) → `A weigh-in is not a forecast — today or earlier.` (more than one day past UTC today) → `could not read that weigh-in` (no json, not an object, a weight that is not a number, an instant that is not an integer) → `Between 20 and 400 kg — check the number.` (the band, after rounding) → `could not read that weigh-in` again (an instant outside the band) |
-| `DELETE /v1/gym/bodyweight/{dateLocal}` | `204` always for this account: absent, already gone and a day that is not a day are one answer |
-| `GET  /v1/gym/stats` | the statistics engine — per-movement line, standing bests, weekly counts |
-| `POST /v1/gym/sessions/{id}/share` | mint — `{token, expiresAt}`, idempotent on the session |
-| `DELETE /v1/gym/sessions/{id}/share` | revoke — `204`; nothing to revoke is `404 no such session` |
-| `GET  /v1/gym/shared/{token}` | **the one unauthenticated route.** Revoked, expired and unknown are one `404` |
-| `GET  /v1/gym/threads` | `{threads,nextCursor}` with `limit` and opaque `cursor`; newest activity first. Legacy requests without pagination keep `{threads}` and at most 200 rows. Mounted unconditionally |
-| `GET  /v1/gym/threads/{id}` | conversation and latest generation; `limit` and `before` page messages with `nextCursor`. Legacy requests return the complete conversation |
-| `DELETE /v1/gym/threads/{id}` | `204`; turns cascade, and every proposal it minted keeps its row, state and place in the routine's history, losing only `source.thread` |
-| `POST /v1/gym/ask` | `{thread, question, requestId?}` in; existing answer fields plus durable `generation` and `results`. Same-request replay is idempotent; active retries return 202. Absent with no `ANTHROPIC_API_KEY` |
+- [History and corrections](../../../packages/api-contract/gym-history.md) specify filtered reads,
+  snapshot/live links and atomic workout corrections.
+- [Coach conversations](../../../docs/gym-coach-contract.md) specify request identity, pagination,
+  generation recovery, streaming, pictures and Stop.
+- [The status ladder](#83-the-status-ladder) defines the machine codes clients branch on.
 
 ### 8.2 Shapes
 
 `adapters/json/TrainingJson` is the one cross-surface codec — web, iOS, Android and the MCP tools all
 speak it, which is why a tool's arguments are the REST body's field names.
 
-Instants are epoch-ms numbers, weights numbers in kg. Sets are
-`{id, exerciseId, setNumber, weightKg, reps, kind, rpe?, note, completedAt}`; sessions
-`{id, startedAt, finishedAt?, routineId?, plan?}`; routines
-`{id, name, position, revision, lastTrainedAt?, entries:[{position, exerciseId, sets?, restSeconds?}],
-pendingProposal?, history?}`, where `sets` is the line's scheme — `[{reps?, weightKg?}]`, one object
-per set in lifting order, 1 to 20, `reps` 1–100, `weightKg` inside ±500 — and a plan line and a
-proposal side carry the same array. List replies wrap
-(`{"exercises":[…]}`, `{"sessions":[…]}`, `{"routines":[…]}`, `{"proposals":[…]}`); detail is
-`{"session":…, "sets":[…]}`. A log row is a session plus `{setCount, workingSetCount, tonnageKg,
-exercises:[…], topSet?: {weightKg, reps}, topE1rm?, record, closedItself}` — `record` always present.
-
-A proposal's head is `{id, routineId, intent, state, summary, changeCount, createdAt, settledAt?,
-source:{door, connection?, agent?}}`; the whole adds `{baseRevision, baseName, name,
-changes:[{position, kind, exerciseId, before?, after?, loggedSets?}]}`, each side
-`{sets?, restSeconds?}` — `before` absent on an added line, `after` on a removed one, `loggedSets` on
-removed lines alone. `revision` is read-only on the wire.
-
-The ramp fixture every surface's tests share, as a routine entry reads (jsoncpp writes keys in
-alphabetical order, and clients parse rather than compare bytes):
-
-```json
-{ "exerciseId": "back-squat", "position": 1, "restSeconds": 180,
-  "sets": [ {"reps":5,"weightKg":60}, {"reps":5,"weightKg":80}, {"reps":3,"weightKg":90},
-            {"reps":1,"weightKg":100}, {"reps":5,"weightKg":80} ] }
-```
-
-Parsing a routine entry refuses an unknown key (`unknown routine entry field "…"`), an unknown set
-key (`unknown set field "…"`), and an empty `sets` array — *a zero target is no target — leave out
-the sets instead*; the entity refuses *a set names its reps 1 to 100*, *a set names its load inside
-±500 kg* and *sets, 1 to 20*. `ProgramApi` forwards the sentence verbatim as the 400's `error`, the
-way the notes and bodyweight edges do, because the target sheet draws it under the row that carries
-the fault.
-
-A weigh-in is `{dateLocal, weightKg, recordedAt}` — the day a `YYYY-MM-DD` string that is the
-lifter's own calendar, kilograms rounded to two decimals and written as such (`82.4`, never
-`82.400000000000006` — §3.10), the device instant in epoch ms. The list wraps
-`{entries:[…], latest}`, the write answers `{entry}`.
+Instants are epoch-ms numbers and weights are numbers in kg. The codecs in
+[TrainingJson.cpp](adapters/json/TrainingJson.cpp) define field names, wrappers and omission rules;
+HTTP contract tests live in `test/products/gym/adapters/http/`. Routine entry order becomes positions
+`1..n`; entries use the same set scheme in routines, frozen plans and proposal diffs.
 
 Parsing type-checks every jsoncpp field before `.as*()` and throws `InvalidTraining` → 400.
 **Instants are bounded at the wire**: a UInt64, never `0`, never past `kMaxInstantMs`, which is also
@@ -858,9 +777,9 @@ carries a machine word under `code`
 - **The code is the contract; the sentence is for a human reading a log.** A client that told the 409s
   apart by string-comparing copy degrades to "terminal, reason unknown" the first time one is reworded.
   `set-id-taken` and `set-deleted` are the sharpest case: same status, same shape, opposite repairs.
-- **Every `…-id-taken` names a fact about an id, never about an owner**, and none fires on the caller's
-  **own** id: a replayed create of a session, set, routine or movement reads back what landed.
-  `409 session-finished` answers **new** ids only.
+- **Every `…-id-taken` names a fact about an id, never about an owner.** A valid replay returns
+  the stored row; a reserved ID can remain unavailable after deletion. `409 session-finished`
+  answers **new** set IDs only.
 - The 400s are the client's and terminal; the 500 is the server's and retryable, which is why the write
   handlers catch **only** `InvalidTraining`: a broader catch reports a lock wait as a malformed set.
 - There are no admin doors, nothing sweeps and nothing mails.
@@ -1062,8 +981,8 @@ arguments under the same identity. Existing-routine edits and removal still requ
 | Actions per generation | one routine creation/proposal plus one note save | stable identity across model retries and process restarts |
 | Model context | `kMaxContextTurns` (24) and `kMaxContextBytes` (24,000) | latest completed exchanges; full stored history remains available through pagination |
 | Question | `kMaxAskTurnBytes` (1000) | bounds each submitted text |
-| Entitlement | none — it ships open | Windmill One cannot be bought, so a locked Coach would advertise a 503. The gate is one predicate on the allowance line |
-| Daily limit | `kAskPerDay` (10), `kAskBackToBack` (3), per **account** (`AskRation`) | A bucket in memory, so a deploy refills it. **Taken last and given back only when the run COST NOTHING**: the test is `AskAnswer::modelTurns` — metered vendor round trips — not `ok`, because hitting the 8-iteration cap costs eight billed turns. That return is why the bucket is gym's own and not platform's `RateLimiter`, which cannot hand a token back |
+| Entitlement | all signed-in accounts | allowance is resolved through `Entitlements::aiAllowanceFor` |
+| Request ration | per-account token bucket: capacity 3, refilling at 10/day (`AskRation`) | In memory; a deploy refills it. Taken after admission checks and refunded only when `AskAnswer::modelTurns` is zero |
 | Dollar ceiling | the platform's `AiFuse` hourly + `aiAllowanceFor` over 30 days | never shown as money to anybody |
 | Vendor | absent when unkeyed | no `ANTHROPIC_API_KEY` ⇒ `registerRoutes` omits new asks; durable Stop/recovery and history remain available |
 
@@ -1136,8 +1055,8 @@ remain separate. No tool reads the gym's settings.
 
 ### 12.6 Threads
 
-- **The title is the first message, verbatim**, stored as sent, written once at creation. Nothing in
-  this product summarises what a lifter typed. No auto-title, no folders, no pinning.
+- **The title is the first question verbatim**, or `Photo` for an image-only question. It is
+  written once at creation; there is no generated title.
 - **No unread count, no badge, no notification, nothing waiting.**
 - **The outcome is derived, never stored** (`outcomeOf`, `domain/Thread.h`). Surviving proposal
   records supply their current decisions. If a supported assistant receipt references a proposal
@@ -1161,30 +1080,13 @@ remain separate. No tool reads the gym's settings.
 - **The three read/delete doors are mounted unconditionally** while `POST /v1/gym/ask` is not: a
   deployment with no vendor key keeps every conversation readable and deletable.
 
-### 12.7 Streaming, pictures and interruption
+### 12.7 Transport and recovery
 
-`docs/gym-coach-contract.md` pins the additive request, generation, snapshot and media wire shapes.
-JSON clients remain supported. Streaming clients receive authoritative full-answer snapshots with
-monotonic revisions. Anthropic SSE parsing and libcurl transport live in platform; the Coach prompt,
-image context and persisted answer lifecycle stay in gym. Tool-round visible text is retained in
-order. Internal thinking and tool arguments are not exposed as answer text.
-
-A short admission worker checks ownership, immutable request identity and stored state separately
-from two reserved model workers. Local overlap is captured at arrival, so a conflicting request
-cannot wait behind a model and then silently become a new turn. The admission queue is bounded at
-64 requests; model or admission saturation returns `503 ask-busy`. Stored terminal replays do not
-consume a model slot. Postgres session leases preserve exclusion across service processes.
-
-Owner-scoped JPEG/PNG uploads are bounded before full decode and validated by the pinned, JPEG/PNG-only
-`stb_image` decoder. At most two full decodes run at once. Draft images expire after 24 hours and never
-create an empty conversation; linked images cascade with their conversation/account. The model sees
-at most three recent images from its bounded context.
-
-Stop retains partial text and actions. With no live generation lease after a restart, it reconciles
-committed effects through ordinary domain repositories without executing an uncommitted action.
-Deleted conversation IDs remain in an account-cascaded tombstone, preventing delayed retries from
-recreating a deleted thread or its routine. Immutable routine creation receipts outlive routine
-edits/deletion and recover an uncertain action without resurrecting the routine.
+The [Coach contract](../../../docs/gym-coach-contract.md) owns streaming, image, admission and
+recovery behavior. Anthropic SSE parsing and libcurl transport live in platform; the Coach prompt,
+image context and persisted generation lifecycle stay in gym. JPEG/PNG validation uses the pinned
+`stb_image` decoder. Generation leases and immutable action receipts keep retries from duplicating
+committed changes; deleted conversation IDs remain tombstoned.
 
 ## 13. Open items
 

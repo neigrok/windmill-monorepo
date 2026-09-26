@@ -9,10 +9,12 @@ on:
     paths:
       - 'tools/**'
       - '.github/workflows/tools.yml'
+      - '!tools/**/*.md'
   pull_request:
     paths:
       - 'tools/**'
       - '.github/workflows/tools.yml'
+      - '!tools/**/*.md'
   workflow_dispatch:
 
 concurrency:

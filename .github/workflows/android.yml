@@ -10,11 +10,13 @@ on:
       - 'apps/android/**'
       - 'packages/api-contract/**'
       - '.github/workflows/android.yml'
+      - '!apps/android/**/*.md'
   pull_request:
     paths:
       - 'apps/android/**'
       - 'packages/api-contract/**'
       - '.github/workflows/android.yml'
+      - '!apps/android/**/*.md'
   workflow_dispatch:
     inputs:
       version:

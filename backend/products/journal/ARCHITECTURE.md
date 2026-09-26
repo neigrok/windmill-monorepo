@@ -115,21 +115,11 @@ has no port.
 
 ## Echoes
 
-`ECHOES.md` is the spec: pipeline, selection rules, data model, cost and gates.
-
-- Echoes are derived on the writer's save. `PageService` announces it on `PageWatcher`;
-  `EchoDerivations` debounces (8 s quiet, or 400 bytes of new text) and derives on its own thread,
-  capped at 4 derivations per page and 40 per user in a rolling day, 5 pending entries per user.
-  `WarmEchoRepository` keeps the second derivation of an evening from re-loading the corpus.
-- `EchoSweep` runs every six hours as the repair path: inbound reverse edges, corpus-stamp backfill,
-  failed pages, deferred derivations.
-- Echoes are derived for every signed-in writer and `EchoApi` serves full passages.
-- `HttpEmbedder` talks to the self-hosted `services/embedder` sidecar, running
-  `Xenova/paraphrase-multilingual-MiniLM-L12-v2`. Page text does not leave for an embedding. It
-  does leave for the curator, which is Anthropic's — that call needs the zero-retention, no-training
-  agreement and the privacy copy that names it.
-- The curator records every call to `ai_usage`, and `EchoSweep` asks a per-user cost ceiling before
-  curating, skipping an over-budget user for that pass rather than failing them.
+[ECHOES.md](ECHOES.md) owns the derivation pipeline, selection rules, persistence, scheduling and
+budgets. `PageWatcher` connects page saves to debounced `EchoDerivations`; `EchoSweep` repairs the
+corpus every six hours. Embedding stays on the self-hosted sidecar; curation sends passages to
+Anthropic. Curation requires a zero-retention, no-training agreement and privacy copy naming the
+processor. Echoes are available to every signed-in writer.
 
 ## Entitlement
 
