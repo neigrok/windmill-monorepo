@@ -1,0 +1,30 @@
+// Appendix B constants and the §9.7 limits. Algorithms take a `limits` object defaulting to these, so
+// tests can shrink a limit without patching.
+
+export const CONSTANTS = Object.freeze({
+  HOLD_MS: 9000,
+  LEAVE_DEBOUNCE_MS: 500,
+  MAX_SKEW_MS: 300_000,
+  K_POISON: 3,
+  LOCK_TIMEOUT_MS: 2000,
+  PULL_FALLBACK_MS: 300_000,
+  BACKOFF_BASE_MS: 1000,
+  BACKOFF_CEILING_MS: 300_000,
+  BACKOFF_LIVE_CEILING_MS: 30_000,
+  OFFSET_SAMPLES: 8,
+  REQUEST_LEASE_MS: 60_000,
+  SCOPE_HORIZON_DAYS: 30,
+  REPLICA_GC_DAYS: 365,
+  REQUEST_RETENTION_DAYS: 90,
+  MAX_RECORD_BYTES: 1_048_576,
+  PUSH_MAX_INTENTS: 64,
+  PUSH_MAX_BYTES: 2_097_152,
+  PUSH_WORK_MS: 50,
+  PULL_PAGE_BYTES: 1_048_576,
+  LIVE_FRAME_BYTES: 131_072,
+  LIVE_INLINE_BYTES: 65_536,
+  KEEPALIVE_BYTES: 65_536,
+});
+
+export const COUNTER_LIMIT = 2 ** 32;
+export const MS_LIMIT = 2 ** 53;

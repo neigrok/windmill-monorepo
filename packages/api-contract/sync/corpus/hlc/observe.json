@@ -1,0 +1,208 @@
+[
+  {
+    "name": "observing a greater stamp adopts its pair",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 0
+      },
+      "ops": [
+        {
+          "observe": "2000:5:srv"
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [],
+      "clock": {
+        "ms": 2000,
+        "counter": 5
+      }
+    }
+  },
+  {
+    "name": "observing a smaller stamp changes nothing",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 3000,
+        "counter": 1
+      },
+      "ops": [
+        {
+          "observe": "2000:5:srv"
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [],
+      "clock": {
+        "ms": 3000,
+        "counter": 1
+      }
+    }
+  },
+  {
+    "name": "observing an equal pair of another actor changes nothing",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 2000,
+        "counter": 5
+      },
+      "ops": [
+        {
+          "observe": "2000:5:zzz"
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [],
+      "clock": {
+        "ms": 2000,
+        "counter": 5
+      }
+    }
+  },
+  {
+    "name": "observing a larger counter on the same ms adopts it",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 2000,
+        "counter": 5
+      },
+      "ops": [
+        {
+          "observe": "2000:9:a"
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [],
+      "clock": {
+        "ms": 2000,
+        "counter": 9
+      }
+    }
+  },
+  {
+    "name": "observing the unset stamp changes nothing",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 0,
+        "counter": 0
+      },
+      "ops": [
+        {
+          "observe": "0:0:"
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [],
+      "clock": {
+        "ms": 0,
+        "counter": 0
+      }
+    }
+  },
+  {
+    "name": "a tick after observing a future stamp counts past it",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 0
+      },
+      "ops": [
+        {
+          "observe": "9000:3:srv"
+        },
+        {
+          "tick": 1200
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "9000:4:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 9000,
+        "counter": 4
+      }
+    }
+  },
+  {
+    "name": "a tick after observing a past stamp takes physNow",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 0
+      },
+      "ops": [
+        {
+          "observe": "900:3:srv"
+        },
+        {
+          "tick": 1200
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1200:0:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1200,
+        "counter": 0
+      }
+    }
+  },
+  {
+    "name": "ticks and observes interleave",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 0,
+        "counter": 0
+      },
+      "ops": [
+        {
+          "tick": 100
+        },
+        {
+          "observe": "100:4:srv"
+        },
+        {
+          "tick": 100
+        },
+        {
+          "observe": "150:0:r_bbbbbbbbbbbb"
+        },
+        {
+          "tick": 120
+        },
+        {
+          "tick": 200
+        }
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "100:0:r_aaaaaaaaaaaa",
+        "100:5:r_aaaaaaaaaaaa",
+        "150:1:r_aaaaaaaaaaaa",
+        "200:0:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 200,
+        "counter": 0
+      }
+    }
+  }
+]

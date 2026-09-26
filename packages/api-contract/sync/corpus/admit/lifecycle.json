@@ -1,0 +1,1996 @@
+[
+  {
+    "name": "a governing create inserts its tree scope at seq 0 with digest 0",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "b6b829b30d1cbd7178ac35b58291eea48b4a0001ea340acad99562766d627e18"
+          },
+          "tree:b_00000009": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000009"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000009",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a replayed governing create inserts nothing",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000001",
+            "born": "2000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "2000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a governing delete kills its tree and every overlay of it, and no other",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/overlay/b_00000002": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "tree:b_00000002"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "aa4aea3cb4aefc46cb8a6831c6622dbcd72cee0d27eaadee8fba8876eaa9b690"
+          },
+          "acct:B/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "07c0cf517310fd1773eb636e8d50ec2f4b8c3affd72a10f9f1824c669f725466",
+            "governedBy": "tree:b_00000001"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "8c60cf8ba894c9e36073dd0e9369363065ceb69dc304b752c43f51da7803c567",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "2050:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2050:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000001",
+            "born": "2000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "dead",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 1000000
+          },
+          "acct:A/overlay/b_00000002": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "tree:b_00000002"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "be86ce14b78b2fe54950243e903b0afd4485ee22f658c4817099b92ba7e5cca8"
+          },
+          "acct:B/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "B",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "07c0cf517310fd1773eb636e8d50ec2f4b8c3affd72a10f9f1824c669f725466",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 1000000
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "8c60cf8ba894c9e36073dd0e9369363065ceb69dc304b752c43f51da7803c567",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 1000000
+          },
+          "tree:b_00000002": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000002"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 3,
+              "rc": 1000,
+              "ru": 1000000
+            },
+            {
+              "t": "board",
+              "id": "b_00000002",
+              "life": [
+                "alive",
+                "2050:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2050:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_bbbbbbbbbbbb"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "visibility": [
+                  "public",
+                  "2500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a write to the dead tree is scope-dead for its owner",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "d": [
+          {
+            "t": "meta",
+            "id": "meta",
+            "f": {
+              "title": [
+                "x",
+                "9500:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "scope-dead"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a governing create onto its dead id is ok without a change",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000001",
+            "born": "2000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "2000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a revive of a dead governing record is id-spent",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000001",
+            "born": "2000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "9500:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "id-spent"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a new governing id after a death creates a new scope",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "board",
+            "id": "b_00000003",
+            "born": "9500:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "9500:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "dead",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001",
+            "deadAt": 9000
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "c41dec2aaa2f6a2b37907019c480cd3569e646ff2b6294dc200e42f78c70b6e4"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "dead",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001",
+            "deadAt": 9000
+          },
+          "tree:b_00000003": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+            "governedBy": "acct:A/probe#board#b_00000003"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "dead",
+                "9000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "board",
+              "id": "b_00000003",
+              "life": [
+                "alive",
+                "9500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "9500:0:r_aaaaaaaaaaaa",
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  }
+]

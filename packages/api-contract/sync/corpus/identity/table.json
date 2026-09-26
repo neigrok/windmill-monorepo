@@ -1,0 +1,1191 @@
+[
+  {
+    "name": "card create on none",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "card create on foreign",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "foreign"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "refuse",
+      "code": "id-taken"
+    }
+  },
+  {
+    "name": "card create on alive=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "card create on alive≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "refuse",
+      "code": "id-taken"
+    }
+  },
+  {
+    "name": "card create on dead=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card create on dead≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "refuse",
+      "code": "id-spent"
+    }
+  },
+  {
+    "name": "card update on none",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card update on foreign",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "foreign"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card update on alive=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "card update on alive≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card update on dead=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "record-dead"
+    }
+  },
+  {
+    "name": "card update on dead≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card delete on none",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card delete on foreign",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "foreign"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card delete on alive=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "card delete on alive≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card delete on dead=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card delete on dead≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "card revive on none",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card revive on foreign",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "foreign"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card revive on alive=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "card revive on alive≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "card revive on dead=",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "id-spent"
+    }
+  },
+  {
+    "name": "card revive on dead≠",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag create on none",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag create on alive=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag create on alive≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "refuse",
+      "code": "id-taken"
+    }
+  },
+  {
+    "name": "tag create on dead=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "tag create on dead≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "create",
+      "verdict": "refuse",
+      "code": "id-spent"
+    }
+  },
+  {
+    "name": "tag update on none",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag update on alive=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag update on alive≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag update on dead=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "record-dead"
+    }
+  },
+  {
+    "name": "tag update on dead≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "update",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag delete on none",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "tag delete on alive=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag delete on alive≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "tag delete on dead=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "tag delete on dead≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "delete",
+      "verdict": "ok"
+    }
+  },
+  {
+    "name": "tag revive on none",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag revive on alive=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag revive on alive≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "alive",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "tag revive on dead=",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "tag revive on dead≠",
+    "input": {
+      "type": "tag",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "dead",
+        "born": "4:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "revive",
+      "verdict": "refuse",
+      "code": "unknown-record"
+    }
+  },
+  {
+    "name": "link put alive on none",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "link put alive on alive",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "alive"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "link put alive on dead",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "alive",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "dead"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "link put dead on alive",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "alive"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "link put dead on none",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "link put dead on dead",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "dead",
+          "9:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "dead"
+      }
+    },
+    "expect": {
+      "op": "put",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "mark write on none",
+    "input": {
+      "type": "mark",
+      "delta": {},
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "write",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "mark write on alive",
+    "input": {
+      "type": "mark",
+      "delta": {},
+      "idState": {
+        "state": "alive"
+      }
+    },
+    "expect": {
+      "op": "write",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "meta write on none",
+    "input": {
+      "type": "meta",
+      "delta": {},
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "write",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "meta write on alive",
+    "input": {
+      "type": "meta",
+      "delta": {},
+      "idState": {
+        "state": "alive"
+      }
+    },
+    "expect": {
+      "op": "write",
+      "verdict": "apply"
+    }
+  },
+  {
+    "name": "invalid: a minted delta without born",
+    "input": {
+      "type": "card",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a minted delta with neither life nor born",
+    "input": {
+      "type": "card",
+      "delta": {},
+      "idState": {
+        "state": "alive",
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a keyed-with-life delta without life",
+    "input": {
+      "type": "link",
+      "delta": {},
+      "idState": {
+        "state": "alive"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a keyed delta carrying born",
+    "input": {
+      "type": "link",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a keyed-without-life delta carrying life",
+    "input": {
+      "type": "mark",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a singleton delta carrying life",
+    "input": {
+      "type": "meta",
+      "delta": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  },
+  {
+    "name": "invalid: a singleton delta carrying born",
+    "input": {
+      "type": "meta",
+      "delta": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      },
+      "idState": {
+        "state": "none"
+      }
+    },
+    "expect": {
+      "op": "invalid",
+      "verdict": "refuse",
+      "code": "invalid"
+    }
+  }
+]

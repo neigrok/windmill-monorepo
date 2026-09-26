@@ -1,0 +1,404 @@
+[
+  {
+    "name": "equal texts keep everything",
+    "input": {
+      "a": "a b",
+      "b": "a b"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "keep",
+          "b"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "from empty: insert every token",
+    "input": {
+      "a": "",
+      "b": "x y"
+    },
+    "expect": {
+      "script": [
+        [
+          "insert",
+          "x"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "insert",
+          "y"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "to empty: delete every token",
+    "input": {
+      "a": "x y",
+      "b": ""
+    },
+    "expect": {
+      "script": [
+        [
+          "delete",
+          "x"
+        ],
+        [
+          "delete",
+          " "
+        ],
+        [
+          "delete",
+          "y"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a replacement: the deletion comes first",
+    "input": {
+      "a": "a",
+      "b": "b"
+    },
+    "expect": {
+      "script": [
+        [
+          "delete",
+          "a"
+        ],
+        [
+          "insert",
+          "b"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a replacement inside a sentence",
+    "input": {
+      "a": "a b c",
+      "b": "a x c"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "delete",
+          "b"
+        ],
+        [
+          "insert",
+          "x"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "keep",
+          "c"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a duplicate token: equal tokens are kept first, so the insertion follows them",
+    "input": {
+      "a": "a b",
+      "b": "a a b"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "insert",
+          "a"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "keep",
+          "b"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a duplicate token: equal tokens are kept first, so the deletion follows them",
+    "input": {
+      "a": "a a b",
+      "b": "a b"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "delete",
+          "a"
+        ],
+        [
+          "delete",
+          " "
+        ],
+        [
+          "keep",
+          "b"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a repeated phrase: the kept copy comes first, the new one is appended",
+    "input": {
+      "a": "x y",
+      "b": "x y x y"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "x"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "keep",
+          "y"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "insert",
+          "x"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "insert",
+          "y"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a reorder",
+    "input": {
+      "a": "a b c",
+      "b": "c b a"
+    },
+    "expect": {
+      "script": [
+        [
+          "delete",
+          "a"
+        ],
+        [
+          "insert",
+          "c"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "keep",
+          "b"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "delete",
+          "c"
+        ],
+        [
+          "insert",
+          "a"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a whitespace run changes width",
+    "input": {
+      "a": "a  b",
+      "b": "a b"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "delete",
+          "  "
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "keep",
+          "b"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "leading and trailing whitespace go",
+    "input": {
+      "a": " a ",
+      "b": "a"
+    },
+    "expect": {
+      "script": [
+        [
+          "delete",
+          " "
+        ],
+        [
+          "keep",
+          "a"
+        ],
+        [
+          "delete",
+          " "
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a word appended",
+    "input": {
+      "a": "hello world",
+      "b": "hello world again"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "hello"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "keep",
+          "world"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "insert",
+          "again"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "a word inserted in the middle",
+    "input": {
+      "a": "hello world",
+      "b": "hello big world"
+    },
+    "expect": {
+      "script": [
+        [
+          "keep",
+          "hello"
+        ],
+        [
+          "keep",
+          " "
+        ],
+        [
+          "insert",
+          "big"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "keep",
+          "world"
+        ]
+      ]
+    }
+  },
+  {
+    "name": "one token becomes two",
+    "input": {
+      "a": "x",
+      "b": "y z"
+    },
+    "expect": {
+      "script": [
+        [
+          "delete",
+          "x"
+        ],
+        [
+          "insert",
+          "y"
+        ],
+        [
+          "insert",
+          " "
+        ],
+        [
+          "insert",
+          "z"
+        ]
+      ]
+    }
+  }
+]

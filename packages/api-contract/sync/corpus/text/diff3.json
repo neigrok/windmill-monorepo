@@ -1,0 +1,230 @@
+[
+  {
+    "name": "nobody changed anything",
+    "input": {
+      "base": "a b c",
+      "head": "a b c",
+      "mine": "a b c"
+    },
+    "expect": {
+      "text": "a b c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "only head changed",
+    "input": {
+      "base": "a b c",
+      "head": "a x c",
+      "mine": "a b c"
+    },
+    "expect": {
+      "text": "a x c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "only mine changed",
+    "input": {
+      "base": "a b c",
+      "head": "a b c",
+      "mine": "a b y"
+    },
+    "expect": {
+      "text": "a b y",
+      "conflict": false
+    }
+  },
+  {
+    "name": "changes far apart both apply",
+    "input": {
+      "base": "one two three four",
+      "head": "ONE two three four",
+      "mine": "one two three FOUR"
+    },
+    "expect": {
+      "text": "ONE two three FOUR",
+      "conflict": false
+    }
+  },
+  {
+    "name": "the same change on both sides is emitted once",
+    "input": {
+      "base": "a b c",
+      "head": "a x c",
+      "mine": "a x c"
+    },
+    "expect": {
+      "text": "a x c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "different changes to one token conflict",
+    "input": {
+      "base": "a b c",
+      "head": "a x c",
+      "mine": "a y c"
+    },
+    "expect": {
+      "text": "a x\n\ny c",
+      "conflict": true
+    }
+  },
+  {
+    "name": "changes in neighbouring words both apply: a stable space separates them",
+    "input": {
+      "base": "a b c",
+      "head": "x b c",
+      "mine": "a y c"
+    },
+    "expect": {
+      "text": "x y c",
+      "conflict": false
+    }
+  },
+  {
+    "name": "changes separated by one stable token both apply",
+    "input": {
+      "base": "a b",
+      "head": "x b",
+      "mine": "a y"
+    },
+    "expect": {
+      "text": "x y",
+      "conflict": false
+    }
+  },
+  {
+    "name": "touching changes on both sides conflict: a word and the space after it",
+    "input": {
+      "base": "a b c",
+      "head": "a x c",
+      "mine": "a b  c"
+    },
+    "expect": {
+      "text": "a x\n\nb  c",
+      "conflict": true
+    }
+  },
+  {
+    "name": "head deletes a region mine edits: mine is emitted",
+    "input": {
+      "base": "keep this part end",
+      "head": "keep end",
+      "mine": "keep this PART end"
+    },
+    "expect": {
+      "text": "keep this PART end",
+      "conflict": false
+    }
+  },
+  {
+    "name": "mine deletes a region head edits: head is emitted",
+    "input": {
+      "base": "keep this part end",
+      "head": "keep THIS part end",
+      "mine": "keep end"
+    },
+    "expect": {
+      "text": "keep THIS part end",
+      "conflict": false
+    }
+  },
+  {
+    "name": "both insert different text at one point: conflict",
+    "input": {
+      "base": "a b",
+      "head": "a x b",
+      "mine": "a y b"
+    },
+    "expect": {
+      "text": "a x\n\ny b",
+      "conflict": true
+    }
+  },
+  {
+    "name": "both insert the same text at one point: once",
+    "input": {
+      "base": "a b",
+      "head": "a x b",
+      "mine": "a x b"
+    },
+    "expect": {
+      "text": "a x b",
+      "conflict": false
+    }
+  },
+  {
+    "name": "head appends while mine prepends",
+    "input": {
+      "base": "middle",
+      "head": "middle end",
+      "mine": "start middle"
+    },
+    "expect": {
+      "text": "start middle end",
+      "conflict": false
+    }
+  },
+  {
+    "name": "the conflict seam drops the head side's trailing whitespace",
+    "input": {
+      "base": "p q",
+      "head": "p x ",
+      "mine": "p y "
+    },
+    "expect": {
+      "text": "p x\n\ny ",
+      "conflict": true
+    }
+  },
+  {
+    "name": "the conflict seam drops the mine side's leading whitespace",
+    "input": {
+      "base": "p q r",
+      "head": "p X r",
+      "mine": "p  Y r"
+    },
+    "expect": {
+      "text": "p X\n\nY r",
+      "conflict": true
+    }
+  },
+  {
+    "name": "both sides rewrite one word and widen a space: one region, a conflict",
+    "input": {
+      "base": "a b c",
+      "head": "a x  c",
+      "mine": "a  y c"
+    },
+    "expect": {
+      "text": "a x\n\ny c",
+      "conflict": true
+    }
+  },
+  {
+    "name": "multi-line journal edits in different paragraphs",
+    "input": {
+      "base": "Walked.\n\nRead a book.",
+      "head": "Walked far.\n\nRead a book.",
+      "mine": "Walked.\n\nRead a good book."
+    },
+    "expect": {
+      "text": "Walked far.\n\nRead a good book.",
+      "conflict": false
+    }
+  },
+  {
+    "name": "both sides rewrite the same line",
+    "input": {
+      "base": "Mood: fine",
+      "head": "Mood: great",
+      "mine": "Mood: tired"
+    },
+    "expect": {
+      "text": "Mood: great\n\ntired",
+      "conflict": true
+    }
+  }
+]

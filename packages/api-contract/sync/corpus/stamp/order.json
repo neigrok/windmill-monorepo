@@ -1,0 +1,142 @@
+[
+  {
+    "name": "ms decides first",
+    "input": {
+      "a": "5:9:zzz",
+      "b": "6:0:aaa"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "ms compares as a number, not as text",
+    "input": {
+      "a": "10:0:a",
+      "b": "9:0:a"
+    },
+    "expect": {
+      "order": 1
+    }
+  },
+  {
+    "name": "counter decides on equal ms",
+    "input": {
+      "a": "5:1:zzz",
+      "b": "5:2:aaa"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "counter compares as a number, not as text",
+    "input": {
+      "a": "5:10:a",
+      "b": "5:9:a"
+    },
+    "expect": {
+      "order": 1
+    }
+  },
+  {
+    "name": "actor decides on equal ms and counter",
+    "input": {
+      "a": "5:1:r_a",
+      "b": "5:1:srv"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "actor is compared bytewise: uppercase sorts first",
+    "input": {
+      "a": "5:1:Srv",
+      "b": "5:1:srv"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "actor is compared bytewise: a prefix sorts first",
+    "input": {
+      "a": "5:1:ab",
+      "b": "5:1:abc"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "actor is compared bytewise: b after ab",
+    "input": {
+      "a": "5:1:b",
+      "b": "5:1:ab"
+    },
+    "expect": {
+      "order": 1
+    }
+  },
+  {
+    "name": "an actor holding colons compares as its whole remainder",
+    "input": {
+      "a": "5:1:a:b",
+      "b": "5:1:a"
+    },
+    "expect": {
+      "order": 1
+    }
+  },
+  {
+    "name": "equal stamps",
+    "input": {
+      "a": "7:3:r_aaaaaaaaaaaa",
+      "b": "7:3:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "order": 0
+    }
+  },
+  {
+    "name": "the unset stamp is below every set stamp",
+    "input": {
+      "a": "0:0:",
+      "b": "0:0:!"
+    },
+    "expect": {
+      "order": -1
+    }
+  },
+  {
+    "name": "the unset stamp equals itself",
+    "input": {
+      "a": "0:0:",
+      "b": "0:0:"
+    },
+    "expect": {
+      "order": 0
+    }
+  },
+  {
+    "name": "ms near 2^53",
+    "input": {
+      "a": "9007199254740991:0:a",
+      "b": "9007199254740990:4294967295:a"
+    },
+    "expect": {
+      "order": 1
+    }
+  },
+  {
+    "name": "counter at its limit is below the next ms",
+    "input": {
+      "a": "5:4294967295:z",
+      "b": "6:0:a"
+    },
+    "expect": {
+      "order": -1
+    }
+  }
+]

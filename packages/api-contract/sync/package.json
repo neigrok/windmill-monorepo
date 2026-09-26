@@ -1,0 +1,10 @@
+{
+  "name": "@windmill/sync-contract",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "generate": "node reference/generate.mjs",
+    "check": "node reference/generate.mjs --check",
+    "test": "node --test reference/test/"
+  }
+}

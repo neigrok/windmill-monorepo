@@ -1,0 +1,196 @@
+[
+  {
+    "name": "a fresh clock takes physNow with counter 0",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 0,
+        "counter": 0
+      },
+      "physNow": [
+        1000
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1000:0:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1000,
+        "counter": 0
+      }
+    }
+  },
+  {
+    "name": "physNow ahead of the clock resets the counter",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 7
+      },
+      "physNow": [
+        1001
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1001:0:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1001,
+        "counter": 0
+      }
+    }
+  },
+  {
+    "name": "physNow equal to the clock bumps the counter",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 7
+      },
+      "physNow": [
+        1000
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1000:8:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1000,
+        "counter": 8
+      }
+    }
+  },
+  {
+    "name": "physNow behind the clock bumps the counter",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 5000,
+        "counter": 2
+      },
+      "physNow": [
+        1000
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "5000:3:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 5000,
+        "counter": 3
+      }
+    }
+  },
+  {
+    "name": "a burst in one millisecond counts up",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 0,
+        "counter": 0
+      },
+      "physNow": [
+        1000,
+        1000,
+        1000,
+        1001,
+        999
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1000:0:r_aaaaaaaaaaaa",
+        "1000:1:r_aaaaaaaaaaaa",
+        "1000:2:r_aaaaaaaaaaaa",
+        "1001:0:r_aaaaaaaaaaaa",
+        "1001:1:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1001,
+        "counter": 1
+      }
+    }
+  },
+  {
+    "name": "the counter overflows into the next millisecond",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 4294967295
+      },
+      "physNow": [
+        1000
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1001:0:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1001,
+        "counter": 0
+      }
+    }
+  },
+  {
+    "name": "the counter overflows while physNow lags",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 1000,
+        "counter": 4294967294
+      },
+      "physNow": [
+        900,
+        900,
+        900
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "1000:4294967295:r_aaaaaaaaaaaa",
+        "1001:0:r_aaaaaaaaaaaa",
+        "1001:1:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 1001,
+        "counter": 1
+      }
+    }
+  },
+  {
+    "name": "physNow jumping back and forward",
+    "input": {
+      "actor": "r_aaaaaaaaaaaa",
+      "clock": {
+        "ms": 2000,
+        "counter": 0
+      },
+      "physNow": [
+        1500,
+        2500,
+        2400,
+        2500
+      ]
+    },
+    "expect": {
+      "stamps": [
+        "2000:1:r_aaaaaaaaaaaa",
+        "2500:0:r_aaaaaaaaaaaa",
+        "2500:1:r_aaaaaaaaaaaa",
+        "2500:2:r_aaaaaaaaaaaa"
+      ],
+      "clock": {
+        "ms": 2500,
+        "counter": 2
+      }
+    }
+  }
+]

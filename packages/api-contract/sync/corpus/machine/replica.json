@@ -1,0 +1,216 @@
+[
+  {
+    "name": "none --first-launch--> anon",
+    "input": {
+      "from": null,
+      "event": "first-launch",
+      "to": "anon"
+    },
+    "expect": {
+      "to": "anon"
+    }
+  },
+  {
+    "name": "none --sign-in--> bound",
+    "input": {
+      "from": null,
+      "event": "sign-in",
+      "to": "bound"
+    },
+    "expect": {
+      "to": "bound"
+    }
+  },
+  {
+    "name": "dormant --sign-in--> bound",
+    "input": {
+      "from": "dormant",
+      "event": "sign-in",
+      "to": "bound"
+    },
+    "expect": {
+      "to": "bound"
+    }
+  },
+  {
+    "name": "dormant --sign-in--> dormant",
+    "input": {
+      "from": "dormant",
+      "event": "sign-in",
+      "to": "dormant"
+    },
+    "expect": {
+      "to": "dormant"
+    }
+  },
+  {
+    "name": "anon --sign-in--> bound",
+    "input": {
+      "from": "anon",
+      "event": "sign-in",
+      "to": "bound"
+    },
+    "expect": {
+      "to": "bound"
+    }
+  },
+  {
+    "name": "anon --sign-in--> deleted",
+    "input": {
+      "from": "anon",
+      "event": "sign-in",
+      "to": "deleted"
+    },
+    "expect": {
+      "to": "deleted"
+    }
+  },
+  {
+    "name": "anon --sign-in--> anon",
+    "input": {
+      "from": "anon",
+      "event": "sign-in",
+      "to": "anon"
+    },
+    "expect": {
+      "to": "anon"
+    }
+  },
+  {
+    "name": "bound --sign-out-keep--> dormant",
+    "input": {
+      "from": "bound",
+      "event": "sign-out-keep",
+      "to": "dormant"
+    },
+    "expect": {
+      "to": "dormant"
+    }
+  },
+  {
+    "name": "bound --sign-out-discard--> deleted",
+    "input": {
+      "from": "bound",
+      "event": "sign-out-discard",
+      "to": "deleted"
+    },
+    "expect": {
+      "to": "deleted"
+    }
+  },
+  {
+    "name": "dormant --discard--> deleted",
+    "input": {
+      "from": "dormant",
+      "event": "discard",
+      "to": "deleted"
+    },
+    "expect": {
+      "to": "deleted"
+    }
+  },
+  {
+    "name": "anon --reidentify--> anon",
+    "input": {
+      "from": "anon",
+      "event": "reidentify",
+      "to": "anon"
+    },
+    "expect": {
+      "to": "anon"
+    }
+  },
+  {
+    "name": "bound --reidentify--> bound",
+    "input": {
+      "from": "bound",
+      "event": "reidentify",
+      "to": "bound"
+    },
+    "expect": {
+      "to": "bound"
+    }
+  },
+  {
+    "name": "dormant --reidentify--> dormant",
+    "input": {
+      "from": "dormant",
+      "event": "reidentify",
+      "to": "dormant"
+    },
+    "expect": {
+      "to": "dormant"
+    }
+  },
+  {
+    "name": "illegal: anon --sign-out-keep--> any",
+    "input": {
+      "from": "anon",
+      "event": "sign-out-keep"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: dormant --sign-out-keep--> any",
+    "input": {
+      "from": "dormant",
+      "event": "sign-out-keep"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: bound --sign-in--> any",
+    "input": {
+      "from": "bound",
+      "event": "sign-in"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: anon --discard--> any",
+    "input": {
+      "from": "anon",
+      "event": "discard"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: bound --discard--> any",
+    "input": {
+      "from": "bound",
+      "event": "discard"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: deleted --sign-in--> any",
+    "input": {
+      "from": "deleted",
+      "event": "sign-in"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: anon --reidentify--> bound",
+    "input": {
+      "from": "anon",
+      "event": "reidentify",
+      "to": "bound"
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

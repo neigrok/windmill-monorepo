@@ -1,0 +1,408 @@
+[
+  {
+    "name": "none --commit--> held",
+    "input": {
+      "from": null,
+      "event": "commit",
+      "to": "held"
+    },
+    "expect": {
+      "to": "held"
+    }
+  },
+  {
+    "name": "none --commit--> ready",
+    "input": {
+      "from": null,
+      "event": "commit",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "none --coalesce--> coalesced",
+    "input": {
+      "from": null,
+      "event": "coalesce",
+      "to": "coalesced"
+    },
+    "expect": {
+      "to": "coalesced"
+    }
+  },
+  {
+    "name": "ready --coalesce--> coalesced",
+    "input": {
+      "from": "ready",
+      "event": "coalesce",
+      "to": "coalesced"
+    },
+    "expect": {
+      "to": "coalesced"
+    }
+  },
+  {
+    "name": "held --release--> ready",
+    "input": {
+      "from": "held",
+      "event": "release",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "held --undo--> undone",
+    "input": {
+      "from": "held",
+      "event": "undo",
+      "to": "undone"
+    },
+    "expect": {
+      "to": "undone"
+    }
+  },
+  {
+    "name": "ready --number--> sent",
+    "input": {
+      "from": "ready",
+      "event": "number",
+      "to": "sent"
+    },
+    "expect": {
+      "to": "sent"
+    }
+  },
+  {
+    "name": "held --fold--> refused",
+    "input": {
+      "from": "held",
+      "event": "fold",
+      "to": "refused"
+    },
+    "expect": {
+      "to": "refused"
+    }
+  },
+  {
+    "name": "ready --fold--> refused",
+    "input": {
+      "from": "ready",
+      "event": "fold",
+      "to": "refused"
+    },
+    "expect": {
+      "to": "refused"
+    }
+  },
+  {
+    "name": "held --target-merged--> refused",
+    "input": {
+      "from": "held",
+      "event": "target-merged",
+      "to": "refused"
+    },
+    "expect": {
+      "to": "refused"
+    }
+  },
+  {
+    "name": "ready --target-merged--> refused",
+    "input": {
+      "from": "ready",
+      "event": "target-merged",
+      "to": "refused"
+    },
+    "expect": {
+      "to": "refused"
+    }
+  },
+  {
+    "name": "sent --ok--> acked",
+    "input": {
+      "from": "sent",
+      "event": "ok",
+      "to": "acked"
+    },
+    "expect": {
+      "to": "acked"
+    }
+  },
+  {
+    "name": "sent --recover--> ready",
+    "input": {
+      "from": "sent",
+      "event": "recover",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "sent --refuse--> refused",
+    "input": {
+      "from": "sent",
+      "event": "refuse",
+      "to": "refused"
+    },
+    "expect": {
+      "to": "refused"
+    }
+  },
+  {
+    "name": "sent --orphan-ok--> resolved",
+    "input": {
+      "from": "sent",
+      "event": "orphan-ok",
+      "to": "resolved"
+    },
+    "expect": {
+      "to": "resolved"
+    }
+  },
+  {
+    "name": "sent --transport--> sent",
+    "input": {
+      "from": "sent",
+      "event": "transport",
+      "to": "sent"
+    },
+    "expect": {
+      "to": "sent"
+    }
+  },
+  {
+    "name": "sent --reidentify--> ready",
+    "input": {
+      "from": "sent",
+      "event": "reidentify",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "sent --skew-return--> ready",
+    "input": {
+      "from": "sent",
+      "event": "skew-return",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "acked --resolve--> resolved",
+    "input": {
+      "from": "acked",
+      "event": "resolve",
+      "to": "resolved"
+    },
+    "expect": {
+      "to": "resolved"
+    }
+  },
+  {
+    "name": "acked --epoch--> ready",
+    "input": {
+      "from": "acked",
+      "event": "epoch",
+      "to": "ready"
+    },
+    "expect": {
+      "to": "ready"
+    }
+  },
+  {
+    "name": "held --discard--> discarded",
+    "input": {
+      "from": "held",
+      "event": "discard",
+      "to": "discarded"
+    },
+    "expect": {
+      "to": "discarded"
+    }
+  },
+  {
+    "name": "ready --discard--> discarded",
+    "input": {
+      "from": "ready",
+      "event": "discard",
+      "to": "discarded"
+    },
+    "expect": {
+      "to": "discarded"
+    }
+  },
+  {
+    "name": "sent --discard--> discarded",
+    "input": {
+      "from": "sent",
+      "event": "discard",
+      "to": "discarded"
+    },
+    "expect": {
+      "to": "discarded"
+    }
+  },
+  {
+    "name": "acked --discard--> discarded",
+    "input": {
+      "from": "acked",
+      "event": "discard",
+      "to": "discarded"
+    },
+    "expect": {
+      "to": "discarded"
+    }
+  },
+  {
+    "name": "illegal: held --number--> any",
+    "input": {
+      "from": "held",
+      "event": "number"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: held --ok--> any",
+    "input": {
+      "from": "held",
+      "event": "ok"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: ready --ok--> any",
+    "input": {
+      "from": "ready",
+      "event": "ok"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: ready --undo--> any",
+    "input": {
+      "from": "ready",
+      "event": "undo"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: sent --release--> any",
+    "input": {
+      "from": "sent",
+      "event": "release"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: sent --undo--> any",
+    "input": {
+      "from": "sent",
+      "event": "undo"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: sent --coalesce--> any",
+    "input": {
+      "from": "sent",
+      "event": "coalesce"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: acked --refuse--> any",
+    "input": {
+      "from": "acked",
+      "event": "refuse"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: acked --number--> any",
+    "input": {
+      "from": "acked",
+      "event": "number"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: none --release--> any",
+    "input": {
+      "from": null,
+      "event": "release"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: refused --number--> any",
+    "input": {
+      "from": "refused",
+      "event": "number"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: resolved --discard--> any",
+    "input": {
+      "from": "resolved",
+      "event": "discard"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: sent --recover--> acked",
+    "input": {
+      "from": "sent",
+      "event": "recover",
+      "to": "acked"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: none --commit--> sent",
+    "input": {
+      "from": null,
+      "event": "commit",
+      "to": "sent"
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

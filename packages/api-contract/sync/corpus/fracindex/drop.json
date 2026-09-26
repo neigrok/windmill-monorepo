@@ -1,0 +1,593 @@
+[
+  {
+    "name": "to the top: before the first stored row",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "moved": "C",
+      "above": null
+    },
+    "expect": {
+      "key": "Zz",
+      "drawn": [
+        "C",
+        "A",
+        "B"
+      ],
+      "stored": [
+        "C",
+        "A",
+        "B"
+      ]
+    }
+  },
+  {
+    "name": "to the bottom: after the last stored row",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "moved": "A",
+      "above": "C"
+    },
+    "expect": {
+      "key": "a3",
+      "drawn": [
+        "B",
+        "C",
+        "A"
+      ],
+      "stored": [
+        "B",
+        "C",
+        "A"
+      ]
+    }
+  },
+  {
+    "name": "into the middle",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "moved": "C",
+      "above": "A"
+    },
+    "expect": {
+      "key": "a0V",
+      "drawn": [
+        "A",
+        "C",
+        "B"
+      ],
+      "stored": [
+        "A",
+        "C",
+        "B"
+      ]
+    }
+  },
+  {
+    "name": "down past its own old slot",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "moved": "A",
+      "above": "C"
+    },
+    "expect": {
+      "key": "a2V",
+      "drawn": [
+        "B",
+        "C",
+        "A",
+        "D"
+      ],
+      "stored": [
+        "B",
+        "C",
+        "A",
+        "D"
+      ]
+    }
+  },
+  {
+    "name": "up past other rows",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "moved": "D",
+      "above": "A"
+    },
+    "expect": {
+      "key": "a0V",
+      "drawn": [
+        "A",
+        "D",
+        "B",
+        "C"
+      ],
+      "stored": [
+        "A",
+        "D",
+        "B",
+        "C"
+      ]
+    }
+  },
+  {
+    "name": "dropped where it was keeps its key",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "moved": "B",
+      "above": "A"
+    },
+    "expect": {
+      "key": "a1",
+      "drawn": [
+        "A",
+        "B",
+        "C"
+      ],
+      "stored": [
+        "A",
+        "B",
+        "C"
+      ]
+    }
+  },
+  {
+    "name": "a held-deleted successor keeps its stored place",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "H",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "moved": "D",
+      "above": "A"
+    },
+    "expect": {
+      "key": "a0V",
+      "drawn": [
+        "A",
+        "D",
+        "C"
+      ],
+      "stored": [
+        "A",
+        "D",
+        "H",
+        "C"
+      ]
+    }
+  },
+  {
+    "name": "to the top above a held-deleted first row",
+    "input": {
+      "stored": [
+        {
+          "id": "H",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        }
+      ],
+      "moved": "C",
+      "above": null
+    },
+    "expect": {
+      "key": "Zz",
+      "drawn": [
+        "C",
+        "B"
+      ],
+      "stored": [
+        "C",
+        "H",
+        "B"
+      ]
+    }
+  },
+  {
+    "name": "to the bottom of the drawn list: before a held-deleted last row, which keeps its place",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "H",
+          "key": "a2"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        }
+      ],
+      "moved": "A",
+      "above": "B"
+    },
+    "expect": {
+      "key": "a1V",
+      "drawn": [
+        "B",
+        "A"
+      ],
+      "stored": [
+        "B",
+        "A",
+        "H"
+      ]
+    }
+  },
+  {
+    "name": "after the first of two equal keys: between it and the next greater key",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a1"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        },
+        {
+          "id": "C",
+          "key": "a5"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a1"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        },
+        {
+          "id": "C",
+          "key": "a5"
+        }
+      ],
+      "moved": "C",
+      "above": "A"
+    },
+    "expect": {
+      "key": "a2",
+      "drawn": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "stored": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    }
+  },
+  {
+    "name": "after the second of two equal keys",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a1"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        },
+        {
+          "id": "C",
+          "key": "a5"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a1"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        },
+        {
+          "id": "C",
+          "key": "a5"
+        }
+      ],
+      "moved": "C",
+      "above": "B"
+    },
+    "expect": {
+      "key": "a2",
+      "drawn": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ],
+      "stored": [
+        "A",
+        "B",
+        "C",
+        "D"
+      ]
+    }
+  },
+  {
+    "name": "the only member",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        }
+      ],
+      "moved": "A",
+      "above": null
+    },
+    "expect": {
+      "key": "a0",
+      "drawn": [
+        "A"
+      ],
+      "stored": [
+        "A"
+      ]
+    }
+  }
+]

@@ -1,0 +1,263 @@
+[
+  {
+    "name": "a minted row",
+    "input": {
+      "row": {
+        "t": "card",
+        "id": "card0001",
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "tier": [
+            "draft",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "title": [
+            "Hi",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "seq": 1,
+        "rc": 1000,
+        "ru": 1000
+      }
+    },
+    "expect": {
+      "hash": "811630d7214a1e909dfb059f95af69c24cc9bb5328b10f47a3ec5ce29af0e298"
+    }
+  },
+  {
+    "name": "a derived row",
+    "input": {
+      "row": {
+        "t": "tag",
+        "id": "learn-rust",
+        "life": [
+          "alive",
+          "6:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "6:0:r_aaaaaaaaaaaa",
+        "f": {
+          "label": [
+            "Learn Rust",
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "seq": 2,
+        "rc": 2000,
+        "ru": 2000
+      }
+    },
+    "expect": {
+      "hash": "d89f16de83e428ab767b91f2fa78ce14d7cbb6480489cd42e76ad859919c9772"
+    }
+  },
+  {
+    "name": "a keyed row whose id is an array",
+    "input": {
+      "row": {
+        "t": "link",
+        "id": [
+          "learn-rust",
+          "ship-it"
+        ],
+        "life": [
+          "alive",
+          "7:0:r_aaaaaaaaaaaa"
+        ],
+        "seq": 3,
+        "rc": 3000,
+        "ru": 3000
+      }
+    },
+    "expect": {
+      "hash": "4deb94706f62e9422134a5690d86cfd9fd15af48004823f12d5379a22aeb492c"
+    }
+  },
+  {
+    "name": "a keyed row without life, with a text value",
+    "input": {
+      "row": {
+        "t": "mark",
+        "id": "learn-rust",
+        "f": {
+          "done": [
+            true,
+            "8:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "x": {
+          "memo": {
+            "text": "first draft ✓",
+            "rev": 4,
+            "merged": false
+          }
+        },
+        "seq": 4,
+        "rc": 4000,
+        "ru": 4000
+      }
+    },
+    "expect": {
+      "hash": "14fb4c8357ca39d7735a038eff11a794c6b453bdef5f1b94a5c78d21f25fedc3"
+    }
+  },
+  {
+    "name": "a singleton row",
+    "input": {
+      "row": {
+        "t": "meta",
+        "id": "meta",
+        "f": {
+          "title": [
+            "Plan",
+            "9:0:r_aaaaaaaaaaaa"
+          ],
+          "visibility": [
+            "public",
+            "9:0:srv"
+          ]
+        },
+        "seq": 5,
+        "rc": 5000,
+        "ru": 5000
+      }
+    },
+    "expect": {
+      "hash": "760bc8a157ff34962244892da496608e47c733fe4899404113926dd06d5be5a7"
+    }
+  },
+  {
+    "name": "a row with a serial value and a float",
+    "input": {
+      "row": {
+        "t": "lap",
+        "id": "lap00001",
+        "life": [
+          "alive",
+          "10:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "10:0:r_aaaaaaaaaaaa",
+        "f": {
+          "runId": [
+            "run00001",
+            "10:0:r_aaaaaaaaaaaa"
+          ],
+          "weight": [
+            0.30000000000000004,
+            "10:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "v": {
+          "no": 3
+        },
+        "seq": 6,
+        "rc": 6000,
+        "ru": 6000
+      }
+    },
+    "expect": {
+      "hash": "d316a85d5fbc14adf8bde14e8fd0a23d05f1700a3eae5b5484d5f4076849d48c"
+    }
+  },
+  {
+    "name": "a field the registry does not know is hashed as received",
+    "input": {
+      "row": {
+        "t": "card",
+        "id": "card0002",
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "shine": [
+            "gold",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "title": [
+            "Hi",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "seq": 7,
+        "rc": 7000,
+        "ru": 7000
+      }
+    },
+    "expect": {
+      "hash": "2d3349bdf6a12de3ca5cef8f70074352ee53f411897077d367817f70a5b99a21"
+    }
+  },
+  {
+    "name": "a type the registry does not know is hashed as received",
+    "input": {
+      "row": {
+        "t": "widget",
+        "id": "w1",
+        "f": {
+          "size": [
+            3,
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "seq": 8,
+        "rc": 8000,
+        "ru": 8000
+      }
+    },
+    "expect": {
+      "hash": "f73203f7c135351839c85cd7f134b27ebb8f8df97390704164ac4324634f13dd"
+    }
+  },
+  {
+    "name": "a dead thin row contributes nothing",
+    "input": {
+      "row": {
+        "t": "card",
+        "id": "card0003",
+        "life": [
+          "dead",
+          "11:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "seq": 9,
+        "rc": 9000,
+        "ru": 9000
+      }
+    },
+    "expect": {
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "a dead revivable row with fields contributes nothing",
+    "input": {
+      "row": {
+        "t": "tag",
+        "id": "old-tag",
+        "life": [
+          "dead",
+          "12:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "6:0:r_aaaaaaaaaaaa",
+        "f": {
+          "label": [
+            "Old",
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        "seq": 10,
+        "rc": 10000,
+        "ru": 10000
+      }
+    },
+    "expect": {
+      "hash": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  }
+]

@@ -1,0 +1,746 @@
+[
+  {
+    "name": "an empty scope",
+    "input": {
+      "rows": []
+    },
+    "expect": {
+      "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  },
+  {
+    "name": "one row",
+    "input": {
+      "rows": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "f": {
+            "tier": [
+              "draft",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Hi",
+              "5:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        }
+      ]
+    },
+    "expect": {
+      "digest": "811630d7214a1e909dfb059f95af69c24cc9bb5328b10f47a3ec5ce29af0e298"
+    }
+  },
+  {
+    "name": "rows of every identity class, in any order",
+    "input": {
+      "rows": [
+        {
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": [
+              "Plan",
+              "9:0:r_aaaaaaaaaaaa"
+            ],
+            "visibility": [
+              "public",
+              "9:0:srv"
+            ]
+          },
+          "seq": 5,
+          "rc": 5000,
+          "ru": 5000
+        },
+        {
+          "t": "link",
+          "id": [
+            "learn-rust",
+            "ship-it"
+          ],
+          "life": [
+            "alive",
+            "7:0:r_aaaaaaaaaaaa"
+          ],
+          "seq": 3,
+          "rc": 3000,
+          "ru": 3000
+        },
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "f": {
+            "tier": [
+              "draft",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Hi",
+              "5:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "mark",
+          "id": "learn-rust",
+          "f": {
+            "done": [
+              true,
+              "8:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "x": {
+            "memo": {
+              "text": "first draft ✓",
+              "rev": 4,
+              "merged": false
+            }
+          },
+          "seq": 4,
+          "rc": 4000,
+          "ru": 4000
+        },
+        {
+          "t": "tag",
+          "id": "learn-rust",
+          "life": [
+            "alive",
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "6:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Learn Rust",
+              "6:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "seq": 2,
+          "rc": 2000,
+          "ru": 2000
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "10:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "10:0:r_aaaaaaaaaaaa",
+          "f": {
+            "runId": [
+              "run00001",
+              "10:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              0.30000000000000004,
+              "10:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 3
+          },
+          "seq": 6,
+          "rc": 6000,
+          "ru": 6000
+        }
+      ]
+    },
+    "expect": {
+      "digest": "05be99a82416b399c407ab06d127b211361818a9a429b7a5f6da9dd81f7e6b2c"
+    }
+  },
+  {
+    "name": "dead rows are outside the sum",
+    "input": {
+      "rows": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "f": {
+            "tier": [
+              "draft",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Hi",
+              "5:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "dead",
+            "11:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 9,
+          "rc": 9000,
+          "ru": 9000
+        },
+        {
+          "t": "tag",
+          "id": "old-tag",
+          "life": [
+            "dead",
+            "12:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "6:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Old",
+              "6:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "seq": 10,
+          "rc": 10000,
+          "ru": 10000
+        }
+      ]
+    },
+    "expect": {
+      "digest": "811630d7214a1e909dfb059f95af69c24cc9bb5328b10f47a3ec5ce29af0e298"
+    }
+  },
+  {
+    "name": "two large hashes wrap past 2^256",
+    "input": {
+      "rows": [
+        {
+          "t": "card",
+          "id": "wrap0001",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "card",
+          "id": "wrap0004",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        }
+      ]
+    },
+    "expect": {
+      "digest": "42a8c754c4a7b67c0c83eeae622e5f33bcffaf191ef42f3d83eecc6e0fe8624d"
+    }
+  },
+  {
+    "name": "three large hashes wrap",
+    "input": {
+      "rows": [
+        {
+          "t": "card",
+          "id": "wrap0001",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "card",
+          "id": "wrap0004",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        },
+        {
+          "t": "card",
+          "id": "wrap0007",
+          "life": [
+            "alive",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5:0:r_aaaaaaaaaaaa",
+          "seq": 1,
+          "rc": 1000,
+          "ru": 1000
+        }
+      ]
+    },
+    "expect": {
+      "digest": "427fb4d5930defbb6e2578b43fae6b0c52f3c9b2dfbeeb721a417eaa0b2fa46d"
+    }
+  },
+  {
+    "name": "inserts from zero",
+    "input": {
+      "start": "0000000000000000000000000000000000000000000000000000000000000000",
+      "changes": [
+        {
+          "before": null,
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          }
+        },
+        {
+          "before": null,
+          "after": {
+            "t": "tag",
+            "id": "learn-rust",
+            "life": [
+              "alive",
+              "6:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "6:0:r_aaaaaaaaaaaa",
+            "f": {
+              "label": [
+                "Learn Rust",
+                "6:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 2,
+            "rc": 2000,
+            "ru": 2000
+          }
+        }
+      ]
+    },
+    "expect": {
+      "digest": "59b547b5a52e473c14769792902837d72495719b2d3adc8a8b57353c2c8d7a0a"
+    }
+  },
+  {
+    "name": "a replacement swaps one hash for another",
+    "input": {
+      "start": "59b547b5a52e473c14769792902837d72495719b2d3adc8a8b57353c2c8d7a0a",
+      "changes": [
+        {
+          "before": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hello",
+                "13:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 11,
+            "rc": 1000,
+            "ru": 1000
+          }
+        }
+      ]
+    },
+    "expect": {
+      "digest": "7a8a7a5a2c5066ae743248ceaee48a96d5275733e88383821cac2cc03f4ed183"
+    }
+  },
+  {
+    "name": "a death removes the row's hash",
+    "input": {
+      "start": "59b547b5a52e473c14769792902837d72495719b2d3adc8a8b57353c2c8d7a0a",
+      "changes": [
+        {
+          "before": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "dead",
+              "14:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 12,
+            "rc": 12000,
+            "ru": 12000
+          }
+        }
+      ]
+    },
+    "expect": {
+      "digest": "d89f16de83e428ab767b91f2fa78ce14d7cbb6480489cd42e76ad859919c9772"
+    }
+  },
+  {
+    "name": "a spent row's removal: after is absent",
+    "input": {
+      "start": "59b547b5a52e473c14769792902837d72495719b2d3adc8a8b57353c2c8d7a0a",
+      "changes": [
+        {
+          "before": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": null
+        }
+      ]
+    },
+    "expect": {
+      "digest": "d89f16de83e428ab767b91f2fa78ce14d7cbb6480489cd42e76ad859919c9772"
+    }
+  },
+  {
+    "name": "a revival adds the hash back",
+    "input": {
+      "start": "d89f16de83e428ab767b91f2fa78ce14d7cbb6480489cd42e76ad859919c9772",
+      "changes": [
+        {
+          "before": {
+            "t": "tag",
+            "id": "old-tag",
+            "life": [
+              "dead",
+              "12:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "6:0:r_aaaaaaaaaaaa",
+            "f": {
+              "label": [
+                "Old",
+                "6:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 10,
+            "rc": 10000,
+            "ru": 10000
+          },
+          "after": {
+            "t": "tag",
+            "id": "old-tag",
+            "life": [
+              "alive",
+              "15:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "6:0:r_aaaaaaaaaaaa",
+            "f": {
+              "label": [
+                "Old",
+                "6:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 13,
+            "rc": 10000,
+            "ru": 10000
+          }
+        }
+      ]
+    },
+    "expect": {
+      "digest": "a5df040937f243ba336b03edd8765845ed889e7995882b13f4471b0c8f3829cb"
+    }
+  },
+  {
+    "name": "removing from a wrapped sum wraps back below zero",
+    "input": {
+      "start": "42a8c754c4a7b67c0c83eeae622e5f33bcffaf191ef42f3d83eecc6e0fe8624d",
+      "changes": [
+        {
+          "before": {
+            "t": "card",
+            "id": "wrap0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": null
+        }
+      ]
+    },
+    "expect": {
+      "digest": "8e62d9b868af19e30976cc96b0b222f6c196045ac1ba5ed2f6753201008ce8ac"
+    }
+  },
+  {
+    "name": "a sequence ends where a recount ends",
+    "input": {
+      "start": "0000000000000000000000000000000000000000000000000000000000000000",
+      "changes": [
+        {
+          "before": null,
+          "after": {
+            "t": "card",
+            "id": "wrap0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          }
+        },
+        {
+          "before": null,
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          }
+        },
+        {
+          "before": null,
+          "after": {
+            "t": "card",
+            "id": "wrap0004",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          }
+        },
+        {
+          "before": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hi",
+                "5:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hello",
+                "13:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 11,
+            "rc": 1000,
+            "ru": 1000
+          }
+        },
+        {
+          "before": {
+            "t": "card",
+            "id": "wrap0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 1,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": null
+        },
+        {
+          "before": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "alive",
+              "5:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "f": {
+              "tier": [
+                "draft",
+                "5:0:r_aaaaaaaaaaaa"
+              ],
+              "title": [
+                "Hello",
+                "13:0:r_aaaaaaaaaaaa"
+              ]
+            },
+            "seq": 11,
+            "rc": 1000,
+            "ru": 1000
+          },
+          "after": {
+            "t": "card",
+            "id": "card0001",
+            "life": [
+              "dead",
+              "14:0:r_aaaaaaaaaaaa"
+            ],
+            "born": "5:0:r_aaaaaaaaaaaa",
+            "seq": 12,
+            "rc": 12000,
+            "ru": 12000
+          }
+        }
+      ]
+    },
+    "expect": {
+      "digest": "8e62d9b868af19e30976cc96b0b222f6c196045ac1ba5ed2f6753201008ce8ac"
+    }
+  }
+]

@@ -1,0 +1,1823 @@
+[
+  {
+    "name": "a create at the cap is refused cap",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "87e1502695481a19b3716f6cdb8ada8f6a217d29e016bd303d1f4bffd500aea3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Four",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "cap",
+        "detail": {
+          "type": "card",
+          "cap": 3
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "87e1502695481a19b3716f6cdb8ada8f6a217d29e016bd303d1f4bffd500aea3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a create below the cap is admitted and counted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "6277b4c4862024f7937bffb861228fc018ea7af045fd2582551b3ee3848f1e31"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Three",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "3667885253ee828694bb8b44a56a40a8eb509db34538029d59d9cfbcb30bf622"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0009",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a create and a delete in one intent at the cap are admitted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "87e1502695481a19b3716f6cdb8ada8f6a217d29e016bd303d1f4bffd500aea3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "dead",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Swap",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 3
+            },
+            "digest": "0fc4f76ea0a817a03d11083157381534fd51259d1f590cab06147a720f29108c"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0009",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Swap",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "5000:0:r_aaaaaaaaaaaa",
+              "seq": 4
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "an update over the cap is admitted (it does not raise the count)",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 4
+            },
+            "digest": "075dce3210c40af4009feda46936b697e3453b79b37cb1f0f6800a1dfd2b03e5"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "f": {
+              "title": [
+                "Edit",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 5
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 4
+            },
+            "digest": "fd8c0b985e9efb9620bb24c85e76dd2f956a551273de84e2a3580b8e919918e9"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Edit",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 1000,
+              "ru": 1000000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a create over the cap is refused cap",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 4
+            },
+            "digest": "075dce3210c40af4009feda46936b697e3453b79b37cb1f0f6800a1dfd2b03e5"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Five",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "cap",
+        "detail": {
+          "type": "card",
+          "cap": 3
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 4
+            },
+            "digest": "075dce3210c40af4009feda46936b697e3453b79b37cb1f0f6800a1dfd2b03e5"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a create and a delete over the cap keep the count and are admitted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 4
+            },
+            "digest": "075dce3210c40af4009feda46936b697e3453b79b37cb1f0f6800a1dfd2b03e5"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "dead",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Swap",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 5
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 4
+            },
+            "digest": "34778ae4d553f7f7b50eeab7dc62bb1efe1061d2b28c80be0b8240aecc621c83"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "card",
+              "id": "card0009",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Swap",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "5000:0:r_aaaaaaaaaaaa",
+              "seq": 5
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a delete over the cap is admitted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {
+              "card": 4
+            },
+            "digest": "075dce3210c40af4009feda46936b697e3453b79b37cb1f0f6800a1dfd2b03e5"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0002",
+            "born": "1001:0:r_aaaaaaaaaaaa",
+            "life": [
+              "dead",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 5
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "4b8ba2f363b6fac8a57b3e7200ce345a18e1399d886707a632b69dfa8552bc77"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "card",
+              "id": "card0004",
+              "life": [
+                "alive",
+                "1003:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1003:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C4",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0002",
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "5000:0:r_aaaaaaaaaaaa",
+              "seq": 5
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a replayed create at the cap does not grow the count",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "87e1502695481a19b3716f6cdb8ada8f6a217d29e016bd303d1f4bffd500aea3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "C1",
+                "1000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 3
+            },
+            "digest": "87e1502695481a19b3716f6cdb8ada8f6a217d29e016bd303d1f4bffd500aea3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C1",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C2",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1002:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1002:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "C3",
+                  "1002:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            }
+          ]
+        }
+      }
+    }
+  }
+]

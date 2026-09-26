@@ -1,0 +1,223 @@
+[
+  {
+    "name": "one sample: server time minus the midpoint",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 10000,
+          "tSend": 1000,
+          "tRecv": 1200
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8900,
+          "rtt": 200
+        }
+      ],
+      "serverOffsetMs": 8900
+    }
+  },
+  {
+    "name": "an odd round trip floors the midpoint",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 10000,
+          "tSend": 1000,
+          "tRecv": 1001
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 9000,
+          "rtt": 1
+        }
+      ],
+      "serverOffsetMs": 9000
+    }
+  },
+  {
+    "name": "the lowest round trip wins",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 10000,
+          "tSend": 1000,
+          "tRecv": 1400
+        },
+        {
+          "serverTime": 20050,
+          "tSend": 11000,
+          "tRecv": 11100
+        },
+        {
+          "serverTime": 30000,
+          "tSend": 21000,
+          "tRecv": 21300
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8800,
+          "rtt": 400
+        },
+        {
+          "offset": 9000,
+          "rtt": 100
+        },
+        {
+          "offset": 8850,
+          "rtt": 300
+        }
+      ],
+      "serverOffsetMs": 9000
+    }
+  },
+  {
+    "name": "equal round trips choose the latest sample",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 10000,
+          "tSend": 1000,
+          "tRecv": 1100
+        },
+        {
+          "serverTime": 20500,
+          "tSend": 11000,
+          "tRecv": 11100
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8950,
+          "rtt": 100
+        },
+        {
+          "offset": 9450,
+          "rtt": 100
+        }
+      ],
+      "serverOffsetMs": 9450
+    }
+  },
+  {
+    "name": "a negative offset for a fast device clock",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 1000,
+          "tSend": 400000,
+          "tRecv": 400020
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": -399010,
+          "rtt": 20
+        }
+      ],
+      "serverOffsetMs": -399010
+    }
+  },
+  {
+    "name": "only the last OFFSET_SAMPLES samples count",
+    "input": {
+      "samples": [
+        {
+          "serverTime": 5000,
+          "tSend": 1000,
+          "tRecv": 1002
+        },
+        {
+          "serverTime": 90000,
+          "tSend": 10000,
+          "tRecv": 10050
+        },
+        {
+          "serverTime": 91000,
+          "tSend": 11000,
+          "tRecv": 11050
+        },
+        {
+          "serverTime": 92000,
+          "tSend": 12000,
+          "tRecv": 12050
+        },
+        {
+          "serverTime": 93000,
+          "tSend": 13000,
+          "tRecv": 13050
+        },
+        {
+          "serverTime": 94000,
+          "tSend": 14000,
+          "tRecv": 14050
+        },
+        {
+          "serverTime": 95000,
+          "tSend": 15000,
+          "tRecv": 15050
+        },
+        {
+          "serverTime": 96000,
+          "tSend": 16000,
+          "tRecv": 16050
+        },
+        {
+          "serverTime": 97000,
+          "tSend": 17000,
+          "tRecv": 17050
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        }
+      ],
+      "serverOffsetMs": 79975
+    }
+  }
+]

@@ -1,0 +1,983 @@
+[
+  {
+    "name": "an account holding an alive primary record holds records",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "729fa498a82eb85ae6c5f557af05dbf135cf64d16d8cceea05c92de120491d89",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "2500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2500:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "3000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "3000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "3000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  3500,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "dead",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 3
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an account holding only a non-primary record holds none",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "4f0be5b77b7aa5a0c4ffbd4c75f5893bfebe04b2d09f4857a9ef4f190bdaacb0"
+          }
+        },
+        "rows": {
+          "acct:B/probe": [
+            {
+              "t": "run",
+              "id": "run00002",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  3500,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an account whose primary records are dead holds none",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "spent": {
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "card0008",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 1
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a kept dead row of a primary type is not visible, so the account holds none",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "rows": {
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "dead",
+                "2600:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an alive row of the governing primary type holds records",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "a4bc39eff4b917a1b40e8a78da667531d5d51da5ebe17cdf3f50ba2513f7d28a"
+          }
+        },
+        "rows": {
+          "acct:B/probe": [
+            {
+              "t": "board",
+              "id": "b_0000000b",
+              "life": [
+                "alive",
+                "1500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an account without a product scope holds none",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "729fa498a82eb85ae6c5f557af05dbf135cf64d16d8cceea05c92de120491d89",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "2500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2500:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "3000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "3000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "3000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  3500,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "dead",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 3
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1,
+          "holdsRecords": {
+            "probe": false
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a signed-out caller gets no holdsRecords",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 5,
+            "counters": {
+              "card": 3
+            },
+            "digest": "3de78858478850d26703868a4f4006fb53dbfc0c7a0b4b0f4dab5999fd83d394"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "729fa498a82eb85ae6c5f557af05dbf135cf64d16d8cceea05c92de120491d89",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "2500:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2500:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "3000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "3000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Three",
+                  "3000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "3500:0:srv"
+              ],
+              "born": "3500:0:srv",
+              "f": {
+                "startedAt": [
+                  3500,
+                  "3500:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "dead",
+                "2800:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "dead",
+                "2700:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "born": "1500:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "2600:0:r_aaaaaaaaaaaa",
+              "seq": 3
+            }
+          ]
+        }
+      },
+      "account": null,
+      "serverTime": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "schema": 1,
+          "minSchema": 1
+        }
+      }
+    }
+  }
+]

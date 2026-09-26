@@ -1,0 +1,775 @@
+[
+  {
+    "name": "base-unknown switches every text base to the text it was edited from and returns the entry to ready",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft one",
+                      "rev": 3,
+                      "merged": false
+                    }
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "bc31d225bfa8df14800dccb951c87d46f8c5f08e38a9eaf089dddefa8782b190",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ids": [],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": "draft one, edited"
+              }
+            }
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "refused",
+                  "code": "base-unknown"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "x": {
+                    "memo": {
+                      "text": "draft one, edited",
+                      "base": {
+                        "rev": 3
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5000,
+                "counter": 0
+              },
+              "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft one",
+                      "rev": 3,
+                      "merged": false
+                    }
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "bc31d225bfa8df14800dccb951c87d46f8c5f08e38a9eaf089dddefa8782b190",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/overlay/b_00000001",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/overlay/b_00000001",
+                  "d": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "x": {
+                        "memo": {
+                          "text": "draft one, edited",
+                          "base": {
+                            "text": "draft one"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                },
+                "baseTexts": {
+                  "[\"mark\",\"oak\",\"memo\"]": "draft one"
+                },
+                "numbered": true
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "the recovered entry is numbered again and merges on its text base",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft one",
+                      "rev": 3,
+                      "merged": false
+                    }
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "bc31d225bfa8df14800dccb951c87d46f8c5f08e38a9eaf089dddefa8782b190",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ids": [],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": "draft one, edited"
+              }
+            }
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "refused",
+                  "code": "base-unknown"
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 6
+                }
+              ]
+            }
+          },
+          "deviceNow": 5002,
+          "tSend": 5002,
+          "tRecv": 5002
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "x": {
+                    "memo": {
+                      "text": "draft one, edited",
+                      "base": {
+                        "rev": 3
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "x": {
+                    "memo": {
+                      "text": "draft one, edited",
+                      "base": {
+                        "text": "draft one"
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 2
+            }
+          ]
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5000,
+                "counter": 0
+              },
+              "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft one",
+                      "rev": 3,
+                      "merged": false
+                    }
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6M30",
+                "digest": "bc31d225bfa8df14800dccb951c87d46f8c5f08e38a9eaf089dddefa8782b190",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/overlay/b_00000001",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/overlay/b_00000001",
+                  "d": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "x": {
+                        "memo": {
+                          "text": "draft one, edited",
+                          "base": {
+                            "text": "draft one"
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 2
+                },
+                "baseTexts": {
+                  "[\"mark\",\"oak\",\"memo\"]": "draft one"
+                },
+                "numbered": true,
+                "n": 2,
+                "digest": "948a060879ede8c77f63794d99f69773b2dbc3cd3e5cad08d586d67e0ded26b4",
+                "resultSeq": 6,
+                "resultEpoch": "ep-1"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "a base rev the server still keeps merges without recovery",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft two",
+                      "rev": 4,
+                      "merged": false
+                    }
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "3b66d0e5b6a23e9fecd9c6996bfefcdbca099f69a88dfe1fa84ef11eb29f093d",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ids": [],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/overlay/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": "draft two, edited"
+              }
+            }
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 6
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/overlay/b_00000001",
+              "d": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "x": {
+                    "memo": {
+                      "text": "draft two, edited",
+                      "base": {
+                        "rev": 4
+                      }
+                    }
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5000,
+                "counter": 0
+              },
+              "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "liveHint": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/overlay/b_00000001": [
+                {
+                  "t": "mark",
+                  "id": "oak",
+                  "f": {
+                    "done": [
+                      false,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "x": {
+                    "memo": {
+                      "text": "draft two",
+                      "rev": 4,
+                      "merged": false
+                    }
+                  },
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/overlay/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "3b66d0e5b6a23e9fecd9c6996bfefcdbca099f69a88dfe1fa84ef11eb29f093d",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/overlay/b_00000001",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/overlay/b_00000001",
+                  "d": [
+                    {
+                      "t": "mark",
+                      "id": "oak",
+                      "x": {
+                        "memo": {
+                          "text": "draft two, edited",
+                          "base": {
+                            "rev": 4
+                          }
+                        }
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "baseTexts": {
+                  "[\"mark\",\"oak\",\"memo\"]": "draft two"
+                },
+                "n": 1,
+                "digest": "6a8533b95cdca94c6dc680153f7519f0263f7628473167720cb501293650e646",
+                "numbered": true,
+                "resultSeq": 6,
+                "resultEpoch": "ep-1"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  }
+]

@@ -1,0 +1,550 @@
+[
+  {
+    "name": "a joined row exactly at MAX_RECORD_BYTES as stored is admitted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Bounded",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "body": [
+                "twelve bytes",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "limits": {
+        "MAX_RECORD_BYTES": 232
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "fb0269dac36b8f27920d67dfb8d548b39f49c2c4adf6438d9c77da41e131c65c"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "5000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "twelve bytes",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Bounded",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a joined row one byte over MAX_RECORD_BYTES as stored is too-large",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": "5000:0:r_aaaaaaaaaaaa",
+            "life": [
+              "alive",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "f": {
+              "title": [
+                "Bounded",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "body": [
+                "twelve bytes",
+                "5000:0:r_aaaaaaaaaaaa"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "limits": {
+        "MAX_RECORD_BYTES": 231
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "too-large"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a text base longer than the bound does not count toward it",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "17c0c28b45df20b4df6ee1548aa0520a812b82e4911d465b78633fc258324d17",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/overlay/b_00000001",
+        "d": [
+          {
+            "t": "mark",
+            "id": "ash",
+            "x": {
+              "memo": {
+                "text": "short",
+                "base": {
+                  "text": "a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft a long draft "
+                }
+              }
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "limits": {
+        "MAX_RECORD_BYTES": 110
+      }
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "4eaa5355f9fe4cb5a4b559dea96272180ffe075d3b11c39dc2b3de78f8be6d55",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "36782a9d706a2cb96fa5db23636370c7605e57039f93e7367384ba0f50f88c47",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "ash",
+              "x": {
+                "memo": {
+                  "text": "short",
+                  "rev": 2,
+                  "merged": false
+                }
+              },
+              "seq": 2,
+              "rc": 1000000,
+              "ru": 1000000
+            },
+            {
+              "t": "mark",
+              "id": "oak",
+              "f": {
+                "done": [
+                  true,
+                  "2400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "ash"
+              ],
+              "life": [
+                "alive",
+                "2300:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "tag",
+              "id": "ash",
+              "life": [
+                "alive",
+                "2200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Ash",
+                  "2200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "2100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  }
+]
