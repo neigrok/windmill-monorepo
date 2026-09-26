@@ -68,8 +68,6 @@ jobs:
 
       # Automatic signing with -allowProvisioningUpdates: the API key lets xcodebuild fetch or create
       # the certificate and the profile (Associated Domains included) with no Xcode account signed in.
-      # The archive is signed for distribution: a development profile needs a registered device, and
-      # the team registers none.
       # The build number is this workflow's run number, so every upload is a new build.
       - name: Archive
         env:
@@ -85,7 +83,6 @@ jobs:
             -authenticationKeyID "$ASC_KEY_ID" \
             -authenticationKeyIssuerID "$ASC_ISSUER_ID" \
             DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES \
-            CODE_SIGN_IDENTITY="Apple Distribution" \
             CURRENT_PROJECT_VERSION=${{ github.run_number }} \
             IOS_SENTRY_DSN="$IOS_SENTRY_DSN"
 
