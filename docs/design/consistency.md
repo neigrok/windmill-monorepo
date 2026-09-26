@@ -25,6 +25,24 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 - **F5 / 1w · Unused glow.** Audit the Gym library's Daylight `glow/set-done` values and remove
   unused bindings. Daylight web has no set-done glow.
 
+### Sync engine
+
+Spec: [Windmill sync engine](../SYNC_ENGINE.md), specified and not yet adopted by any product. Canon
+disagrees with it in these places; each needs an owner ruling before a product adopts the engine.
+
+- **7a · Leaving the room.** `gym/briefs/13-gestures.md` "Leaving the room" abandons in-memory
+  holds when the app leaves the foreground: rows return and nothing is sent. The spec (§7.3) keeps a
+  held delete on disk for its full 9 s, re-offers Undo on return and sends it after process death.
+- **7b · Notes reorder.** `13-gestures.md` and `gym/briefs/10-notes.md` ("An order names every
+  note") send the complete order. The spec writes one fractional `ord` per moved note.
+- **7c · Sign-out.** `roadmap/guidelines/auth.md` keeps local copies editable after sign-out;
+  `guidelines/superapp-flow.md` §7 says pages and log leave the phone. The spec purges the confirmed
+  cache and keeps unsent changes until the same account signs in (§7.10). The sign-out alert and the
+  signed-out line (*Nothing of yours is left on this phone*) need a variant that states the count
+  of unsent changes and offers Keep or Discard.
+- **7d · Adoption prompt.** `auth.md` says adoption is always additive and no screen asks; gym asks
+  *These are mine* / *Not mine* for unclaimed training. The spec supports both; choose one rule.
+
 ## iOS first run
 
 Canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and
