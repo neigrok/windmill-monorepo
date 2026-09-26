@@ -35,7 +35,9 @@ The room's name, top-left, is a native `Menu` (a glass button with a chevron). T
 - the room you are in carries the checkmark;
 - each room row is its name, its symbol and at most one short line;
 - the You row's line is the account state: *Not signed in* signed out, *<name> · backed up*
-  signed in.
+  signed in;
+- a room may add one item of its own between the rooms and You, shown only inside that room.
+  Journal's is **Show ink notes** (`journal/onboarding.md` §2); Gym has none.
 
 The menu is the only way between rooms inside the app. It never carries a count, a badge or an
 unread total. A third room is one more row here and one more door on Where to start?; nothing
@@ -56,7 +58,7 @@ else moves.
   verdigris-grey stone for Gym. The shell does not invent a room's colours; it only says *light or
   dark*, and the room maps that onto its own place.
 - **Its own settings.** You lists them and walks you in; it never absorbs them.
-- The line it lends its room-menu row.
+- The line it lends its room-menu row, and its own room-menu item, if any (§3).
 
 **A room reports its skin outward exactly once**, so the shell can dress the chrome it lays over
 that room. It must be a live value rather than a constant on the product: journal's skin is night
