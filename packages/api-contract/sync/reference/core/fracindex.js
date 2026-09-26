@@ -118,12 +118,12 @@ export function compareMembers(x, y) {
   return x.id < y.id ? -1 : 1;
 }
 
-// `stored` and `drawn`: the list's visible members `{id, key}` in each view. `above`: the drawn member
-// immediately above the drop point, or null at the top.
+// `stored` and `drawn`: the list's visible members `{id, key}` in each view. `above`: the member
+// immediately above the drop point, looked up in `drawn`, then in `stored`, or null at the top.
 export function dropKey({ stored, drawn, moved, above }) {
   const storedOrder = stored.filter((member) => member.id !== moved).sort(compareMembers);
   if (above === null) return between(null, storedOrder.length ? storedOrder[0].key : null);
-  const anchor = storedOrder.find((member) => member.id === above) ?? drawn.find((member) => member.id === above);
+  const anchor = drawn.find((member) => member.id === above) ?? storedOrder.find((member) => member.id === above);
   if (!anchor) throw new OrderKeyError(`drop anchor ${above} is not in the list`);
   const successor = storedOrder.find((member) => member.key > anchor.key);
   return between(anchor.key, successor ? successor.key : null);

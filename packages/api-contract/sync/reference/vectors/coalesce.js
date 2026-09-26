@@ -108,13 +108,13 @@ function blocked() {
       device: device(PROBE),
       steps: [
         commitStep('self/probe', [update('card0001', { title: 'Uno' })], undefined, 5000),
-        commitStep('self/probe', [update('card0001', { tier: 'done' })], { guard: true }, 5001),
+        commitStep('self/probe', [update('card0001', { tier: 'done' })], { guard: [{ t: 'card', id: 'card0001', field: 'tier' }] }, 5001),
       ],
     }),
     stepsVector('a guarded earlier entry is not plain and takes no join', {
       device: device(PROBE),
       steps: [
-        commitStep('self/probe', [update('card0001', { title: 'Uno' })], { guard: true }, 5000),
+        commitStep('self/probe', [update('card0001', { title: 'Uno' })], { guard: [{ t: 'card', id: 'card0001', field: 'title' }] }, 5000),
         commitStep('self/probe', [update('card0001', { tier: 'done' })], undefined, 5001),
       ],
     }),

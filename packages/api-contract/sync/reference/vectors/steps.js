@@ -110,7 +110,8 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       const timing = step.send ? { send: step.send, recv: step.recv } : steadyTiming(step.tSend ?? ctx.deviceNow, step.tRecv ?? ctx.deviceNow);
       switch (step.op) {
         case 'commit':
-          answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
+          if (step.changes === null) answer(commit(replica, ctx, step.scope, () => ({ gesture: null })).outcome);
+          else answer(commit(replica, ctx, step.scope, step.changes ?? [], step.opts ?? {}));
           break;
         case 'release':
           answer(release(replica, registry, ended, replica.entry(step.localId)));

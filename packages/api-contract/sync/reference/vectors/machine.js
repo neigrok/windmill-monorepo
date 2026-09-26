@@ -41,6 +41,7 @@ export function files() {
         ['held', 'ok'],
         ['ready', 'ok'],
         ['ready', 'undo'],
+        ['ready', 'retire'],
         ['sent', 'release'],
         ['sent', 'undo'],
         ['sent', 'coalesce'],

@@ -18,7 +18,7 @@ test(`replay fuzz: ${runs} runs of ${steps} steps from seed ${firstSeed} hold ev
     for (const [key, count] of Object.entries(world.coverage())) coverage[key] = (coverage[key] ?? 0) + count;
   }
   assert.deepEqual(failures, []);
-  for (const exercised of ['ended coalesced by coalesce', 'ended refused by target-merged', 'ok with a joining write map', 'refused clock-skew', 'refused cap', 'refused internal', 'http 401 unauthenticated', 'http 400 malformed', 'http 413 request-too-large', 'retry']) {
+  for (const exercised of ['ended coalesced by coalesce', 'ended refused by target-merged', 'ok with a joining write map', 'refused clock-skew', 'refused cap', 'refused internal', 'http 401 unauthenticated', 'http 400 malformed', 'http 413 request-too-large', 'retry', 'retired']) {
     if (runs >= 60) assert.ok(coverage[exercised] > 0, `the fuzz never exercised: ${exercised}`);
   }
 });

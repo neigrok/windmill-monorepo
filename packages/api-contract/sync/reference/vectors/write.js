@@ -74,7 +74,7 @@ export function files() {
     .add(commitStep([], start('run00009'), 5000))
     .push(5000)
     .add(commitStep([{ op: 'create', t: 'lap', id: 'lap00001', f: { runId: 'run00009', weight: 40 } }], undefined, 5001))
-    .add(commitStep([{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Mine' } }], { guard: true }, 5002))
+    .add(commitStep([{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Mine' } }], { guard: [{ t: 'run', id: 'run00009', field: 'label' }] }, 5002))
     .add(commitStep([], end('run00009', 5003), 5003))
     .add(commitStep([{ op: 'delete', t: 'run', id: 'run00009' }], { hold: true }, 5004))
     .respond({ serverNow: 5010, tRecv: 5011 });
@@ -96,7 +96,7 @@ export function files() {
   const guarded = new ServerScript({ device: device([]), server: server([]) })
     .add(commitStep([], start('run00009', 'Go'), 5000))
     .push(5000)
-    .add(commitStep([{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Later' } }], { guard: true }, 5001))
+    .add(commitStep([{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Later' } }], { guard: [{ t: 'run', id: 'run00009', field: 'label' }] }, 5001))
     .respond({ serverNow: 5010, tRecv: 5011 });
 
   return {

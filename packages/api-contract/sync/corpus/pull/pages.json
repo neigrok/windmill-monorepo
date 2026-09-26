@@ -2062,6 +2062,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -2092,6 +2093,7 @@
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5003:0:r_aaaaaaaaaaaa"
         },
         {
@@ -3305,6 +3307,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -3336,6 +3339,7 @@
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5002:0:r_aaaaaaaaaaaa"
         },
         {
@@ -3975,6 +3979,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -4006,6 +4011,7 @@
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5002:0:r_aaaaaaaaaaaa"
         },
         {
@@ -7938,6 +7944,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -7969,6 +7976,7 @@
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5002:0:r_aaaaaaaaaaaa"
         },
         {

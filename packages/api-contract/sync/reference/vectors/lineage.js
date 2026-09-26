@@ -23,7 +23,7 @@ function replicaAfter(meta, steps, extra = {}) {
 function anonWithWork() {
   return replicaAfter({ ...freshMeta(ANON, 'anon') }, [
     commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Offline' } }], undefined, 3000),
-    commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { tier: 'draft' } }], { guard: true }, 3001),
+    commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { tier: 'draft' } }], { guard: [{ t: 'card', id: 'card0009', field: 'tier' }] }, 3001),
     commitStep('self/probe', [], {
       cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 3002, join: true } },
       predict: [{ op: 'create', t: 'run', id: 'run00009', f: { startedAt: 3002 } }],

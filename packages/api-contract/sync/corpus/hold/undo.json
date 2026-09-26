@@ -102,6 +102,7 @@
           "localIds": [
             "del/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         true
@@ -293,6 +294,7 @@
           "localIds": [
             "del/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         null,
@@ -502,6 +504,7 @@
           "localIds": [
             "del/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         false
@@ -712,6 +715,7 @@
           "localIds": [
             "edit/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         false

@@ -447,6 +447,117 @@
     }
   },
   {
+    "name": "below a member only stored holds, inside its delete window: between it and the next stored key",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "H",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "moved": "D",
+      "above": "H"
+    },
+    "expect": {
+      "key": "a1V",
+      "drawn": [
+        "A",
+        "D",
+        "C"
+      ],
+      "stored": [
+        "A",
+        "H",
+        "D",
+        "C"
+      ]
+    }
+  },
+  {
+    "name": "an anchor both views hold at different keys takes its drawn key",
+    "input": {
+      "stored": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a1"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "drawn": [
+        {
+          "id": "A",
+          "key": "a0"
+        },
+        {
+          "id": "B",
+          "key": "a2V"
+        },
+        {
+          "id": "C",
+          "key": "a2"
+        },
+        {
+          "id": "D",
+          "key": "a3"
+        }
+      ],
+      "moved": "A",
+      "above": "B"
+    },
+    "expect": {
+      "key": "a2l",
+      "drawn": [
+        "C",
+        "B",
+        "A",
+        "D"
+      ],
+      "stored": [
+        "B",
+        "C",
+        "A",
+        "D"
+      ]
+    }
+  },
+  {
     "name": "after the first of two equal keys: between it and the next greater key",
     "input": {
       "stored": [

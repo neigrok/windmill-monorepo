@@ -127,7 +127,7 @@ function folds() {
         predict: [{ op: 'create', t: 'run', id: 'run0000b1', f: { startedAt: 5000 } }],
       }, 5000))
       .add(commitStep('self/probe', [{ op: 'create', t: 'lap', id: 'lap00001', f: { runId: 'run0000b1', weight: 40 } }], undefined, 5001))
-      .add(commitStep('self/probe', [{ op: 'update', t: 'lap', id: 'lap00001', f: { weight: 45 } }], { guard: true }, 5002))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'lap', id: 'lap00001', f: { weight: 45 } }], { guard: [{ t: 'lap', id: 'lap00001', field: 'weight' }] }, 5002))
       .add(commitStep('self/probe', [], {
         cmd: { name: 'probe.end', args: { runId: 'run0000b1', endedAt: 5003 } },
         predict: [{ op: 'update', t: 'run', id: 'run0000b1', f: { endedAt: 5003 } }],
@@ -157,12 +157,12 @@ function folds() {
       .add(commitStep('self/probe', [
         { op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } },
         { op: 'update', t: 'card', id: 'card0001', f: { title: 'Kept' } },
-      ], { atomic: true, guard: true }, 5001))
+      ], { atomic: true, guard: [{ t: 'card', id: 'card0009', field: 'title' }, { t: 'card', id: 'card0001', field: 'title' }] }, 5001))
       .respond({ serverNow: 5002 })
       .vector('a partly dependent entry loses the dependent delta and its guards and keeps the rest'),
     script()
       .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
-      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], { guard: true }, 5001))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], { guard: [{ t: 'card', id: 'card0009', field: 'title' }] }, 5001))
       .pushRound({ deviceNow: 5002 })
       .vector('a sent dependent becomes an orphan held in the notice, and its refusal ends it without a notice of its own'),
     script()
@@ -217,7 +217,7 @@ function restamps() {
       .add(commitStep('self/probe', [newCard('card0009')], undefined, skewed(5000)))
       .add(commitStep('self/probe', [{ op: 'create', t: 'board', id: 'b_00000002' }], undefined, skewed(5001)))
       .push(skewed(5001))
-      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], { guard: true }, skewed(5002)))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], { guard: [{ t: 'card', id: 'card0009', field: 'title' }] }, skewed(5002)))
       .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], { hold: true }, skewed(5003)))
       .respond({ serverNow: 5000, budget: 1, tRecv: skewed(5004) })
       .vector('clock-skew returns later unprocessed entries to ready and restamps every held and ready entry in commit order'),

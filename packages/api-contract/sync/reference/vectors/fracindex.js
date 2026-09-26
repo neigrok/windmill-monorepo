@@ -90,6 +90,18 @@ export function files() {
         moved: 'A',
         above: 'B',
       }),
+      drop('below a member only stored holds, inside its delete window: between it and the next stored key', {
+        stored: [A, { id: 'H', key: 'a1' }, C, D],
+        drawn: [A, C, D],
+        moved: 'D',
+        above: 'H',
+      }),
+      drop('an anchor both views hold at different keys takes its drawn key', {
+        stored: [A, B, C, D],
+        drawn: [A, { id: 'B', key: 'a2V' }, C, D],
+        moved: 'A',
+        above: 'B',
+      }),
       drop('after the first of two equal keys: between it and the next greater key', {
         stored: [{ id: 'A', key: 'a1' }, { id: 'B', key: 'a1' }, { id: 'D', key: 'a3' }, { id: 'C', key: 'a5' }],
         moved: 'C',

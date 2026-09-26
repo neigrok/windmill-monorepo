@@ -313,7 +313,7 @@ function skewTranscript() {
   });
   stage.do('d1', 'commit', createCard('card0001', 'One'), fast);
   stage.do('d1', 'commit', editCard('card0001', 'Uno'), fast + 5);
-  stage.do('d1', 'commit', { scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { body: 'More' } }], opts: { guard: true } }, fast + 6);
+  stage.do('d1', 'commit', { scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { body: 'More' } }], opts: { guard: [{ t: 'card', id: 'card0001', field: 'body' }] } }, fast + 6);
   stage.push('d1', { serverNow: T, deviceNow: fast + 10, budget: 1 });
   stage.push('d1', { serverNow: T + 20, deviceNow: fast + 30 });
   stage.pull('d1', ['self/probe'], { serverNow: T + 40, deviceNow: fast + 50 });

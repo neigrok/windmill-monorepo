@@ -4,10 +4,11 @@
 import { Clock } from '../core/clock.js';
 import { CONSTANTS } from '../core/constants.js';
 import { derive, mintId } from '../core/derive.js';
+import { OrderKeyError, dropKey } from '../core/fracindex.js';
 import { jcs, sameJson } from '../core/jcs.js';
-import { INTENT_MACHINE, transition } from '../core/machines.js';
+import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
-import { recordKey } from '../core/rows.js';
+import { isVisible, recordKey } from '../core/rows.js';
 import { roundToQuantum } from '../core/values.js';
 import { coalesce } from './coalesce.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
@@ -19,8 +20,8 @@ export function baseTextKey(t, id, field) {
 }
 
 class DeltaBuilder {
-  constructor({ registry, replica, scope, stamp, physNow, drawnView, draw }) {
-    Object.assign(this, { registry, replica, scope, stamp, physNow, drawnView, draw });
+  constructor({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw }) {
+    Object.assign(this, { registry, replica, scope, stamp, physNow, drawnView, storedView, draw });
     this.chosen = new Set();
     this.baseTexts = {};
   }
@@ -33,9 +34,12 @@ class DeltaBuilder {
 
   delta(change) {
     const type = this.typeOf(change);
+    if (change.anchor !== undefined && change.op !== 'create' && change.op !== 'move') throw new CommitError(`a ${change.op} carries no anchor`);
     switch (change.op) {
       case 'create':
         return this.create(type, change);
+      case 'move':
+        return this.move(type, change);
       case 'update':
         return this.update(type, change);
       case 'delete':
@@ -90,13 +94,40 @@ class DeltaBuilder {
     if (!type.hasBorn) throw new CommitError(`${type.type} is created by put or write`);
     const id = this.idOf(type, change);
     this.chosen.add(id);
+    const values = change.anchor === undefined ? change.f : this.placed(type, id, change.f, change.anchor);
     if (this.drawnView.has(recordKey(type.type, id))) return null;
     const delta = { t: type.type, id, born: this.stamp, life: ['alive', this.stamp] };
-    const f = this.fields(type, change.f, undefined, { create: true });
+    const f = this.fields(type, values, undefined, { create: true });
     if (Object.keys(f).length) delta.f = f;
     const x = this.texts(type, id, change.x, undefined);
     if (Object.keys(x).length) delta.x = x;
     return delta;
+  }
+
+  // §7.1 step 4: a move writes only its anchor's order field, as the update, put or write the type takes.
+  move(type, change) {
+    if (change.anchor === undefined) throw new CommitError('a move carries an anchor');
+    const current = this.existing(type, change);
+    const f = this.placed(type, change.id, {}, change.anchor);
+    if (type.hasBorn) return this.update(type, { op: 'update', id: change.id, f });
+    if (type.life) return this.put(type, { op: 'put', id: change.id, present: current.life?.[0] === 'alive', f });
+    return this.write(type, { op: 'write', id: change.id, f });
+  }
+
+  // The change's values with the anchor's order field at D-25's drop position: the anchor `below` is
+  // looked up in drawn, then in stored, and the list is the type's visible records that hold the field.
+  placed(type, id, values = {}, { field, below }) {
+    if (type.field(field)?.domain?.type !== 'fracKey') throw new CommitError(`${type.type}.${field} is not an order field`);
+    if (values[field] !== undefined) throw new CommitError(`${type.type}.${field} is written beside an anchor`);
+    const members = (records) => [...records.values()]
+      .filter((record) => record.t === type.type && isVisible(type, record) && record.f?.[field] !== undefined)
+      .map((record) => ({ id: record.id, key: record.f[field][0] }));
+    try {
+      return { ...values, [field]: dropKey({ stored: members(this.storedView), drawn: members(this.drawnView), moved: id, above: below }) };
+    } catch (error) {
+      if (error instanceof OrderKeyError) throw new CommitError(error.message);
+      throw error;
+    }
   }
 
   existing(type, change) {
@@ -203,13 +234,15 @@ function refusalOfScope(replica, registry, scope) {
   return record?.life?.[0] === 'dead' ? 'scope-dead' : null;
 }
 
-function guardsOf(opts, deltas, storedView) {
-  if (!opts.guard) return [];
-  const named = [];
-  for (const delta of deltas) for (const field of Object.keys(delta.f ?? {})) named.push({ t: delta.t, id: delta.id, field });
-  if (Array.isArray(opts.guard)) named.push(...opts.guard);
+// §7.1 step 6: exactly the listed registers `{t, id, field}`, each at its stamp in stored, null when
+// unset. A field the type does not declare as a lattice field (`life` and text fields included) throws.
+function guardsOf(registry, scope, listed, storedView) {
+  if (!Array.isArray(listed)) throw new CommitError('guard lists registers');
   const guards = new Map();
-  for (const { t, id, field } of named) {
+  for (const { t, id, field } of listed) {
+    const type = registry.type(t);
+    if (!type || type.scope !== registry.scopeKindOf(scope)) throw new CommitError(`a guard on ${t} does not live in ${scope}`);
+    if (!Registry.isLattice(type.field(field)?.kind)) throw new CommitError(`${t}.${field} is not a guardable register`);
     const stamp = storedView.get(recordKey(t, id))?.f?.[field]?.[1] ?? null;
     guards.set(jcs([t, id, field]), { t, id, field, stamp });
   }
@@ -235,11 +268,12 @@ function groupIntents(scope, deltas, guards, opts, gestureId) {
   return intents;
 }
 
-// §7.1 step 8: the growth rule on `stored` with the gesture applied; a held delete still occupies its slot.
-function exceedsCap(registry, storedView, deltas) {
+// §7.1 step 8: the capped type the gesture's deltas, applied to `stored`, grow past its cap by the growth
+// rule, or undefined. A held delete still occupies its slot.
+function cappedType(registry, storedView, deltas) {
   const after = new Map(storedView);
   for (const delta of deltas) foldDelta(after, registry, delta);
-  return [...new Set(deltas.map((delta) => delta.t))].some((t) => {
+  return [...new Set(deltas.map((delta) => delta.t))].find((t) => {
     const cap = registry.type(t).cap;
     if (cap === undefined) return false;
     const count = visibleCount(registry, after, t);
@@ -247,14 +281,36 @@ function exceedsCap(registry, storedView, deltas) {
   });
 }
 
-// ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits}. `changes` is a list, or a
-// function of the views {drawn, stored} called in this transaction. Answers {localIds, stamp} or
-// {refused}. A throw or a cap refusal writes nothing, and a too-large refusal writes only its notice: the
-// clock is written back once the commit is accepted.
+// §7.1 step 4: the held gestures of the scope that carry no command and whose every delta removes
+// (life → dead) a record `retire` names, as their entries.
+function retiringEntries(replica, scope, retire) {
+  if (retire.length === 0) return [];
+  const named = new Set(retire.map(({ t, id }) => recordKey(t, id)));
+  const removes = (entry) => entry.intent.cmd === undefined && (entry.intent.d ?? []).length > 0
+    && entry.intent.d.every((delta) => delta.life?.[0] === 'dead' && named.has(recordKey(delta.t, delta.id)));
+  const gestures = new Map();
+  for (const entry of replica.entries()) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
+  return [...gestures.values()].filter((gesture) => gesture.every((entry) => entry.state === 'held' && entry.scope === scope && removes(entry))).flat();
+}
+
+// ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits}. `changes` is a list with its
+// `opts`, answering {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a
+// function of the views {drawn, stored} read in this transaction before the scope check, answering
+// {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}. A null gesture
+// writes nothing, ticks no clock and gives a null outcome. A throw writes nothing.
 export function commit(replica, ctx, scope, changes, opts = {}) {
+  if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`);
+  if (typeof changes !== 'function') return commitGesture(replica, ctx, scope, changes, opts);
+  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope) });
+  if (!gesture) return { outcome: null, value };
+  return { outcome: commitGesture(replica, ctx, scope, gesture.changes, gesture.opts ?? {}), value };
+}
+
+// §7.1 steps 2–11. A cap refusal writes nothing, and a too-large refusal writes only its notice; neither
+// retires. The clock is written back once the commit is accepted.
+function commitGesture(replica, ctx, scope, changes, opts) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
-  if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`);
   const scopeRefusal = refusalOfScope(replica, registry, scope);
   if (scopeRefusal) return { refused: scopeRefusal };
 
@@ -263,14 +319,15 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
   clock.observe(replica.meta.hlcHigh);
   const stamp = clock.tick();
 
-  const drawnView = drawn(replica, registry, scope);
+  const retiring = retiringEntries(replica, scope, opts.retire ?? []);
+  const drawnView = drawn(replica, registry, scope, retiring);
   const storedView = stored(replica, registry, scope);
-  const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, draw: ctx.draw });
-  const gesture = typeof changes === 'function' ? changes({ drawn: drawnView, stored: storedView }) : changes;
-  const deltas = gesture.map((change) => builder.delta(change)).filter((delta) => delta !== null);
+  const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
+  const deltas = changes.map((change) => builder.delta(change)).filter((delta) => delta !== null);
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
-  if (exceedsCap(registry, storedView, deltas)) return { refused: 'cap' };
-  const guards = guardsOf(opts, deltas, storedView);
+  const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
+  const capped = cappedType(registry, storedView, deltas);
+  if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };
   const gestureId = opts.gestureId ?? ctx.nextGestureId();
   const intents = groupIntents(scope, deltas, guards, opts, gestureId);
 
@@ -283,6 +340,7 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
     return { refused: 'too-large' };
   }
 
+  for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
   replica.meta.hlc = clock.pair;
   const firstOrder = replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {
@@ -318,5 +376,5 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
     else replica.deviceRows(product)[key] = value;
   }
   replica.meta.hlcHigh = stamp;
-  return { localIds: entries.map((entry) => entry.localId), stamp };
+  return { localIds: entries.map((entry) => entry.localId), retired: [...new Set(retiring.map((entry) => entry.gestureId))], stamp };
 }

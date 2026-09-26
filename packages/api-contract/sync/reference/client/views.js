@@ -1,13 +1,14 @@
 // §7.6 views: confirmed rows joined with pending deltas and predictions in commit order; `drawn` has
 // held entries, `stored` does not. Texts are plain strings; serials come only from confirmed rows.
+// `except` leaves out entries a commit is retiring (§7.1 step 4).
 
 import { joinRecord } from '../core/merge.js';
 import { isVisible, latticeOf, recordKey } from '../core/rows.js';
 
 const PENDING = new Set(['ready', 'sent', 'acked']);
 
-export function pendingEntries(replica, scope, withHeld) {
-  return replica.entries(scope).filter((entry) => PENDING.has(entry.state) || (withHeld && entry.state === 'held'));
+export function pendingEntries(replica, scope, withHeld, except = []) {
+  return replica.entries(scope).filter((entry) => (PENDING.has(entry.state) || (withHeld && entry.state === 'held')) && !except.includes(entry));
 }
 
 function viewRecord(row) {
@@ -30,10 +31,10 @@ export function foldDelta(records, registry, delta) {
   records.set(key, next);
 }
 
-export function view(replica, registry, scope, { withHeld }) {
+export function view(replica, registry, scope, { withHeld, except }) {
   const records = new Map();
   for (const row of replica.confirmedRows(scope)) records.set(recordKey(row.t, row.id), viewRecord(row));
-  for (const entry of pendingEntries(replica, scope, withHeld)) {
+  for (const entry of pendingEntries(replica, scope, withHeld, except)) {
     for (const delta of [...(entry.intent.d ?? []), ...(entry.predict ?? [])]) foldDelta(records, registry, delta);
   }
   return records;
@@ -45,8 +46,8 @@ export function visibleCount(registry, records, t) {
   return count;
 }
 
-export function drawn(replica, registry, scope) {
-  return view(replica, registry, scope, { withHeld: true });
+export function drawn(replica, registry, scope, except = []) {
+  return view(replica, registry, scope, { withHeld: true, except });
 }
 
 export function stored(replica, registry, scope) {

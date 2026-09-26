@@ -233,11 +233,12 @@ list growing by inserts at seeded places, in order.
 ### `fracindex/drop.json` — client
 
 `input: {stored: [{id, key}], drawn: [{id, key}], moved, above}` (the list's visible members in each
-view; `above` is the drawn member just above the drop point, or null for the top) ·
+view; `above` is the member just above the drop point, or null for the top) ·
 `expect: {key, drawn: [id], stored: [id]}`: the D-25 drop key, and each view's order by `(key, id)`
-after the move. The key lies between `above`'s key and the next greater key among the stored
-members other than `moved`; at the top, before the first stored member; with no greater key, after
-`above`. So a held-deleted member (stored, not drawn) keeps its place.
+after the move. `above` is looked up in `drawn`, then in `stored`, so it may be a member inside its
+delete window that only `stored` holds. The key lies between `above`'s key and the next greater key
+among the stored members other than `moved`; at the top, before the first stored member; with no
+greater key, after `above`. So a held-deleted member (stored, not drawn) keeps its place.
 
 ### `digest/row.json` — all
 
@@ -259,7 +260,7 @@ and fields hash as received.
 intent not yet enqueued (intent) or a replica not yet created (replica). With `to`, the answer is
 `to` iff the table allows that target; without it, the table's first target. The terminal intent
 outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
-- intent: `commit`, `coalesce`, `cancel`, `release`, `undo`, `number`, `fold`, `target-merged`, `ok`,
+- intent: `commit`, `coalesce`, `cancel`, `release`, `undo`, `retire`, `number`, `fold`, `target-merged`, `ok`,
   `recover` (clock-skew, base-unknown), `refuse`, `orphan-ok`, `transport`, `reidentify`,
   `skew-return`, `rewind`, `resolve`, `epoch`, `discard`;
 - replica: `first-launch`, `sign-in`, `sign-out-keep`, `sign-out-discard`, `discard`, `reidentify`
@@ -272,7 +273,7 @@ cancelled by a later delete"; `cancel` is "folded with such a cancel" (to `coale
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
 one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
-row; `epoch` is "epoch change, when `resultEpoch ≠ epoch`".
+row; `epoch` is "epoch change, when `resultEpoch ≠ epoch`"; `retire` is "retired by a commit".
 
 ### `text/tokens.json` — server
 
@@ -623,7 +624,7 @@ Expect: `{returns, device, ended, telemetry?}`.
 
 | op | args | spec | returns |
 |---|---|---|---|
-| `commit` | `scope, changes, opts` | §7.1 | `{localIds, stamp}`, or `{refused: code}` |
+| `commit` | `scope, changes, opts` | §7.1 | `{localIds, retired, stamp}`; `{refused: 'cap', detail: {type, cap}}`, `{refused: 'scope-dead'}` or `{refused: 'too-large'}`; `null` for `changes: null` |
 | `release` | `localId` | §7.3 | `true` if the entry was held |
 | `releaseAll` | — | §7.3 (leaving, engine start) | `null` |
 | `releaseDue` | `deviceNow` | §7.3 timer: every held entry with `releaseAt ≤ deviceNow` | `null` |
@@ -656,20 +657,32 @@ is answered for the caller to resume.
 
 | Change | Applies to |
 |---|---|
-| `{op: 'create', t, id?, label?, f?, x?}` | minted and derived types; without `id`, a derived id comes from `derive(label)` (D-26) |
+| `{op: 'create', t, id?, label?, f?, x?, anchor?}` | minted and derived types; without `id`, a derived id comes from `derive(label)` (D-26) |
 | `{op: 'update', t, id, f?, x?}` | minted and derived types |
 | `{op: 'delete', t, id}` | minted and derived types; for a keyed type, a put that removes |
 | `{op: 'revive', t, id, f?}` | minted and derived types |
 | `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true |
 | `{op: 'write', t, id, f?, x?}` | keyed types without life, and singletons |
+| `{op: 'move', t, id, anchor}` | any type with an order field; writes only `anchor.field` |
 
+- `changes: null` stands for a read-and-commit whose function decides no gesture: the step writes
+  nothing, ticks no clock, takes no gesture id and returns `null`, before the scope check.
 - `f` maps field names to plain values; commit stamps them.
+- `anchor` is `{field, below}`: an order field (`fracKey`) and the id of the record just above the
+  drop point, or `null` for the top. The field takes the D-25 drop key (`fracindex/drop.json`) over
+  the type's visible records holding the field, `below` looked up in `drawn`, then in `stored`. An
+  anchor absent from both views throws, and so does a value for `field` in `f` beside it.
 - `x` maps a text field to its new text, or to `{text, from}`, which names the text it was edited
   from. `from` defaults to the drawn text.
 
 **Opts** (`commit`):
 - `atomic`, `hold`: booleans.
-- `guard`: `true`, or a list of registers `{t, id, field}` the gesture read.
+- `guard`: a list of registers `{t, id, field}`, guarded exactly, each at its `stored` stamp (`null`
+  when unset). A field the type does not declare as a lattice field, `life` or a text field throws.
+- `retire`: a list of records `{t, id}`. Every held gesture of the scope that carries no command and
+  whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), and the
+  diff runs on `drawn` without it. `retired` lists those gesture ids; a refused commit retires
+  nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
 - `local`: `{deviceKey: value}`; `null` deletes the row.
@@ -677,7 +690,8 @@ is answered for the caller to resume.
 
 **Ids and order.**
 - A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
-  vector every commit that passes the scope check and builds its deltas.
+  vector every commit that passes the cap check (a too-large refusal takes one; `changes: null`, a
+  throw, and a `scope-dead` or `cap` refusal take none).
 - An entry's `localId` is `<gestureId>/<k>`, where `k` is the index of its intent in the gesture. A
   runner whose engine mints its own local ids maps them by gesture and index.
 - `commitOrder` is 1 plus the greatest in the outbox (1 when the outbox is empty). Sign-in appends
@@ -729,11 +743,17 @@ write-map stamps.
 - `ids.json`: minted, seeded and derived ids. A create without `id` mints one by its type's `mint`: the
   prefix, then `length` characters `alphabet[draw]` from the `draws` queue; a derived create without
   `id` and `label` mints the same way. A minted id already taken (in `drawn`, or spent) is drawn again.
-- `guards.json`: guards read from `stored`.
-- `grouping.json`: intents, holds, lineage, device rows, the scope check, and caps (§7.1 step 8): a
-  gesture that, applied to `stored`, raises a capped type's visible count above its cap and above the
-  count before answers `{refused: 'cap'}` and writes nothing (no entry, notice, clock write or gesture
-  id); a held delete still occupies its slot. A too-large gesture writes only its notice, no clock.
+- `guards.json`: exact guards, read from `stored`. An intent exists only with a delta or a command,
+  so a gesture with neither enqueues nothing, held or not, and its guards go with no intent.
+- `grouping.json`: intents, holds, lineage, device rows, `changes: null`, the scope check, and caps
+  (§7.1 step 8): a gesture that, applied to `stored`, raises a capped type's visible count above its
+  cap and above the count before answers `{refused: 'cap', detail: {type, cap}}` and writes nothing
+  (no entry, notice, clock write or gesture id); a held delete still occupies its slot. A too-large
+  gesture writes only its notice, no clock.
+- `retire.json`: `opts.retire` (§7.1 step 4). A retired gesture ends `undone` by `retire`; the record
+  keeps its untouched fields. A held gesture with a command, with a delta that does not remove, or
+  removing an unlisted record; a ready delete; a held removal in another scope; and any held gesture
+  under a refused commit are not retired.
 - `throws.json`: commits that throw. The step answers `{throws: true}` and writes nothing, the clock
   included: a commit is one local transaction.
 

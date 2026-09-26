@@ -9,6 +9,7 @@ export const INTENT_MACHINE = [
   { from: [null, 'ready'], event: 'coalesce', to: ['coalesced'] },
   { from: ['held'], event: 'release', to: ['ready'] },
   { from: ['held'], event: 'undo', to: ['undone'] },
+  { from: ['held'], event: 'retire', to: ['undone'] },
   { from: ['ready'], event: 'number', to: ['sent'] },
   { from: ['held', 'ready'], event: 'cancel', to: ['coalesced'] },
   { from: ['held', 'ready'], event: 'fold', to: ['refused'] },

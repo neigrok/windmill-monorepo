@@ -164,6 +164,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
@@ -195,6 +196,7 @@
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5035:0:r_aaaaaaaaaaaa"
         },
         {
@@ -549,6 +551,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
@@ -901,18 +904,21 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g3/0"
           ],
+          "retired": [],
           "stamp": "5002:0:r_aaaaaaaaaaaa"
         },
         {
@@ -1439,12 +1445,14 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -1884,6 +1892,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
@@ -2216,6 +2225,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
@@ -2581,12 +2591,14 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -3026,12 +3038,14 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -4606,12 +4620,14 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {
           "localIds": [
             "g2/0"
           ],
+          "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
         {
@@ -5032,6 +5048,7 @@
           "localIds": [
             "g1/0"
           ],
+          "retired": [],
           "stamp": "5000:0:r_aaaaaaaaaaaa"
         },
         {

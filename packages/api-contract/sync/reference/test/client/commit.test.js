@@ -15,19 +15,32 @@ function ctx(draws = []) {
   return { registry, actor: 'r_aaaaaaaaaaaa', deviceNow: 5000, ended: [], nextGestureId: () => `g${(gestures += 1)}`, draw: () => queue.shift() };
 }
 
-test('§7.1: changes given as a function of the views are decided from drawn and stored in the same commit', () => {
-  const card = row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { title: ['One', st(1000)] }, seq: 1 });
-  const replica = bound({ 'self/probe': [card] });
+const CARD = row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { title: ['One', st(1000)] }, seq: 1 });
+
+test('§7.1: a read-and-commit body decides its gesture from drawn and stored in the same commit, and its value comes back', () => {
+  const replica = bound({ 'self/probe': [CARD] });
   const context = ctx();
   commit(replica, context, 'self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true });
   const seen = [];
-  const outcome = commit(replica, context, 'self/probe', ({ drawn, stored }) => {
+  const answer = commit(replica, context, 'self/probe', ({ drawn, stored }) => {
     seen.push([...drawn.values()].map((record) => record.life[0]), [...stored.values()].map((record) => record.life[0]));
-    return [{ op: 'create', t: 'card', id: 'card0002', f: { title: `${stored.size} stored` } }];
+    return { gesture: { changes: [{ op: 'create', t: 'card', id: 'card0002', f: { title: `${stored.size} stored` } }], opts: { hold: true } }, value: 'decided' };
   });
   assert.deepEqual(seen, [['dead'], ['alive']]);
-  assert.deepEqual(outcome, { localIds: ['g2/0'], stamp: '5000:1:r_aaaaaaaaaaaa' });
+  assert.deepEqual(answer, { outcome: { localIds: ['g2/0'], retired: [], stamp: '5000:1:r_aaaaaaaaaaaa' }, value: 'decided' });
   assert.deepEqual(replica.entry('g2/0').intent.d[0].f.title, ['1 stored', '5000:1:r_aaaaaaaaaaaa']);
+  assert.equal(replica.entry('g2/0').state, 'held');
+});
+
+test('§7.1: a body answering no gesture writes nothing and ticks no clock, and its value still comes back', () => {
+  const replica = bound({ 'self/probe': [CARD] });
+  const before = replica.toJSON();
+  let gestures = 0;
+  const context = { ...ctx(), nextGestureId: () => `g${(gestures += 1)}` };
+  const answer = commit(replica, context, 'self/probe', ({ drawn }) => ({ gesture: null, value: drawn.size }));
+  assert.deepEqual(answer, { outcome: null, value: 1 });
+  assert.deepEqual(replica.toJSON(), before);
+  assert.equal(gestures, 0);
 });
 
 test('D-8: a minted id is the prefix and one alphabet character per draw', () => {

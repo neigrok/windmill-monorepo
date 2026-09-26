@@ -66,6 +66,17 @@
     }
   },
   {
+    "name": "held --retire--> undone",
+    "input": {
+      "from": "held",
+      "event": "retire",
+      "to": "undone"
+    },
+    "expect": {
+      "to": "undone"
+    }
+  },
+  {
     "name": "ready --number--> sent",
     "input": {
       "from": "ready",
@@ -331,6 +342,16 @@
     "input": {
       "from": "ready",
       "event": "undo"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: ready --retire--> any",
+    "input": {
+      "from": "ready",
+      "event": "retire"
     },
     "expect": {
       "error": true

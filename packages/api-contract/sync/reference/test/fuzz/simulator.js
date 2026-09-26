@@ -1,12 +1,11 @@
 // §11.3 the deterministic replay simulator: devices running the reference client against the reference
 // server over a network that drops, duplicates, delays and reorders, with process death and reboots,
-// clock error and device clock jumps, holds and undo, two tabs, sign-in and sign-out, 401, 400 and 413
-// envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()` states the
-// invariants after quiescence.
+// clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, 401, 400
+// and 413 envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()`
+// states the invariants after quiescence.
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../../core/constants.js';
-import { dropKey, compareMembers } from '../../core/fracindex.js';
 import { jcs } from '../../core/jcs.js';
 import { Registry } from '../../core/registry.js';
 import { compareRecords, isAlive, isVisible, recordKey } from '../../core/rows.js';
@@ -220,21 +219,30 @@ export class World {
     const alive = (t) => [...view.values()].filter((record) => record.t === t && isAlive(record));
     const record = (outcome) => {
       if (outcome.localIds) device.committed.push(...outcome.localIds);
+      if (outcome.retired?.length) this.count('retired');
       return outcome;
     };
     const choice = this.rng.int(16);
     const cards = alive('card');
     const runs = alive('run');
     const boards = alive('board');
+    const storedProbe = stored(replica, registry, 'self/probe');
+    // Anchors (D-25): ordered cards in drawn, and those inside a delete window, which only stored holds.
+    const ordered = [...new Set([...view.values(), ...storedProbe.values()].filter((c) => c.t === 'card' && isVisible(registry.type('card'), c) && c.f?.ord).map((c) => c.id))];
+    // A held gesture that only deletes one record, which a later commit may retire (§7.1 step 4).
+    const retirable = (t) => replica.entries().filter((entry) => entry.state === 'held' && entry.scope === 'self/probe' && entry.intent.cmd === undefined
+      && entry.intent.d?.length === 1 && entry.intent.d[0].t === t && entry.intent.d[0].life?.[0] === 'dead').map((entry) => entry.intent.d[0].id);
     if (choice === 0) {
-      const list = cards.map((card) => ({ id: card.id, key: card.f?.ord?.[0] })).filter((member) => member.key);
-      const ord = dropKey({ stored: list, drawn: list, moved: '', above: list.length ? [...list].sort(compareMembers).pop().id : null });
       const id = this.rng.chance(0.5) ? this.id('card') : undefined;
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'card', id, f: { title: this.rng.pick(WORDS), ord, tier: 'draft' } }]));
+      const below = ordered.length && this.rng.chance(0.8) ? this.rng.pick(ordered) : null;
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'card', id, f: { title: this.rng.pick(WORDS), tier: 'draft' }, anchor: { field: 'ord', below } }]));
     }
     if (choice === 14) {
-      const day = `2026-09-0${1 + this.rng.int(5)}`;
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'put', t: 'day', id: day, present: this.rng.chance(0.75), f: this.rng.chance(0.7) ? { score: this.rng.int(11) } : {} }]));
+      const deleted = retirable('day');
+      const day = deleted.length && this.rng.chance(0.6) ? this.rng.pick(deleted) : `2026-09-0${1 + this.rng.int(5)}`;
+      const present = this.rng.chance(0.75);
+      const opts = present ? { retire: deleted.includes(day) && this.rng.chance(0.8) ? [{ t: 'day', id: day }] : [] } : { hold: this.rng.chance(0.6) };
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'put', t: 'day', id: day, present, f: this.rng.chance(0.7) ? { score: this.rng.int(11) } : {} }], opts));
     }
     if (choice === 15 && boards.length) {
       const dst = `b_${this.ids.toString(16).padStart(8, '0')}`;
@@ -245,26 +253,30 @@ export class World {
       }));
     }
     if (choice === 1 && cards.length) {
-      const card = this.rng.pick(cards);
+      const deleted = retirable('card').filter((id) => storedProbe.has(recordKey('card', id)));
+      const id = deleted.length && this.rng.chance(0.7) ? this.rng.pick(deleted) : this.rng.pick(cards).id;
       const f = {};
       if (this.rng.chance(0.5)) f.title = this.rng.pick(WORDS);
       if (this.rng.chance(0.4)) f.size = (this.rng.int(20000) - 10000) / 997;
       if (this.rng.chance(0.4)) f.tier = this.rng.pick(['draft', 'review', 'done', 'dropped']);
       if (this.rng.chance(0.3)) f.claim = this.rng.pick(WORDS);
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'update', t: 'card', id: card.id, f }], { guard: this.rng.chance(0.3) }));
+      const guard = this.rng.chance(0.3) ? [...Object.keys(f), ...(this.rng.chance(0.3) ? ['tier'] : [])].map((field) => ({ t: 'card', id, field })) : [];
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'update', t: 'card', id, f }], { guard, retire: deleted.includes(id) ? [{ t: 'card', id }] : [] }));
     }
-    if (choice === 2 && cards.length > 1) {
-      const storedList = [...stored(replica, registry, 'self/probe').values()].filter((c) => c.t === 'card' && isAlive(c) && c.f?.ord)
-        .map((c) => ({ id: c.id, key: c.f.ord[0] }));
-      const drawnList = cards.filter((c) => c.f?.ord).map((c) => ({ id: c.id, key: c.f.ord[0] }));
-      if (drawnList.length < 2) return undefined;
-      const moved = this.rng.pick(drawnList).id;
-      const others = drawnList.filter((member) => member.id !== moved).sort(compareMembers);
-      const above = this.rng.chance(0.3) ? null : this.rng.pick(others).id;
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'update', t: 'card', id: moved, f: { ord: dropKey({ stored: storedList, drawn: drawnList, moved, above }) } }]));
+    if (choice === 2 && ordered.length > 1) {
+      const movable = cards.filter((c) => c.f?.ord).map((c) => c.id);
+      if (movable.length === 0) return undefined;
+      const moved = this.rng.pick(movable);
+      const anchors = ordered.filter((id) => id !== moved);
+      const below = this.rng.chance(0.3) ? null : this.rng.pick(anchors);
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'move', t: 'card', id: moved, anchor: { field: 'ord', below } }]));
     }
     if (choice === 3 && cards.length) {
-      return record(commit(replica, ctx, 'self/probe', [{ op: 'delete', t: 'card', id: this.rng.pick(cards).id }], { hold: true }));
+      const id = this.rng.pick(cards).id;
+      const outcome = record(commit(replica, ctx, 'self/probe', [{ op: 'delete', t: 'card', id }], { hold: true }));
+      if (!storedProbe.has(recordKey('card', id)) || !this.rng.chance(0.25)) return outcome;
+      // The person edits the card again inside its delete window: the edit retires the delete.
+      return record(commit(replica, ctx, 'self/probe', [{ op: 'update', t: 'card', id, f: { title: this.rng.pick(WORDS) } }], { retire: [{ t: 'card', id }] }));
     }
     if (choice === 4) {
       const id = this.id('run');
