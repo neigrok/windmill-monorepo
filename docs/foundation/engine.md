@@ -32,14 +32,16 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 **D-1 Stamp.** A triple `(ms, counter, actor)`:
 - `ms`: an unsigned integer below 2^53;
 - `counter`: an unsigned 32-bit integer;
-- `actor`: 1–64 bytes of printable ASCII.
+- `actor`: 1–64 bytes of printable ASCII (0x20–0x7E, space included).
 
 It is encoded as the text `ms:counter:actor`, in decimal without leading zeros. The *unset stamp*
 `0:0:` has an empty actor and is below every set stamp. Order is defined in §3.1.
 
 **D-2 HLC and actor.** A client replica has one clock state `(ms, counter)`, persisted in
-`ReplicaMeta.hlc` and shared by every engine instance (process or browser tab) that uses it; each
-instance has its own fixed actor. The server has one clock. Actors are:
+`ReplicaMeta.hlc` and shared by every engine instance (process or browser tab) that uses it. Each
+instance has its own actor, minted fresh at every process launch. At a re-identify (§7.11) only the
+re-identifying instance takes a new actor; other instances take one at their next launch. The
+server has one clock. Actors are:
 - a client instance: `r_` plus 12 random `[a-z0-9]`;
 - the server: `srv`.
 
@@ -56,16 +58,18 @@ lowercase hex characters. One device database holds any number of replicas.
 
 | Kind | Server key | Wire reference | Read | Write |
 |---|---|---|---|---|
-| product | `acct:<A>/<product>`, product ∈ {roadmap, gym, journal} | `self/<product>` | A | A |
-| tree | `tree:<T>` | `tree/<T>` | owner; anyone when `meta.visibility ∈ {unlisted, public}` | owner |
+| product | `acct:<A>/<product>`, a product the registry declares | `self/<product>` | A | A |
+| tree | `tree:<T>` | `tree/<T>` | owner; anyone while its `opens` field holds an opening value (§2.4) | owner |
 | overlay | `acct:<A>/overlay/<T>` | `self/overlay/<T>` | A, while A can read `tree:<T>` | A, while A can read `tree:<T>` |
 | device | client only | `device/<product>` | the replica | the replica |
 
-`self` resolves to the authenticated account. A device scope is never sent and never merged.
+`self` resolves to the authenticated account. A device scope is never sent and never merged. The
+products are those the registries declare (D-7); the `probe` product exists only in test and dev
+builds.
 
 **D-5 Scope state.** A server scope is `absent`, `alive` or `dead`.
-- `tree:<T>` is created by, and dies with, its governing `tree` record `T` in the owner's
-  `acct:<A>/roadmap`.
+- `tree:<T>` is created by, and dies with, its governing record `T`: a record, in its owner's
+  product scope, of the type whose `governs` is `tree` (§2.4).
 - Every `acct:*/overlay/<T>` dies in the same transaction as `tree:<T>`.
 - Product scopes are alive for the account's lifetime.
 - A dead scope never becomes alive (INV-13).
@@ -77,8 +81,9 @@ lowercase hex characters. One device database holds any number of replicas.
 - the server-assigned `seq` (the scope seq of its last change);
 - `rc` and `ru`: server receipt ms of the create and of the last change.
 
-**D-7 Registry.** `sync-schema.json` (§2.4) declares every type, field and command. It is
-code-generated into all four implementations.
+**D-7 Registry.** A registry file (`*.registry.json`) declares products, types, fields and commands,
+in the format of `packages/api-contract/sync/registry.schema.json` (§2.4). It is code-generated into
+all four implementations.
 
 **D-8 Identity class.** Each type has one:
 
@@ -92,9 +97,10 @@ code-generated into all four implementations.
 A minted or derived type has an id space: `scope` or `global` (unique across all scopes of the type).
 A **seeded** id is `<seed>-<n>`: a CSPRNG-minted id of the same scope, `-`, and a decimal ordinal
 `n ≥ 1`. It is unique and unpredictable as its seed is, and a retried multi-write that repeats its
-seed and ordinals produces the same ids. A seed leaves room for `-<n>` within the type's id pattern
-for the largest ordinal the product produces: Appendix A bounds it for each product that seeds ids,
-and seeds are minted within that bound.
+seed and ordinals produces the same ids. A type whose ids may be seeded declares `seeded`: the
+seed's maximum length and the largest ordinal, so that `<seed>-<n>` fits its id pattern; seeds are
+minted within that bound. A type's `mint` declares how a CSPRNG id is minted: prefix, alphabet and
+length (§2.4). A client draws a minted id again while it is taken (§4.4).
 
 **D-9 Field kinds.**
 
@@ -135,7 +141,7 @@ is:
 record. The intents of one gesture share one stamp and one `gestureId`.
 
 **D-15 Intent states and outcomes.** States: `held`, `ready`, `sent`, `acked`. Terminal outcomes:
-- `undone`: Undo while held;
+- `undone`: Undo, or a retire (§7.1 step 4), while held;
 - `coalesced`: merged into another intent;
 - `resolved`: `ok`, and the scope's cursor covers it;
 - `refused`: a notice holds it;
@@ -148,23 +154,24 @@ Transitions are in §8.1.
 - `ok`: with the scope seq after admission, a command's write map, and a detail;
 - `refused`: with a code.
 
-**D-17 Notice.** The durable, per-product client record of a refused intent, holding the code and the
-intent's content.
+**D-17 Notice.** The durable, per-product client record of a refused intent, holding the code, the
+intent's content and the content of the dependents folded into it (§7.7).
 
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
 - `epoch`: one random string for the whole server database, regenerated when the database is
   restored from a backup.
-- A cursor is `(epoch, mode ∈ {boot, live}, seq, key?, asOf?)`.
+- A cursor is `(epoch, mode ∈ {boot, live}, seq, key?, asOf?)`, encoded as §9.4 states; clients
+  decode it.
 - The *scope digest*: a per-scope sum of the hashes of the scope's alive rows (§6.12).
 
 **D-19 Guard.** `(type, id, field, stamp | null)`. It holds iff the stored register's stamp equals
 `stamp`, or the register is unset and `stamp` is null.
 
 **D-20 Command and write map.** A command is a named server function (§6.4, Appendix A) that runs
-inside admission and produces server-stamped deltas. Its `ok` result carries a **write map**: one
-entry `{t, id, from?, born?, f?}` per record it wrote or resolved to, giving the id it mapped
-`from`, the record's `born`, and the stamp of every field it wrote (§7.7).
+inside admission and produces server-stamped deltas. Its `ok` result always carries a **write map**,
+possibly empty: one entry `{t, id, from?, born?, f?}` per record it wrote or resolved to, giving the
+id it mapped `from`, the record's `born`, and the stamp of every field it wrote (§7.7).
 
 **D-21 Hold.** A `releaseAt` on the intents of a destructive gesture. They are `held` (not sent)
 until released (§7.3).
@@ -178,16 +185,19 @@ views (§7.6).
 
 **D-24 Cap.** A per-type ceiling on alive records in a scope, enforced by the growth rule (§6.5).
 
-**D-25 Fractional key.** The jitterless base-62 order key of
-`web/src/products/roadmap/sync/fractionalIndex.js`.
+**D-25 Fractional key.** The jitterless base-62 order key of the reference model
+(`packages/api-contract/sync/reference/core/fracindex.js`).
 - Keys compare bytewise, and a list sorts by `(key, id)`.
 - `between(a, b)` returns a key strictly between `a` and `b`.
 - When two neighbours hold equal keys, a key inserted after the first of them is
   `between(a, the next greater key)`.
-- **Drop position.** A member dropped into a list takes a key between the `drawn` row immediately
-  above the drop point and that row's successor in `stored` order, the moved member excluded; at
-  the top, before the first `stored` row; with no `stored` successor, after the last `stored` row.
-  A member inside a delete window (§7.3) so keeps its stored place.
+- **Drop position.** A member placed into a list, by a move or an anchored create (§7.1 step 4),
+  takes a key between the *anchor*, the row immediately above the drop point, and the first
+  `stored` row whose key is greater than the anchor's, the placed member excluded. At the top it
+  goes before the first `stored` row; with no such `stored` row, after the anchor. The anchor is
+  looked up in `drawn`, then in `stored`: it may be a row only `drawn` holds, or a member inside a
+  delete window (§7.3), which only `stored` holds. A member inside a delete window so also keeps
+  its stored place.
 
 **D-26 Derived id.** `derive(label, fallback, taken)`:
 
@@ -226,8 +236,8 @@ sync_scopes  (key text primary key, kind text, owner uuid, governed_by text null
 sync_replicas(replica text primary key, account uuid not null, last_n bigint not null, last_seen timestamptz)
 sync_results (replica text, n bigint, digest bytea not null, result jsonb null, faults int not null,
               primary key (replica, n))
-sync_spent   (scope text, type text, id text, born text not null, life_stamp text not null, seq bigint not null,
-              primary key (scope, type, id))            -- indexes (scope, seq); (type, id) for global id spaces
+sync_spent   (scope text, type text, id text, born text null, life_stamp text not null, seq bigint not null,
+              primary key (scope, type, id))            -- born null for a keyed type; indexes (scope, seq), (type, id)
 sync_requests(account uuid, request_id text, digest bytea not null, state text,   -- running | done
               result jsonb null, started_at timestamptz, primary key (account, request_id))
 ```
@@ -270,41 +280,58 @@ struct Change { Locked before; Row after; };
 class SyncType {
  public:
   virtual const TypeDef& def() const = 0;
-  virtual std::map<Id, Locked> lock(Txn&, const ScopeKey&, std::span<const Id>) = 0;  // FOR UPDATE; global lookup
-  virtual Verdict check(Txn&, const AdmitCtx&, std::vector<Change>&) = 0;             // product rules (Appendix A)
+  virtual std::map<Id, Row> lock(Txn&, const ScopeKey&, std::span<const Id>) = 0;    // this scope's typed rows, FOR UPDATE
+  virtual std::set<Id> elsewhere(Txn&, const ScopeKey&, std::span<const Id>) = 0;    // global ids another scope's rows hold
+  virtual Verdict check(Txn&, const AdmitCtx&, std::vector<Change>&) = 0;             // product rules on joined records
   virtual void apply(Txn&, const ScopeKey&, Seq, const std::vector<Change>&) = 0;     // typed rows, revisions, projections
   virtual std::vector<Row> feed(Txn&, const ScopeKey&, const FeedQuery&) = 0;         // keyset (seq, type, id)
+  virtual std::uint64_t count(Txn&, const ScopeKey&, const FeedQuery&) = 0;           // a boot's total (§6.7)
+  virtual std::optional<std::int64_t> maxSerial(Txn&, const ScopeKey&, Field, const std::map<Field, Json>& match) = 0;
   virtual std::optional<std::string> revisionText(Txn&, const ScopeKey&, const Id&, Field, Seq rev) = 0;
+  virtual void purge(Txn&, const ScopeKey&) = 0;                                      // G5 and account deletion
+  virtual void sweep(Txn&, Ms now) = 0;                                               // G6
 };
 ```
 
+The engine composes each id's state (§4.2) from `lock`, `elsewhere` and its own tables; a product
+adapter never reads a `sync_*` table. `maxSerial` serves §6.1 step 11.
+
 ### §2.4 The registry
 
-```ts
-type TypeDef = {
-  type: string, scope: 'product:roadmap'|'product:gym'|'product:journal'|'tree'|'overlay',
-  identity: 'minted'|'derived'|'keyed'|'singleton', idSpace?: 'scope'|'global', idPattern: string,
-  life: boolean, revivable: boolean, deadRows: 'keep'|'spent',
-  governs?: 'tree', origins: ('replica'|'server')[],
-  fields: Record<string, { kind: 'lww'|'ranked'|'fww'|'const'|'time'|'serial'|'text', writer: 'client'|'server',
-                           ref?: string, parent?: true, unit?: 'chars'|'bytes', max?: number,
-                           domain?: string, quantum?: number, serialNext?: string[],
-                           rank?: Record<string, number> }>,
-  cap?: number, visibleWhen?: string[], primary?: true,
-}
-type CommandDef = { name: string, scope: string, origins: ('replica'|'server')[], serverInternal: boolean,
-                    args: Record<string, 'json' | 'time' | 'instant' | `ref<${string}>`> }
-```
+The registry's format is `packages/api-contract/sync/registry.schema.json`, and that schema is
+authoritative. A registry declares its `version` and `minVersion` (§9.2), its `products` (each with
+its `surfaces` and its device rows), its `types` and its `commands`. Every product-specific
+behaviour the engine applies is registry data or a product binding (Appendix A); the engine body
+names no product.
 
-- `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 9).
+- **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
+  `key` (a keyed type's natural key: an id of another type, or a tuple of such ids), `singletonId`,
+  `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `revivable`, `deadRows`, `governs`,
+  `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
+- **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `quantum`,
+  `serialNext`, `rank` and `opens`.
+- **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
+  (`integer`, `min`, `max`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array` (`items`,
+  `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds are
+  domain bounds, checked at §6.1 step 2.
+- **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
+  `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`) and `predicts`.
+
+The engine applies:
+- `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
 - `rank` gives each value of a `ranked` field an integer rank; its keys are the field's domain.
 - A type's `origins` always include `replica`: a replica MAY create a record of any type, by a
-  delta or through a command as Appendix A binds it, and the product's `check` re-checks it (§6.1
-  step 9).
-- `primary` marks the types whose records make an account hold records in the product (§9.2);
-  Appendix A lists them per product.
+  delta or through a command as its binding allows, and the product's `check` re-checks it (§6.1
+  step 10).
+- `primary` marks the types whose records make an account hold records in the product (§9.2).
 - `visibleWhen` lists fields: a record of a type without life is visible iff one of them holds a
   value other than null or `""`. Without it, any set field makes the record visible.
+- `governs: tree`: each record of the type governs `tree:<id>` (D-5). A governing type is minted
+  and not revivable.
+- `opens`: on a `server`-written field of a `tree`-scoped singleton, the values that open the tree
+  to every reader (D-4).
+- `beforePull`: a server-internal command that runs before every pull of its scope, unless the scope
+  is absent, in its own admission with the scope owner's server origin (§6.7).
 - A `time` argument is device-produced, like a `time` field. An `instant` argument is chosen by the
   user.
 
@@ -313,21 +340,24 @@ type CommandDef = { name: string, scope: string, origins: ('replica'|'server')[]
 The store MUST provide atomic, durable transactions spanning every table below.
 
 ```ts
+type DeviceMeta  = { forkGuard?: string, pendingSignIn?: { account: string } }  // one per local database
 type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?: string,
                      nextN: number, hlc: {ms: number, counter: number}, hlcHigh: Stamp, admittedHigh: Stamp,
                      serverOffsetMs: number, offsetSamples: {offset: number, rtt: number}[],
-                     serverEpoch: string | null, ackThrough: number, forkGuard: string,
-                     authPaused: boolean, liveHint: boolean }
+                     clockReading?: {wall: number, mono: number, boot: string},
+                     serverEpoch: string | null, ackThrough: number, authPaused: boolean }
 type ConfirmedRow = Row                                  // keyed (replica, scope, type, id); replaced, never joined
 type SpentId = { replica, scope, type, id, born }        // derived types only
 type CursorRec = { replica, scope, cursor: string | null, digest: string, booted: boolean,
-                   digestStop?: string }
+                   mismatchReset?: true, digestStop?: string }
+type KnownScope = { replica, scope, kind: 'gone' | 'not-found' }
 type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id | 'anon' */, scope,
-                     state: 'held'|'ready'|'sent'|'acked',
+                     state: 'held'|'ready'|'sent'|'acked', stamp: Stamp, numbered?: true,
                      commitOrder: number, releaseAt: number, n?, digest?, intent: Intent,
                      predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
                      resultSeq?: number, resultEpoch?: string, orphanOf?: string }
-type Notice = { id, replica, scope, code: RefusalCode, detail?, content: { d?: Delta[], cmd?: Cmd }, at }
+type Notice = { id, replica, scope, code: RefusalCode, detail?,
+                content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at }
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 ```
 
@@ -337,9 +367,20 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
   into staging keeps its own digest until the swap (§7.5).
 - `CursorRec.booted`: the scope's first pull is complete, a boot having finished with the cursor
   live (§7.5). It is deleted with the scope's cursor.
+- `CursorRec.mismatchReset`: a digest mismatch reset the scope, and no check has matched since
+  (§7.5).
 - `CursorRec.digestStop`: the app version at which digest checks of the scope stopped (§7.5).
-- `forkGuard`: a random token kept both in the database and in storage excluded from device backups
-  (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web runs no fork guard.
+- `KnownScope`: a tree or overlay scope known gone or not-found (§7.5), which §7.1 step 2 refuses.
+- `OutboxEntry.stamp`: the gesture's stamp (§7.1 step 3), which only `clock-skew` recovery moves
+  (§7.7).
+  `numbered`: the entry has been numbered at least once (§7.2). `localId` is `<gestureId>/<k>`, the
+  gesture's k-th intent from 0; gesture ids, and so local ids, are unique on the device.
+- `DeviceMeta.forkGuard`: a random token for the whole local database, kept both in it and in
+  storage excluded from device backups (iOS `isExcludedFromBackup`, Android `noBackupFilesDir`). Web
+  runs no fork guard.
+- `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
+- `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
+  (Appendix A).
 
 ---
 
@@ -403,12 +444,17 @@ Any other shape is refused `invalid`.
 
 ### §4.2 Id state
 
-`lock` reports the id state:
+The engine composes the id state from `lock`, `elsewhere` and its own tables (§2.3):
 - `none`: no row and no `sync_spent` row for the id in the scope. For `idSpace: global`, none in any
   scope. For a governing type, no `sync_scopes` row for the governed scope.
 - `foreign`: `idSpace: global` and the id exists or is spent in another scope; or, for a governing
   type, the governed scope exists and is not governed by this `(scope, type, id)`.
-- `alive(b)`, `dead(b)`: alive or dead in this scope, with born `b`.
+- `alive(b)`, `dead(b)`: alive or dead in this scope, with born `b` (a keyed type's spent row has
+  no born).
+
+Before `lock`, admission locks each fresh id of a global id space the intent creates, by
+`(type, id)` in ascending order (§6.1 step 3.6), so two scopes creating one fresh id are serialized.
+An id that only a command's arguments or `check` reveal is locked on demand, just before its lookup.
 
 ### §4.3 Decision table (minted and derived)
 
@@ -418,7 +464,7 @@ Any other shape is refused `invalid`.
 |---|---|---|---|---|---|---|
 | `create` | apply | `id-taken` | apply (join) | `id-taken` | ok | `id-spent` |
 | `update` | `unknown-record` | `unknown-record` | apply | `unknown-record` | `record-dead` | `unknown-record` |
-| `delete` | ok | ok | apply | ok | ok | ok |
+| `delete` | ok | ok | apply | ok | apply (join) | ok |
 | `revive` | `unknown-record` | `unknown-record` | apply | `unknown-record` | revivable: apply; else `id-spent` | `unknown-record` |
 
 - A governing `create` that applies creates the governed scope. A governing `delete` that applies
@@ -432,7 +478,8 @@ Any other shape is refused `invalid`.
   `invalid`. So is a delta that writes a `const` or `time` field already set under a different
   stamp to a different value; an equal stamp is the same write and a no-op. Commands and
   server-origin writes MAY write any field.
-- **Spent ids.** No client mints an id that is alive, spent or pending in its views (§7.1). The
+- **Spent ids.** No client mints an id that is alive, spent or pending in its views (§7.1). A
+  minted id taken there, a row or a `SpentId` the server reported included, is drawn again. The
   server's own derived minting uses `taken` = the scope's alive and spent ids.
 
 ---
@@ -442,12 +489,12 @@ Any other shape is refused `invalid`.
 **INV-1 Causal dominance.** A stamp minted by a replica, or by the server, after it observed a
 server-sent stamp `s` is greater than `s`.
 
-*Proof.* `observe(s)` raises the clock to at least `(s.ms, s.counter)`, and `tick` returns a strictly
-greater pair (§10.2). Clients observe every row the server sends them, `hlcHigh` in every commit,
-and a write map's stamps before they restamp the later entries that write the same registers
-(§7.7). `clock-skew` recovery lowers the clock only to `max(physNow(), admittedHigh)`, which is at
-least every server-sent stamp. The server observes, under the row lock, every register it
-overwrites (§10.3).
+*Proof.* `observe(s)` raises the clock to at least `(s.ms, s.counter)`, and `tick` returns a
+strictly greater pair (§10.2). Clients observe every row the server sends them, `hlcHigh` in every
+commit, and a write map's stamps before they restamp the later entries that write the same registers
+(§7.7). `clock-skew` recovery lowers the clock only to the pair maximum of `(physNow(), 0)` and
+`admittedHigh`, which is at least every server-sent stamp. The server observes, under the row lock,
+every register it overwrites (§10.3).
 
 **INV-2 No accidental resurrection.** A record that an admitted delete made dead is alive again only
 through:
@@ -459,7 +506,8 @@ through:
   carries no life. Only `revive` sets alive.
 - **Keyed.** A replayed put carries its original life stamp. The deleting replica had observed the
   record it deleted, so by INV-1 the delete out-stamps that put. A put that does not change presence
-  carries the drawn life register unchanged (§7.1 step 4).
+  carries the drawn life register unchanged (§7.1 step 4), and a restamp moves such a carried
+  register only with its source (§7.7).
 - **Dead state is retained.** Dead rows and `sync_spent` rows are kept for the scope's lifetime
   (§6.10). The `born` and `life_stamp` columns (§2.2) make every comparison exact.
 - **Clients** push only intents (§7.4), replace rather than join confirmed rows (§3.4), and never
@@ -468,7 +516,8 @@ through:
 
 **INV-3 No silent loss.** While the replica's local store survives and the server's committed state
 survives, every committed intent ends in exactly one outcome of D-15. An intent that ends `refused`
-has a notice holding its content, written in the same local transaction.
+has a notice holding its content, written in the same local transaction; an orphan's content is in
+its origin's notice (§7.7).
 
 Storage loss is outside this invariant: uninstall, cleared site data, private windows, and Safari's
 deletion of script-writable storage after 7 days without interaction.
@@ -482,15 +531,22 @@ deletion of script-writable storage after 7 days without interaction.
 - The server stores one result per `(replica, n)`, in the transaction that sets `last_n` (§6.2).
   Poison ends in a stored `internal` result (§6.6).
 - After a restore, acked entries return to `ready` (§7.5).
-- A refusal folds its dependents into the same notice (§7.7).
-- Coalescing joins registers of one record and one actor (§7.2).
+- A refusal folds its dependents into the same notice: the removed content of held and ready
+  entries, and the content of orphans. A sent entry is an orphan only when every delta of it is
+  dependent, so a partly dependent entry keeps its independent deltas (§7.7).
+- `clock-skew` recovery moves borns and guards in every later unacked entry, sent ones included, so
+  a refused batch recovers as a whole (§7.7).
+- Coalescing joins registers of one record and one actor. A create or revive that a later delete
+  cancels was never sent, and its dependents cancel with it (§7.2).
 
 **INV-4 At most once.** An intent from a replica, or a server-origin write that carries a
 `requestId`, takes effect at most once.
 
 *Proof.*
-- `last_n`, the result and the effects commit in one transaction. A resend with `n ≤ last_n` returns
-  the stored result. A missing or different digest for such an `n` answers `replica-forked` (§6.2).
+- `last_n`, the result and the effects commit in one transaction, which locks the replica row and
+  re-checks `last_n` (§6.1 step 3); step R and a fault path re-check it too, under the scope mutex
+  (§6.1, §6.6). A resend with `n ≤ last_n` returns the stored result. A missing or different digest
+  for such an `n` answers `replica-forked` (§6.2).
 - `sync_requests` is looked up under a lock before the intent is built (§6.3).
 
 **INV-5 Feed completeness.** A replica that pulls a scope from cursor `c` until `more = false`
@@ -521,10 +577,11 @@ every lattice field, and its text and serial values equal the server's.
 - (d) An entry of another account's lineage is never adopted, and sign-out purges the confirmed
   cache (§7.10).
 - (e) Existence: for a principal without read access, an absent, private or dead scope answers
-  `not-found` identically on push, pull, live and `roadmap.fork`, and a `foreign` id answers
-  `id-taken` without its state. (Creating a governing record under a global id reveals that the id
-  is in use.)
-- (f) Visibility changes only through a guarded server command (A.1).
+  `not-found` identically on push, pull, live and every command that reads another scope, and a
+  `foreign` id answers `id-taken` without its state. (Creating a governing record under a global id
+  reveals that the id is in use.)
+- (f) A tree opens to other readers only through its `opens` field, which is `server`-written
+  (§2.4, §4.4).
 
 *Proof.* Each clause is enforced at its cited step. No other path emits rows or accepts writes.
 
@@ -532,8 +589,9 @@ every lattice field, and its text and serial values equal the server's.
 raise the count is never refused by the cap. A client never composes an add that the server would
 refuse only because a delete is held.
 
-*Proof.* Counters live on the scope row and are updated under the scope lock, with the growth rule
-(§6.5). The client checks against `stored`, which counts held deletes (§7.6).
+*Proof.* Counters of capped types live on the scope row and are updated under the scope lock, with
+the growth rule (§6.5). The client applies the same rule to `stored`, which counts held deletes
+(§7.1 step 8, §7.6).
 
 **INV-9 Bounded poison.** An intent whose admission faults deterministically is attempted at most
 `K_POISON` times, and the replica's later intents then proceed.
@@ -541,14 +599,19 @@ refuse only because a delete is held.
 *Proof.* Faults are counted per `(replica, n, digest)` in a separate transaction, and at `K_POISON`
 the result `internal` is stored and `last_n` advances (§6.6).
 
-**INV-10 Hold durability.** A held gesture is sent iff Undo does not remove it before release and
-the person does not discard it (§7.10). Process death and in-app navigation, including an activity
-or scene recreation, never abandon it. The early releases, which end Undo, are leaving the app,
-sign-in and sign-out (§7.3, §7.10). After process death, the next engine start releases it.
+**INV-10 Hold durability.** A held gesture is sent iff neither Undo nor a retire (§7.1 step 4)
+removes it before release, the person does not discard it (§7.10), and it is not folded with a
+record it depends on (§7.2, §7.7).
+Process death and in-app navigation, including an activity or scene recreation, never abandon it.
+The early releases, which end Undo, are leaving the app, sign-in and sign-out (§7.3, §7.10). After
+process death, the next engine start releases it.
 
 *Proof.*
-- Held entries are durable rows, changed only by `release` and `undo` (§7.3).
-- `undo` succeeds only while every entry of the gesture is held.
+- Held entries are durable rows. They leave `held` only by `release`, `undo`, a retire, a discard
+  or a fold (§7.1 step 4, §7.2, §7.3, §7.7, §7.10).
+- `undo` succeeds, and a retire acts, only while every entry of the gesture is held. A retire acts
+  in the retiring commit's own transaction, on command-free gestures that only remove records the
+  commit names (§7.1 step 4).
 - Release runs in every replica state: at `releaseAt` by an in-process timer, on leaving the app, at
   engine start, and at sign-in and sign-out.
 
@@ -561,25 +624,31 @@ database constraints back them up.
 - every non-whitespace token that `head` or `mine` inserted or changed relative to the base;
 - every non-whitespace base token that neither side deleted.
 
-A result over the field's cap is refused `too-large`, and the notice holds `mine`.
+Containment is per token occurrence of the edit scripts (§6.11), not a count of equal tokens
+(§11.2 property 7). A result over the field's cap is refused `too-large`, and the notice holds
+`mine`.
 
-*Proof.* Every diff3 region (§6.11) is stable, a one-sided change, or a conflict that emits both
+*Proof.* Every diff3 region (§6.11) is stable, a one-sided change, a region where a side changes
+only whitespace, which emits the other side (head's when both do), or a conflict that emits both
 changed sides.
 
 **INV-13 Scope death is final.**
 
-*Proof.* The only governing type is `tree`, which is minted and not revivable (§4.3). Overlays die in
-the same transaction (D-5). Every write to a dead scope is refused, and every read answers `gone` or
-`not-found`.
+*Proof.* A governing type is minted and not revivable (§2.4, §4.3). Overlays die in the same
+transaction as their tree (D-5), and an overlay's admission holds its tree's row shared, so no
+overlay is created or written past its tree's death (§6.1 step 3). Every write to a dead scope is
+refused, and every read answers `gone` or `not-found`.
 
 **INV-14 Bounded stamps.** The server never stores a stamp whose `ms` exceeds the server time at
 which it is stored plus `MAX_SKEW_MS`, on any path. So a replica that observes stored stamps with a
 correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` recovery terminates.
 
 *Proof.*
-- Client stamps are refused beyond the bound (§6.1 step 2).
-- Server stamps are one tick after observing stored stamps, which are bounded by induction from
-  empty stores (§10.3).
+- Client stamps are refused beyond the bound (§6.1 step 2), against a `serverNow` read before they
+  are stored.
+- Server stamps are minted once per pass of §6.1 step 9, each one tick after observing stored
+  stamps, the stamps of the intent's client deltas and an earlier pass's stamps, all bounded, by
+  induction from empty stores (§10.3).
 
 **INV-15 Verified replica.** A replica whose cursor for a scope is live at seq N, without a key,
 holds exactly the server's alive rows (§6.12) of the scope at N, or detects that it does not at its
@@ -609,27 +678,51 @@ or HTTP IO loops.
 
 ### §6.1 `admit(origin, intent) → Result`
 
-These steps are an ordered, fail-fast pipeline. A refusal at any step goes to step R.
+These steps are an ordered, fail-fast pipeline. A refusal at any step goes to step R. A
+server-origin intent carries null stamps, which step 9 mints (§10.3).
 
 1. **Scope.** Map the reference to its key (`self` is the origin's account).
 2. **Shape.**
-   - Registered types for the scope kind; registered fields and command.
-   - At least one delta or a command.
-   - `idPattern`, bounds, units, domains and quanta.
+   - Registered types for the scope kind; registered fields and command; a command's arguments, each
+     present unless `optional`.
+   - At least one delta or a command, and at most one delta per `(type, id)`.
+   - `idPattern`, bounds, units, domains and quanta (a number off its quantum, §7.1 step 4). A text
+     field's `max` applies to its merge result (§6.11 step 3).
    - §4.1, and §4.4's serial and server-field rules.
 
-   Failure → `invalid`. A stamp with `ms > serverNow + MAX_SKEW_MS` → `clock-skew`. A `time`
-   field or `time` argument beyond `serverNow + MAX_SKEW_MS` is clamped to `serverNow`. An
-   `instant` argument beyond it → `invalid`.
-3. **Lock and access.**
+   Failure → `invalid`. Then a stamp with `ms > serverNow + MAX_SKEW_MS` in any delta's life, born
+   or fields (not in a guard) → `clock-skew`. A `time` field or `time` argument beyond
+   `serverNow + MAX_SKEW_MS` is clamped to `serverNow`. An `instant` argument beyond it → `invalid`.
+   In a push, this `serverNow` is read once per request, and every intent of the request is checked
+   and clamped against it.
+3. **Lock and access.** Locks are taken in this order: the replica row or the request lock (3.3);
+   for an overlay intent, its tree's row held shared (3.4); for every intent, its scope row and the
+   trees its command's arguments name, in one ascending-key pass (3.5); fresh global ids (3.6); the
+   rows (step 5); then the scopes a governing record creates or kills, tree first (step 15).
+   The order has no cycle except through step 15's locks or an id locked on demand (3.6): every
+   scope and tree row of 3.5 is taken in that one pass, and 3.4's shared mode conflicts only with a
+   death. A deadlock through those is retried as transient (§6.6). No overlay outlives its tree.
    1. Take the in-process mutex of the scope key with timeout `LOCK_TIMEOUT_MS`.
    2. `BEGIN`; `SET LOCAL lock_timeout`.
-   3. An absent product scope, or an absent overlay scope whose `tree:<T>` is alive and readable
+   3. A replica origin locks its `sync_replicas` row and re-checks `n = last_n + 1`; otherwise the
+      intent is answered as §6.2 step 4 answers it. A server origin with a `requestId` takes
+      `pg_advisory_xact_lock(A, requestId)` here, and step 4 runs the lookup under it.
+   4. An overlay intent locks `tree:<T>` shared, in a mode only its death conflicts with (Postgres
+      `FOR KEY SHARE`; scope writes take `FOR NO KEY UPDATE`, a death `FOR UPDATE`).
+   5. An absent product scope, or an absent overlay scope whose `tree:<T>` is alive and readable
       by the origin, is inserted `alive`, with seq 0 and digest 0 (`INSERT … ON CONFLICT DO
-      NOTHING`). Then `SELECT … FROM sync_scopes WHERE key = $1 FOR UPDATE`.
-   4. Refuse:
+      NOTHING`). Then every intent, of any scope kind, locks in one pass in ascending key order its
+      scope row and, for each command argument typed `ref<t>` where `t` governs `tree`,
+      `tree:<value>`, each row once in the stronger mode it needs: the scope row `FOR NO KEY
+      UPDATE`, an argument tree `FOR SHARE`. A tree-scope intent's own row so takes its key's place
+      among its argument trees. An id that no scope has yet locks nothing.
+   6. Each fresh id of a global id space that the intent creates is locked by `(type, id)` (§4.2).
+      An id that only a command's arguments or `check` reveal is locked on demand, just before its
+      lookup.
+   7. Refuse:
       - `not-found`: absent; or the origin cannot read the scope; or dead and the origin is not its
-        owner. An overlay answers as its tree does for the origin.
+        owner. An overlay answers as its tree does: `scope-dead` only to the tree's owner,
+        `not-found` to everyone else.
       - `scope-dead`: dead and the origin is its owner.
       - `forbidden`: readable but not writable, or a type's `origins` excludes the origin (for
         deltas outside a command), or a server-internal command from a replica.
@@ -637,22 +730,27 @@ These steps are an ordered, fail-fast pipeline. A refusal at any step goes to st
 5. **Rows.** Call `lock` for every `(type, id)` that the deltas, guards and command touch.
 6. **Identity.** Apply §4.3 to each delta, and §4.4's const and time rule against the locked
    row.
-7. **Guards.** Each guard (D-19) must hold, else `stale` with detail `{t, id, field, current}`.
-   A guard also holds when the stored register already carries the stamp this intent writes to it
-   (a replay, for example after re-identify). A command's guards are not checked when its replay
-   rule (Appendix A) resolves it as a replay.
-8. **Command.** Run the handler (§6.4). Its deltas pass steps 5, 6 and 9–12.
-9. **Product check.** `check` per type touched.
-   - A create from a replica is re-checked like any write: `check` re-computes and validates every
-     value the product's rules derive (Appendix A).
-   - A create or update whose `parent` reference is not alive → `parent-dead`.
-   - Appendix A rules may refuse with their codes, or append server deltas.
-10. **Join.**
-    - `after = joinRecord(before, δ)`.
-    - Text fields are merged (§6.11).
-    - Server stamps are minted (§10.3).
-    - A joined row whose encoding exceeds `MAX_RECORD_BYTES` → `too-large`. Text bases do not
-      count.
+7. **Guards.** A command's replay is determined first, by its replay rule (Appendix A) from the
+   locked rows and its stored arguments; a replay skips the guards. Otherwise each guard (D-19) must
+   hold, else `stale` with detail `{t, id, field, current}`. A guard also holds when the stored
+   register already carries the stamp this intent writes to it (a replay, for example after
+   re-identify).
+8. **Command.** Run the handler (§6.4). Its deltas pass steps 5, 6 and 9.
+9. **Join.**
+   - The server stamps of the deltas this pass joins are minted (§10.3). A later pass, for deltas
+     step 10 appends, observes their registers and ticks again; the write map carries the first
+     pass's stamp.
+   - `after = joinRecord(before, δ)` for each delta, in order.
+   - Text fields are merged (§6.11).
+   - A joined row whose encoding exceeds `MAX_RECORD_BYTES` → `too-large`. Text bases do not
+     count.
+10. **Product check.** `check` per type touched, on the joined records.
+    - A create from a replica is re-checked like any write: `check` re-computes and validates every
+      value the product's rules derive (Appendix A).
+    - Appendix A rules may refuse with their codes, or append server deltas, which pass steps 5, 6
+      and 9.
+    - Then a create or update whose `parent` reference is not alive among the joined records
+      → `parent-dead`. A parent created in the same intent counts as alive.
 11. **Serial.** A new record without a serial value gets 1 plus the maximum over alive records
     sharing its `serialNext` fields, or 1 if there are none, in admission order (a command: in
     argument order). A value a command supplies is kept.
@@ -666,21 +764,28 @@ These steps are an ordered, fail-fast pipeline. A refusal at any step goes to st
        row of a keyed record that became alive.
     5. `rc := serverNow` on rows that did not exist; `ru := serverNow` on every changed row.
     6. The scope digest takes every changed row (§6.12).
-14. **Command scopes.** Writes into a scope the same intent creates (fork) are applied after step 15
-    creates it, and take that scope's seq and digest.
+14. **Command scopes.** Writes into a scope the same intent creates (a command that copies into a
+    new tree) are applied after step 15 creates it, and take that scope's seq and digest. A copied
+    minted or derived record takes its alive source's life, and `born :=` that life's stamp (a
+    create, §4.1), so a revived source's copy keeps its life.
 15. **Lifecycle.**
     - A governing create inserts `sync_scopes(tree:<id>, alive, seq 0, digest 0)`.
     - A governing death marks `tree:<id>` and every `acct:*/overlay/<id>` dead, with `dead_at`.
-    - An overlay row stores `governed_by = tree:<id>`. Scope rows are locked in this order: the
-      intent's scope, `tree:<id>`, then overlays in ascending key order.
-16. **Result.** `ok {seq: scope.seq, write?, detail?}`, where `write` is a command's write map.
+    - An overlay row stores `governed_by = tree:<id>`. These scope rows are locked in this order:
+      `tree:<id>`, then overlays in ascending key order.
+16. **Result.** `ok {seq: scope.seq, write?, detail?}`. A command's result always carries `write`,
+    its write map, possibly empty.
     - Replica origin: upsert `sync_results(replica, n, digest, result)` and set `last_n := n`.
     - Server origin with a `requestId`: insert `sync_requests`.
-17. **`COMMIT`.** Release the mutex, and send live frames (§6.8).
+17. **`COMMIT`.** Publish the live frames (§6.8), then release the mutex.
 
 **Step R.**
 1. `ROLLBACK`.
-2. In a new transaction, write the result and `last_n` as step 16 does.
+2. In a new transaction, write the result as step 16 does. Only a replica origin first locks its
+   replica row (a server origin has none) and re-checks `n = last_n + 1`, otherwise answering as
+   §6.2 step 4.
+
+The scope mutex is held until step R's transaction, or a fault path's (§6.6), ends.
 
 **Exceptions** are classified by §6.6.
 
@@ -690,8 +795,8 @@ These steps are an ordered, fail-fast pipeline. A refusal at any step goes to st
 
 1. **Authenticate.** Failure → `401`.
 2. **Epoch.** The response carries the current epoch.
-3. **Bind.** An absent `sync_replicas[replica]` is inserted with `last_n = 0`. A replica bound to
-   another account → `409 replica-foreign`.
+3. **Bind.** An absent `sync_replicas[replica]` is inserted with `last_n = 0`; a push that answers
+   `409` keeps no such new binding. A replica bound to another account → `409 replica-foreign`.
 4. **Take intents in ascending `n`:**
    - `n ≤ last_n`: no stored row, or a digest ≠ `digest(intent)` → `409 replica-forked` (stop).
      Otherwise answer the stored result.
@@ -710,7 +815,7 @@ MCP tools, REST writes, tending and server-internal commands call
 `admit(server(A, requestId?), intent)`.
 
 - **With a `requestId`,** dedupe is per tool call, with `digest = sha256(jcs({tool, args}))`.
-  1. Every admit of the call takes `pg_advisory_xact_lock(A, requestId)` and sets
+  1. Every admit of the call takes `pg_advisory_xact_lock(A, requestId)` (§6.1 step 3.3) and sets
      `started_at := now`. Before its first intent the call looks up `sync_requests(A, requestId)`:
      a final result with the same digest → return it; a different digest → `request-conflict`;
      `running` younger than `REQUEST_LEASE_MS` → `request-running` (retry later); `running` older
@@ -718,31 +823,37 @@ MCP tools, REST writes, tending and server-internal commands call
      resumes from the stored `requestId#k` results (step 2). The first admit's transaction stores
      the row as `running`.
   2. The tool's k-th admit stores its result under `requestId#k` in its own transaction, including
-     every output a later admit needs (such as a minted tree id). Every admit, original or retry,
+     every output a later admit needs (such as a minted id). Every admit, original or retry,
      skips when its `requestId#k` exists, with the same digest; a retry rebuilds later admits from
      those outputs.
   3. The call's final result replaces `running` with its last admit. An admit that faults (§6.6)
      replaces `running` with its fault result.
   4. Every intent of one call carries the same `gestureId`: the `requestId`, or a server-minted id.
 - **Without a `requestId`:** no deduplication.
-- **Builders** that read the graph (`tidy`, `prune`, `recolor`, sibling order, derived ids) read
-  under the scope lock, from rows or from a cache whose seq equals `scope.seq`.
-- **Server-built bulk writes** (an MCP subgraph graft) classify each incoming id as create,
-  update or spent before building deltas, and report spent ids to the caller.
+- A call's admits run in order and stop at the first refusal, which is the call's result.
+- A transient failure (§6.6) of the call's first admit leaves no row: the transaction that would
+  store it rolls back. A transient failure of a later admit leaves the row `running`, so a retry
+  within `REQUEST_LEASE_MS` answers `request-running`.
+- **Builders** that read records (sibling order, derived ids, whole-graph edits) read under the
+  scope lock, from rows or from a cache whose seq equals `scope.seq`.
+- **Server-built bulk writes** classify each incoming id as create, update or spent before building
+  deltas, and report spent ids to the caller.
 
 ### §6.4 Commands
 
 `handler(txn, ctx, args) → {deltas, write, detail} | refuse(code)`:
 - It is deterministic given the locked rows, `args` and `serverNow`.
 - It MAY lock more rows through the ports, and MAY write any field.
-- It resolves its own replays (Appendix A), comparing the raw arguments stored with its receipt.
-- A command not in Appendix A is refused `invalid`.
+- It resolves its own replays (Appendix A), comparing the raw arguments stored with its receipt,
+  before the guards are checked (§6.1 step 7).
+- A command not in the registry is refused `invalid`.
 
 ### §6.5 Caps
 
-`sync_scopes.counters[type]` equals the number of alive records of the type in the scope. It is
-computed at scope creation and changed only in step 13. The cap check reads the counter
-and never counts rows.
+`sync_scopes.counters[type]` equals the number of alive records of the type in the scope, and is
+kept for capped types only. It is computed at scope creation and changed only in step 13. The cap
+check reads the counter and never counts rows. `holdsRecords` (§9.2) needs no counter: it is an
+existence query over visible rows of primary types.
 
 ### §6.6 Faults and poison
 
@@ -751,54 +862,63 @@ and never counts rows.
   return the results so far with `retry {n, retryAfterMs}`.
 - **Fault:** any other exception, including `statement_timeout`.
   1. Roll back.
-  2. In a new transaction, upsert `sync_results(replica, n, digest, null, faults + 1)`.
+  2. In a new transaction that locks the replica row and re-checks `n = last_n + 1` (otherwise
+     answer as §6.2 step 4), upsert `sync_results(replica, n, digest, null, faults + 1)`.
   3. At `faults ≥ K_POISON`, store `refused internal` and set `last_n := n`.
   4. Otherwise stop the request with `retry`.
 - Server-origin faults return to their caller.
 
 ### §6.7 Pull
 
-`POST /v1/sync/pull` (§9.4). Each requested scope is served from one read-only `REPEATABLE READ`
-transaction, so its access check, its rows (`feed` and `sync_spent` alike), its `seq` and its scope
-digest all come from one snapshot:
+`POST /v1/sync/pull` (§9.4). A request names at most `PULL_MAX_SCOPES` scopes; more → `400
+malformed`. Each requested scope is served from one read-only `REPEATABLE READ` transaction, so its
+access check, its rows (`feed` and `sync_spent` alike), its `seq` and its scope digest all come from
+one snapshot:
 
-1. **Access**, as §6.1 step 3, without creating a scope. An absent product scope, or an absent
-   overlay of a readable alive tree, answers an empty live page at seq 0 with digest 0.
+1. **Access**, as §6.1 step 3's refusals, read in the snapshot without row locks and without
+   creating a scope. An absent product scope, or an absent overlay of a readable alive tree, answers
+   an empty live page at seq 0 with digest 0.
    - `not-found`: absent; or no read access; or dead, to a non-owner.
-   - `gone`: dead, to its owner.
-2. **Reset.** `cursor.epoch ≠ epoch` or `cursor.seq > scope.seq` → `reset`. `cursor = null` →
-   boot with `asOf := scope.seq`.
+   - `gone`: dead, to its owner. An overlay answers as its tree does: `gone` only to the tree's
+     owner.
+2. **Reset.** An undecodable cursor (§9.4), `cursor.epoch ≠ epoch` or `cursor.seq > scope.seq` →
+   `reset`. `cursor = null` → boot with `asOf := scope.seq`.
 3. **Boot page.**
    - Rows with `seq ≤ asOf` and `(seq, type, id) > (cursor.seq, cursor.key)`, in that order, from
      every type's `feed` merged with `sync_spent`, both read in the snapshot.
    - Keep a row iff it has no life, it is alive, or its type is `derived`. A dead derived row is
-     sent thin: `{t, id, life, born}`.
+     sent thin: `{t, id, life, born, seq}`.
    - Up to `PULL_PAGE_BYTES`, with at least one row. When the scan is exhausted the cursor becomes
      `{live, seq: asOf}`.
    - The page carries `total`: the rows with `seq ≤ asOf` that the boot keeps, counted in the
      snapshot, for progress. It can fall between pages, as rows move above `asOf`.
 4. **Live page.**
    - Every row with `(seq, type, id) > (cursor.seq, cursor.key)`. Dead rows are thin (`{t, id,
-     life, born}`).
+     life, born?, seq}`; a keyed type's has no born).
    - The cursor becomes `{live, last seq}`, plus the last key when the page ends inside a seq.
+   - `more` is false iff the cursor after the page is live, carries no key and is at the scope's
+     seq.
 5. **Head.** A rows page carries the scope's `seq` and scope digest (§6.12) as the snapshot holds
    them, so they describe exactly the state its rows come from.
 6. **Header.** A `tree:<T>` page carries `header = {owner: {name}}`.
 
-Before a `self/gym` pull is served, `gym.closeStale` runs (A.2) in its own admission, which commits
-before the pull's snapshot is taken.
+Before a scope is pulled, each `beforePull` command of its scope (§2.4) runs in its own admission,
+with the server origin of the scope's owner (`server(owner)`), and commits before the pull's
+snapshot is taken. An absent scope runs none.
 
 ### §6.8 Live push
 
-After step 17, the server sends `{op: change, scope, epoch, seq, digest, rows}` at once, with no
-debounce, to every socket subscribed to the scope that still holds read access. `digest` is the
-scope digest committed with `seq`.
+At step 17, after the commit and before the scope mutex is released, the server publishes
+`{op: change, scope, epoch, seq, digest, rows}` at once, with no debounce, to every socket
+subscribed to the scope that still holds read access. Frames of one scope so leave in seq order.
+`digest` is the scope digest committed with `seq`.
 - `rows` is omitted above `LIVE_INLINE_BYTES`.
-- A scope that dies sends `gone` to its owner and `not-found` to other subscribers.
+- A scope that dies sends `gone` to its owner and `not-found` to other subscribers. An overlay
+  never written was never created (§6.1 step 3.5), so a tree's death sends no frame for it.
 - A visibility change that removes a subscriber's access sends `not-found` and ends that
   subscription.
-- The per-socket access check MUST use in-memory state, invalidated by `roadmap.setVisibility` and
-  by scope death.
+- The per-socket access check MUST use in-memory state, invalidated by every write to an `opens`
+  field and by scope death.
 - A deployment with several server processes MUST relay committed changes to every process holding
   subscribers.
 
@@ -835,21 +955,33 @@ Let `head` be the stored text.
    - Else `base = head` → `mine`.
    - Else `base = mine` → `head`.
    - Else → `diff3(base, head, mine)`.
-3. **Cap.** A result over `max` → `too-large`.
-4. **Store.** The previous head goes to the revision table under its rev; the new rev is this
-   intent's seq. `merged := conflict ∨ (merged ∧ baseText ≠ headText)`, where `conflict` means a
-   region emitted both sides.
+3. **Cap.** A result over the field's `max` → `too-large`. A text field's bound applies to this
+   result only, so a text over it is never `invalid` (§6.1 step 2).
+4. **Store.** A result whose text and `merged` both equal the stored ones changes nothing. Otherwise
+   the previous head goes to the revision table under its rev, and the new rev is this intent's seq.
+   `merged := conflict ∨ (merged ∧ baseText ≠ headText)`, where `conflict` means a region emitted
+   both sides. A change of `merged` alone is a change.
 
 `diff3(base, head, mine)`:
 - **Tokens:** maximal runs of whitespace (ECMAScript `\s`) and of non-whitespace.
-- **Diffs:** `base→head` and `base→mine` are shortest edit scripts (Myers). Ties prefer a deletion
-  before an insertion, earliest position first.
-- **Walk `base`:**
-  - a stable token is emitted once;
-  - a region changed on one side emits that side;
-  - overlapping or adjacent regions changed on both sides form a conflict: equal replacements are
-    emitted once; if one replacement is empty, the other is emitted; otherwise emit
-    `rtrim(H) + "\n\n" + ltrim(M)`, trimming whitespace.
+- **Scripts:** `base→head` and `base→mine` are each the lexicographically least shortest edit script
+  under keep < delete < insert: equal tokens are kept as early as possible, and a deletion precedes
+  an insertion.
+- **Hunks:** each script's maximal runs of deletions and insertions, as base ranges with their
+  replacement tokens. A hunk is *whitespace-only* when every token it deletes or inserts is
+  whitespace.
+- **Regions:** hunks chain into one region when their base ranges overlap or touch. Base tokens
+  outside every region are emitted once. With `H` and `M` the region's text after head's and mine's
+  hunks, a region emits:
+  - the changed side's text, when only one side has hunks in it;
+  - `H`, when `H = M`;
+  - `H`, when every hunk of both sides is whitespace-only;
+  - the other side's text, when every hunk of one side is whitespace-only;
+  - the other side's text, when `H` or `M` is empty;
+  - otherwise a conflict: `rtrim(H) + "\n\n" + ltrim(M)`.
+
+  A whitespace-only hunk so never conflicts, and edits to neighbouring words, which a whitespace
+  token separates, merge without one.
 
 ### §6.12 Scope digest
 
@@ -875,11 +1007,12 @@ full (§7.9).
 `digest := digest − h(before) + h(after) mod 2^256`, with `h = 0` for an absent or non-alive row and
 `after` taken once its seq, `rc` and `ru` are set (§6.1 step 13). `feed` MUST return every row
 exactly as `apply` stored its `after`, so the server hashes the form a page carries. Every row
-change is such a transaction: replica and server-origin admission, every command (`gym.closeStale`
-included), and a fork's writes into its new scope (§6.1 step 14). Every referential consequence
-(§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a `feed` row. A
-governing create starts its scope at digest 0. Scope death changes no row, and a dead scope's digest
-is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads the stored digest and never sums rows.
+change is such a transaction: replica and server-origin admission, every command (`beforePull`
+commands included), and a command's writes into a scope it creates (§6.1 step 14). Every referential
+consequence (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a
+`feed` row. A governing create starts its scope at digest 0. Scope death changes no row, and a dead
+scope's digest is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads
+the stored digest and never sums rows.
 
 **Client.** The client keeps the same sum over its confirmed rows, hashing each row as received,
 and checks it against the server's (§7.5). It MAY store each row's hash beside the row. Pending
@@ -889,18 +1022,32 @@ entries and predictions never enter it.
 
 ## §7 Client algorithms
 
-### §7.1 `commit(scope, changes, opts) → LocalId[] | Refused`
+### §7.1 `commit(scope, changes, opts) → {localIds, retired} | Refused | none`
 
-`opts = {atomic, hold, guard, cmd, predict, local, gestureId}`. `commit` is a synchronous call on
-the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the network.
-One local transaction:
+`opts = {atomic, hold, guard, retire, cmd, predict, local, gestureId}`. `commit` is a synchronous
+call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
+network. In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it
+after step 1 and before step 2, with `drawn` and `stored` read inside the same transaction, so a
+read and the writes it decides are one transaction. The function returns the gesture (its changes
+and `opts`) or none, and MAY return a value of its own, which `commit` returns beside its result.
+With none, `commit` writes nothing, ticks no clock and returns none. A gesture whose diff is empty
+still runs steps 2–11. One local transaction:
 
 1. **Writable replica.** The replica is `anon` or `bound`; otherwise throw.
-2. **Scope check.** For `tree/<T>` and `self/overlay/<T>`: if the `tree` record `T` is dead in
-   `stored`, or the scope is known `gone` or `not-found`, return `Refused(scope-dead)` and write
-   nothing.
-3. **Stamp.** Read `meta.hlc`, `observe(hlcHigh)`, `s := tick()`, and write `meta.hlc` back.
-4. **Deltas.** Diff `changes` against `drawn`, emitting only changed fields, stamped `s`:
+2. **Scope check.** For `tree/<T>` and `self/overlay/<T>`: if the governing record `T` is dead in
+   `stored`, or the scope is known `gone` or `not-found` (`KnownScope`, §7.5), return
+   `Refused(scope-dead)` and write nothing. A death that only a boot reveals is not known, since a
+   boot sends no dead minted rows: the write is committed, and the server refuses it `scope-dead`
+   with a notice.
+3. **Stamp.** Read `meta.hlc`, `observe(hlcHigh)` and `s := tick()`. `s` is the gesture's stamp;
+   each entry keeps it as `stamp`. The clock is written back only when the commit is accepted
+   (step 11); a refused commit writes no clock.
+4. **Retire, then deltas.** First the retire: `retire` lists records `(t, id)`, and every held
+   gesture of the scope that carries no command, and whose every delta removes (`life → dead`) one
+   of them, ends `undone`, as `undo` ends it (§7.3). `commit` returns their gesture ids as
+   `retired`; a commit refused at step 8 retires nothing. A retired removal never happened, so the
+   record keeps its untouched fields. Then diff `changes` against `drawn`, which no longer holds the
+   retired entries, emitting only changed fields, stamped `s`:
    - A minted or derived delta carries the record's `born`. A create gets `born = s` and
      `life = [alive, s]`.
    - A create of an id already in `drawn` is dropped.
@@ -910,40 +1057,65 @@ One local transaction:
      - otherwise the drawn life register, unchanged.
    - A revive takes `born` from `drawn` or from `SpentId`.
    - An update or delete of a record absent from `drawn` throws.
-   - `time` values come from `physNow()` unless the change supplies them.
-   - Values are rounded to the field's `quantum`, half away from zero.
+   - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
+     record above the drop point or none for the top. One anchor serves both: an anchored create,
+     and a move, which writes only `field`, take D-25's drop position, with `below` looked up in
+     `drawn`, then in `stored`. An anchor absent from both views throws, and so does a value for
+     `field` beside an anchor.
+   - A created record's client-written `time` fields that the change leaves unset take `physNow()`.
+   - A number is rounded to its field's `quantum` `q`, in IEEE-754 doubles, with
+     `roundHalfAway(y) = sign(y) × round(|y|)`: `roundHalfAway(x / q) × q` for an integer `q`, and
+     otherwise `roundHalfAway(x × k) / k` with `k = round(1 / q)`. A number is on its quantum iff
+     this rounding leaves it unchanged; the server admits only such numbers (§6.1 step 2).
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
-5. **Ids.** Minted ids come from a CSPRNG, or are seeded (D-8). Label-based derived ids come from
-   `derive` (D-26).
-6. **Guards.** With `guard`, add `(t, id, field, stamp from stored)` for every field written, and
-   for every register `guard` names that the gesture read.
-7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record.
-8. **Size.** An intent whose encoding exceeds `PUSH_MAX_BYTES` is not enqueued. Return
-   `Refused(too-large)` and write a notice.
+5. **Ids.** Minted ids come from a CSPRNG by the type's `mint`, or are seeded (D-8). Label-based
+   derived ids come from `derive` (D-26).
+6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
+   `(t, id, field, its stamp in stored)`, null when unset (D-19). Each listed field MUST be a
+   lattice field the type declares; any other, `life` or a text field included, throws. A text
+   field is never guarded: it has no stamp, and merges instead (§6.11).
+7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record. Each guard
+   goes with the intent that writes its record; a guard on a record no delta writes goes with the
+   first intent. The k-th intent's entry has `localId = <gestureId>/<k>`. An intent exists only if
+   it carries a delta or a command: guards are dropped when the gesture has neither, and a gesture
+   with nothing to send enqueues nothing (held or not), so no retire can match it.
+8. **Caps and size.**
+   - A gesture whose deltas, applied to `stored`, raise a capped type's visible count above its cap
+     by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1
+     step 12 gives it, and writes nothing. The gesture's command prediction is not counted. Held
+     deletes still occupy their slots (§7.6).
+   - If any intent's encoding exceeds `PUSH_MAX_BYTES`, the whole gesture is refused: nothing is
+     enqueued and no clock is written, a notice `notice:<gestureId>/0` holds the gesture's content,
+     and `commit` returns `Refused(too-large)`.
 9. **Enqueue.** Each entry takes lineage A in a `bound(A)` replica, and `anon` in the `anon` replica
    (D-27).
    - `hold` → `held` with `releaseAt = deviceNow + HOLD_MS`.
    - Otherwise `ready`, coalesced when §7.2 allows.
 10. **Device rows.** Write `opts.local` rows into `device/<product>`. A commit with only local rows
     is legal.
-11. `hlcHigh := s`.
+11. **Clock.** Write `meta.hlc` back, and `hlcHigh := s`.
 
 After the commit: notify tabs (§7.8), kick the sender, and schedule release timers.
 
 ### §7.2 Coalesce
 
-A new ready plain intent `I` on `(t, id)` joins the last outbox entry `E` touching `(t, id)` iff:
-- `E` is ready and plain;
+A new ready plain intent `I` on `(t, id)` joins the last earlier outbox entry `E` touching `(t, id)`
+iff:
+- `E` is ready and plain (here, plain also means no prediction);
 - no command entry of the scope lies between `E` and `I`;
 - for text fields, `E` and `I` carry the same stamp actor (one engine instance).
 
 ```
 E.delta := joinRecord(E.delta, I.delta)        // text: E keeps its base and baseTexts; takes I's text
-if E.delta has born and E.delta.life = [dead, _]: remove E    // created and deleted unsent
 I ends 'coalesced'
 ```
+
+**Cancel.** When `E` made the record alive (a create or a revive), was never numbered, and the join
+leaves it dead, `E` ends `coalesced` too. Its held and ready dependents (§7.7 step 3) fold silently:
+their deltas are removed without a notice, and an entry left empty ends `coalesced`. A `sent`
+dependent is left to the server, and its refusal writes a notice (§7.7).
 
 ### §7.3 Hold, release, undo
 
@@ -978,16 +1150,22 @@ undo(gestureId): tx: if every entry of the gesture is held → delete them, retu
 ```
 loop while state = bound ∧ ¬authPaused ∧ online:
   tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS / PUSH_MAX_BYTES,
-      stopping after the first command entry: n := nextN++, digest, state := sent
+      stopping after the first command entry: n := nextN++, digest, numbered := true, state := sent
           (no entry is numbered while a command entry is `sent`)
   POST push { replica, ackThrough, intents: sent entries by n }
-  network error | 503           → backoff
+  network error                 → backoff
+  503 {retryAfterMs}            → sleep max(retryAfterMs, the backoff draw)
   retry {n, retryAfterMs}       → entries from n stay sent (unless §7.7 step 1.3 returned them to
                                   ready: it takes precedence); wait, then continue
   401                           → authPaused := true (no retry consumed)
   426                           → stop until upgraded
-  400 or 413, one intent        → that entry ends refused (invalid | too-large), with a notice
-  413, several intents          → halve the batch
+  400 or 413, several intents   → halve the batch: resend its first ⌈count/2⌉ entries by n
+  400 or 413, one intent        → nextN := its n, every later sent entry returns to ready, and the
+                                  entry is refused by §7.7 (400: invalid, 413: too-large) with its
+                                  notice; an orphan ends without its own (its content rides its
+                                  origin's notice), and dependents fold transitively
+  every 400                     → also emit the telemetry event sync-push-malformed, with no intent
+                                  content
   replica-forked | replica-foreign | gap → re-identify (§7.11)
   per result, in its own tx:
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
@@ -995,6 +1173,7 @@ loop while state = bound ∧ ¬authPaused ∧ online:
     ackThrough := the response's lastN, once its results are recorded
   then, if the response epoch ≠ serverEpoch → epoch change (§7.5)
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)); ceiling = liveHint ? 30 s : 300 s; k resets on any result
+         (liveHint: computed now by the product's view rule, Appendix A)
 kick (wake now, k := 0): commit, release, connectivity change, foreground, auth refresh
 ```
 
@@ -1007,28 +1186,32 @@ each subscribed scope until `more = false`.
    epoch. A response epoch ≠ a non-null `serverEpoch` triggers an **epoch change** first. In one
    transaction:
    1. `serverEpoch := epoch`.
-   2. Every cursor becomes `null`.
+   2. Every cursor becomes `null`, and every staging is dropped.
    3. Every `acked` entry with `resultEpoch ≠ epoch` returns to `ready` at its commit position.
    4. Re-identify (§7.11).
 
-   A restore is outside INV-3's condition. For example, a re-sent `gym.start` may create its
-   session again under a new `born`, and a pending delete already rewritten to the old `born`
-   then ends as a no-op; and a notice may describe a record that a forked store later re-creates.
+   A restore is outside INV-3's condition. For example, a re-sent command may create its record
+   again under a new `born`, and a pending delete already rewritten to the old `born` then ends as
+   a no-op; and a notice may describe a record that a forked store later re-creates.
 2. Per page, in one local transaction:
    - **Stale page.** A page requested with a cursor other than the scope's stored cursor is dropped,
      and the scope is pulled again, so a cursor never moves backwards.
-   - **`reset`:** the cursor becomes `null`.
-   - **Boot rows** go to staging when confirmed rows exist, otherwise straight in. A thin dead
-     derived row adds a `SpentId`. On `more = false`:
+   - **`reset`:** the cursor becomes `null`, and any staging is dropped.
+   - **Boot rows** go to staging when the boot starts from a `null` cursor while confirmed rows
+     exist, otherwise straight in. A thin dead derived row adds a `SpentId`. On the page that ends
+     the boot's scan (its cursor turns live):
      - staging replaces the scope's confirmed rows, and its digest replaces theirs;
-     - `booted := true` once the cursor is live;
+     - `booted := true`;
      - acked entries of the scope with `resultEpoch = serverEpoch` and `resultSeq ≤ asOf` resolve.
-   - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, and a dead derived row
-     also adds a `SpentId`.
+   - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
+     adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
+     `self/overlay/<id>` as known `gone` (`KnownScope`).
    - **`gone` or `not-found`:**
-     - delete the scope's confirmed rows, `SpentId` rows and cursor, and unsubscribe;
+     - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
+       that kind, and unsubscribe;
      - acked entries of the scope resolve;
      - pending entries stay, and the server refuses them.
+   - A rows page clears the scope's `KnownScope` record.
    - Every change to the scope's confirmed rows changes `CursorRec.digest`, and every change to its
      staging changes the staging digest (§6.12).
    - Store the cursor, observe every stamp, update `admittedHigh`.
@@ -1036,7 +1219,8 @@ each subscribed scope until `more = false`.
      - Live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key.
      - While booting: `cleanSeq = −∞`.
 3. **Live frames.** A `change` frame is applied as a live page iff the cursor is live without a key,
-   `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull.
+   `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or
+   `not-found` frame is applied as that page kind.
 4. **Digest check.** When, after a page or frame is applied, the cursor is live, carries no key and
    its seq equals the page's or frame's `seq`, and no staging is pending, the client compares its
    digest with the received one, in that transaction. This covers a live page that reaches the head,
@@ -1044,12 +1228,12 @@ each subscribed scope until `more = false`.
    mismatch:
    1. emit the telemetry event `sync-digest-mismatch`, with the scope kind and seq and no row
       content;
-   2. reset the scope: the cursor becomes `null`, and the next pull boots it into staging (step 2).
-      The outbox is untouched.
+   2. reset the scope: the cursor becomes `null`, `mismatchReset := true`, and the next pull boots
+      it into staging (step 2). The outbox is untouched.
 
-   When the first check after such a reset mismatches too, the client emits the event once more and
-   stops checking that scope, recording the app version in `CursorRec.digestStop`; checks resume
-   when the app version changes.
+   A matching check clears `mismatchReset`. When a check mismatches while `mismatchReset` is set,
+   the client emits the event once more, clears `mismatchReset`, and stops checking that scope,
+   recording the app version in `CursorRec.digestStop`; checks resume when the app version changes.
 
 ### §7.6 Views
 
@@ -1066,58 +1250,80 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 - `stored` decides caps, guards and write positions (D-25's drop position), so a held delete still
   occupies its slot.
 - Serial values come only from confirmed rows.
-- Unknown fields, and rows of unknown types, are preserved and ignored.
-- Appendix A may add a product view rule (the gym stale rule).
+- Unknown fields, and rows of unknown types, are preserved and ignored: a row of an unknown type is
+  never visible, and a record of a type with life is visible only while alive.
+- Appendix A may add a product view rule (A.2).
 
 ### §7.7 Refusal, rebase, recovery and maps
 
-On `refused(code)` for entry `e`, in one local transaction:
+On `refused(code)` for entry `e`, in one local transaction (an orphan's refusal only ends it, as
+step 3 states):
 
 1. **Automatic recovery,** which writes no notice. `e` returns to `ready` at its commit position:
    - `clock-skew`:
      1. Update the offset.
-     2. `hlc := max(physNow(), admittedHigh)`.
+     2. `hlc :=` the pair maximum of `(physNow(), 0)` and `admittedHigh`.
      3. Every later `sent` entry with `n` above the response's `lastN` returns to `ready`, and
         `nextN := lastN + 1` (the server never processed those numbers).
      4. Restamp `e`, and every held and ready entry, in commit order, by the restamp rule below.
+        Predictions are not restamped.
      5. `meta.hlc` and `hlcHigh` become `max(admittedHigh, the new stamps)`, shared by every tab.
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
-3. **Fold dependents.** A dependent is a delta of a later entry that touches, or whose `ref`
-   fields or `ref` arguments name, a record created in `e` (by a delta or by `predict`), or that
-   targets a scope whose governing record `e` creates.
-   - Dependents are removed, and entries left empty are dropped.
-   - A dependent entry already `sent` is marked `orphanOf = e`. Its later result ends it without
-     a notice: `ok` → `resolved`, a refusal → `refused`.
-4. **Notice.** Write a notice with `e`'s content and the dependents' content.
+3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
+   `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
+   `predict`), or that targets a scope whose governing record `e` creates. A reference names a
+   record in the scope its type lives in: a product scope, or the tree and overlay scopes of the
+   same tree. Folding is transitive: a record a dependent creates makes its own dependents.
+   - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
+     and a dependent command with its prediction. An entry left empty ends `refused`, in this
+     notice.
+   - A `sent` entry that is wholly dependent is an *orphan*: it is marked `orphanOf = e`, and its
+     later result ends it without a notice (`ok` → `resolved`, a refusal → `refused`). A `sent`
+     entry only partly dependent is left as it is.
+4. **Notice.** Write the notice `notice:<localId of e>` with `e`'s content, and in `dependents` each
+   dependent entry's removed or orphaned content (INV-3).
 5. **Redraw.** Recompute the touched views. This is the whole rebase; clients re-execute no
    business logic.
 
 **Write map.** An `ok` result's write map applies in the result's transaction. Let `s` be the
-command entry's stamp, which every register it predicted carries. For each entry `w`:
+command entry's stamp, which every register it predicted carries. Steps 1 and 2 run for each map
+entry `w`, then step 3 once for the map:
 1. `w.from` is present only when the resolved id differs from the id the command was called with,
    which means the record existed before the command (a join). It is replaced by `w.id` in every
-   held and ready entry (delta ids, `ref<w.t>` fields and arguments), in `predict`, and in device
-   rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`: it is not
-   rewritten, and ends `refused` with `target-merged` and a notice.
+   held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
+   in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
+   it is not rewritten, and ends `refused` with `target-merged` and a notice.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:
    `w.f[f]` for each field, and `w.born` for the life of a record it created or resolved to. Later
    borns and guards naming the stamps its predicted registers carry follow. The predict stays
    drawn until the cursor covers `resultSeq`.
-3. The client observes every stamp in the map. Then it restamps, by the restamp rule with fresh
-   ticks, the registers the map names (a field in `w.f`, or the life of a `w` with `born`) in every
-   held or ready entry that writes them. A later local write therefore follows the command it came
-   after (INV-1).
+3. The client observes every stamp in the map and raises `admittedHigh` to them. Then it restamps,
+   by the restamp rule with fresh ticks, the registers the map names (a field in `w.f`, or the life
+   of a `w` with `born`) in every held or ready entry that writes them. A later local write
+   therefore follows the command it came after (INV-1).
 
 No entry is `sent` behind a command (§7.4), so every reference, born and guard is rewritable.
 
-**Restamp rule.** Used by `clock-skew` recovery (every register of an entry) and by the write map
-(steps 2 and 3). Each restamped entry takes one new stamp `n`: a fresh tick in commit order, or the
-stamp a write map gives. For each register that moves from `o` to `n`:
+**Restamp rule.** Used by `clock-skew` recovery and by the write map (steps 2 and 3). It moves only
+registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A register an entry
+carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source. The registers
+each entry wrote are determined for every entry before any register moves in a pass. Each restamped
+entry takes one new stamp `n`: a fresh tick in commit order, in the actor of the entry's `stamp`
+(its author), or the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's
+`stamp`; a write-map restamp leaves the entry's `stamp` unchanged. For each register that moves from
+`o` to `n`:
 1. the register takes `n`;
-2. if it is a create's life, the entry's `born` also becomes `n`, and every later held or ready
-   delta on the same `(t, id)` carrying `born = o` takes `n`;
-3. every later held or ready guard on that register naming `o` takes `n`.
+2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
+   sent delta on the same `(t, id)` carrying `born = o` takes `n`;
+3. every later held, ready or sent delta on the same `(t, id)` carrying that life register
+   unchanged at `o` takes `n`;
+4. every later held, ready or sent guard on that register naming `o` takes `n`.
+
+A later `sent` entry so recovers from its own `clock-skew` refusal with borns and guards that match.
+A process death between two result transactions of one response can leave such an entry rewritten
+before its own result is recorded; its resend then carries another digest, the server answers
+`replica-forked`, and the replica re-identifies (§7.11), with nothing lost.
 
 ### §7.8 Multi-tab (web)
 
@@ -1134,30 +1340,32 @@ stamp a write map gives. For each register that moves from `o` to `n`:
 
 ### §7.9 Subscriptions
 
-A bound replica subscribes the product scopes of the products its surface carries (Appendix A), and
-no scope of another product. For roadmap it also subscribes `tree/<T>` and `self/overlay/<T>` for
-every alive `tree` and `track` record, and any `tree/<T>` while it is open. An `anon` replica pulls
-only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every alive
-row (§6.7). The engine exposes `firstPullComplete(scope)`: `CursorRec.booted` for a scope the
-replica pulls, and true for a scope it does not pull (an `anon` replica pulls no product scope).
+A bound replica subscribes the product scopes of the products its surface carries (the registry's
+`surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
+product binding lists (A.1), and any `tree/<T>` while it is open. An `anon` replica pulls only
+readable trees it opens. Every scope a replica pulls is held in full: a boot sends every alive row
+(§6.7). When a scope leaves the subscription set, its acked entries resolve. The engine exposes
+`firstPullComplete(scope)`: `CursorRec.booted` for a scope the replica pulls, and true for a scope
+it does not pull (an `anon` replica pulls no product scope).
 
 ### §7.10 Replica lifecycle
 
 **Sign-in as A** follows the lineage rule (D-27), per product. It runs after a successful hello as
-A, which states the products in which A holds records (§9.2). An entry's product is its scope's;
-tree and overlay scopes are roadmap's. It first releases every held entry into the durable queue
-(Undo does not survive sign-in), before the decisions.
+A, which states the products in which A holds records (§9.2). An entry's product is its scope's; a
+tree or overlay scope's product is its governing type's. It first releases every held entry into the
+durable queue (Undo does not survive sign-in), before the decisions. While it is incomplete,
+`DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
 - Entries of the `anon` replica are added to A without asking for each product in which A holds no
   records.
 - For each product in which A holds records and the `anon` replica has entries, a **signed-out
-  decision** is due: an explicit add or discard of exactly those entries, of every type (in gym,
-  `thread` and `message` too), with no default and no "later". The engine exposes
-  `anonCount(product)` per decision: the count, by type, of the records its entries create or
-  change. How the decisions are presented is product canon. Until every due decision is made the
-  sign-in is not complete: the `anon` replica stays active, no replica changes and nothing is sent.
-  Cancelling an incomplete sign-in changes nothing more; it resumes, with a new hello and every
-  decision still due, at the next engine start.
+  decision** is due: an explicit add or discard of exactly those entries, of every type, with no
+  default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
+  of the distinct records `(scope, type, id)` its entries create or change. How the decisions are
+  presented is product canon. Until every due decision is made the sign-in is not complete: the
+  `anon` replica stays active, no replica changes and nothing is sent. Cancelling an incomplete
+  sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
+  next engine start.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 
@@ -1169,21 +1377,26 @@ Then, in one local transaction:
    `anon` replica, when entries are left in it, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
 3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries are left in the `anon`
-   replica, they move, with its device rows, into `bound(A)`, preserving local ids, gesture ids,
-   stamps and commit order, and the `anon` replica is deleted. A moved device row whose key
-   `bound(A)` already holds is dropped.
+   replica, they move, with its device rows and notices, into `bound(A)`, preserving local ids,
+   gesture ids and stamps, after `bound(A)`'s own entries in their commit order. The `anon` replica
+   is then deleted. A moved device row whose key `bound(A)` already holds is dropped.
 4. Every entry added to A, rebound or moved, takes lineage A, and `bound(A)` observes its stamps
-   into `hlc` and `hlcHigh`.
+   into `hlc` and `hlcHigh`. `authPaused := false`, and `pendingSignIn` is cleared.
 
 **Other transitions:**
 - **Sign-out of A:**
   1. Every held entry is released into the durable queue (Undo does not survive sign-out), and the
-     sender attempts to flush the outbox.
-  2. If entries remain, the product's sign-out confirmation MUST state their count (the engine
-     exposes `unsentCount(replica)`) and offer Keep or Discard.
-  3. With none left, or on Keep: delete A's confirmed rows, `SpentId` rows, cursors and device
-     rows, and set `state := dormant`; remaining entries are sent on the next sign-in as A. On
-     Discard: delete the replica, and its entries end `discarded`.
+     sender flushes the outbox for at most `SIGNOUT_FLUSH_MS`, then stops for this replica. A
+     request still in flight is abandoned: results that arrive are recorded in the dormant replica,
+     or dropped with a deleted one.
+  2. Acked entries resolve: the server holds them. If ready or sent entries remain, the product's
+     sign-out confirmation MUST state their count and offer Keep or Discard. The engine exposes
+     `unsentCount(replica)` as the ready and the sent counts: a sent entry may already have landed.
+  3. With none left, or on Keep: delete A's confirmed rows, `SpentId` rows, cursors, `KnownScope`
+     rows, staging and device rows, and set `state := dormant`; remaining entries are sent on the
+     next sign-in as A. On Discard: delete the replica, and its entries end `discarded`. Discard
+     removes them from this device; it cannot recall a sent entry the server may already have
+     admitted.
   4. The `anon` replica, created if absent, becomes the active one.
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
@@ -1191,9 +1404,12 @@ Then, in one local transaction:
 
 ### §7.11 Fork guard and re-identify
 
-At engine start (iOS and Android), a `forkGuard` that differs from the backup-excluded copy, or a
-missing copy, triggers **re-identify**. In one local transaction:
-1. Mint a new replica id and `forkGuard`.
+At engine start (iOS and Android), a `DeviceMeta.forkGuard` that differs from its backup-excluded
+copy, or a missing copy, triggers **re-identify** of every replica in the local database, and a new
+`forkGuard`. A local database with no `forkGuard` (a first launch) mints its first guard, kept in
+both places, without re-identifying. Re-identify, in one local transaction per replica:
+1. Mint a new replica id. The re-identifying engine instance takes a new actor; other instances
+   take one at their next launch (D-2).
 2. `nextN := 1`, and `ackThrough := 0`.
 3. Every `sent` entry returns to `ready`. The sender numbers them again in commit order, with new
    digests.
@@ -1207,21 +1423,23 @@ missing copy, triggers **re-identify**. In one local transaction:
 | From | Event | To |
 |---|---|---|
 | — | `commit` with hold / without hold | `held` / `ready` or `coalesced` |
-| — | `commit` over `PUSH_MAX_BYTES` | not enqueued (notice) |
+| — | `commit` over `PUSH_MAX_BYTES` / over a cap (§7.1 step 8) | not enqueued (a notice / none) |
 | `held` | release (§7.3): `releaseAt` reached, leaving the app, engine start, sign-in or sign-out | `ready` |
 | `held` | `undo` | `undone` |
+| `held` | retired by a commit (§7.1 step 4): no command, and every delta removes a record the commit names | `undone` |
 | `ready` | numbered | `sent` |
-| `ready` | create and delete cancel (§7.2) | `coalesced` |
-| `held`, `ready` | folded as a dependent | `refused` (in the dependency's notice) |
+| `ready` | a never-numbered create or revive cancelled by a later delete (§7.2) | `coalesced` |
+| `held`, `ready` | folded with such a cancel (§7.2) | `coalesced` (no notice) |
+| `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
 | `sent` | `clock-skew`, `base-unknown` | `ready` (recovered, same position) |
-| `sent` | another refusal; 400 or 413 on a one-intent request | `refused` (a notice, or none for an orphan) |
+| `sent` | another refusal; a 400 or 413 on a one-intent request (§7.4) | `refused` (a notice, or none for an orphan) |
 | `sent` | orphan receives `ok` | `resolved` |
-| `sent` | transport error, 401, 503, `retry` | `sent` |
+| `sent` | transport error, 401, 503, `retry`; a 400 or 413 on a several-intent request (halved, §7.4) | `sent` |
 | `sent` | re-identify (fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change) | `ready` |
-| `sent`, unprocessed | an earlier entry's `clock-skew` recovery (§7.7 step 1) | `ready` (restamped) |
-| `acked` | `cleanSeq ≥ resultSeq` in the same epoch; boot complete with `asOf ≥ resultSeq`; scope `gone`, `not-found` or unsubscribed | `resolved` |
+| `sent`, unprocessed | an earlier entry's `clock-skew` recovery (§7.7 step 1); a 400 or 413 on a one-intent request at a lower `n` (§7.4) | `ready` (restamped after a skew) |
+| `acked` | `cleanSeq ≥ resultSeq` in the same epoch; boot complete with `asOf ≥ resultSeq`; scope `gone` or `not-found`; the scope leaves the subscription set (§7.9); sign-out (§7.10) | `resolved` |
 | `acked` | epoch change, when `resultEpoch ≠ epoch` | `ready` |
 | any non-terminal | discarded by the person (§7.10) | `discarded` |
 
@@ -1248,8 +1466,8 @@ missing copy, triggers **re-identify**. In one local transaction:
 | From | Event | To |
 |---|---|---|
 | `absent` | first write (product scope; overlay of a readable alive tree) | `alive` |
-| `absent` | governing `tree` create | `alive` |
-| `alive` | governing `tree` delete | `dead` (tree scope and every overlay of it) |
+| `absent` | governing create | `alive` |
+| `alive` | governing delete | `dead` (tree scope and every overlay of it) |
 | `dead` | `SCOPE_HORIZON` elapsed | `dead`, rows removed |
 
 Client cursor: none → boot (subscribe, `reset`, or a digest mismatch, §7.5) → live (last boot
@@ -1279,23 +1497,27 @@ type Intent = { n: number, scope: ScopeRef, d?: Delta[], guard?: Guard[], cmd?: 
                 gestureId?: string }
 ```
 
+A thin dead row is `{t, id, life, born?, seq}`.
+
 ### §9.2 Hello: `GET /v1/sync/hello`
 
 ```ts
 → { serverTime, epoch, schema: number, minSchema: number,
-    holdsRecords?: { roadmap: boolean, journal: boolean, gym: boolean } }   // authenticated callers
+    holdsRecords?: Record<product, boolean> }   // authenticated callers; every product the registry declares
 ```
 
 `holdsRecords` is present iff the caller is authenticated as an account A. `holdsRecords[p]` is true
-iff `acct:A/<p>` holds a row that `visible` (§7.6) accepts, of a `primary` type (§2.4). A
-sign-in's lineage rule uses the hello that precedes it (§7.10).
+iff `acct:A/<p>` holds a row that `visible` (§7.6) accepts, of a `primary` type (§2.4): an existence
+query over visible rows (§6.5). A row of a `visibleWhen` type counts only while one of its fields
+holds a value, so an account whose rows are all empty holds none. A sign-in's lineage rule uses the
+hello that precedes it (§7.10).
 
 ### §9.3 Push: `POST /v1/sync/push`
 
 ```ts
 type PushRequest = { replica: string, ackThrough: number, intents: Intent[] }
 type Result = { n, s: 'ok', seq: number, write?: {t, id: Id, from?: Id, born?: Stamp, f?: Record<string, Stamp>}[],
-                detail?: Json }
+                detail?: Json }                                   // write: present, possibly [], iff a command
             | { n, s: 'refused', code: RefusalCode, detail?: Json }
 type PushResponse = { serverTime, epoch, lastN: number, results: Result[], retry?: {n: number, retryAfterMs: number} }
 ```
@@ -1311,9 +1533,19 @@ type PullResponse = { serverTime, epoch, pages: Page[] }
 ```
 
 `seq` is the scope's seq and `digest` its scope digest, both in the page's snapshot (§6.7, §6.12).
-A boot page carries `total` (§6.7 step 3).
+A boot page carries `total` (§6.7 step 3). `more` is §6.7 step 4's.
 
-Cursors are opaque to clients: base64url of `jcs({e, m, s, k?, a?})`.
+A cursor is the unpadded base64url of `jcs({e, m, s, k?, a?})`:
+- `e`: the epoch;
+- `m`: `boot` or `live`;
+- `s`: a seq, at least 0;
+- `k`: the `[type, id]` of the last row sent, when a boot page or a page ending inside a seq
+  continues after it;
+- `a`: the boot's `asOf`, present iff `m = boot`, with `a ≥ s`.
+
+Clients decode cursors (§7.5). Decoding is strict: a text that is not unpadded base64url of a cursor
+of this shape, or that does not re-encode to itself, is undecodable, and the server answers `reset`
+(§6.7 step 2).
 
 ### §9.5 Live: WebSocket `/v1/sync/live`
 
@@ -1338,30 +1570,26 @@ Frames are at most `LIVE_FRAME_BYTES`.
 
 | Refusal code | Source |
 |---|---|
-| `not-found` | §6.1 step 3; A.1 fork |
-| `scope-dead` | §6.1 step 3 |
+| `not-found` | §6.1 step 3; commands (Appendix A) |
+| `scope-dead` | §6.1 step 3; §7.1 step 2 (local) |
 | `forbidden` | §6.1 step 3 |
-| `invalid` | §6.1 step 2; §4; §6.4; gym commands |
-| `too-large` | §6.1 step 10; §6.11; §7.1 step 8 (local) |
+| `invalid` | §6.1 step 2; §4; §6.4; product checks and commands |
+| `too-large` | §6.1 step 9; §6.11; §7.1 step 8 (local) |
 | `clock-skew` | §6.1 step 2 (recovered, §7.7) |
-| `id-taken` | §4.3; fork |
+| `id-taken` | §4.3; commands |
 | `id-spent` | §4.3 |
-| `unknown-record` | §4.3; gym commands |
-| `record-dead` | §4.3; gym commands |
-| `parent-dead` | §6.1 step 9 |
-| `stale` | §6.1 step 7; `gym.applyProposal` |
-| `cap` | §6.1 step 12 |
+| `unknown-record` | §4.3; commands |
+| `record-dead` | §4.3; commands |
+| `parent-dead` | §6.1 step 10 |
+| `stale` | §6.1 step 7; product checks and commands |
+| `cap` | §6.1 step 12; §7.1 step 8 (local) |
 | `base-unknown` | §6.11 (recovered, §7.7) |
 | `request-conflict` | §6.3 |
 | `request-running` | §6.3 (server origin; retry later) |
-| `payload-conflict` | `gym.importSession`, `gym.correctSession` |
 | `internal` | §6.6 |
-| `session-finished` | gym set rule |
-| `session-open` | `gym.start`; delete of an open session (A.2) |
 | `target-merged` | §7.7 write map (local) |
-| `session-overlap` | `gym.importSession`, `gym.correctSession` |
-| `unknown-exercise` | gym check |
-| `bad-instant` | gym commands |
+
+The closed list of refusal codes is this table and the codes Appendix A lists for its products.
 
 ### §9.7 Limits
 
@@ -1371,6 +1599,7 @@ Frames are at most `LIVE_FRAME_BYTES`.
 | `PUSH_MAX_INTENTS` / `PUSH_MAX_BYTES` | 64 / 2 097 152 (admits a text intent with its inline base) |
 | `PUSH_WORK_MS` | 50 |
 | `PULL_PAGE_BYTES` | 1 048 576 (at least one row) |
+| `PULL_MAX_SCOPES` | 64 |
 | `LIVE_FRAME_BYTES` / `LIVE_INLINE_BYTES` | 131 072 / 65 536 |
 | `KEEPALIVE_BYTES` | 65 536 |
 
@@ -1399,19 +1628,27 @@ server sends.
 ### §10.3 Server stamps
 
 For a server delta, the server:
-1. observes the stamp of every register it writes, as stored in the locked rows;
-2. ticks once per intent;
+1. observes the stamp of every register it writes, as stored in the locked rows and as a client
+   delta of the same intent writes it;
+2. ticks once per pass of §6.1 step 9 that joins server deltas;
 3. stamps those registers with the result.
 
-It does not observe client stamps.
+It observes no other client stamp. A server delta and a client delta on one register in one intent
+so join to the server's.
 
 ### §10.4 Skew, offset and time fields
 
 - **Skew bound.** Admission refuses a stamp beyond `serverNow + MAX_SKEW_MS`, and the server never
   restamps. A `time` value beyond the same bound is clamped to `serverNow` (§6.1 step 2).
-- **Offset.** Each response yields `offset = serverTime − (tSend + tRecv)/2` and
-  `rtt = tRecv − tSend`. `serverOffsetMs` is the offset of the lowest-RTT sample among the last
-  `OFFSET_SAMPLES`, and it is persisted.
+- **Offset.** Each response yields `offset = serverTime − floor((tSend + tRecv) / 2)`, from the
+  integer device wall ms at send and at receive, and `rtt`, the integer monotonic ms between them.
+  `serverOffsetMs` is the offset of the lowest-RTT sample among the last `OFFSET_SAMPLES` (on equal
+  RTTs, the latest), and it is persisted. A clock reading is wall ms, monotonic ms and a boot
+  identifier. Two readings straddle a **jump** when their `boot` differs, or when the wall clock
+  moved more than `CLOCK_JUMP_MS` away from the monotonic clock between them. A response whose send
+  and receive readings straddle a jump yields no sample. Each sample stores its receive reading in
+  `clockReading`. At the next sample, a reading that straddles a jump with the stored one discards
+  the earlier samples; `serverOffsetMs` is kept until then.
 - **Time fields.** A `time` field is a device-reported instant, stored as given after the bound.
   The server's own record times are `rc` and `ru`. How a product displays time is the product's
   rule.
@@ -1423,23 +1660,16 @@ It does not observe client stamps.
 An implementation **implements the engine** iff it passes, in CI, every item below for its role:
 server (C++), or client (JS, Swift, Kotlin).
 
-### §11.1 Golden corpus: `packages/api-contract/sync/`
+### §11.1 Golden corpus: `packages/api-contract/sync/corpus/`
 
-```
-stamp/{order,codec}.json            all      hlc/{tick,observe}.json        all
-jcs/values.json                     all      (floats, -0, 1e21, 1e-7, 1.0, unicode, key order)
-join/{lww,ranked,fww,life,born,record}.json all (ranked: rank beats stamp; equal ranks)
-derive/slug.json                    all      identity/seeded.json           all
-fracindex/between.json              client   identity/table.json            server (every §4.3 cell)
-admit/*.json                        server   text/diff3.json                server
-view/{drawn,stored}.json            client   coalesce/*.json                client (incl. two actors, keyed life)
-refusal/fold.json                   client   write/map.json (restamp too)    client
-refusal/restamp.json                client
-digest/{row,scope}.json             all      (text, unknown fields; sums that wrap mod 2^256; empty)
-lineage/signin.json                 client   (silent add; signed-out decision, add or discard;
-                                             dormant(B) untouched)
-protocol/*.jsonl                    all      (push, pull, live transcripts)
-```
+The corpus runs against the probe product (`packages/api-contract/sync/probe.registry.json`), and
+its `README.md` states its conventions. `constants.json` holds the constants its vectors assume.
+
+| Role | Files |
+|---|---|
+| all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew transcripts) |
+| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `push/serve`, `pull/{serve,hello}`, `machine/scope` |
+| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `coalesce/{join,blocked,cancel}`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout}`, `pull/pages`, `machine/{intent,replica}` |
 
 Runners assert exact equality, comparing values by `jcs`.
 
@@ -1454,6 +1684,8 @@ Runners assert exact equality, comparing values by `jcs`.
 5. `between(a, b)` lies strictly between `a` and `b`.
 6. A scope digest maintained incrementally over any sequence of row inserts, replacements and
    deletions equals the digest recomputed from the resulting rows (§6.12).
+7. A text merge keeps text (INV-12), checked per token occurrence of the edit scripts, not by
+   counts of equal tokens.
 
 ### §11.3 Replay fuzz
 
@@ -1464,8 +1696,8 @@ run, and against the real server and Postgres nightly.
 - drop, duplicate, delay and reorder;
 - lost replies;
 - process death between local transactions;
-- clock error of ±10 min;
-- holds, undo, leaving the app, and activity or scene recreation;
+- clock error of ±10 min, and device clock jumps;
+- holds, undo, retire, leaving the app, and activity or scene recreation;
 - multiple tabs;
 - sign-in under each lineage outcome (silent add; signed-out decision, add or discard), an
   incomplete sign-in, and sign-out;
@@ -1498,7 +1730,7 @@ Registry entries. "g" marks `idSpace: global`. `chars` and `bytes` are units (D-
 |---|---|---|---|---|---|
 | `tree` | self/roadmap | minted g `^t_[0-9a-f]{16}$`, governs `tree:<id>` | terminal, keep | — | — |
 | `track` | self/roadmap | keyed (tree id) | yes, keep | — | — |
-| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}; `visibilitySetBy` lww server; `forkedFrom` const server | — |
+| `meta` | tree/T | singleton | — | `title` lww ≤200 chars; `visibility` lww **server** ∈ {private, unlisted, public}, `opens` at {unlisted, public} (D-4); `visibilitySetBy` lww server; `forkedFrom` const server | — |
 | `node` | tree/T | derived ≤128 chars, fallback `step` | revivable, keep | lww: `label` ≤200 chars, `icon` ≤64 chars, `color`, `ord` (D-25), `pos` ({x, y} or null), `status`, `description` ≤16 000 chars, `links` (≤32 of {url ≤2048 chars, label ≤200 chars}) | 10 000 |
 | `edge` | tree/T | keyed `[from, to]` (`ref<node>` each) | yes, keep | — | 20 000 |
 | `kind` | tree/T | derived ≤128 chars, fallback `kind`; genesis `build`, `learn`, `milestone` | revivable, keep | lww: `hue`, `label` ≤24 chars, `description` ≤80 chars, `crossBranchExempt`, `ord` (D-25) | 6 |
@@ -1527,9 +1759,9 @@ Registry entries. "g" marks `idSpace: global`. `chars` and `bytes` are units (D-
   - `dst` alive, the caller's, with `forkedFrom = src` → ok (replay). Any other state of `dst`
     (§4.3) → `id-taken`.
   - Otherwise: create `tree dst` and `track dst`; write `meta {title: title ?? src title,
-    forkedFrom: src}`; copy every node, edge and kind row of `src`, with ids, stamps and born kept
-    and `status` cleared. `src` is read under `FOR SHARE` on `sync_scopes(tree:src)`, taken after
-    `acct:A/roadmap`.
+    forkedFrom: src}`; copy every node, edge and kind row of `src`, with ids and stamps kept, `born`
+    as §6.1 step 14 gives it, and `status` cleared. `src` is read under `FOR SHARE` on
+    `sync_scopes(tree:src)`, taken after `acct:A/roadmap`.
   - Predicts `tree` and `track`.
 
 **Other bindings:**
@@ -1539,6 +1771,8 @@ Registry entries. "g" marks `idSpace: global`. `chars` and `bytes` are units (D-
 - **Server-origin writers:** MCP roadmap write tools, each advertising an optional `requestId`
   (§6.3), and tending.
 - **Consequences:** a `tree` delete also writes the owner's `track` of that tree dead.
+- **Subscriptions** (§7.9): a bound replica also subscribes `tree/<T>` and `self/overlay/<T>` for
+  every alive `tree` and `track` record.
 
 ### A.2 Gym
 
@@ -1546,18 +1780,18 @@ Registry entries. "g" marks `idSpace: global`. `chars` and `bytes` are units (D-
 pre-minted offer ids, rack state, pictures marked `localOnly` ([gym Coach](mobile/gym_coach.md)
 §9.3). **Surfaces:** web, iOS, Android.
 
-Minted ids match `^[A-Za-z0-9_-]{8,64}$`. A seed (D-8) is at most 58 characters, so a seeded id
-fits for `n ≤ 99 999`. Seed exercise ids are `foreign` to every account. **Primary types** (§9.2):
+Minted ids match `^[A-Za-z0-9_-]{8,64}$`. A seeded type's seed (D-8) is at most 58 characters, and
+`n ≤ 99 999`. Seed exercise ids are `foreign` to every account. **Primary types** (§9.2):
 `routine`, `session`, `set`, `note`, `weighin`, `exercise`.
 
 | Type | Identity | Life | Fields | Rules |
 |---|---|---|---|---|
-| `routine` | minted g | terminal, spent | lww: `name` ≤240 bytes, `ord` (D-25), `entries` (≤50 of {`exerciseId`, `restSeconds` 15–900 or null, `sets` ≤20 of {`reps` 1–100 or null, `weightKg` ±500 or null, quantum 0.01}}) | Editor save guarded. Changing `name` or `entries` supersedes its pending proposals. Delete kills its proposals and writes `routineId = null` on its sessions. Projections: `revision`; `position` = dense rank of `(ord, id)` among alive routines. |
+| `routine` | minted g | terminal, spent | lww: `name` ≤240 bytes, `ord` (D-25), `entries` (≤50 of {`exerciseId`, `restSeconds` 15–900 or null, `sets` ≤20 of {`reps` 1–100 or null, `weightKg` ±500 or null, quantum 0.01}}) | Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals. Delete kills its proposals and writes `routineId = null` on its sessions. Projections: `revision`; `position` = dense rank of `(ord, id)` among alive routines. |
 | `exercise` | minted g | terminal, spent | `name` lww ≤240 bytes; `pattern`, `equipment` const | Never deleted (a delete is `invalid`). |
 | `exerciseName` | keyed (`ref<exercise>`) | yes, spent | `name` lww ≤240 bytes; `aliases` lww server (≤5) | A rename appends the old name to `aliases`. |
 | `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>`; `plan` const server; `startedAt` time; `finishedAt` lww server; `closedBy` lww server ∈ {finish, stale}; `displayName` lww server ≤240 bytes | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes; `completedAt` time | Set rules below. |
-| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guarded. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
+| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent | lww: `kg` 20–400 quantum 0.01, `recordedAt` | `origins: [replica]` |
 | `prefs` | singleton | — | lww, with defaults: `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
 | `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, `intent`, `proposedName`, `summary`, `changes`, `door`, `connection`; `threadId` lww `ref<thread>`; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
@@ -1572,9 +1806,10 @@ fits for `n ≤ 99 999`. Seed exercise ids are `foreign` to every account. **Pri
 - Every exercise reference (a set's `exerciseId`, a routine entry's `exerciseId`, a command's set)
   must be a seed or the owner's; otherwise `unknown-exercise`.
 
-**Commands.** `gym.closeStale` runs first inside `gym.start`, `gym.importSession`,
-`gym.correctSession` and a session delete's admission, before every `self/gym` pull, and before
-every server read of session state (REST and MCP). It is the only writer of `closedBy = stale`.
+**Commands.** `gym.closeStale` (`beforePull`, §2.4) runs first inside `gym.start`,
+`gym.importSession`, `gym.correctSession` and a session delete's admission, before every pull of an
+existing `self/gym`, and before every server read of session state (REST and MCP). It is the only
+writer of `closedBy = stale`.
 
 - **`gym.start {id: ref<session>, routineId?: ref<routine>, startedAt: time, joinOpenSession}`.**
   Clients send `joinOpenSession: true`.
@@ -1650,6 +1885,11 @@ stale. Logging after a stale close issues a new `gym.start`.
 change), proposal `baseRevision` and `baseName`, set revisions (what a correction or a delete
 replaced).
 
+**Codes** (§9.6): `payload-conflict` (`gym.importSession`, `gym.correctSession`), `session-finished`
+(the set rules), `session-open` (`gym.start`; a delete of an open session), `session-overlap`
+(`gym.importSession`, `gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the
+commands).
+
 ### A.3 Journal
 
 **Scope:** `self/journal`. **Surfaces:** web, iOS. **Primary types** (§9.2): `page`.
@@ -1671,12 +1911,14 @@ replaced).
 |---|---|
 | `HOLD_MS` | 9000 |
 | `LEAVE_DEBOUNCE_MS` | 500 |
+| `SIGNOUT_FLUSH_MS` | 5000 |
 | `MAX_SKEW_MS` | 300 000 |
 | `K_POISON` | 3 |
 | `LOCK_TIMEOUT_MS` | 2000 |
 | `PULL_FALLBACK_MS` | 300 000 |
 | Backoff | base 1000 ms; ceiling 300 000 ms, or 30 000 ms while `liveHint`; full jitter |
 | `OFFSET_SAMPLES` | 8 |
+| `CLOCK_JUMP_MS` | 1000 |
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |
 | `REQUEST_LEASE_MS` | 60 000 |
 | Gym stale window | 4 h |
