@@ -63,7 +63,7 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
   bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
   30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
   that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
-  log is not on the server.
+  log is not on the server. [Gym Coach on the client](../GYM_COACH.md) specifies all four.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
   Signed out they must land on the phone's anonymous shelf (`LocalLog.swift`) with a stable,
   retry-safe identity and be adopted once on sign-in, without duplicates.
@@ -150,6 +150,29 @@ skipped sets and substituted movements.
   program. Before designing screens, choose authorship, an evidence-based unlock rule and the
   smallest useful surface; “not yet” remains valid. Any integration must preserve product
   independence and must not introduce XP, levels, badges or streaks into gym. Tracking: `strength-tree`.
+
+### Coach on the client
+
+Spec: [Gym Coach on the client](../GYM_COACH.md). The brief `gym/briefs/09-coach.md` disagrees with
+it in these places.
+
+- **6p · Android signed-out Coach.** The brief keeps Android Coach account-only and lists Android's
+  signed-out Coach as open. The owner decided on 2026-09-26 that Android carries it. Draw Android's
+  signed-out room and allowance line. Until Play Integrity device recall is enabled, the Android
+  allowance is per install, so Android copy cannot say *per phone*.
+- **6q · One agent rule per ability.** The brief never lets Coach log, fix or delete a set, finish
+  or discard a workout, or write a bodyweight. MCP runs `start_session`, `log_set`, `log_sets`,
+  `finish_session`, `discard_session` and `import_session`. The spec gives each ability one agent
+  rule for both doors and withholds these until the brief sets them (its Appendix B-1).
+- **6r · Where a signed-out photo goes.** The brief says a signed-out photo is *stored only on the
+  phone; the server keeps no copy*. A copy goes to the model vendor to read, under the vendor's
+  retention terms. The copy must say so, with the terms verified at release.
+- **6s · Pasted programs.** The brief leaves open whether a pasted program may exceed the
+  1,000-byte question limit. The spec sets 8,000 bytes. Confirm the limit and its refusal sentence.
+- **6t · States the room does not draw.** The spec adds a `declined` answer (the model refused), a
+  truncated completed answer, a phone whose attestation fails (`coach-device-unverified`), and an
+  iPhone whose allowance was spent on an earlier install (`coach-device-spent`). The brief draws
+  none of them.
 
 ### Native and web differences
 
