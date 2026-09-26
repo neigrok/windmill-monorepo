@@ -82,9 +82,7 @@ set exceeds the heaviest planned load. Straight schemes keep their load offer. V
 show before/after ladders and **Save today’s sets**; offer this only when performed working sets
 fit the twenty-set limit. Missing a rep alone must not raise the offer.
 
-Keep-as-routine transcribes performed working sets per set. Readers of old device documents may
-migrate them, but current writes use only the scheme. A malformed legacy row must not discard the
-entire shelf.
+Keep-as-routine transcribes performed working sets per set.
 
 ## Coach review
 
