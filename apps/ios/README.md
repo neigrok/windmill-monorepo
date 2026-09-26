@@ -75,7 +75,8 @@ Sentry project for symbolication.
 CI and uploads it to App Store Connect. Manual dispatch: `gh workflow run ios-release.yml`.
 Build number is the release workflow run number; bump `MARKETING_VERSION` in `project.yml` by
 hand. Automatic signing uses repository secrets `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
-`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN`. TestFlight availability requires successful signing,
+`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN`; the archive is signed for development, so the team needs
+one registered device. TestFlight availability requires successful signing,
 upload and App Store Connect processing.
 
 ## Product, account and storage boundaries
