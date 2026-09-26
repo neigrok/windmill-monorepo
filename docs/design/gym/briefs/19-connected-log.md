@@ -103,9 +103,8 @@ The row opens this screen on both native surfaces. Its metadata states connectio
   `A written program? Your AI tool can build it.` over `Connect a tool`. The Sunday/Monday
   sentence and *Connecting is free* go with the rest of the pitch.
 - **Web connection setup** is the shell’s `/app/connect` page
-  (`web/src/shell/connect/ConnectPage.jsx`). The Coach action opens it directly; the legacy
-  `#/gym/connect` route replaces itself with the shared page. Gym settings has no Connected log
-  row or duplicate credential reads. Shared Connected tools and API keys manage access. The
+  (`web/src/shell/connect/ConnectPage.jsx`). The Coach action opens it directly. Gym settings has
+  no Connected log row or duplicate credential reads. Shared Connected tools and API keys manage access. The
   per-client recipe, ChatGPT and Codex authentication, and API-key fallback belong to
   `../../roadmap/guidelines/mcp-connect.md`.
 

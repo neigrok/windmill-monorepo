@@ -53,8 +53,8 @@ to this phone.*, with the same door as Keep (§6) → **Bringing it back**.
   *31 of 38 workouts*), with a system activity indicator per row. Never a fake progress bar.
 - **The last room — the one holding the newest record — opens as soon as its own data is in**,
   and says so (*Opening Gym as soon as it's ready.*). The other room keeps arriving behind it.
-- When the phone already holds work from before this sign-in, any sign-in question it owes (§6)
-  comes first.
+- When the phone already holds work made signed out, any sign-in question it owes (§6) comes
+  first.
 
 ## 5. Signed out is a first-class state
 
@@ -112,17 +112,13 @@ account verb's door. The web says *this device* where the phones say *this phone
   follows.
 - **In a room where the account already holds records, sign-in asks once**: add the work made
   signed out on this phone to the account, or discard it.
-- **Work whose owner is unknown is always asked about, in its own question**, whatever the account
-  holds. Work left on the phone from before Windmill kept accounts apart — quarantined pages or
-  training — never joins silently. Its question counts only that work; the person's own signed-out
-  work in the same room follows the two rules above, so it joins silently or gets its own question.
-- **One question at a time; a room asks at most two.** Until every question is answered nothing is
-  sent, and a question left unanswered — the app closed on it — is asked again at the next start.
-- **Each question has no default and no "later".** Two buttons of equal weight, both in the
+- **One room at a time.** Until every question is answered nothing is sent, and a question left
+  unanswered — the app closed on it — is asked again at the next start.
+- **The question has no default and no "later".** Two buttons of equal weight, both in the
   platform's default style: neither is the primary fill, neither is destructive red, and there is
   no Cancel, swipe, tap outside or Escape.
-- **Discard asks once more, in either question.** Choosing **Discard** opens a second alert, styled destructive, with
-  the real counts and a plain *can't be undone*. Its **Cancel** returns to that question, still
+- **Discard asks once more.** Choosing **Discard** opens a second alert, styled destructive, with
+  the real counts and a plain *can't be undone*. Its **Cancel** returns to the question, still
   unanswered. Nothing is deleted on one tap.
 - **Work that belongs to another account never joins this one.**
 
@@ -131,23 +127,10 @@ account verb's door. The web says *this device* where the phones say *this phone
 > already has training. Add them, or discard them for good.
 > **Add** · **Discard**
 
-When the owner is unknown, counting only that work:
-
-> **Are these yours?**
-> 3 pages on this phone are from before Windmill kept accounts apart, so it can't tell whose they
-> are. Add them to your account only if they're yours, or discard them for good.
-> **Add** · **Discard**
-
-After **Discard** in *Add to your account?*:
+After **Discard**:
 
 > **Discard 2 workouts · 1 routine?**
 > They never reached an account, and deleting them from this phone can't be undone.
-> **Cancel** · **Discard** (destructive)
-
-After **Discard** in *Are these yours?*:
-
-> **Discard 3 pages?**
-> This phone can't tell whose they are, and deleting them from it can't be undone.
 > **Cancel** · **Discard** (destructive)
 
 - **The counts are real, by kind, in the room's own words**, and name everything the answer
@@ -239,8 +222,8 @@ plus an SF Symbols Draw On check. No congratulation copy, no celebration, no cou
 5. **Sign-out counts what is still unsent** after its one attempt to send it, so the alert's
    number is real. Kept changes survive app updates and stay hidden until the same account signs
    in.
-6. **The sign-in questions need to know, per room, whether the account already holds records of
-   its own**, and which work on the phone has no known owner, before anything is sent.
+6. **The sign-in question needs to know, per room, whether the account already holds records of
+   its own**, before anything is sent.
 
 The backend dependencies of signed-out Coach are in `consistency.md` (6k–6n).
 

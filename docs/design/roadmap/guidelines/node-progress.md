@@ -1,9 +1,8 @@
 # Roadmap progress and controls
 
 A step has two explicit progress values: **Not started** and **Complete**. Prerequisites derive
-the canvas treatment: **Locked**, **Available**, or **Complete**. Legacy `active` and `inProgress`
-values normalize to `none`; a reset step follows the same prerequisite rules as every other
-unfinished step.
+the canvas treatment: **Locked**, **Available**, or **Complete**. A reset step follows the same
+prerequisite rules as every other unfinished step.
 
 The desktop detail panel shows a static status and one action: **Complete** for an available
 step, or **Reset** for a completed step. A locked step explains its prerequisite. There is no

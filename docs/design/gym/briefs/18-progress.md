@@ -259,7 +259,6 @@ Movement names and record metadata, aliases and recent sets retain their existin
 The snapshot is cached per owner and refreshed or invalidated after finish, correction, deletion,
 rename and ownership changes. A failed read preserves loaded Log rows and states the failure;
 it cannot fall back to differently qualified legacy estimates or call a partial series All.
-The legacy stats, record and Review responses remain compatible for web, iOS and MCP.
 
 ## Open
 

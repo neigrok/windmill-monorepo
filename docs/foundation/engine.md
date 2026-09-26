@@ -5,8 +5,7 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 ## §0 Status and scope
 
-**Status:** Specified; not yet implemented. The current roadmap wire is
-[GRAPH_SYNC_DESIGN.md](../GRAPH_SYNC_DESIGN.md). Roadmap, journal and gym are not yet on the engine.
+**Status:** Specified; not yet implemented. The engine starts from empty stores.
 
 **In the engine:**
 - record identity, deletion and spent ids;
@@ -42,8 +41,7 @@ It is encoded as the text `ms:counter:actor`, in decimal without leading zeros. 
 `ReplicaMeta.hlc` and shared by every engine instance (process or browser tab) that uses it; each
 instance has its own fixed actor. The server has one clock. Actors are:
 - a client instance: `r_` plus 12 random `[a-z0-9]`;
-- the server: `srv`;
-- migration: `mig` and `dev`.
+- the server: `srv`.
 
 **D-3 Replica.** One device's durable local store for one account binding. Its id is `rp_` plus 32
 lowercase hex characters. One device database holds any number of replicas.
@@ -53,13 +51,6 @@ lowercase hex characters. One device database holds any number of replicas.
 | `anon` | No account. It never pushes. |
 | `bound(A)` | Signed in as A. It pushes and pulls. |
 | `dormant(A)` | A signed out. The confirmed cache is purged; the outbox is kept, not shown and not sent. |
-| `unattributed` | The account is unknown. Not shown, never sent. Its entries have lineage `anon`, and leave it only by the lineage rule or an explicit discard (§7.10). |
-
-The legacy owner-less stores are `unattributed`:
-- Android gym `Seat.quarantine` (`"unattributed"`);
-- iOS gym `SetQueue` and `LocalLog` key `quarantine`;
-- iOS journal `windmill-journal-pages-v2-unclaimed.json`;
-- web journal `wm.journal.v2.pages.unclaimed`.
 
 **D-4 Scope.** The unit of sequencing, authorization, bootstrap and live delivery.
 
@@ -138,8 +129,7 @@ A text field carries `{text, base}` (§6.11). A minted or derived delta always c
 (D-19), an optional command (D-20) and an optional `gestureId`. It is admitted atomically. An intent
 is:
 - *single-record* when it touches one `(type, id)`;
-- *plain* when it is single-record and has no guard and no command;
-- *import* when migration produced it (Appendix C); the effect is in §4.4.
+- *plain* when it is single-record and has no guard and no command.
 
 **D-14 Gesture.** One user act. `commit` (§7.1) turns it into one intent (atomic) or one intent per
 record. The intents of one gesture share one stamp and one `gestureId`.
@@ -150,7 +140,7 @@ record. The intents of one gesture share one stamp and one `gestureId`.
 - `resolved`: `ok`, and the scope's cursor covers it;
 - `refused`: a notice holds it;
 - `discarded`: the person discarded it (sign-out Discard, a lineage decision, or an explicit
-  discard of a dormant or unattributed replica, §7.10).
+  discard of a dormant replica, §7.10).
 
 Transitions are in §8.1.
 
@@ -218,10 +208,9 @@ return id
 the same gesture.
 
 **D-27 Lineage.** The account an outbox entry was committed under: an account id, or `anon` when it
-was committed signed out. Migration gives an entry its seat's lineage, and `anon` for an
-unattributed seat (C.7). It is set at commit, and changes only when the lineage rule adds the entry
-to an account (§7.10). So every entry of a `bound(A)` or `dormant(A)` replica has lineage A, and
-every entry of an `anon` or `unattributed` replica has lineage `anon`.
+was committed signed out. It is set at commit, and changes only when the lineage rule adds the
+entry to an account (§7.10). So every entry of a `bound(A)` or `dormant(A)` replica has lineage A,
+and every entry of the `anon` replica has lineage `anon`.
 
 ---
 
@@ -245,13 +234,13 @@ sync_requests(account uuid, request_id text, digest bytea not null, state text, 
 
 ### §2.2 The envelope on typed product tables
 
-Each table storing a synced type keeps its typed columns as the truth and adds:
+Each table storing a synced type holds its typed columns as the truth, and:
 
 | Column | On |
 |---|---|
 | `scope_key`, `seq`, index `(scope_key, seq)` | every synced table |
 | `rc`, `ru` | every synced table |
-| `<field>_stamp` | every lattice field (existing stamp columns satisfy this) |
+| `<field>_stamp` | every lattice field |
 | `born`, `life_stamp` | every type with life |
 | `life` | types whose table keeps dead rows (`deadRows: keep`) |
 | `<field>_rev`, `<field>_merged` | every `text` field |
@@ -324,7 +313,7 @@ type CommandDef = { name: string, scope: string, origins: ('replica'|'server')[]
 The store MUST provide atomic, durable transactions spanning every table below.
 
 ```ts
-type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant'|'unattributed', account?: string,
+type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?: string,
                      nextN: number, hlc: {ms: number, counter: number}, hlcHigh: Stamp, admittedHigh: Stamp,
                      serverOffsetMs: number, offsetSamples: {offset: number, rtt: number}[],
                      serverEpoch: string | null, ackThrough: number, forkGuard: string,
@@ -378,8 +367,6 @@ joinRecord(A, B) = { life: joinLife, born: joinBorn, f[k]: (lww ? joinLww : rank
 - `fww`, `const` and `time` join by `joinFww`.
 - `joinRanked` takes the maximum by `(rank(value), stamp, jcs(value))`, so a value never reverts to
   a lower rank, whatever the stamps.
-- `joinLife` is today's add-biased element set (`platform/domain/Crdt.h`, `ElementSet`), for every
-  type with life. Edge existence semantics are unchanged.
 
 ### §3.3 Laws
 
@@ -445,9 +432,6 @@ Any other shape is refused `invalid`.
   `invalid`. So is a delta that writes a `const` or `time` field already set under a different
   stamp to a different value; an equal stamp is the same write and a no-op. Commands and
   server-origin writes MAY write any field.
-- **Import intents** are single-record, except `gym.importSession` (C.7). An import intent refused
-  `record-dead`, `id-spent`, `unknown-record` or `scope-dead` is answered `ok` with
-  `detail: {dropped: code}`. Every other refusal is an ordinary refusal.
 - **Spent ids.** No client mints an id that is alive, spent or pending in its views (§7.1). The
   server's own derived minting uses `taken` = the scope's alive and spent ids.
 
@@ -484,8 +468,7 @@ through:
 
 **INV-3 No silent loss.** While the replica's local store survives and the server's committed state
 survives, every committed intent ends in exactly one outcome of D-15. An intent that ends `refused`
-has a notice holding its content, written in the same local transaction. The one exception is an
-import record dropped by §4.4.
+has a notice holding its content, written in the same local transaction.
 
 Storage loss is outside this invariant: uninstall, cleared site data, private windows, and Safari's
 deletion of script-writable storage after 7 days without interaction.
@@ -540,7 +523,7 @@ every lattice field, and its text and serial values equal the server's.
 - (e) Existence: for a principal without read access, an absent, private or dead scope answers
   `not-found` identically on push, pull, live and `roadmap.fork`, and a `foreign` id answers
   `id-taken` without its state. (Creating a governing record under a global id reveals that the id
-  is in use, as `POST /v1/trees` does today.)
+  is in use.)
 - (f) Visibility changes only through a guarded server command (A.1).
 
 *Proof.* Each clause is enforced at its cited step. No other path emits rows or accepts writes.
@@ -595,8 +578,8 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
 
 *Proof.*
 - Client stamps are refused beyond the bound (§6.1 step 2).
-- Server stamps are one tick after observing stored stamps, which are bounded by induction (§10.3).
-- Migration clamps every stamp built from a legacy value (C.2).
+- Server stamps are one tick after observing stored stamps, which are bounded by induction from
+  empty stores (§10.3).
 
 **INV-15 Verified replica.** A replica whose cursor for a scope is live at seq N, without a key,
 holds exactly the server's alive rows (§6.12) of the scope at N, or detects that it does not at its
@@ -604,8 +587,7 @@ next digest check (§7.5).
 
 *Proof.*
 - The server's scope digest at every committed seq is the sum over the scope's alive rows at that
-  seq. It starts at 0, the transaction that changes a row changes it (§6.12), and migration
-  computes it (C.6).
+  seq. It starts at 0, and the transaction that changes a row changes it (§6.12).
 - A pull page reads its rows and its `(seq, digest)` in one snapshot (§6.7), and a live frame
   carries the digest committed with its seq, so a received `(N, d)` is the server's state at N.
 - The client changes its digest in every transaction that changes its confirmed rows, hashing each
@@ -698,8 +680,7 @@ These steps are an ordered, fail-fast pipeline. A refusal at any step goes to st
 
 **Step R.**
 1. `ROLLBACK`.
-2. Apply §4.4's import rule.
-3. In a new transaction, write the result and `last_n` as step 16 does.
+2. In a new transaction, write the result and `last_n` as step 16 does.
 
 **Exceptions** are classified by §6.6.
 
@@ -746,8 +727,8 @@ MCP tools, REST writes, tending and server-internal commands call
 - **Without a `requestId`:** no deduplication.
 - **Builders** that read the graph (`tidy`, `prune`, `recolor`, sibling order, derived ids) read
   under the scope lock, from rows or from a cache whose seq equals `scope.seq`.
-- **Server-built imports** classify each incoming id as create, update or spent before building
-  deltas, and report spent ids to the caller.
+- **Server-built bulk writes** (an MCP subgraph graft) classify each incoming id as create,
+  update or spent before building deltas, and report spent ids to the caller.
 
 ### §6.4 Commands
 
@@ -760,7 +741,7 @@ MCP tools, REST writes, tending and server-internal commands call
 ### §6.5 Caps
 
 `sync_scopes.counters[type]` equals the number of alive records of the type in the scope. It is
-computed at scope creation or migration and changed only in step 13. The cap check reads the counter
+computed at scope creation and changed only in step 13. The cap check reads the counter
 and never counts rows.
 
 ### §6.6 Faults and poison
@@ -898,8 +879,7 @@ change is such a transaction: replica and server-origin admission, every command
 included), and a fork's writes into its new scope (§6.1 step 14). Every referential consequence
 (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a `feed` row. A
 governing create starts its scope at digest 0. Scope death changes no row, and a dead scope's digest
-is never sent; G5 sets it to 0. Migration computes it (C.6), and a restore brings it back with its
-rows. A pull reads the stored digest and never sums rows.
+is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads the stored digest and never sums rows.
 
 **Client.** The client keeps the same sum over its confirmed rows, hashing each row as received,
 and checks it against the server's (§7.5). It MAY store each row's hash beside the row. Pending
@@ -1099,9 +1079,7 @@ On `refused(code)` for entry `e`, in one local transaction:
      2. `hlc := max(physNow(), admittedHigh)`.
      3. Every later `sent` entry with `n` above the response's `lastN` returns to `ready`, and
         `nextN := lastN + 1` (the server never processed those numbers).
-     4. Restamp `e`, and every held and ready entry, in commit order, by the restamp rule below
-        (import intents other than `e` excepted: their stamps are migration facts, which C.2 keeps
-        at or below `M`).
+     4. Restamp `e`, and every held and ready entry, in commit order, by the restamp rule below.
      5. `meta.hlc` and `hlcHigh` become `max(admittedHigh, the new stamps)`, shared by every tab.
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
@@ -1171,39 +1149,31 @@ tree and overlay scopes are roadmap's. It first releases every held entry into t
 (Undo does not survive sign-in), before the decisions.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
 - Entries of the `anon` replica are added to A without asking for each product in which A holds no
-  records, whatever `unattributed` entries exist.
-- Two kinds of decision are due per product and sign-in, each an explicit add or discard, with no
-  default and no "later":
-  - **signed-out:** due iff A holds records in the product and the `anon` replica has entries of
-    it; it covers exactly those entries;
-  - **owner-unknown:** due iff an `unattributed` replica has entries of the product, whatever A
-    holds; it covers exactly those entries.
-
-  A decision covers its entries of every type (in gym, `thread` and `message` too). The engine
-  exposes `anonCount(product, kind)` per decision: the count, by type, of the records its entries
-  create or change. How the decisions are presented is product canon. Until every due decision is
-  made the sign-in is not complete: the `anon` replica stays active, no replica changes and nothing
-  is sent. Cancelling an incomplete sign-in changes nothing more; it resumes, with a new hello and
-  every decision still due, at the next engine start.
+  records.
+- For each product in which A holds records and the `anon` replica has entries, a **signed-out
+  decision** is due: an explicit add or discard of exactly those entries, of every type (in gym,
+  `thread` and `message` too), with no default and no "later". The engine exposes
+  `anonCount(product)` per decision: the count, by type, of the records its entries create or
+  change. How the decisions are presented is product canon. Until every due decision is made the
+  sign-in is not complete: the `anon` replica stays active, no replica changes and nothing is sent.
+  Cancelling an incomplete sign-in changes nothing more; it resumes, with a new hello and every
+  decision still due, at the next engine start.
 - **Adoption boundary:** entries of another account's lineage are never adopted. A `dormant(B)`
   replica stays dormant.
 
 Then, in one local transaction:
 1. **Discard.** For each decision answered discard, the entries it covers end `discarded`, deletes
-   released at the start among them, and the product's device rows in the replicas those entries
-   come from are deleted.
+   released at the start among them, and the product's device rows in the `anon` replica are
+   deleted.
 2. **Bind.** A `dormant(A)` replica becomes `bound(A)`, with every cursor `null`. Otherwise the
    `anon` replica, when entries are left in it, is rebound (`state := bound`, `account := A`).
    Otherwise a new `bound(A)` replica is created.
-3. **Add.** Every other `anon` or `unattributed` replica with entries left moves them, and its
-   device rows, into `bound(A)`, preserving local ids, gesture ids, stamps and commit order, and
-   is then deleted. A moved device row whose key `bound(A)` already holds is dropped. An
-   `unattributed` replica left empty is deleted.
+3. **Add.** When `bound(A)` is not the rebound `anon` replica and entries are left in the `anon`
+   replica, they move, with its device rows, into `bound(A)`, preserving local ids, gesture ids,
+   stamps and commit order, and the `anon` replica is deleted. A moved device row whose key
+   `bound(A)` already holds is dropped.
 4. Every entry added to A, rebound or moved, takes lineage A, and `bound(A)` observes its stamps
    into `hlc` and `hlcHigh`.
-
-While A is bound, migration that creates an `anon` or `unattributed` replica with entries (C.7)
-runs the same rule on them: the decisions where they are due, then steps 1, 3 and 4.
 
 **Other transitions:**
 - **Sign-out of A:**
@@ -1215,8 +1185,7 @@ runs the same rule on them: the decisions where they are due, then steps 1, 3 an
      rows, and set `state := dormant`; remaining entries are sent on the next sign-in as A. On
      Discard: delete the replica, and its entries end `discarded`.
   4. The `anon` replica, created if absent, becomes the active one.
-- **Discard unsent** (explicit, for `dormant` and `unattributed`): delete the replica. Its entries
-  end `discarded`.
+- **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
 
@@ -1261,19 +1230,17 @@ missing copy, triggers **re-identify**. In one local transaction:
 | From | Event | To |
 |---|---|---|
 | — | first launch | `anon` |
-| — | migration finds owner-less data | `unattributed` |
 | — | sign-in as A, no `dormant(A)` and no rebound `anon` replica | `bound(A)` (new) |
 | `dormant(A)` | sign-in as A | `bound(A)` |
 | `dormant(B)` | sign-in as A | `dormant(B)` |
 | `anon`, entries left after discards (§7.10) | sign-in as A, no `dormant(A)` | `bound(A)` (rebound) |
-| `anon`, entries left after discards | sign-in as A with a `dormant(A)`; migration while `bound(A)` | deleted (entries moved to `bound(A)`) |
-| `anon`, no entries left | sign-in; migration while bound | `anon` |
-| `unattributed` | sign-in as A; migration while `bound(A)` | deleted (entries moved to `bound(A)` or discarded, by each owner-unknown decision) |
-| `anon`, `unattributed` | sign-in as A with a decision still due, or cancelled | unchanged; nothing sent (§7.10) |
+| `anon`, entries left after discards | sign-in as A with a `dormant(A)` | deleted (entries moved to `bound(A)`) |
+| `anon`, no entries left | sign-in | `anon` |
+| `anon` | sign-in as A with a decision still due, or cancelled | unchanged; nothing sent (§7.10) |
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
 | `bound(A)` | 401 / re-authentication as A | `authPaused` set / cleared |
-| `dormant`, `unattributed` | explicit discard | deleted |
+| `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
 
 ### §8.3 Scope
@@ -1309,15 +1276,13 @@ type Delta = { t, id, life?: Life, born?: Stamp, f?: Record<string, Reg>,
 type Guard = { t, id, field: string, stamp: Stamp | null }
 type Cmd = { name: string, args: Json }
 type Intent = { n: number, scope: ScopeRef, d?: Delta[], guard?: Guard[], cmd?: Cmd,
-                gestureId?: string, import?: true }
+                gestureId?: string }
 ```
 
 ### §9.2 Hello: `GET /v1/sync/hello`
 
 ```ts
 → { serverTime, epoch, schema: number, minSchema: number,
-    migratedAt: { roadmap?: number, journal?: number, gym?: number },
-    products: { roadmap: 'engine'|'legacy', journal: 'engine'|'legacy', gym: 'engine'|'legacy' },
     holdsRecords?: { roadmap: boolean, journal: boolean, gym: boolean } }   // authenticated callers
 ```
 
@@ -1469,10 +1434,10 @@ fracindex/between.json              client   identity/table.json            serv
 admit/*.json                        server   text/diff3.json                server
 view/{drawn,stored}.json            client   coalesce/*.json                client (incl. two actors, keyed life)
 refusal/fold.json                   client   write/map.json (restamp too)    client
-refusal/restamp.json                client (incl. an import intent behind `e`, not restamped)
+refusal/restamp.json                client
 digest/{row,scope}.json             all      (text, unknown fields; sums that wrap mod 2^256; empty)
-lineage/signin.json                 client   (silent add; signed-out and owner-unknown decisions,
-                                             each add or discard; dormant(B) untouched)
+lineage/signin.json                 client   (silent add; signed-out decision, add or discard;
+                                             dormant(B) untouched)
 protocol/*.jsonl                    all      (push, pull, live transcripts)
 ```
 
@@ -1502,8 +1467,8 @@ run, and against the real server and Postgres nightly.
 - clock error of ±10 min;
 - holds, undo, leaving the app, and activity or scene recreation;
 - multiple tabs;
-- sign-in under each lineage outcome (silent add; signed-out and owner-unknown decisions, each add
-  or discard), an incomplete sign-in, and sign-out;
+- sign-in under each lineage outcome (silent add; signed-out decision, add or discard), an
+  incomplete sign-in, and sign-out;
 - 401;
 - poison;
 - epoch change;
@@ -1626,8 +1591,7 @@ every server read of session state (REST and MCP). It is the only writer of `clo
 - **`gym.importSession {id: ref<session>, routineId?, startedAt: instant, finishedAt: instant, sets}`.**
   Creates a finished session (`closedBy = finish`) and its sets, with no join.
   - Own `id`: alive with equal raw arguments (its receipt) → ok; with different arguments →
-    `payload-conflict`. An import intent instead creates the sets the server lacks (each set
-    admitted alone, with §4.4's drops) and finishes the session if it is open. Dead → ok.
+    `payload-conflict`. Dead → ok.
   - `foreign` → `id-taken`.
   - `finishedAt < startedAt`, `finishedAt > serverNow`, or a set outside `[startedAt, finishedAt]`
     → `bad-instant`.
@@ -1716,98 +1680,3 @@ replaced).
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |
 | `REQUEST_LEASE_MS` | 60 000 |
 | Gym stale window | 4 h |
-| `MIG_BORN` | `1:0:mig` |
-| `MIG_STAMP` | `1:1:mig` |
-| `DEVICE_MIG_STAMP` | `1:0:dev` (< `MIG_STAMP`) |
-
----
-
-## Appendix C: Migration rules (engine)
-
-**C.1 Identity.** Every record that exists before adoption, including seeded spent rows, has
-`born = MIG_BORN` on the server and on every device that imports it. A device import of a record the
-server holds is therefore `alive =` or `dead =` in §4.3.
-
-**C.2 Server stamps.**
-- Fields keep their existing stamps: roadmap `*_hlc`, `trees.title_hlc`, `node_progress.hlc`, and
-  the journal page stamp for `mood`, `energy` and `source`.
-- Weigh-ins, on the server and on devices, are stamped `recordedAt:0:mig` (server) and
-  `recordedAt:1:dev` (device), for `kg`, `recordedAt` and life, so today's latest-`recordedAt`
-  order survives, and an equal instant goes to the device write as today.
-- **Order-preserving clamp (INV-14),** per side, for journal and weigh-in stamps, and for roadmap
-  stamps on a device. Only roadmap's server-stored stamps are exempt: today's server already
-  refused stamps beyond receipt + 5 min, so they satisfy INV-14. The side's instant `M` is the
-  server's migration of the product, or on a device `hello.serverTime` at its migration. The side
-  sorts its legacy-built stamps with `ms > M` by stamp order, and gives the i-th (from 0) the stamp
-  `(M, 2^31 + i, actor)`. Order among clamped stamps is kept, and they sort after every unclamped
-  stamp at `M`. Limitation: when one weigh-in, or one journal page's `mood`, `energy` or `source`,
-  has future stamps on both the server and a device, the device's clamped stamp sorts after the
-  server's, whatever their original order. Likewise for roadmap: a device migrating within
-  `MAX_SKEW_MS` of the server, with an exempt future-stamped server value and a newer stranded
-  device value on the same field, keeps the server's value.
-- Every other migrated field, and every `life_stamp` without a source, gets `MIG_STAMP`.
-- A roadmap life derives from its element set: `alive@created` iff created is set and not
-  `deleted > created`; otherwise `dead@deleted`.
-
-**C.3 Spent seeding.** Each becomes a spent record with `born = MIG_BORN` and
-`life_stamp = MIG_STAMP`:
-- `trees.deleted_at` → a dead `tree` record, with `tree:<id>` and its overlays dead;
-- `gym_set_revisions.deleted = true` → a spent `set`;
-- `gym_ask_deleted_threads` → a spent `thread` (C.8 migrates the alive ones);
-- ids with no standing row in `gym_write_receipts`, `gym_routine_creations` and `gym_note_saves`
-  → spent records of their kind.
-
-The start receipts in `gym_write_receipts` stay `gym.start` receipts.
-
-**C.4 Order.** Kinds `rank` → `ord`, in `(rank, id)` order. Notes `position` → `ord`, in position
-order. Routines `position` → `ord`, in `(position, id)` order.
-
-**C.5 Membership.** A `track` record is created alive for every alive tree's owner, and for every
-`(user, tree)` in `node_progress` whose user is not the owner.
-
-**C.6 Counters, seq and digest.** Per scope: count the counters once, assign row seqs in one
-ascending pass, set `seq` to the maximum, and compute the scope digest from its alive rows (§6.12).
-Generate the epoch.
-
-**C.7 Device import.** Device migration runs only after a successful hello (an offset sample
-exists). Device-migration intents are import intents (D-13), one per record unless stated
-otherwise. Each takes the lineage of the seat it comes from.
-
-| Legacy local state | Becomes |
-|---|---|
-| Pending writes: set-queue starts, appends, fixes and deletes; phone weigh-in queues | Intents with fresh ticks (weigh-ins: C.2). Starts become `gym.start`. Creates get `born = MIG_BORN`. |
-| Preference documents (owed, and anonymous) | Only fields the surface edits (A.2 `prefs`) that differ from the defaults, with fresh ticks. A document that is not owed is not migrated. A pending change back to a default is therefore not migrated. |
-| Shelves (unconfirmed uploads): Android `LocalLog`, iOS gym shelves | A finished session becomes one `gym.importSession` with its sets; an import `gym.importSession` creates its records with `born = MIG_BORN` (C.1). Other records become creates with `born = MIG_BORN` and fields at `DEVICE_MIG_STAMP`, so a server value always wins. |
-| Roadmap `windmill:device-trees`, unclaimed trees | `anon` replica import intents, with their lattice stamps. |
-| Roadmap claimed trees | Import intents of their IndexedDB `windmill-sync` content, with their lattice stamps. A dead tree's entries end silently (`scope-dead`, §4.4). |
-| Journal owed pages (`needsPush`) | `page` writes with `base: {text: ""}` (§6.11 step 1). |
-| Anonymous seats | The `anon` replica. |
-| Android `ClaimConsent` of a seat | `AwaitingSignIn` → lineage `anon`; `Approved(owner)` → lineage `owner`, in `bound(owner)` or `dormant(owner)`; `Discarding` → the entries end `discarded`. |
-| Signed-in seats of account X | The `bound(X)` replica when the session is X; otherwise a `dormant(X)` replica. |
-| Unattributed seats (D-3) | An `unattributed` replica. Its entries carry `born = MIG_BORN` and lineage `anon`, and are not import intents. |
-
-Each legacy store is deleted in the transaction that writes its entries.
-
-**C.8 Coach conversations** (server, before C.6, with Ask quiesced: no generation in flight). Each
-`gym_ask_threads` row becomes a `thread` with its `id` and `title`. Each `gym_ask_turns` row
-becomes a `message`:
-- id: the seeded id `<thread_id>-<position>` (D-8). It may exceed the gym seed bound or the id
-  pattern, which is harmless: migration bypasses admission, and the only later write that names a
-  migrated message is its death as a thread-delete consequence, which skips §6.1 step 2;
-- `threadId := thread_id`; `role := lifter` iff `from_lifter`, else `coach`; `text`;
-  `at := said_at`;
-- a lifter row: `pictures` from `attachments`, as references `{id, mediaType}` to the
-  `gym_ask_attachments` rows, which stay as the account's private picture store (gym Coach §9.3);
-- a Coach row: `state` from `status` (`interrupted` for `running`, and `failed` for a value outside
-  the ranked domain); `receipt` holds the legacy `receipt` and `results` as they are; `replica`
-  stays unset.
-
-Every record takes `born = MIG_BORN` and fields at `MIG_STAMP` (C.1, C.2). `gym_ask_generations`
-rows are not migrated. Legacy questions, and so titles, are at most 1000 bytes and fit
-`MAX_QUESTION_BYTES`. Legacy answers have no byte cap (at most 8 model calls of 8000 tokens), so one
-over `MAX_ANSWER_BYTES`, like any value over a gym Coach bound, is migrated unchanged: bounds apply
-at admission (§6.1 step 2), and a migrated message has no writer and is never written again.
-
-**C.9 Proposals** (server, before C.6). Each `gym_proposals` row becomes a `proposal` with its
-fields. Its `changes` is built from its `gym_proposal_changes` rows in `position` order, and its
-`baseRevision` and `baseName` projections come from `base_revision` and `base_name`.

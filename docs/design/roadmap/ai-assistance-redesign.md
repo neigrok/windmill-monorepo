@@ -44,6 +44,6 @@ The proposed controls use shared Button instances, Roadmap Skill Node instances,
 
 ## Implementation contract
 
-Separate AI generation from roadmap mutation: request intent and scope; prepare a revision-bound proposal; review; apply atomically; receipt and one undo. Keep provider spend distinct from customer chargeability. The customer activity record needs request identity, product, exact credit debit, status and restoration timing. Background work has no customer debit. Legacy wire identifiers can remain compatibility details without appearing in product language.
+Separate AI generation from roadmap mutation: request intent and scope; prepare a revision-bound proposal; review; apply atomically; receipt and one undo. Keep provider spend distinct from customer chargeability. The customer activity record needs request identity, product, exact credit debit, status and restoration timing. Background work has no customer debit.
 
 These backend guarantees are prerequisites for promoting the interaction proposal to the live product.
