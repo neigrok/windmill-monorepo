@@ -32,7 +32,8 @@ The Android routine editor supports continuous drag scrolling as well as accessi
 
 ## Delete windows
 
-Withheld means **not sent**. An offered Undo cannot depend on reversing a server deletion.
+Withheld means **not sent**. An offered Undo cannot depend on reversing a server deletion. A held
+delete is stored on the device the moment it is held, on every surface, so it outlives the process.
 The following acts use the room's nine-second window without confirmation:
 
 | Act | Consequence after the window |
@@ -43,7 +44,6 @@ The following acts use the room's nine-second window without confirmation:
 | Discard session | Removes the finished workout |
 | Delete note | Removes the note |
 | Delete weigh-in | Removes the reading |
-| Discard unclaimed training | Removes Android's device-only shelf |
 
 Each delete has an independent deadline. A second delete settles nothing; Undo restores the newest
 held item, then offers the next. A restored row must start with fresh gesture state, so it cannot
@@ -69,25 +69,33 @@ the account follows stored data. In particular:
 - A hidden routine is not evidence that the routine was removed or a proposal superseded.
 - Once the server accepts deletion, remove it from stored reads as well as drawn rows.
 - A deleted bodyweight row must not remove a new reading written during its hold.
-- Reordering Notes includes withheld entries in the complete order sent to the server.
-- Hiding Android's unclaimed shelf hides the entire row, including its claim action. Its transient
-  says `Unclaimed training deleted — it was only on this phone.`
+- Moving a note writes that note's position only: right after the row drawn above the drop point,
+  in stored order, so a withheld note keeps its stored place (`10-notes.md`).
 
 Failures restore the affected visible row when the write was actually refused. Device-first
 writes instead report their local/pending state; they cannot claim the row remains on the device
 when it has already been removed there. Preserve useful server reasons. Cross-surface refusal
 wording remains in `../../consistency.md`.
 
-### Leaving the room
+### Leaving the app
 
-Navigation within the room preserves holds. Leaving the foreground abandons in-memory holds:
-restore rows and send nothing. Web uses document-hidden/unmount; Android uses stop/disposal;
-iOS uses background/room departure. A send already in flight continues.
+**Leaving the app ends the Undo.** Every held delete is let go into the device's queue, which sends
+it as soon as it can (at once when online, on reconnecting when not), and Undo is not offered again
+on return. Leaving is the app going to the background on Android, the last scene going to the
+background on iOS, and on the web no Windmill tab staying visible past a short debounce, or the last
+tab closing. Moving between two Windmill tabs is not leaving.
 
-iOS set deletions are the durable exception: their deadline lives in `SetQueue` and survives
-process death. Android holds deletion in memory, then queues the write when it settles. Its
-in-memory hold is abandoned on backgrounding. Preserve this distinction until a deliberate
-queue/durability change makes the two behaviors agree.
+**Staying in the app keeps the hold.** A pop, a tab change, a sheet dismissal, a switch to another
+room, or a screen recreated in place — a dark-mode switch, a rotation — is not leaving. The deadline
+keeps running, and when the room is drawn again its transient returns with the time that remains.
+
+**Signing in or out ends the Undo too.** Signing out lets every held delete go into the queue the
+same way. Signing in lets them go before the sign-in question is asked; in a room whose signed-out
+work is then discarded (`../../guidelines/superapp-flow.md` §6), its held deletes are discarded with
+it and never sent.
+
+**A killed app still sends.** A delete held when the process dies is let go into the queue on the
+next start, and no Undo is shown for it. A delete the lifter made is never silently put back.
 
 Unsaved drafts are a separate decision: no server delete exists to withhold. The cross-surface
 routine-exit policy remains open under consistency entry 4k. Whether held session deletions filter

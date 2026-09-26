@@ -94,8 +94,10 @@ contents. Native acceptance and a same-key update check precede publication. See
   [authentication](backend/AUTH.md) and [authorization](backend/AUTHZ.md).
 - [Journal architecture](backend/products/journal/ARCHITECTURE.md) and
   [gym architecture](backend/products/gym/ARCHITECTURE.md).
-- [Gym Coach on the client](docs/GYM_COACH.md): the shared ability catalog and the phone-hosted
-  Coach turn. Specified; not yet implemented.
+- `docs/foundation/` holds specifications that apply to more than one product or platform:
+  [the sync engine](docs/foundation/engine.md) for every product and surface, and
+  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones. Both are specified
+  and not yet implemented.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
   `docs/design/` holds written canon; Figma holds the drawings.

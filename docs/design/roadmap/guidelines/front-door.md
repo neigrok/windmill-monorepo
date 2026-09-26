@@ -28,7 +28,8 @@ truncates the name at ~18ch.
   TreeSwitcher already unfolded, never an interstitial page. Camera at fit, Next panel
   holds (never under an open menu).
 - **The seat → the account menu:** identity · sync status · My trees (count) · Account
-  settings · Sign out (instant, no confirmation).
+  settings · Sign out (instant when every change has reached the account; otherwise the
+  unsent-changes confirmation, `auth.md` §4).
 
 ## 3. The half-open door — link sent
 

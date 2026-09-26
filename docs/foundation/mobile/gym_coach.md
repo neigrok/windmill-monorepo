@@ -7,7 +7,7 @@ code can cite them.
 ## §0 Status and scope
 
 **Status:** Specified; not yet implemented. The running Coach is described in
-[gym-coach-contract.md](gym-coach-contract.md): the server reads and writes the log itself.
+[gym-coach-contract.md](../../gym-coach-contract.md): the server reads and writes the log itself.
 
 **Adoption:**
 
@@ -27,10 +27,10 @@ code can cite them.
 - conversation and picture records.
 
 **§0.2 Outside this spec:**
-- Replicas, the outbox, holds, pull and claim. They are [the sync engine](SYNC_ENGINE.md); §11
+- Replicas, the outbox, holds, pull and claim. They are [the sync engine](../engine.md); §11
   lists what this spec requires of it.
 - What the room draws: the four beats, receipts, stances and copy. They are
-  [the Coach brief](design/gym/briefs/09-coach.md).
+  [the Coach brief](../../design/gym/briefs/09-coach.md).
 - The agent rule of each ability (§3.4). It is canon; the catalog encodes it.
 - The system prompt's text. It is owner-supplied and preserved by the server.
 
@@ -60,19 +60,22 @@ agent rule or rule changes. Model-facing descriptions and phrases change without
 **D-5 Agent door.** Coach or MCP.
 
 **D-6 Executor.** The code that runs an ability's rule against a store.
-- The **replica executor** (Kotlin, Swift) runs on a phone against its replica (SYNC_ENGINE D-5).
+- The **replica executor** (Kotlin, Swift) runs on a phone against its replica (engine D-3).
 - The **server executor** (C++) runs on the server against Postgres.
 
 **D-7 Tool host.** Where a Coach turn's abilities run. A phone turn's tool host is that phone's
 replica executor, reached over the turn wire (§6). A web turn's tool host is the server executor.
 
 **D-8 Turn.** One lifter message and everything Coach does to answer it. A turn has a client-minted
-`turnId`. The turn record is the Coach `message` record (§9.1), and `turnId` is its id.
+`turnId`, a CSPRNG id of at most 58 characters (the gym seed bound, engine A.2). The turn record is
+the Coach `message` record (§9.1), and `turnId` is its id.
 
 **D-9 Model call.** One vendor request within a turn, numbered `1..MAX_MODEL_CALLS`.
 
 **D-10 Seat.** Whose store a turn runs against: `anon` (signed out) or `bound(A)`
-(SYNC_ENGINE D-6). A turn keeps the seat it opened with until it ends.
+(engine D-3). A turn keeps the seat it opened with until it ends. Any seat change (a sign-in's
+move or rebind, a discard decision, a sign-out; engine §7.10) first ends a running turn
+`interrupted`.
 
 **D-11 Device grant.** A short-lived credential issued to a signed-out install after platform
 attestation (§8). It admits the Coach turn routes only.
@@ -96,7 +99,7 @@ attestation (§8). It admits the Coach turn routes only.
 5. **One loop, one gate.** The model loop and the gate exist once, on the server, for every Coach
    surface.
 6. **Coach writes are ordinary writes.** An ability Coach runs commits through the same replica
-   path as the UI gesture for the same ability (SYNC_ENGINE §7.1), and syncs, holds and claims the
+   path as the UI gesture for the same ability (engine §7.1), and syncs, holds and claims the
    same way.
 
 ---
@@ -125,9 +128,9 @@ Each catalog entry declares:
   canonical result bytes (§3.3), or the same refusal code.
 - **INV-2.** For the same store state and call, every executor writes the same records (type, id
   and field values), apart from stamps and server-assigned `serial` fields.
-- **INV-3.** A result carries no value the replica cannot know. A `serial` field (set numbers,
-  routine revisions) appears in a result only as the replica's prediction (SYNC_ENGINE §7.6
-  `drawn`), and the corpus pins the prediction.
+- **INV-3.** A result carries no value the replica cannot know. A result never carries a predicted
+  `serial` value: a `serial` field (set numbers) appears only once confirmed (engine D-9,
+  §7.6).
 - **INV-4.** A read has one projection. The projection MCP receives is the projection Coach
   receives.
 - **INV-5.** Derived reads are shared domain rules computed by every executor from its own store:
@@ -245,12 +248,17 @@ The model's reasoning and every assistant content block stay on the server.
   `coach-turn-unknown`, and the phone ends the turn `interrupted`.
 - **Writer.** Only the replica named on the Coach message writes its state, text, receipt and
   calls. Another device shows a running turn as answering on another device and never writes it.
+  A turn whose writer replica re-identifies (engine §7.4, §7.5, §7.11) ends `interrupted`.
+  When the server drops a turn (§4.4) whose `bound` Coach message is still `running`, it MAY write
+  `interrupted` on it, as a server-origin write that sets only `state` (engine §6.3).
 
 ### §4.6 Web turn
 
 A web turn follows §4.2 with the server executor as its tool host. No batch leaves the server. The
-server writes the turn's records as server-origin writes (SYNC_ENGINE §6.3). A web turn requires
-an account.
+server writes the turn's records as server-origin writes (engine §6.3), and its Coach message
+has `replica = srv`, the server's actor (engine D-2). Each create carries its seeded id (G-7) as
+its `requestId` (engine §6.3), so a re-executed call replays its create. A web turn requires an
+account.
 
 ---
 
@@ -269,9 +277,10 @@ and the model continues.
 - **G-5 One note.** At most one `save_note` call succeeds per turn.
 - **G-6 Volume.** At most `MAX_ABILITY_CALLS` calls and `MAX_ADDS` `add` calls per turn. Further
   calls are refused `coach-turn-volume`.
-- **G-7 Ids.** The server mints every new record id from `turnId` and the call's ordinal in the
-  turn, and replaces an id the model supplies for a new record. A replayed call therefore replays
-  its create.
+- **G-7 Ids.** The server mints every new record id as a seeded id (engine D-8): seed
+  `turnId`, and `n` a turn-wide ordinal over every record the turn creates, in call order and then
+  record order. It replaces an id the model supplies for a new record. A replayed call therefore
+  replays its create.
 - **G-8 Stop.** After Stop, every remaining call is refused.
 
 The executor refuses whatever its rule refuses (INV-1). The replica executor re-checks G-3.
@@ -403,9 +412,11 @@ the challenge, grant and open routes.
 - Usage rows, allowance state and grant records.
 - A running turn, in memory, until `TURN_LINGER` after it ends.
 
-It never persists or logs a question, answer, picture, history, context or ability result. Error
-records carry the code, sizes, `turnId` and model call number only. `anon` usage rows and grant
-records are deleted after `ANON_RETENTION_DAYS`.
+It never logs a question, answer, picture, history, context or ability result, and never persists
+one for a turn with no bound seat until a sign-in adds its conversation to an account (§9.1); a
+bound seat's conversation is ordinary synced data.
+Error records carry the code, sizes, `turnId` and model call number only. `anon` usage rows and
+grant records are deleted after `ANON_RETENTION_DAYS`.
 
 ---
 
@@ -457,17 +468,22 @@ Integrity Cloud project and service account; the grant signing key; the device-h
 ### §9.1 Records
 
 Conversations are records in the `self/gym` scope. They sync for `bound` seats and stay on the
-device for `anon`.
+device for `anon`. At sign-in, signed-out conversations join the account with the rest of the
+signed-out gym data: silently where the account holds no gym records, otherwise under the gym
+signed-out decision (engine §7.10).
 
 | Type | Identity | Fields |
 |---|---|---|
-| `thread` | minted | `title` const: the first text message verbatim, or `Photo` |
-| `message` | minted, `parent: thread` | `threadId` const; `role` const ∈ {lifter, coach}; `replica` const; `text`; `state` ∈ {running, completed, declined, failed, stopped, interrupted}; `truncated`; `receipt`; `calls`; `pictures` const; `at` time |
+| `thread` | minted | `title` const ≤`MAX_QUESTION_BYTES` bytes: the first text message verbatim, or `Photo` |
+| `message` | minted, `parent: thread` | `threadId` const; `role` const ∈ {lifter, coach}; `replica` const; `text` (bytes: ≤`MAX_QUESTION_BYTES` from the lifter, ≤`MAX_ANSWER_BYTES` from Coach); `state` ∈ {running, completed, declined, failed, stopped, interrupted}; `truncated`; `receipt` ≤`MAX_RECEIPT_BYTES`; `calls` ≤`MAX_CALLS_BYTES`; `pictures` const; `at` time |
 
-- `state` moves from `running` to one terminal state. A terminal state is final and beats
-  `running` in a merge regardless of stamp.
-- `text`, `receipt` and `calls` are final once `state` is terminal.
-- A lifter message carries `role`, `text`, `pictures` and `at` only.
+- `state` moves from `running` to a terminal state. A terminal state beats `running`, and a
+  writer's terminal state (`completed`, `declined`, `failed`, `stopped`) beats `interrupted`, in a
+  merge regardless of stamp (engine A.2).
+- Once `state` is a writer's terminal state, it and `text`, `receipt` and `calls` are final. A
+  writer's terminal write, with its text, receipt and calls, is admitted over `interrupted`.
+- A lifter message carries `threadId`, `role`, `text`, `pictures` and `at` only.
+- `receipt` and `calls` are bounded in bytes of their JCS encoding.
 
 ### §9.2 Receipt
 
@@ -488,6 +504,8 @@ device for `anon`.
   draws it as a picture held on the phone that sent it.
 - **Signed in**, the original is also uploaded to the account's private picture store, and the
   message references it.
+- A `pictures` entry is `{id, mediaType, localOnly?}`. Its `id` names the picture in the store, or
+  on the phone that sent it when `localOnly`.
 - Copy about a sent picture says that a copy goes to the model vendor to read for the answer, that
   Windmill stores none when signed out, and the vendor's retention as verified at release.
 
@@ -512,7 +530,7 @@ by code, duration and bytes. It never carries text, pictures or results.
 
 ## §11 Requirements on the sync engine
 
-A phone Coach requires a gym replica per [SYNC_ENGINE](SYNC_ENGINE.md) with:
+A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - the account's full history: no boot window on `session` and `set`;
 - a signal that the replica's first pull of history is complete;
 - `proposal` records mintable by a replica, with `changes` computed by the shared diff rule and
@@ -531,6 +549,9 @@ A phone Coach requires a gym replica per [SYNC_ENGINE](SYNC_ENGINE.md) with:
 | `MAX_ABILITY_CALLS` | 12 |
 | `MAX_ADDS` | 6 |
 | `MAX_QUESTION_BYTES` | 8,000 |
+| `MAX_ANSWER_BYTES` | 128 KiB |
+| `MAX_RECEIPT_BYTES` | 16 KiB |
+| `MAX_CALLS_BYTES` | 32 KiB |
 | `MAX_PICTURES_PER_MESSAGE` | 1 |
 | `CONTEXT_TURNS` | 24 |
 | `CONTEXT_BYTES` | 24,000 |

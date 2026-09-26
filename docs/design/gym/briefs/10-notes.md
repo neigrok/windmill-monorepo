@@ -76,15 +76,12 @@ Android declares *Move up* / *Move down* as custom actions beside its long press
 is a real `<button>` answering the drag, ArrowUp / ArrowDown and a single pointer's pick-up /
 place-down alike — the routine editor's grip exactly, off the one hook (`13-gestures.md` Law 1).
 
-**An order names every note, including one the screen is not drawing.** A reorder is the whole list
-or it is nothing — the log refuses a list that does not name every note it holds, in those words:
-`400 notes-order-mismatch`, *that order does not name every note*. So a drag inside an open delete
-window sends the **drawn** order mapped back onto the **stored** one, with the withheld note keeping
-the place it stands in and the drawn rows filling the rest. What the lifter drags is what is on
-screen; what goes over the wire is the account's whole notebook. All three surfaces do that mapping
-(`notes/Notes.jsx`, `NotesScreen.swift`'s `resequenced(_:drawn:)`, `store/TrainingStore.kt`'s
-`reorderNotes(drawn)`), and on each surface it sits beside whoever owns the standing list — the
-screen on the web and iOS, the store on Android.
+**A move writes one note.** Dropping a note writes one new position for that note and nothing else:
+right after the row drawn above the drop point, in stored order, or before the first stored note
+when dropped at the top ([engine](../../../foundation/engine.md) §7.6). A note inside an open delete
+window is not drawn but is still stored, so it keeps its stored place, and every other note keeps
+the position it has. What the lifter drags is what is on screen; what goes over the wire is the one
+note they moved.
 
 **Never in the cached prefix.** The system prompt must stay byte-stable, because it and the tool
 catalogue are one cached prefix and a single interpolated byte moves it so the cache never reads.

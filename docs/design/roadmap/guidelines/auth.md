@@ -53,7 +53,9 @@ staying signed out never blocks building one.
 
 ## 4. Claiming — local trees become yours
 
-The signed-out → signed-in transition is an adoption: additive, narrated, uncelebrated.
+The signed-out → signed-in transition is an adoption: narrated, uncelebrated, and a question only
+when the account already owns trees. Owning means trees of its own; trees it only follows do not
+count.
 
 - **The beat:** ghost seat cross-fades out, initial avatar wakes (480ms soft) · chip
   narrates "Syncing your trees…" (gold, breathing) → "Synced" (olive, 1.5s) → silence ·
@@ -64,15 +66,20 @@ The signed-out → signed-in transition is an adoption: additive, narrated, unce
 
   | Situation | What happens |
   |---|---|
-  | Fresh account | Local trees become the account's — nothing to review |
-  | Account already has trees | **Union.** Nothing merges by content; same-name trees coexist |
-  | Same tree known on both | Per-field merge; only a true collision shows the two-versions card |
-  | Second device signs in | Account trees flow down; its local trees union up |
-  | Sign out | Local copies stay, editable — no confirmation dialog |
-  | Sign back in | Offline edits sync up as a plain sync, not a ceremony |
+  | Account owns no trees | Trees made signed out become the account's — nothing to review, even if it follows other people's trees |
+  | Account already owns trees | **Asked once.** Sign-in asks whether to add the trees made signed out or discard them; Discard asks once more before it deletes. Added trees sit beside the account's: nothing merges by content, and same-name trees coexist |
+  | Same tree known on both | Merged field by field; the newest edit to each field wins |
+  | Second device signs in | Account trees flow down; trees made signed out on it follow the two rows above |
+  | Sign out | The account's trees leave this device. Instant when every change has reached the account; otherwise the confirmation states how many have not and offers **Keep** or **Discard** |
+  | Sign back in, same account | The account's own changes — made offline while signed in, or kept at sign-out — sync up as a plain sync, never asked about |
 
-- **Adoption is always additive** — no screen ever asks "keep local or cloud?"; that
-  question exists only per-field, later, in sync's conflict card.
+- **One question, only where it has an answer.** An account that owns no trees takes the trees
+  made signed out silently. An account that already owns trees gets the sign-in question once, with
+  no default and no "later". Changes that belong to another account never join this one. The
+  question, its Discard confirmation and the sign-out confirmation are brand-wide
+  (`../../guidelines/superapp-flow.md` §6–7); the web says *this device* where the phones say
+  *this phone*. All three are the standard Dialog, except that the sign-in question ignores Escape
+  and scrim clicks, because it has no "later"; its Discard confirmation's Cancel returns to it.
 
 ## 5. The settings home
 
@@ -101,7 +108,8 @@ owns:
 
 - **90-day rolling session**, silently refreshed by use, per device.
 - **Lapse is a non-event:** the seat returns to the ghost icon — no modal, no toast, no
-  redirect. Editing continues; saves go local, exactly like signed-out.
+  redirect. Editing continues; saves go local and stay the account's, so re-auth sends them
+  without asking.
 - **Mid-flow expiry** (server rejects a sync): chip shows "Signed out — saved on this
   device" (neutral, persists); never interrupts the edit. The visible moment is specced in
   `honesty.md`.
@@ -124,11 +132,12 @@ owns:
 | App door — primary | "Email me a code" |
 | App door — wait state | "Check your email" · "We sent a code to {email}. It works once and lasts 15 minutes." · numeric field "6-digit code" (accepts a pasted link) |
 | App door — expired / used | "That code has expired. Codes work once and last 15 minutes — send a fresh one." |
-| App door — reassurance | "No password. What you make on this device is claimed by your account when you sign in." |
+| App door — reassurance | "No password. What you make on this device can join your account when you sign in." |
 | Typo | "That address looks unfinished — check the ending." |
 | Rate-limited | "That's a few links in a row" · "Check your spam folder first — or try again in 10 minutes." |
 | Unreachable | "Can't reach windmill.works" · "Your trees are safe on this device." · "Retry" |
 | Claim chip | "Syncing your trees…" → "Synced" |
+| Sign-in question · sign-out with unsent changes | `../../guidelines/superapp-flow.md` §6–7, with *this device* for *this phone* |
 | Expired session | "Your sign-in expired. Everything's still here — sign in to keep syncing." |
 | Delete | "Delete in 30 days" · "Account closing · {date}" · "Sign in any time before then to undo." |
 

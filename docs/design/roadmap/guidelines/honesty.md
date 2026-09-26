@@ -4,7 +4,7 @@ Capability loss: expired sessions and read-only visitors. The fix is never a war
 — it is telling the truth in existing chrome. Session rules themselves are `auth.md` §6's.
 
 > **Principle: read-only is the remedy only when the tree was never yours. For owners,
-> honesty is persistence.** Work never leaves the device.
+> honesty is persistence.** A lapse never takes work off the device.
 
 ## 1. Two different truths
 

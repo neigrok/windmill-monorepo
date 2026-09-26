@@ -27,21 +27,87 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 ### Sync engine
 
-Spec: [Windmill sync engine](../SYNC_ENGINE.md), specified and not yet adopted by any product. Canon
-disagrees with it in these places; each needs an owner ruling before a product adopts the engine.
+Spec: [Windmill sync engine](../foundation/engine.md), specified and not yet adopted by any product. Canon
+states the owner's rulings of 2026-09-26 on its lifecycle; each app keeps the behavior below until
+its product adopts the engine.
 
-- **7a · Leaving the room.** `gym/briefs/13-gestures.md` "Leaving the room" abandons in-memory
-  holds when the app leaves the foreground: rows return and nothing is sent. The spec (§7.3) keeps a
-  held delete on disk for its full 9 s, re-offers Undo on return and sends it after process death.
-- **7b · Notes reorder.** `13-gestures.md` and `gym/briefs/10-notes.md` ("An order names every
-  note") send the complete order. The spec writes one fractional `ord` per moved note.
-- **7c · Sign-out.** `roadmap/guidelines/auth.md` keeps local copies editable after sign-out;
-  `guidelines/superapp-flow.md` §7 says pages and log leave the phone. The spec purges the confirmed
-  cache and keeps unsent changes until the same account signs in (§7.10). The sign-out alert and the
-  signed-out line (*Nothing of yours is left on this phone*) need a variant that states the count
-  of unsent changes and offers Keep or Discard.
-- **7d · Adoption prompt.** `auth.md` says adoption is always additive and no screen asks; gym asks
-  *These are mine* / *Not mine* for unclaimed training. The spec supports both; choose one rule.
+- **7a · Leaving the app.** Canon (`gym/briefs/13-gestures.md` "Leaving the app"; owner ruling
+  2026-09-26): a held delete is stored on the device. Leaving the app — Android to the background,
+  the last iOS scene to the background, on the web no Windmill tab visible past a short debounce or
+  the last tab closing — lets it go into the queue, which sends it when it can, and Undo is not
+  offered on return. A screen recreated in place keeps the Undo with its remaining time; sign-in lets
+  holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
+  process dying is let go on the next start. The apps let holds go the other way, putting the rows
+  back and sending nothing: the web when the document hides or the room unmounts
+  (`useTrainingLog.js`), Android on `ON_STOP` and on disposal (`GymRoom.kt`, `abandonWithheld`), iOS
+  on scene `.background` and on leaving the room (`GymRoom.swift`, `withheld.abandon()`). Only iOS
+  set deletions reach disk (`TrainingStore.swift` `delete` into `SetQueue`); every other hold is in
+  memory.
+- **7b · Notes reorder.** Canon (`gym/briefs/10-notes.md` "A move writes one note",
+  `13-gestures.md`; owner ruling 2026-09-26): moving a note writes that note's position only, right
+  after the row drawn above the drop point in stored order, so a note inside a delete window keeps
+  its stored place. All three apps send
+  the complete order, mapping the drawn order onto the stored one (`Notes.jsx`, `NotesScreen.swift`
+  `resequenced(_:drawn:)`, `TrainingStore.kt` `reorderNotes(drawn)`), and the backend refuses an
+  order that does not name every note (`400 notes-order-mismatch`,
+  `PgNotesRepository::reorderNotes`).
+- **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
+  §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
+  account's synced data off the device. When changes have not reached the account, the confirmation
+  states how many and offers **Keep** (hidden on the device, sent at the same account's next
+  sign-in) or **Discard** (destructive), and Where to start?'s signed-out line has a kept-changes
+  variant. No app counts unsent changes or offers Keep or Discard.
+  - iOS signs out with no confirmation under a footer saying what you've written *stays on this
+    device, editable* (`YouScreen.swift`, 6f).
+  - Android signs out from the You sheet with no confirmation (`YouSheet.kt`).
+  - The web signs out at once, and on sign-out or any change of account wipes the account's roadmap
+    trees from the browser, unsynced edits included, with no warning: `accountChange.js` calls each
+    product's `forgetDevice`, and the roadmap's (`routes.js`) runs `forgetDeviceTrees`
+    (`localTrees.js`), which deletes every account-stamped registry row, sync blob and per-tree
+    store. The web journal keeps the account's pages on disk under their own key, hidden
+    (`pageStore.js` `forget`, `pageCache.js`); web gym keeps no local log.
+  - Audit every device-local gym store for sign-out residue against this rule when gym adopts the
+    engine.
+  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unsent-changes variant;
+    board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
+    lists sign-out with unsent changes as open question 8; the Android *Account / Profile* board
+    ([`669:8214`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8214)) draws no confirmation. The web's confirmation is not drawn.
+- **7d · Signing in with local data.** Canon (`guidelines/superapp-flow.md` §6 "Signing in with work
+  already on the phone", `roadmap/guidelines/auth.md` §4, `gym/android-delivery.md`; owner ruling
+  2026-09-26): work made signed in belongs to that account and syncs without asking. Work made signed
+  out joins silently in a room where the account holds no records of its own; where it does, sign-in
+  asks once — *Add to your account?* with real counts, **Add** · **Discard** of equal weight, no
+  default and no "later". Work whose owner is unknown is always asked about in its own question
+  (*Are these yours?*), whatever the account holds, counting only that work. Either question's
+  **Discard** opens a destructive second confirmation whose Cancel returns to the question. Another account's work never joins. The apps differ:
+  - Silent adoption where canon asks. The web roadmap adopts every signed-out tree on this device,
+    adding it beside the account's (`claimLocalTrees.js`). The web journal joins signed-out drafts
+    into the account's pages for those days (`pageStore.js` `claimAnonymousDrafts`, `joinBodies`).
+    The iOS journal carries signed-out pages across with the later stamp winning per day
+    (`PageStore.swift` `carryTheAnonymousClaim`, `PageCache.store`). The iOS gym adopts the
+    anonymous shelf, queue and weigh-ins on a verified sign-in (`TrainingStore.swift` `connect`).
+  - Standing claim rows where canon asks once at sign-in. Android asks *These are mine* / *Not
+    mine* on a settings row (`SettingsScreen.kt`), and its sign-in door says *Logged before any
+    sign-in. Nothing joins an account until you say it is yours.* (`SignInDoor.kt`). The web journal
+    offers pages from before per-account keeping on a settings row, *These are mine — restore them*
+    / *Discard them* (`UnclaimedPagesRow.jsx`), where one tap on Discard deletes them.
+  - Replay order. Android sends a claim grouped by kind — settings, movements, routines, finished
+    workouts oldest first, the live one, then weigh-ins (`ClaimReplay.kt` `run`) — where canon
+    sends changes in the order they were made (`gym/briefs/11-bodyweight.md`,
+    `gym/android-delivery.md`).
+  - Owner-unknown work that nothing offers. iOS parks it in quarantine (`PageCache.swift`
+    `quarantinedPages`, the `quarantine` key in `LocalLog.swift` and `SetQueue.swift`), and no screen
+    asks about it.
+  - Copy. iOS says *Signing in claims what you've already written* (`YouScreen.swift`), and its
+    sign-in door says *What you make on this device is claimed by your account when you sign in.*
+    (`SignInDoor.swift`) where canon says *can join your account* (`roadmap/guidelines/auth.md` §7).
+  - Figma: the Gym board *Account · Sign-in and connections* (`678:11123`) draws the claim row
+    *Unclaimed log* (`678:11183`, These are mine / Not mine) and its *Local log removed* Undo
+    (`678:11192`), which the sign-in question replaces; the Android *Account / Sign in* board
+    ([`669:8237`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8237)) says *What you made on this device joins your account when you sign
+    in.*, true only for an account with no gym records; the first-run READ ME line `174:4274` says
+    signed-out work *moves to the account on sign-in* with no question. No surface draws the sign-in
+    question, the owner-unknown question or the Discard confirmation.
 
 ## iOS first run
 
@@ -67,7 +133,7 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
 - **6f · You and sign-out.** `YouScreen` shows the Windmill One row signed out, has no Erase data,
   and signs out with no confirmation under a footer saying what you've written *stays on this
   device, editable*. Canon: no One signed out, Erase data, and the sign-out alert *Your pages and
-  log stay in your account and leave this phone.*
+  log stay in your account and leave this phone.*, with its unsent-changes variant (7c).
 - **6g · Gym first open and Coach signed out.** Gym opens on the Routines empty state (Build a
   routine · Just start logging), not the Coach-led *Set up your routines*; signed out, Coach is a
   wall (`Ask.needsSignIn`, pinned by `AskTests.swift`). Canon: the starters, the escapes and the
@@ -81,10 +147,11 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
   bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
   30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
   that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
-  log is not on the server. [Gym Coach on the client](../GYM_COACH.md) specifies all four.
+  log is not on the server. [Gym Coach on the client](../foundation/mobile/gym_coach.md) specifies all four.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
   Signed out they must land on the phone's anonymous shelf (`LocalLog.swift`) with a stable,
-  retry-safe identity and be adopted once on sign-in, without duplicates.
+  retry-safe identity and be adopted once on sign-in under the sign-in rule (7d), without
+  duplicates.
 - **6m · Backend: signed-out photos.** A sent photo is kept in private storage with the account's
   conversation. Signed out it must be sent inline for Coach to read and not persisted server-side;
   the phone keeps the only copy.
@@ -171,7 +238,7 @@ skipped sets and substituted movements.
 
 ### Coach on the client
 
-Spec: [Gym Coach on the client](../GYM_COACH.md). The brief `gym/briefs/09-coach.md` disagrees with
+Spec: [Gym Coach on the client](../foundation/mobile/gym_coach.md). The brief `gym/briefs/09-coach.md` disagrees with
 it in these places.
 
 - **6p · Android signed-out Coach.** The brief keeps Android Coach account-only and lists Android's
@@ -248,8 +315,6 @@ it in these places.
   hidden by Undo. Stored limits and visible rows must not imply that an unsettled delete has landed.
 - **4r · Share expiry.** The pre-mint offer must state the 30-day window; an active link can show
   its actual expiry date.
-- **3w · Sign-out residue.** Audit device-local gym state on account change against explicit local
-  ownership and recovery; a design cleanup must not silently choose a data-deletion policy.
 
 ### Figma reconciliation
 

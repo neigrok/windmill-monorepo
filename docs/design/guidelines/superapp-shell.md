@@ -131,7 +131,8 @@ role follow. `surfaceCanvas` IS `neutral50` in both skins.
 1. **Never a number we don't have.** Counts on Bringing it back and On this phone come from real
    records. A plan meter, a digest line or a streak is drawn only when the data behind it is real.
 2. **No walls.** The app opens on a choice of rooms or on the last room, never on a sign-in screen,
-   and signing in *keeps* what is already there (`superapp-flow.md`).
+   and signing in *keeps* what is already there unless the person, asked, discards it
+   (`superapp-flow.md` §6).
 3. **No urgency.** No countdown styling, no urgency colour, no "only 1 left" — the Coach
    allowance included.
 

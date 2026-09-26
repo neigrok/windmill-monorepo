@@ -225,8 +225,8 @@ day **whatever the window**, so one windowed read draws both the chart and the l
 no export: the CSV is out of the product on every surface (`19-connected-log.md`).
 
 On the phones a weigh-in is local-first like a set: it lands in one store file per seat beside the
-others and is queued to the server, and in the sign-in claim replay it goes **last** — settings,
-movements, routines, sessions, then bodyweight, after every session has landed.
+others and is queued to the server, which receives it in the order it was made, among every other
+change, sign-in included.
 
 ## Open
 

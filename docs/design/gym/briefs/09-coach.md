@@ -268,11 +268,14 @@ No countdown, no urgency colour, no *only 1 left*. When the allowance is spent, 
 refused once, in place of an answer:
 
 > **You’ve used the 5 questions Coach answers without an account.**
-> Sign in and this chat carries on. Your routines come too.
+> Sign in and this chat carries on, with your routines. If your account already has training,
+> you’ll be asked first.
 
 **Continue with Apple** leads and **Use email instead** follows, as on the Keep sheet. The draft
-stays in the composer and the conversation stays on screen. After sign-in the same conversation
-continues under the account, receipts included, and the phone's routines join the account.
+stays in the composer and the conversation stays on screen. After sign-in the conversation and the
+phone's routines join the account by the sign-in rule (`../../guidelines/superapp-flow.md` §6): the
+same conversation continues under the account, receipts included, unless the person discards the
+phone's gym work when asked, which discards the conversation with it.
 
 **A signed-out photo is sent to Coach to read and stored only on the phone**; the server keeps no
 copy. Signed in, a sent photo is kept privately with the account's conversation.
