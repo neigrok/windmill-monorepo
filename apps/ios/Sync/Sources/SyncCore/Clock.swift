@@ -37,6 +37,16 @@ public struct HLC: Sendable, Hashable {
     ms = stamp.ms
     counter = stamp.counter
   }
+
+  // A clock at a stamp's `(ms, counter)`.
+  public init(pairOf stamp: Stamp) {
+    self.init(ms: stamp.ms, counter: stamp.counter)
+  }
+
+  // The greater `(ms, counter)` pair (§7.7 step 1).
+  public static func pairMaximum(_ a: HLC, _ b: HLC) -> HLC {
+    (a.ms, a.counter) >= (b.ms, b.counter) ? a : b
+  }
 }
 
 public struct ServerOffset: Sendable, Hashable {
@@ -74,12 +84,14 @@ public struct ServerOffset: Sendable, Hashable {
     self.capacity = capacity
   }
 
-  // A request that straddles a jump changes nothing; a receipt that jumped from the stored reading drops the earlier samples.
-  public mutating func take(serverTime: Int64, send: ClockReading, recv: ClockReading) {
-    guard let sample = Sample(serverTime: serverTime, send: send, recv: recv) else { return }
+  // A request that straddles a jump takes no sample; a receipt that jumped from the stored reading drops the earlier ones.
+  @discardableResult
+  public mutating func take(serverTime: Int64, send: ClockReading, recv: ClockReading) -> Bool {
+    guard let sample = Sample(serverTime: serverTime, send: send, recv: recv) else { return false }
     if let clockReading, recv.jumped(since: clockReading) { samples = [] }
     samples = Array((samples + [sample]).suffix(capacity))
     clockReading = recv
+    return true
   }
 
   // `serverOffsetMs`: the lowest round trip among the kept samples, the latest on a tie.

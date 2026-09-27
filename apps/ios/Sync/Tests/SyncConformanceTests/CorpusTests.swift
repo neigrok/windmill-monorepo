@@ -7,6 +7,14 @@ import Testing
 struct CorpusTests {
   @Test("vector", arguments: try Corpus.files().filter { Handlers.table[$0.path] != nil }.flatMap { try Corpus.vectors(in: $0) })
   func vector(_ vector: CorpusVector) throws {
+    if let reason = Corpus.defects[vector.description] {
+      withKnownIssue("corpus defect: \(reason)") { try check(vector) }
+      return
+    }
+    try check(vector)
+  }
+
+  func check(_ vector: CorpusVector) throws {
     let handler = try #require(Handlers.table[vector.file])
     let answer: JSON
     do {

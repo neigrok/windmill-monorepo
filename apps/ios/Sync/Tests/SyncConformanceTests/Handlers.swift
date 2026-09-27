@@ -1,11 +1,15 @@
+import SyncAPI
 import SyncCore
+import SyncReplica
 import SyncTesting
 import Testing
 
 // One handler per corpus file: it runs a vector's input and answers in the shape of its `expect`.
 
 enum Handlers {
-  static let table: [String: @Sendable (JSON) throws -> JSON] = [
+  static let table: [String: @Sendable (JSON) throws -> JSON] = core.merging(clientSteps) { $1 }.merging(transcripts) { $1 }
+
+  static let core: [String: @Sendable (JSON) throws -> JSON] = [
     "constants.json": { _ in
       [
         "HOLD_MS": JSON(Constants.holdMs), "LEAVE_DEBOUNCE_MS": JSON(Constants.leaveDebounceMs),
@@ -138,6 +142,31 @@ enum Handlers {
       return ["key": .string(key.text), "drawn": order(drawnAfter), "stored": order(stored)]
     },
 
+    "view/drawn.json": { input in try view(input, .drawn) },
+    "view/stored.json": { input in try view(input, .stored) },
+
+    "machine/intent.json": { input in
+      let from = try input.member("from").nullable { json -> EntryState in
+        guard let state = EntryState(rawValue: try json.asString()) else { throw VectorError("no intent leaves an outcome") }
+        return state
+      }
+      guard let event = IntentEvent(rawValue: try input.member("event").asString()) else { throw VectorError("not an intent event") }
+      let to = try input["to"].map { json -> IntentNode in
+        guard let node = IntentNode(rawValue: try json.asString()) else { throw VectorError("not an intent node") }
+        return node
+      }
+      return ["to": .string(try Machines.intent.transition(from: from, event, to: to).description)]
+    },
+    "machine/replica.json": { input in
+      let node = { (json: JSON) throws -> ReplicaNode in
+        guard let node = ReplicaNode(rawValue: try json.asString()) else { throw VectorError("not a replica node") }
+        return node
+      }
+      guard let event = ReplicaEvent(rawValue: try input.member("event").asString()) else { throw VectorError("not a replica event") }
+      let to = try input["to"].map(node)
+      return ["to": .string(try Machines.replica.transition(from: try input.member("from").nullable(node), event, to: to).rawValue)]
+    },
+
     "digest/row.json": { input in
       ["hash": .string(ScopeDigest(row: try input.member("row")).hex)]
     },
@@ -151,6 +180,47 @@ enum Handlers {
     },
   ]
 
+  static let probe = try! Corpus.probeRegistry()
+
+  // corpus/README.md "Client steps": every client step file runs through the planners over an in-memory device.
+  static let clientSteps: [String: @Sendable (JSON) throws -> JSON] = Dictionary(uniqueKeysWithValues: Corpus.clientStepFiles.map { file in
+    let run: @Sendable (JSON) throws -> JSON = { input in
+      try ClientSteps.run(input, registry: probe) { PlannedDevice($0, registry: probe, limits: $1) }
+    }
+    return (file, run)
+  })
+
+  // protocol/*.jsonl: the client half runs through the planners; the server half waits for ModelServer (M6).
+  static let transcripts: [String: @Sendable (JSON) throws -> JSON] = Dictionary(uniqueKeysWithValues: try! Corpus.paths()
+    .filter { $0.hasPrefix("protocol/") }.map { file in
+      let run: @Sendable (JSON) throws -> JSON = { input in
+        let differences = try Transcripts.clientDifferences(input.asArray(), registry: probe) {
+          PlannedDevice($0, registry: probe, limits: Limits())
+        }
+        #expect(differences == [], "\(file): the client half")
+        withKnownIssue("pending: the server half of \(file) waits for ModelServer") { Issue.record("\(file): server half pending") }
+        return .null
+      }
+      return (file, run)
+    })
+
+  // `{replica, scope}`: the view's records in record order, the visible ones, and for stored the cap counts.
+  static func view(_ input: JSON, _ mode: ViewMode) throws -> JSON {
+    let replica = try LoadedReplica(json: input.member("replica"), registry: probe)
+    let scope = try ScopeRef(json: input.member("scope"))
+    let view = try ScopeView(replica, scope, mode, registry: probe)
+    let records = view.all
+    var answer: JSON.Object = [
+      "records": .array(records.map(\.json)),
+      "visible": .array(records.filter(view.isVisible).map(\.key.json)),
+    ]
+    if mode == .stored {
+      let capped = probe.types.filter { $0.cap != nil && probe.scopeKind(of: scope) == $0.scope }
+      answer["capCount"] = .object(JSON.Object(uniqueKeysWithValues: capped.map { ($0.name, JSON(view.visibleCount($0.name))) }))
+    }
+    return .object(answer)
+  }
+
   // A join vector `{a, b}` answers `{join}`, null being absent, and must answer the same both ways round.
   static func commutative<Value: Equatable>(
     _ input: JSON, _ decode: (JSON) throws -> Value, _ encode: (Value) -> JSON, _ join: (Value?, Value?) throws -> Value?
@@ -163,16 +233,3 @@ enum Handlers {
   }
 }
 
-struct VectorError: Error, CustomStringConvertible {
-  let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
-extension JSON {
-  func nullable<Value>(_ decode: (JSON) throws -> Value) rethrows -> Value? {
-    isNull ? nil : try decode(self)
-  }
-}

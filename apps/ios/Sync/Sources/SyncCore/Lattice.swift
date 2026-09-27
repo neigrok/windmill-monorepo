@@ -67,6 +67,11 @@ public struct Lattice: Sendable, Hashable {
       fields: Dictionary(uniqueKeysWithValues: try registers.map { ($0.key, try Register(json: $0.value)) }))
   }
 
+  // Every stamp the part carries: its life's, its born, and each register's.
+  public var stamps: [Stamp] {
+    [life?.stamp, born].compactMap { $0 } + fields.values.map(\.stamp)
+  }
+
   public var json: JSON {
     var object = JSON.Object()
     object["life"] = life?.json

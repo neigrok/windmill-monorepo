@@ -61,14 +61,15 @@ public struct FractionalKey: Sendable, Hashable, Comparable, CustomStringConvert
     }
   }
 
-  // D-25 drop position: after the drawn anchor, before the next greater stored key, the moved member excluded.
+  // D-25 drop position: after the anchor (looked up in drawn, then stored), before the next greater stored key,
+  // the placed member excluded.
   public init(dropping moved: JSON, below above: JSON?, stored: [ListMember], drawn: [ListMember]) throws(FractionalKeyError) {
     let others = stored.filter { $0.id != moved }.sorted()
     guard let above else {
       try self.init(between: nil, and: others.first?.key)
       return
     }
-    guard let anchor = others.first(where: { $0.id == above }) ?? drawn.first(where: { $0.id == above }) else {
+    guard let anchor = drawn.first(where: { $0.id == above }) ?? others.first(where: { $0.id == above }) else {
       throw .anchorMissing(above.jcsText)
     }
     try self.init(between: anchor.key, and: others.first { $0.key > anchor.key }?.key)

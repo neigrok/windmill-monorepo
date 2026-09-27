@@ -1,9 +1,16 @@
 // How ids are made: a CSPRNG id by its type's mint and a seeded id (D-8), and a derived id from a label (D-26).
 
 extension Mint {
-  public func id(using generator: inout some RandomNumberGenerator) -> String {
+  // The prefix, then `length` alphabet characters: each `alphabet[draw(size)]`, a draw being a uniform index below size.
+  public func id(drawing draw: (Int) throws -> Int) throws -> String {
     let symbols = Array(alphabet.unicodeScalars)
-    return prefix + String(String.UnicodeScalarView((0..<length).map { _ in symbols.randomElement(using: &generator)! }))
+    var id = String.UnicodeScalarView(prefix.unicodeScalars)
+    for _ in 0..<length {
+      let index = try draw(symbols.count)
+      guard symbols.indices.contains(index) else { throw IdentityError("the draw \(index) is outside 0..<\(symbols.count)") }
+      id.append(symbols[index])
+    }
+    return String(id)
   }
 }
 

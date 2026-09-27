@@ -37,6 +37,16 @@ public struct ScopeDigest: Sendable, Hashable, CustomStringConvertible {
     words = stride(from: 0, to: 64, by: 16).map { UInt64(String(decoding: digits[$0..<$0 + 16], as: UTF8.self), radix: 16)! }
   }
 
+  // 32 big-endian bytes, as the store keeps it (§6.12).
+  public init(bytes: [UInt8]) throws(DigestError) {
+    guard bytes.count == 32 else { throw DigestError(hex: "\(bytes.count) bytes") }
+    words = stride(from: 0, to: 32, by: 8).map { start in bytes[start..<start + 8].reduce(0) { $0 << 8 | UInt64($1) } }
+  }
+
+  public var bytes: [UInt8] {
+    words.flatMap { word in stride(from: 56, through: 0, by: -8).map { UInt8(truncatingIfNeeded: word >> UInt64($0)) } }
+  }
+
   public var hex: String {
     words.map { word in
       let digits = String(word, radix: 16)
@@ -73,5 +83,15 @@ public struct ScopeDigest: Sendable, Hashable, CustomStringConvertible {
       borrow = overflowA || overflowB
     }
     return ScopeDigest(words: words)
+  }
+}
+
+// sha256 of some bytes as 64 lowercase hex characters: the §6.2 intent digest.
+public enum SHA256Hex {
+  public static func of(_ bytes: [UInt8]) -> String {
+    SHA256.hash(data: bytes).map { byte in
+      let digits = String(byte, radix: 16)
+      return digits.count == 1 ? "0" + digits : digits
+    }.joined()
   }
 }

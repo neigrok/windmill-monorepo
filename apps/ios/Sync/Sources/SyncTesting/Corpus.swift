@@ -53,6 +53,22 @@ public enum Corpus {
     ("pull/pages.json", .client), ("machine/intent.json", .client), ("machine/replica.json", .client),
   ]
 
+  // The client files written in the client-step language (corpus/README.md "Client steps").
+  public static let clientStepFiles = [
+    "commit/deltas.json", "commit/grouping.json", "commit/guards.json", "commit/ids.json", "commit/retire.json",
+    "commit/throws.json", "coalesce/blocked.json", "coalesce/cancel.json", "coalesce/join.json", "hold/release.json",
+    "hold/undo.json", "refusal/base-unknown.json", "refusal/fold.json", "refusal/restamp.json", "refusal/transport.json",
+    "write/map.json", "lineage/signin.json", "lineage/signout.json", "lineage/start.json", "pull/pages.json",
+  ]
+
+  // Vectors whose expectation breaks a rule of engine.md, reported to the contract owner; each runs as a known issue.
+  public static let defects: [String: String] = [
+    "lineage/start.json · engine start releases every held entry, and the instance takes a fresh actor that its next commit uses (web: no fork guard)":
+      "the input outbox holds g1/0 and the step's commit mints g1 again, so the expected outbox holds two entries with local id g1/0; §2.5 makes local ids unique on the device",
+    "lineage/signin.json · a dormant replica of A is rebound; the anon entries, notices and new device rows move after its own":
+      "the input notice's content is {d: []}, which no engine writes (§7.7 step 4 content leaves out empty parts)",
+  ]
+
   public static func role(of path: String) -> CorpusRole? {
     roles.first { $0.entry == path }?.role ?? roles.first { $0.entry.hasSuffix("/") && path.hasPrefix($0.entry) }?.role
   }

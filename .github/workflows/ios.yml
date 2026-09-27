@@ -42,7 +42,7 @@ jobs:
 
       # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it.
       - name: Test on macOS
-        run: swift test
+        run: swift test --explicit-target-dependency-import-check error
 
       - name: Build for the iOS simulator
         run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'

@@ -11,7 +11,7 @@ struct IdentityTests {
     #expect(minting.map(\.type.name) == ["board", "card", "run", "lap", "tag"])
     for (type, mint) in minting {
       for _ in 0..<500 {
-        let id = mint.id(using: &random)
+        let id = try mint.id { Int.random(in: 0..<$0, using: &random) }
         #expect(type.idPattern?.matches(id) == true, "seed \(random.seed): \(type.name) minted \(id)")
       }
     }
