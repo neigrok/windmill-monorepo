@@ -31,4 +31,8 @@ struct PortsTests {
     #expect(shapes.filter { !$0.1.matches($0.0) }.map(\.0) == [])
     #expect(identities.replicaID() != identities.replicaID())
   }
+
+  @Test func sessionTokensAreTheSameOnlyByteForByte() {
+    #expect(Set([SessionToken("\u{E9}"), SessionToken("e\u{301}"), SessionToken("\u{E9}")]).count == 2)
+  }
 }

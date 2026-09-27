@@ -16,8 +16,10 @@ struct TransactionsTests {
 
   @Test(arguments: vectors)
   func everyClientStepVectorHoldsThroughTheStore(_ vector: CorpusVector) throws {
-    guard let reason = Corpus.defects[vector.description] else { return try check(vector) }
-    withKnownIssue("corpus defect: \(reason)") { try check(vector) }
+    let answer = try ClientSteps.run(vector.input, registry: Self.probe) { device, limits in
+      try StoredDevice(seeding: device, registry: Self.probe, limits: limits)
+    }
+    #expect(answer == vector.expect, "\(vector)")
   }
 
   static let transcripts = try! Corpus.files().filter { $0.path.hasPrefix("protocol/") }.flatMap { try Corpus.vectors(in: $0) }
@@ -63,6 +65,17 @@ struct TransactionsTests {
       {"op": "commit", "scope": "self/overlay/b_00000001", "changes": [{"op": "write", "t": "mark", "id": "tag1", "x": {"memo": "one"}},
         {"op": "write", "t": "mark", "id": "tag1", "x": {"memo": "two"}}], "opts": {"atomic": true}, "deviceNow": 1000}
       """, ["throws"]),
+    ("an orphan's refusal folds its held-back dependent into its origin's notice, which keeps its place before a later one", """
+      {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0009", "f": {"title": "Thirteen char"}}], "deviceNow": 5000},
+      {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0011", "f": {"title": "Thirteen chaR"}}], "deviceNow": 5000},
+      {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0009", "f": {"title": "Fixed"}},
+        {"op": "create", "t": "card", "id": "card0010", "f": {"title": "Fourth"}}], "opts": {"atomic": true}, "deviceNow": 5001},
+      {"op": "push", "deviceNow": 5002},
+      {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0010", "f": {"title": "Edited"}}], "deviceNow": 5003},
+      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "lastN": 3, "results": [
+        {"n": 1, "s": "refused", "code": "invalid"}, {"n": 2, "s": "refused", "code": "invalid"}, {"n": 3, "s": "refused", "code": "unknown-record"}]}},
+       "deviceNow": 5004}
+      """, []),
     ("a device row outside the product's declared rows throws", """
       {"op": "commit", "scope": "self/probe", "changes": [], "opts": {"local": {"café": 1}}, "deviceNow": 1000}
       """, ["throws"]),
@@ -90,13 +103,6 @@ struct TransactionsTests {
       default: #expect(try answer["intents"]?.asArray().first?["n"] == 1, "\(name)")
       }
     }
-  }
-
-  func check(_ vector: CorpusVector) throws {
-    let answer = try ClientSteps.run(vector.input, registry: Self.probe) { device, limits in
-      try StoredDevice(seeding: device, registry: Self.probe, limits: limits)
-    }
-    #expect(answer == vector.expect, "\(vector)")
   }
 }
 
@@ -204,7 +210,7 @@ enum Seed {
       for (scope, ids) in replica.spent { writes += ids.values.map { .putSpent(scope, $0) } }
       for (scope, kind) in replica.known { writes.append(.putKnown(scope, kind)) }
       writes += replica.notices.map { .putNotice($0) }
-      for (product, rows) in replica.deviceRows { writes += rows.map { .putDeviceRow(product: product, key: $0.key, $0.value) } }
+      for (product, rows) in replica.deviceRows { writes += rows.members.map { .putDeviceRow(product: product, key: $0.key, $0.value) } }
       return [.createReplica(replica.meta)] + writes.map { .replica(replica.id, $0) }
     } + [.device(device.meta, active: device.active)]
   }

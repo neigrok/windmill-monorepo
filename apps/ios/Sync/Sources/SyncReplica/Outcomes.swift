@@ -34,6 +34,14 @@ public enum PushStep: Sendable, Hashable {
   case result(PushResult, lastN: Int64, epoch: String)
   case ack(lastN: Int64)
   case epoch(String)
+
+  // A refusal may fold an orphan's dependents into its origin's stored notice, so its Action loads the notices.
+  public var readsNotices: Bool {
+    switch self {
+    case .result, .refuseLocally: true
+    case .sample, .pauseAuth, .reidentify, .halve, .ack, .epoch: false
+    }
+  }
 }
 
 // §7.7 write map step 1's product hook: a device row of `product` at `key`, with the id of `type` a join mapped `from`
@@ -59,9 +67,10 @@ public struct PushPlanner: Sendable {
 
   // MARK: Numbering
 
-  // Numbers ready entries in commit order up to the batch limits, stopping after the first command entry, and never
-  // while a command entry is sent. `limit`, after a several-intent 400 or 413, sends at most that many sent entries and
-  // numbers none beyond them. The request, or nil when there is nothing to send.
+  // Numbers ready entries in commit order up to the batch limits, passing over held-back entries, stopping after the
+  // first command entry or at a held-back one, and never while a command entry is sent. `limit`, after a several-intent
+  // 400 or 413, sends at most that many sent entries and numbers none beyond them. The request, or nil when there is
+  // nothing to send.
   public func number(_ replica: inout LoadedReplica, limit: Int? = nil) throws -> PushRequest? {
     guard replica.meta.state == .bound, !replica.meta.authPaused else { return nil }
     let maxIntents = min(limits.pushMaxIntents, limit ?? .max)
@@ -69,7 +78,12 @@ public struct PushPlanner: Sendable {
     if !sent(replica).contains(where: { $0.intent.command != nil }) {
       var count = sent(replica).count
       var bytes = sent(replica).reduce(0) { $0 + $1.intent.json.jcs.count }
+      let back = heldBack(in: replica)
       for entry in replica.outbox where entry.state == .ready {
+        if back.contains(entry.commitOrder) {
+          if entry.intent.command != nil { break }
+          continue
+        }
         var intent = entry.intent
         intent.n = replica.meta.nextN
         let size = intent.json.jcs.count
@@ -88,6 +102,28 @@ public struct PushPlanner: Sendable {
     let batch = sent(replica).prefix(maxIntents)
     guard !batch.isEmpty else { return nil }
     return PushRequest(replica: replica.meta.replica, ackThrough: replica.meta.ackThrough, intents: batch.map(\.intent))
+  }
+
+  // §7.4 held back, by commit order: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
+  // orphan awaiting its result, or touch, by a delta, a guard or a prediction, a record an earlier held-back entry
+  // touches.
+  func heldBack(in replica: LoadedReplica) -> Set<Int64> {
+    var sources = Dependents(registry: registry)
+    var touched: Set<ScopedKey> = []
+    var back: Set<Int64> = []
+    for entry in replica.outbox {
+      if entry.state == .ready {
+        let records = (entry.drawnDeltas.map(\.key) + entry.intent.guards.map(\.key)).map { ScopedKey(scope: entry.scope, key: $0) }
+        if sources.part(of: entry).any || records.contains(where: touched.contains) {
+          back.insert(entry.commitOrder)
+          touched.formUnion(records)
+        }
+      }
+      if entry.state == .held || back.contains(entry.commitOrder) || entry.orphanOf != nil {
+        sources.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
+      }
+    }
+    return back
   }
 
   // MARK: A push answer, step by step
@@ -174,24 +210,42 @@ public struct PushPlanner: Sendable {
     }
   }
 
-  // §7.7: an orphan's refusal only ends it; clock-skew and base-unknown recover automatically; any other refusal
-  // removes the entry, folds its dependents and writes its notice.
+  // §7.7: an orphan's refusal ends it into its origin's notice; clock-skew and base-unknown recover automatically; any
+  // other refusal removes the entry, folds its dependents and writes its notice.
   func refuse(_ localId: String, code: RefusalCode, detail: JSON?, lastN: Int64, in replica: inout LoadedReplica,
               instance: Instance) throws {
     guard let entry = replica.entry(localId) else { return }
-    if entry.orphanOf != nil {
-      try replica.move(localId, .refuse)
-      return
-    }
+    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, code: code, in: &replica, at: instance.deviceNow) }
     if code == .clockSkew { return try recoverSkew(localId, lastN: lastN, in: &replica, instance: instance) }
     if code == .baseUnknown { return try recoverBase(localId, in: &replica) }
-    try replica.move(localId, .refuse)
-    let dependents = try foldDependents(of: entry, in: &replica)
+    try remove(entry, by: .refuse, code: code, detail: detail, in: &replica, at: instance.deviceNow)
+  }
+
+  // §7.7 steps 2–4: the entry ends by `event`, its dependents fold, and its notice holds its content and theirs.
+  func remove(_ entry: OutboxEntry, by event: IntentEvent, code: RefusalCode, detail: JSON?, in replica: inout LoadedReplica,
+              at deviceNow: Int64) throws {
+    try replica.move(entry.localId, event)
     var content = entry.content
-    content.dependents = dependents
+    content.dependents = try foldDependents(of: entry, into: entry.localId, in: &replica)
     replica.apply(.putNotice(Notice(
-      id: "notice:\(localId)", product: try product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
-      content: content, at: instance.deviceNow)))
+      id: "notice:\(entry.localId)", product: try product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
+      content: content, at: deviceNow)))
+  }
+
+  // An orphan's refusal ends it with no notice of its own; its held-back dependents fold into its origin's notice, its
+  // whole content their source. A notice the person dismissed is written again with the dependents alone.
+  func refuseOrphan(_ orphan: OutboxEntry, of origin: String, code: RefusalCode, in replica: inout LoadedReplica,
+                    at deviceNow: Int64) throws {
+    try replica.move(orphan.localId, .refuse)
+    let dependents = try foldDependents(of: orphan, into: origin, in: &replica)
+    guard !dependents.isEmpty else { return }
+    let id = "notice:\(origin)"
+    let notice = try replica.notices.first { $0.id.utf8.elementsEqual(id.utf8) }
+      ?? Notice(id: id, product: product(of: orphan.scope), scope: orphan.scope, code: code, detail: nil, content: NoticeContent(), at: deviceNow)
+    var content = notice.content
+    content.dependents += dependents
+    replica.apply(.putNotice(Notice(
+      id: id, product: notice.product, scope: notice.scope, code: notice.code, detail: notice.detail, content: content, at: notice.at)))
   }
 
   func product(of scope: ScopeRef) throws -> String {
@@ -199,29 +253,29 @@ public struct PushPlanner: Sendable {
     return product
   }
 
-  // §7.7 step 3: a queued dependent's dependent part is removed into the notice; a sent entry wholly dependent is an
-  // orphan, in the notice; a partly dependent sent entry stays as it is.
-  func foldDependents(of refused: OutboxEntry, in replica: inout LoadedReplica) throws -> [NoticeContent] {
-    var dependents = Dependents(registry: registry, scope: refused.scope, deltas: refused.drawnDeltas)
+  // §7.7 step 3: the dependents of a refused `source` fold into the notice of `origin`, the refused entry itself or the
+  // one whose notice an orphan's content rides. A queued dependent part is removed; a sent entry with any dependent part
+  // is an orphan, whole in the notice. An orphan is no source here: its own dependents are held back (§7.4) until its
+  // result, and fold only when it is refused.
+  func foldDependents(of source: OutboxEntry, into origin: String, in replica: inout LoadedReplica) throws -> [NoticeContent] {
+    var dependents = Dependents(registry: registry)
+    dependents.absorb(scope: source.scope, deltas: source.drawnDeltas, stamp: source.stamp)
     var folded: [NoticeContent] = []
-    for later in replica.outbox where later.commitOrder > refused.commitOrder {
-      guard let entry = replica.entry(later.localId) else { continue }
+    for entry in replica.outbox where entry.commitOrder > source.commitOrder {
       let part = dependents.part(of: entry)
       guard part.any else { continue }
       if entry.state == .sent {
-        guard part.whole else { continue }
-        dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas)
         folded.append(entry.content)
-        replica.update(entry: entry.localId) { $0.orphanOf = refused.localId }
+        replica.update(entry: entry.localId) { $0.orphanOf = origin }
         continue
       }
       guard entry.isQueued else { continue }
-      dependents.absorb(scope: entry.scope, deltas: part.removed + (part.commandGone ? entry.predict : []))
+      dependents.absorb(part, of: entry)
       var removed = NoticeContent()
       replica.update(entry: entry.localId) { removed = Dependents.remove(part, from: &$0) }
       folded.append(removed)
       if replica.entry(entry.localId)!.isEmpty {
-        replica.update(entry: entry.localId) { $0.orphanOf = refused.localId }
+        replica.update(entry: entry.localId) { $0.orphanOf = origin }
         try replica.move(entry.localId, .fold)
       }
     }
@@ -234,7 +288,7 @@ public struct PushPlanner: Sendable {
   func recoverSkew(_ localId: String, lastN: Int64, in replica: inout LoadedReplica, instance: Instance) throws {
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
     replica.update { meta in meta.hlc = HLC.pairMaximum(HLC(ms: physNow), HLC(pairOf: meta.admittedHigh)) }
-    for entry in replica.outbox where entry.localId != localId && entry.state == .sent && entry.n! > lastN {
+    for entry in replica.outbox where !entry.localId.utf8.elementsEqual(localId.utf8) && entry.state == .sent && entry.n! > lastN {
       try replica.move(entry.localId, .skewReturn)
     }
     replica.update { $0.nextN = lastN + 1 }
@@ -272,19 +326,16 @@ public struct PushPlanner: Sendable {
   // MARK: The write map
 
   // §7.7 an ok result's write map, in the result's transaction: ids a join resolved are rewritten into queued entries,
-  // predictions and device rows (a queued delete of the joined id ends target-merged); the prediction takes the map's
-  // stamps; then queued writes of the mapped registers tick after them.
+  // predictions and device rows (a queued delete of the joined id is refused target-merged, its dependents folded); the
+  // prediction takes the map's stamps; then queued writes of the mapped registers tick after them.
   func applyWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
     for w in write {
       if let from = w.from {
         let fromKey = RecordKey(w.key.type, from)
         for queued in replica.outbox where queued.isQueued {
-          let entry = replica.entry(queued.localId)!
+          guard let entry = replica.entry(queued.localId) else { continue }
           if entry.intent.deltas.contains(where: { $0.key == fromKey && $0.removes }) {
-            replica.apply(.putNotice(Notice(
-              id: "notice:\(entry.localId)", product: try product(of: entry.scope), scope: entry.scope, code: .targetMerged,
-              detail: nil, content: entry.content, at: instance.deviceNow)))
-            try replica.move(entry.localId, .targetMerged)
+            try remove(entry, by: .targetMerged, code: .targetMerged, detail: nil, in: &replica, at: instance.deviceNow)
             continue
           }
           replica.update(entry: entry.localId) { rewrite(&$0, type: w.key.type, from: from, to: w.key.id) }
@@ -360,7 +411,7 @@ public struct PushPlanner: Sendable {
 
   func rewriteDeviceRows(of commandId: String, type: String, from: RecordID, to: RecordID, in replica: inout LoadedReplica) {
     guard let scope = replica.entry(commandId)?.scope, let product = registry.product(of: scope) else { return }
-    for (key, value) in replica.deviceRows[product] ?? [:] {
+    for (key, value) in replica.deviceRows[product]?.members ?? [] {
       let rewritten = rewriteDeviceValue(product, key, value, type, from, to)
       if rewritten != value { replica.apply(.putDeviceRow(product: product, key: key, rewritten)) }
     }

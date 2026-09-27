@@ -133,7 +133,7 @@ package actor Sender {
         return .paused
       }
       guard let request = try core.write({ store, _ in try store.number(limit: batchLimit) }) else { return .idle }
-      guard request.replica == seat.replica else { return .again }
+      guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
       let send = core.clock.wall.reading()
       let reply = await transport.push(request, token: token)
       return try record(reply, to: request, timing: Timing(send: send, recv: core.clock.wall.reading()))
@@ -165,17 +165,18 @@ package actor Sender {
     }
   }
 
-  // A 200 that answers an intent of the request resets the backoff and the halved batch. A `retry` waits as asked; one
-  // that answers nothing and asks nothing would bring the same request straight back, so it backs off.
+  // A 200 that answers an intent of the request resets the halved batch, and any result but `clock-skew` resets the
+  // backoff. After a clock-skew recovery the sender backs off before the next push, longer each time in a row, and a
+  // `retry` beside it waits no less than it asks. A `retry` alone waits as asked. An answer that answers nothing and asks
+  // nothing would bring the same request straight back, so it backs off too.
   func next(after response: PushResponse, to request: PushRequest) -> SenderStep {
     conflicts = 0
-    let answered = response.results.contains { result in request.intents.contains { $0.n == result.n } }
-    if answered {
-      backoff.reset()
-      batchLimit = nil
-    }
-    if let retry = response.retry { return quiet(for: retry.retryAfterMs) }
-    return answered ? .again : .backoff(ms: nextBackoff(floorMs: 0))
+    let answered = response.results.filter { result in request.intents.contains { $0.n == result.n } }
+    let skewed = answered.contains { $0.verdict == .refused(.clockSkew) }
+    if !answered.isEmpty { batchLimit = nil }
+    if answered.contains(where: { $0.verdict != .refused(.clockSkew) }) { backoff.reset() }
+    if let retry = response.retry { return quiet(for: skewed ? nextBackoff(floorMs: retry.retryAfterMs) : retry.retryAfterMs) }
+    return answered.isEmpty || skewed ? .backoff(ms: nextBackoff(floorMs: 0)) : .again
   }
 
   // Design §6.3's rows: a 401 pauses; a 400 or 413 was halved or refused, so the next push differs; a conflict

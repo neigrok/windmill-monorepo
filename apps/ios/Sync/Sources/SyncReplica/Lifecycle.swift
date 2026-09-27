@@ -80,7 +80,7 @@ public struct ReplicaLifecycle: Sendable {
       replica.update { $0.serverEpoch = epoch }
       return
     }
-    if current != epoch { try changeEpoch(to: epoch, in: &replica, instance: &instance, identities: identities) }
+    if !current.utf8.elementsEqual(epoch.utf8) { try changeEpoch(to: epoch, in: &replica, instance: &instance, identities: identities) }
   }
 
   // Every cursor null and every staging dropped; acked entries of another epoch back to ready; then re-identify.
@@ -92,7 +92,9 @@ public struct ReplicaLifecycle: Sendable {
       replica.apply(.putCursor(scope, reset))
     }
     for scope in replica.staging.keys.sorted() { replica.apply(.dropStaging(scope)) }
-    for entry in replica.outbox where entry.state == .acked && entry.resultEpoch != epoch { try replica.move(entry.localId, .epoch) }
+    for entry in replica.outbox where entry.state == .acked && entry.resultEpoch?.utf8.elementsEqual(epoch.utf8) != true {
+      try replica.move(entry.localId, .epoch)
+    }
     try reidentify(&replica, instance: &instance, identities: identities)
   }
 
@@ -164,7 +166,7 @@ public struct ReplicaLifecycle: Sendable {
     }
 
     let target = try bind(account, in: &device, identities: identities)
-    if let anon = device.anon, anon.id != target, !anon.outbox.isEmpty {
+    if let anon = device.anon, !anon.id.utf8.elementsEqual(target.utf8), !anon.outbox.isEmpty {
       device.modify(anon.id) { anon in
         for entry in anon.outbox { anon.apply(.deleteEntry(entry.localId)) }
         for notice in anon.notices { anon.apply(.deleteNotice(notice.id)) }
@@ -175,8 +177,8 @@ public struct ReplicaLifecycle: Sendable {
           moved.commitOrder = target.nextCommitOrder
           target.apply(.putEntry(moved))
         }
-        for (product, rows) in anon.deviceRows.sorted(by: { $0.key < $1.key }) {
-          for (key, value) in rows.sorted(by: { $0.key < $1.key }) where target.deviceRows[product]?[key] == nil {
+        for (product, rows) in anon.deviceRows.sorted(by: { $0.key.utf8.lexicographicallyPrecedes($1.key.utf8) }) {
+          for (key, value) in rows.members where target.deviceRows[product]?[key] == nil {
             target.apply(.putDeviceRow(product: product, key: key, value))
           }
         }
@@ -241,15 +243,15 @@ public struct ReplicaLifecycle: Sendable {
 
   // An entry's product is its scope's; a tree or overlay scope's is its governing type's.
   func entries(of product: String, in replica: LoadedReplica) -> [OutboxEntry] {
-    replica.outbox.filter { registry.product(of: $0.scope) == product }
+    replica.outbox.filter { registry.product(of: $0.scope)?.utf8.elementsEqual(product.utf8) == true }
   }
 
   // The count, by type, of the distinct records (scope, type, id) a product's entries create or change.
   public func anonCount(of product: String, in replica: LoadedReplica) -> [String: Int] {
-    var records: Set<String> = []
+    var records: Set<ScopedKey> = []
     var counts: [String: Int] = [:]
     for entry in entries(of: product, in: replica) {
-      for delta in entry.drawnDeltas where records.insert("\(entry.scope.text)|\(JSON.array([.string(delta.key.type), delta.key.id.json]).jcsText)").inserted {
+      for delta in entry.drawnDeltas where records.insert(ScopedKey(scope: entry.scope, key: delta.key)).inserted {
         counts[delta.key.type, default: 0] += 1
       }
     }

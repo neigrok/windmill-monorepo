@@ -116,6 +116,9 @@ public struct SessionToken: Sendable, Hashable {
   public init(_ value: String) {
     self.value = value
   }
+
+  public static func == (lhs: SessionToken, rhs: SessionToken) -> Bool { lhs.value.utf8.elementsEqual(rhs.value.utf8) }
+  public func hash(into hasher: inout Hasher) { hasher.combine(Array(value.utf8)) }
 }
 
 public protocol TokenStore: Sendable {

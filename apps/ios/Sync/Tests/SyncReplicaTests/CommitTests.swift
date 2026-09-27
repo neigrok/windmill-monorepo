@@ -31,8 +31,8 @@ struct CommitTests {
     return LoadedReplica(meta: meta, confirmed: [product: Rows(rows), overlay: Rows([mark])], wholeScopes: true)
   }
 
-  // Plain writes by one engine instance that never cancel: updates and deletes of confirmed cards, keyed puts, and
-  // text and field writes of a mark.
+  // Plain writes by one engine instance: updates, deletes and revives of confirmed cards, keyed puts, and text and field
+  // writes of a mark. A revive joined into a delete of a live card, then deleted again, meets the cancel rule.
   static func gesture(_ random: inout SeededRandom) -> (scope: ScopeRef, gesture: Gesture) {
     if random.chance(0.25) {
       let change: Change = random.chance(0.5)
@@ -42,8 +42,9 @@ struct CommitTests {
     }
     let changes = (0..<Int.random(in: 1...3, using: &random)).map { _ -> Change in
       let card = RecordID(random.pick(["card0001", "card0002", "card0003"]))
-      switch Int.random(in: 0..<6, using: &random) {
+      switch Int.random(in: 0..<7, using: &random) {
       case 0: return .delete("card", card)
+      case 6: return .revive("card", card)
       case 1: return .put("day", "2026-09-01", present: random.chance(0.5), ["score": JSON(Int.random(in: 0...10, using: &random))])
       case 2: return .update("card", card, ["tier": .string(random.pick(["draft", "review", "done"]))])
       default: return .update("card", card, ["title": .string(random.pick(["One", "Two", "Three"]))])
@@ -138,6 +139,30 @@ struct CommitTests {
     return LoadedReplica(
       meta: replica.meta, outbox: replica.outbox, confirmed: rows, spent: spent, cursors: replica.cursors, known: replica.known,
       deviceRows: replica.deviceRows, wholeScopes: false)
+  }
+
+  // Gesture ids that differ only by canonical equivalence are two gestures: both commit, and Undo of one leaves the other.
+  @Test func lookAlikeGestureIdsAreTwoGestures() throws {
+    var replica = try Self.replica()
+    let planner = CommitPlanner(registry: Self.probe)
+    for (id, card) in [("g\u{E9}", "card0001"), ("ge\u{301}", "card0002")] {
+      _ = try planner.commit(
+        Gesture(changes: [.update("card", RecordID(card), ["title": "Held"])], hold: true, gestureId: id), in: Self.product,
+        to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]))
+    }
+    #expect(try Hold(registry: Self.probe).undo("ge\u{301}", in: &replica))
+    #expect(replica.outbox.map { Array($0.localId.utf8) } == [Array("g\u{E9}/0".utf8)])
+  }
+
+  // A scope the registry cannot name, here a tree id the wire cannot carry, throws even for a command alone.
+  @Test func aScopeTheRegistryCannotNameThrows() throws {
+    var replica = try Self.replica()
+    #expect(throws: CommitError.self) {
+      try CommitPlanner(registry: Self.probe).commit(
+        Gesture(changes: [], command: Command(name: "probe.copy", args: ["src": "b_00000001", "dst": "b_00000002"])),
+        in: .tree("b_0000000\u{E9}"), to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]))
+    }
+    #expect(replica.writes == [])
   }
 
   // A put that keeps presence changes a record drawn holds, as an update does; one drawn does not hold throws.

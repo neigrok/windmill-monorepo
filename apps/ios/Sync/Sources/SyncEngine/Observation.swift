@@ -73,7 +73,8 @@ final class ViewHub {
 
   let core: EngineCore
   var liveRecords: [RecordsView.Key: Weak<RecordsView>] = [:]
-  var liveNotices: [String: Weak<NoticesView>] = [:]
+  // Keyed by the product's bytes, so products that differ only by canonical equivalence are two views.
+  var liveNotices: [[UInt8]: Weak<NoticesView>] = [:]
   var offersView: UndoOffers?
   var statusView: SyncStatus?
   var applied: UInt64 = 0
@@ -120,8 +121,9 @@ final class ViewHub {
       }
     }
     if everything || change.notices {
-      for (product, entry) in liveNotices {
+      for entry in liveNotices.values {
         guard let view = entry.view else { continue }
+        let product = view.product
         if let loaded = await load({ tx in try Self.loadNotices(tx, of: product) }) { view.notices = loaded }
       }
     }
@@ -160,9 +162,9 @@ final class ViewHub {
   }
 
   func notices(_ product: String) -> NoticesView {
-    if let view = liveNotices[product]?.view { return view }
+    if let view = liveNotices[Array(product.utf8)]?.view { return view }
     let view = NoticesView(product: product, notices: (try? core.store.read { try Self.loadNotices($0, of: product) }) ?? [])
-    liveNotices[product] = Weak(view: view)
+    liveNotices[Array(product.utf8)] = Weak(view: view)
     return view
   }
 
@@ -195,8 +197,8 @@ final class ViewHub {
     let active = try tx.activeReplica()
     let outbox = try tx.replica(active)?.outbox ?? []
     var offers: [UndoOffer] = []
-    for entry in outbox where !offers.contains(where: { $0.id == entry.gestureId }) {
-      let gesture = outbox.filter { $0.gestureId == entry.gestureId }
+    for entry in outbox where !offers.contains(where: { $0.id.utf8.elementsEqual(entry.gestureId.utf8) }) {
+      let gesture = outbox.filter { $0.gestureId.utf8.elementsEqual(entry.gestureId.utf8) }
       guard gesture.allSatisfy({ $0.state == .held }), entry.releaseAt > deviceNow else { continue }
       offers.append(UndoOffer(id: entry.gestureId, scope: entry.scope, releaseAt: entry.releaseAt))
     }
@@ -293,6 +295,13 @@ public final class SyncStatus {
     var pendingSignIn: String?
     var ready = 0
     var sent = 0
+
+    static func == (lhs: Snapshot, rhs: Snapshot) -> Bool {
+      lhs.account.map { Array($0.utf8) } == rhs.account.map { Array($0.utf8) } && lhs.authPaused == rhs.authPaused
+        && lhs.upgradeRequired == rhs.upgradeRequired && lhs.online == rhs.online
+        && lhs.pendingSignIn.map { Array($0.utf8) } == rhs.pendingSignIn.map { Array($0.utf8) } && lhs.ready == rhs.ready
+        && lhs.sent == rhs.sent
+    }
   }
 
   public private(set) var account: String?

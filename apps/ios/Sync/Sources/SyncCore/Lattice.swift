@@ -79,6 +79,9 @@ public struct Lattice: Sendable, Hashable {
     if !fields.isEmpty { object["f"] = .object(JSON.Object(uniqueKeysWithValues: fields.map { ($0.key, $0.value.json) })) }
     return .object(object)
   }
+
+  public static func == (lhs: Lattice, rhs: Lattice) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 public enum Join {

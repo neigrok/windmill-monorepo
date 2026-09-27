@@ -1,7 +1,8 @@
 import SyncAPI
 import SyncCore
 
-// §2.5 the client's local store table by table, each record in the JSON form the stored blobs and the corpus share.
+// §2.5 the client's local store table by table, each record in the JSON form the stored blobs and the corpus share, and
+// equal only when that form is, byte for byte.
 
 // MARK: - Device and replica meta
 
@@ -26,6 +27,9 @@ public struct DeviceMeta: Sendable, Hashable {
     object["pendingSignIn"] = pendingSignIn.map { ["account": .string($0)] }
     return .object(object)
   }
+
+  public static func == (lhs: DeviceMeta, rhs: DeviceMeta) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 public struct ReplicaMeta: Sendable, Hashable {
@@ -119,6 +123,9 @@ public struct ReplicaMeta: Sendable, Hashable {
     object["clockReading"] = offset.clockReading?.json
     return .object(object)
   }
+
+  public static func == (lhs: ReplicaMeta, rhs: ReplicaMeta) -> Bool { lhs.json == rhs.json && lhs.offset == rhs.offset }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // MARK: - Outbox
@@ -140,6 +147,13 @@ public struct TextRef: Sendable, Hashable, Comparable {
   }
 
   public var text: String { JSON.array([.string(key.type), key.id.json, .string(field)]).jcsText }
+
+  public static func == (lhs: TextRef, rhs: TextRef) -> Bool { lhs.key == rhs.key && lhs.field.utf8.elementsEqual(rhs.field.utf8) }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(key)
+    hasher.combine(Array(field.utf8))
+  }
 
   public static func < (lhs: TextRef, rhs: TextRef) -> Bool { lhs.text.utf8.lexicographicallyPrecedes(rhs.text.utf8) }
 }
@@ -230,6 +244,9 @@ public struct OutboxEntry: Sendable, Hashable {
     object["orphanOf"] = orphanOf.map { .string($0) }
     return .object(object)
   }
+
+  public static func == (lhs: OutboxEntry, rhs: OutboxEntry) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // MARK: - Scopes: cursors, staging, spent ids, known scopes
@@ -265,6 +282,9 @@ public struct CursorRecord: Sendable, Hashable {
     object["digestStop"] = digestStop.map { .string($0) }
     return .object(object)
   }
+
+  public static func == (lhs: CursorRecord, rhs: CursorRecord) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // A boot filling rows beside the confirmed ones, with its own digest, until the swap (§7.5).
@@ -293,6 +313,12 @@ public struct SpentID: Sendable, Hashable {
   }
 
   public var json: JSON { ["t": .string(key.type), "id": key.id.json, "born": born.json] }
+}
+
+// One record of one scope, the same only byte for byte: what dependents, held-back numbering and anon counts key by.
+struct ScopedKey: Hashable {
+  let scope: ScopeRef
+  let key: RecordKey
 }
 
 // A tree or overlay scope the replica learned is gone or not found (§7.5), which §7.1 step 2 refuses.

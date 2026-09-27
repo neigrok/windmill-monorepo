@@ -126,4 +126,7 @@ public struct ClockReading: Sendable, Hashable {
     if !boot.utf8.elementsEqual(earlier.boot.utf8) { return true }
     return abs((wall - earlier.wall) - (mono - earlier.mono)) > Constants.clockJumpMs
   }
+
+  public static func == (lhs: ClockReading, rhs: ClockReading) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }

@@ -41,17 +41,13 @@ public struct ScopeView: Sendable {
   let coverage: Rows
   public private(set) var loaded: [RecordKey: ViewRecord]
 
-  // `except`: entries a commit is retiring, which no longer draw (§7.1 step 4).
-  public init(_ replica: LoadedReplica, _ scope: ScopeRef, _ mode: ViewMode, registry: Registry, except: Set<String> = []) throws {
+  public init(_ replica: LoadedReplica, _ scope: ScopeRef, _ mode: ViewMode, registry: Registry) throws {
     self.scope = scope
     self.mode = mode
     self.registry = registry
     coverage = replica.rows(scope)
     loaded = coverage.loaded.mapValues(ViewRecord.init)
-    let folded = replica.entries(in: scope).filter { entry in
-      !except.contains(entry.localId) && (entry.state != .held || mode == .drawn)
-    }
-    for entry in folded {
+    for entry in replica.entries(in: scope) where entry.state != .held || mode == .drawn {
       for delta in entry.drawnDeltas { try fold(delta) }
     }
   }

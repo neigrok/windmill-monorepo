@@ -96,7 +96,7 @@ public struct PageApplier: Sendable {
                     instance: Instance) throws -> PageOutcome {
     let scope = page.scope
     var record = replica.cursors[scope] ?? CursorRecord()
-    guard requested == record.cursor else { return .stale }
+    guard requested.map(JSON.string) == record.cursor.map(JSON.string) else { return .stale }
     switch page.body {
     case .reset:
       record.cursor = nil
@@ -174,7 +174,8 @@ public struct PageApplier: Sendable {
 
   // Acked entries of the scope in the replica's epoch whose result the rows now hold.
   func resolveAcked(in scope: ScopeRef, through cleanSeq: Int64, in replica: inout LoadedReplica) throws {
-    for entry in replica.entries(in: scope) where entry.state == .acked && entry.resultEpoch == replica.meta.serverEpoch
+    for entry in replica.entries(in: scope) where entry.state == .acked
+      && entry.resultEpoch.map(JSON.string) == replica.meta.serverEpoch.map(JSON.string)
       && entry.resultSeq! <= cleanSeq {
       try replica.move(entry.localId, .resolve)
     }
@@ -186,7 +187,7 @@ public struct PageApplier: Sendable {
                    in replica: inout LoadedReplica) -> CursorRecord {
     var record = record
     if let stop = record.digestStop {
-      if stop == appVersion { return record }
+      if stop.utf8.elementsEqual(appVersion.utf8) { return record }
       record.digestStop = nil
     }
     if record.digest == received {
@@ -236,7 +237,8 @@ public struct PageApplier: Sendable {
       return .ignored
     case .change(let change):
       let stored = replica.cursors[change.scope]?.cursor
-      guard let cursor = stored.flatMap(Cursor.init(decoding:)), cursor.isLiveAtSeq, change.epoch == replica.meta.serverEpoch,
+      guard let cursor = stored.flatMap(Cursor.init(decoding:)), cursor.isLiveAtSeq,
+            replica.meta.serverEpoch.map(JSON.string) == .string(change.epoch),
             change.seq == cursor.seq + 1, let rows = change.rows else { return .pull }
       let page = RowsPage(
         rows: rows, cursor: Cursor(epoch: change.epoch, mode: .live, seq: change.seq).text, more: false, seq: change.seq,

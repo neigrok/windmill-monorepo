@@ -64,6 +64,17 @@ struct RegistryTests {
      #"type "note": field claim: opens is for a field of a tree singleton"#),
     (registry(meta(opens: ["secret"])),
      #"type "meta": field visibility: opens the value secret outside its domain"#),
+    (registry(note {
+      $0["identity"] = "keyed"; $0["idSpace"] = nil; $0["mint"] = nil; $0["revivable"] = nil
+      $0["fields"] = ["ord": ["kind": "lww", "writer": "client", "domain": ["type": "fracKey"]]]
+    }),
+     #"type "note": field ord: an order field belongs to a minted or derived type"#),
+    (registry(note {
+      $0["identity"] = "singleton"; $0["singletonId"] = "meta"; $0["idPattern"] = "^meta$"; $0["idSpace"] = nil; $0["mint"] = nil
+      $0["revivable"] = nil; $0["deadRows"] = nil; $0["life"] = false
+      $0["fields"] = ["ord": ["kind": "lww", "writer": "client", "domain": ["type": "fracKey"]]]
+    }),
+     #"type "note": field ord: an order field belongs to a minted or derived type"#),
     (registry(note(field: "t\u{EF}tle", ["kind": "lww", "writer": "client"])),
      "type \"note\": field t\u{EF}tle: not a field name"),
     (registry(note(field: "runId", ["kind": "const", "writer": "client", "ref": "run"])),
@@ -109,6 +120,19 @@ struct RegistryTests {
   @Test(arguments: [0, -1, 0.3, 0.7, Double.infinity, Double.nan])
   func aQuantumIsAnIntegerOrOneOverK(_ step: Double) {
     #expect(Quantum(step) == nil)
+  }
+
+  // Registry names, argument types and mints are the same only byte for byte, never by canonical equivalence.
+  @Test func declarationsThatDifferOnlyByCanonicalEquivalenceAreDifferent() throws {
+    let mints = try ["\u{E9}", "e\u{301}"].map { prefix in
+      try Registry(json: Self.registry(Self.note {
+        $0["idPattern"] = "^.{9,10}$"
+        $0["mint"] = ["prefix": .string(prefix), "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 8]
+      })).type("note")?.mint
+    }
+    let kinds: Set<ScopeKind> = [.product("\u{212A}"), .product("K"), .tree]
+    let arguments: Set<ArgumentType> = [.ref("\u{212A}"), .ref("K"), .json]
+    #expect([kinds.count, arguments.count, Set(mints).count] == [3, 3, 2])
   }
 
   @Test func charsCountCodePointsAndBytesCountUTF8() {

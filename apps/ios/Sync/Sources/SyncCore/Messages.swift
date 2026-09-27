@@ -1,4 +1,4 @@
-// §9.2–§9.6 the exchanges: hello, push and pull requests and responses, live frames, HTTP failures and refusal codes.
+// §9.2–§9.6 the exchanges, the same only byte for byte: hello, push and pull, live frames, HTTP failures and refusal codes.
 
 // MARK: - Refusal codes
 
@@ -66,6 +66,20 @@ public struct HTTPFailure: Sendable, Hashable {
       epoch: try body?["epoch"]?.asString(),
       retryAfterMs: try body?["retryAfterMs"]?.asInteger())
   }
+
+  public static func == (lhs: HTTPFailure, rhs: HTTPFailure) -> Bool {
+    lhs.status == rhs.status && lhs.error.map { Array($0.utf8) } == rhs.error.map { Array($0.utf8) }
+      && lhs.serverTime == rhs.serverTime && lhs.epoch.map { Array($0.utf8) } == rhs.epoch.map { Array($0.utf8) }
+      && lhs.retryAfterMs == rhs.retryAfterMs
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(status)
+    hasher.combine(error.map { Array($0.utf8) })
+    hasher.combine(serverTime)
+    hasher.combine(epoch.map { Array($0.utf8) })
+    hasher.combine(retryAfterMs)
+  }
 }
 
 // One HTTP answer: a 200 body, or a failure.
@@ -90,6 +104,19 @@ public struct HelloResponse: Sendable, Hashable {
     minSchema = Int(try json.member("minSchema").asInteger())
     holdsRecords = try json["holdsRecords"].map { try JSON.map($0) { try $0.asBool() } }
   }
+
+  public static func == (lhs: HelloResponse, rhs: HelloResponse) -> Bool {
+    lhs.serverTime == rhs.serverTime && lhs.epoch.utf8.elementsEqual(rhs.epoch.utf8) && lhs.schema == rhs.schema
+      && lhs.minSchema == rhs.minSchema && lhs.holdsRecords == rhs.holdsRecords
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(serverTime)
+    hasher.combine(Array(epoch.utf8))
+    hasher.combine(schema)
+    hasher.combine(minSchema)
+    hasher.combine(holdsRecords)
+  }
 }
 
 // MARK: - Push
@@ -108,6 +135,9 @@ public struct PushRequest: Sendable, Hashable {
   public var json: JSON {
     ["replica": .string(replica), "ackThrough": JSON(ackThrough), "intents": .array(intents.map(\.json))]
   }
+
+  public static func == (lhs: PushRequest, rhs: PushRequest) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // D-20 one record a command wrote or resolved to: the id it was called with, its born, and each field's stamp.
@@ -175,6 +205,19 @@ public struct PushResponse: Sendable, Hashable {
     results = try json.member("results").asArray().map { try PushResult(json: $0) }.sorted { $0.n < $1.n }
     retry = try json["retry"].map { Retry(n: try $0.member("n").asInteger(), retryAfterMs: try $0.member("retryAfterMs").asInteger()) }
   }
+
+  public static func == (lhs: PushResponse, rhs: PushResponse) -> Bool {
+    lhs.serverTime == rhs.serverTime && lhs.epoch.utf8.elementsEqual(rhs.epoch.utf8) && lhs.lastN == rhs.lastN
+      && lhs.results == rhs.results && lhs.retry == rhs.retry
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(serverTime)
+    hasher.combine(Array(epoch.utf8))
+    hasher.combine(lastN)
+    hasher.combine(results)
+    hasher.combine(retry)
+  }
 }
 
 // MARK: - Pull
@@ -188,6 +231,15 @@ public struct PullRequest: Sendable, Hashable {
     public init(scope: ScopeRef, cursor: String?) {
       self.scope = scope
       self.cursor = cursor
+    }
+
+    public static func == (lhs: Pulled, rhs: Pulled) -> Bool {
+      lhs.scope == rhs.scope && lhs.cursor.map { Array($0.utf8) } == rhs.cursor.map { Array($0.utf8) }
+    }
+
+    public func hash(into hasher: inout Hasher) {
+      hasher.combine(scope)
+      hasher.combine(cursor.map { Array($0.utf8) })
     }
   }
 
@@ -254,6 +306,19 @@ public struct RowsPage: Sendable, Hashable {
       seq: try json.member("seq").asInteger(),
       digest: try ScopeDigest(hex: json.member("digest").asString()))
   }
+
+  public static func == (lhs: RowsPage, rhs: RowsPage) -> Bool {
+    lhs.rows == rhs.rows && lhs.cursor.utf8.elementsEqual(rhs.cursor.utf8) && lhs.more == rhs.more && lhs.seq == rhs.seq
+      && lhs.digest == rhs.digest
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(rows)
+    hasher.combine(Array(cursor.utf8))
+    hasher.combine(more)
+    hasher.combine(seq)
+    hasher.combine(digest)
+  }
 }
 
 public struct PullResponse: Sendable, Hashable {
@@ -265,6 +330,16 @@ public struct PullResponse: Sendable, Hashable {
     serverTime = try json.member("serverTime").asInteger()
     epoch = try json.member("epoch").asString()
     pages = try json.member("pages").asArray().map { try Page(json: $0) }
+  }
+
+  public static func == (lhs: PullResponse, rhs: PullResponse) -> Bool {
+    lhs.serverTime == rhs.serverTime && lhs.epoch.utf8.elementsEqual(rhs.epoch.utf8) && lhs.pages == rhs.pages
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(serverTime)
+    hasher.combine(Array(epoch.utf8))
+    hasher.combine(pages)
   }
 }
 
@@ -287,6 +362,25 @@ public enum LiveFrame: Sendable, Hashable {
     case let other: self = .other(other)
     }
   }
+
+  public static func == (lhs: LiveFrame, rhs: LiveFrame) -> Bool {
+    switch (lhs, rhs) {
+    case (.change(let a), .change(let b)): a == b
+    case (.gone(let a), .gone(let b)), (.notFound(let a), .notFound(let b)): a == b
+    case (.pong, .pong): true
+    case (.other(let a), .other(let b)): a.utf8.elementsEqual(b.utf8)
+    default: false
+    }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    switch self {
+    case .change(let frame): hasher.combine(frame)
+    case .gone(let scope), .notFound(let scope): hasher.combine(scope)
+    case .pong: hasher.combine(0)
+    case .other(let op): hasher.combine(Array(op.utf8))
+    }
+  }
 }
 
 public struct ChangeFrame: Sendable, Hashable {
@@ -302,5 +396,18 @@ public struct ChangeFrame: Sendable, Hashable {
     seq = try json.member("seq").asInteger()
     digest = try ScopeDigest(hex: json.member("digest").asString())
     rows = try json["rows"]?.asArray().map { try Row(json: $0) }
+  }
+
+  public static func == (lhs: ChangeFrame, rhs: ChangeFrame) -> Bool {
+    lhs.scope == rhs.scope && lhs.epoch.utf8.elementsEqual(rhs.epoch.utf8) && lhs.seq == rhs.seq && lhs.digest == rhs.digest
+      && lhs.rows == rhs.rows
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(scope)
+    hasher.combine(Array(epoch.utf8))
+    hasher.combine(seq)
+    hasher.combine(digest)
+    hasher.combine(rows)
   }
 }

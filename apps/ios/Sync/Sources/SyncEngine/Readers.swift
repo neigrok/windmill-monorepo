@@ -56,10 +56,11 @@ final class TransactionReader: CommitContext {
     try records(ofType: type, where: field, is: id, .stored)
   }
 
+  // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
-    let replica = try load(RowSelection())
+    guard isOpen else { throw EngineError.readerEnded }
     guard let product = registry.product(of: scope) else { return nil }
-    return replica.deviceRows[product]?[key]
+    return try tx.deviceRow(meta.replica, product: product, key: key)
   }
 
   func firstPullComplete() throws -> Bool {

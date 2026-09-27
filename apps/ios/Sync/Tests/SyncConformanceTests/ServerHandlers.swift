@@ -31,7 +31,7 @@ enum ServerHandlers {
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
     "pull/hello.json": { input in
-      let server = try makeServer(input)
+      var server = try makeServer(input)
       return ["response": server.hello(account: try account(input), at: try input.member("serverTime").asInteger()).json]
     },
   ]

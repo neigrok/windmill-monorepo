@@ -44,14 +44,15 @@ public struct StoreTransaction {
     }
     return LoadedReplica(
       meta: meta, outbox: try outbox(of: id), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
-      known: try known(of: id), notices: notices ? try self.notices(of: id) : [], deviceRows: try deviceRows(of: id), wholeScopes: false)
+      known: try known(of: id), notices: notices ? try self.notices(of: id) : nil, deviceRows: try deviceRows(of: id), wholeScopes: false)
   }
 
-  // Every replica with its notices, and no rows: what the lifecycle planners read.
-  public func device(rows: Bool = false) throws -> LoadedDevice {
+  // Every replica with its notices and the rows `reads` names from its outbox: what the lifecycle planners read. `rows`
+  // loads every row instead.
+  public func device(rows: Bool = false, reads: ([OutboxEntry]) -> [ScopeRef: RowSelection] = { _ in [:] }) throws -> LoadedDevice {
     guard let device = try deviceMeta() else { throw StoreError.noDevice }
     let replicas = try replicaIDs().map { id in
-      rows ? try wholeReplica(id) : try replica(id, notices: true)!
+      rows ? try wholeReplica(id) : try replica(id, reads: reads(try outbox(of: id)), notices: true)!
     }
     return LoadedDevice(meta: device.meta, active: device.active, replicas: replicas)
   }
@@ -145,12 +146,18 @@ public struct StoreTransaction {
     }
   }
 
-  func deviceRows(of id: String) throws -> [String: [String: JSON]] {
-    var rows: [String: [String: JSON]] = [:]
+  func deviceRows(of id: String) throws -> [String: JSON.Object] {
+    var rows: [String: JSON.Object] = [:]
     for record in try GRDB.Row.fetchAll(db, sql: "SELECT product, key, value FROM device_row WHERE replica = ?", arguments: [id]) {
-      rows[record["product"], default: [:]][record["key"]] = try Blob.json(record["value"])
+      rows[record["product"], default: JSON.Object()][record["key"]] = try Blob.json(record["value"])
     }
     return rows
+  }
+
+  // A row of `device/<product>`, found by its key's bytes as SQLite compares text.
+  public func deviceRow(_ replica: String, product: String, key: String) throws -> JSON? {
+    try Data.fetchOne(db, sql: "SELECT value FROM device_row WHERE replica = ? AND product = ? AND key = ?",
+                      arguments: [replica, product, key]).map(Blob.json)
   }
 
   func spentIDs(of id: String, in scope: ScopeRef) throws -> [RecordKey: SpentID] {
@@ -202,22 +209,23 @@ public struct StoreTransaction {
     return try ids.map { RecordKey(type, try RecordID(text: $0)) }.sorted()
   }
 
-  // The ref index as it stands, and as the rows say it must be: equal whenever the batch writer kept it true.
-  public func refIndex() throws -> (stored: [String], expected: [String]) {
-    var stored: [String] = []
-    var expected: [String] = []
+  // The ref index as it stands and as the rows say it must be, as JSON lines: equal whenever the batch writer kept it true.
+  public func refIndex() throws -> (stored: [JSON], expected: [JSON]) {
+    var stored: [JSON] = []
+    var expected: [JSON] = []
     for table in [BatchWriter.RowTable.confirmed, .staging] {
       stored += try GRDB.Row.fetchAll(db, sql: "SELECT * FROM \(table.rawValue)_ref").map { record in
-        "\(table) \(record["replica"] as String) \(record["scope"] as String) \(record["type"] as String) \(record["field"] as String) \(record["target"] as String) \(record["id"] as String)"
+        .array(([table.rawValue] + ["replica", "scope", "type", "field", "target", "id"].map { record[$0] as String }).map { .string($0) })
       }
       for record in try GRDB.Row.fetchAll(db, sql: "SELECT replica, scope, row FROM \(table.rawValue)") {
         let row = try Blob.row(record["row"])
+        let (replica, scope): (String, String) = (record["replica"], record["scope"])
         for (field, target) in BatchWriter.references(of: row, registry: registry) {
-          expected.append("\(table) \(record["replica"] as String) \(record["scope"] as String) \(row.key.type) \(field) \(target.text) \(row.key.id.text)")
+          expected.append(.array([table.rawValue, replica, scope, row.key.type, field, target.text, row.key.id.text].map { .string($0) }))
         }
       }
     }
-    return (stored.sorted(), expected.sorted())
+    return (stored.sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
   }
 }
 

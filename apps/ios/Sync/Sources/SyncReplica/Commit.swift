@@ -59,9 +59,11 @@ public struct CommitPlanner: Sendable {
     guard meta.state == .anon || meta.state == .bound else { throw CommitError("a \(meta.state.rawValue) replica does not commit") }
   }
 
-  // Steps 2–11.
+  // Steps 2–11. The retire and its silent fold run on a working copy, which the diff reads and which the replica becomes
+  // once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
                      identities: IdentitySource) throws -> CommitOutcome {
+    guard registry.scopeKind(of: scope) != nil else { throw CommitError("\(scope) is no scope of the registry") }
     if try scopeIsDead(scope, in: replica) { return .refused(.scopeDead, detail: nil) }
 
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
@@ -70,10 +72,12 @@ public struct CommitPlanner: Sendable {
     let stamp = clock.tick(physNow: physNow, actor: instance.actor)
 
     let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
+    var retired = replica
+    try coalescing.cancel(retiring.map { ($0, $0.drawnDeltas) }, by: .retire, in: &retired)
     var builder = DeltaBuilder(
-      registry: registry, replica: replica, scope: scope, stamp: stamp, physNow: physNow,
-      drawn: try ScopeView(replica, scope, .drawn, registry: registry, except: Set(retiring.map(\.localId))),
-      stored: try ScopeView(replica, scope, .stored, registry: registry), identities: identities)
+      registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
+      drawn: try ScopeView(retired, scope, .drawn, registry: registry),
+      stored: try ScopeView(retired, scope, .stored, registry: registry), identities: identities)
     let deltas = try gesture.changes.compactMap { try builder.delta($0) }
     let predict = try gesture.predict.map { try builder.predicted($0) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
@@ -81,7 +85,7 @@ public struct CommitPlanner: Sendable {
       return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
     }
     let gestureId = try gesture.gestureId ?? identities.gestureID()
-    guard !replica.outbox.contains(where: { $0.gestureId == gestureId }) else { throw CommitError("the gesture id \(gestureId) is taken") }
+    guard !replica.outbox.contains(where: { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }) else { throw CommitError("the gesture id \(gestureId) is taken") }
     let intents = try group(deltas, guards: guards, gesture: gesture, scope: scope, gestureId: gestureId)
 
     if intents.contains(where: { $0.json.jcs.count > limits.pushMaxBytes }) {
@@ -91,7 +95,7 @@ public struct CommitPlanner: Sendable {
       return .refused(.tooLarge, detail: nil)
     }
 
-    for entry in retiring { try replica.move(entry.localId, .retire) }
+    replica = retired
     let releaseAt = gesture.hold ? instance.deviceNow + limits.holdMs : 0
     let firstOrder = replica.nextCommitOrder
     let entries = try intents.enumerated().map { k, intent in
@@ -122,11 +126,13 @@ public struct CommitPlanner: Sendable {
       meta.hlc = clock
       meta.hlcHigh = stamp
     }
-    var retired: [String] = []
-    for entry in retiring where !retired.contains(entry.gestureId) { retired.append(entry.gestureId) }
+    var retiredGestures: [String] = []
+    for entry in retiring where !retiredGestures.contains(where: { $0.utf8.elementsEqual(entry.gestureId.utf8) }) {
+      retiredGestures.append(entry.gestureId)
+    }
     return .committed(CommitReceipt(
       gestureId: gestureId, stamp: stamp, localIds: entries.map(\.localId), ids: builder.ids,
-      releaseAt: gesture.hold ? releaseAt : nil, retired: retired))
+      releaseAt: gesture.hold ? releaseAt : nil, retired: retiredGestures))
   }
 
   func product(of scope: ScopeRef) throws -> String {
@@ -153,7 +159,7 @@ public struct CommitPlanner: Sendable {
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []
     for entry in replica.outbox {
-      if let index = gestures.firstIndex(where: { $0.id == entry.gestureId }) {
+      if let index = gestures.firstIndex(where: { $0.id.utf8.elementsEqual(entry.gestureId.utf8) }) {
         gestures[index].entries.append(entry)
       } else {
         gestures.append((entry.gestureId, [entry]))
@@ -331,14 +337,10 @@ struct DeltaBuilder {
     return delta
   }
 
-  // A move writes only its anchor's order field, as the update, put or write the type takes.
+  // A move writes only its anchor's order field, by an update: only minted and derived types hold one (§2.4).
   mutating func move(_ type: TypeDef, _ id: RecordID, _ anchor: OrderAnchor?) throws -> Delta? {
     guard let anchor else { throw CommitError("a move carries an anchor") }
-    let current = try existing(type, id)
-    let values = try placed(type, id, [:], anchor)
-    if type.hasBorn { return try update(type, id, values: values, texts: [:]) }
-    if type.life { return try put(type, id, present: current.lattice.life?.isAlive == true, values: values, texts: [:]) }
-    return try write(type, id, values: values, texts: [:])
+    return try update(type, id, values: try placed(type, id, [:], anchor), texts: [:])
   }
 
   // The values with the anchor's order field at D-25's drop position: the anchor is looked up in drawn, then in

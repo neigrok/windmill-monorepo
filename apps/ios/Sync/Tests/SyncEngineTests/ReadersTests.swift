@@ -113,6 +113,29 @@ struct ReadersTests {
     #expect(try rig.engine.read(Rig.scope) { try $0.device("rack") } == nil)
   }
 
+  // §9.1: a device row is found only by its key's bytes, never by a canonically equivalent look-alike.
+  @Test func aDeviceRowIsReadByItsKeysBytes() throws {
+    let notes = try Registry(json: JSON(parsing: """
+      {"registry": "notes", "version": 1, "minVersion": 1, "types": [], "commands": [],
+       "products": {"notes": {"surfaces": ["ios"], "device": {"draft": {"keyPattern": "^draft:.+$"}}}}}
+      """))
+    let rig = try Rig(registry: notes)
+    let scope = ScopeRef.product("notes")
+    try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "draft:\u{E9}", value: 1)]), in: scope)
+    #expect(try ["draft:\u{E9}", "draft:e\u{301}"].map { key in try rig.engine.read(scope) { try $0.device(key) } } == [1, nil])
+  }
+
+  // §9.1, D-4: a reference the wire cannot carry, such as a tree id with a look-alike of an ASCII letter, names no scope:
+  // it is neither read nor written, so no look-alike of a tree reaches the store.
+  @Test func aScopeTheWireCannotCarryIsNeitherReadNorWritten() throws {
+    let rig = try Rig()
+    let before = try rig.store.read { try $0.device(rows: true).json }
+    let tree = ScopeRef.tree("t\u{E9}")
+    #expect(throws: EngineError.notAScope(tree)) { try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))])) }
+    #expect(throws: EngineError.notAScope(tree)) { try rig.engine.read(tree) { try $0.drawn("tag") } }
+    #expect(try rig.store.read { try $0.device(rows: true).json } == before)
+  }
+
   // §7.9: true for a scope the replica does not pull (an anon replica pulls no product scope), else once booted.
   @Test func theFirstPullIsCompleteForAScopeTheReplicaDoesNotPull() throws {
     #expect(try Rig().engine.read(Rig.scope) { try $0.firstPullComplete() })

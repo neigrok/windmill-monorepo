@@ -57,15 +57,16 @@ struct SenderTests {
     #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 acked 2", "g1/2 acked 3"])
   }
 
-  // §7.7 step 1: the sample says the device runs 10 minutes ahead; the entry takes a fresh stamp on the server's time
-  // and goes again under the next number, with no notice.
-  @Test func aClockSkewRefusalRestampsTheEntryAndSendsItAgain() async throws {
+  // §7.7 step 1: the sample says the device runs 10 minutes ahead; the entry takes a fresh stamp on the server's time,
+  // and after a backoff goes again under the next number, with no notice.
+  @Test func aClockSkewRefusalRestampsTheEntryAndSendsItAgainAfterABackoff() async throws {
     let rig = try Rig(account: "A")
     rig.clock.skew(ms: 600_000)
+    rig.random.queue(raw: .max, count: 1)
     let receipt = try rig.commit(Self.card1)
     #expect(receipt.stamp.ms == Rig.startMs + 600_000)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "clock-skew")], serverTime: Rig.startMs))
-    #expect(await rig.engine.sender.step() == .again)
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
     #expect(try rig.outbox() == ["g1/0 ready"])
     #expect(try rig.meta().serverOffsetMs == -600_000)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(2, seq: 1)]))
@@ -75,6 +76,38 @@ struct SenderTests {
     #expect(Set(rig.transport.pushes[0].intents[0].deltas.flatMap(\.lattice.stamps)) == [receipt.stamp])
     #expect(Set(rig.transport.pushes[1].intents[0].deltas.flatMap(\.lattice.stamps)) == [restamped])
     #expect(try rig.active().notices.isEmpty)
+  }
+
+  // §7.4: `k` resets on any result but clock-skew, so recoveries in a row back off longer each time, and the next other
+  // result starts the backoff over: the dropped push after it backs off from 1 s again.
+  @Test func clockSkewRecoveriesInARowBackOffLongerUntilAnotherResult() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 4)
+    try rig.commit(Self.card1)
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
+    for n in stride(from: Int64(1), through: 5, by: 2) {
+      rig.transport.willAnswerPush(200, Rig.ok(lastN: n + 1, [Rig.refused(n, "clock-skew"), Rig.refused(n + 1, "clock-skew")]))
+    }
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 7, [Rig.admitted(7, seq: 1)]))
+    rig.transport.willDropPush()
+    var sleeps: [SenderStep] = []
+    for _ in 0..<5 { sleeps.append(await rig.engine.sender.step()) }
+    #expect(sleeps == [.backoff(ms: 1_000), .backoff(ms: 2_000), .backoff(ms: 4_000), .again, .backoff(ms: 1_000)])
+    #expect(Self.numbers(rig.transport) == [[1, 2], [3, 4], [5, 6], [7, 8], [8]])
+    #expect(try rig.outbox() == ["g1/0 acked 7", "g2/0 sent 8"])
+  }
+
+  // A server out of admission budget asks for a retry at once; beside a clock-skew recovery the sender still backs off.
+  @Test func aRetryBesideAClockSkewRecoveryWaitsNoLessThanTheBackoff() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.three)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "clock-skew")], retry: ["n": 2, "retryAfterMs": 0]))
+    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
+    #expect(try rig.outbox() == ["g1/0 ready", "g1/1 ready", "g1/2 ready"])
+    rig.engine.foreground()
+    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
+    #expect(rig.transport.pushes.count == 1)
   }
 
   @Test func anEpochChangeInAnAnswerReturnsOtherEpochsAcksAndReidentifies() async throws {

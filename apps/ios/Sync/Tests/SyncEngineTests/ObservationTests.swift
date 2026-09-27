@@ -185,4 +185,31 @@ struct ObservationTests {
     #expect([await first.next(), await first.next()] == expected)
     #expect([await second.next(), await second.next()] == expected)
   }
+
+  // §9.1: identifiers are the same only byte for byte, so look-alikes ("\u{E9}" and "e\u{301}") are never one view,
+  // one offer or one account.
+  @Test func lookAlikeProductsNeverShareANoticesView() throws {
+    let rig = try Rig()
+    let views = ["\u{E9}", "e\u{301}"].map { rig.engine.notices($0) }
+    #expect(views.map { JSON.string($0.product) } == ["\u{E9}", "e\u{301}"])
+  }
+
+  @Test func lookAlikeHeldGesturesAreOfferedApart() throws {
+    let rig = try Rig()
+    let replica = try rig.meta().replica
+    let stamp = try Stamp("1:0:r_aaaaaaaaaaaa")
+    let held = ["g\u{E9}", "ge\u{301}"].enumerated().map { order, gesture in
+      StoreWrite.replica(replica, .putEntry(OutboxEntry(
+        localId: "\(gesture)/0", gestureId: gesture, lineage: "anon", scope: Rig.scope, state: .held, commitOrder: Int64(order + 1),
+        releaseAt: Rig.startMs + Constants.holdMs, stamp: stamp, intent: Intent(scope: Rig.scope, gestureId: gesture))))
+    }
+    _ = try rig.store.write(.commit) { _ in Planned((), ReplicaBatch(writes: held)) }
+    #expect(rig.engine.undoOffers.offers.map { JSON.string($0.id) } == ["g\u{E9}", "ge\u{301}"])
+  }
+
+  @Test func theStatusShowsALookAlikeAccountAsAnother() {
+    let status = SyncStatus(SyncStatus.Snapshot(account: "\u{E9}"))
+    status.apply(SyncStatus.Snapshot(account: "e\u{301}"))
+    #expect(status.account.map(JSON.string) == "e\u{301}")
+  }
 }

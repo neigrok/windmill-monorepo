@@ -1,4 +1,4 @@
-// §9.1 the records the wire carries: ids and keys, scope references, rows, deltas, guards, commands and intents.
+// §9.1 the wire's records, the same only byte for byte: ids and keys, scopes, rows, deltas, guards, commands and intents.
 
 // MARK: - Record ids
 
@@ -90,7 +90,7 @@ public struct RecordKey: Sendable, Hashable, Comparable, CustomStringConvertible
 
 // D-4 wire references: `self/<product>`, `self/overlay/<T>`, `tree/<T>`, and the client-only `device/<product>`.
 public struct ScopeRef: Sendable, Hashable, Comparable, CustomStringConvertible {
-  public enum Kind: Sendable, Hashable {
+  public enum Kind: Sendable {
     case product(String)
     case tree(String)
     case overlay(String)
@@ -144,13 +144,16 @@ public struct ScopeRef: Sendable, Hashable, Comparable, CustomStringConvertible 
   public var description: String { text }
   public var json: JSON { .string(text) }
 
+  public static func == (lhs: ScopeRef, rhs: ScopeRef) -> Bool { lhs.text.utf8.elementsEqual(rhs.text.utf8) }
+  public func hash(into hasher: inout Hasher) { hasher.combine(Array(text.utf8)) }
   public static func < (lhs: ScopeRef, rhs: ScopeRef) -> Bool { lhs.text.utf8.lexicographicallyPrecedes(rhs.text.utf8) }
 }
 
 extension Registry {
-  // The registry scope kind a reference names; nil for a device scope or an undeclared product.
+  // The registry scope kind a reference names; nil for a device scope, an undeclared product, or text the wire cannot carry.
   public func scopeKind(of scope: ScopeRef) -> ScopeKind? {
-    switch scope.kind {
+    guard (try? ScopeRef(scope.text)) != nil else { return nil }
+    return switch scope.kind {
     case .product(let name): product(name) == nil ? nil : .product(name)
     case .tree: .tree
     case .overlay: .overlay
@@ -242,9 +245,12 @@ public struct TextState: Sendable, Hashable {
   }
 
   public var json: JSON { ["text": .string(text), "rev": JSON(rev), "merged": .bool(merged)] }
+
+  public static func == (lhs: TextState, rhs: TextState) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
-// A §9.1 row as a page carries it; a thin dead row has no rc and ru. `json` is the form the digest hashes.
+// A §9.1 row as a page carries it; a thin dead row has no rc and ru. `json` is the form the digest hashes and rows compare by.
 public struct Row: Sendable, Hashable {
   public var key: RecordKey
   public var lattice: Lattice
@@ -296,6 +302,9 @@ public struct Row: Sendable, Hashable {
 
   // Every stamp the row carries: its life's, its born, and each lattice register's.
   public var stamps: [Stamp] { lattice.stamps }
+
+  public static func == (lhs: Row, rhs: Row) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // MARK: - Deltas, guards, commands and intents
@@ -319,6 +328,9 @@ public enum TextBase: Sendable, Hashable {
     case .text(let text): ["text": .string(text)]
     }
   }
+
+  public static func == (lhs: TextBase, rhs: TextBase) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // §6.11 a text write: the new text, and the base it was edited from.
@@ -336,6 +348,9 @@ public struct TextWrite: Sendable, Hashable {
   }
 
   public var json: JSON { ["text": .string(text), "base": base.json] }
+
+  public static func == (lhs: TextWrite, rhs: TextWrite) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // D-12 a partial record state: its lattice part, stamped, and its text writes.
@@ -374,6 +389,9 @@ public struct Delta: Sendable, Hashable {
   }
 
   public var removes: Bool { lattice.life?.state == .dead }
+
+  public static func == (lhs: Delta, rhs: Delta) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // D-19 a guard: the register `(t, id, field)` holds `stamp`, or is unset when `stamp` is nil.
@@ -400,6 +418,9 @@ public struct Guard: Sendable, Hashable {
   public var json: JSON {
     ["t": .string(key.type), "id": key.id.json, "field": .string(field), "stamp": stamp?.json ?? .null]
   }
+
+  public static func == (lhs: Guard, rhs: Guard) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // D-20 a named server function and its arguments.
@@ -417,6 +438,9 @@ public struct Command: Sendable, Hashable {
   }
 
   public var json: JSON { ["name": .string(name), "args": args] }
+
+  public static func == (lhs: Command, rhs: Command) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // D-13 the unit of admission; `n` is set once the sender numbers it (§7.4).
@@ -461,6 +485,9 @@ public struct Intent: Sendable, Hashable {
 
   // §6.2 digest(intent) = sha256(jcs(intent)), as 64 lowercase hex characters.
   public var digest: String { SHA256Hex.of(json.jcs) }
+
+  public static func == (lhs: Intent, rhs: Intent) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 // MARK: - Cursors
@@ -518,6 +545,9 @@ public struct Cursor: Sendable, Hashable {
 
   // Live without a key: the cursor is at a whole seq (§7.5 steps 3 and 4).
   public var isLiveAtSeq: Bool { mode == .live && key == nil }
+
+  public static func == (lhs: Cursor, rhs: Cursor) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }
 
 enum Base64URL {

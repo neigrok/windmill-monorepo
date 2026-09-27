@@ -14,18 +14,19 @@ public struct LoadedReplica: Sendable {
   public private(set) var spent: [ScopeRef: [RecordKey: SpentID]]
   public private(set) var cursors: [ScopeRef: CursorRecord]
   public private(set) var known: [ScopeRef: KnownKind]
-  public private(set) var notices: [Notice]
-  public private(set) var deviceRows: [String: [String: JSON]]
+  private(set) var loadedNotices: [Notice]?
+  public private(set) var deviceRows: [String: JSON.Object]
   public private(set) var writes: [StoreWrite] = []
   public private(set) var events: [EngineEvent] = []
   public private(set) var change = StoreChange()
   // Every scope's rows were loaded, so a scope absent from `confirmed` holds none; otherwise reading it traps.
   public private(set) var wholeScopes: Bool
 
-  // The outbox, cursors, known scopes and staging digests are always loaded whole; rows and notices as a planner needs.
+  // The outbox, cursors, known scopes and staging digests are always loaded whole; rows and notices as a planner needs,
+  // `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
   public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
-              known: [ScopeRef: KnownKind] = [:], notices: [Notice] = [], deviceRows: [String: [String: JSON]] = [:],
+              known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
               wholeScopes: Bool) {
     self.meta = meta
     self.outbox = outbox.sorted { $0.commitOrder < $1.commitOrder }
@@ -34,7 +35,7 @@ public struct LoadedReplica: Sendable {
     self.spent = spent
     self.cursors = cursors
     self.known = known
-    self.notices = notices
+    loadedNotices = notices
     self.deviceRows = deviceRows
     self.wholeScopes = wholeScopes
   }
@@ -53,7 +54,7 @@ public struct LoadedReplica: Sendable {
   }
 
   public func entry(_ localId: String) -> OutboxEntry? {
-    outbox.first { $0.localId == localId }
+    outbox.first { $0.localId.utf8.elementsEqual(localId.utf8) }
   }
 
   public func rows(_ scope: ScopeRef) -> Rows {
@@ -66,6 +67,12 @@ public struct LoadedReplica: Sendable {
     if let ids = spent[scope] { return ids }
     precondition(wholeScopes, "the spent ids of \(scope) were read but not loaded")
     return [:]
+  }
+
+  // Reading notices a load did not cover is a loader bug, and traps.
+  public var notices: [Notice] {
+    guard let loadedNotices else { preconditionFailure("the notices of \(meta.replica) were read but not loaded") }
+    return loadedNotices
   }
 
   public func cursor(_ scope: ScopeRef) -> CursorRecord? {
@@ -83,13 +90,13 @@ public struct LoadedReplica: Sendable {
     note(write)
     switch write {
     case .meta(let meta):
-      precondition(meta.replica == self.meta.replica, "a replica's id changes only by a rename")
+      precondition(meta.replica.utf8.elementsEqual(self.meta.replica.utf8), "a replica's id changes only by a rename")
       self.meta = meta
     case .rename(let id): meta.replica = id
     case .putEntry(let entry):
-      outbox.removeAll { $0.localId == entry.localId }
+      outbox.removeAll { $0.localId.utf8.elementsEqual(entry.localId.utf8) }
       outbox.insert(entry, at: outbox.firstIndex { $0.commitOrder > entry.commitOrder } ?? outbox.endIndex)
-    case .deleteEntry(let localId): outbox.removeAll { $0.localId == localId }
+    case .deleteEntry(let localId): outbox.removeAll { $0.localId.utf8.elementsEqual(localId.utf8) }
     case .putRow(let scope, let row):
       var rows = rows(scope)
       rows.put(row)
@@ -121,10 +128,13 @@ public struct LoadedReplica: Sendable {
     case .putKnown(let scope, let kind): known[scope] = kind
     case .deleteKnown(let scope): known[scope] = nil
     case .putNotice(let notice):
-      notices.removeAll { $0.id == notice.id }
-      notices.append(notice)
-    case .deleteNotice(let id): notices.removeAll { $0.id == id }
-    case .putDeviceRow(let product, let key, let value): deviceRows[product, default: [:]][key] = value
+      if let index = loadedNotices?.firstIndex(where: { $0.id.utf8.elementsEqual(notice.id.utf8) }) {
+        loadedNotices?[index] = notice
+      } else {
+        loadedNotices?.append(notice)
+      }
+    case .deleteNotice(let id): loadedNotices?.removeAll { $0.id.utf8.elementsEqual(id.utf8) }
+    case .putDeviceRow(let product, let key, let value): deviceRows[product, default: JSON.Object()][key] = value
     case .deleteDeviceRow(let product, let key): deviceRows[product]?[key] = nil
     case .deleteDeviceRows(let product): deviceRows[product] = nil
     case .purgeCaches:
@@ -230,7 +240,7 @@ public struct LoadedDevice: Sendable {
   }
 
   public func replica(_ id: String) -> LoadedReplica? {
-    replicas.first { $0.id == id }
+    replicas.first { $0.id.utf8.elementsEqual(id.utf8) }
   }
 
   public var activeReplica: LoadedReplica {
@@ -241,21 +251,21 @@ public struct LoadedDevice: Sendable {
   public var anon: LoadedReplica? { replicas.first { $0.meta.state == .anon } }
 
   public func dormant(of account: String) -> LoadedReplica? {
-    replicas.first { $0.meta.state == .dormant && $0.meta.account == account }
+    replicas.first { $0.meta.state == .dormant && $0.meta.account?.utf8.elementsEqual(account.utf8) == true }
   }
 
   // Runs a replica planner on one replica; its writes and events join the device's in order. A re-identify inside
   // it keeps the device's active replica pointing at it.
   @discardableResult
   public mutating func modify<T>(_ id: String, _ body: (inout LoadedReplica) throws -> T) rethrows -> T {
-    guard let index = replicas.firstIndex(where: { $0.id == id }) else { preconditionFailure("no replica \(id)") }
+    guard let index = replicas.firstIndex(where: { $0.id.utf8.elementsEqual(id.utf8) }) else { preconditionFailure("no replica \(id)") }
     defer {
       let batch = replicas[index].drain()
       writes += batch.writes
       events += batch.events
       change.merge(batch.change)
       let renamed = replicas[index].id
-      if active == id && renamed != id { setMeta(meta, active: renamed) }
+      if active.utf8.elementsEqual(id.utf8) && !renamed.utf8.elementsEqual(id.utf8) { setMeta(meta, active: renamed) }
     }
     return try body(&replicas[index])
   }
@@ -263,7 +273,7 @@ public struct LoadedDevice: Sendable {
   public var batch: ReplicaBatch { ReplicaBatch(writes: writes, events: events, change: change) }
 
   public mutating func setMeta(_ meta: DeviceMeta, active: String) {
-    guard meta != self.meta || active != self.active else { return }
+    guard meta != self.meta || !active.utf8.elementsEqual(self.active.utf8) else { return }
     self.meta = meta
     self.active = active
     writes.append(.device(meta, active: active))
@@ -278,7 +288,7 @@ public struct LoadedDevice: Sendable {
 
   public mutating func remove(_ id: String) {
     writes.append(.deleteReplica(id))
-    replicas.removeAll { $0.id == id }
+    replicas.removeAll { $0.id.utf8.elementsEqual(id.utf8) }
     change.replicas = true
   }
 
@@ -315,7 +325,7 @@ extension LoadedReplica {
         return (scope, known)
       }),
       notices: try object["notices"]?.asArray().map { try Notice(json: $0, registry: registry) } ?? [],
-      deviceRows: try JSON.map(object["device"]) { try JSON.map($0) { $0 } },
+      deviceRows: try JSON.map(object["device"]) { try $0.asObject() },
       wholeScopes: true)
   }
 
@@ -332,7 +342,7 @@ extension LoadedReplica {
     object["known"] = byScope(known.mapValues { .string($0.rawValue) })
     object["outbox"] = outbox.isEmpty ? nil : .array(outbox.map(\.json))
     object["notices"] = notices.isEmpty ? nil : .array(notices.map(\.storedJSON))
-    let device = deviceRows.compactMapValues { $0.isEmpty ? nil : JSON.object(from: $0) { $0 } }
+    let device = deviceRows.compactMapValues { $0.isEmpty ? nil : JSON.object($0) }
     object["device"] = JSON.object(from: device) { $0 }
     return .object(object)
   }

@@ -54,6 +54,12 @@ struct LatticeTests {
     }
   }
 
+  @Test func latticePartsOfLookAlikeFieldsAreDifferent() throws {
+    let register = Register("gold", try Stamp("4:0:a"))
+    let parts = [Lattice(fields: ["\u{212A}": register]), Lattice(fields: ["K": register])]
+    #expect(Set(parts).count == 2)
+  }
+
   func checkLaws<Value: Equatable>(
     _ join: (Value?, Value?) throws -> Value?, _ a: Value?, _ b: Value?, _ c: Value?, seed: UInt64
   ) throws {

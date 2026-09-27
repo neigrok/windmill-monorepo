@@ -44,17 +44,17 @@ extension Store {
   }
 
   public func release(_ localId: String) throws -> Written<Bool> {
-    try onActive(.release) { replica in try planners.hold.release(localId, in: &replica) }
+    try onActive(.release, releasing: true) { replica in try planners.hold.release(localId, in: &replica) }
   }
 
   // The release timer: every held entry whose `releaseAt` has come.
   public func releaseDue(at deviceNow: Int64) throws -> Written<Void> {
-    try onActive(.release) { replica in try planners.hold.releaseDue(at: deviceNow, in: &replica) }
+    try onActive(.release, releasing: true) { replica in try planners.hold.releaseDue(at: deviceNow, in: &replica) }
   }
 
   // Leaving the app, and sign-out's first step: every held entry released.
   public func releaseAll() throws -> Written<Void> {
-    try onActive(.release) { replica in try planners.hold.releaseAll(in: &replica) }
+    try onActive(.release, releasing: true) { replica in try planners.hold.releaseAll(in: &replica) }
   }
 
   // §7.3 and §7.11 at engine start: holds released, a new actor, and the fork guard checked.
@@ -84,7 +84,7 @@ extension Store {
   public func apply(_ step: PushStep, replica id: String, instance: inout Instance, timing: Timing,
                     identities: IdentitySource) throws -> Written<String?> {
     try write(step.transaction) { tx in
-      guard var replica = try tx.replica(id) else { return Planned(nil, ReplicaBatch()) }
+      guard var replica = try tx.replica(id, notices: step.readsNotices) else { return Planned(nil, ReplicaBatch()) }
       try planners.pushes.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
       return Planned(replica.id, replica.batch)
     }
@@ -180,19 +180,22 @@ extension Store {
     return replica
   }
 
-  // A planner over the active replica, which reads no rows.
-  func onActive<Value>(_ tx: TxName, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
+  // A planner over the active replica, which reads no rows, or, when it may release held entries, the rows their
+  // coalescing reads.
+  func onActive<Value>(_ tx: TxName, releasing: Bool = false, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      var replica = try loaded(try transaction.activeReplica(), in: transaction)
+      let active = try transaction.activeReplica()
+      let reads = releasing ? planners.hold.reads(releasing: try transaction.outbox(of: active)) : [:]
+      var replica = try loaded(active, in: transaction, reads: reads)
       let value = try plan(&replica)
       return Planned(value, replica.batch)
     }
   }
 
-  // A planner over every replica of the device, which reads no rows.
+  // A planner over every replica of the device, which may release their held entries: the rows their coalescing reads.
   func onDevice<Value>(_ tx: TxName, _ plan: (inout LoadedDevice) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      var device = try transaction.device()
+      var device = try transaction.device(reads: planners.hold.reads(releasing:))
       let value = try plan(&device)
       return Planned(value, device.batch)
     }

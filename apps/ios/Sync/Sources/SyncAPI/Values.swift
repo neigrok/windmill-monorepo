@@ -1,6 +1,6 @@
 import SyncCore
 
-// The values a product domain or the domain kit names when it writes and reads through the engine (§7.1, §7.6).
+// The values a product domain or the domain kit names through the engine (§7.1, §7.6), the same only byte for byte.
 
 public struct RecordRef: Hashable, Sendable {
   public let type: String
@@ -12,6 +12,9 @@ public struct RecordRef: Hashable, Sendable {
   }
 
   public var key: RecordKey { RecordKey(type, id) }
+
+  public static func == (lhs: RecordRef, rhs: RecordRef) -> Bool { lhs.key == rhs.key }
+  public func hash(into hasher: inout Hasher) { hasher.combine(key) }
 }
 
 // A lattice register of one record: the unit a guard names (D-19).
@@ -27,6 +30,15 @@ public struct RegisterRef: Hashable, Sendable {
   }
 
   public var key: RecordKey { RecordKey(type, id) }
+
+  public static func == (lhs: RegisterRef, rhs: RegisterRef) -> Bool {
+    lhs.key == rhs.key && lhs.field.utf8.elementsEqual(rhs.field.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(key)
+    hasher.combine(Array(field.utf8))
+  }
 }
 
 // D-25 where a member is placed: its order field, and the record just above the drop point (nil: the top).
@@ -38,6 +50,15 @@ public struct OrderAnchor: Hashable, Sendable {
     self.field = field
     self.below = below
   }
+
+  public static func == (lhs: OrderAnchor, rhs: OrderAnchor) -> Bool {
+    lhs.field.utf8.elementsEqual(rhs.field.utf8) && lhs.below == rhs.below
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(field.utf8))
+    hasher.combine(below)
+  }
 }
 
 // How a create names its record (D-8, D-26); every kind but `given` is resolved inside the commit.
@@ -46,6 +67,27 @@ public enum NewID: Hashable, Sendable {
   case seeded(seed: String, ordinal: Int)
   case derived(label: String)
   case given(RecordID)
+
+  public static func == (lhs: NewID, rhs: NewID) -> Bool {
+    switch (lhs, rhs) {
+    case (.minted, .minted): true
+    case (.seeded(let a, let m), .seeded(let b, let n)): a.utf8.elementsEqual(b.utf8) && m == n
+    case (.derived(let a), .derived(let b)): a.utf8.elementsEqual(b.utf8)
+    case (.given(let a), .given(let b)): a == b
+    default: false
+    }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    switch self {
+    case .minted: hasher.combine(0)
+    case .seeded(let seed, let ordinal):
+      hasher.combine(Array(seed.utf8))
+      hasher.combine(ordinal)
+    case .derived(let label): hasher.combine(Array(label.utf8))
+    case .given(let id): hasher.combine(id)
+    }
+  }
 }
 
 // A text change and the text it was edited from; nil means the text drawn when the commit reads it (§7.1 step 4).
@@ -56,6 +98,15 @@ public struct TextEdit: Hashable, Sendable {
   public init(text: String, editedFrom: String? = nil) {
     self.text = text
     self.editedFrom = editedFrom
+  }
+
+  public static func == (lhs: TextEdit, rhs: TextEdit) -> Bool {
+    lhs.text.utf8.elementsEqual(rhs.text.utf8) && lhs.editedFrom.map { Array($0.utf8) } == rhs.editedFrom.map { Array($0.utf8) }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(text.utf8))
+    hasher.combine(editedFrom.map { Array($0.utf8) })
   }
 }
 
@@ -128,6 +179,19 @@ public struct Change: Hashable, Sendable {
     case .create: nil
     }
   }
+
+  public static func == (lhs: Change, rhs: Change) -> Bool {
+    lhs.type.utf8.elementsEqual(rhs.type.utf8) && lhs.operation == rhs.operation && lhs.values == rhs.values
+      && lhs.texts == rhs.texts && lhs.anchor == rhs.anchor
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(type.utf8))
+    hasher.combine(operation)
+    hasher.combine(values)
+    hasher.combine(texts)
+    hasher.combine(anchor)
+  }
 }
 
 // A row of `device/<product>`, written with the gesture and never sent; nil deletes it.
@@ -138,6 +202,15 @@ public struct DeviceWrite: Hashable, Sendable {
   public init(key: String, value: JSON?) {
     self.key = key
     self.value = value
+  }
+
+  public static func == (lhs: DeviceWrite, rhs: DeviceWrite) -> Bool {
+    lhs.key.utf8.elementsEqual(rhs.key.utf8) && lhs.value == rhs.value
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(key.utf8))
+    hasher.combine(value)
   }
 }
 
@@ -168,6 +241,24 @@ public struct Gesture: Hashable, Sendable {
     self.local = local
     self.gestureId = gestureId
   }
+
+  public static func == (lhs: Gesture, rhs: Gesture) -> Bool {
+    lhs.changes == rhs.changes && lhs.atomic == rhs.atomic && lhs.hold == rhs.hold && lhs.guards == rhs.guards
+      && lhs.retire == rhs.retire && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.local == rhs.local
+      && lhs.gestureId.map { Array($0.utf8) } == rhs.gestureId.map { Array($0.utf8) }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(changes)
+    hasher.combine(atomic)
+    hasher.combine(hold)
+    hasher.combine(guards)
+    hasher.combine(retire)
+    hasher.combine(command)
+    hasher.combine(predict)
+    hasher.combine(local)
+    hasher.combine(gestureId.map { Array($0.utf8) })
+  }
 }
 
 public enum CommitOutcome: Hashable, Sendable {
@@ -193,6 +284,21 @@ public struct CommitReceipt: Hashable, Sendable {
     self.releaseAt = releaseAt
     self.retired = retired
   }
+
+  public static func == (lhs: CommitReceipt, rhs: CommitReceipt) -> Bool {
+    lhs.gestureId.utf8.elementsEqual(rhs.gestureId.utf8) && lhs.stamp == rhs.stamp
+      && lhs.localIds.map { Array($0.utf8) } == rhs.localIds.map { Array($0.utf8) } && lhs.ids == rhs.ids
+      && lhs.releaseAt == rhs.releaseAt && lhs.retired.map { Array($0.utf8) } == rhs.retired.map { Array($0.utf8) }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(gestureId.utf8))
+    hasher.combine(stamp)
+    hasher.combine(localIds.map { Array($0.utf8) })
+    hasher.combine(ids)
+    hasher.combine(releaseAt)
+    hasher.combine(retired.map { Array($0.utf8) })
+  }
 }
 
 // MARK: - Reading
@@ -210,6 +316,16 @@ public struct TextValue: Hashable, Sendable {
     self.text = text
     self.merged = merged
     self.pending = pending
+  }
+
+  public static func == (lhs: TextValue, rhs: TextValue) -> Bool {
+    lhs.text.utf8.elementsEqual(rhs.text.utf8) && lhs.merged == rhs.merged && lhs.pending == rhs.pending
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(text.utf8))
+    hasher.combine(merged)
+    hasher.combine(pending)
   }
 }
 
@@ -242,6 +358,27 @@ public struct Record: Hashable, Sendable {
     self.isVisible = isVisible
     self.isPending = isPending
     self.isHeld = isHeld
+  }
+
+  public static func == (lhs: Record, rhs: Record) -> Bool {
+    lhs.type.utf8.elementsEqual(rhs.type.utf8) && lhs.id == rhs.id && lhs.life == rhs.life && lhs.born == rhs.born
+      && lhs.values == rhs.values && lhs.texts == rhs.texts && lhs.serials == rhs.serials && lhs.rc == rhs.rc && lhs.ru == rhs.ru
+      && lhs.isVisible == rhs.isVisible && lhs.isPending == rhs.isPending && lhs.isHeld == rhs.isHeld
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(type.utf8))
+    hasher.combine(id)
+    hasher.combine(life)
+    hasher.combine(born)
+    hasher.combine(values)
+    hasher.combine(texts)
+    hasher.combine(serials)
+    hasher.combine(rc)
+    hasher.combine(ru)
+    hasher.combine(isVisible)
+    hasher.combine(isPending)
+    hasher.combine(isHeld)
   }
 }
 
@@ -280,6 +417,21 @@ public struct Notice: Hashable, Sendable, Identifiable {
     self.content = content
     self.at = at
   }
+
+  public static func == (lhs: Notice, rhs: Notice) -> Bool {
+    lhs.id.utf8.elementsEqual(rhs.id.utf8) && lhs.product.utf8.elementsEqual(rhs.product.utf8) && lhs.scope == rhs.scope
+      && lhs.code == rhs.code && lhs.detail == rhs.detail && lhs.content == rhs.content && lhs.at == rhs.at
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(id.utf8))
+    hasher.combine(Array(product.utf8))
+    hasher.combine(scope)
+    hasher.combine(code)
+    hasher.combine(detail)
+    hasher.combine(content)
+    hasher.combine(at)
+  }
 }
 
 // A held gesture that Undo can still remove, until `releaseAt` (device ms, §7.3).
@@ -292,5 +444,15 @@ public struct UndoOffer: Hashable, Sendable, Identifiable {
     self.id = id
     self.scope = scope
     self.releaseAt = releaseAt
+  }
+
+  public static func == (lhs: UndoOffer, rhs: UndoOffer) -> Bool {
+    lhs.id.utf8.elementsEqual(rhs.id.utf8) && lhs.scope == rhs.scope && lhs.releaseAt == rhs.releaseAt
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(id.utf8))
+    hasher.combine(scope)
+    hasher.combine(releaseAt)
   }
 }

@@ -245,6 +245,10 @@ public struct TypeDef: Sendable {
     guard fields.filter(\.parent).count <= 1 else { throw RegistryError("at most one field is the parent") }
     for name in visibleWhen ?? [] where field(name) == nil { throw RegistryError("visibleWhen names the unknown field \(name)") }
     for field in fields {
+      guard case .fracKey? = field.domain?.shape, !hasBorn else { continue }
+      throw RegistryError("field \(field.name): an order field belongs to a minted or derived type")
+    }
+    for field in fields {
       guard case .serial(let next) = field.kind else { continue }
       for name in next where self.field(name) == nil {
         throw RegistryError("field \(field.name): serialNext names the unknown field \(name)")
@@ -324,6 +328,9 @@ public enum ScopeKind: Sendable, Hashable, CustomStringConvertible {
     case .overlay: "overlay"
     }
   }
+
+  public static func == (lhs: ScopeKind, rhs: ScopeKind) -> Bool { lhs.description.utf8.elementsEqual(rhs.description.utf8) }
+  public func hash(into hasher: inout Hasher) { hasher.combine(Array(description.utf8)) }
 }
 
 public enum IdentityClass: String, Sendable, CaseIterable {
@@ -403,6 +410,17 @@ public struct Mint: Sendable, Hashable {
     alphabet = try object.member("alphabet").asString()
     length = Int(try object.member("length").asInteger(atLeast: 1))
     guard alphabet.unicodeScalars.count >= 2 else { throw RegistryError("a mint alphabet has at least two characters") }
+  }
+
+  public static func == (lhs: Mint, rhs: Mint) -> Bool {
+    lhs.prefix.utf8.elementsEqual(rhs.prefix.utf8) && lhs.alphabet.utf8.elementsEqual(rhs.alphabet.utf8)
+      && lhs.length == rhs.length
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(prefix.utf8))
+    hasher.combine(Array(alphabet.utf8))
+    hasher.combine(length)
   }
 }
 
@@ -796,6 +814,12 @@ public enum ArgumentType: Sendable, Hashable, CustomStringConvertible {
     case .ref(let type): "ref<\(type)>"
     }
   }
+
+  public static func == (lhs: ArgumentType, rhs: ArgumentType) -> Bool {
+    lhs.description.utf8.elementsEqual(rhs.description.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) { hasher.combine(Array(description.utf8)) }
 }
 
 // MARK: - Patterns and names

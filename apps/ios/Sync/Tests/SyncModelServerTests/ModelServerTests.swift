@@ -42,6 +42,28 @@ struct ModelServerTests {
     #expect(rebound.json == ["status": 409, "body": ["serverTime": 3_000, "epoch": "ep-1", "error": "replica-foreign"]])
   }
 
+  // §10.2: the wall clock steps back a minute, but `serverNow` does not, so a stamp admitted at the skew bound passes the
+  // check again, a later hello answers the greatest time, and a restore keeps the process's clock.
+  @Test func serverNowNeverStepsBackWithinTheProcess_10_2() throws {
+    var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
+    let bound = 1_000_000 + Constants.maxSkewMs
+    let card = { (n: Int64, id: String) -> JSON in
+      ["replica": "rp_a", "ackThrough": 0, "intents": [
+        ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": .string(id), "born": .string("\(bound):0:r_aaaaaaaaaaaa"),
+                                                    "life": ["alive", .string("\(bound):0:r_aaaaaaaaaaaa")]]]],
+      ]]
+    }
+    let first = server.push(card(1, "card0001"), account: "A", at: 1_000_000)
+    let second = server.push(card(2, "card0002"), account: "A", at: 940_000)
+    server.restore(ServerState(epoch: "ep-2"))
+    let hello = server.hello(account: "A", at: 900_000)
+    #expect(try first.body.member("results") == [["n": 1, "s": "ok", "seq": 1]])
+    #expect(second.json == ["status": 200, "body": ["serverTime": 1_000_000, "epoch": "ep-1", "lastN": 2, "results": [
+      ["n": 2, "s": "ok", "seq": 2],
+    ]]])
+    #expect(try hello.body.member("serverTime") == 1_000_000)
+  }
+
   @Test func faultsAreCountedPerReplicaNAndDigestSoAnotherIntentAtThatNStartsAgain_6_6() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     let intent = { (id: String) -> JSON in

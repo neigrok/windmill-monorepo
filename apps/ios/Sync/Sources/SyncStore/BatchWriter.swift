@@ -84,10 +84,12 @@ struct BatchWriter {
     case .deleteKnown(let scope):
       try db.execute(sql: "DELETE FROM known_scope WHERE replica = ? AND scope = ?", arguments: [replica, scope.text])
     case .putNotice(let notice):
-      try db.execute(sql: "DELETE FROM notice WHERE id = ? AND replica = ?", arguments: [notice.id, replica])
-      try db.execute(sql: "INSERT INTO notice (replica, id, product, scope, code, detail, content, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
-                     arguments: [replica, notice.id, notice.product, notice.scope.text, notice.code.text, notice.detail.map(Blob.of),
-                                 Blob.of(notice.content.json), notice.at])
+      try db.execute(sql: """
+        INSERT INTO notice (replica, id, product, scope, code, detail, content, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+        ON CONFLICT (id) DO UPDATE SET replica = excluded.replica, product = excluded.product, scope = excluded.scope,
+          code = excluded.code, detail = excluded.detail, content = excluded.content, at = excluded.at
+        """, arguments: [replica, notice.id, notice.product, notice.scope.text, notice.code.text, notice.detail.map(Blob.of),
+                         Blob.of(notice.content.json), notice.at])
     case .deleteNotice(let id):
       try db.execute(sql: "DELETE FROM notice WHERE id = ? AND replica = ?", arguments: [id, replica])
     case .putDeviceRow(let product, let key, let value):

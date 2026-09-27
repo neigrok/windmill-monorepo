@@ -2,7 +2,8 @@ import SyncCore
 
 // The server half of the sync engine over in-memory tables: hello (§9.2), push (§6.2) with faults and poison (§6.6),
 // server-origin calls (§6.3), pull (§6.7) with `beforePull`, the live channel (§6.8), and epoch and restore. A value:
-// a copy is a snapshot, and whoever shares one guards it.
+// a copy is a snapshot, and whoever shares one guards it. One value is one server process: every entry point takes the
+// wall clock and reads its `physNow()` once (§10.2).
 
 public struct ModelServer: Sendable {
   public static let transientRetryAfterMs: Int64 = 1_000
@@ -12,6 +13,7 @@ public struct ModelServer: Sendable {
   let admission: Admission
   var live = LiveChannel()
   var scripted: [Refusal] = []
+  var greatestNow = Int64.min
 
   public init(registry: Registry, rules: any ServerRules, state: ServerState, limits: ServerLimits = ServerLimits()) {
     self.registry = registry
@@ -22,9 +24,17 @@ public struct ModelServer: Sendable {
   var limits: ServerLimits { admission.limits }
   var feed: Feed { Feed(registry: registry, limits: limits) }
 
-  // A restore from a backup: the tables as they were, under the new epoch the snapshot carries.
+  // A restore from a backup: the tables as they were, under the new epoch the snapshot carries. The process, and so its
+  // clock, runs on.
   public mutating func restore(_ snapshot: ServerState) {
     state = snapshot
+  }
+
+  // §10.2 the server's physNow(): the wall clock, never below a value it returned in this process, so `serverNow` never
+  // steps back.
+  mutating func physNow(wall: Int64) -> Int64 {
+    greatestNow = max(greatestNow, wall)
+    return greatestNow
   }
 
   // The next `count` replica intents are refused with `code`, stored as step R stores a refusal.
@@ -34,7 +44,8 @@ public struct ModelServer: Sendable {
 
   // MARK: - Hello
 
-  public func hello(account: String?, at serverNow: Int64) -> Reply {
+  public mutating func hello(account: String?, at wall: Int64) -> Reply {
+    let serverNow = physNow(wall: wall)
     var body: JSON.Object = [
       "serverTime": JSON(serverNow), "epoch": .string(state.epoch),
       "schema": JSON(registry.version), "minSchema": JSON(registry.minVersion),
@@ -45,7 +56,8 @@ public struct ModelServer: Sendable {
 
   // MARK: - Push
 
-  public mutating func push(_ body: JSON, account: String?, at serverNow: Int64, faults: PushFaults = PushFaults()) -> Reply {
+  public mutating func push(_ body: JSON, account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
+    let serverNow = physNow(wall: wall)
     guard let account else { return failure(401, "unauthenticated", at: serverNow) }
     guard let request = PushBody(body) else { return failure(400, "malformed", at: serverNow) }
     guard request.intents.count <= limits.pushMaxIntents, body.jcs.count <= limits.pushMaxBytes else {
@@ -140,7 +152,8 @@ public struct ModelServer: Sendable {
 
   // §6.3: a tool call's admits in order, stopping at the first refusal. With a `requestId` the call is deduplicated
   // by `sha256(jcs({tool, args}))`, and each admit stores its result as part k. Nil when the call ended unanswered.
-  public mutating func call(_ call: ServerCall, at serverNow: Int64, faults: CallFaults = CallFaults()) -> JSON? {
+  public mutating func call(_ call: ServerCall, at wall: Int64, faults: CallFaults = CallFaults()) -> JSON? {
+    let serverNow = physNow(wall: wall)
     guard let requestId = call.requestId else {
       var last: AdmitResult?
       for intent in call.intents {
@@ -194,7 +207,8 @@ public struct ModelServer: Sendable {
   // MARK: - Pull
 
   // §6.7: each requested scope runs its `beforePull` commands, then answers one page from the tables as they stand.
-  public mutating func pull(_ body: JSON, account: String?, at serverNow: Int64) -> Reply {
+  public mutating func pull(_ body: JSON, account: String?, at wall: Int64) -> Reply {
+    let serverNow = physNow(wall: wall)
     guard case .object(let object) = body, object.keys == ["scopes"], case .array(let requested)? = object["scopes"],
           requested.count <= limits.pullMaxScopes else { return failure(400, "malformed", at: serverNow) }
     var scopes: [(scope: String, cursor: String?)] = []
