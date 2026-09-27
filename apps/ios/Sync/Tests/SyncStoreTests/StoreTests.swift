@@ -28,7 +28,7 @@ struct StoreTests {
   static func none() throws -> QueuedIdentities { try QueuedIdentities([:]) }
 
   // A bound replica of A holding card0001, confirmed at seq 1 under a live cursor.
-  static func seed() throws -> [StoreWrite] {
+  static func seed() throws -> ReplicaBatch {
     let row = try Row(json: JSON(parsing: """
       {"t":"card","id":"card0001","life":["alive","1000:0:r_aaaaaaaaaaaa"],"born":"1000:0:r_aaaaaaaaaaaa",
        "f":{"title":["One","1000:0:r_aaaaaaaaaaaa"]},"seq":1,"rc":1000,"ru":1000}
@@ -39,7 +39,7 @@ struct StoreTests {
     let device = LoadedDevice(meta: DeviceMeta(forkGuard: "fg-1"), active: "rp_1", replicas: [
       LoadedReplica(meta: meta, confirmed: [scope: Rows([row])], cursors: [scope: cursor], wholeScopes: true),
     ])
-    return Seed.writes(of: device)
+    return ReplicaBatch(building: device)
   }
 
   static func commit(_ name: String, at deviceNow: Int64, _ gesture: Gesture) -> Step {
@@ -94,7 +94,7 @@ struct StoreTests {
     let pull = { (step: PullStep, replica: String) in
       Step(name: "\(step)") { store in
         var instance = at(20_000)
-        _ = try store.apply(step, replica: replica, instance: &instance, timing: .steady(send: 20_000, recv: 20_000),
+        _ = try store.apply(step, replica: replica, subscribed: [scope], instance: &instance, timing: .steady(send: 20_000, recv: 20_000),
                             identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
       }
     }
@@ -130,7 +130,7 @@ struct StoreTests {
       let committed = point % 2 == 1
       try Self.inFreshDirectory { path in
         let seeded = try Store(path: path, registry: Self.probe)
-        _ = try seeded.write(.firstLaunch) { _ in Planned((), ReplicaBatch(writes: try Self.seed())) }
+        _ = try seeded.write(.firstLaunch) { _ in Planned((), try Self.seed()) }
         let killing = try Store(path: path, registry: Self.probe, crashPoints: .killing(at: point))
         for index in 0...step {
           do {
@@ -151,7 +151,7 @@ struct StoreTests {
   // The store's state before the first step and after each one, run without kills.
   static func states(after steps: [Step]) throws -> [JSON] {
     let store = try Store.inMemory(registry: probe)
-    _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(writes: try seed())) }
+    _ = try store.write(.firstLaunch) { _ in Planned((), try seed()) }
     var states = [try store.read { try $0.device(rows: true).json }]
     for step in steps {
       try step.run(store)
@@ -170,7 +170,7 @@ struct StoreTests {
   @Test func aKillBeforeTheCommitRollsTheActionBackAndOneAfterItKeepsIt() throws {
     for (point, kept) in [(CrashPoint.beforeCommit(.commit), false), (.afterCommit(.commit), true)] {
       let store = try Store.inMemory(registry: Self.probe, crashPoints: CrashPoints { if $0 == point { throw Killed() } })
-      _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(writes: try Self.seed())) }
+      _ = try store.write(.firstLaunch) { _ in Planned((), try Self.seed()) }
       #expect(throws: Killed.self) {
         try store.commit(Gesture(changes: [.update("card", "card0001", ["title": "Two"])]), in: Self.scope, instance: Self.at(5000),
                          identities: try QueuedIdentities([:]))

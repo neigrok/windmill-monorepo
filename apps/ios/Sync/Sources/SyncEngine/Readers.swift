@@ -79,7 +79,7 @@ final class TransactionReader: CommitContext {
   func firstPullComplete() throws -> Bool {
     try reading {
       let replica = try load(RowSelection())
-      return ReplicaLifecycle(registry: registry).firstPullComplete(scope, in: replica, subscribed: core.subscriptions(of: meta))
+      return ReplicaLifecycle(registry: registry).firstPullComplete(scope, in: replica, subscribed: Set(core.subscriptions(of: meta)))
     }
   }
 

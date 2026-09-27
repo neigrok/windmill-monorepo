@@ -7,8 +7,10 @@ import Testing
 // One handler per corpus file: it runs a vector's input and answers in the shape of its `expect`.
 
 enum Handlers {
-  static let table: [String: @Sendable (JSON) throws -> JSON] = core.merging(clientSteps) { $1 }.merging(transcripts) { $1 }
-    .merging(ServerHandlers.table) { $1 }
+  typealias Handler = @Sendable (JSON) async throws -> JSON
+
+  static let table: [String: Handler] = core.merging(clientSteps) { $1 }.merging(ServerHandlers.table) { $1 }
+    .mapValues { handler -> Handler in handler }.merging(transcripts) { $1 }
 
   static let core: [String: @Sendable (JSON) throws -> JSON] = [
     "constants.json": { _ in
@@ -192,15 +194,14 @@ enum Handlers {
     return (file, run)
   })
 
-  // protocol/*.jsonl: the client half runs through the planners, the server half through ModelServer.
-  static let transcripts: [String: @Sendable (JSON) throws -> JSON] = Dictionary(uniqueKeysWithValues: try! Corpus.paths()
+  // protocol/*.jsonl: the client half runs through the engine, the server half through ModelServer.
+  static let transcripts: [String: Handler] = Dictionary(uniqueKeysWithValues: try! Corpus.paths()
     .filter { $0.hasPrefix("protocol/") }.map { file in
-      let run: @Sendable (JSON) throws -> JSON = { input in
-        let differences = try Transcripts.clientDifferences(input.asArray(), registry: probe) {
-          PlannedDevice($0, registry: probe, limits: Limits())
-        }
-        #expect(differences == [], "\(file): the client half")
-        #expect(try ServerHandlers.transcriptDifferences(input.asArray()) == [], "\(file): the server half")
+      let run: Handler = { input in
+        let client = try await Transcripts.differences(input.asArray(), registry: probe)
+        let server = try ServerHandlers.transcriptDifferences(input.asArray())
+        #expect(client == [], "\(file): the client half")
+        #expect(server == [], "\(file): the server half")
         return .null
       }
       return (file, run)

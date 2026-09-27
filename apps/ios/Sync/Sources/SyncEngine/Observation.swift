@@ -16,6 +16,7 @@ final class Publisher: Sendable {
     var sequence: UInt64 = 0
     var nextSubscriber = 0
     var subscribers: [Int: AsyncStream<EngineEvent>.Continuation] = [:]
+    var taps: [@Sendable (EngineEvent) -> Void] = []
   }
 
   let changes: AsyncStream<(sequence: UInt64, change: StoreChange)>
@@ -35,8 +36,15 @@ final class Publisher: Sendable {
       }
       for event in events {
         for subscriber in state.subscribers.values { subscriber.yield(event) }
+        for tap in state.taps { tap(event) }
       }
     }
+  }
+
+  // Every event from now on, handed over inside the writer's turn: a step-mode harness sees each one before the step
+  // that published it returns.
+  func tap(_ tap: @escaping @Sendable (EngineEvent) -> Void) {
+    state.withLock { $0.taps.append(tap) }
   }
 
   // The sequence of the last change sent to the views.

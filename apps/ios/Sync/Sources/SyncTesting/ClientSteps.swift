@@ -1,6 +1,8 @@
 import SyncAPI
 import SyncCore
 import SyncReplica
+import SyncStore
+import Synchronization
 
 // The corpus's client-step language (corpus/README.md "Client steps"): a device, queues of identities, and steps whose
 // answers, ended entries and telemetry a vector expects. `ClientDevice` is what the steps drive: the planners over an
@@ -105,7 +107,7 @@ public struct PlannedDevice: ClientDevice {
   }
 
   public mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest {
-    pages.request(scopes, in: device.activeReplica)
+    pages.request(scopes, in: device.activeReplica).request
   }
 
   public mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
@@ -387,63 +389,114 @@ public enum ClientSteps {
 
 // The vector's queues, each consumed in order: replica ids, actors, fork guards and CSPRNG draws; gesture ids count
 // g1, g2, … within the vector.
-public final class QueuedIdentities: IdentitySource {
-  public struct Snapshot {
-    let ids: [String], actors: [String], forkGuards: [String], draws: [Int], gestures: Int
+public final class QueuedIdentities: IdentitySource, Sendable {
+  public struct Snapshot: Sendable {
+    let queues: Queues
+    let gestures: Int
   }
 
   // The g1, g2, … count, which a transcript's devices share.
-  public final class GestureCount {
-    var value = 0
+  public final class GestureCount: Sendable {
+    let value = Mutex(0)
 
     public init() {}
   }
 
-  var ids: [String]
-  var actors: [String]
-  var forkGuards: [String]
-  var draws: [Int]
+  struct Queues: Sendable {
+    var ids: [String]
+    var actors: [String]
+    var forkGuards: [String]
+    var draws: [Int]
+    var lastActor: String?
+  }
+
+  let queues: Mutex<Queues>
   let gestures: GestureCount
 
   // `input`'s queues `ids`, `actors`, `forkGuards` and `draws`, each optional.
   public init(_ input: JSON, gestures: GestureCount = GestureCount()) throws {
-    ids = try input["ids"]?.asArray().map { try $0.asString() } ?? []
-    actors = try input["actors"]?.asArray().map { try $0.asString() } ?? []
-    forkGuards = try input["forkGuards"]?.asArray().map { try $0.asString() } ?? []
-    draws = try input["draws"]?.asArray().map { Int(try $0.asInteger()) } ?? []
+    queues = Mutex(Queues(
+      ids: try input["ids"]?.asArray().map { try $0.asString() } ?? [],
+      actors: try input["actors"]?.asArray().map { try $0.asString() } ?? [],
+      forkGuards: try input["forkGuards"]?.asArray().map { try $0.asString() } ?? [],
+      draws: try input["draws"]?.asArray().map { Int(try $0.asInteger()) } ?? []))
     self.gestures = gestures
   }
 
   public func snapshot() -> Snapshot {
-    Snapshot(ids: ids, actors: actors, forkGuards: forkGuards, draws: draws, gestures: gestures.value)
+    Snapshot(queues: queues.withLock { $0 }, gestures: gestures.value.withLock { $0 })
   }
 
   public func restore(_ snapshot: Snapshot) {
-    ids = snapshot.ids
-    actors = snapshot.actors
-    forkGuards = snapshot.forkGuards
-    draws = snapshot.draws
-    gestures.value = snapshot.gestures
+    queues.withLock { $0 = snapshot.queues }
+    gestures.value.withLock { $0 = snapshot.gestures }
+  }
+
+  // The actor handed out last is handed out again next: a store loaded under a running instance keeps its actor.
+  public func reissueLastActor() {
+    queues.withLock { queues in
+      if let last = queues.lastActor { queues.actors.insert(last, at: 0) }
+    }
   }
 
   public func draw(below bound: Int) throws -> Int {
-    let index = try take(&draws, "draws")
+    let index = try take(\.draws, "draws")
     guard index < bound else { throw VectorError("draw \(index) is not below \(bound)") }
     return index
   }
 
   public func gestureID() throws -> String {
-    gestures.value += 1
-    return "g\(gestures.value)"
+    gestures.value.withLock { value in
+      value += 1
+      return "g\(value)"
+    }
   }
 
-  public func replicaID() throws -> String { try take(&ids, "ids") }
-  public func actor() throws -> Stamp.Actor { try Stamp.Actor(take(&actors, "actors")) }
-  public func forkGuard() throws -> String { try take(&forkGuards, "forkGuards") }
+  public func replicaID() throws -> String { try take(\.ids, "ids") }
+  public func forkGuard() throws -> String { try take(\.forkGuards, "forkGuards") }
 
-  func take<Value>(_ queue: inout [Value], _ name: String) throws -> Value {
-    guard !queue.isEmpty else { throw VectorError("the vector uses more \(name) than it lists") }
-    return queue.removeFirst()
+  public func actor() throws -> Stamp.Actor {
+    let actor = try take(\.actors, "actors")
+    queues.withLock { $0.lastActor = actor }
+    return try Stamp.Actor(actor)
+  }
+
+  func take<Value: Sendable>(_ queue: WritableKeyPath<Queues, [Value]>, _ name: String) throws -> Value {
+    try queues.withLock { queues in
+      guard !queues[keyPath: queue].isEmpty else { throw VectorError("the vector uses more \(name) than it lists") }
+      return queues[keyPath: queue].removeFirst()
+    }
+  }
+}
+
+// MARK: - A store holding a device
+
+extension ReplicaBatch {
+  // The writes that put `device` whole into an empty store, replicas in their order, as the corpus writes a device down.
+  public init(building device: LoadedDevice) {
+    let writes = device.replicas.flatMap { replica -> [StoreWrite] in
+      var writes: [ReplicaWrite] = replica.outbox.map { .putEntry($0) }
+      for (scope, rows) in replica.confirmed { writes += rows.all.map { .putRow(scope, $0) } }
+      for (scope, record) in replica.cursors { writes.append(.putCursor(scope, record)) }
+      for (scope, staging) in replica.staging {
+        writes += [.beginStaging(scope)] + staging.rows.all.map { .putStagedRow(scope, $0) } + [.stagingDigest(scope, staging.digest)]
+      }
+      for (scope, ids) in replica.spent { writes += ids.values.map { .putSpent(scope, $0) } }
+      for (scope, kind) in replica.known { writes.append(.putKnown(scope, kind)) }
+      writes += replica.notices.map { .putNotice($0) }
+      for (product, rows) in replica.deviceRows { writes += rows.members.map { .putDeviceRow(product: product, key: $0.key, $0.value) } }
+      return [.createReplica(replica.meta)] + writes.map { .replica(replica.id, $0) }
+    }
+    self.init(writes: writes + [.device(device.meta, active: device.active)])
+  }
+}
+
+extension Store {
+  // An in-memory store holding `device` whole.
+  public static func inMemory(holding device: LoadedDevice, registry: Registry, limits: Limits = Limits()) throws -> Store {
+    let store = try Store.inMemory(registry: registry, limits: limits)
+    _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(building: device)) }
+    return store
   }
 }
 

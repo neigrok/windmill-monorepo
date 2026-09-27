@@ -6,11 +6,11 @@ import Testing
 
 struct CorpusTests {
   @Test("vector", arguments: try Corpus.files().filter { Handlers.table[$0.path] != nil }.flatMap { try Corpus.vectors(in: $0) })
-  func vector(_ vector: CorpusVector) throws {
+  func vector(_ vector: CorpusVector) async throws {
     let handler = try #require(Handlers.table[vector.file])
     let answer: JSON
     do {
-      answer = try handler(vector.input)
+      answer = try await handler(vector.input)
     } catch {
       answer = ["error": true]
       #expect(vector.expect == answer, "\(vector) threw: \(error)")
@@ -24,6 +24,38 @@ struct CorpusTests {
     withKnownIssue("pending: no Swift handler yet for \(file)") {
       Issue.record("pending \(file.path)")
     }
+  }
+
+  // The transcript runner is no easier than the transcript: a line or an ending the engines do not meet is reported,
+  // and a transcript that lost its end or names a device the header does not hold is refused.
+  @Test(arguments: ["frame returns", "pull request", "pull returns", "end store", "no end", "unknown device"])
+  func aTranscriptTheEnginesDoNotMeetFails(_ mutation: String) async throws {
+    let file = try #require(try Corpus.files().first { $0.path == "protocol/live.jsonl" })
+    var lines = try Corpus.vectors(in: file)[0].input.asArray()
+    let change = { (index: Int, key: String, value: JSON) in
+      var line = try lines[index].asObject()
+      line[key] = value
+      lines[index] = .object(line)
+    }
+    switch mutation {
+    case "frame returns": try change(try #require(lines.firstIndex { $0["frame"] != nil }), "returns", "pull")
+    case "pull request": try change(try #require(lines.lastIndex { $0["http"] == "pull" }), "request", ["scopes": []])
+    case "pull returns": try change(try #require(lines.lastIndex { $0["http"] == "pull" }), "returns", [])
+    case "end store":
+      var devices = try lines[lines.count - 1].member("devices").asObject()
+      devices["d2"] = devices["d1"]
+      try change(lines.count - 1, "devices", .object(devices))
+    case "no end": lines.removeLast()
+    default: try change(try #require(lines.firstIndex { $0["frame"] != nil }), "device", "d9")
+    }
+    let differences: [String]
+    do {
+      differences = try await Transcripts.differences(lines, registry: Handlers.probe)
+    } catch is VectorError {
+      #expect(["no end", "unknown device"].contains(mutation))
+      return
+    }
+    #expect(differences != [])
   }
 
   @Test func everyCorpusFileHasOneRoleAndEveryRoleEntryAFile() throws {

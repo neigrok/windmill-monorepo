@@ -308,6 +308,11 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Subscriptions (§7.9)
 
+  // Scopes subscribed again: one the replica knows gone or not found is known no more, so its next pull boots it (§8.3).
+  public func subscribe(_ replica: inout LoadedReplica, to scopes: [ScopeRef]) {
+    for scope in scopes where replica.known[scope] != nil { replica.apply(.deleteKnown(scope)) }
+  }
+
   // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not.
   public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws {
     for scope in replica.cursors.keys.sorted() where !subscribed.contains(scope) {

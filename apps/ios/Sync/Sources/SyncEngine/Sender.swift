@@ -28,28 +28,20 @@ package enum SenderStep: Sendable, Hashable {
 package actor Sender {
   let core: EngineCore
   let transport: any SyncTransport
-  let tokens: any TokenStore
-  let random: any RandomSource
-  let bindings: [any ProductBinding]
   let answers: PushPlanner
-  package nonisolated let wake = Wake()
+  let turns = Turns()
   var wait = SenderWait()
   var batchLimit: Int?
   var kicksSeen: UInt64 = 0
   var conflicts = 0
-  var turn: Int?
-  var nextTurn = 0
-  var waitingTurns: [(turn: Int, continuation: CheckedContinuation<Void, Never>)] = []
 
-  init(core: EngineCore, transport: any SyncTransport, tokens: any TokenStore, random: any RandomSource,
-       bindings: [any ProductBinding]) {
+  init(core: EngineCore, transport: any SyncTransport) {
     self.core = core
     self.transport = transport
-    self.tokens = tokens
-    self.random = random
-    self.bindings = bindings
     answers = PushPlanner(registry: core.registry)
   }
+
+  package nonisolated var wake: Wake { core.wakes.sender }
 
   // The production driver: a kick ends any sleep early, and a round inside a pause answers the rest of it.
   func run() async {
@@ -71,46 +63,11 @@ package actor Sender {
     while !Task.isCancelled, await step(leaving: leaving) == .again { leaving = false }
   }
 
-  // MARK: One round at a time
-
+  // One round, once the round in flight has ended.
   package func step(leaving: Bool = false) async -> SenderStep {
-    guard let turn = await takeTurn() else { return .idle }
-    defer { passTurn(from: turn) }
+    guard await turns.take() else { return .idle }
+    defer { turns.pass() }
     return await round(leaving: leaving)
-  }
-
-  // Waits for the round in flight to end; nil when the caller is cancelled first.
-  func takeTurn() async -> Int? {
-    nextTurn += 1
-    let mine = nextTurn
-    guard turn != nil else {
-      turn = mine
-      return mine
-    }
-    await withTaskCancellationHandler {
-      await withCheckedContinuation { continuation in
-        if Task.isCancelled { continuation.resume() } else { waitingTurns.append((mine, continuation)) }
-      }
-    } onCancel: {
-      Task { await self.abandonTurn(mine) }
-    }
-    return turn == mine ? mine : nil
-  }
-
-  func passTurn(from ending: Int) {
-    guard turn == ending else { return }
-    guard !waitingTurns.isEmpty else {
-      turn = nil
-      return
-    }
-    let next = waitingTurns.removeFirst()
-    turn = next.turn
-    next.continuation.resume()
-  }
-
-  func abandonTurn(_ abandoned: Int) {
-    guard let index = waitingTurns.firstIndex(where: { $0.turn == abandoned }) else { return }
-    waitingTurns.remove(at: index).continuation.resume()
   }
 
   // MARK: One round
@@ -128,40 +85,51 @@ package actor Sender {
     guard core.connectivity.isOnline else { return .idle }
     do {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
-      guard let token = tokens.token(for: account) else {
-        try core.pauseAuth(seat.replica)
-        return .paused
-      }
+      guard let token = core.tokens.token(for: account) else { return try core.pauseAuth(seat.replica, sentUnder: nil) ? .paused : .again }
       guard let request = try core.write({ store, _ in try store.number(limit: batchLimit) }) else { return .idle }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
       let send = core.clock.wall.reading()
       let reply = await transport.push(request, token: token)
-      return try record(reply, to: request, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      return try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
     } catch {
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
   }
 
   // The answer's transactions in order: the offset sample first, then the results, the ack and the epoch, or the
-  // failure's own move. A replica gone since the request (re-identified, signed out) drops the rest of the answer,
-  // which then says nothing about the replica now active: the next round looks again.
-  func record(_ reply: Reply<PushResponse>, to request: PushRequest, timing: Timing) throws -> SenderStep {
+  // failure's own move; a 401 pauses only while `token` is still the account's. A replica gone since the request
+  // (re-identified, signed out) drops the rest of the answer, which then says nothing about the replica now active: the
+  // next round looks again. An entry acked at a seq its scope's rows already hold (its own frame came first) has the
+  // puller pull the scope, whose page resolves it.
+  func record(_ reply: Reply<PushResponse>, to request: PushRequest, under token: SessionToken, timing: Timing) throws -> SenderStep {
     guard case .answered(let answer) = reply else {
       conflicts = 0
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
     var replica: String? = request.replica
+    var paused = false
     for step in answers.steps(for: answer, to: request) {
       guard let id = replica else { break }
       if case .halve(let limit, _) = step { batchLimit = limit }
+      if step == .pauseAuth {
+        paused = try core.pauseAuth(id, sentUnder: token)
+        continue
+      }
       replica = try core.write { store, instance in
         try store.apply(step, replica: id, instance: &instance, timing: timing, identities: core.identities)
       }
     }
-    guard replica != nil else { return .again }
+    guard let replica else { return .again }
     switch answer {
-    case .ok(let response): return next(after: response, to: request)
-    case .failed(let failure): return next(after: failure)
+    case .ok(let response):
+      let resolvable = try core.store.resolvableScopes(of: replica)
+      if !resolvable.isEmpty {
+        core.pullWants.add(resolvable)
+        core.wakes.puller.kick()
+      }
+      return next(after: response, to: request)
+    case .failed(let failure):
+      return next(after: failure, paused: paused)
     }
   }
 
@@ -189,13 +157,14 @@ package actor Sender {
     return answered.isEmpty ? .backoff(ms: nextBackoff(floorMs: 0)) : .again
   }
 
-  // Design §6.3's rows: a 401 pauses; a 400 or 413 was halved or refused, so the next push differs; a conflict
-  // re-identified, and a second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a
-  // pause no kick cuts short, and a backoff.
-  func next(after failure: HTTPFailure) -> SenderStep {
+  // Design §6.3's rows: a 401 paused, unless the token changed while the push was in flight, and the push goes again
+  // under the new one; a 400 or 413 was halved or refused, so the next push differs; a conflict re-identified, and a
+  // second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a pause no kick cuts
+  // short, and a backoff.
+  func next(after failure: HTTPFailure, paused: Bool) -> SenderStep {
     conflicts = failure.status == 409 ? conflicts + 1 : 0
     switch failure.status {
-    case 401: return .paused
+    case 401: return paused ? .paused : .again
     case 400, 413: return .again
     case 409: return conflicts == 1 ? .again : .backoff(ms: nextBackoff(floorMs: 0))
     case 426:
@@ -210,40 +179,24 @@ package actor Sender {
     }
   }
 
-  // The ceiling is 30 s while any product's live hint holds, else 300 s; a hint that cannot be read does not hold.
   func nextBackoff(floorMs: Int64) -> Int64 {
-    let physNow = try? core.physNow()
-    let live = physNow.map { physNow in
-      bindings.contains { binding in
-        (try? core.read(.product(binding.product)) { try binding.liveHint($0, physNow: physNow) }) == true
-      }
-    } ?? false
-    return wait.backoff(ceilingMs: live ? Constants.backoffLiveCeilingMs : Constants.backoffCeilingMs, floorMs: floorMs, random: random)
+    wait.backoff.next(ceilingMs: core.backoffCeilingMs(), floorMs: floorMs, random: core.random)
   }
 }
 
-// §7.4 the sender's wait between pushes. A backoff sleeps `max(floor, random(0, min(ceiling, 1 s · 2^k)))`, then k grows
-// by one. Two waits hold every push until they end on the monotonic clock: the time the server asked for (a `retry`, a
-// 503), and the backoff after a clock-skew recovery, which only a leave's push goes through. A kick resets k, except
-// during the backoff after a clock-skew recovery, which it neither cuts short nor resets.
+// §7.4 the sender's wait between pushes: its backoff, and two waits that hold every push until they end on the monotonic
+// clock: the time the server asked for (a `retry`, a 503), and the backoff after a clock-skew recovery, which only a
+// leave's push goes through. A kick resets k, except during the backoff after a clock-skew recovery, which it neither
+// cuts short nor resets.
 package struct SenderWait: Sendable {
-  package private(set) var k = 0
+  package var backoff = Backoff()
   var serverAskEnd: Int64?
   var skewBackoffEnd: Int64?
 
   package init() {}
 
-  package mutating func backoff(ceilingMs: Int64, floorMs: Int64, random: any RandomSource) -> Int64 {
-    var bound = Constants.backoffBaseMs
-    for _ in 0..<k where bound < ceilingMs { bound *= 2 }
-    var draws = Draws(source: random)
-    let sleep = Int64.random(in: 0...min(ceilingMs, bound), using: &draws)
-    k += 1
-    return max(floorMs, sleep)
-  }
-
   package mutating func reset() {
-    k = 0
+    backoff.reset()
   }
 
   package mutating func serverAsks(until end: Int64) {
@@ -257,13 +210,13 @@ package struct SenderWait: Sendable {
   // A leave's push (§7.3) leaves k and the backoff after a clock-skew recovery as they were; a pause the server asked
   // for stays.
   package mutating func restoreBackoff(from earlier: SenderWait) {
-    k = earlier.k
+    backoff = earlier.backoff
     skewBackoffEnd = earlier.skewBackoffEnd
   }
 
   package mutating func kick(at mono: Int64) {
     if let skewBackoffEnd, mono < skewBackoffEnd { return }
-    k = 0
+    backoff.reset()
   }
 
   // The ms left before a round may push at `mono`, nil when it may push now.

@@ -96,6 +96,53 @@ struct Rig {
   static func failure(_ error: String, serverTime: Int64 = startMs) -> JSON {
     ["error": .string(error), "serverTime": JSON(serverTime), "epoch": "ep-1"]
   }
+
+  // MARK: Pull answers (§9.4)
+
+  static func pulled(_ pages: [JSON], serverTime: Int64 = startMs, epoch: String = "ep-1") -> JSON {
+    ["serverTime": JSON(serverTime), "epoch": .string(epoch), "pages": .array(pages)]
+  }
+
+  // A rows page of `scope` ending live at `seq` (or at `cursor`), whose digest is the sum of `digestOf`.
+  static func rows(_ rows: [Row] = [], in scope: ScopeRef = Rig.scope, seq: Int64, cursor: String? = nil, more: Bool = false,
+                   digestOf alive: [Row]? = nil, epoch: String = "ep-1") -> JSON {
+    [
+      "scope": scope.json, "kind": "rows", "rows": .array(rows.map(\.json)),
+      "cursor": .string(cursor ?? Cursor(epoch: epoch, mode: .live, seq: seq).text), "more": .bool(more), "seq": JSON(seq),
+      "digest": .string(ScopeDigest(rows: (alive ?? rows).filter(\.isAlive).map(\.json)).hex),
+    ]
+  }
+
+  static func page(_ scope: ScopeRef = Rig.scope, _ kind: String) -> JSON {
+    ["scope": scope.json, "kind": .string(kind)]
+  }
+
+  // A tree's meta row as the server sends it, its title set at `ms`.
+  static func metaRow(_ title: String = "Plan", seq: Int64, ms: Int64 = 1_000) throws -> Row {
+    try Row(json: [
+      "t": "meta", "id": "meta", "f": ["title": [.string(title), .string("\(ms):0:r_server00001")]], "seq": JSON(seq), "rc": JSON(ms),
+      "ru": JSON(ms),
+    ])
+  }
+
+  // §9.5 a change frame of `scope` at `seq`, whose digest is the sum of `digestOf`; `rows` nil leaves them out.
+  static func change(_ scope: ScopeRef = Rig.scope, rows: [Row]?, seq: Int64, digestOf alive: [Row], epoch: String = "ep-1") throws -> LiveFrame {
+    var frame: JSON.Object = [
+      "op": "change", "scope": scope.json, "epoch": .string(epoch), "seq": JSON(seq),
+      "digest": .string(ScopeDigest(rows: alive.filter(\.isAlive).map(\.json)).hex),
+    ]
+    frame["rows"] = rows.map { .array($0.map(\.json)) }
+    return try LiveFrame(json: .object(frame))
+  }
+
+  // A card row as the server sends it: born and alive at `ms`, its title set then.
+  static func cardRow(_ id: String, _ title: String, seq: Int64, ms: Int64 = 1_000, life: String = "alive") throws -> Row {
+    let stamp = "\(ms):0:r_server00001"
+    return try Row(json: [
+      "t": "card", "id": .string(id), "life": [.string(life), .string(stamp)], "born": .string(stamp),
+      "f": ["title": [.string(title), .string(stamp)]], "seq": JSON(seq), "rc": JSON(ms), "ru": JSON(ms),
+    ])
+  }
 }
 
 struct RigError: Error, CustomStringConvertible {

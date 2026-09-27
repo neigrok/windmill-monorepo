@@ -1,6 +1,7 @@
 import SyncAPI
 import SyncCore
 import SyncEngine
+import SyncModelServer
 import SyncReplica
 import SyncStore
 import SyncTesting
@@ -8,7 +9,7 @@ import Testing
 
 // The engine offline (design §11 M5): commits and their receipts, the read-and-commit body, holds on the release timer,
 // Undo and retire, leaving, engine start, and the commit contract of §7.1 (it throws only before its transaction
-// commits).
+// commits). Then two devices of one account over one in-memory server, stepped and with their loops running.
 
 struct SyncEngineTests {
   // MARK: Commit
@@ -278,5 +279,94 @@ struct SyncEngineTests {
     let board = rig.engine.mintID("board")
     #expect(Rig.probe.type("board")!.idPattern!.matches(board.string!))
     #expect(try rig.engine.physNow() == Rig.startMs)
+  }
+
+  // MARK: Two devices over one server
+
+  struct Device {
+    let store: Store
+    let engine: SyncEngine
+    let connectivity: SwitchedConnectivity
+  }
+
+  // A device of account A on `network`, its replica bound before the engine starts.
+  static func device(on network: SimNetwork, clock: SimClock, seed: UInt64, drivesLoops: Bool = false) throws -> Device {
+    let store = try Store.inMemory(registry: Rig.probe)
+    let identities = Identities(random: SeededRandomSource(seed: seed))
+    _ = try store.firstLaunch(identities: identities)
+    _ = try store.signIn(account: "A", holdsRecords: [:], decisions: [:], identities: identities)
+    let connectivity = SwitchedConnectivity()
+    let engine = try SyncEngine(
+      config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), store: store, transport: network,
+      tokens: InMemoryTokenStore(["A": network.token(for: "A")]), forkGuard: InMemoryForkGuardStore(), clock: clock.engineClock,
+      random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
+    return Device(store: store, engine: engine, connectivity: connectivity)
+  }
+
+  static func network(_ clock: SimClock) -> SimNetwork {
+    SimNetwork(server: ModelServer(registry: Rig.probe, rules: ProbeServerRules(), state: ServerState(epoch: "ep-1", accounts: ["A": "Ann"])),
+               clock: clock)
+  }
+
+  // Every card a device's stored view holds.
+  static func cards(_ device: Device) throws -> [Record] {
+    try device.engine.read(Rig.scope) { try $0.stored("card") }
+  }
+
+  // A's cards reach B: the first by a frame applied inline; the second while B is offline, so B's first frame after it
+  // reconnects is past a gap and B pulls, which brings the second and the third. Both end holding the server's rows,
+  // their digests checked.
+  @Test func aWriteOnOneDeviceReachesAnotherByPushLiveFrameAndPull() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = Self.network(clock)
+    let (a, b) = (try Self.device(on: network, clock: clock, seed: 1), try Self.device(on: network, clock: clock, seed: 2))
+    #expect(await b.engine.live.step() == .open(ms: 25_000))
+    #expect(await b.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")]))
+    #expect(await a.engine.sender.step() == .again)
+    #expect(await b.engine.live.receiveNext())
+    #expect(await b.engine.puller.step() == .frame(Rig.scope, .applied))
+    #expect(try Self.cards(b).count == 1)
+
+    b.connectivity.set(online: false)
+    #expect(await b.engine.live.step() == .idle)
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0002", "Two")]))
+    #expect(await a.engine.sender.step() == .again)
+    b.connectivity.set(online: true)
+    #expect(await b.engine.live.step() == .open(ms: 25_000))
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0003", "Three")]))
+    #expect(await a.engine.sender.step() == .again)
+    #expect(await b.engine.live.receiveNext())
+    #expect(await b.engine.puller.step() == .frame(Rig.scope, .pull))
+    #expect(await b.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(await b.engine.puller.step() == .idle)
+
+    #expect(await a.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    let server = network.server.state.rows[ScopeKey(.product(account: "A", name: "probe"))] ?? [:]
+    #expect(server.count == 3)
+    for device in [a, b] {
+      let replica = try device.store.read { try $0.device(rows: true).activeReplica }
+      #expect(replica.confirmed[Rig.scope]?.all.map(\.json) == server.values.sorted { $0.key < $1.key }.map(\.json))
+      #expect(replica.cursors[Rig.scope] == CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: 3).text,
+                                                         digest: ScopeDigest(rows: server.values.map(\.json)), booted: true))
+      #expect(replica.outbox.isEmpty)
+    }
+    #expect(try Self.cards(a) == Self.cards(b))
+  }
+
+  // The same with every loop running: sockets open and scopes boot from `start()`, and A's commit reaches B, and
+  // resolves on A, with no step taken by hand, whether A's own frame or its push's answer comes first.
+  @Test func twoDevicesWithTheirLoopsRunningConverge() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = Self.network(clock)
+    let a = try Self.device(on: network, clock: clock, seed: 1, drivesLoops: true)
+    let b = try Self.device(on: network, clock: clock, seed: 2, drivesLoops: true)
+    await a.engine.start()
+    await b.engine.start()
+    try await eventually("B's scope to boot") { try b.engine.read(Rig.scope) { try $0.firstPullComplete() } }
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")]))
+    try await eventually("A's card on B") { try Self.cards(b).count == 1 }
+    try await eventually("A's own entry to resolve") { try Self.cards(a) == Self.cards(b) }
   }
 }

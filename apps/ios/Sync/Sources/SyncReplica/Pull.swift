@@ -33,9 +33,35 @@ public struct PageApplier: Sendable {
     lifecycle = ReplicaLifecycle(registry: registry)
   }
 
-  // Each scope with its stored cursor; a scope with none boots.
-  public func request(_ scopes: [ScopeRef], in replica: LoadedReplica) -> PullRequest {
-    PullRequest(scopes: scopes.map { PullRequest.Pulled(scope: $0, cursor: replica.cursors[$0]?.cursor) })
+  // One request: the scopes asked for, less those the replica knows gone or not found, at most PULL_MAX_SCOPES of them in
+  // the order asked, each with its stored cursor (a scope with none boots); `later` holds the rest, for the next request.
+  public func request(_ scopes: [ScopeRef], in replica: LoadedReplica) -> (request: PullRequest, later: [ScopeRef]) {
+    let pulled = scopes.filter { replica.known[$0] == nil }
+    let request = PullRequest(scopes: pulled.prefix(Constants.pullMaxScopes).map { PullRequest.Pulled(scope: $0, cursor: replica.cursors[$0]?.cursor) })
+    return (request, Array(pulled.dropFirst(Constants.pullMaxScopes)))
+  }
+
+  // §7.5: a page's scope is pulled again after a stale or reset page, a page with more rows, or a digest check that reset
+  // its cursor to boot it.
+  public func pullsAgain(after page: Page, _ outcome: PageOutcome, in replica: LoadedReplica) -> Bool {
+    switch outcome {
+    case .stale, .reset: return true
+    case .gone, .notFound: return false
+    case .applied:
+      if case .rows(let rows) = page.body, rows.more { return true }
+      return replica.cursors[page.scope]?.cursor == nil
+    }
+  }
+
+  // A frame's scope is pulled again when the frame was not admitted, or its digest check reset the cursor.
+  public func pullsAgain(after frame: LiveFrame, _ outcome: FrameOutcome, in replica: LoadedReplica) -> Bool {
+    switch outcome {
+    case .pull: return true
+    case .gone, .notFound, .ignored: return false
+    case .applied:
+      guard case .change(let change) = frame else { return false }
+      return replica.cursors[change.scope]?.cursor == nil
+    }
   }
 
   // The rows a page or frame reads, for its Action to load first: the stored rows of the records it carries.
@@ -170,6 +196,17 @@ public struct PageApplier: Sendable {
     }
     replica.apply(staged ? .putStagedRow(scope, row) : .putRow(scope, row))
     return digest.replacing(previous?.json, with: row.json)
+  }
+
+  // The scopes holding acked entries whose result the scope's rows already hold: a push answered after its scope's own
+  // frame. A pull of such a scope resolves them (§7.5 step 2).
+  public func resolvable(in replica: LoadedReplica) -> Set<ScopeRef> {
+    Set(replica.outbox.filter { entry in
+      guard entry.state == .acked, let resultSeq = entry.resultSeq,
+            entry.resultEpoch.map(JSON.string) == replica.meta.serverEpoch.map(JSON.string),
+            let cursor = replica.cursors[entry.scope]?.cursor.flatMap(Cursor.init(decoding:)), cursor.mode == .live else { return false }
+      return resultSeq <= (cursor.key == nil ? cursor.seq : cursor.seq - 1)
+    }.map(\.scope))
   }
 
   // Acked entries of the scope in the replica's epoch whose result the rows now hold.

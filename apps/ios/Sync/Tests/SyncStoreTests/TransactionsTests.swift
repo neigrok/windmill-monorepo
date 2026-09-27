@@ -22,17 +22,6 @@ struct TransactionsTests {
     #expect(answer == vector.expect, "\(vector)")
   }
 
-  static let transcripts = try! Corpus.files().filter { $0.path.hasPrefix("protocol/") }.flatMap { try Corpus.vectors(in: $0) }
-
-  // The client half of every protocol transcript, each device a store.
-  @Test(arguments: transcripts)
-  func everyTranscriptsClientHalfHoldsThroughTheStore(_ transcript: CorpusVector) throws {
-    let differences = try Transcripts.clientDifferences(transcript.input.asArray(), registry: Self.probe) {
-      try StoredDevice(seeding: $0, registry: Self.probe, limits: Limits())
-    }
-    #expect(differences == [], "\(transcript.file)")
-  }
-
   // Steps beyond the corpus, each run through the planners and through the store: the two must agree exactly, and
   // `returns` names what the steps must answer.
   static let beyond: [(name: String, steps: String, returns: [String])] = [
@@ -196,8 +185,7 @@ struct StoredDevice: ClientDevice {
   var events: [EngineEvent] = []
 
   init(seeding device: LoadedDevice, registry: Registry, limits: Limits) throws {
-    store = try Store.inMemory(registry: registry, limits: limits)
-    _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(writes: Seed.writes(of: device))) }
+    store = try Store.inMemory(holding: device, registry: registry, limits: limits)
   }
 
   mutating func take<Value>(_ written: Written<Value>) -> Value {
@@ -241,23 +229,28 @@ struct StoredDevice: ClientDevice {
     take(try store.start(backup: backup, instance: &instance, identities: identities))
   }
 
-  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest { try store.pullRequest(scopes) }
+  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest { try store.pullRequest(scopes, replica: active())!.request }
 
   // Each step of the answer in its own transaction, following the replica through an epoch change's re-identify.
   mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)] {
     var replica: String? = try active()
     var outcomes: [(scope: ScopeRef, outcome: PageOutcome)] = []
+    let subscribed = Set(request.scopes.map(\.scope))
     for step in PageApplier(registry: store.registry).steps(for: answer, to: request) {
       guard let current = replica else { break }
-      let applied = take(try store.apply(step, replica: current, instance: &instance, timing: timing, identities: identities))
-      replica = applied.replica
-      if case .page(let page, _) = step, let outcome = applied.outcome { outcomes.append((page.scope, outcome)) }
+      let applied = take(try store.apply(step, replica: current, subscribed: subscribed, instance: &instance, timing: timing,
+                                         identities: identities))
+      replica = applied?.replica
+      if case .page(let page, _) = step, let outcome = applied?.outcome { outcomes.append((page.scope, outcome)) }
     }
     return outcomes
   }
 
-  mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome { take(try store.apply(frame, instance: instance)) }
+  mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome {
+    guard let scope = frame.scope else { return .ignored }
+    return take(try store.apply(frame, replica: active(), subscribed: [scope], instance: instance))!.outcome
+  }
   mutating func reconcile(_ scopes: Set<ScopeRef>) throws { take(try store.reconcile(subscribed: scopes)) }
 
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
@@ -281,23 +274,4 @@ struct StoredDevice: ClientDevice {
 
   func anonCount(of product: String, in replica: String) throws -> [String: Int] { try store.anonCount(of: product, in: replica) }
   func dump() throws -> JSON { try store.read { try $0.device(rows: true).json } }
-}
-
-// The writes that build a whole device in an empty store, replicas in their order.
-enum Seed {
-  static func writes(of device: LoadedDevice) -> [StoreWrite] {
-    device.replicas.flatMap { replica -> [StoreWrite] in
-      var writes: [ReplicaWrite] = replica.outbox.map { .putEntry($0) }
-      for (scope, rows) in replica.confirmed { writes += rows.all.map { .putRow(scope, $0) } }
-      for (scope, record) in replica.cursors { writes.append(.putCursor(scope, record)) }
-      for (scope, staging) in replica.staging {
-        writes += [.beginStaging(scope)] + staging.rows.all.map { .putStagedRow(scope, $0) } + [.stagingDigest(scope, staging.digest)]
-      }
-      for (scope, ids) in replica.spent { writes += ids.values.map { .putSpent(scope, $0) } }
-      for (scope, kind) in replica.known { writes.append(.putKnown(scope, kind)) }
-      writes += replica.notices.map { .putNotice($0) }
-      for (product, rows) in replica.deviceRows { writes += rows.members.map { .putDeviceRow(product: product, key: $0.key, $0.value) } }
-      return [.createReplica(replica.meta)] + writes.map { .replica(replica.id, $0) }
-    } + [.device(device.meta, active: device.active)]
-  }
 }

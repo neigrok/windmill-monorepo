@@ -89,6 +89,9 @@ public final class SimClock: WallClock, Clock, Sendable {
   // How many tasks sleep on this clock now.
   public var sleepers: Int { state.withLock(\.sleepers.count) }
 
+  // The monotonic ms each sleeper wakes at.
+  public var deadlines: [Int64] { state.withLock { $0.sleepers.map(\.deadline) } }
+
   public func advance(ms: Int64) {
     let woken = state.withLock { state in
       state.mono += ms
@@ -164,10 +167,12 @@ public final class InMemoryForkGuardStore: ForkGuardStore {
   public func save(_ forkGuard: String) { copy.withLock { $0 = forkGuard } }
 }
 
-// A network switch the test flips; each flip runs the engine's handlers at once, on the test's thread.
+// A network switch the test flips; each flip runs the engine's handlers at once, on the test's thread. It counts how
+// often the engine asks, so a test can tell a loop that sleeps from one that spins.
 public final class SwitchedConnectivity: Connectivity {
   struct State {
     var online: Bool
+    var reads = 0
     var handlers: [@Sendable (Bool) -> Void] = []
   }
 
@@ -177,7 +182,14 @@ public final class SwitchedConnectivity: Connectivity {
     state = Mutex(State(online: online))
   }
 
-  public var isOnline: Bool { state.withLock(\.online) }
+  public var isOnline: Bool {
+    state.withLock { state in
+      state.reads += 1
+      return state.online
+    }
+  }
+
+  public var reads: Int { state.withLock(\.reads) }
 
   public func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {
     state.withLock { $0.handlers.append(handler) }

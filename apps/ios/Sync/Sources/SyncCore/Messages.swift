@@ -1,4 +1,5 @@
-// §9.2–§9.6 the exchanges, the same only byte for byte: hello, push and pull, live frames, HTTP failures and refusal codes.
+// §9.2–§9.6 the exchanges, the same only byte for byte: hello, push and pull, live requests and frames, HTTP failures and
+// refusal codes.
 
 // MARK: - Refusal codes
 
@@ -345,6 +346,30 @@ public struct PullResponse: Sendable, Hashable {
 
 // MARK: - Live
 
+// §9.5 a message to the server: follow scopes, stop following them, or ask for a `pong`.
+public enum LiveRequest: Sendable, Hashable {
+  case sub([ScopeRef])
+  case unsub([ScopeRef])
+  case ping
+
+  public init(json: JSON) throws {
+    switch try json.member("op").asString() {
+    case "sub": self = .sub(try json.member("scopes").asArray().map { try ScopeRef(json: $0) })
+    case "unsub": self = .unsub(try json.member("scopes").asArray().map { try ScopeRef(json: $0) })
+    case "ping": self = .ping
+    case let other: throw JSONError.shape("\(other) is not a live request")
+    }
+  }
+
+  public var json: JSON {
+    switch self {
+    case .sub(let scopes): ["op": "sub", "scopes": .array(scopes.map(\.json))]
+    case .unsub(let scopes): ["op": "unsub", "scopes": .array(scopes.map(\.json))]
+    case .ping: ["op": "ping"]
+    }
+  }
+}
+
 // §9.5 a frame from the server; an op the engine does not know (presence) is `other` and ignored.
 public enum LiveFrame: Sendable, Hashable {
   case change(ChangeFrame)
@@ -360,6 +385,15 @@ public enum LiveFrame: Sendable, Hashable {
     case "not-found": self = .notFound(try ScopeRef(json: json.member("scope")))
     case "pong": self = .pong
     case let other: self = .other(other)
+    }
+  }
+
+  // The scope a change, gone or not-found frame names.
+  public var scope: ScopeRef? {
+    switch self {
+    case .change(let change): change.scope
+    case .gone(let scope), .notFound(let scope): scope
+    case .pong, .other: nil
     }
   }
 

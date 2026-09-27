@@ -264,6 +264,25 @@ struct SenderTests {
     #expect(try rig.outbox() == ["g1/0 acked 1"])
   }
 
+  // A 401 to a push sent under a token the account replaced while it was in flight pauses nothing, and the push goes
+  // again under the new token (design §4.4 rule 2).
+  @Test func a401ToATokenReplacedInFlightPausesNothing() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    let gate = Gate()
+    rig.transport.willAnswerPush(401, Rig.failure("unauthenticated"), after: gate)
+    let sender = rig.engine.sender
+    let pushing = Task { await sender.step() }
+    try await eventually("the push to be in flight") { gate.reached }
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    gate.open()
+    #expect(await pushing.value == .again)
+    #expect(try rig.meta().authPaused == false)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(rig.transport.calls.last == .push(rig.transport.pushes[0], token: SessionToken("token-2")))
+  }
+
   @Test func aTokenThatIsGonePausesWithoutPushing() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)
@@ -468,7 +487,9 @@ struct SenderTests {
     await rig.engine.start()
     rig.transport.willAnswerPush(503, ["error": "unavailable", "retryAfterMs": 60_000, "serverTime": JSON(Rig.startMs), "epoch": "ep-1"])
     try rig.commit(Self.card1)
-    try await eventually("the loop to sleep out the server's pause") { rig.transport.pushes.count == 1 && rig.clock.sleepers == 1 }
+    try await eventually("the loop to sleep out the server's pause") {
+      rig.transport.pushes.count == 1 && rig.clock.deadlines.contains(60_000)
+    }
     try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
     await rig.engine.flushOnLeave()
     #expect(rig.transport.pushes.count == 1)

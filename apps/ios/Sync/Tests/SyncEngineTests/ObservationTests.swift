@@ -158,14 +158,8 @@ struct ObservationTests {
     let view = engine.records(Rig.scope, "card")
     await engine.settle()
     #expect(view.firstPullComplete == false)
-    let page = Page(scope: Rig.scope, body: .rows(RowsPage(
-      rows: [], cursor: Cursor(epoch: "ep-1", mode: .live, seq: 0).text, more: false, seq: 0, digest: .zero)))
-    let replica = try rig.meta().replica
-    let applied = try engine.core.write { store, instance in
-      try store.apply(PullStep.page(page, requested: nil), replica: replica, instance: &instance,
-                      timing: .steady(send: Rig.startMs, recv: Rig.startMs), identities: engine.core.identities)
-    }
-    #expect(applied.outcome == .applied)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
     await engine.settle()
     #expect(view.firstPullComplete)
   }

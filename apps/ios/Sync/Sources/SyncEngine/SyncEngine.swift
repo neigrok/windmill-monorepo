@@ -5,9 +5,9 @@ import SyncReplica
 import SyncStore
 import Synchronization
 
-// The engine (design §5.3): the `Replica` products commit and read through, the loops that send and release, and the
-// views UI modules observe. Construction runs the start work that must precede the first frame; `start()` starts the
-// loops.
+// The engine (design §5.3): the `Replica` products commit and read through, the loops that send, release, pull and
+// follow live, and the views UI modules observe. Construction runs the start work that must precede the first frame;
+// `start()` says hello and starts the loops.
 
 public final class SyncEngine: Replica {
   struct Loops {
@@ -16,20 +16,30 @@ public final class SyncEngine: Replica {
   }
 
   let core: EngineCore
-  let tokens: any TokenStore
+  let transport: any SyncTransport
   let hub: ViewHub
   package let sender: Sender
   package let releaser: Releaser
+  package let puller: Puller
+  package let live: LiveChannel
   let loops = Mutex(Loops())
+
+  public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
+                          tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
+                          connectivity: any Connectivity) throws {
+    try self.init(config: config, bindings: bindings, store: store, transport: transport, tokens: tokens, forkGuard: forkGuard,
+                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity)
+  }
 
   // Engine start (§7.3, §7.11, §7.4): the store first launched; every held entry released, with no Undo shown; a fresh
   // actor; the fork guard checked against its backup-excluded copy (a copy that differs or is missing re-identifies every
-  // replica), and the copy rewritten once the store has committed; a bound replica with no token paused.
-  public init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
-              tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
-              connectivity: any Connectivity) throws {
-    let identities = Identities(random: random)
-    let core = try EngineCore(config: config, store: store, clock: clock, identities: identities, connectivity: connectivity)
+  // replica), and the copy rewritten once the store has committed; a bound replica with no token paused. `identities`
+  // mints every id and actor; the transcript runner hands the corpus's queues.
+  package init(config: EngineConfig, bindings: [any ProductBinding], store: Store, transport: any SyncTransport,
+               tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
+               identities: any IdentitySource & Sendable, connectivity: any Connectivity) throws {
+    let core = EngineCore(config: config, bindings: bindings, store: store, tokens: tokens, clock: clock, random: random,
+                          identities: identities, connectivity: connectivity)
     _ = try core.write { store, _ in try store.firstLaunch(identities: identities) }
     let copy = forkGuard.load()
     _ = try core.write { store, instance in
@@ -37,18 +47,20 @@ public final class SyncEngine: Replica {
     }
     if let kept = try store.read({ try $0.deviceMeta()?.meta.forkGuard }), kept != copy { try forkGuard.save(kept) }
     if let seat = try core.seat(), seat.state == .bound, let account = seat.account, tokens.token(for: account) == nil {
-      try core.pauseAuth(seat.replica)
+      try core.pauseAuth(seat.replica, sentUnder: nil)
     }
 
     self.core = core
-    self.tokens = tokens
+    self.transport = transport
     hub = ViewHub(core: core)
-    sender = Sender(core: core, transport: transport, tokens: tokens, random: random, bindings: bindings)
-    releaser = Releaser(core: core, senderWake: sender.wake)
+    sender = Sender(core: core, transport: transport)
+    releaser = Releaser(core: core)
+    puller = Puller(core: core, transport: transport)
+    live = LiveChannel(core: core, transport: transport, puller: puller)
     let (hub, changes) = (hub, core.publisher.changes)
     loops.withLock { $0.tasks.append(Task { @MainActor in await hub.run(changes) }) }
-    connectivity.onChange { [weak core, wake = sender.wake] _ in
-      wake.kick()
+    connectivity.onChange { [weak core] _ in
+      core?.wakes.kickAll()
       core?.publishStatus()
     }
   }
@@ -60,14 +72,43 @@ public final class SyncEngine: Replica {
     core.publisher.finish()
   }
 
-  // Starts the sender and the release timer, once; in step mode (`drivesLoops` false) they stay for the caller to step.
+  // Engine start's network half (design §5.1): the hello, whose sample sets the offset and whose `minSchema` may require
+  // an upgrade; then every subscribed scope is wanted, and the loops start, once. In step mode (`drivesLoops` false) the
+  // loops stay for the caller to step.
   public func start() async {
+    let seat = try? core.seat()
+    let account = seat?.state == .bound && seat?.authPaused == false ? seat?.account : nil
+    _ = await hello(token: account.flatMap { core.tokens.token(for: $0) })
+    core.pullWants.all()
     guard core.config.drivesLoops else { return }
-    let (sender, releaser) = (sender, releaser)
+    let (sender, releaser, puller, live) = (sender, releaser, puller, live)
     loops.withLock { loops in
       guard !loops.started else { return }
       loops.started = true
-      loops.tasks += [Task { await sender.run() }, Task { await releaser.run() }]
+      loops.tasks += [
+        Task { await sender.run() }, Task { await releaser.run() }, Task { await puller.run() }, Task { await live.run() },
+      ]
+    }
+  }
+
+  // §9.2 under `token`, or none: the answer's offset sample is recorded for the active replica (§10.4), and a
+  // `minSchema` above the registry's version, or a 426, requires an upgrade. The answer, when there was one.
+  package func hello(token: SessionToken?) async -> HelloResponse? {
+    let send = core.clock.wall.reading()
+    let reply = await transport.hello(token: token)
+    let timing = Timing(send: send, recv: core.clock.wall.reading())
+    guard case .answered(let answer) = reply else { return nil }
+    switch answer {
+    case .ok(let hello):
+      _ = try? core.write { store, _ in try store.sample(serverTime: hello.serverTime, timing: timing) }
+      if hello.minSchema > core.registry.version { core.requireUpgrade() }
+      return hello
+    case .failed(let failure):
+      if let serverTime = failure.serverTime {
+        _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) }
+      }
+      if failure.status == 426 { core.requireUpgrade() }
+      return nil
     }
   }
 
@@ -100,8 +141,8 @@ public final class SyncEngine: Replica {
       throw CommitFailure(meeting: error)
     }
     if case .committed(let receipt)? = committed.outcome {
-      sender.wake.kick()
-      if receipt.releaseAt != nil { releaser.wake.kick() }
+      core.wakes.sender.kick()
+      if receipt.releaseAt != nil { core.wakes.releaser.kick() }
     }
     return committed
   }
@@ -151,77 +192,144 @@ public final class SyncEngine: Replica {
     await hub.settle(through: core.publisher.published)
   }
 
+  // MARK: Subscriptions (§7.9)
+
+  // Tree and overlay scopes followed beyond the products' own, while they are open: a scope known gone or not found is
+  // forgotten as known, so it boots again (§8.3), and each is pulled at once and followed live. A signed-out replica
+  // follows only trees.
+  public func subscribe(_ scopes: [ScopeRef]) throws {
+    precondition(scopes.allSatisfy { $0.tree != nil }, "only tree and overlay scopes are subscribed by hand")
+    try core.write { store, _ in try store.subscribe(scopes) }
+    core.opened.withLock { opened in
+      for scope in scopes where !opened.contains(scope) { opened.append(scope) }
+    }
+    core.pullWants.add(scopes)
+    core.wakes.puller.kick()
+    core.wakes.live.kick()
+  }
+
+  // Scopes no longer followed: each is forgotten, and its acked entries resolve. The set is read inside the write, after
+  // the scopes left it, so a scope subscribed meanwhile stays.
+  public func unsubscribe(_ scopes: [ScopeRef]) throws {
+    core.opened.withLock { $0.removeAll(where: scopes.contains) }
+    try core.write { store, _ in
+      try store.reconcile(subscribed: Set(try core.seat().map { core.subscriptions(of: $0) } ?? []))
+    }
+    core.wakes.live.kick()
+  }
+
   // MARK: App lifecycle (§7.3)
 
   // Leaving the app: every held entry is released into the durable queue at once, so Undo is not offered again, and a
-  // release kicks the sender (§7.3).
+  // release kicks the sender (§7.3); the live socket closes and the pull timer stops until the app is back.
   public func leave() throws {
-    if try core.write({ store, _ in try store.releaseAll() }) { sender.wake.kick() }
+    core.foreground.store(false, ordering: .relaxed)
+    core.wakes.live.kick()
+    if try core.write({ store, _ in try store.releaseAll() }) { core.wakes.sender.kick() }
   }
 
-  // The leave flush: one drain, joined with the sender's loop.
+  // The leave flush: one drain, joined with the sender's loop; then the live socket is closed.
   public func flushOnLeave() async {
     await sender.flushOnce()
+    await live.close()
   }
 
+  // Back in the foreground: the sender goes again, every subscribed scope is pulled, and the live socket reopens.
   public func foreground() {
-    sender.wake.kick()
+    core.foreground.store(true, ordering: .relaxed)
+    core.pullWants.all()
+    core.wakes.kickAll()
   }
 
-  // §8.2: the account's new token clears the pause a 401 set, and sending resumes.
+  // §8.2: the account's new token clears the pause a 401 set, and sending, pulling and following live resume.
   public func reauthenticate(token: SessionToken) throws {
     guard let seat = try core.seat(), seat.state == .bound, let account = seat.account else { throw EngineError.notSignedIn }
-    try tokens.save(token, for: account)
+    try core.tokens.save(token, for: account)
     try core.write { store, _ in try store.reauthenticate() }
-    sender.wake.kick()
+    core.wakes.kickAll()
+  }
+
+  // MARK: The step-mode harness
+
+  // One store Action as this instance, its changes and events published as the engine's own.
+  package func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
+    try core.write(action)
+  }
+
+  package var identities: any IdentitySource & Sendable { core.identities }
+
+  // `tap` receives every event from now on, inside the transaction's turn that published it.
+  package func tapEvents(_ tap: @escaping @Sendable (EngineEvent) -> Void) {
+    core.publisher.tap(tap)
   }
 }
 
 // MARK: - The core
 
-// What every part of the engine shares: the store, this instance's actor (D-2), the clocks and ids, connectivity, and
-// the pipe to the views. Every write runs as this instance and is published in commit order.
+// What every part of the engine shares: the store, the session tokens, this instance's actor (D-2), the clocks, ids and
+// randomness, connectivity, the app's foreground, the scopes opened by hand and those wanted pulled, the product
+// bindings, every loop's wake-up, and the pipe to the views. Every write runs as this instance and is published in
+// commit order.
 final class EngineCore: Sendable {
+  // The actor until the start transaction mints the instance's own; nothing is stamped with it.
+  static let provisionalActor = try! Stamp.Actor("r_provisional")
+
   let config: EngineConfig
+  let bindings: [any ProductBinding]
   let store: Store
+  let tokens: any TokenStore
   let clock: EngineClock
-  let identities: Identities
+  let random: any RandomSource
+  let identities: any IdentitySource & Sendable
   let connectivity: any Connectivity
   let publisher = Publisher()
-  let actor: Mutex<Stamp.Actor>
+  let wakes = Wakes()
+  let pullWants = PullWants()
+  let actor = Mutex(EngineCore.provisionalActor)
   let upgrade = Atomic(false)
+  let foreground = Atomic(true)
+  let opened = Mutex<[ScopeRef]>([])
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
   // body) stops with a message instead of waiting on itself.
   let writingThread = Atomic<UInt64>(0)
 
-  // The actor is provisional until the start transaction mints the instance's own.
-  init(config: EngineConfig, store: Store, clock: EngineClock, identities: Identities, connectivity: any Connectivity) throws {
+  init(config: EngineConfig, bindings: [any ProductBinding], store: Store, tokens: any TokenStore, clock: EngineClock,
+       random: any RandomSource, identities: any IdentitySource & Sendable, connectivity: any Connectivity) {
     self.config = config
+    self.bindings = bindings
     self.store = store
+    self.tokens = tokens
     self.clock = clock
+    self.random = random
     self.identities = identities
     self.connectivity = connectivity
-    actor = Mutex(try identities.actor())
   }
 
   var registry: Registry { store.registry }
 
   // One of the store's Actions, as this instance: its actor and the device clock now. The actor is held for the whole
   // transaction, so an actor a re-identify mints serves every later write, and changes and events go out in commit order.
+  // A write that renames or swaps the replicas (a re-identify, an epoch change, a sign-in or out) wakes the puller, which
+  // then pulls every scope, and the live channel, which then reconnects for the replica now active.
   func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
     precondition(writingThread.load(ordering: .acquiring) != thread,
                  "an engine write inside another: a commit's body reads through its context and writes nothing")
-    return try actor.withLock { actor in
+    let (value, change) = try actor.withLock { actor in
       writingThread.store(thread, ordering: .releasing)
       defer { writingThread.store(0, ordering: .releasing) }
       var instance = Instance(actor: actor, deviceNow: clock.wall.nowMs(), appVersion: config.appVersion)
       let written = try action(store, &instance)
       actor = instance.actor
       publisher.publish(written.change, written.events)
-      return written.value
+      return (written.value, written.change)
     }
+    if change.replicas {
+      wakes.puller.kick()
+      wakes.live.kick()
+    }
+    return value
   }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
@@ -243,22 +351,34 @@ final class EngineCore: Sendable {
     return meta.physNow(deviceNow: clock.wall.nowMs())
   }
 
-  // A bound replica with no token to send under pauses, as a 401 pauses it (§7.4).
-  func pauseAuth(_ replica: String) throws {
-    try write { store, _ in
+  // §7.4: a 401 to a call made under `sent`, or no token to call under (`sent` nil), pauses the bound replica, and the
+  // live socket closes; unless the account holds another token by now, which a re-authentication saved while the call
+  // was in flight (design §4.4 rule 2). The token is read inside the write, so a re-authentication's own write follows
+  // this one, or finds the token changed. True when the replica is paused.
+  @discardableResult
+  func pauseAuth(_ replica: String, sentUnder sent: SessionToken?) throws -> Bool {
+    let paused = try write { store, _ in
       try store.write(.authPause) { tx in
-        guard var loaded = try tx.replica(replica) else { return Planned((), ReplicaBatch()) }
+        guard var loaded = try tx.replica(replica), let account = loaded.meta.account, tokens.token(for: account) == sent else {
+          return Planned(false, ReplicaBatch())
+        }
         loaded.update { $0.authPaused = true }
-        return Planned((), loaded.batch)
+        return Planned(true, loaded.batch)
       }
     }
+    if paused { wakes.live.kick() }
+    return paused
   }
 
-  // §7.9: a bound replica subscribes the product scopes of the products its surface carries.
-  func subscriptions(of meta: ReplicaMeta) -> Set<ScopeRef> {
-    guard meta.state == .bound else { return [] }
-    return Set(registry.products.filter { $0.surfaces.contains(config.surface) }.map { ScopeRef.product($0.name) })
+  // §7.9, in the order the puller pulls and the live channel follows them: a bound replica subscribes the product
+  // scopes of the products its surface carries, then the scopes opened by hand; a signed-out one only the trees opened.
+  func subscriptions(of meta: ReplicaMeta) -> [ScopeRef] {
+    let opened = opened.withLock { $0 }
+    guard meta.state == .bound else { return opened.filter { if case .tree = $0.kind { true } else { false } } }
+    return registry.products.filter { $0.surfaces.contains(config.surface) }.map { ScopeRef.product($0.name) } + opened
   }
+
+  var isForeground: Bool { foreground.load(ordering: .relaxed) }
 
   // 426: nothing more is sent or pulled until the app is upgraded; the status says so.
   var upgradeRequired: Bool { upgrade.load(ordering: .relaxed) }
@@ -266,6 +386,7 @@ final class EngineCore: Sendable {
   func requireUpgrade() {
     upgrade.store(true, ordering: .relaxed)
     publishStatus()
+    wakes.live.kick()
   }
 
   // What the store does not hold changed the status: connectivity, or an upgrade required.
@@ -273,6 +394,16 @@ final class EngineCore: Sendable {
     var change = StoreChange()
     change.status = true
     publisher.publish(change, [])
+  }
+
+  // A backoff's ceiling (§7.4): 30 s while any product's live hint holds, else 300 s; a hint that cannot be read does not
+  // hold.
+  func backoffCeilingMs() -> Int64 {
+    guard let physNow = try? physNow() else { return Constants.backoffCeilingMs }
+    let live = bindings.contains { binding in
+      (try? read(.product(binding.product)) { try binding.liveHint($0, physNow: physNow) }) == true
+    }
+    return live ? Constants.backoffLiveCeilingMs : Constants.backoffCeilingMs
   }
 }
 
@@ -288,13 +419,12 @@ package enum ReleaserStep: Sendable, Hashable {
 // neither loses a release nor fires one early. Each release kicks the sender.
 package final class Releaser: Sendable {
   let core: EngineCore
-  let senderWake: Wake
-  package let wake = Wake()
 
-  init(core: EngineCore, senderWake: Wake) {
+  init(core: EngineCore) {
     self.core = core
-    self.senderWake = senderWake
   }
+
+  package var wake: Wake { core.wakes.releaser }
 
   func run() async {
     while !Task.isCancelled {
@@ -318,7 +448,7 @@ package final class Releaser: Sendable {
       guard let due else { return .idle }
       guard due <= deviceNow else { return .wait(ms: due - deviceNow) }
       try core.write { store, instance in try store.releaseDue(at: instance.deviceNow) }
-      senderWake.kick()
+      core.wakes.sender.kick()
       return .again
     } catch {
       return .wait(ms: Constants.backoffBaseMs)

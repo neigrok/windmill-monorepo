@@ -97,14 +97,16 @@ public final class Identities: IdentitySource, Sendable {
   public func actor() throws -> Stamp.Actor { try Stamp.Actor("r_" + symbols(12, from: Self.lowercase)) }
   public func forkGuard() -> String { "fg_" + symbols(32, from: Self.hex) }
 
-  // A CSPRNG id of `type` by its registry `mint`.
-  public func mint(_ type: TypeDef) -> RecordID? {
-    guard let mint = type.mint else { return nil }
-    return try? RecordID(mint.id(drawing: draw(below:)))
-  }
-
   func symbols(_ count: Int, from alphabet: [Character]) -> String {
     String((0..<count).map { _ in alphabet[draw(below: alphabet.count)] })
+  }
+}
+
+extension IdentitySource {
+  // A CSPRNG id of `type` by its registry `mint`; nil when the type mints none or the source cannot draw.
+  func mint(_ type: TypeDef) -> RecordID? {
+    guard let mint = type.mint else { return nil }
+    return try? RecordID(mint.id(drawing: draw(below:)))
   }
 }
 
@@ -244,5 +246,96 @@ package final class Wake: Sendable {
       await group.next()
       group.cancelAll()
     }
+  }
+}
+
+// Every loop's wake-up, made before the loops so any part of the engine can wake any of them.
+struct Wakes: Sendable {
+  let sender = Wake()
+  let releaser = Wake()
+  let puller = Wake()
+  let live = Wake()
+
+  // Connectivity, foreground and re-authentication: every loop looks again.
+  func kickAll() {
+    for wake in [sender, releaser, puller, live] { wake.kick() }
+  }
+}
+
+// One round at a time, whoever runs it (a loop, a flush, the simulator): a caller waits for the round in flight to end,
+// in the order callers came, and one cancelled while it waits gives up its place.
+package final class Turns: Sendable {
+  struct State {
+    var busy = false
+    var nextWaiter = 0
+    var waiting: [(id: Int, continuation: CheckedContinuation<Bool, Never>)] = []
+  }
+
+  let state = Mutex(State())
+
+  package init() {}
+
+  // True once the caller holds the turn, which it then passes on; false when it was cancelled first.
+  package func take() async -> Bool {
+    let (id, taken) = state.withLock { state -> (Int, Bool) in
+      state.nextWaiter += 1
+      guard !state.busy else { return (state.nextWaiter, false) }
+      state.busy = true
+      return (state.nextWaiter, true)
+    }
+    if taken { return true }
+    return await withTaskCancellationHandler {
+      await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
+        let answer = state.withLock { state -> Bool? in
+          if Task.isCancelled { return false }
+          guard state.busy else {
+            state.busy = true
+            return true
+          }
+          state.waiting.append((id, continuation))
+          return nil
+        }
+        if let answer { continuation.resume(returning: answer) }
+      }
+    } onCancel: {
+      let abandoned = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+        guard let index = state.waiting.firstIndex(where: { $0.id == id }) else { return nil }
+        return state.waiting.remove(at: index).continuation
+      }
+      abandoned?.resume(returning: false)
+    }
+  }
+
+  // The holder's round is over: the next caller waiting takes the turn.
+  package func pass() {
+    let next = state.withLock { state -> CheckedContinuation<Bool, Never>? in
+      guard !state.waiting.isEmpty else {
+        state.busy = false
+        return nil
+      }
+      return state.waiting.removeFirst().continuation
+    }
+    next?.resume(returning: true)
+  }
+}
+
+// §7.4's backoff, which every loop draws its retries from: a sleep of `max(floor, random(0, min(ceiling, 1 s · 2^k)))`,
+// full jitter from the injected source, after which k grows by one; the bound stops doubling once it passes the ceiling.
+package struct Backoff: Sendable {
+  package private(set) var k = 0
+
+  package init() {}
+
+  package mutating func next(ceilingMs: Int64, floorMs: Int64, random: any RandomSource) -> Int64 {
+    var bound = Constants.backoffBaseMs
+    for _ in 0..<k where bound < ceilingMs { bound *= 2 }
+    var draws = Draws(source: random)
+    let sleep = Int64.random(in: 0...min(ceilingMs, bound), using: &draws)
+    k += 1
+    return max(floorMs, sleep)
+  }
+
+  package mutating func reset() {
+    k = 0
   }
 }
