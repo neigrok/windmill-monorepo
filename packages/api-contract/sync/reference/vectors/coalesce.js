@@ -1,6 +1,7 @@
-// coalesce/*.json (§7.2): when a ready plain intent joins the last earlier entry on its record; an entry
-// ever numbered takes no join. Only a create joined with a delete cancels, and only where the record is
-// alive in neither view without the two; any other join with a delete keeps the delete.
+// coalesce/*.json (§7.2): when a ready plain intent joins the last earlier entry on its record (by a
+// delta or a prediction, never a guard); an entry ever numbered takes no join. Only a create joined with
+// a delete cancels, and only where the record is alive in neither view without the two; any other join
+// with a delete keeps the delete.
 
 import { freshMeta } from '../client/replica.js';
 import { OTHER, row, st } from './fixtures.js';
@@ -209,6 +210,15 @@ function cancels() {
         { op: 'push', deviceNow: 5002 },
         { op: 'release', localId: 'g1/0', deviceNow: 5003 },
         commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5004),
+      ],
+    }),
+    stepsVector('a guard on a register of a cancelled create is not folded: its entry keeps the guard, sent as it was taken', {
+      device: device(PROBE),
+      steps: [
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Brief' } }], undefined, 5000),
+        commitStep('self/probe', [update('card0001', { title: 'Uno' })], { guard: [{ t: 'card', id: 'card0009', field: 'title' }] }, 5001),
+        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], undefined, 5002),
+        { op: 'push', deviceNow: 5003 },
       ],
     }),
     stepsVector('a create and a delete of the same record, both unsent, cancel', {

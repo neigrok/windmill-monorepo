@@ -157,7 +157,8 @@ Transitions are in §8.1.
 
 **D-17 Notice.** The durable, per-product client record of a refused intent, holding the code, the
 intent's content and the content of the dependents folded into it (§7.7). A product MAY dismiss a
-notice, which hides it; a notice that an outbox entry's `orphanOf` names is never deleted.
+notice, which hides it; content that later folds into a dismissed notice shows it again. A notice
+that an outbox entry's `orphanOf` names is never deleted.
 
 **D-18 Seq, epoch, cursor.**
 - `seq`: a per-scope counter, incremented once per committed intent that changes the scope.
@@ -319,7 +320,17 @@ names no product.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
   (`integer`, `min`, `max`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array` (`items`,
   `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds are
-  domain bounds, checked at §6.1 step 2.
+  domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
+  field's bound does (D-9).
+- **Patterns** (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) are printable
+  ASCII and match the whole value. A pattern is `^`, a body, then `$`. The body holds only literal
+  characters other than `^$\.*+?()[]{}|`; `\` before one of `^$\.*+?()[]{}|/`; bracket classes of
+  literal characters, those escapes, `\-` and ascending ranges, with no `[`, `&` or `~` inside and a
+  bare `-` only first or last; groups `(…)` and `(?:…)`, the only place a `|` may stand; and the
+  quantifiers `?`, `*`, `+`, `{n}`, `{n,}` and `{n,m}`, each after an atom. Anything else (`.`, class
+  escapes such as `\d`, `\s`, `\w` and `\b`, negated classes, backreferences, lookaround, lazy
+  quantifiers, flags) makes the registry invalid. Each atom so matches one ASCII character, and every
+  regex dialect, counting bytes or code points, searching or matching whole, gives the same answer.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
   `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`) and `predicts`.
 
@@ -365,7 +376,8 @@ type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id 
                      predict?: Delta[], baseTexts?: Record<string, string>,   // (t, id, field) → text edited from
                      resultSeq?: number, resultEpoch?: string, orphanOf?: string }
 type Notice = { id, replica, scope, code: RefusalCode, detail?,
-                content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at }
+                content: { d?: Delta[], cmd?: Cmd, dependents?: { d?: Delta[], cmd?: Cmd }[] }, at,
+                dismissed?: true }
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 ```
 
@@ -379,6 +391,8 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
   (§7.5).
 - `CursorRec.digestStop`: the app version at which digest checks of the scope stopped (§7.5).
 - `KnownScope`: a tree or overlay scope known gone or not-found (§7.5), which §7.1 step 2 refuses.
+- `Notice.dismissed`: the product dismissed the notice, and no content has folded into it since
+  (D-17).
 - `OutboxEntry.stamp`: the gesture's stamp (§7.1 step 3), which only `clock-skew` recovery moves
   (§7.7).
   `numbered`: the entry has been numbered at least once (§7.2). `localId` is `<gestureId>/<k>`, the
@@ -715,8 +729,9 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    - Registered types for the scope kind; registered fields and command; a command's arguments, each
      present unless `optional`.
    - At least one delta or a command, and at most one delta per `(type, id)`.
-   - `idPattern`, bounds, units, domains and quanta (a number off its quantum, §7.1 step 4). A text
-     field's `max` applies to its merge result (§6.11 step 3).
+   - `idPattern`, bounds, units, domains and quanta (a number off its quantum, §7.1 step 4), and
+     every integer a safe integer (§9.1), a text base's `rev` included. A text field's `max`
+     applies to its merge result (§6.11 step 3).
    - §4.1, and §4.4's serial and server-field rules.
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
@@ -737,7 +752,9 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
    1. Take the in-process mutex of the scope key with timeout `LOCK_TIMEOUT_MS`.
    2. `BEGIN`; `SET LOCAL lock_timeout`.
    3. A replica origin locks its `sync_replicas` row, inserting it with `last_n = 0` when absent,
-      and re-checks `n = last_n + 1`; otherwise the intent is answered as §6.2 step 4 answers it.
+      and re-checks, in this order, that the row is bound to the origin's account, else the push
+      stops with `409 replica-foreign`, and that `n = last_n + 1`, else the intent is answered as
+      §6.2 step 4 answers it.
       A server origin with a `requestId` takes `pg_advisory_xact_lock(A, requestId)` here, and
       step 4 runs the lookup under it.
    4. An overlay intent locks `tree:<T>` shared, in a mode only its death conflicts with (Postgres
@@ -812,33 +829,35 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
 16. **Result.** `ok {seq: scope.seq, write?, detail?}`. A command's result always carries `write`,
     its write map, possibly empty.
     - Replica origin: upsert `sync_results(replica, n, digest, result)` and set `last_n := n`.
-    - Server origin with a `requestId`: insert `sync_requests`.
+    - Server origin with a `requestId`: store the result as the call's part `requestId#k` (§6.3).
 17. **`COMMIT`.** Publish the live frames (§6.8), then release the mutex.
 
 **Step R.**
 1. `ROLLBACK`.
 2. In a new transaction, write the result as step 16 does. Only a replica origin first locks its
-   replica row (a server origin has none) and re-checks `n = last_n + 1`, otherwise answering as
-   §6.2 step 4.
+   replica row (a server origin has none) and re-checks it as step 3.3 does.
 
 The scope mutex is held until step R's transaction, or a fault path's (§6.6), ends.
 
-**Exceptions** are classified by §6.6.
+**Exceptions**, in steps 1–17 and in step R's transaction alike, are classified by §6.6.
 
 ### §6.2 Push
 
 `POST /v1/sync/push` (§9.3):
 
-1. **Authenticate.** Failure → `401`. Then a body other than exactly `{replica, ackThrough,
-   intents}`, a `replica` not of D-3's form, or an intent without an integer `n ≥ 1` → `400
-   malformed`; more than `PUSH_MAX_INTENTS` intents, or a body over `PUSH_MAX_BYTES` → `413`.
+1. **Envelope,** in §9.1's order: no principal → `401`; a body over `PUSH_MAX_BYTES` → `413`; a body
+   other than exactly `{replica, ackThrough, intents}`, a `replica` not of D-3's form, an
+   `ackThrough` that is not a safe integer ≥ 0, or an intent without a safe integer `n ≥ 1` → `400
+   malformed`; more than `PUSH_MAX_INTENTS` intents → `413`.
 2. **Epoch.** The response carries the current epoch.
 3. **Bind.** A replica bound to another account → `409 replica-foreign`. An absent
    `sync_replicas[replica]` is inserted with `last_n = 0`. A push that inserted the binding and
    answers `409` deletes it, under the replica row lock, while its `last_n` is still 0 and the
    replica holds no `sync_results` row; an admission that finds its binding gone inserts it again
    (§6.1 step 3.3).
-4. **Take intents in ascending `n`:**
+4. **Take intents in ascending `n`,** each compared with `last_n` as read under the replica row lock
+   (§6.1 step 3.3), never with a value read earlier in the request, so an intent that an overlapping
+   push of the same replica admitted meanwhile is answered from its stored result, never as a gap:
    - `n ≤ last_n`: no stored row, or a digest ≠ `digest(intent)` → `409 replica-forked` (stop).
      Otherwise answer the stored result.
    - `n > last_n + 1` → `409 gap` (stop).
@@ -860,23 +879,27 @@ MCP tools, REST writes, tending and server-internal commands call
 - **With a `requestId`,** dedupe is per tool call, with `digest = sha256(jcs({tool, args}))`. A
   `requestId` is a non-empty string holding neither `#` nor U+0000; any other → `invalid`, and
   nothing is stored.
-  1. Every admit of the call takes `pg_advisory_xact_lock(A, requestId)` (§6.1 step 3.3) and sets
-     `started_at := now`. Before its first intent the call looks up `sync_requests(A, requestId)`,
-     in the transaction of the first admit it runs: a final result with the same digest → return
-     it; a different digest → `request-conflict`; `running` younger than `REQUEST_LEASE_MS` →
-     `request-running` (retry later); `running` older than that → the call takes the lease over
-     (`started_at := now`) and resumes from the stored `requestId#k` results (step 2). The takeover
-     so rolls back with a transient failure of that admit. The first admit's transaction stores the
-     row as `running`.
-  2. The tool's k-th admit stores its result under `requestId#k` in its own transaction, including
-     every output a later admit needs (such as a minted id). Every admit, original or retry,
-     skips when its `requestId#k` exists, with the same digest; a retry rebuilds later admits from
-     those outputs.
-  3. The call's final result replaces `running` with its last admit. An admit that faults (§6.6)
-     ends the call `refused internal`: its `requestId#k` and the row store that result, `done`.
+  1. Every admit the call runs takes `pg_advisory_xact_lock(A, requestId)` (§6.1 step 3.3) and sets
+     `started_at := now`. Before its first intent the call looks up `sync_requests(A, requestId)`
+     under that lock, in the transaction of the first admit it runs, or of its final write (step 3)
+     when it runs none: a final result with the same digest → return it; a different digest →
+     `request-conflict`; `running` younger than `REQUEST_LEASE_MS` → `request-running` (retry
+     later); `running` older than that → the call takes the lease over (`started_at := now`) and
+     resumes from its stored parts (step 2). The takeover so rolls back with a transient failure of
+     that admit. The first admit's transaction stores the row as `running`.
+  2. The call's k-th admit stores its result as the part `requestId#k` in its own transaction,
+     including every output a later admit needs (such as a minted id). A part already stored is
+     replayed: the call runs no admit for it and writes nothing, and rebuilds later admits from its
+     outputs.
+  3. After its last part the call writes its result into the row, `done`, in a transaction of its
+     own. A crash before that write leaves the row `running`, and a retry after the lease replays
+     every stored part, then writes the result. An admit that faults (§6.6) ends the call `refused
+     internal`: its part and the row store that result, `done`, in one transaction.
   4. Every intent of one call carries the same `gestureId`: the `requestId`, or a server-minted id.
 - **Without a `requestId`:** no deduplication.
-- A call's admits run in order and stop at the first refusal, which is the call's result.
+- A call's admits run in order and stop at the first refusal, which is the call's result; otherwise
+  its result is its last admit's. A resumed call stops alike at a replayed part that is a refusal
+  (step 2).
 - A transient failure (§6.6) of the call's first admit leaves no row: the transaction that would
   store it rolls back. A transient failure of a later admit leaves the row `running`, so a retry
   within `REQUEST_LEASE_MS` answers `request-running`.
@@ -908,8 +931,8 @@ counter: it is an existence query over visible rows of primary types.
   return the results so far with `retry {n, retryAfterMs: 1000}`.
 - **Fault:** any other exception, including `statement_timeout`.
   1. Roll back.
-  2. In a new transaction that locks the replica row and re-checks `n = last_n + 1` (otherwise
-     answer as §6.2 step 4), upsert `sync_results(replica, n, digest, null, faults + 1)`.
+  2. In a new transaction that locks the replica row and re-checks it as §6.1 step 3.3 does, upsert
+     `sync_results(replica, n, digest, null, faults + 1)`.
   3. At `faults ≥ K_POISON`, store `refused internal` and set `last_n := n`.
   4. Otherwise stop the request with `retry {n, retryAfterMs: 0}`.
 - A server-origin admit that faults answers its caller `refused internal` (§6.3), final at its first
@@ -1088,11 +1111,14 @@ network. It throws only before its local transaction commits, and every client A
 three failures, told apart by where they arise:
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
-  (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice already
-  carries), and every misuse of what the read-and-commit function is given: a reference that is not
-  this commit's scope, a view read after the function returned, or an id minted for a type that mints
-  none;
+  (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice of any
+  replica on the device already carries), and every misuse of what the read-and-commit function is
+  given: a reference that is not this commit's scope, a view read after the function returned, or an
+  id minted for a type that mints none;
 - *store failure*: anything else. The transaction could not commit, and nothing is written.
+
+An error the read-and-commit function itself throws is none of the three: `commit` writes nothing
+and rethrows it unchanged.
 
 A `Refused` is a result, not a failure. Once the transaction has committed, `commit` MUST return its
 result: a failure in the steps after the commit (below) is the engine's to log and retry, and never
@@ -1157,10 +1183,13 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
 7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record. An intent
    changes a record at most once: changes that give one record two deltas, other than the move and
    update step 4 folds, throw. Each guard goes with the intent that writes its record; a guard on a
-   record no delta writes goes with the first intent. The k-th intent's entry has
-   `localId = <gestureId>/<k>`. An intent exists only if it carries a delta or a command: guards are
-   dropped when the gesture has neither, and a gesture with nothing to send enqueues nothing (held or
-   not), so no retire can match it.
+   record no delta writes goes with the first intent. The gesture id is `opts.gestureId`, or one
+   `commit` mints with at least 122 bits from a CSPRNG, unique on the device without a check. The
+   k-th intent's entry has `localId = <gestureId>/<k>`. An intent exists only if it carries a delta
+   or a command: guards are dropped when the gesture has neither, and a gesture with nothing to send
+   enqueues nothing (held or not), so no retire can match it. A string of the intents (their scope,
+   deltas, guards, command and gesture id), a key or a value at any depth, that holds U+0000 throws,
+   as §6.1 step 2 refuses it.
 8. **Caps and size.**
    - A gesture whose deltas, applied to `stored`, raise a capped type's visible count above its cap
      by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1
@@ -1181,8 +1210,8 @@ After the commit: notify tabs (§7.8), kick the sender, and schedule release tim
 
 ### §7.2 Coalesce
 
-A new ready plain intent `I` on `(t, id)` joins the last earlier outbox entry `E` touching `(t, id)`
-iff:
+A new ready plain intent `I` on `(t, id)` joins the last earlier outbox entry `E` whose delta or
+prediction touches `(t, id)` (a guard touches nothing here) iff:
 - `E` is ready and plain (here, plain also means no prediction);
 - `E` was never numbered;
 - no command entry of the scope lies between `E` and `I`;
@@ -1210,14 +1239,15 @@ undo(gestureId): tx: if every entry of the gesture is held → delete them, fold
 - **Triggers:**
   - an in-process timer at `releaseAt`, owned by the app or process (on web, a timer in every tab);
   - **leaving the app** releases every held entry into the durable queue at once, and the sender
-    attempts one best-effort push at once, whatever backoff is running (§7.4); that push neither
-    resets k nor ends the backoff. Leaving is the process- or scene-level signal: Android
-    `ProcessLifecycleOwner` `ON_STOP`, iOS scene `.background` of the last foreground scene, and on
-    web no tab of the app visible, debounced, or the last tab's `pagehide`. A tab that becomes
-    hidden decides after `LEAVE_DEBOUNCE_MS`, and leaves only if no tab has announced it is visible
-    by then (§7.8). A page suspended before `LEAVE_DEBOUNCE_MS` elapses releases on its next resume
-    or `pagehide`; the hold is durable either way. The last tab's `pagehide` SHOULD number the ready entries and push them with
-    `fetch(keepalive)`, up to `KEEPALIVE_BYTES`. A reload is a `pagehide`;
+    attempts one best-effort push at once, whatever backoff is running, unless a server-requested
+    wait is running (§7.4); that push neither resets k nor ends the backoff. Leaving is the process-
+    or scene-level signal: Android `ProcessLifecycleOwner` `ON_STOP`, iOS scene `.background` of the
+    last foreground scene, and on web no tab of the app visible, debounced, or the last tab's
+    `pagehide`. A tab that becomes hidden decides after `LEAVE_DEBOUNCE_MS`, and leaves only if no
+    tab has announced it is visible by then (§7.8). A page suspended before `LEAVE_DEBOUNCE_MS`
+    elapses releases on its next resume or `pagehide`; the hold is durable either way. The push of
+    the last tab's `pagehide` SHOULD number the ready entries and send them with `fetch(keepalive)`,
+    up to `KEEPALIVE_BYTES`. A reload is a `pagehide`;
   - engine start releases every held entry, with no Undo shown: on iOS and Android the process's
     start, on web the first tab's (§7.8);
   - sign-in and sign-out release every held entry into the durable queue (§7.10).
@@ -1261,6 +1291,9 @@ backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveH
          (liveHint: computed now by the product's view rule, Appendix A)
 kick (wake now, k := 0): commit, release, connectivity change, foreground, auth refresh; a kick
          never cuts short, or resets k during, the backoff after a clock-skew recovery
+server-requested wait: a 503's or a retry's retryAfterMs, from the response's receipt; no push
+         starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
+         push during it
 ```
 
 A ready entry is *held back* while it depends (§7.7 step 3) on a held or held-back entry or on an
@@ -1367,7 +1400,9 @@ notice of its own, as step 3 states):
    targets a scope whose governing record `e` creates. A reference names a record in the scope its
    type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
    transitive: a record a dependent creates, and a life register it writes, make their own
-   dependents.
+   dependents. A guard makes nothing dependent: a guard on a record `e` creates, in an entry with no
+   dependent delta on that record, stays, and the server refuses that entry `stale` (§6.1 step 7),
+   the record never having been created. This holds for every fold, a cancel's included (§7.2).
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
      notice.
@@ -1576,10 +1611,28 @@ page) → none (`gone` or `not-found`).
 ### §9.1 Encodings
 
 JSON over HTTPS and WebSocket. Every response carries `serverTime` and `epoch`. Every request carries
-the header `Sync-Schema` with the registry version: hello, push, pull and the live socket's upgrade
-request alike. A missing value, or one that is not a decimal integer, → `400 malformed`; a version
-below the server's `minSchema` → `426 upgrade-required`. Keyed ids declared as arrays (`edge: [from,
-to]`) have their `jcs` as identity.
+the registry version, on every surface: hello, push and pull in the header `Sync-Schema`, and the
+live socket's upgrade request, to which a browser `WebSocket` cannot add headers, in the query
+parameter `schema` (`/v1/sync/live?schema=<version>`). The server reads each request's version from
+that carrier only. A missing or repeated value, or one that is not a decimal integer, → `400
+malformed`; a version below the server's `minSchema` → `426 upgrade-required`. A browser cannot read
+the status of a refused upgrade, so a web client learns a `426` from its hello, push or pull. Keyed
+ids declared as arrays (`edge: [from, to]`) have their `jcs` as identity.
+
+An HTTP request is checked in this order, and the first failing check answers:
+1. the registry version (above);
+2. authentication: a push without a principal → `401 unauthenticated`;
+3. a push body over `PUSH_MAX_BYTES`, measured as received, before it is parsed → `413
+   request-too-large`;
+4. a body that is not JSON, or not of the endpoint's shape (§6.2 step 1, §9.4) → `400 malformed`;
+5. more intents than `PUSH_MAX_INTENTS` → `413 request-too-large`; more scopes than
+   `PULL_MAX_SCOPES` → `400 malformed`.
+
+**Integers.** Every integer on the wire is a JSON safe integer, at most 2^53 − 1 in magnitude: `n`,
+`ackThrough`, `lastN`, `seq`, `rev`, `total`, `retryAfterMs`, a cursor's `s` and `a`, a `time`,
+`instant` or `serial` value, and a number of a domain declared `integer`. Beyond it, a push's `n` or
+`ackThrough` makes the body malformed (§6.2 step 1), a value in an intent is `invalid` (§6.1 step 2),
+and a cursor is undecodable (§9.4).
 
 Record ids and their key parts, account ids, scope keys and references, replica ids, gesture ids,
 `requestId`s, and type, field and command names compare byte for byte, in UTF-8. Every
@@ -1650,6 +1703,8 @@ of this shape, or that does not re-encode to itself, is undecodable, and the ser
 (§6.7 step 2).
 
 ### §9.5 Live: WebSocket `/v1/sync/live`
+
+The upgrade request is `GET /v1/sync/live?schema=<version>`; §9.1 checks the version.
 
 ```ts
 C→S: { op: 'sub' | 'unsub', scopes: ScopeRef[] } | { op: 'ping' }

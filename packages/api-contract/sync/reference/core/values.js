@@ -6,9 +6,11 @@ import { isOrderKey } from './fracindex.js';
 import { jcs } from './jcs.js';
 import { Stamp } from './stamp.js';
 
+// A bound's unit, which the registry always states (D-9): code points or UTF-8 bytes.
 export function lengthIn(unit, text) {
   if (unit === 'chars') return [...text].length;
-  return Buffer.byteLength(text, 'utf8');
+  if (unit === 'bytes') return Buffer.byteLength(text, 'utf8');
+  throw new Error(`a bound without a unit: ${unit}`);
 }
 
 export function roundHalfAway(y) {
@@ -37,9 +39,9 @@ function isEpochMs(value) {
 function checkBounds(bounds, value) {
   if (bounds.max === undefined && bounds.min === undefined) return null;
   const measured = typeof value === 'string' ? value : jcs(value);
-  const length = lengthIn(bounds.unit ?? 'bytes', measured);
-  if (bounds.min !== undefined && length < bounds.min) return `shorter than ${bounds.min} ${bounds.unit ?? 'bytes'}`;
-  if (bounds.max !== undefined && length > bounds.max) return `longer than ${bounds.max} ${bounds.unit ?? 'bytes'}`;
+  const length = lengthIn(bounds.unit, measured);
+  if (bounds.min !== undefined && length < bounds.min) return `shorter than ${bounds.min} ${bounds.unit}`;
+  if (bounds.max !== undefined && length > bounds.max) return `longer than ${bounds.max} ${bounds.unit}`;
   return null;
 }
 
@@ -53,7 +55,7 @@ export function checkDomain(domain, value) {
       return checkBounds(domain, value);
     case 'number':
       if (typeof value !== 'number' || !Number.isFinite(value)) return 'not a number';
-      if (domain.integer && !Number.isInteger(value)) return 'not an integer';
+      if (domain.integer && !Number.isSafeInteger(value)) return 'not a safe integer';
       if (domain.min !== undefined && value < domain.min) return `below ${domain.min}`;
       if (domain.max !== undefined && value > domain.max) return `above ${domain.max}`;
       return null;
@@ -111,7 +113,7 @@ export function checkFieldValue(registry, field, value) {
     case 'time':
       return isEpochMs(value) ? null : 'not an epoch ms';
     case 'serial':
-      return Number.isInteger(value) && value >= 1 ? null : 'not a positive integer';
+      return Number.isSafeInteger(value) && value >= 1 ? null : 'not a positive safe integer';
     case 'text':
       return typeof value === 'string' ? null : 'not a string';
     default:

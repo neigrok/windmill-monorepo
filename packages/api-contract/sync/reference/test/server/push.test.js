@@ -71,6 +71,7 @@ for (const file of transcripts) {
       ended: ended[name],
       telemetry: [],
       appVersion: '1',
+      device: devices[name],
       nextGestureId: () => `g${(gestures += 1)}`,
       newReplicaId: () => ids[name].shift(),
       newActor: () => actors[name].shift(),

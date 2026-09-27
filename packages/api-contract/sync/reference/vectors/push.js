@@ -117,6 +117,14 @@ function serve() {
     pushed('an answer replayed from sync_results spends no admission budget', {
       state: two, budget: 1, request: request([cardCreate(1, 'card0002', 2000), cardCreate(2, 'card0003', 2001), cardCreate(3, 'card0004', 2002), cardCreate(4, 'card0005', 2003)]),
     }),
+    pushed('a malformed body over PUSH_MAX_BYTES is 413: the size is checked before the shape', {
+      state: base(), limits: { PUSH_MAX_BYTES: 64 }, request: { replica: REPLICA, intents: [first] },
+    }),
+    pushed('a malformed body with more intents than PUSH_MAX_INTENTS is 400: the count is checked after the shape', {
+      state: base(), limits: { PUSH_MAX_INTENTS: 1 }, request: request([first, { ...cardCreate(2, 'card0003', 2001), n: 'two' }]),
+    }),
+    pushed('an intent n beyond the safe integers is 400 malformed', { state: base(), request: request([{ ...first, n: 2 ** 53 }]) }),
+    pushed('an ackThrough beyond the safe integers is 400 malformed', { state: base(), request: request([first], 2 ** 53) }),
     pushed('ackThrough above lastN prunes nothing above lastN: the next n keeps its fault count', {
       state: withReplica(base(), { account: 'A', lastN: 0 }, [{ n: 1, digest: intentDigest(first), result: null, faults: 1 }]), request: request([], 5),
     }),

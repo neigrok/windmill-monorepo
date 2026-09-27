@@ -1,9 +1,11 @@
 // §6.3 server-origin calls, deduplicated per (account, requestId) by sha256(jcs({tool, args})); a
 // requestId is a non-empty string without `#` or U+0000, else the call is invalid. Each admit k stores
-// part k in its own transaction, and a run's first admit also holds the lookup and any lease takeover.
-// `crashAfter: k` stops after part k; `transientAt: k` fails admit k transiently, rolled back;
-// `faultAt: k` faults admit k, which ends the call `refused internal`, stored as done. Live events as
-// push's.
+// part k in its own transaction, and a run's first admit also holds the lookup and any lease takeover;
+// a stored part is replayed without writing, and a refused one, stored or new, ends the call. After
+// the last part the call writes its result, done, in a transaction of its own. `crashAfter: k` stops
+// right after part k, before that write even when k is the last; `transientAt: k` fails admit k
+// transiently, rolled back; `faultAt: k` faults admit k, which ends the call `refused internal`, stored
+// as done. Live events as push's.
 
 import { createHash } from 'node:crypto';
 import { CONSTANTS } from '../core/constants.js';

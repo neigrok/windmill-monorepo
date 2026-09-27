@@ -121,22 +121,37 @@ export function onPushResponse(replica, ctx, request, response, timing) {
 
 // §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and
 // raises k. A response with results resets k unless one is clock-skew, whose recovery is followed by a
-// backoff. A kick wakes the sender and resets k, except during the backoff after a clock-skew recovery,
-// which it neither cuts short nor resets. A leave flush (§7.3) pushes once whatever the wait and leaves
-// the wait as it was. `draw(bound)` answers the random sleep below `bound`.
+// backoff. A server-requested wait (a 503's or a retry's retryAfterMs) is a floor no push passes. A
+// kick wakes the sender, no earlier than the floor, and resets k, except during the backoff after a
+// clock-skew recovery, which it neither cuts short nor resets. A leave (§7.3) pushes once whatever the
+// backoff, but not before the floor, and leaves the wait as it was. `draw(bound)` answers the random
+// sleep below `bound`.
 export class SenderWait {
   constructor(limits = CONSTANTS) {
     this.limits = limits;
     this.k = 0;
     this.until = 0;
+    this.floor = 0;
     this.afterSkew = false;
   }
 
   backoff(now, draw, { liveHint = false, afterSkew = false } = {}) {
     const ceiling = liveHint ? this.limits.BACKOFF_LIVE_CEILING_MS : this.limits.BACKOFF_CEILING_MS;
-    this.until = now + draw(Math.min(ceiling, this.limits.BACKOFF_BASE_MS * 2 ** this.k));
+    this.until = Math.max(this.floor, now + draw(Math.min(ceiling, this.limits.BACKOFF_BASE_MS * 2 ** this.k)));
     this.k += 1;
     this.afterSkew = afterSkew;
+  }
+
+  // 503 {retryAfterMs}: a backoff that sleeps at least the server's wait.
+  unavailable(now, retryAfterMs, draw, { liveHint = false } = {}) {
+    this.floor = now + retryAfterMs;
+    this.backoff(now, draw, { liveHint });
+  }
+
+  // retry {n, retryAfterMs}: wait that long, k as it was.
+  retry(now, retryAfterMs) {
+    this.floor = now + retryAfterMs;
+    this.until = Math.max(this.until, this.floor);
   }
 
   results(codes, now, draw, { liveHint = false } = {}) {
@@ -148,12 +163,16 @@ export class SenderWait {
   kick(now) {
     if (this.afterSkew && now < this.until) return;
     this.k = 0;
-    this.until = now;
+    this.until = Math.max(now, this.floor);
     this.afterSkew = false;
   }
 
   due(now) {
     return now >= this.until;
+  }
+
+  leaveMayPush(now) {
+    return now >= this.floor;
   }
 }
 

@@ -140,7 +140,7 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
 }
 
 // An orphan's refusal ends it with no notice of its own; its held-back dependents fold into the
-// origin's notice, its whole content their source.
+// origin's notice, its whole content their source, and show that notice again if it was dismissed.
 function refuseOrphan(replica, ctx, orphan) {
   moveEntry(replica, ctx.ended, orphan, 'refuse');
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
@@ -148,6 +148,14 @@ function refuseOrphan(replica, ctx, orphan) {
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
   if (!notice) throw new Error(`notice:${orphan.orphanOf}, which ${orphan.localId}'s orphanOf names, is gone (D-17 keeps it)`);
   notice.content.dependents = [...(notice.content.dependents ?? []), ...dependents];
+  delete notice.dismissed;
+}
+
+// D-17: a product dismisses a notice, which hides it until content folds into it.
+export function dismiss(replica, noticeId) {
+  const notice = replica.notices.find((candidate) => candidate.id === noticeId);
+  if (!notice) throw new Error(`${noticeId} is not a notice of ${replica.id}`);
+  notice.dismissed = true;
 }
 
 // A refusal of a sent entry: automatic recovery, or removal, folding and a notice (§7.7 steps 1-5).

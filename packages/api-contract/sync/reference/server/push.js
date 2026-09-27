@@ -14,25 +14,27 @@ function isObject(value) {
 const PUSH_KEYS = ['ackThrough', 'intents', 'replica'];
 const REPLICA_ID = /^rp_[0-9a-f]{32}$/;
 
-// §9.3: exactly {replica, ackThrough, intents}, with a replica id of D-3's pattern.
+// §9.3: exactly {replica, ackThrough, intents}, with a replica id of D-3's pattern and safe integers
+// (§9.1).
 function isWellFormed(request) {
   return isObject(request)
     && Object.keys(request).sort().join() === PUSH_KEYS.join()
     && typeof request.replica === 'string' && REPLICA_ID.test(request.replica)
-    && Number.isInteger(request.ackThrough) && request.ackThrough >= 0
+    && Number.isSafeInteger(request.ackThrough) && request.ackThrough >= 0
     && Array.isArray(request.intents)
-    && request.intents.every((intent) => isObject(intent) && Number.isInteger(intent.n) && intent.n >= 1);
+    && request.intents.every((intent) => isObject(intent) && Number.isSafeInteger(intent.n) && intent.n >= 1);
 }
 
 // Answers {state, response, live, frames}: `live` is every admission's change frame and death events in
-// order (§6.8), `frames` its change frames alone.
+// order (§6.8), `frames` its change frames alone. The envelope is checked in §9.1's order; the body as
+// received is `jcs(request)`, measured before its shape.
 export function push({ state, registry, product, account, request, serverNow, budget = Infinity, faultOf = () => null, limits = CONSTANTS }) {
   const head = { serverTime: serverNow, epoch: state.epoch };
   const answer = (status, error) => ({ state, response: { status, body: { ...head, error } }, live: [], frames: [] });
   if (account === null || account === undefined) return answer(401, 'unauthenticated');
+  if (Buffer.byteLength(jcs(request), 'utf8') > limits.PUSH_MAX_BYTES) return answer(413, 'request-too-large');
   if (!isWellFormed(request)) return answer(400, 'malformed');
-  const tooMany = request.intents.length > limits.PUSH_MAX_INTENTS;
-  if (tooMany || Buffer.byteLength(jcs(request), 'utf8') > limits.PUSH_MAX_BYTES) return answer(413, 'request-too-large');
+  if (request.intents.length > limits.PUSH_MAX_INTENTS) return answer(413, 'request-too-large');
   const { replica } = request;
   const bound = state.replicas[replica];
   if (bound && bound.account !== account) return answer(409, 'replica-foreign');

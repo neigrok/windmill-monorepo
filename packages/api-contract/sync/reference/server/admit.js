@@ -10,6 +10,7 @@ import { Registry } from '../core/registry.js';
 import { compactRow, isAlive, latticeOf, recordKey, stampsOf, thinRow } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
 import { checkArgument, checkFieldValue, checkId, lengthIn } from '../core/values.js';
+import { holdsNul } from '../core/wire.js';
 import { accessOf, scopeKeyOf } from './access.js';
 import { decide, opOf } from './identity.js';
 import { mergeText, mergedFlag } from './textmerge.js';
@@ -27,14 +28,6 @@ const INTENT_KEYS = new Set(['n', 'scope', 'd', 'guard', 'cmd', 'gestureId']);
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
-}
-
-// Any string of the value, a key or a value at any depth, holding U+0000 (§6.1 step 2).
-function holdsNul(value) {
-  if (typeof value === 'string') return value.includes('\u0000');
-  if (Array.isArray(value)) return value.some(holdsNul);
-  if (isObject(value)) return Object.entries(value).some(([key, inner]) => key.includes('\u0000') || holdsNul(inner));
-  return false;
 }
 
 // Answers {result, state, writes, killed}: `writes` lists each changed scope's applied rows, the
@@ -140,7 +133,7 @@ class Admission {
       const field = type.field(name);
       if (!field || field.kind !== 'text' || !isObject(write) || typeof write.text !== 'string' || !isObject(write.base)) throw new Refusal('invalid');
       if (!this.fromServer && field.writer === 'server') throw new Refusal('invalid');
-      const byRev = Object.keys(write.base).length === 1 && Number.isInteger(write.base.rev) && write.base.rev >= 0;
+      const byRev = Object.keys(write.base).length === 1 && Number.isSafeInteger(write.base.rev) && write.base.rev >= 0;
       const byText = Object.keys(write.base).length === 1 && typeof write.base.text === 'string';
       if (!byRev && !byText) throw new Refusal('invalid');
     }
@@ -304,8 +297,7 @@ class Admission {
         scopeKey: change.scopeKey,
         type: change.type,
         delta: change.delta,
-        op: change.op,
-        source: change.source,
+        createdBy: [...(known?.createdBy ?? []), ...(change.op === 'create' ? [change.source] : [])],
         original,
         typedBefore,
         joinedFields,

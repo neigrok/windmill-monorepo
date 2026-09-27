@@ -10,6 +10,7 @@ import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
 import { isVisible, recordKey } from '../core/rows.js';
 import { roundToQuantum } from '../core/values.js';
+import { holdsNul } from '../core/wire.js';
 import { coalesce } from './coalesce.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
@@ -323,12 +324,13 @@ function retiringEntries(replica, scope, retire) {
   return [...gestures.values()].filter((gesture) => gesture.every((entry) => entry.state === 'held' && entry.scope === scope && removes(entry))).flat();
 }
 
-// ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits}. `changes` is a list with its
-// `opts`, answering {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a
-// function of the views and the commit's one physNow reading {drawn, stored, now}, read in this
-// transaction before the scope check, answering {gesture: {changes, opts} | null, value}, and then
-// `commit` answers {outcome, value}. A null gesture writes nothing, ticks no clock and gives a null
-// outcome. A throw writes nothing.
+// ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits, device}; `device` holds every
+// replica a given `opts.gestureId` is checked against. `changes` is a list with its `opts`, answering
+// {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a function of the views
+// and the commit's one physNow reading {drawn, stored, now}, read in this transaction before the scope
+// check, answering {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}.
+// A null gesture writes nothing, ticks no clock and gives a null outcome. A throw writes nothing, and
+// the body's own throw passes through unchanged.
 export function commit(replica, ctx, scope, changes, opts = {}) {
   if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`, 'not-writable');
   const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
@@ -345,10 +347,7 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
-  const gestureOfNotice = (id) => id.slice('notice:'.length, id.lastIndexOf('/'));
-  const taken = (gestureId) => replica.entries().some((entry) => entry.gestureId === gestureId)
-    || replica.notices.some((notice) => gestureOfNotice(notice.id) === gestureId);
-  if (opts.gestureId !== undefined && taken(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken`);
+  if (opts.gestureId !== undefined && ctx.device.carriesGesture(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken on the device`);
   const product = registry.productOfRef(scope);
   for (const key of Object.keys(opts.local ?? {})) {
     const rows = Object.values(registry.products[product]?.device ?? {});
@@ -370,6 +369,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const deltas = oneDeltaPerRecord(changes.map((change) => ({ change, delta: builder.delta(change) })).filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
+  if (holdsNul({ scope, d: deltas, guard: guards, cmd: opts.cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
   const capped = cappedType(registry, storedView, deltas);
   if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };
   const gestureId = opts.gestureId ?? ctx.nextGestureId();

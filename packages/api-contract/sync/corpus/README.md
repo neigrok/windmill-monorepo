@@ -23,6 +23,8 @@ written from this README alone needs no other file than `../probe.registry.json`
 - **Errors**: a vector whose function must fail expects `{error: true}`; a client step that must throw
   answers `{throws: true}` in `returns` and leaves the device as it was before the step.
 - **Digests** are 64 lowercase hex characters; the empty digest is 64 zeros.
+- **Integers** on the wire are safe integers, at most 2^53 − 1 in magnitude (engine.md §9.1); vectors
+  show the bound with 2^53, `9007199254740992`.
 - **Array order** matters, since values compare by JCS. Records (rows, spent ids, `spent` entries) sort
   by type, then id; `revisions` by type, id, field, then rev; `results` by `n`; `requests` by
   `requestId`; request `parts` by `k`; a device's `replicas` by replica id; an outbox by `commitOrder`;
@@ -101,7 +103,8 @@ as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy re
 
 **Checks** (§6.1 step 10, on the joined records):
 
-- A `run` create that does not come from `probe.start` → `invalid`.
+- A `run` create that does not come from `probe.start` → `invalid`, a delta creating the run beside a
+  `probe.start` of the same id included.
 - A `run` whose joined life turns dead (alive before the intent, dead after) kills every alive `lap`
   with that `runId`, the laps the intent itself deletes included, in the same seq, at the stamp of
   step 9's next pass (§10.3: it observes the laps' stored life stamps and the intent's client stamps, so
@@ -423,8 +426,10 @@ creates are over the bound.
 
 Run §6.3 for each call in order against the evolving state: `digest = sha256(jcs({tool, args}))`;
 admit k is part k, each in its own transaction, and every intent carries `gestureId = requestId`.
-The call stops at its first refusal, which is its result. `crashAfter: k` ends the call right after
-part k commits (the row stays `running`); its result is `null`. `transientAt: k` makes admit k fail
+The call stops at its first refusal, which is its result; a resumed call stops alike at a stored
+refused part, and runs no later admit. After its last part the call writes its result into the row,
+`done`, in a transaction of its own. `crashAfter: k` ends the call right after part k commits and
+before that write, k being the last part or not (the row stays `running`); its result is `null`. `transientAt: k` makes admit k fail
 transiently (rolled back): the row stays `running` with the parts before k, and the result is `null`.
 When k is the first admit this call runs, the rollback also takes back the row's insertion (a fresh
 call) or the lease takeover (a resumed one), so the state is unchanged. `faultAt: k` makes admit k
@@ -442,14 +447,14 @@ fault: the call ends `refused internal`, stored as part k and as the row's resul
 LiveEvent = {key, frame: ChangeFrame} | {key, dead: true}
 ```
 
-Run §6.2 once against `state`. Checks run in this order:
+Run §6.2 once against `state`. The body as received is `jcs(request)`. Checks run in this order (§9.1):
 1. no principal → 401 `unauthenticated`;
-2. a body that is not exactly `{replica, ackThrough, intents}`, with `replica` of D-3's form (`rp_`
-   and 32 lowercase hex), `ackThrough` an integer ≥ 0 and `intents` `[{n: integer ≥ 1, …}]` → 400
-   `malformed`;
-3. more intents than `PUSH_MAX_INTENTS`, or `jcs(request)` over `PUSH_MAX_BYTES` → 413
-   `request-too-large`;
-4. a replica bound to another account → 409 `replica-foreign`.
+2. `jcs(request)` over `PUSH_MAX_BYTES`, measured before the shape → 413 `request-too-large`;
+3. a body that is not exactly `{replica, ackThrough, intents}`, with `replica` of D-3's form (`rp_`
+   and 32 lowercase hex), `ackThrough` a safe integer ≥ 0 and `intents` `[{n: safe integer ≥ 1, …}]`
+   → 400 `malformed`;
+4. more intents than `PUSH_MAX_INTENTS` → 413 `request-too-large`;
+5. a replica bound to another account → 409 `replica-foreign`.
 
 None of these changes the state. Then an absent binding is inserted, and intents are taken in
 ascending `n` (§6.2 step 4).
@@ -651,6 +656,7 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `releaseAll` | — | §7.3 (leaving, engine start) | `null` |
 | `releaseDue` | `deviceNow` | §7.3 timer: every held entry with `releaseAt ≤ deviceNow` | `null` |
 | `undo` | `gestureId` | §7.3 | `true` iff every entry of the gesture was held |
+| `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
 | `pushResponse` | `response` | §7.4, for the last `push` | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample | `null` |
@@ -712,10 +718,13 @@ is answered for the caller to resume.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
 - `local`: `{deviceKey: value}`; `null` deletes the row. A key matching none of the product's device
   rows (`keyPattern`) throws.
-- `gestureId`: one that an outbox entry or a notice (`notice:<gestureId>/<k>`) already carries throws.
+- `gestureId`: one that an outbox entry or a notice (`notice:<gestureId>/<k>`) of any replica on the
+  device already carries throws, a dormant replica's included.
 
 A gesture whose changes give one record two deltas throws: an intent changes a record at most once.
 A `move` and an `update` of one record fold into one delta; the update writing `anchor.field` throws.
+A gesture any string of whose intents (scope, deltas, guards, command, `opts.gestureId`), a key or a
+value at any depth, holds U+0000 throws, before the cap check.
 
 **Ids and order.**
 - A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
@@ -729,9 +738,11 @@ A `move` and an `update` of one record fold into one delta; the update writing `
 - Every entry carries `stamp`, the gesture's stamp. Only a clock-skew restamp replaces it; a write-map
   restamp leaves it.
 
-**Notices.** A notice is `{id: 'notice:<localId>', scope, code, detail?, content: {d?, cmd?, dependents?}, at}`.
+**Notices.** A notice is `{id: 'notice:<localId>', scope, code, detail?, content: {d?, cmd?, dependents?}, at, dismissed?}`.
 `dependents` lists the content `{d?, cmd?}` of each dependent, folded or orphaned. The local too-large
-notice of §7.1 step 8 is `notice:<gestureId>/0`, the local id of the gesture's first intent.
+notice of §7.1 step 8 is `notice:<gestureId>/0`, the local id of the gesture's first intent. A
+`dismiss` step sets `dismissed: true`; content that later folds into the notice (an orphan's refusal
+folding its held-back dependents, §7.7 step 3) removes it.
 
 **Sender.** Every response carrying `serverTime` yields an offset sample: every push status, every
 pull response, and hello. After a one-intent 400 or 413 the entry ends `refused` (`invalid` or
@@ -793,7 +804,8 @@ write-map stamps.
 - `cancel.json`: a create joined with a delete, the dependents it folds, and the joins with a delete
   that keep it.
 
-The target E is the last *earlier* entry, in commit order, touching the intent's record. An entry
+The target E is the last *earlier* entry, in commit order, whose delta or prediction touches the
+intent's record; a guard touches nothing here. An entry
 with `numbered: true`, an orphan among them, takes no join: the intent stays an entry of its own. A
 join removes E iff E's delta is a create (its life `[alive, born]`), the record is alive in neither
 drawn nor stored without E and the intent, and the joined life is dead. Any other join keeps the
@@ -802,6 +814,8 @@ end as one entry that deletes the record.
 
 A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
 and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.
+A guard makes nothing dependent: an entry that only guards a register of the cancelled record keeps
+its guard, and is sent with it (the server then refuses it `stale`).
 
 ### hold/*.json
 
@@ -826,6 +840,7 @@ re-identify and an epoch change.
   - Dependency is transitive through the records that folded dependents create and the life
     registers they write.
   - Names include ref fields, key parts and command `ref<t>` arguments.
+  - A guard names nothing: a guard is removed only with a dependent delta on its record.
 - A queued dependent is removed; its entry ends `fold` when nothing is left of it.
 - A sent entry with any dependent delta or command becomes an orphan (`orphanOf`), its whole
   content in the notice. Its `ok` makes it `acked` like any `ok`; its refusal ends it `refused`,

@@ -173,6 +173,12 @@ export class Replica {
     this.outbox = this.outbox.filter((entry) => entry.localId !== localId);
   }
 
+  // A gesture id an outbox entry or a notice (`notice:<gestureId>/<k>`) of this replica carries.
+  carriesGesture(gestureId) {
+    return this.outbox.some((entry) => entry.gestureId === gestureId)
+      || this.notices.some((notice) => notice.id.slice('notice:'.length, notice.id.lastIndexOf('/')) === gestureId);
+  }
+
   deviceRows(product) {
     this.device[product] ??= {};
     return this.device[product];
@@ -215,5 +221,10 @@ export class Device {
 
   remove(replica) {
     this.replicas = this.replicas.filter((other) => other !== replica);
+  }
+
+  // Gesture ids are unique on the device (§2.5), across every replica.
+  carriesGesture(gestureId) {
+    return this.replicas.some((replica) => replica.carriesGesture(gestureId));
   }
 }

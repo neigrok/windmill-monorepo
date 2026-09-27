@@ -4,8 +4,107 @@
 import { readFileSync } from 'node:fs';
 
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
+const SYNTAX_CHARACTERS = '^$\\.*+?()[]{}|/';
+const DASH = Symbol('dash');
 
 export class RegistryError extends Error {}
+
+// A bracket class of literal characters and ranges from `start`, just past its `[`: the index of its
+// `]`, or -1. A `-` is literal first or last, and otherwise joins two characters into a range.
+function classEnd(body, start) {
+  if (body[start] === '^') return -1;
+  const items = [];
+  let i = start;
+  while (i < body.length && body[i] !== ']') {
+    if (body[i] === '\\') {
+      const escaped = body[i + 1] ?? '';
+      if (escaped === '' || !`${SYNTAX_CHARACTERS}-`.includes(escaped)) return -1;
+      items.push(escaped);
+      i += 2;
+    } else if ('[&~'.includes(body[i])) {
+      return -1;
+    } else {
+      items.push(body[i] === '-' ? DASH : body[i]);
+      i += 1;
+    }
+  }
+  if (i === body.length || items.length === 0) return -1;
+  for (let k = 1; k < items.length - 1; k += 1) {
+    if (items[k] !== DASH) continue;
+    const [low, high] = [items[k - 1], items[k + 1]];
+    if (low === DASH || high === DASH || low > high) return -1;
+    if (items[k + 2] === DASH && k + 2 !== items.length - 1) return -1;
+  }
+  return i;
+}
+
+// §2.4 patterns: printable ASCII; `^` and `$` around literal characters, escaped syntax characters,
+// bracket classes, groups (alternation only inside one) and greedy quantifiers.
+export function isPortablePattern(source) {
+  if (typeof source !== 'string' || !/^[ -~]*$/.test(source) || source.length < 2) return false;
+  if (source[0] !== '^' || source[source.length - 1] !== '$') return false;
+  const body = source.slice(1, -1);
+  let depth = 0;
+  let quantifiable = false;
+  let i = 0;
+  while (i < body.length) {
+    const char = body[i];
+    if (char === '\\') {
+      const escaped = body[i + 1] ?? '';
+      if (escaped === '' || !SYNTAX_CHARACTERS.includes(escaped)) return false;
+      i += 2;
+      quantifiable = true;
+    } else if (char === '[') {
+      const end = classEnd(body, i + 1);
+      if (end === -1) return false;
+      i = end + 1;
+      quantifiable = true;
+    } else if (char === '(') {
+      if (body[i + 1] === '?' && body[i + 2] !== ':') return false;
+      i += body[i + 1] === '?' ? 3 : 1;
+      depth += 1;
+      quantifiable = false;
+    } else if (char === ')') {
+      if (depth === 0) return false;
+      depth -= 1;
+      i += 1;
+      quantifiable = true;
+    } else if (char === '|') {
+      if (depth === 0) return false;
+      i += 1;
+      quantifiable = false;
+    } else if ('?*+{'.includes(char)) {
+      const counted = /^\{(\d+)(?:,(\d*))?\}/.exec(body.slice(i));
+      if (!quantifiable || (char === '{' && !counted)) return false;
+      if (counted && counted[2] !== undefined && counted[2] !== '' && Number(counted[2]) < Number(counted[1])) return false;
+      i += counted ? counted[0].length : 1;
+      quantifiable = false;
+    } else if ('^$.]}'.includes(char)) {
+      return false;
+    } else {
+      i += 1;
+      quantifiable = true;
+    }
+  }
+  return depth === 0;
+}
+
+// A domain's first fault against §2.4, or null: a string domain's pattern is portable and its bounds
+// state their unit, at any depth.
+function domainFault(domain) {
+  switch (domain.type) {
+    case 'string':
+      if (domain.pattern !== undefined && !isPortablePattern(domain.pattern)) return `the pattern ${domain.pattern} is outside §2.4's patterns`;
+      if ((domain.min !== undefined || domain.max !== undefined) && domain.unit === undefined) return 'a string bound states its unit';
+      return null;
+    case 'array':
+      return domainFault(domain.items);
+    case 'object':
+      return Object.values(domain.properties).map(domainFault).find((fault) => fault !== null) ?? null;
+    default:
+      return null;
+  }
+}
 
 export class TypeDef {
   constructor(json) {
@@ -149,6 +248,7 @@ export class Registry {
         const sample = (char) => type.mint.prefix + char.repeat(type.mint.length);
         if ([...type.mint.alphabet].some((char) => !pattern.test(sample(char)))) fail(`${type.type}: a minted id does not match idPattern`);
       }
+      if (type.idPattern !== undefined && !isPortablePattern(type.idPattern)) fail(`${type.type}: idPattern ${type.idPattern} is outside §2.4's patterns`);
       if (!type.origins.includes('replica')) fail(`${type.type}: origins always include replica`);
       if (type.visibleWhen && type.life) fail(`${type.type}: visibleWhen is for types without life`);
       for (const part of type.key?.tuple ?? []) if (!this.types.has(part.ref)) fail(`${type.type}: key refers to unknown ${part.ref}`);
@@ -160,6 +260,9 @@ export class Registry {
         if (field.domain?.type === 'fracKey' && !type.hasBorn) fail(`${type.type}.${name}: an order field belongs to a minted or derived type`);
         for (const next of field.serialNext ?? []) if (!type.field(next)) fail(`${type.type}.${name}: serialNext names unknown ${next}`);
         if (field.quantum !== undefined && field.domain?.type !== 'number') fail(`${type.type}.${name}: quantum needs a number domain`);
+        if ((field.min !== undefined || field.max !== undefined) && field.unit === undefined) fail(`${type.type}.${name}: a bound states its unit`);
+        const fault = field.domain ? domainFault(field.domain) : null;
+        if (fault) fail(`${type.type}.${name}: ${fault}`);
         if (field.opens) {
           const placed = type.scope === 'tree' && type.identity === 'singleton' && field.writer === 'server';
           if (!placed) fail(`${type.type}.${name}: opens is for a server-written field of a tree singleton`);
@@ -173,6 +276,13 @@ export class Registry {
       for (const [name, arg] of Object.entries(command.args)) {
         const ref = /^ref<(.+)>$/.exec(arg.type)?.[1];
         if (ref && !this.types.has(ref)) fail(`${command.name}.${name}: ref to unknown ${ref}`);
+        const fault = arg.domain ? domainFault(arg.domain) : null;
+        if (fault) fail(`${command.name}.${name}: ${fault}`);
+      }
+    }
+    for (const [product, def] of Object.entries(this.products)) {
+      for (const [name, row] of Object.entries(def.device ?? {})) {
+        if (!isPortablePattern(row.keyPattern)) fail(`${product} device row ${name}: keyPattern ${row.keyPattern} is outside §2.4's patterns`);
       }
     }
   }

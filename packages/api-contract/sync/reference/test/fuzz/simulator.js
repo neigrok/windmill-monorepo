@@ -72,6 +72,7 @@ class SimDevice {
       ended: this.ended,
       telemetry: this.telemetry,
       appVersion: '1',
+      device: this.store,
       nextGestureId: () => `${this.name}-g${++this.gestures}`,
       newReplicaId: () => this.world.replicaId(),
       newActor: () => {

@@ -544,6 +544,31 @@ function throws() {
         commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } }], { gestureId: 'big' }, 5001),
       ],
     }),
+    stepsVector('a gestureId a dormant replica\'s outbox entry carries throws: gesture ids are unique on the device', {
+      device: device(bound({ confirmed: PROBE })),
+      ids: ['rp_00000000000000000000000000000002'],
+      steps: [
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { gestureId: 'edit' }),
+        { op: 'signOut', choice: 'keep', deviceNow: 5001 },
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Nine' } }], { gestureId: 'edit' }, 5002),
+      ],
+    }),
+    stepsVector('a change holding U+0000 throws, as the server would refuse it', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Un\u0000o' } }])],
+    }),
+    stepsVector('a command argument holding U+0000 throws', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [], { cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 5000, label: 'Ru\u0000n', join: true } } })],
+    }),
+    stepsVector('an opts.gestureId holding U+0000 throws', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { gestureId: 'g\u0000' })],
+    }),
+    stepsVector('U+0000 throws before the cap check: a gesture over the cap holding it throws rather than answering cap', {
+      device: device(bound({ confirmed: FULL })),
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fo\u0000r' } }])],
+    }),
     stepsVector('a device row whose key matches none of its product\'s rows throws', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [], { local: { plates: [10] } })],

@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
-import { Registry, RegistryError } from '../../core/registry.js';
+import { Registry, RegistryError, isPortablePattern } from '../../core/registry.js';
 
 const SCHEMA = JSON.parse(readFileSync(fileURLToPath(new URL('../../../registry.schema.json', import.meta.url)), 'utf8'));
 const PROBE = JSON.parse(readFileSync(fileURLToPath(new URL('../../../probe.registry.json', import.meta.url)), 'utf8'));
@@ -95,6 +95,8 @@ test('registry.schema.json refuses broken registries', () => {
     'an order field on a keyed type': broken((r) => { r.types.find((t) => t.type === 'day').fields.ord = { kind: 'lww', writer: 'client', domain: { type: 'fracKey' } }; }),
     'a governing type with scoped ids': broken((r) => { r.types.find((t) => t.type === 'board').idSpace = 'scope'; }),
     'a bound without its unit': broken((r) => { delete card(r).fields.title.unit; }),
+    'a string domain bound without its unit': broken((r) => { delete command(r, 'probe.start').args.label.domain.unit; }),
+    'a pattern outside printable ASCII': broken((r) => { card(r).idPattern = '^[a-zé]{8,64}$'; }),
     'an order field on a singleton': broken((r) => { r.types.find((t) => t.type === 'meta').fields.ord = { kind: 'lww', writer: 'client', domain: { type: 'fracKey' } }; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.notDeepEqual(errorsOf(SCHEMA, registry), [], name);
@@ -111,8 +113,27 @@ test('the Registry refuses what the schema cannot express', () => {
     'a mint alphabet outside idPattern': broken((r) => { card(r).mint.alphabet = 'ab!'; }),
     'opens on a field of a product-scope type': broken((r) => { card(r).fields.claim.opens = ['x']; card(r).fields.claim.writer = 'server'; }),
     'opens values outside the domain': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.opens = ['secret']; }),
+    'a string domain bound without its unit': broken((r) => { delete command(r, 'probe.start').args.label.domain.unit; }),
+    'an idPattern with a dot': broken((r) => { r.types.find((t) => t.type === 'run').idPattern = '^.{8,64}$'; }),
+    'a domain pattern with a class escape': broken((r) => { card(r).fields.attachment.domain.properties.id.pattern = '^\\S{8,64}$'; }),
+    'a keyPattern with a negated class': broken((r) => { r.products.probe.device.picture.keyPattern = '^picture:[^/]{8,64}$'; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.throws(() => new Registry(registry), RegistryError, name);
+});
+
+test('§2.4 patterns: only the portable subset, which every dialect reads alike', () => {
+  const patterns = [
+    '^b_[0-9a-f]{8}$', '^[A-Za-z0-9_-]{8,64}$', '^[-a]$', '^(?:ab|cd)+$', '^(a|b)?c{2,}$', '^a\\.b\\/c$', '^[\\]\\-]$',
+    'b_[0-9a-f]{8}$', '^b_[0-9a-f]{8}', '^a|b$', '^.{1,64}$', '^\\s+$', '^\\d+$', '^\\w+$', '^a\\b$', '^\\_$',
+    '^[^/]+$', '^[]$', '^[z-a]$', '^[a-b-c]$', '^[a--]$', '^[a&&b]$', '^[[a]]$', '^a+?$', '^a**$', '^a{3,2}$', '^a{,2}$',
+    '^(?=a)a$', '^(a)\\1$', '^a$b$', '^é$', '^a\\$',
+  ];
+  assert.deepEqual(patterns.map(isPortablePattern), [
+    true, true, true, true, true, true, true,
+    false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false, false, false, false, false, false, false,
+    false, false, false, false, false,
+  ]);
 });
 
 test('the Registry, like the schema, keeps a governing type global', () => {

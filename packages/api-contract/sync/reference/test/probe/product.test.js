@@ -63,24 +63,26 @@ test('probe.end writes endedAt on an open run; probe.tick ends open runs started
   }
 });
 
-// A joined record as step 10 hands it to `check`.
-const joined = (op, source, original, after) => ({ type: { type: after.t }, op, source, original, after });
+// A joined record as step 10 hands it to `check`: `createdBy` lists the source of each change that
+// creates it.
+const joined = (createdBy, original, after) => ({ type: { type: after.t }, createdBy, original, after });
 
 test('check refuses a run created outside probe.start and kills every alive lap of a run the intent kills', () => {
   const probe = new ProbeProduct();
   const rows = [run('run00001'), lap('lap00001', 'run00001'), lap('lap00002', 'run00001'), lap('lap00003', 'run00001', ['dead', '3:0:r_a']), lap('lap00004', 'run00002')];
   const killed = { ...run('run00001'), life: ['dead', '4:0:r_a'] };
   const deleting = [
-    joined('delete', 'client', run('run00001'), killed),
-    joined('delete', 'client', lap('lap00002', 'run00001'), lap('lap00002', 'run00001', ['dead', '4:0:r_a'])),
+    joined([], run('run00001'), killed),
+    joined([], lap('lap00002', 'run00001'), lap('lap00002', 'run00001', ['dead', '4:0:r_a'])),
   ];
   assert.deepEqual(probe.check(context(rows), deleting), [
     { t: 'lap', id: 'lap00001', born: '2:0:r_a', life: ['dead', null] },
     { t: 'lap', id: 'lap00002', born: '2:0:r_a', life: ['dead', null] },
   ]);
-  assert.deepEqual(probe.check(context(rows), [joined('delete', 'client', run('run00001'), run('run00001'))]), []);
-  assert.throws(() => probe.check(context([]), [joined('create', 'client', undefined, run('run00001'))]), (error) => error.code === 'invalid');
-  assert.deepEqual(probe.check(context([]), [joined('create', 'command', undefined, run('run00001'))]), []);
+  assert.deepEqual(probe.check(context(rows), [joined([], run('run00001'), run('run00001'))]), []);
+  assert.throws(() => probe.check(context([]), [joined(['client'], undefined, run('run00001'))]), (error) => error.code === 'invalid');
+  assert.throws(() => probe.check(context([]), [joined(['client', 'command'], undefined, run('run00001'))]), (error) => error.code === 'invalid');
+  assert.deepEqual(probe.check(context([]), [joined(['command'], undefined, run('run00001'))]), []);
 });
 
 test('probe.copy replays by its receipt, refuses an unreadable source or a taken id, and copies title, tags and links, a revived tag born at its life stamp', () => {

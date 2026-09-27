@@ -4485,6 +4485,609 @@
     }
   },
   {
+    "name": "a malformed body over PUSH_MAX_BYTES is 413: the size is checked before the shape",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "limits": {
+        "PUSH_MAX_BYTES": 64
+      }
+    },
+    "expect": {
+      "response": {
+        "status": 413,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "error": "request-too-large"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "a malformed body with more intents than PUSH_MAX_INTENTS is 400: the count is checked after the shape",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          },
+          {
+            "n": "two",
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0003",
+                "born": "2001:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2001:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 2",
+                    "2001:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g2"
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "limits": {
+        "PUSH_MAX_INTENTS": 1
+      }
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "error": "malformed"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "an intent n beyond the safe integers is 400 malformed",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 9007199254740992,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "error": "malformed"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "an ackThrough beyond the safe integers is 400 malformed",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "ackThrough": 9007199254740992,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "error": "malformed"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
     "name": "ackThrough above lastN prunes nothing above lastN: the next n keeps its fault count",
     "input": {
       "state": {

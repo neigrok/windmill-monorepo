@@ -1,11 +1,19 @@
-// §9 encodings both roles compute: the §6.2 intent digest, and the §9.4 cursor as unpadded base64url
-// of jcs({e, m, s, k?, a?}).
+// §9 encodings both roles compute: the §6.2 intent digest, the §9.4 cursor as unpadded base64url of
+// jcs({e, m, s, k?, a?}), and the string rule both check an intent by (§6.1 step 2, §7.1 step 7).
 
 import { createHash } from 'node:crypto';
 import { jcs } from './jcs.js';
 
 export function intentDigest(intent) {
   return createHash('sha256').update(jcs(intent), 'utf8').digest('hex');
+}
+
+// Any string of the value, a key or a value at any depth, holding U+0000.
+export function holdsNul(value) {
+  if (typeof value === 'string') return value.includes('\u0000');
+  if (Array.isArray(value)) return value.some(holdsNul);
+  if (value !== null && typeof value === 'object') return Object.entries(value).some(([key, inner]) => key.includes('\u0000') || holdsNul(inner));
+  return false;
 }
 
 const CURSOR_KEYS = new Set(['e', 'm', 's', 'k', 'a']);
@@ -19,10 +27,10 @@ function isCursor(cursor) {
   if (cursor === null || typeof cursor !== 'object' || Array.isArray(cursor)) return false;
   if (Object.keys(cursor).some((key) => !CURSOR_KEYS.has(key))) return false;
   if (typeof cursor.e !== 'string' || !['boot', 'live'].includes(cursor.m)) return false;
-  if (!Number.isInteger(cursor.s) || cursor.s < 0) return false;
+  if (!Number.isSafeInteger(cursor.s) || cursor.s < 0) return false;
   if (cursor.k !== undefined && !(Array.isArray(cursor.k) && cursor.k.length === 2 && typeof cursor.k[0] === 'string' && isId(cursor.k[1]))) return false;
   if (cursor.m === 'live') return cursor.a === undefined;
-  return Number.isInteger(cursor.a) && cursor.a >= cursor.s;
+  return Number.isSafeInteger(cursor.a) && cursor.a >= cursor.s;
 }
 
 export const Cursor = {

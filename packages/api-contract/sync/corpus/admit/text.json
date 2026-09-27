@@ -1104,6 +1104,219 @@
     }
   },
   {
+    "name": "a base rev beyond the safe integers is invalid",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e20fc4bfe5b8860ea5b055a09220f94960b480fa341720dda2ea44dd4e50b84d",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "34cfa50c64a4ac819036783f44030d4905a8d034c662757d08ef0a00e7eb3d1a",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": {
+                  "text": "red blue",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/overlay/b_00000001",
+        "d": [
+          {
+            "t": "mark",
+            "id": "oak",
+            "x": {
+              "memo": {
+                "text": "red",
+                "base": {
+                  "rev": 9007199254740992
+                }
+              }
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/overlay/b_00000001": {
+            "kind": "overlay",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "e20fc4bfe5b8860ea5b055a09220f94960b480fa341720dda2ea44dd4e50b84d",
+            "governedBy": "tree:b_00000001"
+          },
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "34cfa50c64a4ac819036783f44030d4905a8d034c662757d08ef0a00e7eb3d1a",
+            "governedBy": "acct:A/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:A/overlay/b_00000001": [
+            {
+              "t": "mark",
+              "id": "oak",
+              "x": {
+                "memo": {
+                  "text": "red blue",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "acct:A/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "2100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2100:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
     "name": "a base text other than the head merges with diff3",
     "input": {
       "state": {
