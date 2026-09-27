@@ -7,15 +7,12 @@
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
-#include <limits>
 #include <set>
 #include <utility>
 
 namespace wm::sync {
 
 namespace {
-
-constexpr double kMsLimit = 9007199254740992.0;  // 2^53
 
 [[noreturn]] void invalid() {
   throw Refusal(code::invalid);
@@ -33,28 +30,20 @@ bool holdsNul(const Json::Value& value) {
   return false;
 }
 
-bool isInteger(const Json::Value& value) {
-  if (!value.isNumeric() || value.isBool()) return false;
-  const double number = value.asDouble();
-  return std::isfinite(number) && std::floor(number) == number;
-}
-
 bool isEpochMs(const Json::Value& value) {
-  return isInteger(value) && value.asDouble() >= 0 && value.asDouble() < kMsLimit;
+  return isSafeInteger(value) && value.asDouble() >= 0;
 }
 
 bool isNumber(const Json::Value& value) {
   return value.isNumeric() && !value.isBool() && std::isfinite(value.asDouble());
 }
 
-// A bound in its unit (D-9; a string domain that states none measures bytes): a string measured as itself, any
-// other value as its JCS.
-bool withinBounds(std::optional<Unit> unit, std::optional<std::int64_t> min, std::optional<std::int64_t> max,
-                  const Json::Value& value) {
-  if (!min && !max) return true;
+// D-9: a string measured as itself, any other value as its JCS, in the unit its bounds state.
+bool withinBounds(const std::optional<Bounds>& bounds, const Json::Value& value) {
+  if (!bounds || (!bounds->min && !bounds->max)) return true;
   const std::string measured = value.isString() ? value.asString() : jcs(value);
-  const auto length = static_cast<std::int64_t>(lengthIn(unit.value_or(Unit::bytes), measured));
-  return (!min || length >= *min) && (!max || length <= *max);
+  const auto length = static_cast<std::int64_t>(lengthIn(bounds->unit, measured));
+  return (!bounds->min || length >= *bounds->min) && (!bounds->max || length <= *bounds->max);
 }
 
 void requireKeys(const Json::Value& object, std::initializer_list<const char*> allowed) {
@@ -90,9 +79,7 @@ TextBase textBaseOf(const Json::Value& base) {
     if (!base["text"].isString()) invalid();
     return TextBase{std::nullopt, base["text"].asString()};
   }
-  if (!base.isMember("rev") || !isInteger(base["rev"]) || base["rev"].asDouble() < 0) invalid();
-  // A rev past any seq names no revision: the merge answers base-unknown, as for any unkept rev.
-  if (!base["rev"].isUInt64()) return TextBase{std::numeric_limits<Seq>::max(), ""};
+  if (!base.isMember("rev") || !isSafeInteger(base["rev"]) || base["rev"].asDouble() < 0) invalid();
   return TextBase{static_cast<Seq>(base["rev"].asUInt64()), ""};
 }
 
@@ -209,11 +196,11 @@ bool admits(const Domain& domain, const Json::Value& value) {
       const std::string text = value.asString();
       if (!domain.oneOf.empty() && std::find(domain.oneOf.begin(), domain.oneOf.end(), text) == domain.oneOf.end()) return false;
       if (domain.pattern && !domain.pattern->matches(text)) return false;
-      return withinBounds(domain.unit, domain.minLength, domain.maxLength, value);
+      return withinBounds(domain.bounds, value);
     }
     case Domain::Type::number: {
       if (!isNumber(value)) return false;
-      if (domain.integer && !isInteger(value)) return false;
+      if (domain.integer && !isSafeInteger(value)) return false;
       const double number = value.asDouble();
       return (!domain.min || number >= *domain.min) && (!domain.max || number <= *domain.max);
     }
@@ -267,14 +254,14 @@ bool admitsValue(const Registry& registry, const FieldDef& field, const Json::Va
   switch (field.kind) {
     case FieldKind::ranked: return value.isString() && field.rank.contains(value.asString());
     case FieldKind::time: return isEpochMs(value);
-    case FieldKind::serial: return isInteger(value) && value.asDouble() >= 1;
+    case FieldKind::serial: return isSafeInteger(value) && value.asDouble() >= 1;
     case FieldKind::text: return value.isString();
     default: break;
   }
   if (field.ref && !value.isNull() && !isIdOf(registry, *registry.type(*field.ref), value)) return false;
   if (field.ref && value.isNull() && !(field.domain && field.domain->nullable)) return false;
   if (field.domain && !admits(*field.domain, value)) return false;
-  if (!value.isNull() && !withinBounds(field.unit, field.min, field.max, value)) return false;
+  if (!value.isNull() && !withinBounds(field.bounds, value)) return false;
   return !(field.quantum && isNumber(value) && !field.quantum->holds(value.asDouble()));
 }
 

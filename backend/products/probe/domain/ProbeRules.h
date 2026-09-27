@@ -17,7 +17,8 @@ inline constexpr sync::Ms kTickAfterMs = 600'000;
 // A run is open while alive and its endedAt is unset or null.
 bool isOpen(const sync::Row& run);
 
-// A run is created only by probe.start: a create from any other source is invalid.
+// A run is created only by probe.start: a create from any other source is invalid, a delta creating the run
+// beside a probe.start of the same id included.
 void requireStartedRuns(const std::vector<sync::Change>& changes);
 
 // A run whose joined life turns dead kills every alive lap of it in the same seq, the laps the intent

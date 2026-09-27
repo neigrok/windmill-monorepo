@@ -206,7 +206,7 @@ void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>&
       if (const auto loaded = revisions.find(RevisionWanted{key, name, write.base.rev.value_or(0)}); loaded != revisions.end()) revision = loaded->second;
       const std::optional<TextMerge> merge = mergeText(head.text, head.rev, write.base, write.text, revision, limits_.mergeWorkCells);
       if (!merge) throw Refusal(code::baseUnknown);
-      if (static_cast<std::int64_t>(lengthIn(*field.unit, merge->text)) > *field.max) throw Refusal(code::tooLarge);
+      if (static_cast<std::int64_t>(lengthIn(field.bounds->unit, merge->text)) > *field.bounds->max) throw Refusal(code::tooLarge);
       const bool merged = mergedFlag(head.merged, head.text, *merge);
       if (merge->text == head.text && merged == head.merged) continue;
       after.x[name] = TextVal{merge->text, 0, merged};
@@ -228,8 +228,7 @@ void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>&
                                              .typed = queued.locked.typed,
                                              .isNew = isNew});
     }
-    change->op = queued.op;
-    change->source = queued.source;
+    if (queued.op == Op::create) change->createdBy.push_back(queued.source);
     change->after = std::move(after);
     change->joined = joined;
     change->revisions.insert(change->revisions.end(), superseded.begin(), superseded.end());

@@ -19,8 +19,6 @@ namespace wm::sync {
 
 namespace {
 
-constexpr std::uint32_t kTransientRetryMs = 1000;
-
 std::string partId(const CallPart& call) {
   return call.requestId + "#" + std::to_string(call.k);
 }
@@ -68,6 +66,7 @@ public:
         caller_{std::visit([](const auto& o) { return o.account; }, origin), std::holds_alternative<ServerOrigin>(origin)} {}
 
   AdmitOutcome run() {
+    if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
     try {
       shaped_.emplace(shapeIntent(registry_, wire_, Sender{caller_.account, caller_.server}, now_, a_.limits_.maxSkewMs));
     } catch (const Refusal& refusal) {
@@ -122,9 +121,27 @@ private:
     return server && server->call ? &*server->call : nullptr;
   }
 
+  // §6.3 steps 1 and 2 before the intent is shaped or its scope taken: a call the lookup answers whole, or a part a
+  // run of the call stored, is answered from a transaction that holds only the call's lock and writes nothing, so a
+  // replay runs no admit. Step 4 asks again under the scope's lock, for a run that stored the part meanwhile.
+  std::optional<AdmitOutcome> answeredCall() {
+    const CallPart* part = call();
+    if (!part) return std::nullopt;
+    try {
+      txn_ = store().begin(TxnMode::write);
+      store().lockRequest(*txn_, caller_.account, part->requestId);
+      std::optional<AdmitOutcome> answered = storedAnswer(*part);
+      txn_.reset();
+      return answered;
+    } catch (const std::exception& error) {
+      txn_.reset();
+      return answerFault(error);
+    }
+  }
+
   AdmitOutcome admitUnderLock() {
     txn_ = store().begin(TxnMode::write);                                 // 3.2
-    if (!lockOrigin()) return AlreadyAnswered{};                          // 3.3
+    if (std::optional<OutOfTurn> out = lockOrigin()) return *out;         // 3.3
     lockScopes();                                                         // 3.4, 3.5
     lockFreshIds();                                                       // 3.6
     checkAccess();                                                        // 3.7
@@ -148,18 +165,15 @@ private:
     return Admitted{result};
   }
 
-  // 3.3: a replica locks its row and re-checks its turn; a call locks its requestId.
-  bool lockOrigin() {
-    if (const ReplicaOrigin* origin = replica()) return isTurnOf(*origin);
+  // 3.3 in the open transaction: a replica locks its row, inserted again at last_n 0 when a push's 409 deleted it
+  // (§6.2 step 3), and re-checks its turn, the account first; a call locks its requestId.
+  std::optional<OutOfTurn> lockOrigin() {
+    if (const ReplicaOrigin* origin = replica()) {
+      const Turn turn = store().bindReplica(*txn_, origin->replica, origin->account, now_).turnOf(origin->account, origin->n);
+      if (turn != Turn::next) return OutOfTurn{turn};
+    }
     if (const CallPart* part = call()) store().lockRequest(*txn_, caller_.account, part->requestId);
-    return true;
-  }
-
-  // The replica's row, locked in the open transaction and inserted again at last_n 0 when a push's 409 deleted
-  // it (§6.2 step 3): still bound to the origin's account, with n next.
-  bool isTurnOf(const ReplicaOrigin& origin) {
-    const ReplicaRow row = store().bindReplica(*txn_, origin.replica, origin.account, now_);
-    return row.account == origin.account && row.lastN + 1 == origin.n;
+    return std::nullopt;
   }
 
   // 3.4 and 3.5: an overlay's tree held shared; an absent scope a write may create inserted; then, in one
@@ -215,9 +229,9 @@ private:
     return accessOf(scope(), facts, tree, caller_.account);
   }
 
-  // 4: the answer the store already holds for this admit, which writes nothing; otherwise the call's row is running
-  // from here, its lease taken, taken over or refreshed in this admit's transaction, so a transient failure of the
-  // admit takes it back.
+  // 4: the answer the store already holds for this admit, a replayed part included, which writes nothing; otherwise
+  // the call's row is running from here, its lease taken, taken over or refreshed in this admit's transaction, so a
+  // transient failure of the admit takes it back.
   std::optional<AdmitOutcome> lookUpCall() {
     const CallPart* part = call();
     if (!part) return std::nullopt;
@@ -405,7 +419,7 @@ private:
     return changes_->writeMap().value_or(std::vector<WriteEntry>{});
   }
 
-  // 16: a replica's result and last_n, or a call's part.
+  // 16: a replica's result and last_n, or a call's part; the call writes its own result after its last part (§6.3).
   void recordResult(const Json::Value& result) {
     if (const ReplicaOrigin* origin = replica()) {
       store().putResult(*txn_, origin->replica, StoredResult{origin->n, origin->digest, result, 0});
@@ -432,20 +446,18 @@ private:
     }
   }
 
-  // Step R: the refusal is the final answer, stored in a transaction of its own. A failure of that transaction is
-  // classified as any other (§6.6).
+  // Step R: the refusal is the answer, stored as step 16 stores a result, in a transaction of its own that re-checks
+  // the origin as step 3.3 does and looks a call up as step 4 does. A failure of that transaction is classified as
+  // any other (§6.6). A server origin without a requestId stores nothing.
   AdmitOutcome answerRefusal(const Refused& refused) {
     const Json::Value result = refusedResult(refused);
+    if (!replica() && !call()) return Admitted{result};
     try {
-      if (const ReplicaOrigin* origin = replica()) {
-        txn_ = store().begin(TxnMode::write);
-        if (!isTurnOf(*origin)) return AlreadyAnswered{};
-        store().putResult(*txn_, origin->replica, StoredResult{origin->n, origin->digest, result, 0});
-        store().setLastN(*txn_, origin->replica, origin->n);
-        txn_->commit();
-        return Admitted{result};
-      }
-      if (const CallPart* part = call()) return endCall(*part, result);
+      txn_ = store().begin(TxnMode::write);
+      if (std::optional<OutOfTurn> out = lockOrigin()) return *out;
+      if (std::optional<AdmitOutcome> answered = lookUpCall()) return *answered;
+      recordResult(result);
+      txn_->commit();
       return Admitted{result};
     } catch (const std::exception& error) {
       txn_.reset();
@@ -453,18 +465,20 @@ private:
     }
   }
 
-  // §6.6: a transient failure records nothing; a fault is tallied toward poison for a replica, and is a
-  // server-origin call's final answer.
+  // §6.6: a transient failure records nothing; a fault is tallied toward poison for a replica, in a transaction
+  // that re-checks the origin as step 3.3 does, and ends a server-origin call refused internal: its part k and its
+  // row, done, in one transaction, unless the store already holds this admit's answer.
   AdmitOutcome answerFault(const std::exception& error) {
     const bool transient = dynamic_cast<const ScopeLockTimeout*>(&error) || dynamic_cast<const WorkerPoolStopping*>(&error) ||
                            a_.store_.classify(error) == FaultClass::transient;
-    if (transient) return Retry{kTransientRetryMs};
+    if (transient) return Retry{Retry::kTransientMs};
     report(error);
     const Json::Value internal = refusedResult(Refused{code::internal, {}});
+    if (!replica() && !call()) return Admitted{internal};
     try {
+      txn_ = store().begin(TxnMode::write);
+      if (std::optional<OutOfTurn> out = lockOrigin()) return *out;
       if (const ReplicaOrigin* origin = replica()) {
-        txn_ = store().begin(TxnMode::write);
-        if (!isTurnOf(*origin)) return AlreadyAnswered{};
         const std::optional<StoredResult> previous = store().storedResult(*txn_, origin->replica, origin->n);
         const int faults = (previous && previous->digest == origin->digest ? previous->faults : 0) + 1;
         if (faults < a_.limits_.kPoison) {
@@ -477,24 +491,17 @@ private:
         txn_->commit();
         return Admitted{internal};
       }
-      if (const CallPart* part = call()) return endCall(*part, internal);
+      const CallPart& part = *call();
+      if (std::optional<AdmitOutcome> answered = storedAnswer(part)) return *answered;
+      store().putRequest(*txn_, caller_.account, RequestRow{partId(part), part.digest, false, internal, now_});
+      store().putRequest(*txn_, caller_.account, RequestRow{part.requestId, part.digest, false, internal, now_});
+      txn_->commit();
       return Admitted{internal};
     } catch (const std::exception& second) {
+      txn_.reset();
       if (a_.store_.classify(second) == FaultClass::fault) report(second);
-      return Retry{kTransientRetryMs};
+      return Retry{Retry::kTransientMs};
     }
-  }
-
-  // Step R and §6.6 for a call: the result ends the call, stored as its part k and as its row, done, in a
-  // transaction of its own, unless the store already holds this admit's answer.
-  AdmitOutcome endCall(const CallPart& part, const Json::Value& result) {
-    txn_ = store().begin(TxnMode::write);
-    store().lockRequest(*txn_, caller_.account, part.requestId);
-    if (std::optional<AdmitOutcome> answered = storedAnswer(part)) return *answered;
-    store().putRequest(*txn_, caller_.account, RequestRow{partId(part), part.digest, false, result, now_});
-    store().putRequest(*txn_, caller_.account, RequestRow{part.requestId, part.digest, false, result, now_});
-    txn_->commit();
-    return Admitted{result};
   }
 
   void report(const std::exception& error) {

@@ -53,11 +53,26 @@ struct ScopeRow {
   ScopeFacts facts() const { return ScopeFacts{owner, dead, open}; }
 };
 
+// §6.1 step 3.3 and §6.2 step 4: where a replica's intent n stands against the replica's row.
+enum class Turn {
+  foreign,   // the row is bound to another account: 409 replica-foreign
+  answered,  // n ≤ last_n: answered from sync_results
+  next,      // n = last_n + 1: admitted
+  gap,       // n > last_n + 1: 409 gap
+};
+
 // §2.1 sync_replicas.
 struct ReplicaRow {
   std::string replica;
   UserId account;
   std::uint64_t lastN = 0;
+
+  // Read under the row's lock: the account first, then n against last_n.
+  Turn turnOf(const UserId& origin, std::uint64_t n) const {
+    if (account != origin) return Turn::foreign;
+    if (n <= lastN) return Turn::answered;
+    return n == lastN + 1 ? Turn::next : Turn::gap;
+  }
 };
 
 // §2.1 sync_results: the stored result JSON, or none while the row only tallies faults (§6.6).
@@ -110,7 +125,8 @@ public:
 
   // §6.2 step 3 and §6.1 step 3.3: the replica's row, inserted with last_n 0 when absent; FOR UPDATE either way.
   virtual ReplicaRow bindReplica(SyncTxn&, const std::string& replica, const UserId& account, Ms now) = 0;
-  virtual std::optional<ReplicaRow> lockReplica(SyncTxn&, const std::string& replica) = 0;
+  // The replica's row in `lock`'s mode: none, or update (FOR UPDATE).
+  virtual std::optional<ReplicaRow> replica(SyncTxn&, const std::string& replica, RowLock lock) = 0;
   // §6.2 step 3: a binding a push inserted and answers 409 on, deleted while its last_n is 0 and it holds no
   // sync_results row. The caller holds the replica row's lock.
   virtual void unbindUnused(SyncTxn&, const std::string& replica) = 0;

@@ -141,7 +141,8 @@ void linkSyncSocket() {}
 void SyncSchemaGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
   if (!g_installed) return pass();
   const SyncSocketDeps& deps = g_installed->deps;
-  if (const std::optional<SyncReply> refused = schemaRefusal(req, deps.minSchema, deps.clock->nowMs(), deps.epoch)) return refuse(responseOf(*refused));
+  const std::optional<SyncReply> refused = schemaRefusal(schemaParameters(req->query()), deps.minSchema, deps.clock->nowMs(), deps.epoch);
+  if (refused) return refuse(responseOf(*refused));
   pass();
 }
 

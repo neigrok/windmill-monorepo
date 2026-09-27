@@ -212,9 +212,9 @@ ReplicaRow PgSyncStore::bindReplica(SyncTxn& txn, const std::string& replica, co
   return ReplicaRow{text(rows[0], "replica"), UserId{text(rows[0], "account")}, unsignedOf(rows[0], "last_n")};
 }
 
-std::optional<ReplicaRow> PgSyncStore::lockReplica(SyncTxn& txn, const std::string& replica) {
-  const pqxx::result rows =
-      sqlOf(txn).exec("select replica, account::text as account, last_n from sync_replicas where replica = $1 for update", pqxx::params{pgText(replica)});
+std::optional<ReplicaRow> PgSyncStore::replica(SyncTxn& txn, const std::string& replica, RowLock lock) {
+  const pqxx::result rows = sqlOf(txn).exec("select replica, account::text as account, last_n from sync_replicas where replica = $1" + lockClause(lock),
+                                            pqxx::params{pgText(replica)});
   if (rows.empty()) return std::nullopt;
   return ReplicaRow{text(rows[0], "replica"), UserId{text(rows[0], "account")}, unsignedOf(rows[0], "last_n")};
 }

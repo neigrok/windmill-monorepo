@@ -62,13 +62,13 @@ struct TextRevision {
 };
 
 // One record of the intent after step 9: what a product's check reads and step 13 stores. `stored` and
-// `typed` are the record before the intent; `op` and `source` are its last delta's. `joined` is after's lattice
-// as the join wrote it, before G1 dropped a dead record's fields: step 10 reads a parent reference there.
+// `typed` are the record before the intent; `createdBy` holds the source of each of its deltas that creates it,
+// in admission order. `joined` is after's lattice as the join wrote it, before G1 dropped a dead record's fields:
+// step 10 reads a parent reference there.
 struct Change {
   const TypeDef* type = nullptr;
   ScopeKey scope;
-  Op op = Op::write;
-  Source source = Source::client;
+  std::vector<Source> createdBy;
   std::optional<Row> stored;
   std::optional<Row> typed;
   bool isNew = false;

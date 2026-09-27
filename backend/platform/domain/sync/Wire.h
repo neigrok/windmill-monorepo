@@ -117,6 +117,9 @@ Json::Value changeFrame(const std::string& epoch, const ScopeKey& scope, Seq seq
 // digest of a server-origin call, sha256(jcs({tool, args})).
 Digest256 intentDigest(const Json::Value& intent);
 
+// §9.1 Integers: every integer on the wire is a JSON safe integer, at most 2^53 − 1 in magnitude.
+bool isSafeInteger(const Json::Value& value);
+
 // Appendix B and §9.7: the constants the server applies. A test may shrink one for one call.
 struct Limits {
   Ms maxSkewMs = 300'000;

@@ -12,7 +12,8 @@
 #include <variant>
 
 // What admit/requests.json does not pin about ServerCall: a requestId that could name another call's part, a
-// finish by a call whose requestId another call holds, and a stored part a replay's refusal must not overwrite.
+// finish by a call whose requestId another call holds, a finish after a fault ended the call, a replay while its
+// scope is busy, and a stored part a replay's refusal must not overwrite.
 
 using namespace wm;
 using namespace wm::sync;
@@ -102,6 +103,58 @@ TEST(server_call_finish_leaves_the_row_of_another_call_holding_its_request_id) {
   done["A"][0]["state"] = "done";
   done["A"][0]["result"] = parseJson(R"({"s": "ok", "seq": 1})");
   CHECK_EQ(jcs(world.dump()["requests"]), jcs(done));
+}
+
+TEST(server_call_finish_leaves_a_call_a_fault_ended_as_the_fault_stored_it) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(emptyProbe());
+  sync::fake::FaultingStore store(world.store(), sync::fake::FaultingStore::Faults{.parts = {{1, FaultClass::fault}}});
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  const Json::Value args = parseJson(R"({"titles": ["One"]})");
+  ServerCall call(admission, store, world.account("A"), "req-1", "cards.add", args);
+
+  const AdmitOutcome faulted = call.admit(cardAdd("card0001"), 1'000'000);
+  call.finish(parseJson(R"({"s": "refused", "code": "internal"})"), 1'000'001);
+
+  const Json::Value internal = parseJson(R"({"s": "refused", "code": "internal"})");
+  REQUIRE(std::holds_alternative<Admitted>(faulted));
+  CHECK_EQ(jcs(std::get<Admitted>(faulted).result), jcs(internal));
+  Json::Value done = parseJson(R"({"A": [{"requestId": "req-1", "state": "done", "startedAt": 1000000,
+      "parts": [{"k": 1, "result": {"s": "refused", "code": "internal"}}], "result": {"s": "refused", "code": "internal"}}]})");
+  done["A"][0]["digest"] = callDigest(args).hex();
+  CHECK_EQ(jcs(world.dump()["requests"]), jcs(done));
+}
+
+// A store whose scope rows cannot be read, as a scope another admission holds past lock_timeout.
+class BusyScopes final : public sync::fake::ForwardingStore {
+public:
+  using ForwardingStore::ForwardingStore;
+  std::optional<ScopeRow> scope(SyncTxn&, const ScopeKey&, RowLock) override { throw sync::fake::InjectedTransient("lock_timeout on sync_scopes"); }
+};
+
+TEST(server_call_replays_a_stored_part_while_its_scope_is_busy_and_writes_nothing) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(emptyProbe());
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const Json::Value args = parseJson(R"({"titles": ["One"]})");
+  ServerCall crashed(admission, world.store(), world.account("A"), "req-1", "cards.add", args);
+  const AdmitOutcome stored = crashed.admit(cardAdd("card0001"), 1'000'000);
+  const Json::Value before = world.dump();
+
+  BusyScopes busy(world.store());
+  Admission busyAdmission(world.catalog(), busy, world.feed, world.clock(), world.failures);
+  ServerCall resumed(busyAdmission, busy, world.account("A"), "req-1", "cards.add", args);
+  const AdmitOutcome replayed = resumed.admit(cardAdd("card0001"), 1'000'000 + Limits{}.requestLeaseMs);
+
+  const Json::Value ok = parseJson(R"({"s": "ok", "seq": 1})");
+  REQUIRE(std::holds_alternative<Admitted>(stored));
+  CHECK_EQ(jcs(std::get<Admitted>(stored).result), jcs(ok));
+  REQUIRE(std::holds_alternative<Admitted>(replayed));
+  CHECK_EQ(jcs(std::get<Admitted>(replayed).result), jcs(ok));
+  CHECK_EQ(jcs(world.dump()), jcs(before));
+  CHECK_EQ(world.dump()["requests"]["A"][0]["startedAt"].asUInt64(), 1'000'000u);
 }
 
 TEST(server_call_replaying_a_stored_part_whose_scope_died_since_answers_that_part_and_overwrites_nothing) {

@@ -22,7 +22,9 @@
 
 // What the golden corpus does not pin about SyncService: the production push budget, the order a push takes
 // its intents in, the pull scope limit, a scope larger than one feed read, an intent a concurrent push of the
-// same replica answered first, and a binding a concurrent push answered under by the time a 409 would delete it.
+// same replica answered first, step 4's last_n read under the replica row's lock rather than at the bind, a
+// transient failure of that read, step 6 answering without the lock, a binding another account holds by the time
+// its intent is admitted, and a binding a concurrent push answered under by the time a 409 would delete it.
 
 using namespace wm;
 using namespace wm::sync;
@@ -49,15 +51,21 @@ private:
   std::function<void()> then_;
 };
 
-// A store whose `nth` replica lock first runs `then` on the transaction taking it: a concurrent push that
-// committed just before that lock was granted.
+// A store whose `nth` read of a replica row under its lock (replica FOR UPDATE or bindReplica, counted together)
+// first runs `then` on the transaction taking it: a concurrent push that committed just before that lock was
+// granted, or a lock that timed out.
 class BeforeReplicaLock final : public sync::fake::ForwardingStore {
 public:
   BeforeReplicaLock(SyncStore& inner, int nth, std::function<void(SyncTxn&)> then) : ForwardingStore(inner), nth_(nth), then_(std::move(then)) {}
 
-  std::optional<ReplicaRow> lockReplica(SyncTxn& txn, const std::string& replica) override {
+  std::optional<ReplicaRow> replica(SyncTxn& txn, const std::string& replica, RowLock lock) override {
+    if (lock != RowLock::none && ++locks_ == nth_) then_(txn);
+    return ForwardingStore::replica(txn, replica, lock);
+  }
+
+  ReplicaRow bindReplica(SyncTxn& txn, const std::string& replica, const UserId& account, Ms now) override {
     if (++locks_ == nth_) then_(txn);
-    return ForwardingStore::lockReplica(txn, replica);
+    return ForwardingStore::bindReplica(txn, replica, account, now);
   }
 
 private:
@@ -65,6 +73,12 @@ private:
   int locks_ = 0;
   std::function<void(SyncTxn&)> then_;
 };
+
+// What a concurrent push committed, in the transaction about to read it and in the store every later one reads.
+void committedMeanwhile(test::FakeWorld& world, SyncTxn& txn, const std::function<void(sync::fake::FakeDb&)>& change) {
+  change(sync::fake::dbOf(txn));
+  change(world.db());
+}
 
 }
 
@@ -93,7 +107,7 @@ TEST(sync_service_push_takes_intents_in_ascending_n_whatever_order_the_request_c
   request["intents"].append(first);
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), request, budget);
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 2,
@@ -126,14 +140,14 @@ TEST(sync_service_pull_of_more_than_pull_max_scopes_is_malformed_and_runs_no_bef
     return request;
   };
 
-  const SyncReply refused = service.pull(world.account("A"), pullOf(65));
+  const SyncReply refused = service.pull(world.account("A"), jcs(pullOf(65)));
 
   CHECK_EQ(refused.status, 400);
   CHECK_EQ(jcs(refused.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "malformed"})")));
   CHECK_EQ(jcs(world.dump()), jcs(seeded));
   CHECK(world.feed.published.empty());
 
-  const SyncReply served = service.pull(world.account("A"), pullOf(64));
+  const SyncReply served = service.pull(world.account("A"), jcs(pullOf(64)));
 
   CHECK_EQ(served.status, 200);
   CHECK_EQ(served.body["pages"].size(), 64u);
@@ -164,7 +178,7 @@ TEST(sync_service_boot_pages_a_scope_larger_than_one_feed_read_in_seq_then_id_or
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
 
-  const SyncReply reply = service.pull(world.account("A"), parseJson(R"({"scopes": [{"scope": "self/probe", "cursor": null}]})"));
+  const SyncReply reply = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
 
   Json::Value body = parseJson(R"({"serverTime": 1000000, "epoch": "ep-1",
       "pages": [{"scope": "self/probe", "kind": "rows", "rows": [], "more": false, "seq": 7, "total": 600}]})");
@@ -196,7 +210,7 @@ TEST(sync_service_push_answers_an_n_a_concurrent_push_answered_with_the_result_i
   request["intents"].append(second);
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), request, budget);
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 2,
@@ -220,7 +234,7 @@ TEST(sync_service_push_from_a_replica_id_outside_d3_is_malformed_and_binds_nothi
     request["intents"].append(cardIntent(1, "card0001"));
     TimeBudget budget(60'000);
 
-    const SyncReply reply = service.push(world.account("A"), request, budget);
+    const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
 
     CHECK_EQ(reply.status, 400);
     CHECK_EQ(jcs(reply.body), jcs(malformed));
@@ -249,18 +263,112 @@ TEST(sync_service_push_spends_no_budget_on_an_n_a_concurrent_push_answered) {
   request["intents"].append(cardIntent(3, "card0003"));
   test::CountBudget twoAdmissions(2);
 
-  const SyncReply reply = service.push(world.account("A"), request, twoAdmissions);
+  const SyncReply reply = service.push(world.account("A"), jcs(request), twoAdmissions);
 
   CHECK_EQ(reply.status, 200);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3,
       "results": [{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 7}, {"n": 3, "s": "ok", "seq": 2}]})")));
 }
 
+TEST(sync_service_push_compares_each_n_with_last_n_read_under_the_replica_lock_never_the_one_it_bound_at) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(parseJson(R"({"epoch": "ep-1", "clock": {"ms": 0, "counter": 0},
+      "replicas": {"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}}})"));
+  // Between the bind (reads 1 and 2) and step 4's read of n 3 (read 3), an overlapping push admits n 1 and 2.
+  BeforeReplicaLock store(world.store(), 3, [&world](SyncTxn& txn) {
+    committedMeanwhile(world, txn, [](sync::fake::FakeDb& db) {
+      db.replicas.at("rp_0000000000000000000000000000000a").lastN = 2;
+      db.results[{"rp_0000000000000000000000000000000a", 2}] = StoredResult{2, Digest256{}, parseJson(R"({"s": "ok", "seq": 7})"), 0};
+    });
+  });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 2, "intents": []})");
+  request["intents"].append(cardIntent(3, "card0003"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+
+  CHECK_EQ(reply.status, 200);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3, "results": [{"n": 3, "s": "ok", "seq": 1}]})")));
+}
+
+TEST(sync_service_push_answers_the_results_so_far_with_a_retry_when_step_4_s_read_times_out) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  // Reads 1 and 2 bind, 3 is n 1's turn, 4 its admission, 5 n 2's turn.
+  BeforeReplicaLock store(world.store(), 5, [](SyncTxn&) { throw sync::fake::InjectedTransient("lock_timeout on sync_replicas"); });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0001"));
+  request["intents"].append(cardIntent(2, "card0002"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+
+  CHECK_EQ(reply.status, 200);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 1,
+      "results": [{"n": 1, "s": "ok", "seq": 1}], "retry": {"n": 2, "retryAfterMs": 1000}})")));
+}
+
+TEST(sync_service_push_prunes_and_answers_last_n_without_waiting_on_the_replica_lock) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  // Reads 1 and 2 bind, 3 is n 1's turn, 4 its admission: a fifth lock, a slow overlapping admission's, times out.
+  BeforeReplicaLock store(world.store(), 5, [](SyncTxn&) { throw sync::fake::InjectedTransient("lock_timeout on sync_replicas"); });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 1, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0001"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+
+  CHECK_EQ(reply.status, 200);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]})")));
+  CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 1}})")));
+  CHECK_FALSE(world.dump().isMember("results"));
+}
+
+TEST(sync_service_push_answers_replica_foreign_when_another_account_holds_the_binding_by_the_admission) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(parseJson(R"({"epoch": "ep-1", "clock": {"ms": 0, "counter": 0},
+      "replicas": {"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}}})"));
+  // The admission's step 3.3 (read 4) finds the binding B's: a 409 took it from A and B's push bound it again.
+  BeforeReplicaLock store(world.store(), 4, [&world](SyncTxn& txn) {
+    committedMeanwhile(world, txn, [&world](sync::fake::FakeDb& db) { db.replicas.at("rp_0000000000000000000000000000000a").account = world.account("B"); });
+  });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0001"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+
+  CHECK_EQ(reply.status, 409);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "replica-foreign"})")));
+  CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "B", "lastN": 0}})")));
+  CHECK(world.feed.published.empty());
+}
+
 TEST(sync_service_push_409_keeps_a_binding_it_inserted_once_a_concurrent_push_tallied_a_fault_under_it) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
   const Json::Value first = cardIntent(1, "card0001");
-  BeforeReplicaLock store(world.store(), 2, [&first](SyncTxn& txn) {
+  // Reads 1 and 2 bind, read 3 finds n 2 a gap, read 4 is the 409's.
+  BeforeReplicaLock store(world.store(), 4, [&first](SyncTxn& txn) {
     sync::fake::dbOf(txn).results[{"rp_0000000000000000000000000000000a", 1}] = StoredResult{1, intentDigest(first), std::nullopt, 1};
   });
   Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
@@ -271,7 +379,7 @@ TEST(sync_service_push_409_keeps_a_binding_it_inserted_once_a_concurrent_push_ta
   request["intents"].append(cardIntent(2, "card0002"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), request, budget);
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
 
   CHECK_EQ(reply.status, 409);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "gap"})")));

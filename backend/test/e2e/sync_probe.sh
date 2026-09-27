@@ -61,6 +61,7 @@ sync "$BASE/v1/sync/hello" > "$BODY"
 check "$(field "['holdsRecords']" < "$BODY")" '{"probe":false}' "a fresh account holds no probe records"
 check "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello")" "400" "a request without Sync-Schema is malformed"
 check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 0' "$BASE/v1/sync/hello")" "426" "an older Sync-Schema must upgrade"
+check "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello?schema=1")" "400" "hello reads its version from the header alone, never ?schema="
 
 echo "push"
 FIRST="{\"replica\":\"$REPLICA\",\"ackThrough\":0,\"intents\":[$(card 1 cardE2E0001 One)]}"
@@ -76,6 +77,8 @@ check "$(field "['error']" < "$BODY")" "replica-forked" "and the error is replic
 check "$(push_all 1 "[$(card 2 cardE2E0002 Two),$(card 3 cardE2E0003 Three),$(card 4 cardE2E0004 Four)]")" '[{"n":2,"s":"ok","seq":2},{"n":3,"s":"ok","seq":3},{"code":"cap","detail":{"cap":3,"type":"card"},"n":4,"s":"refused"}]' \
   "a fourth card is refused by the cap of 3"
 check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d 'not json')" "400" "a body that is not JSON is malformed"
+BEYOND="{\"replica\":\"$REPLICA\",\"ackThrough\":0,\"intents\":[$(card 9007199254740992 cardE2E0005 Five)]}"
+check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d "$BEYOND")" "400" "an n beyond the safe integers is malformed"
 EXTRA="{\"replica\":\"$REPLICA\",\"ackThrough\":0,\"intents\":[],\"device\":\"phone\"}"
 check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d "$EXTRA")" "400" "a body with a key beyond replica, ackThrough and intents is malformed"
 
@@ -91,7 +94,9 @@ PY
 sync -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.big" > "$BODY"
 check "$(field "['results']" < "$BODY")" '[{"n":5,"s":"ok","seq":4}]' "a 1.2 MB push is read whole and admitted"
 python3 -c "print('x' * 2_200_000)" > "$BODY.huge"
-check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.huge")" "413" "a body over 2 MiB is too large"
+check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.huge")" "413" "a body over 2 MiB is too large, before its shape is read"
+check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 1' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.huge")" "401" \
+  "a signed-out push over 2 MiB is 401: the principal is checked before the size"
 
 echo "pull"
 sync -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
@@ -119,7 +124,7 @@ LIVE="$(python3 - "$PORT" "$SESSION" "$REPLICA" "$NOW" <<'PY'
 import asyncio, json, sys, urllib.request
 import websockets
 port, secret, replica, now = sys.argv[1:]
-live = f"ws://localhost:{port}/v1/sync/live"
+live = f"ws://localhost:{port}/v1/sync/live?schema=1"
 
 def push_day(n, day, score):
     stamp = f"{now}:{n}:r_e2eaaaaaaaa"
@@ -132,16 +137,18 @@ def push_day(n, day, score):
 async def frame(ws):
     return json.loads(await asyncio.wait_for(ws.recv(), 5))
 
-async def refused(headers):
+async def refused(query, headers):
     try:
-        async with websockets.connect(live, additional_headers=headers):
+        async with websockets.connect(f"ws://localhost:{port}/v1/sync/live{query}", additional_headers=headers):
             return "upgraded"
     except websockets.InvalidStatus as error:
         return error.response.status_code
 
 async def main():
-    print(await refused({"Cookie": f"wm_session={secret}"}), await refused({"Cookie": f"wm_session={secret}", "Sync-Schema": "0"}))
-    async with websockets.connect(live, additional_headers={"Cookie": f"wm_session={secret}", "Sync-Schema": "1"}) as ws:
+    cookie = {"Cookie": f"wm_session={secret}"}
+    print(await refused("", cookie), await refused("?schema=0", cookie), await refused("", {**cookie, "Sync-Schema": "1"}),
+          await refused("?schema=1&schema=1", cookie), await refused("?schema=1", {**cookie, "Sync-Schema": "0"}))
+    async with websockets.connect(live, additional_headers=cookie) as ws:
         await ws.send(json.dumps({"op": "ping"}))
         print((await frame(ws))["op"])
         await ws.send(json.dumps({"op": "sub", "scopes": ["self/probe", "tree/b_ffffffff"]}))
@@ -149,11 +156,11 @@ async def main():
         seq = push_day(6, "2026-09-02", 5)["results"][0]["seq"]
         change = await frame(ws)
         print(change["op"], change["scope"], change["seq"] == seq, [row["id"] for row in change.get("rows", [])])
-    async with websockets.connect(live, additional_headers={"Sync-Schema": "1"}) as guest:
+    async with websockets.connect(live) as guest:
         await guest.send(json.dumps({"op": "sub", "scopes": ["self/probe"]}))
         print(json.dumps(await frame(guest), sort_keys=True))
     try:
-        async with websockets.connect(live, additional_headers={"Origin": "https://elsewhere.example", "Sync-Schema": "1"}) as stranger:
+        async with websockets.connect(live, additional_headers={"Origin": "https://elsewhere.example"}) as stranger:
             await asyncio.wait_for(stranger.recv(), 5)
             print("stranger kept")
     except (websockets.ConnectionClosed, websockets.InvalidStatus):
@@ -162,7 +169,8 @@ async def main():
 asyncio.run(main())
 PY
 )"
-check "$(sed -n 1p <<<"$LIVE")" "400 426" "an upgrade without Sync-Schema is malformed, and one below minSchema must upgrade"
+check "$(sed -n 1p <<<"$LIVE")" "400 426 400 400 upgraded" \
+  "the upgrade reads ?schema= alone: missing, below minSchema, only a header, repeated, and a header beside it ignored"
 check "$(sed -n 2p <<<"$LIVE")" "pong" "ping answers pong"
 check "$(sed -n 3p <<<"$LIVE")" '{"op": "not-found", "scope": "tree/b_ffffffff"}' "a sub to an absent tree answers not-found"
 check "$(sed -n 4p <<<"$LIVE")" "change self/probe True ['2026-09-02']" "a push reaches the subscriber as a change frame at its seq, rows inline"

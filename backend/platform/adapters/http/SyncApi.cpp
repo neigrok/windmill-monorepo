@@ -3,6 +3,8 @@
 #include "platform/adapters/http/Caller.h"
 #include "platform/domain/sync/Jcs.h"
 
+#include <drogon/utils/Utilities.h>
+
 #include <trantor/utils/Logger.h>
 
 #include <charconv>
@@ -48,52 +50,60 @@ void SyncApi::onWorker(Reply&& reply, std::function<SyncReply()> work) {
 
 void SyncApi::hello(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
-    const std::optional<UserId> caller = callerOf(req, *deps_.auth);
-    if (std::optional<SyncReply> refused = schemaRefusal(req, deps_.minSchema, deps_.clock->nowMs(), deps_.epoch)) return *refused;
-    return deps_.service->hello(caller);
+    if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
+    return deps_.service->hello(callerOf(req, *deps_.auth));
   });
 }
 
 void SyncApi::push(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
     TimeBudget budget(deps_.limits.pushWorkMs);
-    const std::optional<UserId> caller = callerOf(req, *deps_.auth);
-    if (std::optional<SyncReply> refused = schemaRefusal(req, deps_.minSchema, deps_.clock->nowMs(), deps_.epoch)) return *refused;
-    if (req->body().size() > deps_.limits.pushMaxBytes) return refusal(413, "request-too-large", deps_.clock->nowMs(), deps_.epoch);
-    Json::Value request;
-    try {
-      request = parseJson(req->body());
-    } catch (const JsonError&) {
-      return refusal(400, "malformed", deps_.clock->nowMs(), deps_.epoch);
-    }
-    return deps_.service->push(caller, request, budget);
+    if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
+    return deps_.service->push(callerOf(req, *deps_.auth), req->body(), budget);
   });
 }
 
 void SyncApi::pull(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
-    const std::optional<UserId> caller = callerOf(req, *deps_.auth);
-    if (std::optional<SyncReply> refused = schemaRefusal(req, deps_.minSchema, deps_.clock->nowMs(), deps_.epoch)) return *refused;
-    Json::Value request;
-    try {
-      request = parseJson(req->body());
-    } catch (const JsonError&) {
-      return refusal(400, "malformed", deps_.clock->nowMs(), deps_.epoch);
-    }
-    return deps_.service->pull(caller, request);
+    if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
+    return deps_.service->pull(callerOf(req, *deps_.auth), req->body());
   });
 }
 
-std::optional<SyncReply> schemaRefusal(const drogon::HttpRequestPtr& req, std::int64_t minSchema, Ms serverTime, const std::string& epoch) {
+std::optional<SyncReply> SyncApi::versionRefusal(const drogon::HttpRequestPtr& req) const {
+  // Drogon keeps the first value of a repeated header, so a repeated Sync-Schema reaches here as that one.
   const std::string& header = req->getHeader("sync-schema");
+  const std::vector<std::string> versions = header.empty() ? std::vector<std::string>{} : std::vector<std::string>{header};
+  return schemaRefusal(versions, deps_.minSchema, deps_.clock->nowMs(), deps_.epoch);
+}
+
+std::optional<SyncReply> schemaRefusal(const std::vector<std::string>& versions, std::int64_t minSchema, Ms serverTime,
+                                       const std::string& epoch) {
+  if (versions.size() != 1) return refusal(400, "malformed", serverTime, epoch);
+  const std::string& version = versions.front();
   std::int64_t schema = 0;
-  const auto [end, error] = std::from_chars(header.data(), header.data() + header.size(), schema);
-  const bool decimal = !header.empty() && end == header.data() + header.size();
+  const auto [end, error] = std::from_chars(version.data(), version.data() + version.size(), schema);
+  const bool decimal = !version.empty() && end == version.data() + version.size();
   if (!decimal || (error != std::errc{} && error != std::errc::result_out_of_range)) return refusal(400, "malformed", serverTime, epoch);
   // A decimal integer past int64 is past every version, and below minSchema only when it is negative.
-  const bool below = error == std::errc::result_out_of_range ? header.front() == '-' : schema < minSchema;
+  const bool below = error == std::errc::result_out_of_range ? version.front() == '-' : schema < minSchema;
   if (below) return refusal(426, "upgrade-required", serverTime, epoch);
   return std::nullopt;
+}
+
+std::vector<std::string> schemaParameters(std::string_view query) {
+  std::vector<std::string> values;
+  while (!query.empty()) {
+    const std::size_t next = query.find('&');
+    const std::string_view parameter = query.substr(0, next);
+    const std::size_t equals = parameter.find('=');
+    if (drogon::utils::urlDecode(parameter.substr(0, equals)) == "schema") {
+      values.push_back(equals == std::string_view::npos ? "" : drogon::utils::urlDecode(parameter.substr(equals + 1)));
+    }
+    if (next == std::string_view::npos) break;
+    query.remove_prefix(next + 1);
+  }
+  return values;
 }
 
 drogon::HttpResponsePtr responseOf(const SyncReply& reply) {
