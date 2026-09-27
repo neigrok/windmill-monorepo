@@ -228,8 +228,7 @@
                 },
                 "baseTexts": {
                   "[\"mark\",\"oak\",\"memo\"]": "draft one"
-                },
-                "numbered": true
+                }
               }
             ]
           }
@@ -524,7 +523,6 @@
                 "baseTexts": {
                   "[\"mark\",\"oak\",\"memo\"]": "draft one"
                 },
-                "numbered": true,
                 "n": 2,
                 "digest": "948a060879ede8c77f63794d99f69773b2dbc3cd3e5cad08d586d67e0ded26b4",
                 "resultSeq": 6,
@@ -770,7 +768,6 @@
                 },
                 "n": 1,
                 "digest": "6a8533b95cdca94c6dc680153f7519f0263f7628473167720cb501293650e646",
-                "numbered": true,
                 "resultSeq": 6,
                 "resultEpoch": "ep-1"
               }

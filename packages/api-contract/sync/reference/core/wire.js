@@ -1,11 +1,17 @@
-// §9 encodings both roles compute: the §6.2 intent digest, the §9.4 cursor as unpadded base64url of
-// jcs({e, m, s, k?, a?}), and the string rule both check an intent by (§6.1 step 2, §7.1 step 7).
+// §9 encodings both roles compute: the §6.2 intent digest, a request body's size (§9.1), the §9.4
+// cursor as unpadded base64url of jcs({e, m, s, k?, a?}), and the string rule both check an intent by
+// (§6.1 step 2, §7.1 step 7).
 
 import { createHash } from 'node:crypto';
 import { jcs } from './jcs.js';
 
 export function intentDigest(intent) {
   return createHash('sha256').update(jcs(intent), 'utf8').digest('hex');
+}
+
+// A request body's bytes as the server measures them: a client sends the request's jcs (§7.4).
+export function bodyBytes(request) {
+  return Buffer.byteLength(jcs(request), 'utf8');
 }
 
 // Any string of the value, a key or a value at any depth, holding U+0000.

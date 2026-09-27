@@ -3572,7 +3572,6 @@
                 },
                 "n": 2,
                 "digest": "4ad1017c5d29effcacc6d98df7951c4729bb32104999f7cb9d040911448a9438",
-                "numbered": true,
                 "resultSeq": 6,
                 "resultEpoch": "ep-1"
               }
@@ -4598,6 +4597,380 @@
       "ended": [
         {
           "localId": "sent1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        }
+      ]
+    }
+  },
+  {
+    "name": "an ok whose seq the frame before it already applied resolves in its own transaction",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "pull",
+          "scopes": [
+            "self/probe"
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5000,
+              "epoch": "ep-1",
+              "pages": [
+                {
+                  "scope": "self/probe",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "life": [
+                        "alive",
+                        "1001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 1",
+                          "1001:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0002",
+                      "life": [
+                        "alive",
+                        "1002:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1002:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 2",
+                          "1002:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0003",
+                      "life": [
+                        "alive",
+                        "1003:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1003:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Card 3",
+                          "1003:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 3,
+                      "rc": 3000,
+                      "ru": 3000
+                    },
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "life": [
+                        "alive",
+                        "900:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "900:0:r_aaaaaaaaaaaa",
+                      "seq": 4,
+                      "rc": 4000,
+                      "ru": 4000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                  "more": false,
+                  "seq": 4,
+                  "digest": "14c909e3f21dddc652d450b920150a2dc41f285a526510e2496c096d831c9b70",
+                  "total": 4
+                }
+              ]
+            }
+          },
+          "tSend": 5000,
+          "tRecv": 5000,
+          "deviceNow": 5000
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0003",
+              "f": {
+                "title": "Mine"
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5001
+        },
+        {
+          "op": "frame",
+          "frame": {
+            "op": "change",
+            "scope": "self/probe",
+            "epoch": "ep-1",
+            "seq": 5,
+            "digest": "18c742fefacd3031135e7fe607cd29d6c711839e1d6b3f28be7a6fbe7a52bf02",
+            "rows": [
+              {
+                "t": "card",
+                "id": "card0003",
+                "life": [
+                  "alive",
+                  "1003:0:r_aaaaaaaaaaaa"
+                ],
+                "born": "1003:0:r_aaaaaaaaaaaa",
+                "f": {
+                  "title": [
+                    "Mine",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ]
+                },
+                "seq": 5,
+                "rc": 3000,
+                "ru": 5001
+              }
+            ]
+          },
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5001,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 5
+                }
+              ]
+            }
+          },
+          "deviceNow": 5001,
+          "tSend": 5001,
+          "tRecv": 5001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "scopes": [
+            {
+              "scope": "self/probe",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "self/probe",
+            "outcome": "applied"
+          }
+        ],
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0003",
+                  "born": "1003:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Mine",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        "applied",
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5001:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                },
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5001,
+                "mono": 5001,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "card",
+                  "id": "card0003",
+                  "life": [
+                    "alive",
+                    "1003:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1003:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Mine",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 5,
+                  "rc": 3000,
+                  "ru": 5001
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+                "digest": "18c742fefacd3031135e7fe607cd29d6c711839e1d6b3f28be7a6fbe7a52bf02",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
           "outcome": "resolved",
           "event": "resolve"
         }
@@ -6175,6 +6548,395 @@
           "seq": 4
         }
       ]
+    }
+  },
+  {
+    "name": "a subscribe clears a known scope: a commit to it is accepted, and its first pull boots it",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "known": {
+              "tree/b_00000001": "not-found"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001"
+        },
+        {
+          "op": "commit",
+          "scope": "tree/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "Reopened"
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "pull",
+          "scopes": [
+            "tree/b_00000001"
+          ],
+          "deviceNow": 5002
+        },
+        {
+          "op": "pullResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5002,
+              "epoch": "ep-1",
+              "pages": [
+                {
+                  "scope": "tree/b_00000001",
+                  "kind": "rows",
+                  "rows": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 1,
+                      "rc": 1000,
+                      "ru": 1000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "oak",
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "label": [
+                          "Oak",
+                          "1000:0:r_aaaaaaaaaaaa"
+                        ]
+                      },
+                      "seq": 2,
+                      "rc": 2000,
+                      "ru": 2000
+                    },
+                    {
+                      "t": "tag",
+                      "id": "elm",
+                      "life": [
+                        "dead",
+                        "1500:0:r_aaaaaaaaaaaa"
+                      ],
+                      "born": "1100:0:r_aaaaaaaaaaaa",
+                      "seq": 3
+                    },
+                    {
+                      "t": "link",
+                      "id": [
+                        "oak",
+                        "elm"
+                      ],
+                      "life": [
+                        "alive",
+                        "1000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "seq": 4,
+                      "rc": 4000,
+                      "ru": 4000
+                    }
+                  ],
+                  "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                  "more": false,
+                  "seq": 4,
+                  "digest": "6666b364f40cb1af59affa71cd14f2161ede51d0fe466b63f3cebac7e27f79b9",
+                  "total": 4,
+                  "header": {
+                    "owner": {
+                      "name": "Ann"
+                    }
+                  }
+                }
+              ]
+            }
+          },
+          "tSend": 5002,
+          "tRecv": 5002,
+          "deviceNow": 5002
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null,
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "scopes": [
+            {
+              "scope": "tree/b_00000001",
+              "cursor": null
+            }
+          ]
+        },
+        [
+          {
+            "scope": "tree/b_00000001",
+            "outcome": "applied"
+          }
+        ]
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1500:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5002,
+                "mono": 5002,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "tree/b_00000001": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "meta",
+                  "id": "meta",
+                  "f": {
+                    "title": [
+                      "Plan",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "tag",
+                  "id": "oak",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "label": [
+                      "Oak",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "spentIds": {
+              "tree/b_00000001": [
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "born": "1100:0:r_aaaaaaaaaaaa"
+                }
+              ]
+            },
+            "cursors": {
+              "tree/b_00000001": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "6666b364f40cb1af59affa71cd14f2161ede51d0fe466b63f3cebac7e27f79b9",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Reopened",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "a subscribe to a scope known gone answers gone and keeps the record: its death is final, so a commit to it refuses scope-dead",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "known": {
+              "tree/b_00000001": "gone"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "subscribe",
+          "scope": "tree/b_00000001"
+        },
+        {
+          "op": "commit",
+          "scope": "tree/b_00000001",
+          "changes": [
+            {
+              "op": "write",
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": "Reopened"
+              }
+            }
+          ],
+          "deviceNow": 5001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        "gone",
+        {
+          "refused": "scope-dead"
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "known": {
+              "tree/b_00000001": "gone"
+            }
+          }
+        ]
+      },
+      "ended": []
     }
   },
   {
@@ -8136,8 +8898,7 @@
                     }
                   ],
                   "gestureId": "g1"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g2/0",

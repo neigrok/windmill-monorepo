@@ -49,7 +49,10 @@ single-threaded run can observe, nor the HTTP envelope:
 - publishing frames before the mutex is released (§6.8);
 - the server's clock source (§10.2 `physNow()`, which callers pass as `serverNow`);
 - the registry version's carriers, the `Sync-Schema` header and the live upgrade's `schema` parameter
-  (§9.1); the reference push takes `jcs(request)` as the body received;
+  (§9.1); the transport's own 413 and number-literal syntax (§9.1): the reference push and pull take
+  `jcs(request)` as the body received;
+- a transient failure in the bind, answered 503 (§6.6);
+- the live socket's reopen backoff and the cross-tab `upgrade` signal (§7.5, §7.8);
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
 - the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step);
@@ -76,9 +79,9 @@ single-threaded run can observe, nor the HTTP envelope:
 | `probe/product.js` | the probe's product rules (its Appendix A) |
 | `client/replica.js` | §2.5 the local store, D-3 the device |
 | `client/views.js` | §7.6 |
-| `client/commit.js`, `client/coalesce.js`, `client/hold.js` | §7.1, §7.2, §7.3 |
+| `client/commit.js`, `client/hold.js` | §7.1, §7.3 |
 | `client/sender.js`, `client/puller.js` | §7.4, §7.5 |
-| `client/dependents.js` | §7.7 step 3's dependents: a refusal's fold, the silent fold of a cancel, an undo and a retire (§7.2, §7.3), and §7.4's held-back entries |
+| `client/dependents.js` | §7.7 step 3's dependents: a refusal's fold, the silent fold of an undo and a retire (§7.3), and §7.4's held-back entries |
 | `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps, and D-17's dismissal |
 | `client/subscriptions.js` | §7.9 |
 | `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor) |

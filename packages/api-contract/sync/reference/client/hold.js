@@ -1,14 +1,12 @@
 // §7.3 hold, release and undo: held entries wait durably for release, and Undo removes a gesture only
-// while every entry of it is held, folding its dependents silently as a cancel does (§7.2).
+// while every entry of it is held, folding its dependents silently.
 
 import { moveEntry } from '../core/machines.js';
-import { coalesce } from './coalesce.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 
 export function release(replica, registry, ended, entry) {
   if (entry.state !== 'held') return false;
   moveEntry(replica, ended, entry, 'release');
-  coalesce(replica, registry, ended, entry);
   return true;
 }
 

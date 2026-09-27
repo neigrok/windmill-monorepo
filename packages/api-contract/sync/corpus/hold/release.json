@@ -1195,6 +1195,357 @@
     }
   },
   {
+    "name": "numbering stops before an entry that would take the request body, its jcs, over PUSH_MAX_BYTES; the next push sends it",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "e67ed72eca1f414c9eba9560b8247f35631de7cdf766bd57250e3e81f54f0aab",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "limits": {
+        "PUSH_MAX_BYTES": 391
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Uno"
+              }
+            }
+          ],
+          "deviceNow": 5000
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0002",
+              "f": {
+                "title": "Dos"
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "push",
+          "deviceNow": 5002
+        },
+        {
+          "op": "pushResponse",
+          "deviceNow": 5003,
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5003,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 3
+                }
+              ]
+            }
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 5004
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Uno",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Dos",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "5000:0:r_aaaaaaaaaaaa",
+              "serverOffsetMs": 0,
+              "offsetSamples": [
+                {
+                  "offset": 0,
+                  "rtt": 0
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5003,
+                "mono": 5003,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Mn0",
+                "digest": "e67ed72eca1f414c9eba9560b8247f35631de7cdf766bd57250e3e81f54f0aab",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Uno",
+                          "5000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "87a22cc9d81696fa7c98a14a5dd7dd2865acd5f92ae3e9c81bbb411620edbfac",
+                "resultSeq": 3,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0002",
+                      "born": "1100:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Dos",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "da68c45267dcbd9348b26300c4344067c8017a509916b4bddfeb073acac783d2"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
     "name": "push numbers ready entries and passes over held ones",
     "input": {
       "device": {
@@ -1469,8 +1820,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "6a61243e82b7a9e40098f8bd04c623d706c131ddd3632a3fc10d4ab592dde625",
-                "numbered": true
+                "digest": "6a61243e82b7a9e40098f8bd04c623d706c131ddd3632a3fc10d4ab592dde625"
               }
             ]
           }
@@ -1480,7 +1830,7 @@
     }
   },
   {
-    "name": "a released delete joins the ready update before it",
+    "name": "a released delete is sent as its own intent, numbered after the ready update committed before it",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -1588,6 +1938,10 @@
         {
           "op": "releaseAll",
           "deviceNow": 5002
+        },
+        {
+          "op": "push",
+          "deviceNow": 5003
         }
       ]
     },
@@ -1607,7 +1961,47 @@
           "retired": [],
           "stamp": "5001:0:r_aaaaaaaaaaaa"
         },
-        null
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Uno",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "del",
+              "n": 2
+            }
+          ]
+        }
       ],
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -1616,7 +2010,7 @@
             "meta": {
               "replica": "rp_00000000000000000000000000000001",
               "state": "bound",
-              "nextN": 1,
+              "nextN": 3,
               "hlc": {
                 "ms": 5001,
                 "counter": 0
@@ -1683,7 +2077,7 @@
                 "gestureId": "g1",
                 "lineage": "A",
                 "scope": "self/probe",
-                "state": "ready",
+                "state": "sent",
                 "commitOrder": 1,
                 "releaseAt": 0,
                 "stamp": "5000:0:r_aaaaaaaaaaaa",
@@ -1693,10 +2087,6 @@
                     {
                       "t": "card",
                       "id": "card0001",
-                      "life": [
-                        "dead",
-                        "5001:0:r_aaaaaaaaaaaa"
-                      ],
                       "born": "1000:0:r_aaaaaaaaaaaa",
                       "f": {
                         "title": [
@@ -1706,20 +2096,45 @@
                       }
                     }
                   ],
-                  "gestureId": "g1"
-                }
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "87a22cc9d81696fa7c98a14a5dd7dd2865acd5f92ae3e9c81bbb411620edbfac"
+              },
+              {
+                "localId": "del/0",
+                "gestureId": "del",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 14001,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "del",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "dcaaf89e8b796758b5694a69922f24db40030a4c2de114847a6a0cb521b80841"
               }
             ]
           }
         ]
       },
-      "ended": [
-        {
-          "localId": "del/0",
-          "outcome": "coalesced",
-          "event": "coalesce"
-        }
-      ]
+      "ended": []
     }
   },
   {
@@ -2074,8 +2489,7 @@
                   "n": 2
                 },
                 "n": 2,
-                "digest": "7889faf9cd9741a78d1b8ceb18387b313a891b5fb8a97b0fac6e55375f02d80e",
-                "numbered": true
+                "digest": "7889faf9cd9741a78d1b8ceb18387b313a891b5fb8a97b0fac6e55375f02d80e"
               },
               {
                 "localId": "g1/0",
@@ -2105,8 +2519,7 @@
                   "n": 3
                 },
                 "n": 3,
-                "digest": "757ebcbbcd6a619d95b9d0861140db2c4401141aa434c2ccb3b1e126e82cd310",
-                "numbered": true
+                "digest": "757ebcbbcd6a619d95b9d0861140db2c4401141aa434c2ccb3b1e126e82cd310"
               },
               {
                 "localId": "g2/0",
@@ -2136,8 +2549,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "19f062ff2c759161b622358def9ca66f11d677f30a1e57a581fee21316a1ef04",
-                "numbered": true
+                "digest": "19f062ff2c759161b622358def9ca66f11d677f30a1e57a581fee21316a1ef04"
               }
             ]
           }
@@ -2641,8 +3053,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "2de60b1c3ba222d9bdafba41e356b4041315a6403053e9740857ea464f266eb0",
-                "numbered": true
+                "digest": "2de60b1c3ba222d9bdafba41e356b4041315a6403053e9740857ea464f266eb0"
               },
               {
                 "localId": "board/0",

@@ -19,6 +19,18 @@ function resolveAcked(replica, ctx, scope, cleanSeq) {
   }
 }
 
+// cleanSeq (§7.5): the seqs a live cursor has received whole; none while booting or without a cursor.
+function cleanSeqOf(cursor) {
+  if (cursor === null || cursor.m !== 'live') return -Infinity;
+  return cursor.k === undefined ? cursor.s : cursor.s - 1;
+}
+
+// Resolves the scope's acked entries its stored cursor already covers: an `ok` that arrives after the
+// page or frame holding its seq resolves in its own transaction (§7.5).
+export function resolveCovered(replica, ctx, scope) {
+  resolveAcked(replica, ctx, scope, cleanSeqOf(Cursor.decode(replica.cursorOf(scope).cursor)));
+}
+
 function observeRows(replica, rows) {
   const stamps = rows.flatMap(stampsOf);
   replica.observe(stamps);
@@ -117,8 +129,7 @@ export function applyPage(replica, ctx, requested, page) {
     record.booted = true;
     resolveAcked(replica, ctx, scope, cursor.s);
   }
-  const cleanSeq = cursor.m !== 'live' ? -Infinity : cursor.k === undefined ? cursor.s : cursor.s - 1;
-  resolveAcked(replica, ctx, scope, cleanSeq);
+  resolveAcked(replica, ctx, scope, cleanSeqOf(cursor));
   if (cursor.m === 'live' && cursor.k === undefined && cursor.s === page.seq && !replica.staging[scope]) {
     checkDigest(replica, ctx, scope, page.digest, page.seq);
   }

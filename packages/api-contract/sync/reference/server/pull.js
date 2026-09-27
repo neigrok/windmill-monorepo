@@ -4,7 +4,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST } from '../core/digest.js';
 import { jcs } from '../core/jcs.js';
 import { compareFeed, compareRecords, isAlive, isVisible, thinRow } from '../core/rows.js';
-import { Cursor } from '../core/wire.js';
+import { Cursor, bodyBytes } from '../core/wire.js';
 import { accessOf, scopeKeyOf } from './access.js';
 import { admit } from './admit.js';
 
@@ -104,9 +104,20 @@ function beforePull(state, registry, product, account, ref, serverNow, limits) {
 }
 
 // Answers {state, response, live}: the state after the beforePull admissions, and their live events.
+// §9.4: exactly {scopes}, each {scope, cursor} with a string scope and a string or null cursor.
+function isWellFormedPull(request) {
+  const isObject = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
+  return isObject(request) && Object.keys(request).join() === 'scopes' && Array.isArray(request.scopes)
+    && request.scopes.every((entry) => isObject(entry) && Object.keys(entry).sort().join() === 'cursor,scope'
+      && typeof entry.scope === 'string' && (entry.cursor === null || typeof entry.cursor === 'string'));
+}
+
+// The envelope is checked in §9.1's order, the body received being `jcs(request)`.
 export function pull({ state, registry, product, account, request, serverNow, limits = CONSTANTS }) {
   const head = { serverTime: serverNow, epoch: state.epoch };
-  if (request.scopes.length > limits.PULL_MAX_SCOPES) return { state, response: { status: 400, body: { ...head, error: 'malformed' } }, live: [] };
+  const answer = (status, error) => ({ state, response: { status, body: { ...head, error } }, live: [] });
+  if (bodyBytes(request) > limits.PULL_MAX_BYTES) return answer(413, 'request-too-large');
+  if (!isWellFormedPull(request) || request.scopes.length > limits.PULL_MAX_SCOPES) return answer(400, 'malformed');
   let current = state;
   const live = [];
   const pages = request.scopes.map(({ scope, cursor }) => {

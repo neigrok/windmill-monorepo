@@ -2,9 +2,9 @@
 
 import { freshMeta } from '../client/replica.js';
 import { ZERO_DIGEST } from '../core/digest.js';
-import { Cursor } from '../core/wire.js';
+import { Cursor, bodyBytes } from '../core/wire.js';
 import { OTHER, row, st } from './fixtures.js';
-import { settle, stepsVector } from './steps.js';
+import { runSteps, settle, stepsVector } from './steps.js';
 
 const REPLICA = 'rp_00000000000000000000000000000001';
 const BOARD = 'b_00000001';
@@ -317,7 +317,17 @@ function guards() {
   ];
 }
 
+// The widest one-intent push body of an update of card0001: its request at n = ackThrough = 2^53 − 1.
+function widestAloneBytes() {
+  const step = commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno', body: 'a body of some length' } }]);
+  const out = runSteps({ device: device(bound({ confirmed: PROBE })), steps: [step] });
+  const [entry] = out.device.replicas.find((replica) => replica.meta.replica === REPLICA).outbox;
+  const widest = Number.MAX_SAFE_INTEGER;
+  return { step, bytes: bodyBytes({ replica: REPLICA, ackThrough: widest, intents: [{ ...entry.intent, n: widest }] }) };
+}
+
 function grouping() {
+  const alone = widestAloneBytes();
   const start = {
     cmd: { name: 'probe.start', args: { id: 'run00009', label: 'Go', startedAt: 5000, join: true } },
     predict: [{ op: 'create', t: 'run', id: 'run00009', f: { label: 'Go', startedAt: 5000 } }],
@@ -330,6 +340,16 @@ function grouping() {
         { op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno', body: 'a longer body text' } },
         { op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } },
       ], { atomic: true })],
+    }),
+    stepsVector('an intent whose widest one-intent push body is one byte over PUSH_MAX_BYTES is refused too-large, though the intent alone fits', {
+      device: device(bound({ confirmed: PROBE })),
+      limits: { PUSH_MAX_BYTES: alone.bytes - 1 },
+      steps: [alone.step],
+    }),
+    stepsVector('an intent whose widest one-intent push body is exactly PUSH_MAX_BYTES is enqueued', {
+      device: device(bound({ confirmed: PROBE })),
+      limits: { PUSH_MAX_BYTES: alone.bytes },
+      steps: [alone.step],
     }),
     stepsVector('a create beyond a cap is refused at commit: cap, with nothing written, no notice and no tick', {
       device: device(bound({ confirmed: FULL })),

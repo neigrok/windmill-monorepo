@@ -14,7 +14,7 @@ import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
 import { dismiss } from '../client/refusal.js';
 import { Device } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../client/sender.js';
-import { reconcile } from '../client/subscriptions.js';
+import { reconcile, subscribe } from '../client/subscriptions.js';
 import { capCount, view } from '../client/views.js';
 import { ACTOR, registry } from './fixtures.js';
 
@@ -157,6 +157,9 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
         case 'reconcile':
           reconcile(replica, ctx, step.scopes);
           answer(null);
+          break;
+        case 'subscribe':
+          answer(subscribe(replica, step.scope));
           break;
         case 'signIn':
           answer(signIn(device, ctx, { account: step.account, holdsRecords: step.holdsRecords, decisions: step.decisions }));

@@ -10,8 +10,7 @@ import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
 import { isVisible, recordKey } from '../core/rows.js';
 import { roundToQuantum } from '../core/values.js';
-import { holdsNul } from '../core/wire.js';
-import { coalesce } from './coalesce.js';
+import { bodyBytes, holdsNul } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
@@ -375,7 +374,9 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const gestureId = opts.gestureId ?? ctx.nextGestureId();
   const intents = groupIntents(scope, deltas, guards, opts, gestureId);
 
-  const oversize = intents.find((intent) => Buffer.byteLength(jcs(intent), 'utf8') > limits.PUSH_MAX_BYTES);
+  const widest = Number.MAX_SAFE_INTEGER;
+  const aloneBytes = (intent) => bodyBytes({ replica: replica.meta.replica, ackThrough: widest, intents: [{ ...intent, n: widest }] });
+  const oversize = intents.find((intent) => aloneBytes(intent) > limits.PUSH_MAX_BYTES);
   if (oversize) {
     const content = {};
     if (deltas.length) content.d = deltas;
@@ -413,7 +414,6 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
     return entry;
   });
   replica.outbox.push(...entries);
-  for (const entry of entries) coalesce(replica, registry, ctx.ended, entry);
 
   for (const [key, value] of Object.entries(opts.local ?? {})) {
     if (value === null) delete replica.deviceRows(product)[key];
