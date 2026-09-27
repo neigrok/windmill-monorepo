@@ -1,13 +1,13 @@
 // §11.2 #2: for a single-actor outbox, drawn with coalescing equals drawn without it. The uncoalesced
 // replica numbers every ready entry after each step, so no later intent can join an earlier one.
 // Drawn is compared over visible records: a create and delete that cancel leave no row where the
-// uncoalesced outbox draws a dead one, and neither is drawn.
+// uncoalesced outbox draws a dead one, and neither is drawn. Undo and retire act on both replicas alike.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';
 import { compareRecords, isVisible } from '../../core/rows.js';
 import { commit } from '../../client/commit.js';
-import { releaseAll, releaseDue } from '../../client/hold.js';
+import { releaseAll, releaseDue, undo } from '../../client/hold.js';
 import { Replica } from '../../client/replica.js';
 import { nextPush } from '../../client/sender.js';
 import { drawn } from '../../client/views.js';
@@ -37,10 +37,11 @@ function visibleDrawn(replica) {
 function gesture(rng, replica, k) {
   const cards = [...drawn(replica, registry, 'self/probe').values()].filter((record) => record.t === 'card' && isVisible(registry.type('card'), record));
   const tags = [...drawn(replica, registry, TREE).values()].filter((record) => record.t === 'tag');
-  const roll = rng.int(9);
-  if (roll === 7 && tags.length) {
+  const roll = rng.int(11);
+  if ((roll === 7 || roll >= 9) && tags.length) {
     const tag = rng.pick(tags);
-    return [TREE, [{ op: tag.life?.[0] === 'alive' ? 'delete' : 'revive', t: 'tag', id: tag.id }], {}];
+    if (tag.life?.[0] === 'alive') return [TREE, [{ op: 'delete', t: 'tag', id: tag.id }], { hold: rng.chance(0.4) }];
+    return [TREE, [{ op: 'revive', t: 'tag', id: tag.id }], {}];
   }
   if (roll === 8) return [TREE, [{ op: 'create', t: 'tag', id: `t${String(k).padStart(4, '0')}`, f: { label: rng.pick(WORDS) } }], {}];
   if (roll === 0) return ['self/probe', [{ op: 'create', t: 'card', id: `new${String(k).padStart(5, '0')}`, f: { title: rng.pick(WORDS) } }], {}];
@@ -54,7 +55,9 @@ function gesture(rng, replica, k) {
 
 test('drawn with coalescing equals drawn without it, for single-actor outboxes', () => {
   let joins = 0;
-  for (let seed = 1; seed <= 150; seed += 1) {
+  let undone = 0;
+  let retired = 0;
+  for (let seed = 1; seed <= 300; seed += 1) {
     const rng = new Rng(seed);
     const joined = start();
     const apart = start();
@@ -69,6 +72,23 @@ test('drawn with coalescing equals drawn without it, for single-actor outboxes',
       } else if (rng.chance(0.05)) {
         releaseAll(joined, registry, endedJoined);
         releaseAll(apart, registry, endedApart);
+      } else if (rng.chance(0.1)) {
+        const held = joined.entries().filter((entry) => entry.state === 'held').map((entry) => entry.gestureId);
+        if (held.length) {
+          const gestureId = rng.pick(held);
+          undo(joined, registry, endedJoined, gestureId);
+          undo(apart, registry, endedApart, gestureId);
+          undone += 1;
+        }
+      } else if (rng.chance(0.1)) {
+        const deletes = joined.entries().filter((entry) => entry.state === 'held').map((entry) => entry.intent.d[0]);
+        if (deletes.length) {
+          const { t, id } = rng.pick(deletes);
+          const edit = t === 'card' ? ['self/probe', { op: 'update', t, id, f: { title: rng.pick(WORDS) } }] : [TREE, { op: 'update', t, id, f: { label: rng.pick(WORDS) } }];
+          commit(joined, ctx(endedJoined), edit[0], [edit[1]], { retire: [{ t, id }] });
+          commit(apart, ctx(endedApart), edit[0], [edit[1]], { retire: [{ t, id }] });
+          retired += 1;
+        }
       } else {
         const [scope, changes, opts] = gesture(rng, joined, k);
         commit(joined, ctx(endedJoined), scope, changes, opts);
@@ -81,4 +101,5 @@ test('drawn with coalescing equals drawn without it, for single-actor outboxes',
     joins += endedJoined.filter((end) => end.outcome === 'coalesced').length;
   }
   assert.ok(joins > 500, `only ${joins} joins happened`);
+  assert.ok(undone > 80 && retired > 60, `only ${undone} undos and ${retired} retires happened`);
 });

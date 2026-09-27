@@ -173,6 +173,13 @@ function deltas() {
         { op: 'create', t: 'card', id: 'card0009', f: { title: 'Last' }, anchor: below('card0002') },
       ], { atomic: true })],
     }),
+    stepsVector('a move and a rename of one record in one gesture fold into one delta', {
+      device: device(bound({ confirmed: LISTED })),
+      steps: [commitStep('self/probe', [
+        { op: 'move', t: 'card', id: 'card0002', anchor: below(null) },
+        { op: 'update', t: 'card', id: 'card0002', f: { title: 'First' } },
+      ])],
+    }),
     stepsVector('a move below itself is its own anchor: a key between its drawn key and the next greater stored key keeps its place', {
       device: device(bound({ confirmed: LISTED })),
       steps: [commitStep('self/probe', [{ op: 'move', t: 'card', id: 'card0001', anchor: below('card0001') }])],
@@ -515,11 +522,26 @@ function throws() {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }, { op: 'update', t: 'card', id: 'card0001', f: { tier: 'done' } }], { atomic: true })],
     }),
+    stepsVector('an update writing the field a move of the same record places throws', {
+      device: device(bound({ confirmed: LISTED })),
+      steps: [commitStep('self/probe', [
+        { op: 'move', t: 'card', id: 'card0002', anchor: below(null) },
+        { op: 'update', t: 'card', id: 'card0002', f: { ord: 'a5' } },
+      ])],
+    }),
     stepsVector('a gestureId an outbox entry already carries throws', {
       device: device(bound({ confirmed: PROBE })),
       steps: [
         commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { gestureId: 'edit' }),
         commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } }], { gestureId: 'edit' }, 5001),
+      ],
+    }),
+    stepsVector('a gestureId a notice already carries throws: a too-large gesture\'s id is not reused', {
+      device: device(bound({ confirmed: PROBE })),
+      limits: { PUSH_MAX_BYTES: 150 },
+      steps: [
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno', body: 'a longer body text' } }], { gestureId: 'big' }),
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } }], { gestureId: 'big' }, 5001),
       ],
     }),
     stepsVector('a device row whose key matches none of its product\'s rows throws', {

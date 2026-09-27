@@ -1,6 +1,6 @@
 // coalesce/*.json (§7.2): when a ready plain intent joins the last earlier entry on its record; an entry
-// ever numbered takes no join. A create joined with a delete cancels only when the earlier entry made
-// the record alive (a create or a revive); an update joined with a delete keeps the delete.
+// ever numbered takes no join. Only a create joined with a delete cancels, and only where the record is
+// alive in neither view without the two; any other join with a delete keeps the delete.
 
 import { freshMeta } from '../client/replica.js';
 import { OTHER, row, st } from './fixtures.js';
@@ -161,6 +161,14 @@ function blocked() {
 const BOARD_ROW = row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 1 });
 const ELM = row({ t: 'tag', id: 'elm', life: ['alive', st(950)], born: st(950), f: { label: ['Elm', st(950)] }, seq: 1 });
 
+// A tree whose tag elm is spent: dead, with its born known from a SpentId.
+function spentElm() {
+  return settle({
+    active: REPLICA,
+    replicas: [{ meta: freshMeta(REPLICA, 'bound', 'A'), confirmed: { [TREE]: TREE_ROWS }, spentIds: { [TREE]: [{ t: 'tag', id: 'elm', born: st(1000) }] } }],
+  });
+}
+
 function cancels() {
   return [
     stepsVector('a cancelled board takes its tree and overlay writes with it, silently: each ends coalesced by cancel', {
@@ -235,14 +243,29 @@ function cancels() {
         commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5002),
       ],
     }),
-    stepsVector('a revive and a delete of a spent record, both unsent, cancel', {
-      device: settle({
-        active: REPLICA,
-        replicas: [{ meta: freshMeta(REPLICA, 'bound', 'A'), confirmed: { [TREE]: TREE_ROWS }, spentIds: { [TREE]: [{ t: 'tag', id: 'elm', born: st(1000) }] } }],
-      }),
+    stepsVector('a held delete, a revive and a delete, then Undo of the held delete: the final delete stands', {
+      device: device({ 'self/probe': [BOARD_ROW], [TREE]: TREE_ROWS }),
+      steps: [
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], { hold: true, gestureId: 'held' }, 5000),
+        commitStep(TREE, [{ op: 'revive', t: 'tag', id: 'oak' }], undefined, 5001),
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5002),
+        { op: 'undo', gestureId: 'held' },
+      ],
+    }),
+    stepsVector('a revive and a delete of a spent record join to one delete: only a create cancels', {
+      device: spentElm(),
       steps: [
         commitStep(TREE, [{ op: 'revive', t: 'tag', id: 'elm' }], undefined, 5000),
         commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'elm' }], undefined, 5001),
+      ],
+    }),
+    stepsVector('a revive that writes a label, a delete and a revive of a spent record keep the label: the joined entry is never cancelled', {
+      device: spentElm(),
+      steps: [
+        commitStep(TREE, [{ op: 'revive', t: 'tag', id: 'elm', f: { label: 'Elm again' } }], undefined, 5000),
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'elm' }], undefined, 5001),
+        commitStep(TREE, [{ op: 'revive', t: 'tag', id: 'elm' }], undefined, 5002),
+        { op: 'view', scope: TREE, withHeld: true, deviceNow: 5003 },
       ],
     }),
   ];

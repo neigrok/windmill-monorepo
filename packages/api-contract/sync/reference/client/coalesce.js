@@ -1,7 +1,9 @@
 // §7.2 coalescing: a ready plain intent joins the last earlier entry on its record under the §7.2
-// conditions, and an entry ever numbered takes no join. When the earlier entry brought the record to
-// life, the record is not alive in drawn without the two entries, and the join leaves it dead, the
-// earlier entry cancels with its dependents.
+// conditions, and an entry ever numbered takes no join. When the earlier entry is a create (its life
+// alive at its born), the record is alive in neither drawn nor stored without the two entries, and the
+// join leaves it dead, the earlier entry cancels with its dependents. A held delete may still be undone
+// and a held create or revive released, so both views are read; a revive never cancels, since the
+// registers it carries outlive a later death.
 
 import { moveEntry } from '../core/machines.js';
 import { joinRecord } from '../core/merge.js';
@@ -9,7 +11,7 @@ import { latticeOf, recordKey } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
 import { sameJson } from '../core/jcs.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
-import { drawn } from './views.js';
+import { drawn, stored } from './views.js';
 
 export function isPlain(entry) {
   const { intent } = entry;
@@ -34,8 +36,10 @@ export function coalesce(replica, registry, ended, entry) {
   if (delta.x && actorOf(target) !== actorOf(entry)) return false;
 
   const [base] = target.intent.d;
-  const without = drawn(replica, registry, entry.scope, new Set([...deltasOf(target), ...deltasOf(entry)])).get(recordKey(delta.t, delta.id));
-  const cancels = base.life?.[0] === 'alive' && base.born !== undefined && without?.life?.[0] !== 'alive';
+  const except = new Set([...deltasOf(target), ...deltasOf(entry)]);
+  const aliveWithout = (view) => view(replica, registry, entry.scope, except).get(recordKey(delta.t, delta.id))?.life?.[0] === 'alive';
+  const creates = base.life?.[0] === 'alive' && base.born !== undefined && base.life[1] === base.born;
+  const cancels = creates && !aliveWithout(drawn) && !aliveWithout(stored);
   const joined = { t: base.t, id: base.id, ...joinRecord(registry.type(delta.t), latticeOf(base), latticeOf(delta)) };
   if (base.x || delta.x) {
     joined.x = { ...(base.x ?? {}) };
