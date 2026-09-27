@@ -39,8 +39,9 @@ public enum StoreWrite: Sendable, Hashable {
 }
 
 // What one transaction's writes changed, for views to refresh: records per scope and scopes to reload whole; the
-// outbox (holds, unsent counts, Undo); the notices; a replica's status (its meta, known scopes, device rows); and the
-// replicas themselves (one created, deleted, renamed or purged, or another made active), which reloads everything.
+// outbox (holds, unsent counts, Undo); the notices; a replica's status (its meta, cursors, known scopes, device rows);
+// and the replicas themselves (one created, deleted, renamed or purged, or another made active), which reloads
+// everything.
 public struct StoreChange: Sendable, Hashable {
   public var records: [ScopeRef: Set<RecordKey>] = [:]
   public var scopes: Set<ScopeRef> = []

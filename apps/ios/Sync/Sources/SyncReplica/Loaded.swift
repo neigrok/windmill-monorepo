@@ -183,7 +183,7 @@ public struct LoadedReplica: Sendable {
   // What a write changes for the views, read before it applies: an entry's records before and after it.
   mutating func note(_ write: ReplicaWrite) {
     switch write {
-    case .meta, .putKnown, .deleteKnown, .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows:
+    case .meta, .putKnown, .deleteKnown, .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows, .putCursor:
       change.status = true
     case .rename, .purgeCaches:
       change.replicas = true
@@ -197,7 +197,7 @@ public struct LoadedReplica: Sendable {
     case .deleteRow(let scope, let key): change.touch(scope, [key])
     case .swapStaging(let scope), .forgetScope(let scope): change.scopes.insert(scope)
     case .putNotice, .deleteNotice: change.notices = true
-    case .beginStaging, .putStagedRow, .deleteStagedRow, .stagingDigest, .dropStaging, .putSpent, .putCursor: break
+    case .beginStaging, .putStagedRow, .deleteStagedRow, .stagingDigest, .dropStaging, .putSpent: break
     }
   }
 

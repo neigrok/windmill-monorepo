@@ -8,6 +8,7 @@ import Testing
 
 enum Handlers {
   static let table: [String: @Sendable (JSON) throws -> JSON] = core.merging(clientSteps) { $1 }.merging(transcripts) { $1 }
+    .merging(ServerHandlers.table) { $1 }
 
   static let core: [String: @Sendable (JSON) throws -> JSON] = [
     "constants.json": { _ in
@@ -190,7 +191,7 @@ enum Handlers {
     return (file, run)
   })
 
-  // protocol/*.jsonl: the client half runs through the planners; the server half waits for ModelServer (M6).
+  // protocol/*.jsonl: the client half runs through the planners, the server half through ModelServer.
   static let transcripts: [String: @Sendable (JSON) throws -> JSON] = Dictionary(uniqueKeysWithValues: try! Corpus.paths()
     .filter { $0.hasPrefix("protocol/") }.map { file in
       let run: @Sendable (JSON) throws -> JSON = { input in
@@ -198,7 +199,7 @@ enum Handlers {
           PlannedDevice($0, registry: probe, limits: Limits())
         }
         #expect(differences == [], "\(file): the client half")
-        withKnownIssue("pending: the server half of \(file) waits for ModelServer") { Issue.record("\(file): server half pending") }
+        #expect(try ServerHandlers.transcriptDifferences(input.asArray()) == [], "\(file): the server half")
         return .null
       }
       return (file, run)

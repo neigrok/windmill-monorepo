@@ -11,7 +11,9 @@ struct LayeringTests {
     "SyncAPI": ["SyncCore"],
     "SyncReplica": ["SyncCore", "SyncAPI"],
     "SyncStore": ["SyncCore", "SyncAPI", "SyncReplica", "GRDB", "Foundation"],
-    "SyncTesting": ["SyncCore", "SyncAPI", "SyncReplica", "Foundation"],
+    "SyncEngine": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "Foundation", "Network", "Observation", "Synchronization"],
+    "SyncModelServer": ["SyncCore"],
+    "SyncTesting": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "SyncEngine", "Foundation", "Synchronization"],
   ]
 
   static let engineAPI = ["SyncCore", "SyncAPI"]
