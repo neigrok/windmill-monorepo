@@ -100,6 +100,12 @@ apps store carries across.
     in.*, true only for an account with no gym records; the first-run READ ME line `174:4274` says
     signed-out work *moves to the account on sign-in* with no question. No surface draws the sign-in
     question or its Discard confirmation.
+- **7h · Weigh-in conflicts.** `gym/briefs/11-bodyweight.md` ("The wire", and the paragraph on a
+  weigh-in written again inside its delete window) says the write with the later `recordedAt` wins.
+  Under the engine (A.2 `weighin`; owner ruling 2026-09-26, newest wins per field by stamp), the
+  newest save wins by its stamp, whatever `recordedAt` holds: a save made later on a device whose
+  clock runs behind beats an earlier save that carries a later `recordedAt`. The engine rule stands;
+  restate the brief's two sentences by it.
 
 ## iOS first run
 
