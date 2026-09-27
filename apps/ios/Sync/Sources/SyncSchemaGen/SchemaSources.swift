@@ -1,8 +1,9 @@
 import SyncCore
 
-// The SyncSchema target's sources, from the product registries: per registry, `<Product>.generated.swift` holding the
-// registry as a literal of SyncCore's JSON and its type and command names; and `SyncSchema.swift`, composing them into
-// the one registry the app runs. Pure: main.swift reads the registry files and writes or checks what this answers.
+// The SyncSchema target's sources, from the product registries: per registry, `<Product>.generated.swift` holding its
+// product's scope, the registry as a literal of SyncCore's JSON, and its type and command names; and `SyncSchema.swift`,
+// composing them into the one registry the app runs. Pure: main.swift reads the registry files and writes or checks what
+// this answers.
 
 struct RegistryFile {
   let name: String
@@ -24,10 +25,11 @@ enum SchemaSources {
   // Enum names a registry cannot take: they would shadow a name SyncSchema uses or Swift reserves.
   static let reservedEnumNames: Set<String> = ["SyncSchema", "SyncCore", "Registry", "Any", "Self", "Type", "Protocol"]
 
-  // A registry, decoded, and the enum its sources declare.
+  // A registry, decoded, the enum its sources declare, and the one product whose scope the enum names.
   struct Part {
     let file: String
     let enumName: String
+    let product: String
     let registry: Registry
   }
 
@@ -65,7 +67,11 @@ enum SchemaSources {
     guard !reservedEnumNames.contains(enumName) else {
       throw GenerationError(description: "\(file.name): the registry \(registry.name) would declare the reserved enum \(enumName)")
     }
-    return Part(file: file.name, enumName: enumName, registry: registry)
+    guard registry.products.count == 1, let product = registry.products.first else {
+      throw GenerationError(
+        description: "\(file.name) declares \(registry.products.count) products: a product registry declares one, whose scope its enum names")
+    }
+    return Part(file: file.name, enumName: enumName, product: product.name, registry: registry)
   }
 
   static func productFile(_ part: Part) throws -> GeneratedFile {
@@ -83,6 +89,8 @@ enum SchemaSources {
       import SyncCore
 
       public enum \(part.enumName) {
+        public static let scope = ScopeRef.product(\(SwiftLiteral.string(part.product)))
+
         public enum Types {
 
       """

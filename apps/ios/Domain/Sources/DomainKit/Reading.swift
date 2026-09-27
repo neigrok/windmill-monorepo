@@ -8,7 +8,7 @@ public struct Reader {
   let source: any ScopeReader
   let registry: Registry
 
-  init(_ source: any ScopeReader, scope: ScopeRef, moment: Moment, registry: Registry) {
+  package init(_ source: any ScopeReader, scope: ScopeRef, moment: Moment, registry: Registry) {
     self.source = source
     self.scope = scope
     self.moment = moment
@@ -108,15 +108,24 @@ extension Repository where E: Ordered {
 // §7.3 how full a capped type is: `used` counts the visible `stored` records, so a record inside its delete window keeps
 // its slot, as the engine's commit-time check counts it.
 public struct Capacity: Equatable, Sendable {
-  public let used: Int, cap: Int
+  public let type: String, used: Int, cap: Int
 
   public init<E: Entity>(of: E.Type, stored: some Collection<Record>, registry: Registry) {
     guard let cap = registry.type(E.type)?.cap else { preconditionFailure("\(E.type) has no cap in the registry") }
+    type = E.type
     used = stored.filter { $0.isVisible && $0.type.utf8.elementsEqual(E.type.utf8) }.count
     self.cap = cap
   }
 
+  // The UI's "full" line.
   public var isFull: Bool { used >= cap }
+
+  // The engine's growth rule (engine §6.1 step 12): a plan whose creates of the type less its removals of it, `growth`,
+  // raise `used` past `cap` is refused `cap`, about `subject`, the first record it creates.
+  public func refusal(growing growth: Int, subject: RecordRef?) -> Refused? {
+    guard growth > 0, used + growth > cap else { return nil }
+    return Refused(.cap, subject: subject, detail: ["type": .string(type), "cap": JSON(cap)], path: .predicted)
+  }
 }
 
 // §7.5 where a new member of an ordered list goes.

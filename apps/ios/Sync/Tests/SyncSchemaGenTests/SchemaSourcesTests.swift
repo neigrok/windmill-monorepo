@@ -3,8 +3,8 @@ import Testing
 
 @testable import SyncSchemaGen
 
-// The generator's sources, text for text: a registry's names and literal, the composing file, escapes a literal needs,
-// the registries it refuses, and what a check finds stale.
+// The generator's sources, text for text: a registry's scope, names and literal, the composing file, escapes a literal
+// needs, the registries it refuses, and what a check finds stale.
 
 struct SchemaSourcesTests {
   static let tiny: JSON = [
@@ -18,7 +18,7 @@ struct SchemaSourcesTests {
     "commands": [["name": "tiny.in", "scope": "product:tiny", "origins": ["replica"], "serverInternal": false, "args": [:]]],
   ]
 
-  @Test func aRegistryGeneratesItsNamesAndItsLiteralAndTheComposingFile() throws {
+  @Test func aRegistryGeneratesItsScopeItsNamesAndItsLiteralAndTheComposingFile() throws {
     let files = try SchemaSources.files(from: [RegistryFile(name: "tiny.registry.json", json: Self.tiny)])
     #expect(files == [
       GeneratedFile(name: "SyncSchema.swift", text: """
@@ -40,6 +40,8 @@ struct SchemaSourcesTests {
         import SyncCore
 
         public enum TinyLog {
+          public static let scope = ScopeRef.product("tiny")
+
           public enum Types {
             public static let `default` = "default"
           }
@@ -99,6 +101,8 @@ struct SchemaSourcesTests {
      "the product registries do not compose: tiny-log declares version 1 and minVersion 1, other 2 and 1: the registries composed declare one"),
     ([tiny, edited { $0["registry"] = "tiny-log"; $0["products"] = ["other": [:]]; $0["types"] = []; $0["commands"] = [] }],
      "tiny.registry.json declares a second enum TinyLog"),
+    ([edited { $0["products"] = ["tiny": ["surfaces": ["ios"]], "other": ["surfaces": ["ios"]]] }],
+     "tiny.registry.json declares 2 products: a product registry declares one, whose scope its enum names"),
   ])
   func aRegistryThatCannotGenerateIsRefusedNamingWhy(_ registries: [JSON], _ message: String) {
     let files = registries.enumerated().map { RegistryFile(name: $0.offset == 0 ? "tiny.registry.json" : "other.registry.json", json: $0.element) }

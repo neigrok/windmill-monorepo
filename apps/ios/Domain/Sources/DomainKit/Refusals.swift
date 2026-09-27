@@ -34,11 +34,6 @@ public struct Refused: Hashable, Sendable {
     return (type, Int(cap))
   }
 
-  // §9.3: an executor records a growth past the cap it predicted in decide.
-  public static func cap(_ type: String, cap: Int, subject: RecordRef?) -> Refused {
-    Refused(.cap, subject: subject, detail: ["type": .string(type), "cap": JSON(cap)], path: .predicted)
-  }
-
   static func commandSubject(_ command: Command?, registry: Registry) -> RecordRef? {
     guard let command, let definition = registry.command(command.name) else { return nil }
     for argument in definition.args {

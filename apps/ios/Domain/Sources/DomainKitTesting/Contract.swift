@@ -68,6 +68,45 @@ extension JSON {
   }
 }
 
+extension Entity {
+  // `{id, fields}`, as a product's vectors state an entity: the record its fields build, decoded (§3.4 step 7).
+  public init(form: JSON) throws {
+    let fields = try form.member("fields").asObject().members.map { ($0.key, $0.value) }
+    try self.init(Fields(type: Self.type, id: try RecordID(json: form.member("id")), values: Dictionary(uniqueKeysWithValues: fields)))
+  }
+}
+
+extension TextSpec {
+  // `{path, kind: "text", unit, min, max, trim, nfc}`.
+  package init(form: JSON) throws {
+    guard let unit = TextUnit(rawValue: try form.member("unit").asString()) else { throw ContractError("no unit in \(form)") }
+    self.init(try form.member("path").asString(), unit: unit, min: Int(try form.member("min").asInteger()),
+              max: Int(try form.member("max").asInteger()), trim: try form.member("trim").asBool(), nfc: try form.member("nfc").asBool())
+  }
+}
+
+extension NumberSpec {
+  // `{path, kind: "number", min, max, integer, quantum?}`, a null or absent quantum none.
+  package init(form: JSON) throws {
+    self.init(try form.member("path").asString(), min: try form.member("min").asDouble(), max: try form.member("max").asDouble(),
+              integer: try form["integer"]?.asBool() ?? false, quantum: try form["quantum"].flatMap { $0.isNull ? nil : try $0.asDouble() })
+  }
+}
+
+extension ChoiceSpec {
+  // `{path, kind: "choice", values}`.
+  package init(form: JSON) throws {
+    self.init(try form.member("path").asString(), values: try form.member("values").asArray().map { try $0.asString() })
+  }
+}
+
+extension CountSpec {
+  // `{path, kind: "count", min, max}`.
+  package init(form: JSON) throws {
+    self.init(try form.member("path").asString(), min: Int(try form.member("min").asInteger()), max: Int(try form.member("max").asInteger()))
+  }
+}
+
 extension Violation {
   // `{rule, path, reason, …}`, the reason's members as keys.
   public var form: JSON {
@@ -109,9 +148,12 @@ extension Violation {
 
 extension Refused {
   public var form: JSON {
-    ["code": code.json, "subject": subject.map(\.form) ?? .null, "detail": detail ?? .null,
-     "path": path == .predicted ? "predicted" : "notice"]
+    ["code": code.json, "subject": subject.map(\.form) ?? .null, "detail": detail ?? .null, "path": path.form]
   }
+}
+
+extension Refused.Path {
+  public var form: JSON { self == .predicted ? "predicted" : "notice" }
 }
 
 extension RecordRef {

@@ -8,8 +8,8 @@ struct CreateCard: Action {
   let save: SaveCard
   var scope: ScopeRef { save.scope }
   func load(_ read: Reader) throws -> SaveDraftLoaded<Card> { try save.load(read) }
-  func decide(_ loaded: SaveDraftLoaded<Card>, ids: IDSource) throws(Violation) -> Decision<Bool, ProbeRefusal> {
-    switch try save.decide(loaded, ids: ids) {
+  func decide(_ loaded: SaveDraftLoaded<Card>, ids: IDSource) -> Decision<Bool, ProbeRefusal> {
+    switch save.decision(loaded, ids: ids) {
     case .write(let plan, _): return .write(plan, true)
     case .unchanged: return .unchanged(false)
     case .refuse(let refusal): return .refuse(refusal)

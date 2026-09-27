@@ -7,7 +7,7 @@ import SyncSchema
 
 public struct Note: Draftable, Removable, Ordered {
   public static let type = Gym.Types.note
-  public static let scope = ScopeRef.product("gym")
+  public static let scope = Gym.scope
   public static let orderField = "ord"
   public static let savesGuarded = true
   public static let heldRemoval = true
@@ -51,7 +51,8 @@ public typealias DeleteNote = Remove<Note, GymRefusal>
 public typealias MoveNote = Move<Note, GymRefusal>
 
 // Coach's `save_note` on the phone: the call's note, under the id its turn gave it, goes below every stored note. A
-// replay that finds that note stored, or a call whose words a stored note holds, is done and writes nothing.
+// replay that finds that note stored, or a call whose words a stored note holds, is done and writes nothing; a call past
+// the cap is refused in decide, so the turn that made it records the refusal.
 public struct SaveNoteCall: Action {
   public typealias Loaded = (save: SaveDraftLoaded<Note>, stored: [Note], slots: Capacity)
 
@@ -68,14 +69,13 @@ public struct SaveNoteCall: Action {
     return (try save.load(read), try notes.all(in: .stored), try notes.capacity())
   }
 
-  public func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<ID<Note>, GymRefusal> {
-    switch try save.decide(loaded.save, ids: ids) {
+  public func decide(_ loaded: Loaded, ids: IDSource) -> Decision<ID<Note>, GymRefusal> {
+    switch save.decision(loaded.save, ids: ids) {
     case .refuse(.taken), .unchanged: return .unchanged(note.id)
     case .refuse(let refusal): return .refuse(refusal)
     case .write(let plan, let saved):
       if let same = loaded.stored.first(where: { $0.fields == saved.values }) { return .unchanged(same.id) }
-      let slots = loaded.slots
-      if slots.used + 1 > slots.cap { return .refuse(GymRefusal(.cap(Note.type, cap: slots.cap, subject: note.id.ref))) }
+      if let full = loaded.slots.refusal(growing: 1, subject: note.id.ref) { return .refuse(GymRefusal(full)) }
       return .write(plan, note.id)
     }
   }

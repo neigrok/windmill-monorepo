@@ -84,8 +84,9 @@ struct HarnessTests {
     #expect(capacity.used == 3 && capacity.cap == 3 && capacity.isFull)
     var fourth = Draft(new: Sticky(id: a.runner.mint(Sticky.self)), placed: .bottom)
     fourth.current.title = "Four"
-    #expect(refused(a.runner.save(&fourth, SaveSticky.self))
-      == .refused(Refused(.cap, subject: fourth.id.ref, detail: ["type": "card", "cap": 3], path: .predicted)))
+    let atCommit = Refused(.cap, subject: fourth.id.ref, detail: ["type": "card", "cap": 3], path: .predicted)
+    #expect(refused(a.runner.save(&fourth, SaveSticky.self)) == .refused(atCommit))
+    #expect([1, 0].map { capacity.refusal(growing: $0, subject: fourth.id.ref) } == [atCommit, nil])
     a.sync()
     b.sync()
     #expect(try b.drawn(Sticky.self).map(\.id) == [first.id, second.id, third.id])
@@ -105,10 +106,7 @@ struct HarnessTests {
     #expect(try a.runner.undo(removal.gestureId))
     #expect(try a.drawn(Sticky.self).map(\.id) == [first.id])
     #expect(a.undoOffers() == [])
-    guard case .unchanged = try a.runner.run(Remove<Sticky, ProbeRefusal>(ID("absent00"))) else {
-      Issue.record("a removal of what the person cannot see wrote")
-      return
-    }
+    #expect(unchanged(try a.runner.run(Remove<Sticky, ProbeRefusal>(ID("absent00")))) != nil)
   }
 
   @Test func aKeyedRewriteInsideTheWindowRetiresTheHeldRemoval() throws {
@@ -167,10 +165,7 @@ struct HarnessTests {
     let one = try HarnessTests.sticky(a, "One")
     let two = try HarnessTests.sticky(a, "Two")
     let three = try HarnessTests.sticky(a, "Three")
-    guard case .unchanged = try a.runner.run(Move<Sticky, ProbeRefusal>(two.id, below: one.id)) else {
-      Issue.record("a drop in place wrote")
-      return
-    }
+    #expect(unchanged(try a.runner.run(Move<Sticky, ProbeRefusal>(two.id, below: one.id))) != nil)
     let moved = try a.runner.run(Move<Sticky, ProbeRefusal>(three.id, below: nil))
     #expect(moved.receipt != nil)
     a.sync()
@@ -210,8 +205,8 @@ struct HarnessTests {
   }
 }
 
-// §8.4, §9.3 and §7.1 over the real engine: a command with its specs and prediction, an executor's own record and its
-// replay, a device row, and the reader's first-pull flag.
+// §8.4, §9.3 and §7.1 over the real engine: a command with its specs and prediction, an executor's own record and every
+// refusal of its save, a device row, and the reader's first-pull flag.
 struct HarnessCommandTests {
   static func phone() throws -> Harness {
     Harness(registry: try Corpus.probeRegistry(), start: Probe.start, rules: ProbeServerRules())
@@ -246,14 +241,16 @@ struct HarnessCommandTests {
     #expect(try b.drawn(Lap.self).map(\.fields) == [["runId": run.json, "at": JSON(Probe.start.ms), "weight": 60]])
   }
 
-  @Test func anExecutorCreatesItsOwnRecordAndItsReplayFindsItTaken() throws {
+  // The executor records each refusal of its save: a replay's taken record, and the violation the save throws.
+  @Test func anExecutorCreatesItsOwnRecordAndReadsEveryRefusalOfItsSaveInOneChannel() throws {
     let a = try HarnessCommandTests.phone()
     var sticky = Sticky(id: a.runner.mint(Sticky.self))
     sticky.title = "From Coach"
-    let first = try a.runner.run(CreateSticky(save: SaveSticky(creating: sticky, placed: .bottom)))
-    #expect(first.receipt != nil)
-    let replay = try a.runner.run(CreateSticky(save: SaveSticky(creating: sticky, placed: .bottom)))
-    #expect(replay.refusal == .refused(Refused(.idTaken, subject: sticky.id.ref, path: .predicted)))
+    let untitled = Sticky(id: a.runner.mint(Sticky.self))
+    let runs = try [sticky, sticky, untitled].map { try a.runner.run(CreateSticky(save: SaveSticky(creating: $0, placed: .bottom))) }
+    #expect(runs.map { $0.receipt != nil } == [true, false, false])
+    #expect(runs.map(unchanged) == [nil, .refused(Refused(.idTaken, subject: sticky.id.ref, path: .predicted)),
+                                    .violation(Violation(rule: "card.title", path: "title", reason: .blank))])
     #expect(try a.drawn(Sticky.self).map(\.title) == ["From Coach"])
   }
 
@@ -292,17 +289,18 @@ struct HarnessCommandTests {
     }
   }
 
+  // An executor's own record; a refusal of its save is its result, as a Coach turn records it.
   struct CreateSticky: Action {
     let save: SaveSticky
     var scope: ScopeRef { save.scope }
 
     func load(_ read: Reader) throws -> SaveDraftLoaded<Sticky> { try save.load(read) }
 
-    func decide(_ loaded: SaveDraftLoaded<Sticky>, ids: IDSource) throws(Violation) -> Decision<Bool, ProbeRefusal> {
-      switch try save.decide(loaded, ids: ids) {
-      case .write(let plan, _): .write(plan, true)
-      case .unchanged: .unchanged(false)
-      case .refuse(let refusal): .refuse(refusal)
+    func decide(_ loaded: SaveDraftLoaded<Sticky>, ids: IDSource) -> Decision<ProbeRefusal?, ProbeRefusal> {
+      switch save.decision(loaded, ids: ids) {
+      case .write(let plan, _): .write(plan, nil)
+      case .unchanged: .unchanged(nil)
+      case .refuse(let refusal): .unchanged(refusal)
       }
     }
   }

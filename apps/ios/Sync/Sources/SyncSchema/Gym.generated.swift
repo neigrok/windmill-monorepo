@@ -3,6 +3,8 @@
 import SyncCore
 
 public enum Gym {
+  public static let scope = ScopeRef.product("gym")
+
   public enum Types {
     public static let routine = "routine"
     public static let exercise = "exercise"

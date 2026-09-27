@@ -3,6 +3,8 @@
 import SyncCore
 
 public enum Journal {
+  public static let scope = ScopeRef.product("journal")
+
   public enum Types {
     public static let page = "page"
   }

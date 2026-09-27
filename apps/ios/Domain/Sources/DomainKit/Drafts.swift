@@ -109,10 +109,9 @@ extension ActionRunner {
   // it was; a programming fault traps.
   public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, _ type: SaveDraft<E, R>.Type) -> SaveResult<R> {
     precondition(draft.current.id == draft.id, "a draft saves its own record \(draft.id), and its current names \(draft.current.id)")
-    let save = SaveDraft<E, R>(draft)
     let outcome: Outcome<Saved, R>
     do {
-      outcome = try perform(in: save.scope, load: save.load, decide: save.decide)
+      outcome = try perform(SaveDraft<E, R>(draft))
     } catch let fault as PlanError {
       preconditionFailure("a draft's save made a plan no write path makes: \(fault)")
     } catch let fault as DecodeError {

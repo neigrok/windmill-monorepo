@@ -188,12 +188,8 @@ enum Drafts {
       stored: try decode(visible(try reader.stored(E.type, save.id.record))),
       folded: try decode(try reader.stored(E.type, save.id.record)),
       anchor: try recordID(vector.input["anchor"]), moment: vector.moment, definition: definition)
-    do {
-      let decision = try save.decide(loaded, ids: IDSource(context: reader))
-      return ["decision": try decision.form(in: E.scope, registry: registry, result: \.form, refusal: \.form)]
-    } catch {
-      return ["decision": ["refuse": ProbeRefusal(error).form]]
-    }
+    let decision = save.decision(loaded, ids: IDSource(context: reader))
+    return ["decision": try decision.form(in: E.scope, registry: registry, result: \.form, refusal: \.form)]
   }
 
   // Runs the script's operations; a last step that expects a trap runs only when `trapping`, in its own process.
@@ -276,13 +272,6 @@ enum Drafts {
   }
 }
 
-extension ProbeRefusal {
-  init(_ error: any Error) {
-    guard let violation = error as? Violation else { preconditionFailure("decide threw \(error)") }
-    self = .violation(violation)
-  }
-}
-
 // MARK: - refusal/subject.json
 
 enum Refusals {
@@ -357,7 +346,7 @@ enum Traps {
 
   static func run(_ vector: Vector) throws {
     if trapsAtConstruction(vector) {
-      _ = try Values.numberSpec(vector.input.member("spec"))
+      _ = try NumberSpec(form: vector.input.member("spec"))
     } else {
       _ = try Drafts.script(vector, trapping: true)
     }

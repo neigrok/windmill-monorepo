@@ -53,6 +53,7 @@ public struct ID<E: Entity>: Hashable, Comparable, Sendable, CustomStringConvert
 
 // What the kit knows of an entity type from its declaration, read once from its metatype.
 struct EntityFacts: Sendable {
+  let entity: any Entity.Type
   let type: String
   let scope: ScopeRef
   let orderField: String?
@@ -60,6 +61,7 @@ struct EntityFacts: Sendable {
   let savesGuarded: Bool?
 
   init(_ entity: any Entity.Type) {
+    self.entity = entity
     type = entity.type
     scope = entity.scope
     orderField = (entity as? any Ordered.Type)?.orderField
@@ -101,7 +103,7 @@ public struct Fields {
   }
 
   // §3.4 step 7: the record an entity's `fields` build, which decoding turns back into the entity.
-  init(type: String, id: RecordID, values: [String: JSON]) {
+  package init(type: String, id: RecordID, values: [String: JSON]) {
     self.init(type: type, path: "", recordID: id, values: JSON.Object(uniqueKeysWithValues: values.map { ($0.key, $0.value) }),
               serials: JSON.Object())
   }

@@ -12,10 +12,10 @@ struct CorpusTests {
   static let directory = "domain-kit"
 
   static let handlers: [String: @Sendable (Vector) throws -> JSON] = [
-    "value/text.json": Values.text,
-    "value/number.json": Values.number,
-    "value/choice.json": Values.choice,
-    "value/count.json": Values.count,
+    "value/text.json": { try ValueVectors.run($0.input) },
+    "value/number.json": { try ValueVectors.run($0.input) },
+    "value/choice.json": { try ValueVectors.run($0.input) },
+    "value/count.json": { try ValueVectors.run($0.input) },
     "time/day.json": Days.handle,
     "order/list.json": Lists.handle,
     "capacity/count.json": Lists.capacity,
@@ -80,125 +80,6 @@ func placement(_ json: JSON?) throws -> Placement? {
   case .string("top")?: return .top
   case .string("bottom")?: return .bottom
   case let json?: return .below(try RecordID(json: json.member("below")))
-  }
-}
-
-// MARK: - value/*.json
-
-enum Values {
-  static func text(_ vector: Vector) throws -> JSON {
-    if let text = vector.input["isBlank"] { return ["isBlank": .bool(TextSpec.isBlank(try text.asString()))] }
-    let spec = try textSpec(vector.input.member("spec"))
-    if let text = vector.input["measure"] { return ["measured": JSON(spec.measure(try text.asString()))] }
-    return try violationOr {
-      let at = at(vector, spec.path)
-      guard case .string(let value) = try vector.input.member("value") else { return ["value": .of(try spec.apply(nil as String?, at: at))] }
-      return ["value": .string(try spec.apply(value, at: at) as String)]
-    }
-  }
-
-  static func number(_ vector: Vector) throws -> JSON {
-    let spec = try numberSpec(vector.input.member("spec"))
-    let at = at(vector, spec.path)
-    let value = try vector.input.member("value")
-    if vector.input["as"] == "int" {
-      if value.isNull { return try violationOr { ["value": .of(try spec.apply(nil as Int?, at: at))] } }
-      guard let integer = Int(exactly: try value.asDouble()) else { return ["error": true] }
-      return try violationOr { ["value": JSON(try spec.apply(integer, at: at) as Int)] }
-    }
-    let number: Double? = switch value {
-    case .null: nil
-    case .string("NaN"): Double.nan
-    case .string("Infinity"): Double.infinity
-    case .string("-Infinity"): -Double.infinity
-    default: try value.asDouble()
-    }
-    return try violationOr { ["value": .of(try spec.apply(number, at: at))] }
-  }
-
-  static func choice(_ vector: Vector) throws -> JSON {
-    let spec = try choiceSpec(vector.input.member("spec"))
-    let value = try vector.input.member("value")
-    return try violationOr {
-      guard case .string(let text) = value else { return ["value": .of(try spec.apply(nil as String?, at: at(vector, spec.path)))] }
-      return ["value": .string(try spec.apply(text, at: at(vector, spec.path)) as String)]
-    }
-  }
-
-  static func count(_ vector: Vector) throws -> JSON {
-    let spec = try countSpec(vector.input.member("spec"))
-    let itemSpec = try vector.input["itemSpec"].map(valueSpec)
-    let items = try vector.input.member("items")
-    if items.isNull { return try violationOr { ["items": try spec.apply(nil as [Item]?, at: at(vector, spec.path)).map { .array($0.map(\.json)) } ?? .null] } }
-    let values = try items.asArray().map { Item(value: $0, spec: itemSpec) }
-    return try violationOr { ["items": .array(try spec.apply(values, at: at(vector, spec.path)).map(\.json))] }
-  }
-
-  // An item holding one raw value; it validates by applying the item spec at its own path.
-  struct Item: ValueObject {
-    let value: JSON
-    let spec: (any ValueSpec)?
-
-    init(value: JSON, spec: (any ValueSpec)?) {
-      self.value = value
-      self.spec = spec
-    }
-
-    init(_ f: Fields) throws(DecodeError) {
-      throw DecodeError(type: "", field: "", reason: "a vector item is built, never decoded")
-    }
-
-    var json: JSON { value }
-
-    func validated(at path: Path) throws(Violation) -> Item {
-      switch (spec, value) {
-      case (let spec as TextSpec, .string(let text)): Item(value: .string(try spec.apply(text, at: path) as String), spec: spec)
-      case (let spec as ChoiceSpec, .string(let text)): Item(value: .string(try spec.apply(text, at: path) as String), spec: spec)
-      case (let spec as NumberSpec, .number(let number)): Item(value: .of(try spec.apply(number.value, at: path) as Double), spec: spec)
-      default: self
-      }
-    }
-  }
-
-  static func at(_ vector: Vector, _ path: String) -> Path {
-    if case .string(let at)? = vector.input["at"] { return Path(at) }
-    return Path(path.split(separator: ".").last.map(String.init) ?? path)
-  }
-
-  static func violationOr(_ body: () throws -> JSON) throws -> JSON {
-    do {
-      return try body()
-    } catch let violation as Violation {
-      return ["violation": violation.form]
-    }
-  }
-
-  static func valueSpec(_ json: JSON) throws -> any ValueSpec {
-    switch try json.member("kind").asString() {
-    case "text": try textSpec(json)
-    case "number": try numberSpec(json)
-    case "choice": try choiceSpec(json)
-    default: try countSpec(json)
-    }
-  }
-
-  static func textSpec(_ json: JSON) throws -> TextSpec {
-    guard let unit = TextUnit(rawValue: try json.member("unit").asString()) else { throw ContractError("no unit in \(json)") }
-    return TextSpec(try json.member("path").asString(), unit: unit, min: Int(try json.member("min").asInteger()),
-                    max: Int(try json.member("max").asInteger()), trim: try json.member("trim").asBool(), nfc: try json.member("nfc").asBool())
-  }
-
-  static func numberSpec(_ json: JSON) throws -> NumberSpec {
-    NumberSpec(try json.member("path").asString(), min: try json.member("min").asDouble(), max: try json.member("max").asDouble(),
-               integer: try json["integer"]?.asBool() ?? false, quantum: try json["quantum"].flatMap { $0.isNull ? nil : try $0.asDouble() })
-  }
-
-  static func choiceSpec(_ json: JSON) throws -> ChoiceSpec {
-    ChoiceSpec(try json.member("path").asString(), values: try json.member("values").asArray().map { try $0.asString() })
-  }
-
-  static func countSpec(_ json: JSON) throws -> CountSpec {
-    CountSpec(try json.member("path").asString(), min: Int(try json.member("min").asInteger()), max: Int(try json.member("max").asInteger()))
   }
 }
 

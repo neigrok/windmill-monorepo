@@ -171,10 +171,7 @@ struct NotesTests {
     let one = try NotesTests.add(a, "One")
     let two = try NotesTests.add(a, "Two")
     let three = try NotesTests.add(a, "Three")
-    guard case .unchanged = try a.runner.run(MoveNote(two, below: one)) else {
-      Issue.record("a drop in place wrote")
-      return
-    }
+    #expect(unchanged(try a.runner.run(MoveNote(two, below: one))) != nil)
     let moved = try #require(try a.runner.run(MoveNote(three, below: nil)).receipt)
     #expect(moved.ids == [three.record])
     a.sync()
@@ -209,18 +206,14 @@ struct NotesTests {
     let a = NotesTests.phone()
     _ = try NotesTests.add(a, "What I am training for")
     let call = SaveNoteCall(Note(id: a.runner.mint(Note.self), title: " Knee ", body: "No deep lunges."))
-    #expect(try a.runner.run(call).receipt != nil)
+    #expect(committed(try a.runner.run(call)) == call.note.id)
     #expect(try a.drawn(Note.self).map(\.fields) == [
       ["title": "What I am training for", "body": ""], ["title": "Knee", "body": "No deep lunges."],
     ])
     var edited = try #require(try a.runner.open(call.note.id))
     edited.current.body = "No deep lunges, ever."
     #expect(saved(a.runner.save(&edited, SaveNote.self)))
-    guard case .unchanged(let replayed) = try a.runner.run(call) else {
-      Issue.record("a replay wrote")
-      return
-    }
-    #expect(replayed == call.note.id)
+    #expect(unchanged(try a.runner.run(call)) == call.note.id)
     #expect(try a.drawn(Note.self).map(\.body) == ["", "No deep lunges, ever."])
   }
 
@@ -232,13 +225,10 @@ struct NotesTests {
     _ = try a.runner.run(call)
     a.sync()
     _ = try a.runner.run(DeleteNote(call.note.id))
-    guard case .unchanged = try a.runner.run(call) else {
-      Issue.record("a replay inside the delete window wrote")
-      return
-    }
+    #expect(unchanged(try a.runner.run(call)) == call.note.id)
     a.advance(ms: Constants.holdMs)
     a.sync()
-    #expect(try a.runner.run(call).receipt != nil)
+    #expect(committed(try a.runner.run(call)) == call.note.id)
     a.sync()
     #expect(try a.notices(GymRefusal.self).map(\.refusal) == [.taken(call.note.id.ref, .notice)])
     #expect(try a.drawn(Note.self).isEmpty)
@@ -249,11 +239,7 @@ struct NotesTests {
     let id = try NotesTests.add(a, "Tone", body: "Blunt.")
     let removal = try #require(try a.runner.run(DeleteNote(id)).receipt)
     let call = SaveNoteCall(Note(id: a.runner.mint(Note.self), title: "Tone ", body: "Blunt."))
-    guard case .unchanged(let reused) = try a.runner.run(call) else {
-      Issue.record("a note holding the same words was written again")
-      return
-    }
-    #expect(reused == id)
+    #expect(unchanged(try a.runner.run(call)) == id)
     #expect(try a.runner.undo(removal.gestureId))
     #expect(try a.drawn(Note.self).map(\.id) == [id])
   }
@@ -267,32 +253,23 @@ struct NotesTests {
     let full = SaveNoteCall(Note(id: a.runner.mint(Note.self), title: "Knee"))
     let blank = SaveNoteCall(Note(id: a.runner.mint(Note.self), title: " "))
     #expect(try a.runner.run(full).refusal == .full(type: "note", cap: 10, .predicted))
-    #expect(try [full, blank].map { try Recording.refusal(a.runner.run(Recording(call: $0))) }
+    #expect(try [full, blank].map { try unchanged(a.runner.run(Recording(call: $0))) }
       == [.full(type: "note", cap: 10, .predicted), .invalid(Violation(rule: "note.title", path: "title", reason: .blank))])
   }
 
-  // How a turn composes a call (domain-kit §9.3): its refusal, returned or thrown, is what the turn records.
+  // How a turn composes a call (domain-kit §9.3): every refusal of its decision is what the turn records.
   struct Recording: Action {
     let call: SaveNoteCall
     var scope: ScopeRef { call.scope }
 
     func load(_ read: Reader) throws -> SaveNoteCall.Loaded { try call.load(read) }
 
-    func decide(_ loaded: SaveNoteCall.Loaded, ids: IDSource) throws(Violation) -> Decision<GymRefusal?, GymRefusal> {
-      do throws(Violation) {
-        switch try call.decide(loaded, ids: ids) {
-        case .write(let plan, _): return .write(plan, nil)
-        case .unchanged: return .unchanged(nil)
-        case .refuse(let refusal): return .unchanged(refusal)
-        }
-      } catch {
-        return .unchanged(GymRefusal(error))
+    func decide(_ loaded: SaveNoteCall.Loaded, ids: IDSource) -> Decision<GymRefusal?, GymRefusal> {
+      switch call.decision(loaded, ids: ids) {
+      case .write(let plan, _): .write(plan, nil)
+      case .unchanged: .unchanged(nil)
+      case .refuse(let refusal): .unchanged(refusal)
       }
-    }
-
-    static func refusal(_ outcome: Outcome<GymRefusal?, GymRefusal>) -> GymRefusal? {
-      guard case .unchanged(let recorded) = outcome else { return nil }
-      return recorded
     }
   }
 }

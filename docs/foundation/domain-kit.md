@@ -44,8 +44,9 @@ with their test support `DomainKitTesting` and `:domain-kit-testing`.
 `Change`, `Command`, `DeviceWrite`, `Gesture`, `CommitOutcome`, `CommitReceipt`, `ViewMode`,
 `Record`, `Notice`, `UndoOffer`, the `Replica` port and the readers `ScopeReader` and
 `CommitContext`. `SyncCore` holds `JSON`, `Stamp`, `ScopeRef`, `Registry`, `RefusalCode`, `Quantum`,
-`MeasureUnit` and the engine's `Constants`. `SyncSchema` holds the generated registry and
-names. Together they are the kit's whole lower boundary.
+`MeasureUnit` and the engine's `Constants`. `SyncSchema` holds the generated registry and, per
+product, its scope and names (`Gym.scope`, `Gym.Types.note`). Together they are the kit's whole lower
+boundary.
 
 **D-3 Layer.** One of: engine API, engine runtime, kit, product domain, UI, test, composition (the
 app). Each module belongs to exactly one, the row of §2.2 that lists it.
@@ -96,8 +97,9 @@ prediction refuses only a write the server would refuse (INV-6).
 **D-15 Rule book.** A product's rules and entity facts, declared in code and pinned byte for byte
 across Swift and Kotlin by one JSON file (§6.3).
 
-**D-16 Action.** A use case: a scope, a load phase over a `Reader`, and a pure decide phase that
-returns a decision (§9). A draft's save is not an action (§10.1).
+**D-16 Decider and action.** A decider is a scope, a load phase over a `Reader`, and a pure decide
+phase that returns a decision (§9.1). An action is a decider the runner runs: a use case. A draft's
+save is a decider and not an action (§10.1).
 
 **D-17 Decision and outcome.** A decision is `write(plan, result)`, `unchanged(result)` or
 `refuse(refusal)`. An outcome is what `run` returns: `committed(result, receipt)`,
@@ -325,7 +327,7 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
 ```swift
 public protocol Entity: Sendable {
   static var type: String { get }                  // the registry type, from SyncSchema
-  static var scope: ScopeRef { get }               // its product scope
+  static var scope: ScopeRef { get }               // its product scope, from SyncSchema
   var id: ID<Self> { get }
   init(_ record: Fields) throws(DecodeError)
 }
@@ -725,9 +727,10 @@ Exactly one of:
    into the open, non-stale session its `stored` view holds, and calls `gym.start` only when none is
    open. The server still decides (`gym.start` joins).
 
-`Capacity` is a display read; decide never predicts `cap` from `isFull` (a plan that removes one
-record and creates another at the cap is admitted). A rule no client can predict, such as a session
-overlap, is declared all the same, so its refusal maps (§12).
+`cap` stays the engine's. An action that must hear of it in decide, as a Coach executor records a
+refusal in its own gesture (§9.3), applies the engine's own count there first: the growth rule
+(§7.3). A rule no client can predict, such as a session overlap, is declared all the same, so its
+refusal maps (§12).
 
 **The gone precondition** (§9.2 step 5) is not a prediction. A product maps its `unknown-record`, with
 the server's `unknown-record` and `record-dead`, to one "gone" refusal.
@@ -818,15 +821,22 @@ extension Repository where E: Ordered {
 
 ```swift
 public struct Capacity: Equatable, Sendable {
-  public let used: Int, cap: Int
-  public var isFull: Bool { get }
+  public let type: String, used: Int, cap: Int
+  public var isFull: Bool { get }                                              // used ≥ cap
+  public func refusal(growing growth: Int, subject: RecordRef?) -> Refused?   // the growth rule
   public init<E: Entity>(of: E.Type, stored: some Collection<Record>, registry: Registry)
 }
 ```
 
 `used` counts the visible `stored` records of the type, so a record inside its delete window still
 occupies its slot (engine §7.6 `capCount`). The UI computes it from a `stored` `RecordsView`, so the
-"full" line and the engine's commit-time check read the same count.
+"full" line, `isFull`, and the engine's commit-time check read the same count.
+
+**The growth rule** is the engine's (engine §6.1 step 12), which that check applies to `stored`. A
+plan's `growth` is its creates of the type less its removals of it. `refusal(growing:subject:)` returns
+`Refused(cap, subject:, detail: {type, cap}, path: .predicted)` when `growth > 0` and `used + growth >
+cap`, `subject` being the first record the plan creates of the type (§12.1), and nil otherwise. A plan
+that removes one record and creates another at the cap grows by 0 and is admitted.
 
 ### §7.4 Derived reads
 
@@ -978,14 +988,18 @@ public struct Prediction: Sendable {
 ### §9.1 The interface
 
 ```swift
-public protocol Action: Sendable {
+public protocol Decider: Sendable {
   associatedtype Loaded
-  associatedtype Result: Sendable
+  associatedtype Result
   associatedtype Refusal: ProductRefusal
   var scope: ScopeRef { get }
   func load(_ read: Reader) throws -> Loaded
   func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Result, Refusal>
 }
+extension Decider {
+  public func decision(_ loaded: Loaded, ids: IDSource) -> Decision<Result, Refusal>   // decide, one refusal channel
+}
+public protocol Action: Decider where Result: Sendable {}
 public enum Decision<Result, Refusal> { case write(Plan, Result), unchanged(Result), refuse(Refusal) }
 extension Decision where Result == Void { public static func write(_ plan: Plan) -> Decision }
 public enum Outcome<Result, Refusal> { case committed(Result, CommitReceipt), unchanged(Result), refused(Refusal) }
@@ -1002,7 +1016,10 @@ public struct IDSource { public func mint<E: Entity>(_ type: E.Type) -> ID<E> } 
 - **Decide** is pure: its inputs are the loaded value and the id source. It validates with `Valid`,
   over the moment its load read from the reader, predicts SERVER-DECIDED rules, and builds at most
   one plan.
-- An action is a value; its stored properties are its input. A domain holds no mutable state outside
+- **Decision** is decide with one refusal channel: a `Violation` decide throws becomes
+  `refuse(Refusal(violation))`. The runner (§9.2 step 4) and every composer (§9.3) read `decision`,
+  never `decide`, so every refusal arrives as `refuse`.
+- A decider is a value; its stored properties are its input. A domain holds no mutable state outside
   values.
 - An action's `Result` and its receipt are the only domain events the kit produces: the Undo transient
   takes `receipt.gestureId` and `releaseAt`, and a Coach executor records a call from the result.
@@ -1029,8 +1046,8 @@ public final class ActionRunner: Sendable {
    form). Steps 3–6 run in it. A `CommitFailure` of kind `malformed` traps (ER-14); `run` rethrows
    any other error `commit` throws.
 3. **Load** with `Reader(ctx, zone)`. A store or decode error rethrows; nothing is written.
-4. **Decide.** A thrown `Violation` becomes `refuse(R(violation))`. `refuse` and `unchanged` return no
-   gesture: the engine writes nothing and ticks no clock (engine §7.1).
+4. **Decide** by `decision` (§9.1). `refuse` and `unchanged` return no gesture: the engine writes
+   nothing and ticks no clock (engine §7.1).
 5. **Gone.** For every update, remove or move of a type with life, `ctx.drawn(t, id)` must hold the
    record alive, and every insert or move that names an anchor needs that anchor visible, with its
    order key, in `drawn` or in `stored` (engine D-25). Otherwise the body returns no gesture and the
@@ -1055,15 +1072,15 @@ context: on iOS any thread; on Android `withContext(NonCancellable)` on the call
 
 ### §9.3 Composition
 
-An action MAY run another action's, or `SaveDraft`'s, `load` and `decide` inside its own and extend the
-plan: decisions and plans are values, and the standard `load` and `decide` are public. A Coach executor
-so records an ability call on the Coach message in the same gesture as the ability's writes (gym Coach
-§4.3 step 2): on `write` it adds the unguarded message update to the inner plan, on `refuse` it writes
-that update alone. A plan the engine refuses at commit (`cap`, `too-large`) records nothing, so an
-executor predicts such a refusal in decide by the growth rule (`used` plus creates minus removals, over
-`capacity()`) and records it, as `Refused.cap(_:cap:subject:)` for `save_note` at the 10-note cap. It
-saves a note of its own with `SaveDraft(creating:)` and returns a result of its own, never `Saved`
-(§10.1).
+An action MAY run another decider's `load` and `decision` inside its own, another action's or a
+`SaveDraft`'s, and extend its plan: decisions and plans are values, and the standard deciders are
+public. A composer reads `decision`, whose `refuse` holds every refusal, a thrown violation included
+(§9.1). A Coach executor so records an ability call on the Coach message in the same gesture as the
+ability's writes (gym Coach §4.3 step 2): on `write` it adds the unguarded message update to the inner
+plan, on `refuse` it writes that update alone. A plan the engine refuses at commit records nothing, so
+an executor that can hear of such a refusal in decide does: `cap` by the growth rule (§7.3), as
+`save_note` does at the 10-note cap. It saves a note of its own with `SaveDraft(creating:)` and
+returns a result of its own, never `Saved` (§10.1).
 
 ---
 
@@ -1236,7 +1253,7 @@ value, and `exists`, whether the record is in `stored` after the save:
 ## §11 Standard actions
 
 ```swift
-public struct SaveDraft<E: Draftable, R: ProductRefusal>: Sendable {
+public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   public init(creating value: E)                           // an executor's own new record
   public var id: ID<E> { get }                             // the draft's, or the created value's
   public var scope: ScopeRef { get }
@@ -1296,7 +1313,6 @@ public struct Refused: Hashable, Sendable {
   public var cap: (type: String, cap: Int)? { get }            // a cap refusal's detail
   public init(_ code: RefusalCode, subject: RecordRef?, detail: JSON? = nil, path: Path)
   public init(_ notice: Notice, registry: Registry)            // path: notice
-  public static func cap(_ type: String, cap: Int, subject: RecordRef?) -> Refused   // §9.3
 }
 ```
 
@@ -1473,6 +1489,8 @@ public struct NoServerRules: ServerRules { public init() }                // a p
 public func saved<R>(_ result: SaveResult<R>) -> Bool                      // a test's result readers
 public func refused<R>(_ result: SaveResult<R>) -> R?
 public func failed<R>(_ result: SaveResult<R>) -> (any Error)?
+public func committed<Result, Refusal>(_ outcome: Outcome<Result, Refusal>) -> Result?
+public func unchanged<Result, Refusal>(_ outcome: Outcome<Result, Refusal>) -> Result?
 ```
 
 `Harness` wraps the engine's `SteppedEngine`; `ServerRules`, `ModelServerHandle` and `SimClock` are
@@ -1515,7 +1533,7 @@ the engine's test support (ER-9). Kotlin's `Harness` has the same members over `
 }
 ```
 
-### §14.4 Checks every product runs
+### §14.4 Checks and vectors every product runs
 
 ```swift
 public enum RegistryCheck {
@@ -1528,12 +1546,24 @@ public enum RuleBookCheck {
   public static func check<R: ProductRefusal>(_ book: RuleBook, refusal: R.Type, vectors: String) throws
 }
 public enum RuleBookParity { public static func check(_ book: RuleBook, file: String) throws }
+public struct ProductCorpus {                                                        // §15.3
+  public init(_ book: RuleBook)
+  public func value(_ vector: Vector) throws -> JSON                                 // a values.json case
+  public func decision<D: Decider>(of decider: D, _ vector: Vector, result: (D.Result) -> JSON,
+                                   refusal: (D.Refusal) -> JSON) throws -> JSON       // an actions.json case
+}
+extension Entity { public init(form: JSON) throws }                                 // {id, fields}
+public enum Contract { public static func vectors(_ path: String) throws -> [Vector] }
+public struct Vector: Sendable { public let file: String, name: String, input: JSON, expect: JSON }
 ```
 
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`
-and `RuleBookParity` over its rule book (§6.3; `vectors` and `file` are paths under
-`packages/api-contract/<product>/`), the layering tests (§2.4), and the vector runner over the kit's
-and the product's corpus files. They live in `DomainKitTesting`.
+and `RuleBookParity` over its rule book (§6.3), and `ProductCorpus` over every case of its
+`values.json` and `actions.json` (§15.3), comparing the result with the case's `expect` by JCS.
+`vectors`, `file` and `Contract.vectors` take paths under `packages/api-contract/`. An actions test
+maps each case's `action` to the decider it names, built from the case's `input`, and gives the JSON
+forms of its result and its product refusal. These live in `DomainKitTesting`. The kit's own tests
+run the kit's corpus (§15.2) and the layering tests (§2.4).
 
 ---
 
@@ -1581,9 +1611,13 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | Path | Behaviour |
 |---|---|
 | `domain/rules.json` | the rule book and entity facts, pinned (§6.3) |
-| `domain/values.json` | each LOCAL rule: spec cases by path, and entity cases (`{entity, fields, now, offsetSeconds}` → `{fields}` or `{violation}`) pinning check order |
-| `domain/actions.json` | each action: `{action, input, records, ids, now, offsetSeconds}` → `{decision}` |
+| `domain/values.json` | each LOCAL rule: spec cases, the kit's value-vector forms (§15.2) over a spec of the book, and entity cases (`{entity, id, fields, now, offsetSeconds}` → `{fields}` or `{violation}`) pinning check order |
+| `domain/actions.json` | each action: `{action, input, records: {drawn, stored?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records, `stored` defaulting to `drawn`, minting `ids` in order |
+| `domain/README.md` | each action's `input` and result, and the forms of the product refusal |
 | `rules/<read>.json` | derived reads (for gym, gym Coach §3.5 `rules/`) |
+
+An entity in a product's corpus is `{id, fields}`. A decision's `refuse` holds the product refusal's
+form, which the product's README states.
 
 ---
 
@@ -1603,7 +1637,7 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | Harness tests | domain tests | 5–15 each |
 
 Measured on the appendices (non-blank Swift lines, no imports or comments): the routine editor 68,
-gym notes 25, the journal page 45, and the gym refusal type and rule book, written once, 23.
+gym notes 25, the journal page 45, and the gym refusal type and rule book, written once, 25.
 
 ### §16.2 Bug classes the kit removes
 
@@ -1665,7 +1699,7 @@ import SyncSchema
 
 public struct Routine: Draftable, Removable, Ordered {
   public static let type = Gym.Types.routine
-  public static let scope = ScopeRef.gym
+  public static let scope = Gym.scope
   public static let orderField = "ord"
   public static let savesGuarded = true
   public static let heldRemoval = true
@@ -1724,16 +1758,16 @@ public struct SetTarget: ValueObject {
 }
 
 public enum RoutineRules {
-  static let name      = TextSpec("routine.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
-  static let movements = CountSpec("routine.entries", min: 1, max: 50)
-  static let sets      = CountSpec("routine.entries.sets", min: 1, max: 20)
-  static let reps      = NumberSpec("routine.entries.sets.reps", min: 1, max: 100, integer: true)
-  static let load      = NumberSpec("routine.entries.sets.weightKg", min: -500, max: 500, quantum: 0.01)
-  static let rest      = NumberSpec("routine.entries.restSeconds", min: 15, max: 900, integer: true)
+  public static let name      = TextSpec("routine.name", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
+  public static let movements = CountSpec("routine.entries", min: 1, max: 50)
+  public static let sets      = CountSpec("routine.entries.sets", min: 1, max: 20)
+  public static let reps      = NumberSpec("routine.entries.sets.reps", min: 1, max: 100, integer: true)
+  public static let load      = NumberSpec("routine.entries.sets.weightKg", min: -500, max: 500, quantum: 0.01)
+  public static let rest      = NumberSpec("routine.entries.restSeconds", min: 15, max: 900, integer: true)
   static func zero(at p: Path) -> Violation { Violation(rule: "routine.zeroTarget", path: p, reason: .custom("zero")) }
-  public static let rules: [Rule] = [.local(name), .local(movements), .local(sets), .local(reps), .local(load), .local(rest),
-                                     .local("routine.zeroTarget", subject: Routine.type),
-                                     .serverDecided("routine.movement", codes: [.unknownExercise], subject: Routine.type)]
+  static let rules: [Rule] = [.local(name), .local(movements), .local(sets), .local(reps), .local(load), .local(rest),
+                              .local("routine.zeroTarget", subject: Routine.type),
+                              .serverDecided("routine.movement", codes: [.unknownExercise], subject: Routine.type)]
 }
 
 public typealias SaveRoutine = SaveDraft<Routine, GymRefusal>
@@ -1812,8 +1846,8 @@ What the kit guarantees:
 data class Routine(override val id: Id<Routine>, val name: String = "", val entries: List<Entry> = emptyList()) : Writable<Routine> {
     override fun fields() = mapOf("name" to Json.of(name), "entries" to Json.array(entries.map { it.json() }))
     companion object : DraftType<Routine>, RemovableType<Routine>, OrderedType<Routine> {
-        override val type = GymTypes.ROUTINE
-        override val scope = ScopeRef.GYM
+        override val type = Gym.Types.ROUTINE
+        override val scope = Gym.SCOPE
         override val orderField = "ord"
         override val savesGuarded = true
         override val heldRemoval = true
@@ -1855,12 +1889,12 @@ class RoutineEditor(private val runner: ActionRunner, opened: Routine) {
 Illustrative. The canon is [notes](../design/gym/briefs/10-notes.md),
 [gestures](../design/gym/briefs/13-gestures.md) and engine A.2. An ordered list with a cap of 10: a
 held delete keeps its slot until it lands; a reorder writes one `ord`; a new note goes at the bottom.
-Its `note.gone`, `note.stale` and `note.cap` rules are the book's standard rules (§6.3).
+Its `note.cap`, `note.gone`, `note.stale` and `note.taken` rules are the book's standard rules (§6.3).
 
 ```swift
 public struct Note: Draftable, Removable, Ordered {
   public static let type = Gym.Types.note
-  public static let scope = ScopeRef.gym
+  public static let scope = Gym.scope
   public static let orderField = "ord"
   public static let savesGuarded = true
   public static let heldRemoval = true
@@ -1879,9 +1913,9 @@ public struct Note: Draftable, Removable, Ordered {
 }
 
 public enum NoteRules {
-  static let title = TextSpec("note.title", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
-  static let body  = TextSpec("note.body", unit: .bytes, min: 0, max: 500, trim: true, nfc: true)
-  public static let rules: [Rule] = [.local(title), .local(body)]
+  public static let title = TextSpec("note.title", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
+  public static let body  = TextSpec("note.body", unit: .bytes, min: 0, max: 500, trim: true, nfc: true)
+  static let rules: [Rule] = [.local(title), .local(body)]
 }
 
 public typealias SaveNote = SaveDraft<Note, GymRefusal>
@@ -1899,6 +1933,7 @@ let offerSeeds = storedNotes.firstPullComplete && slots.used == 0               
 
 var draft = Draft(new: Note(id: runner.mint(Note.self)), placed: .bottom)           // a blank, id minted now
 draft.current.title = typedTitle
+let bodyBytes = NoteRules.body.measure(draft.current.body)                          // the editor's "n of 500 bytes"
 switch runner.save(&draft, SaveNote.self) {
 case .saved: closeAddRow()
 case .refused(let refusal): show(refusal)                                          // the row keeps the draft
@@ -1931,7 +1966,7 @@ merges its body as text, and saves itself while the person writes.
 ```swift
 public struct Page: Draftable {
   public static let type = Journal.Types.page
-  public static let scope = ScopeRef.journal
+  public static let scope = Journal.scope
   public static let savesGuarded = false
 
   public let id: ID<Page>
@@ -2038,8 +2073,8 @@ data class Page(override val id: Id<Page>, val body: String = "", val mood: Int?
     override fun fields() = mapOf("body" to Json.of(body), "mood" to Json.of(mood), "energy" to Json.of(energy),
                                   "source" to Json.of(source))
     companion object : DraftType<Page> {
-        override val type = JournalTypes.PAGE
-        override val scope = ScopeRef.JOURNAL
+        override val type = Journal.Types.PAGE
+        override val scope = Journal.SCOPE
         override val savesGuarded = false
         override fun decode(f: Fields) = Page(Id(f.id), f.text("body"), f.optionalInt("mood"), f.optionalInt("energy"),
                                               f.string("source", default = "typed"))

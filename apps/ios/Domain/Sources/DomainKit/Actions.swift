@@ -1,16 +1,31 @@
 import SyncAPI
 import SyncCore
 
-// §9.1 a use case: a scope, a load phase over a reader, and a pure decide phase that returns a decision. An action is a
-// value; its stored properties are its input.
-public protocol Action: Sendable {
+// §9.1 a scope, a load phase over a reader, and a pure decide phase that returns a decision: what the runner runs and an
+// action composes. A decider is a value; its stored properties are its input.
+public protocol Decider: Sendable {
   associatedtype Loaded
-  associatedtype Result: Sendable
+  associatedtype Result
   associatedtype Refusal: ProductRefusal
   var scope: ScopeRef { get }
   func load(_ read: Reader) throws -> Loaded
   func decide(_ loaded: Loaded, ids: IDSource) throws(Violation) -> Decision<Result, Refusal>
 }
+
+extension Decider {
+  // The decision as the runner and a composing action read it: a violation decide throws is the refusal it maps to, so
+  // every refusal arrives as `refuse`.
+  public func decision(_ loaded: Loaded, ids: IDSource) -> Decision<Result, Refusal> {
+    do throws(Violation) {
+      return try decide(loaded, ids: ids)
+    } catch {
+      return .refuse(Refusal(error))
+    }
+  }
+}
+
+// D-16 a use case: a decider the runner runs. Its result is `Sendable`, so no action returns a draft's `Saved` (§10.1).
+public protocol Action: Decider where Result: Sendable {}
 
 public enum Decision<Result, Refusal> {
   case write(Plan, Result)
@@ -49,6 +64,10 @@ extension Outcome: Sendable where Result: Sendable, Refusal: Sendable {}
 public struct IDSource {
   let context: any CommitContext
 
+  package init(context: any CommitContext) {
+    self.context = context
+  }
+
   public func mint<E: Entity>(_ type: E.Type) -> ID<E> {
     do {
       return ID(try context.mintID(E.type))
@@ -73,7 +92,7 @@ public final class ActionRunner: Sendable {
   }
 
   public func run<A: Action>(_ action: A) throws -> Outcome<A.Result, A.Refusal> {
-    try perform(in: action.scope, load: action.load, decide: action.decide)
+    try perform(action)
   }
 
   public func read<T>(_ scope: ScopeRef, _ body: (Reader) throws -> T) throws -> T {
@@ -100,27 +119,19 @@ public final class ActionRunner: Sendable {
 
   // §9.2 one ordered, fail-fast pipeline: no nesting, one local transaction, load, decide, the gone check, translate,
   // then the engine's outcome mapped, a refusal the commit wrote into a notice delivered by the outcome alone.
-  func perform<Loaded, Result, Refusal: ProductRefusal>(
-    in scope: ScopeRef, load: (Reader) throws -> Loaded, decide: (Loaded, IDSource) throws(Violation) -> Decision<Result, Refusal>
-  ) throws -> Outcome<Result, Refusal> {
+  func perform<D: Decider>(_ decider: D) throws -> Outcome<D.Result, D.Refusal> {
     precondition(!ActionRunner.isRunning, "a run entered inside a run: a run commits one gesture (§9.2 step 1)")
+    let scope = decider.scope
     return try ActionRunner.$isRunning.withValue(true) {
-      let committed: (outcome: CommitOutcome?, value: Step<Result, Refusal>)
+      let committed: (outcome: CommitOutcome?, value: Step<D.Result, D.Refusal>)
       do {
         committed = try replica.commit(scope) { context in
           let reader = Reader(context, scope: scope, moment: Moment(now: Instant(ms: context.now), zone: zone), registry: registry)
-          let loaded = try load(reader)
-          let decision: Decision<Result, Refusal>
-          do throws(Violation) {
-            decision = try decide(loaded, IDSource(context: context))
-          } catch {
-            return (nil, .done(.refused(Refusal(error))))
-          }
-          switch decision {
+          switch decider.decision(try decider.load(reader), ids: IDSource(context: context)) {
           case .refuse(let refusal): return (nil, .done(.refused(refusal)))
           case .unchanged(let result): return (nil, .done(.unchanged(result)))
           case .write(let plan, let result):
-            if let gone = try plan.firstGone(in: context, of: scope, registry: registry) { return (nil, .done(.refused(Refusal(gone)))) }
+            if let gone = try plan.firstGone(in: context, of: scope, registry: registry) { return (nil, .done(.refused(D.Refusal(gone)))) }
             return (try plan.gesture(in: scope, registry: registry), .writing(plan, result))
           }
         }

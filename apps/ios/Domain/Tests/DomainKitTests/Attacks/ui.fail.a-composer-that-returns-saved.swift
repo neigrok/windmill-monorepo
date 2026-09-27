@@ -9,7 +9,7 @@ nonisolated struct RelaySave: Action {
   let save: SaveCard
   var scope: ScopeRef { save.scope }
   func load(_ read: Reader) throws -> SaveDraftLoaded<Card> { try save.load(read) }
-  func decide(_ loaded: SaveDraftLoaded<Card>, ids: IDSource) throws(Violation) -> Decision<Saved, ProbeRefusal> {
-    try save.decide(loaded, ids: ids)
+  func decide(_ loaded: SaveDraftLoaded<Card>, ids: IDSource) -> Decision<Saved, ProbeRefusal> {
+    save.decision(loaded, ids: ids)
   }
 }

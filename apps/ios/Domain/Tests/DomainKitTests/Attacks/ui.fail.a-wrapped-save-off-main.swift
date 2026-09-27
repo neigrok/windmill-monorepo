@@ -9,5 +9,5 @@ nonisolated struct AsAction<E: Draftable, R: ProductRefusal>: Action {
   let save: SaveDraft<E, R>
   var scope: ScopeRef { save.scope }
   func load(_ read: Reader) throws -> SaveDraftLoaded<E> { try save.load(read) }
-  func decide(_ loaded: SaveDraftLoaded<E>, ids: IDSource) throws(Violation) -> Decision<Saved, R> { try save.decide(loaded, ids: ids) }
+  func decide(_ loaded: SaveDraftLoaded<E>, ids: IDSource) -> Decision<Saved, R> { save.decision(loaded, ids: ids) }
 }

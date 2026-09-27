@@ -1,60 +1,7 @@
-import DomainKit
 import DomainKitTesting
-import Foundation
 import SyncAPI
 import SyncCore
-import SyncTesting
 import Synchronization
-
-// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product.
-struct VectorRecords: Sendable {
-  var drawn: [Record]
-  var stored: [Record]
-
-  init(drawn: JSON?, stored: JSON?, registry: Registry) throws {
-    self.drawn = try VectorRecords.records(drawn, registry: registry)
-    self.stored = try VectorRecords.records(stored, registry: registry)
-  }
-
-  static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
-    try (rows?.asArray() ?? []).map { json in Record(confirmed: try Row(json: json), registry: registry) }
-  }
-}
-
-// A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
-// order, as the engine's readers answer (ER-3, ER-12).
-struct VectorReader: CommitContext {
-  let records: VectorRecords
-  let now: Int64
-
-  func drawn(_ type: String, _ id: RecordID) throws -> Record? { find(records.drawn, type, id) }
-  func stored(_ type: String, _ id: RecordID) throws -> Record? { find(records.stored, type, id) }
-  func drawn(_ type: String) throws -> [Record] { visible(records.drawn, type) }
-  func stored(_ type: String) throws -> [Record] { visible(records.stored, type) }
-
-  func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    visible(records.drawn, type).filter { $0.values[field] == id.json }
-  }
-
-  func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    visible(records.stored, type).filter { $0.values[field] == id.json }
-  }
-
-  func device(_ key: String) throws -> JSON? { nil }
-  func firstPullComplete() throws -> Bool { true }
-
-  func mintID(_ type: String) throws -> RecordID {
-    throw CommitFailure.malformed("a vector mints no id")
-  }
-
-  func find(_ records: [Record], _ type: String, _ id: RecordID) -> Record? {
-    records.first { $0.type == type && $0.id == id }
-  }
-
-  func visible(_ records: [Record], _ type: String) -> [Record] {
-    records.filter { $0.type == type && $0.isVisible }.sorted { $0.id < $1.id }
-  }
-}
 
 // A replica over a vector's records, which it never changes by itself. Its commits answer as the vector says: the
 // receipt or refusal of `answer`, or `g<k>` for its k-th committed gesture; `failNextCommit` throws before committing,

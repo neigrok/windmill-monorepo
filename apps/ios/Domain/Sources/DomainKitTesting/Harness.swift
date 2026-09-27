@@ -97,3 +97,13 @@ public func failed<R>(_ result: SaveResult<R>) -> (any Error)? {
   guard case .failed(let error) = result else { return nil }
   return error
 }
+
+public func committed<Result, Refusal>(_ outcome: Outcome<Result, Refusal>) -> Result? {
+  guard case .committed(let result, _) = outcome else { return nil }
+  return result
+}
+
+public func unchanged<Result, Refusal>(_ outcome: Outcome<Result, Refusal>) -> Result? {
+  guard case .unchanged(let result) = outcome else { return nil }
+  return result
+}

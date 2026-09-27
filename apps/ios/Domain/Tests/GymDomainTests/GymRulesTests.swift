@@ -6,7 +6,8 @@ import SyncCore
 import SyncSchema
 import Testing
 
-// The gym's declarations against the registry and its pinned book, and its LOCAL rules against their vectors.
+// The gym's declarations against the registry and its pinned book, and its corpus: the LOCAL rules against their vectors,
+// the actions against theirs.
 struct GymRulesTests {
   @Test func everyEntityAgreesWithTheRegistry() throws {
     let sample = Note(id: ID("note0001"), title: "How I want to be talked to", body: "Blunt. No pep talks.")
@@ -21,28 +22,35 @@ struct GymRulesTests {
     try RuleBookParity.check(GymRules.book, file: "gym/domain/rules.json")
   }
 
-  // A spec case applies the book's own spec at its field; an entity case validates a note built from its fields.
   @Test(arguments: try Contract.vectors("gym/domain/values.json"))
   func localRule(_ vector: Vector) throws {
-    let input = vector.input
-    let result: JSON
-    do {
-      if let spec = input["spec"] {
-        let declared = try #require([NoteRules.title, NoteRules.body].first { $0.json == spec })
-        let field = String(declared.path.dropFirst("note.".count))
-        result = ["value": .string(try declared.apply(try input.member("value").asString(), at: Path(field)))]
-      } else {
-        let fields = try input.member("fields").asObject().members
-        let values = Dictionary(uniqueKeysWithValues: fields.map { ($0.key, $0.value) })
-        let note = try Note(Fields(Record(type: Note.type, id: "vector00", life: nil, born: nil, values: values, texts: [:], serials: [:],
-                                          rc: nil, ru: nil, isVisible: true, isPending: false, isHeld: false)))
-        let moment = Moment(now: Instant(ms: try input.member("now").asInteger()),
-                            zone: FixedZone(offsetSeconds: Int(try input.member("offsetSeconds").asInteger())))
-        result = ["fields": .object(fields: try Valid(note, at: moment).value.fields)]
-      }
-    } catch let violation as Violation {
-      result = ["violation": violation.form]
+    let result = try ProductCorpus(GymRules.book).value(vector)
+    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+
+  @Test(arguments: try Contract.vectors("gym/domain/actions.json"))
+  func action(_ vector: Vector) throws {
+    let corpus = ProductCorpus(GymRules.book)
+    let input = try vector.input.member("input")
+    let result = switch try vector.input.member("action").asString() {
+    case "SaveNoteCall":
+      try corpus.decision(of: SaveNoteCall(try Note(form: input.member("note"))), vector, result: \.json, refusal: \.form)
+    case let action: throw ContractError("no gym action \(action)")
     }
     #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
+  }
+}
+
+extension GymRefusal {
+  // The form packages/api-contract/gym/domain/README.md states.
+  var form: JSON {
+    switch self {
+    case .invalid(let violation): ["invalid": violation.form]
+    case .stale(let subject, let path): ["stale": ["subject": subject.form, "path": path.form]]
+    case .gone(let subject, let path): ["gone": ["subject": subject.form, "path": path.form]]
+    case .taken(let subject, let path): ["taken": ["subject": subject.form, "path": path.form]]
+    case .full(let type, let cap, let path): ["full": ["type": .string(type), "cap": JSON(cap), "path": path.form]]
+    case .other(let refused): ["other": refused.form]
+    }
   }
 }

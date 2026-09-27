@@ -59,6 +59,11 @@ public struct RuleBook: Sendable {
     self.entities = facts
   }
 
+  // The book's entity of a registry type, for the kit's test support to build the entities a vector states.
+  package func entity(_ type: String) -> (any Entity.Type)? {
+    entities.first { $0.type.utf8.elementsEqual(type.utf8) }?.entity
+  }
+
   // Pinned byte for byte across implementations by `packages/api-contract/<product>/domain/rules.json`.
   public var json: JSON {
     let facts = entities.map { entity -> JSON in

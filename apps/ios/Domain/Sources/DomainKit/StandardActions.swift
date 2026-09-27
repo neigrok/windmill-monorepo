@@ -1,10 +1,10 @@
 import SyncAPI
 import SyncCore
 
-// §10.2 and §11: a draft's save, and the standard removal and move. Their `load` and `decide` are public, so an action
-// may compose them into its own plan (§9.3).
+// §10.2 and §11: a draft's save, and the standard removal and move. Each is a decider, so an action may compose it into
+// its own plan (§9.3).
 
-public struct SaveDraft<E: Draftable, R: ProductRefusal>: Sendable {
+public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   let recordID: ID<E>
   let base: E
   let current: E
