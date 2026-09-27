@@ -21,7 +21,9 @@ struct JsonError : std::runtime_error {
 std::string jcs(const Json::Value& value);
 
 // RFC 8259 with nothing lenient: any value at the root, no comments, no duplicate keys, nothing after
-// the value, and every string and key UTF-8. Throws JsonError.
+// the value, every string and key UTF-8 with its control characters escaped, and arrays and objects
+// nested at most 1000 deep. A number is §9.1's: a finite double, zero only when every digit of its
+// literal is, and an integer literal that Int64 or UInt64 holds stays that integer. Throws JsonError.
 Json::Value parseJson(std::string_view text);
 
 // The "bytewise" order of §3.2: the UTF-8 bytes of the two encodings, which differs from UTF-16 order

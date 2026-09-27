@@ -62,6 +62,8 @@ check "$(field "['holdsRecords']" < "$BODY")" '{"probe":false}' "a fresh account
 check "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello")" "400" "a request without Sync-Schema is malformed"
 check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 0' "$BASE/v1/sync/hello")" "426" "an older Sync-Schema must upgrade"
 check "$(curl -s -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello?schema=1")" "400" "hello reads its version from the header alone, never ?schema="
+check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 1' -H 'Sync-Schema: 0' "$BASE/v1/sync/hello") $(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 0' -H 'Sync-Schema: 1' "$BASE/v1/sync/hello")" \
+  "200 426" "a repeated Sync-Schema is read as Drogon presents it: the first value decides"
 
 echo "push"
 FIRST="{\"replica\":\"$REPLICA\",\"ackThrough\":0,\"intents\":[$(card 1 cardE2E0001 One)]}"
@@ -97,8 +99,19 @@ python3 -c "print('x' * 2_200_000)" > "$BODY.huge"
 check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.huge")" "413" "a body over 2 MiB is too large, before its shape is read"
 check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 1' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.huge")" "401" \
   "a signed-out push over 2 MiB is 401: the principal is checked before the size"
+python3 -c "print('x' * 9_000_000)" > "$BODY.transport"
+check "$(sync -o "$BODY" -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.transport")" "413" \
+  "a body over the transport's 8 MiB is answered 413 before §9.1's checks"
+check "$(grep -c serverTime "$BODY")" "0" "and that 413 is the transport's own, bare of serverTime and epoch"
 
 echo "pull"
+python3 -c "import json; print(json.dumps({'scopes': [{'scope': 'self/probe', 'cursor': None}], 'pad': 'x' * 70_000}))" > "$BODY.pull"
+check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 1' -X POST "$BASE/v1/sync/pull" --data-binary "@$BODY.pull")" "413" \
+  "a pull body over 64 KiB is too large, before its shape is read"
+check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe"}]}')" "400" \
+  "a pull scope without its cursor is malformed"
+check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":1e-400}]}')" "400" \
+  "a number that rounds to zero from nonzero makes a body malformed"
 sync -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
 check "$(field "['pages'][0]['total']" < "$BODY")" "4" "a boot counts every alive row"
 check "$(field "['pages'][0]['more']" < "$BODY")" "false" "and ends live at the head"
@@ -147,7 +160,8 @@ async def refused(query, headers):
 async def main():
     cookie = {"Cookie": f"wm_session={secret}"}
     print(await refused("", cookie), await refused("?schema=0", cookie), await refused("", {**cookie, "Sync-Schema": "1"}),
-          await refused("?schema=1&schema=1", cookie), await refused("?schema=1", {**cookie, "Sync-Schema": "0"}))
+          await refused("?schema=1&schema=1", cookie), await refused("?schema=0&schema=1", cookie), await refused("?schema=1&schema=0", cookie),
+          await refused("?schema=1", {**cookie, "Sync-Schema": "0"}))
     async with websockets.connect(live, additional_headers=cookie) as ws:
         await ws.send(json.dumps({"op": "ping"}))
         print((await frame(ws))["op"])
@@ -169,15 +183,15 @@ async def main():
 asyncio.run(main())
 PY
 )"
-check "$(sed -n 1p <<<"$LIVE")" "400 426 400 400 upgraded" \
-  "the upgrade reads ?schema= alone: missing, below minSchema, only a header, repeated, and a header beside it ignored"
+check "$(sed -n 1p <<<"$LIVE")" "400 426 400 upgraded upgraded 426 upgraded" \
+  "the upgrade reads ?schema= alone, as Drogon presents it: missing, below minSchema, only a header, repeated (the last value decides), and a header beside it ignored"
 check "$(sed -n 2p <<<"$LIVE")" "pong" "ping answers pong"
 check "$(sed -n 3p <<<"$LIVE")" '{"op": "not-found", "scope": "tree/b_ffffffff"}' "a sub to an absent tree answers not-found"
 check "$(sed -n 4p <<<"$LIVE")" "change self/probe True ['2026-09-02']" "a push reaches the subscriber as a change frame at its seq, rows inline"
 check "$(sed -n 5p <<<"$LIVE")" '{"op": "not-found", "scope": "self/probe"}' "a signed-out sub to self/probe answers not-found"
 check "$(sed -n 6p <<<"$LIVE")" "stranger refused" "an upgrade from an origin off the allow-list is closed"
 
-rm -f "$JAR" "$BODY" "$BODY.big" "$BODY.huge"
+rm -f "$JAR" "$BODY" "$BODY.big" "$BODY.huge" "$BODY.transport" "$BODY.pull"
 echo
 echo "$pass passed, $fail failed"
 [ "$fail" -eq 0 ]

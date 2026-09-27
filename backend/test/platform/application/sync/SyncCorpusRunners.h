@@ -10,6 +10,8 @@
 
 #include <json/json.h>
 
+#include <cstddef>
+#include <map>
 #include <stdexcept>
 #include <string>
 #include <variant>
@@ -19,14 +21,20 @@
 
 namespace wm::sync::test {
 
-// A vector's `limits` knobs over the engine's constants.
+// A vector's `limits` knobs over the engine's constants. A knob this runner cannot configure fails the vector
+// rather than leaving it to run under the default.
 inline Limits limitsOf(const Json::Value& input) {
   Limits limits;
-  const Json::Value& knobs = input["limits"];
-  if (knobs.isMember("MAX_RECORD_BYTES")) limits.maxRecordBytes = knobs["MAX_RECORD_BYTES"].asUInt64();
-  if (knobs.isMember("PUSH_MAX_INTENTS")) limits.pushMaxIntents = knobs["PUSH_MAX_INTENTS"].asUInt64();
-  if (knobs.isMember("PUSH_MAX_BYTES")) limits.pushMaxBytes = knobs["PUSH_MAX_BYTES"].asUInt64();
-  if (knobs.isMember("PULL_PAGE_BYTES")) limits.pullPageBytes = knobs["PULL_PAGE_BYTES"].asUInt64();
+  const std::map<std::string, std::size_t*> knobs{{"MAX_RECORD_BYTES", &limits.maxRecordBytes},
+                                                  {"PUSH_MAX_INTENTS", &limits.pushMaxIntents},
+                                                  {"PUSH_MAX_BYTES", &limits.pushMaxBytes},
+                                                  {"PULL_PAGE_BYTES", &limits.pullPageBytes},
+                                                  {"PULL_MAX_BYTES", &limits.pullMaxBytes}};
+  for (const std::string& name : input["limits"].getMemberNames()) {
+    const auto knob = knobs.find(name);
+    if (knob == knobs.end()) throw std::logic_error("the runner configures no limit " + name);
+    *knob->second = input["limits"][name].asUInt64();
+  }
   return limits;
 }
 

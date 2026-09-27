@@ -33,9 +33,9 @@ void installSyncSocket(SyncSocketDeps deps);
 void linkSyncSocket();
 
 // §9.1 and §9.5 on the upgrade to /v1/sync/live?schema=<version>, before the connection upgrades: the version is
-// read from the query parameter `schema` alone, since a browser WebSocket cannot send headers. One that is missing,
-// repeated or not a decimal integer is answered 400 malformed, one below minSchema 426 upgrade-required. Drogon
-// creates the gate by the name SyncSocket's path list gives.
+// the query parameter `schema` alone, since a browser WebSocket cannot send headers, as Drogon presents it (the
+// last value of a repeated one). One that is missing or not a decimal integer is answered 400 malformed, one below
+// minSchema 426 upgrade-required. Drogon creates the gate by the name SyncSocket's path list gives.
 class SyncSchemaGate : public drogon::HttpFilter<SyncSchemaGate> {
 public:
   void doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) override;

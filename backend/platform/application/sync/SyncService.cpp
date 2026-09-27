@@ -24,20 +24,6 @@ namespace {
 // The rows one read of a feed stream takes from the store.
 constexpr std::size_t kFeedBatch = 256;
 
-// §9.1: every answer carries serverTime and epoch.
-Json::Value envelope(Ms serverTime, const std::string& epoch) {
-  Json::Value body(Json::objectValue);
-  body["serverTime"] = Json::UInt64(serverTime);
-  body["epoch"] = epoch;
-  return body;
-}
-
-// §9.6: an answer that is its error code alone.
-SyncReply failed(int status, Json::Value body, const std::string& error) {
-  body["error"] = error;
-  return SyncReply{status, std::move(body)};
-}
-
 std::string epochOf(SyncStore& store) {
   const std::unique_ptr<SyncTxn> txn = store.begin(TxnMode::snapshot);
   return store.epoch(*txn);
@@ -74,11 +60,12 @@ bool isPushRequest(const Json::Value& request) {
                      [](const Json::Value& intent) { return intent.isObject() && isSafeAtLeast(intent["n"], 1); });
 }
 
-// §9.4 PullRequest: {scopes: [{scope: string, cursor: string | null}]}.
+// §9.4 PullRequest: exactly {scopes: [exactly {scope: string, cursor: string | null}]}.
 bool isPullRequest(const Json::Value& request) {
-  if (!request.isObject() || !request["scopes"].isArray()) return false;
+  if (!request.isObject() || request.size() != 1 || !request["scopes"].isArray()) return false;
   return std::all_of(request["scopes"].begin(), request["scopes"].end(), [](const Json::Value& wanted) {
-    return wanted.isObject() && wanted["scope"].isString() && wanted.isMember("cursor") && (wanted["cursor"].isString() || wanted["cursor"].isNull());
+    return wanted.isObject() && wanted.size() == 2 && wanted["scope"].isString() && wanted.isMember("cursor") &&
+           (wanted["cursor"].isString() || wanted["cursor"].isNull());
   });
 }
 
@@ -108,7 +95,9 @@ public:
         serverNow_(serverNow) {}
 
   SyncReply run(PushBudget& budget, Json::Value body) {
-    if (!bind()) return failed(409, std::move(body), "replica-foreign");
+    const Binding binding = bind();
+    if (binding == Binding::unavailable) return SyncReply::unavailable(std::move(body));
+    if (binding == Binding::foreign) return SyncReply::refused(409, std::move(body), "replica-foreign");
     Json::Value results(Json::arrayValue);
     std::optional<Json::Value> retry;
     std::size_t admitted = 0;
@@ -152,15 +141,23 @@ public:
   }
 
 private:
-  // Step 3: an absent binding is inserted at last_n 0; a replica bound to another account is foreign.
-  bool bind() {
-    const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-    const bool absent = !store_.replica(*txn, replica_, RowLock::update);
-    const ReplicaRow binding = store_.bindReplica(*txn, replica_, account_, serverNow_);
-    if (binding.account != account_) return false;
-    txn->commit();
-    inserted_ = absent;
-    return true;
+  enum class Binding { bound, foreign, unavailable };
+
+  // Step 3: an absent binding is inserted at last_n 0; a replica bound to another account is foreign. A transient
+  // failure comes before the push takes its first intent, so the push answers it 503 (§6.6).
+  Binding bind() {
+    try {
+      const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
+      const bool absent = !store_.replica(*txn, replica_, RowLock::update);
+      const ReplicaRow binding = store_.bindReplica(*txn, replica_, account_, serverNow_);
+      if (binding.account != account_) return Binding::foreign;
+      txn->commit();
+      inserted_ = absent;
+      return Binding::bound;
+    } catch (const std::exception& error) {
+      if (store_.classify(error) == FaultClass::transient) return Binding::unavailable;
+      throw;
+    }
   }
 
   // Step 4's comparison of n with last_n as read under the replica row's lock, never a value read earlier. A
@@ -205,7 +202,7 @@ private:
       if (row && row->account == account_) store_.unbindUnused(*txn, replica_);
       txn->commit();
     }
-    return failed(409, std::move(body), error);
+    return SyncReply::refused(409, std::move(body), error);
   }
 
   // Step 6, in a push answered 200: the results the replica acknowledged, never past its last_n, which the response
@@ -497,6 +494,23 @@ private:
 
 }
 
+Json::Value SyncReply::envelope(Ms serverTime, const std::string& epoch) {
+  Json::Value body(Json::objectValue);
+  body["serverTime"] = Json::UInt64(serverTime);
+  body["epoch"] = epoch;
+  return body;
+}
+
+SyncReply SyncReply::refused(int status, Json::Value envelope, const std::string& error) {
+  envelope["error"] = error;
+  return SyncReply{status, std::move(envelope)};
+}
+
+SyncReply SyncReply::unavailable(Json::Value envelope) {
+  envelope["retryAfterMs"] = Json::UInt(Retry::kTransientMs);
+  return refused(503, std::move(envelope), "unavailable");
+}
+
 TimeBudget::TimeBudget(Ms workMs) : deadline_(std::chrono::steady_clock::now() + std::chrono::milliseconds(workMs)) {}
 
 bool TimeBudget::spent(std::size_t admitted) {
@@ -511,7 +525,7 @@ SyncReply SyncService::hello(const std::optional<UserId>& caller) {
   const Ms serverTime = clock_.nowMs();
   const Registry& registry = catalog_.registry();
   const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
-  Json::Value body = envelope(serverTime, store_.epoch(*txn));
+  Json::Value body = SyncReply::envelope(serverTime, store_.epoch(*txn));
   body["schema"] = Json::Int64(registry.version());
   body["minSchema"] = Json::Int64(registry.minVersion());
   if (!caller) return SyncReply{200, std::move(body)};
@@ -529,21 +543,23 @@ SyncReply SyncService::hello(const std::optional<UserId>& caller) {
 SyncReply SyncService::push(const std::optional<UserId>& caller, std::string_view body, PushBudget& budget) {
   const Ms serverNow = clock_.nowMs();
   const Limits& limits = admission_.limits();
-  Json::Value answer = envelope(serverNow, epochOf(store_));
-  if (!caller) return failed(401, std::move(answer), "unauthenticated");
-  if (body.size() > limits.pushMaxBytes) return failed(413, std::move(answer), "request-too-large");
+  Json::Value answer = SyncReply::envelope(serverNow, epochOf(store_));
+  if (!caller) return SyncReply::refused(401, std::move(answer), "unauthenticated");
+  if (body.size() > limits.pushMaxBytes) return SyncReply::refused(413, std::move(answer), "request-too-large");
   const std::optional<Json::Value> request = parsed(body);
-  if (!request || !isPushRequest(*request)) return failed(400, std::move(answer), "malformed");
-  if ((*request)["intents"].size() > limits.pushMaxIntents) return failed(413, std::move(answer), "request-too-large");
+  if (!request || !isPushRequest(*request)) return SyncReply::refused(400, std::move(answer), "malformed");
+  if ((*request)["intents"].size() > limits.pushMaxIntents) return SyncReply::refused(413, std::move(answer), "request-too-large");
   return ReplicaPush(store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
 }
 
 SyncReply SyncService::pull(const std::optional<UserId>& caller, std::string_view body) {
   const Ms serverNow = clock_.nowMs();
-  Json::Value answer = envelope(serverNow, epochOf(store_));
+  const Limits& limits = admission_.limits();
+  Json::Value answer = SyncReply::envelope(serverNow, epochOf(store_));
+  if (body.size() > limits.pullMaxBytes) return SyncReply::refused(413, std::move(answer), "request-too-large");
   const std::optional<Json::Value> request = parsed(body);
-  if (!request || !isPullRequest(*request)) return failed(400, std::move(answer), "malformed");
-  if ((*request)["scopes"].size() > admission_.limits().pullMaxScopes) return failed(400, std::move(answer), "malformed");
+  if (!request || !isPullRequest(*request) || (*request)["scopes"].size() > limits.pullMaxScopes)
+    return SyncReply::refused(400, std::move(answer), "malformed");
   ScopePull pull(catalog_, store_, admission_, caller, serverNow);
   Json::Value& pages = answer["pages"] = Json::Value(Json::arrayValue);
   for (const Json::Value& wanted : (*request)["scopes"]) pages.append(pull.page(wanted));

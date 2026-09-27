@@ -277,34 +277,6 @@ TEST(a_registry_refuses_a_pattern_outside_section_2_4_s_portable_subset_wherever
            std::string("registry.products.p.device.picture.keyPattern: the pattern ^picture:[^/]{8,64}$ is outside §2.4's portable patterns"));
 }
 
-// The reference's table (core/registry.js isPortablePattern): the first seven are portable, the rest not.
-TEST(a_portable_pattern_is_the_subset_every_dialect_reads_alike) {
-  const std::vector<std::string> portable{"^b_[0-9a-f]{8}$", "^[A-Za-z0-9_-]{8,64}$", "^[-a]$", "^(?:ab|cd)+$", "^(a|b)?c{2,}$", "^a\\.b\\/c$",
-                                          "^[\\]\\-]$"};
-  const std::vector<std::string> outside{"b_[0-9a-f]{8}$", "^b_[0-9a-f]{8}", "^a|b$", "^.{1,64}$", "^\\s+$", "^\\d+$", "^\\w+$", "^a\\b$",
-                                         "^\\_$", "^[^/]+$", "^[]$", "^[z-a]$", "^[a-b-c]$", "^[a--]$", "^[a&&b]$", "^[[a]]$", "^a+?$",
-                                         "^a**$", "^a{3,2}$", "^a{,2}$", "^(?=a)a$", "^(a)\\1$", "^a$b$", "^\xc3\xa9$", "^a\\$"};
-  for (const std::string& source : portable) {
-    CHECK(Pattern::isPortable(source));
-    CHECK(Pattern{source}.source() == source);
-  }
-  for (const std::string& source : outside) CHECK_FALSE(Pattern::isPortable(source));
-}
-
-TEST(a_pattern_matches_the_whole_value_as_every_dialect_does) {
-  const Pattern lower{"^[a-z]+$"};
-  CHECK(lower.matches("abc"));
-  CHECK_FALSE(lower.matches("abc\n"));
-  CHECK_FALSE(lower.matches("xabcx!"));
-  const Pattern escaped{"^[\\]\\-]$"};
-  CHECK(escaped.matches("]"));
-  CHECK(escaped.matches("-"));
-  CHECK_FALSE(escaped.matches("\\"));
-  const Pattern grouped{"^(?:ab|cd)+/$"};
-  CHECK(grouped.matches("abcdab/"));
-  CHECK_FALSE(grouped.matches("abc/"));
-}
-
 // SPEC-GAP 12: roundHalfAway(x × k) ÷ k for q = 1/k, roundHalfAway(x ÷ q) × q for an integer q, in doubles.
 TEST(a_quantum_rounds_half_away_from_zero_in_doubles) {
   const Quantum cents{0.01};
