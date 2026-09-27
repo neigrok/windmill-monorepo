@@ -270,7 +270,7 @@ outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
 - scope: `first-write`, `governing-create`, `governing-delete`, `horizon`.
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
-`ready`); `coalesce` is both a commit that coalesces at once and "cancelled by a later delete";
+`ready`); `coalesce` is both a commit that coalesces at once and "a create cancelled by a later delete";
 `cancel` is "folded with such a cancel" (to `coalesced`, no notice);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
@@ -712,9 +712,10 @@ is answered for the caller to resume.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
 - `local`: `{deviceKey: value}`; `null` deletes the row. A key matching none of the product's device
   rows (`keyPattern`) throws.
-- `gestureId`: one an outbox entry already carries throws.
+- `gestureId`: one that an outbox entry or a notice (`notice:<gestureId>/<k>`) already carries throws.
 
 A gesture whose changes give one record two deltas throws: an intent changes a record at most once.
+A `move` and an `update` of one record fold into one delta; the update writing `anchor.field` throws.
 
 **Ids and order.**
 - A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
@@ -789,14 +790,15 @@ write-map stamps.
 
 - `join.json`: intents that join.
 - `blocked.json`: intents that do not.
-- `cancel.json`: a create or revive joined with a delete, and the dependents it folds.
+- `cancel.json`: a create joined with a delete, the dependents it folds, and the joins with a delete
+  that keep it.
 
 The target E is the last *earlier* entry, in commit order, touching the intent's record. An entry
 with `numbered: true`, an orphan among them, takes no join: the intent stays an entry of its own. A
-join removes E iff E's delta holds an alive life and a born, the record is not alive in drawn without
-E and the intent, and the joined life is dead. An update joined with a delete keeps the delete, and so
-does a revive of a record alive without it: a delete, a revive and a delete of a confirmed record end
-as one entry that deletes it.
+join removes E iff E's delta is a create (its life `[alive, born]`), the record is alive in neither
+drawn nor stored without E and the intent, and the joined life is dead. Any other join keeps the
+delete: an update or a revive joined with a delete is one delete, and a delete, a revive and a delete
+end as one entry that deletes the record.
 
 A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
 and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.

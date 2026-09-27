@@ -122,7 +122,8 @@ export function onPushResponse(replica, ctx, request, response, timing) {
 // §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and
 // raises k. A response with results resets k unless one is clock-skew, whose recovery is followed by a
 // backoff. A kick wakes the sender and resets k, except during the backoff after a clock-skew recovery,
-// which it neither cuts short nor resets. `draw(bound)` answers the random sleep below `bound`.
+// which it neither cuts short nor resets. A leave flush (§7.3) pushes once whatever the wait and leaves
+// the wait as it was. `draw(bound)` answers the random sleep below `bound`.
 export class SenderWait {
   constructor(limits = CONSTANTS) {
     this.limits = limits;

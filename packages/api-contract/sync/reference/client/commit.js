@@ -228,6 +228,31 @@ class DeltaBuilder {
   }
 }
 
+// §7.1 step 4: a move and an update of one record fold into one delta, the update leaving the move's
+// field alone. Step 7: any other changes that give one record two deltas throw.
+function oneDeltaPerRecord(built) {
+  const byRecord = new Map();
+  const deltas = [];
+  for (const { change, delta } of built) {
+    const key = recordKey(delta.t, delta.id);
+    const earlier = byRecord.get(key);
+    if (!earlier) {
+      byRecord.set(key, { changes: [change], delta });
+      deltas.push(delta);
+      continue;
+    }
+    const pair = [...earlier.changes, change];
+    const move = pair.find((one) => one.op === 'move');
+    const update = pair.find((one) => one.op === 'update');
+    if (pair.length !== 2 || !move || !update) throw new CommitError('an intent changes a record at most once');
+    if (update.f?.[move.anchor.field] !== undefined) throw new CommitError(`${delta.t}.${move.anchor.field} is written beside a move`);
+    earlier.changes.push(change);
+    earlier.delta.f = Object.fromEntries(Object.entries({ ...earlier.delta.f, ...delta.f }).sort(([a], [b]) => (a < b ? -1 : 1)));
+    if (delta.x) earlier.delta.x = { ...earlier.delta.x, ...delta.x };
+  }
+  return deltas;
+}
+
 function refusalOfScope(replica, registry, scope) {
   const kind = registry.scopeKindOf(scope);
   if (kind !== 'tree' && kind !== 'overlay') return null;
@@ -320,9 +345,10 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
-  if (opts.gestureId !== undefined && replica.entries().some((entry) => entry.gestureId === opts.gestureId)) {
-    throw new CommitError(`gesture id ${opts.gestureId} is taken`);
-  }
+  const gestureOfNotice = (id) => id.slice('notice:'.length, id.lastIndexOf('/'));
+  const taken = (gestureId) => replica.entries().some((entry) => entry.gestureId === gestureId)
+    || replica.notices.some((notice) => gestureOfNotice(notice.id) === gestureId);
+  if (opts.gestureId !== undefined && taken(opts.gestureId)) throw new CommitError(`gesture id ${opts.gestureId} is taken`);
   const product = registry.productOfRef(scope);
   for (const key of Object.keys(opts.local ?? {})) {
     const rows = Object.values(registry.products[product]?.device ?? {});
@@ -341,9 +367,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
-  const deltas = changes.map((change) => builder.delta(change)).filter((delta) => delta !== null);
-  const records = deltas.map((delta) => recordKey(delta.t, delta.id));
-  if (new Set(records).size !== records.length) throw new CommitError('an intent changes a record at most once');
+  const deltas = oneDeltaPerRecord(changes.map((change) => ({ change, delta: builder.delta(change) })).filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
   const capped = cappedType(registry, storedView, deltas);

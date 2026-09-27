@@ -546,7 +546,8 @@ deletion of script-writable storage after 7 days without interaction.
   a refused batch recovers as a whole (§7.7).
 - Coalescing joins registers of one record into an entry never numbered, so an entry that a later
   delete cancels was never sent, and its dependents cancel with it (§7.2). A cancel drops no gesture
-  the record needs: it takes place only where the record is not alive without the two entries.
+  the record needs: only a create cancels, whose registers nothing else holds, and only where the
+  record is alive in neither view without the two entries.
 
 **INV-4 At most once.** An intent from a replica, or a server-origin write that carries a
 `requestId`, takes effect at most once.
@@ -661,8 +662,8 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
   induction from empty stores (§10.3).
 - Recovery terminates. The `serverNow` of §6.1 step 2 never steps back within a server process
   (§10.2), so a stamp that passed the skew check once passes it again there. A step back of δ
-  across a restart, or between server processes, costs a bounded number of extra refusals, each
-  after a backoff (§7.4), until the wall clock regains δ.
+  across a restart, or between server processes, costs a bounded number of extra refusals, one per
+  backoff (§7.4) or leave flush (§7.3), until the wall clock regains δ.
   - Recovery (§7.7 step 1) ticks every register a held or ready entry wrote from the pair maximum
     of `(physNow(), 0)` and `admittedHigh`. With a correct offset `physNow()` passes, and
     `admittedHigh` is a stamp that passed.
@@ -1087,9 +1088,10 @@ network. It throws only before its local transaction commits, and every client A
 three failures, told apart by where they arise:
 - *not writable*: step 1, the replica's state forbids writes;
 - *malformed*, a programming error: every throw of steps 2 to 10, the checks before step 2 included
-  (a type outside the commit's scope, an `opts.gestureId` an outbox entry already carries), and every
-  misuse of what the read-and-commit function is given: a reference that is not this commit's scope,
-  a view read after the function returned, or an id minted for a type that mints none;
+  (a type outside the commit's scope, an `opts.gestureId` that an outbox entry or a notice already
+  carries), and every misuse of what the read-and-commit function is given: a reference that is not
+  this commit's scope, a view read after the function returned, or an id minted for a type that mints
+  none;
 - *store failure*: anything else. The transaction could not commit, and nothing is written.
 
 A `Refused` is a result, not a failure. Once the transaction has committed, `commit` MUST return its
@@ -1132,8 +1134,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
      record above the drop point or none for the top. An anchored create and a move take D-25's
      drop position, with `below` looked up in `drawn`, then in `stored`. A move writes only `field`,
-     by an update. An anchor absent from both views throws, and so does a value for `field` beside
-     an anchor.
+     by an update; a move and an update of one record in one gesture fold into that one update, and
+     the update writing `field` throws. An anchor absent from both views throws, and so does a value
+     for `field` beside an anchor.
    - A created record's client-written `time` fields that the change leaves unset take `physNow()`.
      A commit reads `physNow()` once: the read-and-commit function, step 3's `tick` and these fields
      all take that one reading.
@@ -1152,11 +1155,12 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    undeclared field, or a field of a type another scope holds. A text field is never guarded: it
    has no stamp, and merges instead (§6.11).
 7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record. An intent
-   changes a record at most once: changes that give one record two deltas throw. Each guard
-   goes with the intent that writes its record; a guard on a record no delta writes goes with the
-   first intent. The k-th intent's entry has `localId = <gestureId>/<k>`. An intent exists only if
-   it carries a delta or a command: guards are dropped when the gesture has neither, and a gesture
-   with nothing to send enqueues nothing (held or not), so no retire can match it.
+   changes a record at most once: changes that give one record two deltas, other than the move and
+   update step 4 folds, throw. Each guard goes with the intent that writes its record; a guard on a
+   record no delta writes goes with the first intent. The k-th intent's entry has
+   `localId = <gestureId>/<k>`. An intent exists only if it carries a delta or a command: guards are
+   dropped when the gesture has neither, and a gesture with nothing to send enqueues nothing (held or
+   not), so no retire can match it.
 8. **Caps and size.**
    - A gesture whose deltas, applied to `stored`, raise a capped type's visible count above its cap
      by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1
@@ -1189,10 +1193,10 @@ E.delta := joinRecord(E.delta, I.delta)        // text: E keeps its base and bas
 I ends 'coalesced'
 ```
 
-**Cancel.** When `E`'s delta holds an alive life and a born, the record is not alive in `drawn`
-without `E` and `I`, and the join leaves it dead, `E` ends `coalesced` too. Its dependents (§7.7
-step 3) fold silently: their deltas are removed without a notice, and an entry left empty ends
-`coalesced`.
+**Cancel.** When `E`'s delta is a create (its life `[alive, born]`, §4.1), the record is alive in
+neither `drawn` nor `stored` without `E` and `I`, and the join leaves it dead, `E` ends `coalesced`
+too. Its dependents (§7.7 step 3) fold silently: their deltas are removed without a notice, and an
+entry left empty ends `coalesced`.
 
 ### §7.3 Hold, release, undo
 
@@ -1206,7 +1210,8 @@ undo(gestureId): tx: if every entry of the gesture is held → delete them, fold
 - **Triggers:**
   - an in-process timer at `releaseAt`, owned by the app or process (on web, a timer in every tab);
   - **leaving the app** releases every held entry into the durable queue at once, and the sender
-    attempts a best-effort flush. Leaving is the process- or scene-level signal: Android
+    attempts one best-effort push at once, whatever backoff is running (§7.4); that push neither
+    resets k nor ends the backoff. Leaving is the process- or scene-level signal: Android
     `ProcessLifecycleOwner` `ON_STOP`, iOS scene `.background` of the last foreground scene, and on
     web no tab of the app visible, debounced, or the last tab's `pagehide`. A tab that becomes
     hidden decides after `LEAVE_DEBOUNCE_MS`, and leaves only if no tab has announced it is visible
@@ -1520,7 +1525,7 @@ both places, without re-identifying. Re-identify, in one local transaction per r
 | `held` | `undo` | `undone` |
 | `held` | retired by a commit (§7.1 step 4): no command, and every delta removes a record the commit names | `undone` |
 | `ready` | numbered | `sent` |
-| `ready` | cancelled by a later delete (§7.2) | `coalesced` |
+| `ready` | a create cancelled by a later delete (§7.2) | `coalesced` |
 | `held`, `ready` | folded with such a cancel, an undo or a retire (§7.2, §7.3) | `coalesced` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
