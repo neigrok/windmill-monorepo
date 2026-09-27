@@ -3,8 +3,9 @@
 `apps/ios` holds the SwiftPM package `WindmillSync` in `Sync/`, the client of the sync engine
 ([engine.md](../../docs/foundation/engine.md)); `WindmillDomain` in `Domain/`, the domain kit every feature's
 logic is declared on ([domain-kit.md](../../docs/foundation/domain-kit.md)); and `SyncTestingSurface/`, a package of
-tests only, which proves from outside `WindmillSync` that its test harness is enough for the domain kit. There is no
-iOS app target and no product domain yet.
+tests only, which proves from outside `WindmillSync` that its test harness is enough for the domain kit. The one
+product domain so far is gym Notes (`Domain/Sources/GymDomain`); the `domain-feature` skill
+(`.claude/skills/domain-feature/`) teaches building the next one from it. There is no iOS app target yet.
 
 ## Layout
 
