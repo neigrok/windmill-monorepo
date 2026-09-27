@@ -110,6 +110,12 @@ apps store carries across.
 - **7g · Notes account-only.** `10-notes.md` makes notes account-only (signed out, Notes is a
   sign-in door); `../foundation/mobile/gym_coach.md` Appendix C gives `save_note` `seats: any`, so a
   signed-out Coach turn could write one. Rule which holds.
+- **7h · Weigh-in conflicts.** `gym/briefs/11-bodyweight.md` ("The wire", and the paragraph on a
+  weigh-in written again inside its delete window) says the write with the later `recordedAt` wins.
+  Under the engine (A.2 `weighin`; owner ruling 2026-09-26, newest wins per field by stamp), the
+  newest save wins by its stamp, whatever `recordedAt` holds: a save made later on a device whose
+  clock runs behind beats an earlier save that carries a later `recordedAt`. The engine rule stands;
+  restate the brief's two sentences by it.
 
 ## iOS first run
 

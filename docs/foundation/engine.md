@@ -191,13 +191,17 @@ views (§7.6).
 - `between(a, b)` returns a key strictly between `a` and `b`.
 - When two neighbours hold equal keys, a key inserted after the first of them is
   `between(a, the next greater key)`.
+- **List.** The list of an order field, in a view, is every visible record (§7.6) of its type in the
+  scope that holds the field. A list per parent needs a split the registry declares, and the registry
+  format declares none.
 - **Drop position.** A member placed into a list, by a move or an anchored create (§7.1 step 4),
   takes a key between the *anchor*, the row immediately above the drop point, and the first
   `stored` row whose key is greater than the anchor's, the placed member excluded. At the top it
   goes before the first `stored` row; with no such `stored` row, after the anchor. The anchor is
   looked up in `drawn`, then in `stored`: it may be a row only `drawn` holds, or a member inside a
   delete window (§7.3), which only `stored` holds. A member inside a delete window so also keeps
-  its stored place.
+  its stored place. A member moved below itself is its own anchor: it takes a key between its
+  drawn key and the first greater `stored` key, and keeps its place.
 
 **D-26 Derived id.** `derive(label, fallback, taken)`:
 
@@ -319,6 +323,7 @@ names no product.
 
 The engine applies:
 - `parent: true` marks the one `ref` field whose target must be alive (§6.1 step 10).
+- A `fracKey` field, an order field (D-25), belongs to a minted or derived type.
 - `rank` gives each value of a `ranked` field an integer rank; its keys are the field's domain.
 - A type's `origins` always include `replica`: a replica MAY create a record of any type, by a
   delta or through a command as its binding allows, and the product's `check` re-checks it (§6.1
@@ -532,12 +537,12 @@ deletion of script-writable storage after 7 days without interaction.
   Poison ends in a stored `internal` result (§6.6).
 - After a restore, acked entries return to `ready` (§7.5).
 - A refusal folds its dependents into the same notice: the removed content of held and ready
-  entries, and the content of orphans. A sent entry is an orphan only when every delta of it is
-  dependent, so a partly dependent entry keeps its independent deltas (§7.7).
+  entries, and the whole content of orphans, the sent entries with a dependent part. An orphan's
+  refusal folds its own dependents into it too (§7.7).
 - `clock-skew` recovery moves borns and guards in every later unacked entry, sent ones included, so
   a refused batch recovers as a whole (§7.7).
-- Coalescing joins registers of one record and one actor. A create or revive that a later delete
-  cancels was never sent, and its dependents cancel with it (§7.2).
+- Coalescing joins registers of one record into an entry never numbered, so a create or revive that
+  a later delete cancels was never sent, and its dependents cancel with it (§7.2).
 
 **INV-4 At most once.** An intent from a replica, or a server-origin write that carries a
 `requestId`, takes effect at most once.
@@ -601,7 +606,7 @@ the result `internal` is stored and `last_n` advances (§6.6).
 
 **INV-10 Hold durability.** A held gesture is sent iff neither Undo nor a retire (§7.1 step 4)
 removes it before release, the person does not discard it (§7.10), and it is not folded with a
-record it depends on (§7.2, §7.7).
+record it depends on (§7.2, §7.3, §7.7).
 Process death and in-app navigation, including an activity or scene recreation, never abandon it.
 The early releases, which end Undo, are leaving the app, sign-in and sign-out (§7.3, §7.10). After
 process death, the next engine start releases it.
@@ -649,6 +654,24 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
 - Server stamps are minted once per pass of §6.1 step 9, each one tick after observing stored
   stamps, the stamps of the intent's client deltas and an earlier pass's stamps, all bounded, by
   induction from empty stores (§10.3).
+- Recovery terminates. The `serverNow` of §6.1 step 2 never steps back within a server process
+  (§10.2), so a stamp that passed the skew check once passes it again there. A step back of δ
+  across a restart, or between server processes, costs a bounded number of extra refusals, each
+  after a backoff (§7.4), until the wall clock regains δ.
+  - Recovery (§7.7 step 1) ticks every register a held or ready entry wrote from the pair maximum
+    of `(physNow(), 0)` and `admittedHigh`. With a correct offset `physNow()` passes, and
+    `admittedHigh` is a stamp that passed.
+  - Every other stamp an unacked entry carries is a born or a carried life register. Its source is
+    an earlier unacked entry, whose restamp moves it (§7.7 restamp rule); a command's prediction,
+    which the write map moves before any entry behind the command is numbered (§7.4, §7.7); or an
+    admitted stamp.
+  - No source leaves the outbox unadmitted with a dependent behind it. A numbered entry takes no
+    join (§7.2). A cancel, an undo and a retire fold their dependents (§7.2, §7.3), none of which
+    is numbered while its source is held or never numbered (§7.4). A refusal folds the queued
+    dependents and orphans the sent ones. An orphan's whole content is a source whose dependents
+    are held back until its result: its `ok` admits their source, and its refusal, which recovers
+    nothing, folds them (§7.4, §7.7). A discard ends every entry of its product (§7.10).
+  - So a recovered entry's resend passes the check.
 
 **INV-15 Verified replica.** A replica whose cursor for a scope is live at seq N, without a key,
 holds exactly the server's alive rows (§6.12) of the scope at N, or detects that it does not at its
@@ -1022,16 +1045,19 @@ entries and predictions never enter it.
 
 ## §7 Client algorithms
 
-### §7.1 `commit(scope, changes, opts) → {localIds, retired} | Refused | none`
+### §7.1 `commit(scope, changes, opts) → {localIds, retired, stamp} | Refused | none`
 
 `opts = {atomic, hold, guard, retire, cmd, predict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
-network. In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it
-after step 1 and before step 2, with `drawn` and `stored` read inside the same transaction, so a
-read and the writes it decides are one transaction. The function returns the gesture (its changes
-and `opts`) or none, and MAY return a value of its own, which `commit` returns beside its result.
-With none, `commit` writes nothing, ticks no clock and returns none. A gesture whose diff is empty
-still runs steps 2–11. One local transaction:
+network. It throws only before its local transaction commits. Once the transaction has committed,
+`commit` MUST return its result: a failure in the steps after the commit (below) is the engine's to
+log and retry, and never reaches the caller. In the **read-and-commit** form, `changes` is a function
+of the views: `commit` calls it after step 1 and before step 2, with `drawn` and `stored` read inside
+the same transaction and the commit's `physNow()` reading (step 4), so a read and the writes it
+decides are one transaction. The function returns the gesture (its changes and `opts`) or none, and
+MAY return a value of its own, which `commit` returns beside its result. With none, `commit` writes
+nothing, ticks no clock and returns none. A gesture whose diff is empty still runs steps 2–11. One
+local transaction:
 
 1. **Writable replica.** The replica is `anon` or `bound`; otherwise throw.
 2. **Scope check.** For `tree/<T>` and `self/overlay/<T>`: if the governing record `T` is dead in
@@ -1040,17 +1066,19 @@ still runs steps 2–11. One local transaction:
    boot sends no dead minted rows: the write is committed, and the server refuses it `scope-dead`
    with a notice.
 3. **Stamp.** Read `meta.hlc`, `observe(hlcHigh)` and `s := tick()`. `s` is the gesture's stamp;
-   each entry keeps it as `stamp`. The clock is written back only when the commit is accepted
-   (step 11); a refused commit writes no clock.
+   each entry keeps it as `stamp`, and `commit` returns it as `stamp`. The clock is written back
+   only when the commit is accepted (step 11); a refused commit writes no clock.
 4. **Retire, then deltas.** First the retire: `retire` lists records `(t, id)`, and every held
    gesture of the scope that carries no command, and whose every delta removes (`life → dead`) one
-   of them, ends `undone`, as `undo` ends it (§7.3). `commit` returns their gesture ids as
-   `retired`; a commit refused at step 8 retires nothing. A retired removal never happened, so the
-   record keeps its untouched fields. Then diff `changes` against `drawn`, which no longer holds the
-   retired entries, emitting only changed fields, stamped `s`:
+   of them, ends `undone`, as `undo` ends it (§7.3), dependents folded. `commit` returns their
+   gesture ids as `retired`, in commit order; a commit refused at step 8 retires nothing. A retired
+   removal never happened, so the record keeps its untouched fields, and a minted or derived record
+   is back in `drawn`: the gesture writes it by an update. From here on `drawn` and `stored` hold
+   neither the retired entries nor the parts their fold removes. Then diff `changes` against
+   `drawn`, emitting only changed fields, stamped `s`:
    - A minted or derived delta carries the record's `born`. A create gets `born = s` and
      `life = [alive, s]`.
-   - A create of an id already in `drawn` is dropped.
+   - A create of an id already in `drawn` is dropped, after its anchor, if any, is checked.
    - A keyed-with-life put's life:
      - `[alive, s]` when the gesture makes the record present;
      - `[dead, s]` when it removes it;
@@ -1058,11 +1086,13 @@ still runs steps 2–11. One local transaction:
    - A revive takes `born` from `drawn` or from `SpentId`.
    - An update or delete of a record absent from `drawn` throws.
    - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
-     record above the drop point or none for the top. One anchor serves both: an anchored create,
-     and a move, which writes only `field`, take D-25's drop position, with `below` looked up in
-     `drawn`, then in `stored`. An anchor absent from both views throws, and so does a value for
-     `field` beside an anchor.
+     record above the drop point or none for the top. An anchored create and a move take D-25's
+     drop position, with `below` looked up in `drawn`, then in `stored`. A move writes only `field`,
+     by an update. An anchor absent from both views throws, and so does a value for `field` beside
+     an anchor.
    - A created record's client-written `time` fields that the change leaves unset take `physNow()`.
+     A commit reads `physNow()` once: the read-and-commit function, step 3's `tick` and these fields
+     all take that one reading.
    - A number is rounded to its field's `quantum` `q`, in IEEE-754 doubles, with
      `roundHalfAway(y) = sign(y) × round(|y|)`: `roundHalfAway(x / q) × q` for an integer `q`, and
      otherwise `roundHalfAway(x × k) / k` with `k = round(1 / q)`. A number is on its quantum iff
@@ -1074,8 +1104,9 @@ still runs steps 2–11. One local transaction:
    derived ids come from `derive` (D-26).
 6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
    `(t, id, field, its stamp in stored)`, null when unset (D-19). Each listed field MUST be a
-   lattice field the type declares; any other, `life` or a text field included, throws. A text
-   field is never guarded: it has no stamp, and merges instead (§6.11).
+   lattice field of a type the commit's scope holds; any other throws: `life`, a text field, an
+   undeclared field, or a field of a type another scope holds. A text field is never guarded: it
+   has no stamp, and merges instead (§6.11).
 7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record. Each guard
    goes with the intent that writes its record; a guard on a record no delta writes goes with the
    first intent. The k-th intent's entry has `localId = <gestureId>/<k>`. An intent exists only if
@@ -1104,6 +1135,7 @@ After the commit: notify tabs (§7.8), kick the sender, and schedule release tim
 A new ready plain intent `I` on `(t, id)` joins the last earlier outbox entry `E` touching `(t, id)`
 iff:
 - `E` is ready and plain (here, plain also means no prediction);
+- `E` was never numbered;
 - no command entry of the scope lies between `E` and `I`;
 - for text fields, `E` and `I` carry the same stamp actor (one engine instance).
 
@@ -1112,16 +1144,16 @@ E.delta := joinRecord(E.delta, I.delta)        // text: E keeps its base and bas
 I ends 'coalesced'
 ```
 
-**Cancel.** When `E` made the record alive (a create or a revive), was never numbered, and the join
-leaves it dead, `E` ends `coalesced` too. Its held and ready dependents (§7.7 step 3) fold silently:
-their deltas are removed without a notice, and an entry left empty ends `coalesced`. A `sent`
-dependent is left to the server, and its refusal writes a notice (§7.7).
+**Cancel.** When `E` made the record alive (a create or a revive) and the join leaves it dead, `E`
+ends `coalesced` too. Its dependents (§7.7 step 3) fold silently: their deltas are removed without a
+notice, and an entry left empty ends `coalesced`.
 
 ### §7.3 Hold, release, undo
 
 ```
 release(entry): tx: if entry.state = held → state := ready; coalesce per §7.2; kick the sender
-undo(gestureId): tx: if every entry of the gesture is held → delete them, return true; else return false
+undo(gestureId): tx: if every entry of the gesture is held → delete them, fold their dependents as a
+                 cancel does (§7.2), return true; else return false
 ```
 
 - Release runs in every replica state.
@@ -1149,8 +1181,9 @@ undo(gestureId): tx: if every entry of the gesture is held → delete them, retu
 
 ```
 loop while state = bound ∧ ¬authPaused ∧ online:
-  tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS / PUSH_MAX_BYTES,
-      stopping after the first command entry: n := nextN++, digest, numbered := true, state := sent
+  tx: number ready entries in commitOrder, up to PUSH_MAX_INTENTS / PUSH_MAX_BYTES, passing over
+      held-back entries, and stopping after the first command entry or at a held-back command entry:
+      n := nextN++, digest, numbered := true, state := sent
           (no entry is numbered while a command entry is `sent`)
   POST push { replica, ackThrough, intents: sent entries by n }
   network error                 → backoff
@@ -1169,13 +1202,18 @@ loop while state = bound ∧ ¬authPaused ∧ online:
   replica-forked | replica-foreign | gap → re-identify (§7.11)
   per result, in its own tx:
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
-    refused → §7.7
+    refused → §7.7; after a `clock-skew` recovery, back off before the next push
     ackThrough := the response's lastN, once its results are recorded
   then, if the response epoch ≠ serverEpoch → epoch change (§7.5)
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)); ceiling = liveHint ? 30 s : 300 s; k resets on any result
+         but `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
 kick (wake now, k := 0): commit, release, connectivity change, foreground, auth refresh
 ```
+
+A ready entry is *held back* while it depends (§7.7 step 3) on a held or held-back entry or on an
+orphan awaiting its result, or touches, by a delta, a guard or a prediction, a record that an earlier
+held-back entry touches. Every other ready entry is numbered past held and held-back entries.
 
 ### §7.5 Puller, reset and epoch change
 
@@ -1256,8 +1294,8 @@ capCount(t) = |{ id : visible(stored(t, id)) }|
 
 ### §7.7 Refusal, rebase, recovery and maps
 
-On `refused(code)` for entry `e`, in one local transaction (an orphan's refusal only ends it, as
-step 3 states):
+On `refused(code)` for entry `e`, in one local transaction (an orphan's refusal ends it without a
+notice of its own, as step 3 states):
 
 1. **Automatic recovery,** which writes no notice. `e` returns to `ready` at its commit position:
    - `clock-skew`:
@@ -1272,15 +1310,20 @@ step 3 states):
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
    `ref` fields, `ref` arguments or key parts name, a record created in `e` (by a delta or by
-   `predict`), or that targets a scope whose governing record `e` creates. A reference names a
-   record in the scope its type lives in: a product scope, or the tree and overlay scopes of the
-   same tree. Folding is transitive: a record a dependent creates makes its own dependents.
+   `predict`), that carries unchanged a life register `e` wrote (a keyed put, §7.1 step 4), or that
+   targets a scope whose governing record `e` creates. A reference names a record in the scope its
+   type lives in: a product scope, or the tree and overlay scopes of the same tree. Folding is
+   transitive: a record a dependent creates, and a life register it writes, make their own
+   dependents.
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
      notice.
-   - A `sent` entry that is wholly dependent is an *orphan*: it is marked `orphanOf = e`, and its
-     later result ends it without a notice (`ok` → `resolved`, a refusal → `refused`). A `sent`
-     entry only partly dependent is left as it is.
+   - A `sent` entry with a dependent part is an *orphan*: it is marked `orphanOf = e`, and its later
+     result ends it without a notice of its own (`ok` → `resolved`, a refusal → `refused`). An
+     orphan's whole content is a source: every record it creates and every life register it writes
+     make their own dependents. They are held back (§7.4) until its result: on `ok` they are
+     numbered as usual; on a refusal they fold by this step into `e`'s notice, and a sent one becomes
+     an orphan of `e`. Its `ok` does not withdraw its content from the notice.
 4. **Notice.** Write the notice `notice:<localId of e>` with `e`'s content, and in `dependents` each
    dependent entry's removed or orphaned content (INV-3).
 5. **Redraw.** Recompute the touched views. This is the whole rebase; clients re-execute no
@@ -1293,7 +1336,7 @@ entry `w`, then step 3 once for the map:
    which means the record existed before the command (a join). It is replaced by `w.id` in every
    held and ready entry (delta ids, key parts, `ref<w.t>` fields and arguments), in `predict`, and
    in device rows (a product hook). The exception is an entry whose delta deletes `(w.t, w.from)`:
-   it is not rewritten, and ends `refused` with `target-merged` and a notice.
+   it is not rewritten, and is refused `target-merged` by steps 2–4 above.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:
    `w.f[f]` for each field, and `w.born` for the life of a record it created or resolved to. Later
    borns and guards naming the stamps its predicted registers carry follow. The predict stays
@@ -1428,8 +1471,8 @@ both places, without re-identifying. Re-identify, in one local transaction per r
 | `held` | `undo` | `undone` |
 | `held` | retired by a commit (§7.1 step 4): no command, and every delta removes a record the commit names | `undone` |
 | `ready` | numbered | `sent` |
-| `ready` | a never-numbered create or revive cancelled by a later delete (§7.2) | `coalesced` |
-| `held`, `ready` | folded with such a cancel (§7.2) | `coalesced` (no notice) |
+| `ready` | a create or revive cancelled by a later delete (§7.2) | `coalesced` |
+| `held`, `ready` | folded with such a cancel, an undo or a retire (§7.2, §7.3) | `coalesced` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
@@ -1615,7 +1658,8 @@ is the actor.
 ### §10.2 HLC
 
 ```
-physNow():  client = deviceWallMs() + serverOffsetMs ; server = wallMs()
+physNow():  client = deviceWallMs() + serverOffsetMs
+            server = max(wallMs(), the greatest value it has returned in this process)
 tick():     p := physNow(); if p > ms: (ms, counter) := (p, 0)
             else counter += 1; if counter = 2^32: (ms, counter) := (ms + 1, 0)
             return (ms, counter, actor)
@@ -1623,7 +1667,8 @@ observe(s): if (s.ms, s.counter) > (ms, counter): (ms, counter) := (s.ms, s.coun
 ```
 
 Clients observe `hlcHigh` at engine start and in every commit, and every stamp of every row the
-server sends.
+server sends. The server's `serverNow` (§6.1) is its `physNow()`, so it never steps back within a
+process.
 
 ### §10.3 Server stamps
 
@@ -1669,7 +1714,7 @@ its `README.md` states its conventions. `constants.json` holds the constants its
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew transcripts) |
 | server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `push/serve`, `pull/{serve,hello}`, `machine/scope` |
-| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `coalesce/{join,blocked,cancel}`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout}`, `pull/pages`, `machine/{intent,replica}` |
+| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `coalesce/{join,blocked,cancel}`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
 
 Runners assert exact equality, comparing values by `jcs`.
 
@@ -1686,6 +1731,9 @@ Runners assert exact equality, comparing values by `jcs`.
    deletions equals the digest recomputed from the resulting rows (§6.12).
 7. A text merge keeps text (INV-12), checked per token occurrence of the edit scripts, not by
    counts of equal tokens.
+8. Client: `clock-skew` recovery terminates (INV-14) under 409 and epoch returns, holds, undo,
+   retire, keyed carriers, orphans and later gestures on the same records: with the server clock
+   held still, every entry is acked or ends, and none is refused `clock-skew` twice.
 
 ### §11.3 Replay fuzz
 
@@ -1792,7 +1840,7 @@ Minted ids match `^[A-Za-z0-9_-]{8,64}$`. A seeded type's seed (D-8) is at most 
 | `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>`; `plan` const server; `startedAt` time; `finishedAt` lww server; `closedBy` lww server ∈ {finish, stale}; `displayName` lww server ≤240 bytes | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes; `completedAt` time | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
-| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent | lww: `kg` 20–400 quantum 0.01, `recordedAt` | `origins: [replica]` |
+| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent | lww: `kg` 20–400 quantum 0.01, `recordedAt` | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. `kg` and `recordedAt` join by stamp (§3.2): the newest save wins, whatever `recordedAt` holds. |
 | `prefs` | singleton | — | lww, with defaults: `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
 | `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, `intent`, `proposedName`, `summary`, `changes`, `door`, `connection`; `threadId` lww `ref<thread>`; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
 | `thread` | minted g | terminal, spent | `title` const | Fields and rules: gym Coach §9.1. Delete kills its messages and writes `threadId = null` on its proposals. |
@@ -1888,7 +1936,7 @@ replaced).
 **Codes** (§9.6): `payload-conflict` (`gym.importSession`, `gym.correctSession`), `session-finished`
 (the set rules), `session-open` (`gym.start`; a delete of an open session), `session-overlap`
 (`gym.importSession`, `gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the
-commands).
+commands; a weigh-in's future day).
 
 ### A.3 Journal
 
