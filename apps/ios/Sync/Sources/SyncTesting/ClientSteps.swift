@@ -29,8 +29,8 @@ public protocol ClientDevice {
   mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome
   mutating func reconcile(_ scopes: Set<ScopeRef>) throws
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
-                       identities: IdentitySource) throws -> SignIn
-  mutating func signOut(choice: SignOutChoice?, identities: IdentitySource) throws -> SignOut
+                       counted: [String: [String]], identities: IdentitySource) throws -> SignIn
+  mutating func signOut(choice: SignOutChoice?, counted: [String]?, identities: IdentitySource) throws -> SignOut
   mutating func discardUnsent(_ replica: String) throws
   mutating func reidentify(instance: inout Instance, identities: IdentitySource) throws
   mutating func changeEpoch(to epoch: String, instance: inout Instance, identities: IdentitySource) throws
@@ -139,12 +139,12 @@ public struct PlannedDevice: ClientDevice {
   }
 
   public mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
-                              identities: IdentitySource) throws -> SignIn {
-    try lifecycle.signIn(&device, account: account, holdsRecords: holdsRecords, decisions: decisions, identities: identities)
+                              counted: [String: [String]], identities: IdentitySource) throws -> SignIn {
+    try lifecycle.signIn(&device, account: account, holdsRecords: holdsRecords, decisions: decisions, counted: counted, identities: identities)
   }
 
-  public mutating func signOut(choice: SignOutChoice?, identities: IdentitySource) throws -> SignOut {
-    try lifecycle.signOut(&device, choice: choice, identities: identities)
+  public mutating func signOut(choice: SignOutChoice?, counted: [String]?, identities: IdentitySource) throws -> SignOut {
+    try lifecycle.signOut(&device, choice: choice, counted: counted, identities: identities)
   }
 
   public mutating func discardUnsent(_ replica: String) throws {
@@ -279,14 +279,16 @@ public enum ClientSteps {
       }
       let signIn = try device.signIn(
         account: try step.member("account").asString(), holdsRecords: try JSON.map(step["holdsRecords"]) { try $0.asBool() },
-        decisions: decisions, identities: identities)
+        decisions: decisions, counted: try JSON.map(step["counted"]) { try $0.asArray().map { try $0.asString() } },
+        identities: identities)
       return json(signIn)
     case "signOut":
       let choice = try step["choice"].map { json -> SignOutChoice in
         guard let choice = SignOutChoice(rawValue: try json.asString()) else { throw VectorError("not a choice") }
         return choice
       }
-      return json(try device.signOut(choice: choice, identities: identities))
+      let counted = try step["counted"].map { try $0.asArray().map { try $0.asString() } }
+      return json(try device.signOut(choice: choice, counted: counted, identities: identities))
     case "discardUnsent":
       try device.discardUnsent(try step.member("replica").asString())
       return .null
@@ -328,7 +330,7 @@ public enum ClientSteps {
     return .ok(try decode(response.member("body")))
   }
 
-  static func gesture(_ step: JSON) throws -> Gesture {
+  public static func gesture(_ step: JSON) throws -> Gesture {
     let opts = step["opts"] ?? [:]
     return Gesture(
       changes: try step["changes"]?.asArray().map(change) ?? [],
@@ -375,7 +377,7 @@ public enum ClientSteps {
 
   // MARK: Answers in the corpus's form
 
-  static func json(_ outcome: CommitOutcome) -> JSON {
+  public static func json(_ outcome: CommitOutcome) -> JSON {
     switch outcome {
     case .committed(let receipt):
       return ["localIds": .array(receipt.localIds.map { .string($0) }), "retired": .array(receipt.retired.map { .string($0) }), "stamp": receipt.stamp.json]
@@ -395,12 +397,20 @@ public enum ClientSteps {
   public static func json(_ signIn: SignIn) -> JSON {
     [
       "complete": .bool(signIn.complete),
-      "due": .array(signIn.due.map { ["kind": "signed-out", "product": .string($0.product), "count": JSON.object(from: $0.counts) { JSON($0) } ?? [:]] }),
+      "due": .array(signIn.due.map { decision in
+        [
+          "kind": "signed-out", "product": .string(decision.product), "count": JSON.object(from: decision.counts) { JSON($0) } ?? [:],
+          "counted": .array(decision.counted.map { .string($0) }),
+        ]
+      }),
     ]
   }
 
   public static func json(_ signOut: SignOut) -> JSON {
-    ["complete": .bool(signOut.complete), "unsent": JSON(signOut.unsent), "ready": JSON(signOut.ready), "sent": JSON(signOut.sent)]
+    [
+      "complete": .bool(signOut.complete), "unsent": JSON(signOut.unsent), "ready": JSON(signOut.ready), "sent": JSON(signOut.sent),
+      "counted": .array(signOut.counted.map { .string($0) }),
+    ]
   }
 }
 

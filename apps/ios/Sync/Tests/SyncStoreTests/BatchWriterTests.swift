@@ -75,7 +75,7 @@ struct BatchWriterTests {
     _ = try before.write(.pullPage) { _ in Planned((), ReplicaBatch(writes: [.replica(replica, .putRow(Self.scope, card))])) }
     #expect(try before.read { try $0.referencing(replica, in: Self.scope, type: "lap", field: "runId", target: "run00001") } == [])
 
-    var file = try Corpus.probeRegistryFile().asObject()
+    var file = try Corpus.registryFile("probe").asObject()
     file["version"] = 2
     var types = try file.member("types").asArray()
     let index = try #require(types.firstIndex { $0["type"] == "card" })

@@ -2,11 +2,12 @@ import SyncCore
 import SyncTesting
 import Testing
 
-// The registry against the probe (a JCS round trip), each rule by its exact error, patterns, quanta and measures.
+// The registry against the probe (a JCS round trip), each rule by its exact error, composition, patterns, quanta and
+// measures.
 
 struct RegistryTests {
   @Test func theProbeRegistryRoundTripsByJCS() throws {
-    let file = try Corpus.probeRegistryFile()
+    let file = try Corpus.registryFile("probe")
     var expected = try file.asObject()
     expected["$schema"] = nil
     #expect(try Registry(json: file).json.jcs == JSON.object(expected).jcs)
@@ -194,6 +195,41 @@ struct RegistryTests {
     #expect(text.count == 2)
   }
 
+  // The registries that ship together compose into one: their products, types and commands in part order, under their
+  // one version.
+  @Test func registriesComposeIntoOne() throws {
+    let first = Self.part("first", product: "p", type: "note", command: "p.go")
+    let second = Self.part("second", product: "q", type: "page", command: "q.go")
+    let composed = try Registry(name: "both", composing: [Registry(json: first), Registry(json: second)])
+    let expected: JSON = [
+      "registry": "both", "version": 1, "minVersion": 1, "products": ["p": [:], "q": [:]],
+      "types": .array(try first.member("types").asArray() + second.member("types").asArray()),
+      "commands": .array(try first.member("commands").asArray() + second.member("commands").asArray()),
+    ]
+    #expect(composed.json == expected)
+  }
+
+  @Test(arguments: [
+    ("both", [JSON](), "a composed registry has at least one part"),
+    ("Both", [part("first", product: "p", type: "note", command: "p.go")], "Both is not a registry name"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go"), part("second", product: "q", type: "page", command: "q.go", version: 2)],
+     "second declares version 2 and minVersion 1, first 1 and 1: the registries composed declare one"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go", version: 2),
+              part("second", product: "q", type: "page", command: "q.go", version: 2, minVersion: 2)],
+     "second declares version 2 and minVersion 2, first 2 and 1: the registries composed declare one"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go"), part("second", product: "p", type: "page", command: "p.run")],
+     "product p is declared twice"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go"), part("second", product: "q", type: "note", command: "q.go")],
+     "type note is declared twice"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go"), part("second", product: "q", type: "page", command: "p.go")],
+     "command p.go is declared twice"),
+  ])
+  func aCompositionIsRefusedNamingWhy(_ name: String, _ parts: [JSON], _ message: String) throws {
+    let registries = try parts.map { try Registry(json: $0) }
+    let error = #expect(throws: RegistryError.self) { try Registry(name: name, composing: registries) }
+    #expect(error?.description == message)
+  }
+
   static func note(_ edit: (inout JSON.Object) -> Void) -> JSON {
     var type: JSON.Object = [
       "type": "note", "scope": "product:p", "identity": "minted", "idSpace": "global", "idPattern": "^[a-z]{8}$",
@@ -224,6 +260,15 @@ struct RegistryTests {
     [
       "registry": "test", "version": 1, "minVersion": 1, "products": products, "types": .array(types),
       "commands": .array(commands),
+    ]
+  }
+
+  // A whole registry of one product, with one type and one command.
+  static func part(_ name: String, product: String, type: String, command: String, version: Int = 1, minVersion: Int = 1) -> JSON {
+    [
+      "registry": .string(name), "version": JSON(version), "minVersion": JSON(minVersion), "products": .object([product: [:]]),
+      "types": [note { $0["type"] = .string(type); $0["scope"] = .string("product:\(product)") }],
+      "commands": [Self.command { $0["name"] = .string(command); $0["scope"] = .string("product:\(product)") }],
     ]
   }
 

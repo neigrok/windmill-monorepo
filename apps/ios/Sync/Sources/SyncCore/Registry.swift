@@ -28,6 +28,25 @@ public struct Registry: Sendable {
     try checkReferences()
   }
 
+  // The registries that ship together, as one: they declare one version and one minVersion, the version every request
+  // carries (§9.1), and no product, type or command twice. Each part is whole, so no part refers into another.
+  public init(name: String, composing parts: [Registry]) throws(RegistryError) {
+    guard RegistryName.isRegistry(name) else { throw RegistryError("\(name) is not a registry name") }
+    guard let first = parts.first else { throw RegistryError("a composed registry has at least one part") }
+    for part in parts where part.version != first.version || part.minVersion != first.minVersion {
+      throw RegistryError(
+        "\(part.name) declares version \(part.version) and minVersion \(part.minVersion), \(first.name) \(first.version) and "
+          + "\(first.minVersion): the registries composed declare one")
+    }
+    self.name = name
+    version = first.version
+    minVersion = first.minVersion
+    products = parts.flatMap(\.products)
+    types = parts.flatMap(\.types)
+    commands = parts.flatMap(\.commands)
+    try checkReferences()
+  }
+
   public func type(_ name: String) -> TypeDef? {
     types.first { $0.name.utf8.elementsEqual(name.utf8) }
   }
@@ -53,6 +72,9 @@ public struct Registry: Sendable {
 
   // Rules that need the whole registry: unique names, and every referenced type and product declared.
   func checkReferences() throws(RegistryError) {
+    for (index, product) in products.enumerated() where products[..<index].contains(where: { $0.name == product.name }) {
+      throw RegistryError("product \(product.name) is declared twice")
+    }
     for (index, type) in types.enumerated() where types[..<index].contains(where: { $0.name == type.name }) {
       throw RegistryError("type \(type.name) is declared twice")
     }

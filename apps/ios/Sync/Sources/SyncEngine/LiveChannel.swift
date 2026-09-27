@@ -5,13 +5,14 @@ import SyncStore
 
 // §7.5 and §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device
 // online and the app in the foreground. On open it follows every subscribed scope the replica does not know gone or not
-// found, then has the puller pull them all (the reconnect trigger); while open it keeps what it follows in step with
-// the subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping forcing a reconnect. Change, gone and
-// not-found frames go to the puller's queue, a pong keeps the heartbeat, and any other op is ignored. An open that
-// fails, and a socket that ends or fails, count as a reconnect too, so the puller pulls every scope at once; the next
-// socket opens after the channel's own backoff, with its own `k` and a 30 s ceiling, `k` reset once a socket has
-// stayed open 30 s. A 401 at the handshake pauses the replica, and a 426 stops the channel for the process. When the
-// loops run, a reader task per socket receives its frames; in step mode the caller receives them.
+// found; while open it keeps what it follows in step with the subscriptions, and pings every PING_MS, a pong missing
+// PONG_MS after a ping failing the socket. Change, gone and not-found frames go to the puller's queue, a pong keeps the
+// heartbeat, and any other op is ignored. An open that fails, and a socket that ends or fails, count as a reconnect, so
+// the puller pulls every scope at once; a close the client makes (leaving, going offline, a replica change) pulls
+// nothing. The next socket after a reconnect opens after the channel's own backoff, with its own `k` and a 30 s
+// ceiling, `k` reset once a socket has stayed open 30 s. A 401 at the handshake pauses the replica, and a 426 stops the
+// channel for the process. When the loops run, a reader task per socket receives its frames; in step mode the caller
+// receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -112,8 +113,8 @@ package actor LiveChannel {
     return await open(meta, account: account)
   }
 
-  // The leave flush's end, and every state that wants no socket: the socket closes, and the next one opens at once. A
-  // socket that stayed open `settledMs` resets the reopen backoff's `k`.
+  // The leave flush's end, and every state that wants no socket: the socket closes, pulling nothing, and the next one
+  // opens at once. A socket that stayed open `settledMs` resets the reopen backoff's `k`.
   package func close() {
     if let socket, now() - socket.openedAt >= Self.settledMs { backoff.reset() }
     socket?.connection.close()
@@ -142,8 +143,8 @@ package actor LiveChannel {
   // MARK: Opening
 
   // The handshake under the account's token. A socket opened for a seat that changed while the handshake was on its way
-  // closes at once; one still wanted follows what the replica subscribes, then the puller pulls every scope. A 401 pauses
-  // only while that token is still the account's.
+  // closes at once; one still wanted follows what the replica subscribes. A 401 is an open that fails, so every scope is
+  // wanted, pulled once the account re-authenticates; it pauses only while that token is still the account's.
   func open(_ meta: ReplicaMeta, account: String) async -> LiveStep {
     guard let token = core.tokens.token(for: account) else {
       return (try? core.pauseAuth(meta.replica, sentUnder: nil)) == true ? .paused : .again
@@ -157,11 +158,10 @@ package actor LiveChannel {
       generation += 1
       socket = Socket(connection: connection, replica: meta.replica, generation: generation, openedAt: now(), pingedAt: now())
       if core.config.drivesLoops { read(connection, generation: generation) }
-      let kept = await keep(meta)
+      return await keep(meta)
+    case .answered(.failed(let failure)) where failure.status == 401:
       core.pullWants.all()
       puller.wake.kick()
-      return kept
-    case .answered(.failed(let failure)) where failure.status == 401:
       return (try? core.pauseAuth(meta.replica, sentUnder: token)) == true ? .paused : .again
     case .answered(.failed(let failure)) where failure.status == 426:
       core.requireUpgrade()

@@ -171,28 +171,30 @@ extension Store {
     try onDevice(.signInBegin) { device in try planners.lifecycle.beginSignIn(&device, account: account) }
   }
 
-  // The corpus's sign-in step: complete when every due decision is answered, else incomplete with nothing more changed.
+  // The corpus's sign-in step: complete when every due decision is answered, and each pin in `counted` still holds; else
+  // incomplete with nothing more changed.
   public func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
-                     identities: IdentitySource) throws -> Written<SignIn> {
+                     counted: [String: [String]], identities: IdentitySource) throws -> Written<SignIn> {
     try onDevice(.signInComplete) { device in
-      try planners.lifecycle.signIn(&device, account: account, holdsRecords: holdsRecords, decisions: decisions, identities: identities)
+      try planners.lifecycle.signIn(
+        &device, account: account, holdsRecords: holdsRecords, decisions: decisions, counted: counted, identities: identities)
     }
   }
 
-  // The pending sign-in as `account`, after its hello, with the answers to the question `asked`; nil when no sign-in as
+  // The pending sign-in as `account`, after its hello, with the answers and the entries each pins; nil when no sign-in as
   // `account` is pending.
   public func continueSignIn(account: String, holdsRecords: [String: Bool], answers: [String: LineageAnswer],
-                             asked: SignIn?, identities: IdentitySource) throws -> Written<SignIn?> {
+                             counted: [String: [String]], identities: IdentitySource) throws -> Written<SignIn?> {
     try onDevice(.signInComplete) { device in
       try planners.lifecycle.continueSignIn(
-        &device, account: account, holdsRecords: holdsRecords, answers: answers, asked: asked, identities: identities)
+        &device, account: account, holdsRecords: holdsRecords, answers: answers, counted: counted, identities: identities)
     }
   }
 
-  // The corpus's sign-out step: without a choice, the count of unsent entries; with one, or none unsent, the sign-out.
-  public func signOut(choice: SignOutChoice?, identities: IdentitySource) throws -> Written<SignOut> {
+  // The corpus's sign-out step: the question, and with a choice whose pin holds, the finish.
+  public func signOut(choice: SignOutChoice?, counted: [String]?, identities: IdentitySource) throws -> Written<SignOut> {
     try onDevice(choice == nil ? .signOutCount : .signOutFinish) { device in
-      try planners.lifecycle.signOut(&device, choice: choice, identities: identities)
+      try planners.lifecycle.signOut(&device, choice: choice, counted: counted, identities: identities)
     }
   }
 
@@ -201,10 +203,10 @@ extension Store {
     try onDevice(.signOutCount) { device in try planners.lifecycle.countUnsent(&device, signingOut: account) }
   }
 
-  // Keep or Discard of `account`'s unsent entries, the confirmation having stated `stated`.
-  public func finishSignOut(account: String, choice: SignOutChoice, stated: [String], identities: IdentitySource) throws -> Written<SignOutFinish> {
+  // Keep or Discard of `account`'s unsent entries, the confirmation having counted `counted`.
+  public func finishSignOut(account: String, choice: SignOutChoice, counted: [String], identities: IdentitySource) throws -> Written<SignOutFinish> {
     try onDevice(.signOutFinish) { device in
-      try planners.lifecycle.finishSignOut(&device, account: account, choice: choice, stated: stated, identities: identities)
+      try planners.lifecycle.finishSignOut(&device, account: account, choice: choice, counted: counted, identities: identities)
     }
   }
 

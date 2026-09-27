@@ -250,12 +250,12 @@ struct StoredDevice: ClientDevice {
   mutating func reconcile(_ scopes: Set<ScopeRef>) throws { take(try store.reconcile(subscribed: scopes)) }
 
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
-                       identities: IdentitySource) throws -> SignIn {
-    take(try store.signIn(account: account, holdsRecords: holdsRecords, decisions: decisions, identities: identities))
+                       counted: [String: [String]], identities: IdentitySource) throws -> SignIn {
+    take(try store.signIn(account: account, holdsRecords: holdsRecords, decisions: decisions, counted: counted, identities: identities))
   }
 
-  mutating func signOut(choice: SignOutChoice?, identities: IdentitySource) throws -> SignOut {
-    take(try store.signOut(choice: choice, identities: identities))
+  mutating func signOut(choice: SignOutChoice?, counted: [String]?, identities: IdentitySource) throws -> SignOut {
+    take(try store.signOut(choice: choice, counted: counted, identities: identities))
   }
 
   mutating func discardUnsent(_ replica: String) throws { take(try store.discardDormant(replica)) }

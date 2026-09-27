@@ -1,11 +1,16 @@
 import assert from 'node:assert/strict';
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import test from 'node:test';
 import { fileURLToPath } from 'node:url';
+import { seededId } from '../../core/derive.js';
 import { Registry, RegistryError, isPortablePattern } from '../../core/registry.js';
 
-const SCHEMA = JSON.parse(readFileSync(fileURLToPath(new URL('../../../registry.schema.json', import.meta.url)), 'utf8'));
-const PROBE = JSON.parse(readFileSync(fileURLToPath(new URL('../../../probe.registry.json', import.meta.url)), 'utf8'));
+const CONTRACT = fileURLToPath(new URL('../../../', import.meta.url));
+const read = (name) => JSON.parse(readFileSync(`${CONTRACT}${name}`, 'utf8'));
+const SCHEMA = read('registry.schema.json');
+const PROBE = read('probe.registry.json');
+// The registries the products ship: every registry file but the test-only probe's.
+const PRODUCTS = readdirSync(CONTRACT).filter((name) => name.endsWith('.registry.json') && name !== 'probe.registry.json').sort().map(read);
 
 // The JSON Schema 2020-12 keywords registry.schema.json uses, and no others: a failed keyword throws.
 function errorsOf(schema, value, path = '$', root = schema) {
@@ -163,4 +168,34 @@ test('the registry exposes the opening field and the before-pull commands', () =
   assert.deepEqual(registry.opening, { type: 'meta', id: 'meta', field: 'visibility', values: ['unlisted', 'public'] });
   assert.deepEqual(registry.beforePullCommands('product:probe').map((entry) => entry.name), ['probe.tick']);
   assert.deepEqual(registry.beforePullCommands('tree'), []);
+});
+
+test('the product registries are gym and journal, each valid against registry.schema.json and the Registry', () => {
+  assert.deepEqual(PRODUCTS.map((registry) => registry.registry), ['gym', 'journal']);
+  for (const registry of PRODUCTS) {
+    assert.deepEqual(errorsOf(SCHEMA, registry), [], registry.registry);
+    assert.doesNotThrow(() => new Registry(registry), registry.registry);
+  }
+});
+
+// The product registries ship together as one registry: one version, the version every request carries (§9.1), and no
+// product, type or command a second registry declares again.
+test('the product registries compose into one registry: one version and no name declared twice', () => {
+  assert.deepEqual(new Set(PRODUCTS.map((registry) => `${registry.version}/${registry.minVersion}`)).size, 1);
+  const names = (pick) => PRODUCTS.flatMap(pick);
+  for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name))]) {
+    assert.deepEqual(declared.filter((name, index) => declared.indexOf(name) !== index), []);
+  }
+});
+
+// D-8 and A.2: every gym minted type is seeded, and its widest seeded id, a seed at the bound and the largest ordinal, fits
+// its id pattern.
+test('every minted gym type is seeded, its widest seeded id in its pattern', () => {
+  const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
+  const seeded = minted.filter((type) => type.seeded);
+  assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
+  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'thread', 'message']);
+  for (const type of seeded) {
+    assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
+  }
 });

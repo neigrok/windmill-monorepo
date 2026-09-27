@@ -1,0 +1,30 @@
+{
+  "$schema": "./registry.schema.json",
+  "registry": "journal",
+  "version": 1,
+  "minVersion": 1,
+  "products": {
+    "journal": {
+      "surfaces": ["web", "ios"]
+    }
+  },
+  "types": [
+    {
+      "type": "page",
+      "scope": "product:journal",
+      "identity": "keyed",
+      "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "life": false,
+      "visibleWhen": ["body", "mood", "energy"],
+      "origins": ["replica", "server"],
+      "primary": true,
+      "fields": {
+        "body": { "kind": "text", "writer": "client", "unit": "bytes", "max": 131072 },
+        "mood": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 10, "nullable": true } },
+        "energy": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 10, "nullable": true } },
+        "source": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["typed", "spoken"] } }
+      }
+    }
+  ],
+  "commands": []
+}

@@ -306,7 +306,8 @@ public struct PushPlanner: Sendable {
 
   // §7.7 step 1 for clock-skew, after the answer's sample: the clock restarts from the pair maximum of (physNow, 0) and
   // admittedHigh; unprocessed sent entries return to ready; the refused entry and every held and ready entry take one
-  // fresh tick each, in commit order, which becomes their stamp.
+  // fresh tick each of this instance's clock, in its actor whichever instance wrote the entry, in commit order, which
+  // becomes their stamp.
   func recoverSkew(_ localId: String, lastN: Int64, in replica: inout LoadedReplica, instance: Instance) throws {
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
     replica.update { meta in meta.hlc = HLC.pairMaximum(HLC(ms: physNow), HLC(pairOf: meta.admittedHigh)) }
@@ -319,7 +320,7 @@ public struct PushPlanner: Sendable {
     var high = replica.meta.admittedHigh
     let plan = replica.outbox.filter(\.isQueued).map { (localId: $0.localId, own: Restamp.ownRegisters(of: $0)) }
     for (entryId, own) in plan {
-      let n = try Restamp.tick(&clock, physNow: physNow, authoredBy: replica.entry(entryId)!)
+      let n = clock.tick(physNow: physNow, actor: instance.actor)
       for register in own { Restamp.move(register, of: entryId, to: n, in: &replica) }
       replica.update(entry: entryId) { $0.stamp = n }
       high = max(high, n)
@@ -349,7 +350,8 @@ public struct PushPlanner: Sendable {
 
   // §7.7 an ok result's write map, in the result's transaction: ids a join resolved are rewritten into queued entries,
   // predictions and device rows (a queued delete of the joined id is refused target-merged, its dependents folded); the
-  // prediction takes the map's stamps; then queued writes of the mapped registers tick after them.
+  // prediction takes the map's stamps; then queued writes of the mapped registers take fresh ticks of this instance's
+  // clock after them.
   func applyWriteMap(_ write: [WriteMapEntry], of commandId: String, in replica: inout LoadedReplica, instance: Instance) throws {
     for w in write {
       if let from = w.from {
@@ -385,7 +387,7 @@ public struct PushPlanner: Sendable {
       let entry = replica.entry(queued.localId)!
       let named = Restamp.registers(of: entry, namedBy: write)
       guard !named.isEmpty else { continue }
-      let n = try Restamp.tick(&clock, physNow: physNow, authoredBy: entry)
+      let n = clock.tick(physNow: physNow, actor: instance.actor)
       for register in named { Restamp.move(register, of: entry.localId, to: n, in: &replica) }
       replica.update { $0.hlcHigh = max($0.hlcHigh, n) }
     }
@@ -491,11 +493,6 @@ enum Restamp {
     case .intent(let index): entry.intent.deltas[index]
     case .predict(let index): entry.predict[index]
     }
-  }
-
-  // A fresh tick from the shared clock, in the actor of the instance that authored the entry.
-  static func tick(_ clock: inout HLC, physNow: Int64, authoredBy entry: OutboxEntry) throws -> Stamp {
-    clock.tick(physNow: physNow, actor: try Stamp.Actor(entry.stamp.actor))
   }
 
   static func move(_ register: Register, of localId: String, to n: Stamp, in replica: inout LoadedReplica) {

@@ -19,7 +19,7 @@ struct LifecycleTests {
       .fresh(ReplicaMeta(replica: "rp_cafe", state: .dormant, account: "caf\u{E9}")),
     ])
     let signIn = try ReplicaLifecycle(registry: Self.probe).signIn(
-      &device, account: "cafe\u{301}", holdsRecords: [:], decisions: [:], identities: try QueuedIdentities(["ids": ["rp_new"]]))
+      &device, account: "cafe\u{301}", holdsRecords: [:], decisions: [:], counted: [:], identities: try QueuedIdentities(["ids": ["rp_new"]]))
     #expect(signIn.complete)
     #expect(Self.bytes(device.active) == Self.bytes("rp_new"))
     #expect(device.replicas.map { "\($0.id) \($0.meta.state)" } == ["rp_anon anon", "rp_cafe dormant", "rp_new bound"])

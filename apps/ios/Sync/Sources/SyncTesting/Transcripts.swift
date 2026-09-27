@@ -155,7 +155,7 @@ final class TranscriptDevice {
       around.tokens.save(Transcripts.token(for: account), for: account)
       let signIn = try engine.write { store, _ in
         try store.signIn(account: account, holdsRecords: try JSON.map(args["holdsRecords"]) { try $0.asBool() }, decisions: decisions,
-                         identities: engine.identities)
+                         counted: try JSON.map(args["counted"]) { try $0.asArray().map { try $0.asString() } }, identities: engine.identities)
       }
       return Transcripts.compare(ClientSteps.json(signIn), returns, "\(place): signIn returned")
     case "reconcile":

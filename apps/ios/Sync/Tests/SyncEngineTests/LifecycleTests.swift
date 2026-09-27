@@ -58,6 +58,31 @@ struct LifecycleTests {
     #expect(rig.tokens.accounts() == ["A"])
   }
 
+  // A sign-in as B replaces A's pending sign-in, and with it A's token: A is neither bound nor pending any more.
+  @Test func aReplacedPendingSignInLeavesNoCredential() async throws {
+    let rig = try Rig()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
+    #expect(try await !rig.signIn("A", holds: ["probe": true]).isComplete)
+    #expect(rig.tokens.accounts() == ["A"])
+    #expect(try await rig.signIn("B", holds: ["probe": false]).isComplete)
+    #expect(try rig.replicas() == ["bound(B) active entries: 1 new id"])
+    #expect(rig.tokens.accounts() == ["B"])
+  }
+
+  // A finished sign-out whose token deletion never reached the token store (the process died after its transaction)
+  // leaves the token behind; the next engine start deletes it, and keeps the token of a sign-in still pending.
+  @Test func engineStartRetriesADeletionAFinishedSignOutDidNotReach() async throws {
+    let rig = try Rig(account: "A")
+    rig.connectivity.set(online: false)
+    try await rig.engine.signOut().finish(.keep)
+    #expect(rig.tokens.accounts() == [])
+    rig.tokens.save(SessionToken("token-1"), for: "A")
+    rig.tokens.save(SessionToken("token-b"), for: "B")
+    _ = try rig.store.beginSignIn(account: "B")
+    _ = try rig.relaunch()
+    #expect(rig.tokens.accounts() == ["B"])
+  }
+
   // MARK: §8.2, row by row
 
   @Test(arguments: ReplicaRow.all)
@@ -68,12 +93,16 @@ struct LifecycleTests {
 
   // MARK: The corpus's lineage vectors through the engine
 
-  // lineage/signin.json and lineage/signout.json by the engine's own calls: a sign-in over a hello answering the step's
-  // `holdsRecords`, completed with its decisions when it names any; a sign-out, offline so its flush sends nothing,
-  // finished with its choice, or kept when nothing is unsent, as a product with no confirmation to show does; the discard
-  // of the dormant replica the step names. The engine's hello takes an offset sample (§10.4), which the corpus's step does
-  // not, so each replica's offset fields are compared apart; the rest of the store is compared whole. The anonCount vector
-  // reads a planner the engine only answers through a sign-in, so it runs on the planners and the store alone.
+  // lineage/signin.json and lineage/signout.json by the engine's own calls. A sign-in step asks over a hello answering
+  // its `holdsRecords` (and the step's device clock as `serverTime`, so the offset sample moves no stamp), and completes
+  // with its decisions when it names any, answering the question it pins: the last session's when that session counted
+  // what the step's `counted` names, else the question as it stands. A sign-out step asks, offline so its flush sends
+  // nothing, and finishes with its choice, on the last session when that session counted what the step pins. A question
+  // the engine asks again (`signInChanged`, `signOutChanged`) is answered as the engine's next session asks it. A commit
+  // step commits through the engine, and a discard step discards the dormant replica it names. The engine's hello takes
+  // an offset sample, which the corpus's step does not, so each replica's offset fields are compared apart; the rest of
+  // the store is compared whole. The anonCount vector reads a planner the engine only answers through a sign-in, so it
+  // runs on the planners and the store alone.
   @Test(arguments: try Self.lineageVectors())
   func aLineageVectorThroughTheEngine(_ vector: CorpusVector) async throws {
     let forkGuard = "fg_00000000000000000000000000000000"
@@ -92,23 +121,51 @@ struct LifecycleTests {
       identities: try QueuedIdentities(["ids": vector.input["ids"] ?? [], "actors": [.string(ClientSteps.actor)]]),
       connectivity: SwitchedConnectivity(online: false), tap: { ended.append($0) })
 
+    var signIn: SignInSession?
+    var signOut: SignOutSession?
     var returns: [JSON] = []
     for step in try vector.input.member("steps").asArray() {
       clock.advance(ms: (try step["deviceNow"]?.asInteger() ?? clock.nowMs()) - clock.nowMs())
       switch try step.member("op").asString() {
+      case "commit":
+        let outcome = try engine.commit(try ScopeRef(json: step.member("scope"))) { _ in (try ClientSteps.gesture(step), ()) }.outcome
+        returns.append(outcome.map(ClientSteps.json) ?? .null)
       case "signIn":
         let account = try step.member("account").asString()
-        transport.willAnswerHello(200, Self.hello(holds: try JSON.map(step["holdsRecords"]) { try $0.asBool() }))
-        let pending = try store.read { try $0.deviceMeta()?.meta.pendingSignIn }
-        let session = try await pending == account ? engine.resumeSignIn()! : engine.signIn(account: account, token: SessionToken("t"))
+        let holds = try JSON.map(step["holdsRecords"]) { try $0.asBool() }
+        let ask = { () async throws -> SignInSession in
+          transport.willAnswerHello(200, Self.hello(holds: holds, serverTime: clock.nowMs()))
+          let pending = try store.read { try $0.deviceMeta()?.meta.pendingSignIn }
+          return try await pending == account ? engine.resumeSignIn()! : engine.signIn(account: account, token: SessionToken("t"))
+        }
         let answers = try JSON.map(step["decisions"]) { LineageAnswer(rawValue: try $0.asString())! }
-        if !answers.isEmpty { try await session.complete(answers) }
-        returns.append(ClientSteps.json(SignIn(complete: session.isComplete, due: session.decisions, localIds: [])))
+        let pins = try JSON.map(step["counted"]) { try $0.asArray().map { try $0.asString() } }
+        let pinnedByLast = !pins.isEmpty && signIn.map { last in last.decisions.allSatisfy { pins[$0.product] ?? $0.counted == $0.counted } } == true
+        var session = try await pinnedByLast ? signIn! : ask()
+        if !answers.isEmpty {
+          do {
+            try await session.complete(answers)
+          } catch EngineError.signInChanged {
+            session = try await ask()
+          }
+        }
+        signIn = session
+        returns.append(ClientSteps.json(SignIn(complete: session.isComplete, due: session.decisions)))
       case "signOut":
-        let session = try await engine.signOut()
-        let choice = try step["choice"].map { SignOutChoice(rawValue: try $0.asString())! } ?? (session.unsent == 0 ? .keep : nil)
-        if let choice { try await session.finish(choice) }
-        returns.append(ClientSteps.json(SignOut(complete: choice != nil, ready: session.ready, sent: session.sent, localIds: [])))
+        let pinned = try step["counted"].map { try $0.asArray().map { try $0.asString() } }
+        var session = try await pinned != nil && signOut?.counted == pinned ? signOut! : engine.signOut()
+        signOut = session
+        guard let choice = try step["choice"].map({ SignOutChoice(rawValue: try $0.asString())! }) else {
+          returns.append(ClientSteps.json(SignOut(complete: false, ready: session.ready, sent: session.sent, counted: session.counted)))
+          continue
+        }
+        do {
+          returns.append(ClientSteps.json(try await session.finish(choice)))
+        } catch EngineError.signOutChanged {
+          session = try await engine.signOut()
+          signOut = session
+          returns.append(ClientSteps.json(SignOut(complete: false, ready: session.ready, sent: session.sent, counted: session.counted)))
+        }
       case "discardUnsent":
         let replica = try step.member("replica").asString()
         #expect(try engine.discardDormant(account: #require(try store.read { try $0.replica(replica)?.meta.account })))
@@ -154,9 +211,9 @@ struct LifecycleTests {
   // new hello; when the account holds no records by then, the work joins it without asking.
   @Test func anUnansweredSignInWaitsSendsNothingAndResumesAtTheNextStart() async throws {
     let rig = try Rig()
-    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")]))
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
     let session = try await rig.signIn("A", holds: ["probe": true])
-    #expect(session.decisions == [SignedOutDecision(product: "probe", counts: ["card": 1])])
+    #expect(session.decisions == [SignedOutDecision(product: "probe", counts: ["card": 1], counted: ["g1/0"])])
     #expect(!session.isComplete)
     #expect(await rig.engine.sender.step() == .idle)
     session.cancel()
@@ -183,19 +240,19 @@ struct LifecycleTests {
   // not say so: an edit of the card shown leaves it as it was.
   @Test func anAnswerCountsOnlyForTheWorkThePersonWasShown() async throws {
     let rig = try Rig()
-    try rig.commit(Gesture(changes: [Rig.card("card0001", "Shown")]))
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Shown")], gestureId: "g1"))
     let session = try await rig.signIn("A", holds: ["probe": true])
     await #expect(throws: EngineError.decisionMissing(product: "probe")) { try await session.complete([:]) }
-    try rig.commit(Gesture(changes: [.update("card", "card0001", ["title": "Edited, never shown"])]))
+    try rig.commit(Gesture(changes: [.update("card", "card0001", ["title": "Edited, never shown"])], gestureId: "g2"))
     await #expect(throws: EngineError.signInChanged) { try await session.complete(["probe": .discard]) }
-    try rig.commit(Gesture(changes: [Rig.card("card0002", "Also new")]))
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Also new")], gestureId: "g3"))
     await #expect(throws: EngineError.signInChanged) { try await session.complete(["probe": .discard]) }
     #expect(try rig.replicas() == ["anon active entries: 3 new id"])
     #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
 
     rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true]))
     let asked = try #require(try await rig.engine.resumeSignIn())
-    #expect(asked.decisions == [SignedOutDecision(product: "probe", counts: ["card": 2])])
+    #expect(asked.decisions == [SignedOutDecision(product: "probe", counts: ["card": 2], counted: ["g1/0", "g2/0", "g3/0"])])
     try await asked.complete(["probe": .discard])
     #expect(asked.isComplete)
     try await asked.complete(["probe": .add])
@@ -315,10 +372,10 @@ struct LifecycleTests {
     #expect(rig.tokens.token(for: "A") != nil)
   }
 
-  // Discard deletes none but the entries the confirmation stated, whatever the count: here the push in flight lands and
-  // new work is committed while the confirmation is up, so the count is as it was and the work is not. Keep, which
-  // loses nothing, still goes.
-  @Test func discardDeletesNoneButTheEntriesTheConfirmationStated() async throws {
+  // A Discard covers exactly the entries the confirmation counted, and is asked again when they differ at the answer:
+  // here the push in flight lands, so the entry counted is no longer unsent, and nothing is signed out. Keep covers every
+  // entry, counted or not, so work committed while the confirmation is up goes dormant with it.
+  @Test func aDiscardIsAskedAgainWhenTheEntriesItCountedChanged() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
     let gate = Gate()
@@ -328,16 +385,16 @@ struct LifecycleTests {
     await rig.clock.asleep(until: Constants.signoutFlushMs)
     rig.clock.advance(ms: Constants.signoutFlushMs)
     let session = try await signingOut
-    #expect((session.ready, session.sent) == (0, 1))
+    #expect((session.ready, session.sent, session.counted) == (0, 1, ["g1/0"]))
     gate.open()
     #expect(await rig.engine.sender.step() == .idle)
-    try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
 
-    await #expect(throws: EngineError.signOutChanged(ready: 1, sent: 0)) { try await session.finish(.discard) }
-    #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 ready"])
-    #expect(try rig.replicas() == ["anon entries: 0 new id", "bound(A) active entries: 2 new id"])
+    await #expect(throws: EngineError.signOutChanged(ready: 0, sent: 0)) { try await session.finish(.discard) }
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    #expect(try rig.replicas() == ["anon entries: 0 new id", "bound(A) active entries: 1 new id"])
     #expect(rig.tokens.token(for: "A") != nil)
-    try await session.finish(.keep)
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
+    #expect(try await session.finish(.keep) == SignOut(complete: true, ready: 1, sent: 0, counted: ["g2/0"]))
     #expect(try rig.engine.dormantReplicas() == [DormantReplica(account: "A", ready: 1, sent: 0)])
   }
 
@@ -409,12 +466,12 @@ struct LifecycleTests {
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: false), store: Store.inMemory(registry: Rig.probe),
       transport: network, tokens: InMemoryTokenStore(), forkGuard: InMemoryForkGuardStore(), clock: clock.engineClock,
       random: SeededRandomSource(seed: 1), connectivity: SwitchedConnectivity())
-    _ = try phone.commit(Rig.scope, Gesture(changes: [Rig.card("card000p", "From phone")]))
+    _ = try phone.commit(Rig.scope, Gesture(changes: [Rig.card("card000p", "From phone")], gestureId: "g1"))
     let before = (other: try Self.withoutOffsets(other.store.read { try $0.device(rows: true).json }, forkGuard: ""),
                   server: Self.rows(of: "A", on: network))
 
     let session = try await phone.signIn(account: "A", token: network.server.token(for: "A"))
-    #expect(session.decisions == [SignedOutDecision(product: "probe", counts: ["card": 1])])
+    #expect(session.decisions == [SignedOutDecision(product: "probe", counts: ["card": 1], counted: ["g1/0"])])
     await Self.settle([phone, other.engine])
     #expect(Self.rows(of: "A", on: network) == before.server)
     try await session.complete(["probe": answer])
@@ -464,8 +521,8 @@ struct LifecycleTests {
 
   // MARK: Helpers
 
-  static func hello(holds: [String: Bool]?) -> JSON {
-    var body: JSON.Object = ["serverTime": JSON(Rig.startMs), "epoch": "ep-1", "schema": 1, "minSchema": 1]
+  static func hello(holds: [String: Bool]?, serverTime: Int64 = Rig.startMs) -> JSON {
+    var body: JSON.Object = ["serverTime": JSON(serverTime), "epoch": "ep-1", "schema": 1, "minSchema": 1]
     body["holdsRecords"] = holds.map { .object(JSON.Object(uniqueKeysWithValues: $0.map { ($0.key, .bool($0.value)) })) }
     return .object(body)
   }
@@ -622,12 +679,12 @@ struct ReplicaRow: Sendable, CustomTestStringConvertible {
       #expect(rig.transport.pushes.isEmpty)
       return try rig.replicas(since: before)
     },
-    ReplicaRow(from: "bound(A)", event: "sign-out, empty outbox", to: ["anon active entries: 0", "dormant(A) entries: 0"]) {
+    ReplicaRow(from: "bound(A)", event: "sign-out, empty outbox, its confirm", to: ["anon active entries: 0", "dormant(A) entries: 0"]) {
       let rig = try Rig(account: "A")
       let before = try rig.replicaIDs()
       let session = try await rig.engine.signOut()
       #expect(session.unsent == 0)
-      try await session.finish(.discard)
+      try await session.finish(.keep)
       return try rig.replicas(since: before)
     },
     ReplicaRow(from: "bound(A)", event: "sign-out, Keep", to: ["anon active entries: 0", "dormant(A) entries: 1"]) {
@@ -709,7 +766,7 @@ final class Phone {
     if let account {
       let identities = Identities(random: SeededRandomSource(seed: 11))
       _ = try store.firstLaunch(identities: identities)
-      _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], identities: identities)
+      _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
       tokens.save(network.server.token(for: account), for: account)
     }
     engine = try Phone.engine(store: store, network: network, clock: clock, tokens: tokens, forkGuard: forkGuard,

@@ -41,16 +41,19 @@ extension SyncEngine {
   // Signs in as `account` with its session token, by the lineage rule: every held entry is released first, and a hello
   // as the account says in which products it holds records. The session holds the signed-out decisions due, or is
   // complete when none is, work made signed out having joined the account without asking. Until it completes the
-  // sign-in stays pending, nothing is sent, and it resumes at the next engine start. Signing in as the account already
-  // signed in re-authenticates it; as another, it throws `signedIn`, and that account signs out first.
+  // sign-in stays pending, nothing is sent, and it resumes at the next engine start. A sign-in pending for another account
+  // is replaced, and that account's token deleted. Signing in as the account already signed in re-authenticates it; as
+  // another, it throws `signedIn`, and that account signs out first.
   public func signIn(account: String, token: SessionToken) async throws -> SignInSession {
     if let seat = try core.seat(), seat.state == .bound, let current = seat.account {
       guard current.utf8.elementsEqual(account.utf8) else { throw EngineError.signedIn(account: current) }
       try reauthenticate(token: token)
-      return SignInSession(engine: self, account: account, holdsRecords: [:], question: nil)
+      return SignInSession(engine: self, account: account, holdsRecords: [:], decisions: nil)
     }
+    let replaced = try core.store.read { try $0.deviceMeta()?.meta.pendingSignIn }
     try core.tokens.save(token, for: account)
     try core.write { store, _ in try store.beginSignIn(account: account) }
+    if let replaced, !replaced.utf8.elementsEqual(account.utf8) { try? core.tokens.delete(for: replaced) }
     return try await continueSignIn(as: account)
   }
 
@@ -65,11 +68,11 @@ extension SyncEngine {
     let holdsRecords = try await holdsRecords(of: account)
     await seatWillChange()
     let signIn = try core.write { store, _ in
-      try store.continueSignIn(account: account, holdsRecords: holdsRecords, answers: [:], asked: nil, identities: core.identities)
+      try store.continueSignIn(account: account, holdsRecords: holdsRecords, answers: [:], counted: [:], identities: core.identities)
     }
     guard let signIn else { throw EngineError.signInEnded }
     if signIn.complete { core.wakes.kickAll() }
-    return SignInSession(engine: self, account: account, holdsRecords: holdsRecords, question: signIn.complete ? nil : signIn)
+    return SignInSession(engine: self, account: account, holdsRecords: holdsRecords, decisions: signIn.complete ? nil : signIn.due)
   }
 
   // Before each transaction that may change the replica the products write to (Coach D-10).
@@ -165,28 +168,27 @@ public final class SignInSession: Sendable {
 
   public let account: String
   // One per product in which the account holds records and work made signed out waits, with that work counted by type:
-  // add it to the account or discard it, with no default and no "later".
+  // add it to the account or discard it, with no default and no "later". Each answer covers the entries its decision
+  // counted.
   public let decisions: [SignedOutDecision]
   let holdsRecords: [String: Bool]
-  // What the person is asked: the decisions and the entries they cover; nil once complete.
-  let question: SignIn?
   let engine: SyncEngine
   let state: Mutex<State>
 
-  init(engine: SyncEngine, account: String, holdsRecords: [String: Bool], question: SignIn?) {
+  // Nil decisions: the sign-in is complete.
+  init(engine: SyncEngine, account: String, holdsRecords: [String: Bool], decisions: [SignedOutDecision]?) {
     self.engine = engine
     self.account = account
     self.holdsRecords = holdsRecords
-    self.question = question
-    decisions = question?.due ?? []
-    state = Mutex(question == nil ? .complete : .open)
+    self.decisions = decisions ?? []
+    state = Mutex(decisions == nil ? .complete : .open)
   }
 
   public var isComplete: Bool { state.withLock { $0 == .complete } }
 
   // Every answer in one transaction: the discards, the bind and the add; then the replica now bound sends, boots its
-  // scopes and follows live. Throws `decisionMissing` for a due decision with no answer, `signInChanged` when the work
-  // made signed out changed since the question was asked (nothing changes: ask again from `resumeSignIn()`), and
+  // scopes and follows live. Throws `decisionMissing` for a due decision with no answer, `signInChanged` when the entries
+  // a decision counted changed since the question was asked (nothing changes: ask again from `resumeSignIn()`), and
   // `signInEnded` once the sign-in was cancelled or another replaced it. Completing a complete sign-in does nothing.
   public func complete(_ answers: [String: LineageAnswer]) async throws {
     switch state.withLock({ $0 }) {
@@ -198,7 +200,9 @@ public final class SignInSession: Sendable {
     await engine.seatWillChange()
     let core = engine.core
     let signIn = try core.write { store, _ in
-      try store.continueSignIn(account: account, holdsRecords: holdsRecords, answers: answers, asked: question, identities: core.identities)
+      try store.continueSignIn(
+        account: account, holdsRecords: holdsRecords, answers: answers,
+        counted: Dictionary(uniqueKeysWithValues: decisions.map { ($0.product, $0.counted) }), identities: core.identities)
     }
     guard let signIn else { throw EngineError.signInEnded }
     guard signIn.complete else { throw EngineError.signInChanged }
@@ -212,8 +216,8 @@ public final class SignInSession: Sendable {
   }
 }
 
-// A sign-out of `account` (§7.10) waiting for the person's answer, its unsent entries counted after the flush and held
-// from the sender, so the count the confirmation states stays true. It is answered once.
+// A sign-out of `account` (§7.10) waiting for the person's finish or Cancel, even with nothing unsent: its unsent entries
+// counted after the flush and held from the sender, so the count the confirmation states stays true. It is answered once.
 public final class SignOutSession: Sendable {
   enum State {
     case open, finishing, ended
@@ -223,8 +227,8 @@ public final class SignOutSession: Sendable {
   public let ready: Int
   // Sent with no answer yet: each may already be in the account.
   public let sent: Int
-  // The unsent entries the confirmation states, which Discard deletes and no others.
-  let localIds: [String]
+  // The unsent entries the confirmation states, which Discard covers exactly.
+  package let counted: [String]
   package let hold: Int
   let engine: SyncEngine
   let state = Mutex(State.open)
@@ -235,18 +239,20 @@ public final class SignOutSession: Sendable {
     self.hold = hold
     ready = counted.ready
     sent = counted.sent
-    localIds = counted.localIds
+    self.counted = counted.counted
   }
 
   public var unsent: Int { ready + sent }
 
-  // Keep leaves the unsent entries on this device, dormant until the account signs in here again; Discard deletes them
-  // from this device, and cannot recall one the server already received. Either way the account's rows leave the
-  // device, its token is deleted, and the signed-out replica becomes active; with nothing unsent, either choice signs
-  // out. Throws `signOutChanged` when Discard would delete unsent work the confirmation did not state (nothing changes:
-  // ask again from `signOut()`), and `signOutEnded` once this sign-out finished, was cancelled or was replaced. A token
-  // that cannot be deleted now is deleted at the next engine start.
-  public func finish(_ choice: SignOutChoice) async throws {
+  // The finish. Keep, the plain confirm when nothing is unsent, leaves every unsent entry on this device, counted or not,
+  // dormant until the account signs in here again; Discard deletes the replica and the entries the confirmation
+  // counted, and cannot recall one the server already received. Either way acked entries resolve, the account's rows
+  // leave the device, its token is deleted, and the signed-out replica becomes active. Throws `signOutChanged` when the
+  // unsent entries differ from those a Discard counted (nothing changes: ask again from `signOut()`), and
+  // `signOutEnded` once this sign-out finished, was cancelled or was replaced. A token that cannot be deleted now is
+  // deleted at the next engine start. Answers what the finish covered: the unsent entries as it counted them.
+  @discardableResult
+  public func finish(_ choice: SignOutChoice) async throws -> SignOut {
     guard state.withLock({ state in
       guard state == .open else { return false }
       state = .finishing
@@ -261,7 +267,7 @@ public final class SignOutSession: Sendable {
     let finished: SignOutFinish
     do {
       finished = try core.write { store, _ in
-        try store.finishSignOut(account: account, choice: choice, stated: localIds, identities: core.identities)
+        try store.finishSignOut(account: account, choice: choice, counted: counted, identities: core.identities)
       }
     } catch {
       state.withLock { $0 = .open }
@@ -273,9 +279,10 @@ public final class SignOutSession: Sendable {
     }
     state.withLock { $0 = .ended }
     await engine.sender.endHold(hold)
-    guard case .finished = finished else { throw EngineError.notSignedIn }
+    guard case .finished(let signedOut) = finished else { throw EngineError.notSignedIn }
     try? core.tokens.delete(for: account)
     core.wakes.kickAll()
+    return signedOut
   }
 
   // The person stays signed in: the sender goes on sending. Does nothing once the sign-out is answered.

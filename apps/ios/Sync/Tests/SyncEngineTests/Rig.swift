@@ -36,7 +36,7 @@ struct Rig {
     if let account {
       let identities = Identities(random: SeededRandomSource(seed: 11))
       _ = try store.firstLaunch(identities: identities)
-      _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], identities: identities)
+      _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     }
     engine = try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens,
                             forkGuard: forkGuard, connectivity: connectivity, drivesLoops: drivesLoops, bindings: bindings)

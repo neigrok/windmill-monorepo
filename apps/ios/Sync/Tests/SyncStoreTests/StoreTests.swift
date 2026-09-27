@@ -110,12 +110,12 @@ struct StoreTests {
     let identities: @Sendable () throws -> QueuedIdentities = { try QueuedIdentities(["ids": ["rp_anon"]]) }
     return [
       commit("create", at: 5001, Gesture(changes: [.create("card", id: .given("card0002"), ["title": "New"])], gestureId: "c2")),
-      Step(name: "sign-out count") { store in _ = try store.signOut(choice: nil, identities: try identities()) },
-      Step(name: "sign-out keep") { store in _ = try store.signOut(choice: .keep, identities: try identities()) },
+      Step(name: "sign-out count") { store in _ = try store.signOut(choice: nil, counted: nil, identities: try identities()) },
+      Step(name: "sign-out keep") { store in _ = try store.signOut(choice: .keep, counted: nil, identities: try identities()) },
       commit("anon create", at: 6000, Gesture(changes: [.create("card", id: .given("card0003"), ["title": "Anon"])], gestureId: "a1")),
       Step(name: "sign-in begin") { store in _ = try store.beginSignIn(account: "A") },
       Step(name: "sign-in complete") { store in
-        _ = try store.signIn(account: "A", holdsRecords: ["probe": true], decisions: ["probe": .add], identities: try none())
+        _ = try store.signIn(account: "A", holdsRecords: ["probe": true], decisions: ["probe": .add], counted: [:], identities: try none())
       },
     ]
   }

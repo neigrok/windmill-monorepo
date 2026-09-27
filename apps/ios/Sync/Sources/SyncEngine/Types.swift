@@ -33,7 +33,7 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
   case signInChanged
   // The sign-in was cancelled, completed, or replaced by another.
   case signInEnded
-  // Discard would delete unsent work the sign-out's confirmation did not state: ask again from `signOut()`.
+  // The unsent entries differ from those a Discard counted: ask again from `signOut()`.
   case signOutChanged(ready: Int, sent: Int)
   // The sign-out finished, was cancelled, or another sign-out replaced it.
   case signOutEnded
@@ -48,7 +48,7 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
     case .decisionMissing(let product): "the signed-out decision for \(product) has no answer"
     case .signInChanged: "the work made signed out changed since the question was asked"
     case .signInEnded: "the sign-in was cancelled, completed or replaced"
-    case .signOutChanged(let ready, let sent): "\(ready + sent) changes are unsent now, not the ones the confirmation stated"
+    case .signOutChanged(let ready, let sent): "\(ready + sent) changes are unsent now, not the ones the confirmation counted"
     case .signOutEnded: "the sign-out finished, was cancelled or was replaced"
     }
   }

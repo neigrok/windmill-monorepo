@@ -284,7 +284,7 @@ struct SyncEngineTests {
     let store = try Store.inMemory(registry: Rig.probe)
     let identities = Identities(random: SeededRandomSource(seed: seed))
     _ = try store.firstLaunch(identities: identities)
-    _ = try store.signIn(account: "A", holdsRecords: [:], decisions: [:], identities: identities)
+    _ = try store.signIn(account: "A", holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     let connectivity = SwitchedConnectivity()
     let engine = try SyncEngine(
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), store: store, transport: network,

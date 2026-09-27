@@ -77,14 +77,15 @@ public enum Corpus {
     throw CorpusError.notFound
   }
 
-  // The test-only product the corpus is written against, beside the corpus.
-  public static func probeRegistryFile() throws -> JSON {
-    let file = try root().deletingLastPathComponent().appendingPathComponent("probe.registry.json")
+  // A registry file beside the corpus, `<name>.registry.json`: a product's, or the probe's.
+  public static func registryFile(_ name: String) throws -> JSON {
+    let file = try root().deletingLastPathComponent().appendingPathComponent("\(name).registry.json")
     return try JSON(parsing: [UInt8](Data(contentsOf: file)))
   }
 
+  // The test-only product the corpus is written against.
   public static func probeRegistry() throws -> Registry {
-    try Registry(json: probeRegistryFile())
+    try Registry(json: registryFile("probe"))
   }
 
   public static func paths() throws -> [String] {

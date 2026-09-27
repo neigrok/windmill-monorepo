@@ -1,14 +1,16 @@
 import Foundation
 import Testing
 
-// The package's layers, read from its sources: each target imports only what the table allows, so SyncCore, SyncAPI
-// and SyncReplica stay pure (no UI, networking or storage) and GRDB appears only in SyncStore. The engine-API targets
-// follow the domain kit's source rules (ER-13).
+// The package's layers, read from its sources: each target imports only what the table allows, so SyncCore, SyncAPI,
+// SyncSchema and SyncReplica stay pure (no UI, networking or storage) and GRDB appears only in SyncStore. The engine-API
+// targets follow the domain kit's source rules (ER-13).
 
 struct LayeringTests {
   static let allowed: [String: Set<String>] = [
     "SyncCore": ["CryptoKit"],
     "SyncAPI": ["SyncCore"],
+    "SyncSchema": ["SyncCore"],
+    "SyncSchemaGen": ["SyncCore", "Foundation"],
     "SyncReplica": ["SyncCore", "SyncAPI"],
     "SyncStore": ["SyncCore", "SyncAPI", "SyncReplica", "GRDB", "Foundation"],
     "SyncEngine": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "Foundation", "Network", "Observation", "Synchronization"],
@@ -16,7 +18,7 @@ struct LayeringTests {
     "SyncTesting": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "SyncEngine", "SyncModelServer", "Foundation", "Synchronization"],
   ]
 
-  static let engineAPI = ["SyncCore", "SyncAPI"]
+  static let engineAPI = ["SyncCore", "SyncAPI", "SyncSchema"]
 
   static let sources = URL(fileURLWithPath: #filePath)
     .deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
@@ -54,17 +56,33 @@ struct LayeringTests {
   // ER-13: no import attribute, no access-modified import, no `#if`, and no randomness named `random`.
   @Test(arguments: engineAPI)
   func theEngineAPIFollowsTheKitsSourceRules(_ target: String) throws {
-    var violations: [String] = []
-    for file in try Self.files(of: target) {
-      for (number, line) in file.lines.enumerated() {
-        let place = "\(target)/\(file.name):\(number + 1)"
-        if let match = line.wholeMatch(of: Self.importLine), !match.attributes.isEmpty || match.access != nil {
-          violations.append("\(place) decorates an import")
-        }
-        if line.trimmingCharacters(in: .whitespaces).hasPrefix("#if") { violations.append("\(place) compiles conditionally") }
-        if line.range(of: "random", options: .caseInsensitive) != nil { violations.append("\(place) names randomness `random`") }
-      }
+    let violations = try Self.files(of: target).flatMap { file in
+      file.lines.enumerated().flatMap { Self.violations(of: $0.element, at: "\(target)/\(file.name):\($0.offset + 1)") }
     }
     #expect(violations == [])
+  }
+
+  // The rules read tokens: the text inside a string literal and a comment is none (the kit's §2.3), so a registry value
+  // SyncSchema carries as a string names nothing.
+  @Test func theSourceRulesReadTokensNotStringsOrComments() {
+    let lines: [Substring] = [
+      #"    "enum": ["random", "typed"],"#, #"  let pick = "a \"random\" one" // a random pick"#, "  let random = 1",
+      #"  static let order = "shuffled"; let randomOrder = order"#, "@_exported import SyncCore", "#if DEBUG",
+    ]
+    #expect(lines.enumerated().flatMap { Self.violations(of: $0.element, at: "line \($0.offset + 1)") } == [
+      "line 3 names randomness `random`", "line 4 names randomness `random`", "line 5 decorates an import",
+      "line 6 compiles conditionally",
+    ])
+  }
+
+  static func violations(of line: Substring, at place: String) -> [String] {
+    var found: [String] = []
+    if let match = line.wholeMatch(of: importLine), !match.attributes.isEmpty || match.access != nil {
+      found.append("\(place) decorates an import")
+    }
+    if line.trimmingCharacters(in: .whitespaces).hasPrefix("#if") { found.append("\(place) compiles conditionally") }
+    let code = line.replacing(#/"(?:[^"\\]|\\.)*"/#, with: #""""#).replacing(#///.*/#, with: "")
+    if code.range(of: "random", options: .caseInsensitive) != nil { found.append("\(place) names randomness `random`") }
+    return found
   }
 }

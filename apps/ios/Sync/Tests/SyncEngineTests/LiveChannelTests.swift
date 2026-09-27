@@ -7,8 +7,8 @@ import SyncTesting
 import Testing
 
 // §7.5 and §9.5 the live channel over a scripted transport and a fake socket: when a socket is wanted, what it follows,
-// the reconnect pull after an open, a failed open and a close, the heartbeat, the frames it hands the puller, and how it
-// reopens, pauses and stops.
+// the reconnect pull after a failed open and a socket that ends and none after a close the client makes, the heartbeat,
+// the frames it hands the puller, and how it reopens, pauses and stops.
 
 struct LiveChannelTests {
   static let tree = ScopeRef.tree("b_00000001")
@@ -30,11 +30,44 @@ struct LiveChannelTests {
     #expect(rig.transport.calls == [])
   }
 
-  // On open it follows every subscribed scope, then the puller pulls them all.
-  @Test func anOpenSocketFollowsTheSubscriptionsThenEverythingIsPulled() async throws {
-    let (rig, socket) = try await Self.open()
-    #expect(rig.transport.calls == [.openLive(token: SessionToken("token-1"))])
+  // On open it follows every subscribed scope, and pulls nothing: an open is no pull trigger (§7.5).
+  @Test func anOpenSocketFollowsTheSubscriptionsAndPullsNothing() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    let socket = FakeLiveConnection()
+    rig.transport.willOpenLive(socket)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
     #expect(socket.sent == [.sub([Rig.scope])])
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(rig.transport.pulls.count == 1)
+  }
+
+  // A close the client makes pulls nothing, going offline or leaving, and nor does the open after it; the foreground is
+  // a pull trigger of its own. Nothing to pull in the foreground waits for the fallback pull; in the background, for a
+  // trigger.
+  @Test func aCloseTheClientMakesPullsNothing() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    let first = FakeLiveConnection()
+    rig.transport.willOpenLive(first)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    rig.connectivity.set(online: false)
+    #expect(await rig.engine.live.step() == .idle)
+    #expect(first.isClosed)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    rig.connectivity.set(online: true)
+    let second = FakeLiveConnection()
+    rig.transport.willOpenLive(second)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    try rig.engine.leave()
+    #expect(await rig.engine.live.step() == .idle)
+    #expect(second.isClosed)
+    #expect(await rig.engine.puller.step() == .idle)
+    #expect(rig.transport.pulls.count == 1)
+    rig.engine.foreground()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
   }
@@ -150,7 +183,8 @@ struct LiveChannelTests {
     #expect(socket.isClosed == false)
   }
 
-  // An open that fails, and a socket that ends, count as a reconnect as an open does: the puller pulls every scope at once.
+  // An open that fails, and a socket that ends, count as a reconnect: the puller pulls every scope at once. The open
+  // between them pulls nothing.
   @Test func aFailedOpenAndAnEndedSocketPullEveryScopeAtOnce() async throws {
     let rig = try Rig(account: "A")
     let pulled = PullerStep.pulled([PageReport(scope: Rig.scope, outcome: .applied)])
@@ -165,13 +199,12 @@ struct LiveChannelTests {
     let socket = FakeLiveConnection()
     rig.transport.willOpenLive(socket)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
-    #expect(await rig.engine.puller.step() == pulled)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs - 1_000))
     socket.end()
     #expect(await rig.engine.live.receiveNext() == false)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     #expect(await rig.engine.puller.step() == pulled)
-    #expect(rig.transport.pulls.count == 4)
+    #expect(rig.transport.pulls.count == 3)
   }
 
   // Reopening backs off with the channel's own k up to its own 30 s ceiling, whatever the sender's; k resets once a
@@ -212,6 +245,24 @@ struct LiveChannelTests {
     #expect(try rig.meta().authPaused)
     #expect(await rig.engine.live.step() == .paused)
     #expect(rig.transport.calls.count == 1)
+  }
+
+  // A handshake 401 is an open that fails, a reconnect: every scope is pulled once the account re-authenticates, though
+  // the socket that then opens pulls nothing.
+  @Test func aHandshake401IsAReconnectWhosePullRunsOnceReauthenticated() async throws {
+    let rig = try Rig(account: "A")
+    let pulled = PullerStep.pulled([PageReport(scope: Rig.scope, outcome: .applied)])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
+    rig.transport.willRefuseLive(401)
+    #expect(await rig.engine.live.step() == .paused)
+    #expect(await rig.engine.puller.step() == .paused)
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    rig.transport.willOpenLive(FakeLiveConnection())
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
+    #expect(rig.transport.pulls.count == 2)
   }
 
   // A handshake 401 to a token the account replaced meanwhile pauses nothing, and the next step opens under the new one.

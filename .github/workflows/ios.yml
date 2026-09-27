@@ -1,8 +1,9 @@
 name: iOS CI
 
 # Tests and builds the Swift sync engine package, apps/ios/Sync; ships nothing. Its corpus runner reads
-# packages/api-contract/sync by walking up from #filePath, so the whole repository is checked out and a
-# change to the sync contract runs this workflow too.
+# packages/api-contract/sync by walking up from #filePath, and its SyncSchema target is generated from the
+# registries there, so the whole repository is checked out and a change to the sync contract runs this
+# workflow too.
 
 on:
   push:
@@ -39,6 +40,10 @@ jobs:
       - run: |
           xcodebuild -version
           swift --version
+
+      # Sources/SyncSchema is generated from the product registries and checked in; a stale file fails here.
+      - name: Check the generated registry
+        run: swift run --explicit-target-dependency-import-check error SyncSchemaGen --check
 
       # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it.
       - name: Test on macOS

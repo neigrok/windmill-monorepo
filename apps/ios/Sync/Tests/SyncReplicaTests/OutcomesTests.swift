@@ -6,7 +6,8 @@ import SyncTesting
 import Testing
 
 // §7.7 write map step 1 beyond the corpus: a join rewrites the called id in device rows through the product's hook
-// (the probe's device rows name no ids), and in the guards and base texts of records keyed by it. §11.2 property 8
+// (the probe's device rows name no ids), and in the guards and base texts of records keyed by it; and the restamp rule
+// in a write map ticks in the receiving instance's actor. §11.2 property 8
 // against the model server: clock-skew recovery terminates.
 
 struct OutcomesTests {
@@ -37,6 +38,33 @@ struct OutcomesTests {
                             identities: identities)
     #expect(replica.deviceRows["probe"]?["rack"] == ["run": "runtheir"])
     #expect(replica.outbox.first?.predict.first?.key == RecordKey("run", "runtheir"))
+  }
+
+  // §7.7 the restamp rule in a write map: a queued write of a register the map names takes a fresh tick of the clock of
+  // the instance receiving the result, in its own actor, though another instance (an earlier process) committed it.
+  @Test func aWriteMapRestampsAQueuedWriteInTheReceivingInstancesActor() throws {
+    let input = try JSON(parsing: """
+      {"device": {"active": "rp_1", "replicas": [{"meta": {"replica": "rp_1", "state": "bound", "account": "A", "nextN": 1,
+        "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:", "serverOffsetMs": 0, "offsetSamples": [],
+        "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]},
+       "steps": [
+         {"op": "commit", "scope": "self/probe", "changes": [], "opts": {"cmd": {"name": "probe.start", "args": {"id": "run00009", "startedAt": 5000, "join": true}},
+            "predict": [{"op": "create", "t": "run", "id": "run00009", "f": {"startedAt": 5000}}], "gestureId": "start"}, "deviceNow": 5000},
+         {"op": "push", "deviceNow": 5000},
+         {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "run", "id": "run00009", "f": {"label": "Mine"}}],
+            "opts": {"gestureId": "label"}, "deviceNow": 5001},
+         {"op": "pushResponse", "actor": "r_bbbbbbbbbbbb", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "lastN": 1,
+            "results": [{"n": 1, "s": "ok", "seq": 1, "write": [{"t": "run", "id": "run00009", "born": "5008:0:srv", "f": {"label": "5008:0:srv"}}]}]}},
+          "deviceNow": 5010},
+         {"op": "push", "deviceNow": 5011}
+       ]}
+      """)
+    let returns = try ClientSteps.run(input, registry: Self.probe) { PlannedDevice($0, registry: Self.probe, limits: $1) }
+      .member("returns").asArray()
+    #expect(returns[4] == ["replica": "rp_1", "ackThrough": 1, "intents": [[
+      "n": 2, "scope": "self/probe", "gestureId": "label",
+      "d": [["t": "run", "id": "run00009", "born": "5008:0:srv", "f": ["label": ["Mine", "5010:0:r_bbbbbbbbbbbb"]]]],
+    ]]])
   }
 
   // A join of tagA into tagB: the queued link keyed [tagA, tagX] resends with its guard on [tagB, tagX], and the mark keyed

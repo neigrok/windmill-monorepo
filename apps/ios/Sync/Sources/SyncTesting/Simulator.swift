@@ -603,7 +603,8 @@ package final class Simulator {
     }
   }
 
-  // A sign-out: with nothing unsent it signs out; otherwise the person keeps, discards, or stays signed in (nil).
+  // A sign-out: with nothing unsent the person confirms, which is Keep; otherwise they keep, discard, or stay signed in
+  // (nil).
   func signOut(_ phone: Phone, choosing choice: SignOutChoice?) async {
     guard let meta = try? phone.active().meta, meta.state == .bound else { return }
     do {
