@@ -27,6 +27,7 @@ export const CONSTANTS = Object.freeze({
   LIVE_FRAME_BYTES: 131_072,
   LIVE_INLINE_BYTES: 65_536,
   KEEPALIVE_BYTES: 65_536,
+  MERGE_WORK_CELLS: 4_194_304,
 });
 
 export const COUNTER_LIMIT = 2 ** 32;

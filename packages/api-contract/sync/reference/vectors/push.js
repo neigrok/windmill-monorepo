@@ -111,6 +111,15 @@ function serve() {
     }),
     pushed('a request over PUSH_MAX_BYTES is 413', { state: base(), limits: { PUSH_MAX_BYTES: 64 }, request: request([first]) }),
     pushed('a board delete emits its change frame, then a death event per killed scope', { state: boardState(), request: request([boardDelete]) }),
+    pushed('a replica id other than rp_ and 32 lowercase hex is 400 malformed', { state: base(), request: request([first], 0, 'rp_0000000000000000000000000000000A') }),
+    pushed('a body with a key beyond replica, ackThrough and intents is 400 malformed', { state: base(), request: { ...request([first]), device: 'phone' } }),
+    pushed('a 409 prunes nothing: results at or below ackThrough stay', { state: two, request: request([cardCreate(4, 'card0005', 2003)], 2) }),
+    pushed('an answer replayed from sync_results spends no admission budget', {
+      state: two, budget: 1, request: request([cardCreate(1, 'card0002', 2000), cardCreate(2, 'card0003', 2001), cardCreate(3, 'card0004', 2002), cardCreate(4, 'card0005', 2003)]),
+    }),
+    pushed('ackThrough above lastN prunes nothing above lastN: the next n keeps its fault count', {
+      state: withReplica(base(), { account: 'A', lastN: 0 }, [{ n: 1, digest: intentDigest(first), result: null, faults: 1 }]), request: request([], 5),
+    }),
   ];
 }
 

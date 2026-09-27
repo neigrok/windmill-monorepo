@@ -11,9 +11,14 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+const PUSH_KEYS = ['ackThrough', 'intents', 'replica'];
+const REPLICA_ID = /^rp_[0-9a-f]{32}$/;
+
+// §9.3: exactly {replica, ackThrough, intents}, with a replica id of D-3's pattern.
 function isWellFormed(request) {
   return isObject(request)
-    && typeof request.replica === 'string'
+    && Object.keys(request).sort().join() === PUSH_KEYS.join()
+    && typeof request.replica === 'string' && REPLICA_ID.test(request.replica)
     && Number.isInteger(request.ackThrough) && request.ackThrough >= 0
     && Array.isArray(request.intents)
     && request.intents.every((intent) => isObject(intent) && Number.isInteger(intent.n) && intent.n >= 1);
@@ -84,7 +89,7 @@ export function push({ state, registry, product, account, request, serverNow, bu
     results.push({ n, ...outcome.result });
     live.push(...liveEventsOf(work, outcome, limits));
   }
-  work.pruneResults(replica, request.ackThrough);
+  work.pruneResults(replica, Math.min(request.ackThrough, work.replicas[replica].lastN));
   const body = { ...head, lastN: work.replicas[replica].lastN, results };
   if (retry) body.retry = retry;
   return { state: work, response: { status: 200, body }, live, frames: live.filter((event) => event.frame) };

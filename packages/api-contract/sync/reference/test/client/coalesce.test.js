@@ -36,7 +36,13 @@ function visibleDrawn(replica) {
 
 function gesture(rng, replica, k) {
   const cards = [...drawn(replica, registry, 'self/probe').values()].filter((record) => record.t === 'card' && isVisible(registry.type('card'), record));
-  const roll = rng.int(7);
+  const tags = [...drawn(replica, registry, TREE).values()].filter((record) => record.t === 'tag');
+  const roll = rng.int(9);
+  if (roll === 7 && tags.length) {
+    const tag = rng.pick(tags);
+    return [TREE, [{ op: tag.life?.[0] === 'alive' ? 'delete' : 'revive', t: 'tag', id: tag.id }], {}];
+  }
+  if (roll === 8) return [TREE, [{ op: 'create', t: 'tag', id: `t${String(k).padStart(4, '0')}`, f: { label: rng.pick(WORDS) } }], {}];
   if (roll === 0) return ['self/probe', [{ op: 'create', t: 'card', id: `new${String(k).padStart(5, '0')}`, f: { title: rng.pick(WORDS) } }], {}];
   if (roll === 1 && cards.length) return ['self/probe', [{ op: 'update', t: 'card', id: rng.pick(cards).id, f: { title: rng.pick(WORDS), tier: rng.pick(['draft', 'review', 'done']) } }], {}];
   if (roll === 2 && cards.length) return ['self/probe', [{ op: 'delete', t: 'card', id: rng.pick(cards).id }], { hold: rng.chance(0.5) }];

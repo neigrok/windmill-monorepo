@@ -101,6 +101,23 @@ function treeState({ visibility, dead = false } = {}) {
   });
 }
 
+// Byte-exact identity (§9.1): the owner's account and one canonically equivalent to it, spelled with a
+// combining ring instead of the precomposed letter.
+const OWNER = '\u00c5sa';
+const LOOKALIKE = 'A\u030asa';
+
+// A private board of OWNER's, with its tree.
+function lookalikeState() {
+  return serverState({
+    accounts: { [OWNER]: { name: 'Owner' }, [LOOKALIKE]: { name: 'Lookalike' } },
+    scopes: { [`acct:${OWNER}/probe`]: productScope(OWNER), [TREE]: treeScope(OWNER, BOARD) },
+    rows: {
+      [`acct:${OWNER}/probe`]: [row({ t: 'board', id: BOARD, life: ['alive', s(2000)], born: s(2000), seq: 1 })],
+      [TREE]: [row({ t: 'meta', id: 'meta', f: { title: ['Plan', s(2000)] }, seq: 1 })],
+    },
+  });
+}
+
 function shape() {
   const base = baseState();
   const cardUpdate = (f) => probe([update('card', 'card0001', s(1000), s(5000), f)]);
@@ -212,6 +229,28 @@ function shape() {
     admitted('a stamp one ms beyond the skew bound is clock-skew', { state: base, intent: probe([create('card', 'card0009', s(BOUND + 1), { title: 'Late' })]) }),
     admitted('a stamp exactly at the skew bound is admitted', { state: base, intent: probe([create('card', 'card0009', s(BOUND), { title: 'Edge' })]) }),
     admitted('an invalid value precedes clock-skew', { state: base, intent: probe([create('card', 'card0009', s(BOUND + 1), { title: '' })]) }),
+    admitted('U+0000 in a field value is invalid', { state: base, intent: probe([create('card', 'card0009', s(5000), { title: 'A\u0000' })]) }),
+    admitted('U+0000 in a text is invalid', {
+      state: treeState(),
+      intent: intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'oak', x: { memo: { text: 'a\u0000', base: { text: '' } } } }]),
+    }),
+    admitted('U+0000 in a command argument is invalid', {
+      state: base,
+      intent: { scope: 'self/probe', cmd: { name: 'probe.start', args: { id: 'run00002', label: 'a\u0000', startedAt: 5000, join: true } } },
+    }),
+    admitted('U+0000 in a gestureId is invalid', { state: base, intent: probe([create('card', 'card0009', s(5000), { title: 'Ok' })], { gestureId: 'g\u0000' }) }),
+    admitted('a tree reference whose id is outside the governing pattern is invalid', {
+      state: treeState(),
+      intent: intent('tree/B_00000001', [{ t: 'meta', id: 'meta', f: { title: ['x', s(5000)] } }]),
+    }),
+    admitted('a time value that is not an integer is invalid', {
+      state: base,
+      intent: probe([create('lap', 'lap00009', s(5000), { runId: 'run00001', at: 1200.5, weight: 1 })]),
+    }),
+    admitted('null in a ref field without a domain is invalid', {
+      state: base,
+      intent: probe([create('lap', 'lap00009', s(5000), { runId: null, at: 1200, weight: 1 })]),
+    }),
     admitted('a time field beyond the bound is clamped to serverNow', {
       state: base,
       intent: probe([create('lap', 'lap00009', s(5000), { runId: 'run00001', at: BOUND + 1, weight: 1 })]),
@@ -260,6 +299,11 @@ function access() {
     admitted('another account writing a dead tree is not-found', { state: dead, origin: B, intent: tagWrite(s(9500, 0, OTHER)) }),
     admitted('the owner writing its overlay of a dead tree is scope-dead', { state: dead, intent: markWrite(s(9500)) }),
     admitted('another account writing an overlay of a dead tree is not-found', { state: dead, origin: B, intent: markWrite(s(9500, 0, OTHER)) }),
+    admitted('an account canonically equivalent to the owner, but not byte-equal, writing the private tree is not-found', {
+      state: lookalikeState(),
+      origin: { kind: 'replica', account: LOOKALIKE, replica: 'rp_0000000000000000000000000000000c', n: 1 },
+      intent: intent(`tree/${BOARD}`, [{ t: 'meta', id: 'meta', f: { title: ['Mine', s(5000, 0, OTHER)] } }]),
+    }),
     admitted('an invalid intent is invalid before access is checked', {
       state: tree,
       origin: B,
@@ -783,6 +827,15 @@ function requests() {
     sequence('a call running past its lease is taken over and resumes after its stored parts', base, [call({ crashAfter: 1 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
     sequence('a transient failure of admit 2 leaves the row running, so a retry within the lease is request-running', base, [call({ transientAt: 2 }), call({ serverNow: NOW + 1 })]),
     sequence('after a transient failure the lease lapses, and the call resumes after its stored part', base, [call({ transientAt: 2 }), call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS })]),
+    sequence('a takeover whose first admit fails transiently leaves the lease as it was, so the next retry takes over at once', base, [
+      call({ crashAfter: 1 }),
+      call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS, transientAt: 2 }),
+      call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS + 1 }),
+    ]),
+    sequence('an admit that faults ends the call refused internal, stored as done, and a replay answers it', base, [call({ faultAt: 2 }), call({ serverNow: NOW + 1 })]),
+    sequence('an empty requestId is invalid, and nothing is stored', base, [call({ requestId: '' })]),
+    sequence('a requestId holding # is invalid', base, [call({ requestId: 'req#1' })]),
+    sequence('a requestId holding U+0000 is invalid', base, [call({ requestId: 'req\u00001' })]),
     sequence('a refused admit ends the call with that result', base, [
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')] },
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')], serverNow: NOW + 1 },
@@ -805,10 +858,31 @@ function recordBound() {
   const trees = treeState();
   const longBase = intent(`self/overlay/${BOARD}`, [{ t: 'mark', id: 'ash', x: { memo: { text: 'short', base: { text: 'a long draft '.repeat(40) } } } }]);
   const markBytes = storedBytes(trees, longBase);
+  const runs = serverState({ scopes: { [PROBE_A]: productScope('A') }, rows: { [PROBE_A]: [run('run00001', {})] } });
+  const lapIntent = probe([create('lap', 'lap00009', s(5000), { runId: 'run00001', at: 5000, weight: 1 })]);
+  const lapRow = admit({ state: new ServerState(runs), registry, product, origin: A, intent: lapIntent, serverNow: NOW }).state.toJSON().rows[PROBE_A].find((r) => r.id === 'lap00009');
+  const { v, ...lapWithoutSerial } = lapRow;
+  const lapBytes = Buffer.byteLength(jcs(lapWithoutSerial), 'utf8');
+  const cards = baseState();
+  const unchanged = probe([update('card', 'card0001', s(1000), s(1000), { title: 'Hi' })]);
+  const copying = serverState({
+    scopes: { [PROBE_A]: productScope('A'), [TREE]: treeScope('A', BOARD) },
+    rows: {
+      [PROBE_A]: [row({ t: 'board', id: BOARD, life: ['alive', s(2000)], born: s(2000), seq: 1 })],
+      [TREE]: [row({ t: 'meta', id: 'meta', f: { title: ['Plan', s(2000)] }, seq: 1 }), row({ t: 'tag', id: 'oak', life: ['alive', s(2100)], born: s(2100), f: { label: ['Oak', s(2100)] }, seq: 2 })],
+    },
+  });
+  const copy = { scope: 'self/probe', cmd: { name: 'probe.copy', args: { src: BOARD, dst: 'b_00000002' } } };
+  const copied = admit({ state: new ServerState(copying), registry, product, origin: A, intent: copy, serverNow: NOW }).state.toJSON();
+  const boardBytes = Buffer.byteLength(jcs(copied.rows[PROBE_A].find((r) => r.id === 'b_00000002')), 'utf8');
   return [
     admitted('a joined row exactly at MAX_RECORD_BYTES as stored is admitted', { state: empty, intent: cardIntent, limits: { MAX_RECORD_BYTES: cardBytes } }),
     admitted('a joined row one byte over MAX_RECORD_BYTES as stored is too-large', { state: empty, intent: cardIntent, limits: { MAX_RECORD_BYTES: cardBytes - 1 } }),
     admitted('a text base longer than the bound does not count toward it', { state: trees, intent: longBase, limits: { MAX_RECORD_BYTES: markBytes } }),
+    admitted('a new record is measured before step 11 numbers it: its serial does not count', { state: runs, intent: lapIntent, limits: { MAX_RECORD_BYTES: lapBytes } }),
+    admitted('a new record one byte over the bound before its serial is too-large', { state: runs, intent: lapIntent, limits: { MAX_RECORD_BYTES: lapBytes - 1 } }),
+    admitted('a write that changes nothing is not measured', { state: cards, intent: unchanged, limits: { MAX_RECORD_BYTES: 16 } }),
+    admitted('a row a command writes into a scope the intent creates is measured too', { state: copying, intent: copy, limits: { MAX_RECORD_BYTES: boardBytes } }),
   ];
 }
 

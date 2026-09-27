@@ -12,8 +12,8 @@ import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { applyWriteMap, onRefused } from './refusal.js';
 
 // §7.4 held back: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
-// orphan awaiting its result, or touch a record an earlier held-back entry touches, by a delta, a guard
-// or a prediction.
+// orphan awaiting its result (sent, or returned to ready), or touch a record an earlier held-back entry
+// touches, by a delta, a guard or a prediction.
 function heldBack(replica, registry) {
   const sources = new Dependents(registry);
   const touched = new Set();
@@ -26,7 +26,8 @@ function heldBack(replica, registry) {
         for (const record of records) touched.add(record);
       }
     }
-    if (entry.state === 'held' || back.has(entry) || entry.orphanOf !== undefined) sources.absorb(entry.scope, deltasOf(entry), entry.stamp);
+    const awaiting = entry.orphanOf !== undefined && (entry.state === 'sent' || entry.state === 'ready');
+    if (entry.state === 'held' || back.has(entry) || awaiting) sources.absorb(entry.scope, deltasOf(entry), entry.stamp);
   }
   return back;
 }
@@ -107,10 +108,6 @@ export function onPushResponse(replica, ctx, request, response, timing) {
       onRefused(replica, ctx, entry, result, body);
       continue;
     }
-    if (entry.orphanOf !== undefined) {
-      moveEntry(replica, ctx.ended, entry, 'orphan-ok');
-      continue;
-    }
     moveEntry(replica, ctx.ended, entry, 'ok');
     entry.resultSeq = result.seq;
     entry.resultEpoch = body.epoch;
@@ -120,6 +117,43 @@ export function onPushResponse(replica, ctx, request, response, timing) {
   meta.ackThrough = body.lastN;
   if (body.epoch !== meta.serverEpoch) epochChange(replica, ctx, body.epoch);
   return undefined;
+}
+
+// §7.4 the sender's wait between pushes. A backoff draws a sleep in [0, min(ceiling, base · 2^k)) and
+// raises k. A response with results resets k unless one is clock-skew, whose recovery is followed by a
+// backoff. A kick wakes the sender and resets k, except during the backoff after a clock-skew recovery,
+// which it neither cuts short nor resets. `draw(bound)` answers the random sleep below `bound`.
+export class SenderWait {
+  constructor(limits = CONSTANTS) {
+    this.limits = limits;
+    this.k = 0;
+    this.until = 0;
+    this.afterSkew = false;
+  }
+
+  backoff(now, draw, { liveHint = false, afterSkew = false } = {}) {
+    const ceiling = liveHint ? this.limits.BACKOFF_LIVE_CEILING_MS : this.limits.BACKOFF_CEILING_MS;
+    this.until = now + draw(Math.min(ceiling, this.limits.BACKOFF_BASE_MS * 2 ** this.k));
+    this.k += 1;
+    this.afterSkew = afterSkew;
+  }
+
+  results(codes, now, draw, { liveHint = false } = {}) {
+    if (codes.includes('clock-skew')) return this.backoff(now, draw, { liveHint, afterSkew: true });
+    if (codes.length) this.k = 0;
+    return undefined;
+  }
+
+  kick(now) {
+    if (this.afterSkew && now < this.until) return;
+    this.k = 0;
+    this.until = now;
+    this.afterSkew = false;
+  }
+
+  due(now) {
+    return now >= this.until;
+  }
 }
 
 // §10.4: every response carrying serverTime yields an offset sample, hello included.

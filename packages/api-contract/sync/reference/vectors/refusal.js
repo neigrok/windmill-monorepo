@@ -178,7 +178,7 @@ function folds() {
       .push(5000)
       .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], undefined, 5001))
       .pushRound({ deviceNow: 5002 })
-      .vector('an orphan the server admits resolves'),
+      .vector('an orphan the server admits is acked like any ok, and its content stays in the notice'),
     script()
       .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
       .push(5000)
@@ -289,6 +289,15 @@ function restamps() {
       .pushRound({ deviceNow: skewed(5003), serverNow: 5000, tRecv: skewed(5004) })
       .pushRound({ deviceNow: skewed(5005), serverNow: 5010, tRecv: skewed(5006) })
       .vector('undo of a skewed held create folds the update of its record silently, so no born is left that recovery cannot move, and the independent edit lands'),
+    script()
+      .add(commitStep(TREE, [{ op: 'create', t: 'tag', id: 'pine', f: { label: 'a label of twenty-five ch' } }], undefined, 5000))
+      .add(commitStep(TREE, [{ op: 'create', t: 'tag', id: 'fir', f: { label: 'Fir' } }], undefined, skewed(5001)))
+      .add(commitStep(TREE, [
+        { op: 'update', t: 'tag', id: 'pine', f: { label: 'Pine' } },
+        { op: 'update', t: 'tag', id: 'fir', f: { label: 'Fir tree' } },
+      ], { atomic: true }, skewed(5002)))
+      .pushRound({ deviceNow: skewed(5003), serverNow: 5000, tRecv: skewed(5004) })
+      .vector('a notice is a snapshot: the recovery that moves the born an orphan carries leaves the notice as it was written'),
     script()
       .add({ ...commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', f: { done: true }, x: { memo: 'from tab B' } }], undefined, skewed(5000)), actor: OTHER })
       .push(skewed(5000))

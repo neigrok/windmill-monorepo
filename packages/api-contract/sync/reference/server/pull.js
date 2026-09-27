@@ -136,9 +136,14 @@ export function liveEventsOf(state, outcome, limits = CONSTANTS) {
   return events;
 }
 
-// §6.8 a dead scope sends `gone` to its owner and `not-found` to every other subscriber.
+// §6.8 the death frame a subscriber of `key` receives answers as a pull of the scope would (§6.7
+// step 1): `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to
+// everyone else. A scope that never existed sends none.
 export function deathFrameFor(state, key, account) {
-  return { op: state.scope(key).owner === account ? 'gone' : 'not-found', scope: refOfKey(key) };
+  const scope = state.scope(key);
+  if (scope === undefined) return null;
+  const tree = scope.kind === 'overlay' ? state.scope(scope.governedBy) : scope;
+  return { op: tree.owner === account ? 'gone' : 'not-found', scope: refOfKey(key) };
 }
 
 // §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type.

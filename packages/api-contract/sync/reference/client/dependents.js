@@ -91,11 +91,11 @@ export class Dependents {
 }
 
 // Removes a queued entry's dependent part: the deltas, the guards on their records, and a dependent
-// command with its prediction. Answers the removed content; the entry may be left empty.
+// command with its prediction. Answers the removed content, a snapshot; the entry may be left empty.
 export function removeDependent(entry, { removed, cmdGone }) {
   const content = {};
-  if (removed.length) content.d = removed;
-  if (cmdGone) content.cmd = entry.intent.cmd;
+  if (removed.length) content.d = structuredClone(removed);
+  if (cmdGone) content.cmd = structuredClone(entry.intent.cmd);
   const kept = (entry.intent.d ?? []).filter((delta) => !removed.includes(delta));
   const removedKeys = new Set(removed.map((delta) => recordKey(delta.t, delta.id)));
   if (kept.length) entry.intent.d = kept;

@@ -187,17 +187,6 @@
     }
   },
   {
-    "name": "sent --orphan-ok--> resolved",
-    "input": {
-      "from": "sent",
-      "event": "orphan-ok",
-      "to": "resolved"
-    },
-    "expect": {
-      "to": "resolved"
-    }
-  },
-  {
     "name": "sent --transport--> sent",
     "input": {
       "from": "sent",

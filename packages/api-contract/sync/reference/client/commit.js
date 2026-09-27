@@ -14,7 +14,14 @@ import { coalesce } from './coalesce.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
-export class CommitError extends Error {}
+// §7.1's failures before the transaction commits: `not-writable`, a replica whose state forbids
+// writes, or `malformed`, a programming error. The in-memory reference has no store failure.
+export class CommitError extends Error {
+  constructor(message, kind = 'malformed') {
+    super(message);
+    this.kind = kind;
+  }
+}
 
 export function baseTextKey(t, id, field) {
   return jcs([t, id, field]);
@@ -298,7 +305,7 @@ function retiringEntries(replica, scope, retire) {
 // `commit` answers {outcome, value}. A null gesture writes nothing, ticks no clock and gives a null
 // outcome. A throw writes nothing.
 export function commit(replica, ctx, scope, changes, opts = {}) {
-  if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`);
+  if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`, 'not-writable');
   const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
   if (typeof changes !== 'function') return commitGesture(replica, ctx, physNow, scope, changes, opts);
   const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope), now: physNow });
@@ -313,6 +320,14 @@ export function commit(replica, ctx, scope, changes, opts = {}) {
 function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
+  if (opts.gestureId !== undefined && replica.entries().some((entry) => entry.gestureId === opts.gestureId)) {
+    throw new CommitError(`gesture id ${opts.gestureId} is taken`);
+  }
+  const product = registry.productOfRef(scope);
+  for (const key of Object.keys(opts.local ?? {})) {
+    const rows = Object.values(registry.products[product]?.device ?? {});
+    if (!rows.some((row) => new RegExp(row.keyPattern, 'u').test(key))) throw new CommitError(`device row ${key} matches no row of ${product}`);
+  }
   const scopeRefusal = refusalOfScope(replica, registry, scope);
   if (scopeRefusal) return { refused: scopeRefusal };
 
@@ -327,6 +342,8 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
   const deltas = changes.map((change) => builder.delta(change)).filter((delta) => delta !== null);
+  const records = deltas.map((delta) => recordKey(delta.t, delta.id));
+  if (new Set(records).size !== records.length) throw new CommitError('an intent changes a record at most once');
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
   const capped = cappedType(registry, storedView, deltas);
@@ -374,7 +391,6 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   replica.outbox.push(...entries);
   for (const entry of entries) coalesce(replica, registry, ctx.ended, entry);
 
-  const product = registry.productOfRef(scope);
   for (const [key, value] of Object.entries(opts.local ?? {})) {
     if (value === null) delete replica.deviceRows(product)[key];
     else replica.deviceRows(product)[key] = value;

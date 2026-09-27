@@ -120,7 +120,7 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
     tally.recovered += skews.size;
     tally.folded += ctx.ended.filter((end) => end.event === 'cancel').length;
     tally.orphans += ctx.ended.filter((end) => end.event === 'refuse' && end.orphanOf !== undefined).length;
-    tally.orphansAdmitted += ctx.ended.filter((end) => end.event === 'orphan-ok').length;
+    tally.orphansAdmitted += replica.entries().filter((entry) => entry.orphanOf !== undefined && entry.state === 'acked').length;
   }
   assert.ok(tally.deletesAfterReturn > 100, `only ${tally.deletesAfterReturn} deletes followed a returned numbered create`);
   assert.ok(tally.undone > 400, `only ${tally.undone} held gestures were undone`);

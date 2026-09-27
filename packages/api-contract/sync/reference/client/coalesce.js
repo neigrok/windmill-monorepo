@@ -1,13 +1,15 @@
 // §7.2 coalescing: a ready plain intent joins the last earlier entry on its record under the §7.2
-// conditions, and an entry ever numbered takes no join; a create or revive that the join leaves dead
-// cancels with its dependents.
+// conditions, and an entry ever numbered takes no join. When the earlier entry brought the record to
+// life, the record is not alive in drawn without the two entries, and the join leaves it dead, the
+// earlier entry cancels with its dependents.
 
 import { moveEntry } from '../core/machines.js';
 import { joinRecord } from '../core/merge.js';
-import { latticeOf } from '../core/rows.js';
+import { latticeOf, recordKey } from '../core/rows.js';
 import { Stamp } from '../core/stamp.js';
 import { sameJson } from '../core/jcs.js';
-import { foldSilently, silentFoldOf } from './dependents.js';
+import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
+import { drawn } from './views.js';
 
 export function isPlain(entry) {
   const { intent } = entry;
@@ -32,7 +34,8 @@ export function coalesce(replica, registry, ended, entry) {
   if (delta.x && actorOf(target) !== actorOf(entry)) return false;
 
   const [base] = target.intent.d;
-  const cancels = base.life?.[0] === 'alive';
+  const without = drawn(replica, registry, entry.scope, new Set([...deltasOf(target), ...deltasOf(entry)])).get(recordKey(delta.t, delta.id));
+  const cancels = base.life?.[0] === 'alive' && base.born !== undefined && without?.life?.[0] !== 'alive';
   const joined = { t: base.t, id: base.id, ...joinRecord(registry.type(delta.t), latticeOf(base), latticeOf(delta)) };
   if (base.x || delta.x) {
     joined.x = { ...(base.x ?? {}) };

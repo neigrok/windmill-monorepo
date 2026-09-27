@@ -59,6 +59,19 @@ function state({ visibility, dead = false } = {}) {
   });
 }
 
+// A private board of the account spelled with a precomposed Å, with its tree (§9.1 byte-exact ids).
+function lookalike() {
+  const owner = '\u00c5sa';
+  return serverState({
+    accounts: { [owner]: { name: 'Owner' }, 'A\u030asa': { name: 'Lookalike' } },
+    scopes: { [`acct:${owner}/probe`]: productScope(owner), [TREE]: treeScope(owner, BOARD) },
+    rows: {
+      [`acct:${owner}/probe`]: [row({ t: 'board', id: BOARD, life: ['alive', st(2000)], born: st(2000), seq: 1 })],
+      [TREE]: [row({ t: 'meta', id: 'meta', f: { title: ['Plan', st(2000)] }, seq: 1 })],
+    },
+  });
+}
+
 // Two open runs in A's product scope: one started TICK_AFTER_MS before NOW, one a second ago.
 function ticking() {
   return serverState({
@@ -116,6 +129,12 @@ function serve() {
     }),
     pulled('a live page answers rows above the cursor, dead ones thin, spent ids included', { state: plain, account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 2 })) }),
     ...chain('a paged live pull ends a page inside a seq with a key', { state: plain, account: 'A', scope: 'self/probe', start: cursor({ e: 'ep-1', m: 'live', s: 3 }), limits: { PULL_PAGE_BYTES: 150 } }),
+    pulled('a live page with no rows after a keyed cursor keeps its seq and drops its key', {
+      state: plain, account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 5, k: ['card', 'card0002'] })),
+    }),
+    pulled('a boot cursor without a key resumes after every row of its seq', {
+      state: plain, account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'boot', s: 4, a: 5 })),
+    }),
     pulled('a live pull at the head answers no rows and no more', { state: plain, account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 5 })) }),
     pulled('a tree boot sends a dead derived row thin and leaves out a dead keyed row, with the header', { state: plain, account: 'A', request: request(`tree/${BOARD}`) }),
     pulled('a tree live pull sends the dead keyed row thin', { state: plain, account: 'A', request: request(`tree/${BOARD}`, cursor({ e: 'ep-1', m: 'live', s: 1 })) }),
@@ -136,6 +155,10 @@ function serve() {
     pulled('a cursor with an unknown field is reset', { state: plain, account: 'A', request: request('self/probe', cursor({ e: 'ep-1', m: 'live', s: 2, x: 1 })) }),
     pulled('a padded encoding of a valid cursor is reset', { state: plain, account: 'A', request: request('self/probe', `${Buffer.from('{"e":"ep-1","m":"live","s":2}').toString('base64')}`) }),
     pulled('an absent tree is not-found', { state: plain, account: 'A', request: request('tree/b_0000000f') }),
+    pulled('a tree reference whose id is outside the governing pattern is not-found', { state: plain, account: 'A', request: request('tree/B_00000001') }),
+    pulled('an account canonically equivalent to the owner, but not byte-equal, reads a private tree as not-found', {
+      state: lookalike(), account: 'A\u030asa', request: request(`tree/${BOARD}`),
+    }),
     pulled('a private tree of another account is not-found', { state: plain, account: 'B', request: request(`tree/${BOARD}`) }),
     pulled('an overlay of another account private tree is not-found', { state: plain, account: 'B', request: request(`self/overlay/${BOARD}`) }),
     pulled('a public tree is readable by another account, with the header', { state: open, account: 'B', request: request(`tree/${BOARD}`) }),

@@ -6,7 +6,8 @@ import { scopeDigest } from '../../core/digest.js';
 import { jcs } from '../../core/jcs.js';
 import { compareRecords, isAlive, recordKey } from '../../core/rows.js';
 import { admit } from '../../server/admit.js';
-import { hello, pull } from '../../server/pull.js';
+import { scopeKeyOf } from '../../server/access.js';
+import { deathFrameFor, hello, pull } from '../../server/pull.js';
 import { ServerState } from '../../server/state.js';
 import { Rng, product, registry, serverState } from '../../vectors/fixtures.js';
 
@@ -18,6 +19,13 @@ test('pull/serve.json replays through pull', () => {
     assert.equal(jcs(out.response), jcs(expect.response), name);
     assert.equal(jcs(out.state.toJSON()), jcs(expect.state ?? input.state), name);
     assert.equal(jcs(out.live), jcs(expect.live ?? []), name);
+  }
+});
+
+test('live/death.json replays through deathFrameFor', () => {
+  for (const { name, input, expect } of read('live/death.json')) {
+    const target = scopeKeyOf(registry, input.scope, input.account);
+    assert.equal(jcs(deathFrameFor(new ServerState(input.state), target.key, input.account)), jcs(expect.frame), name);
   }
 });
 

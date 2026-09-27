@@ -1,6 +1,8 @@
 // §6.11 the text merge. An edit script is the lexicographically least shortest script under
 // keep < delete < insert: equal tokens are kept early, and a deletion precedes an insertion.
 
+import { CONSTANTS } from '../core/constants.js';
+
 const TOKEN = /\s+|\S+/g;
 
 export function tokenize(text) {
@@ -84,11 +86,19 @@ function sideText(base, lo, hi, hunks) {
   return out.join('');
 }
 
-export function diff3(baseText, headText, mineText) {
+// §6.11: each script diff3 builds, base→head and base→mine, takes (base tokens + 1) × (side tokens + 1)
+// cells. When either would take over MERGE_WORK_CELLS, the whole text is one conflict region.
+export function diff3(baseText, headText, mineText, limits = CONSTANTS) {
   const base = tokenize(baseText);
+  const head = tokenize(headText);
+  const mine = tokenize(mineText);
+  const cells = (side) => (base.length + 1) * (side.length + 1);
+  if (cells(head) > limits.MERGE_WORK_CELLS || cells(mine) > limits.MERGE_WORK_CELLS) {
+    return { text: `${headText.trimEnd()}\n\n${mineText.trimStart()}`, conflict: true };
+  }
   const tagged = [
-    ...hunksOf(editScript(base, tokenize(headText))).map((hunk) => ({ ...hunk, side: 'head' })),
-    ...hunksOf(editScript(base, tokenize(mineText))).map((hunk) => ({ ...hunk, side: 'mine' })),
+    ...hunksOf(editScript(base, head)).map((hunk) => ({ ...hunk, side: 'head' })),
+    ...hunksOf(editScript(base, mine)).map((hunk) => ({ ...hunk, side: 'mine' })),
   ].sort((x, y) => x.start - y.start || x.end - y.end || (x.side === 'head' ? -1 : 1));
 
   const regions = [];
@@ -139,7 +149,7 @@ function extendsTokens(x, y) {
 
 // `stored`: {text, rev, merged} of the field ('' at rev 0 when never written). `base`: {rev} or {text}.
 // `revisionText(rev)`: a kept superseded head, or undefined. Answers {refuse} or {text, conflict, baseText}.
-export function mergeText({ stored, base, mine, revisionText }) {
+export function mergeText({ stored, base, mine, revisionText, limits = CONSTANTS }) {
   const head = stored.text;
   let baseText;
   if (Object.hasOwn(base, 'rev')) {
@@ -153,7 +163,7 @@ export function mergeText({ stored, base, mine, revisionText }) {
   if (mine === head) return { text: head, conflict: false, baseText };
   if (baseText === head) return { text: mine, conflict: false, baseText };
   if (baseText === mine) return { text: head, conflict: false, baseText };
-  return { ...diff3(baseText, head, mine), baseText };
+  return { ...diff3(baseText, head, mine, limits), baseText };
 }
 
 export function mergedFlag(stored, merge) {
