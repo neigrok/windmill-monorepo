@@ -238,6 +238,59 @@ struct PullerTests {
     guard case .committed = outcome else { throw RigError("the tree's commit was \(outcome)") }
   }
 
+  // §7.9: an entry acked in a scope no longer followed resolves at the next pull round, since no pull of its scope brings
+  // its row. Here the tree closes while its entry is in flight.
+  @Test func anEntryAckedInATreeClosedWhileItWasInFlightResolvesAtTheNextPullRound() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    try rig.commit(Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g1"), in: Self.tree)
+    let gate = Gate()
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
+    async let pushed = rig.engine.sender.step()
+    await gate.arrival()
+    try rig.engine.unsubscribe(Self.tree)
+    gate.open()
+    #expect(await pushed == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try rig.outbox() == [])
+  }
+
+  // §7.9: no scope is open in a new process, so the trees the last one held open have left the set, and their acked
+  // entries resolve at its first pull round.
+  @Test func theTreesTheLastProcessHeldOpenResolveTheirAckedEntries() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    try rig.commit(Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g1"), in: Self.tree)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    let relaunched = try rig.relaunch()
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await relaunched.puller.step() == Self.applied(Rig.scope))
+    #expect(try rig.outbox() == [])
+  }
+
+  // §7.5, §7.9: a tree known not found is followed no more, whoever holds it open, so an entry acked in it resolves at the
+  // next pull round; here the board's tree answered not-found before the board's create landed.
+  @Test func anEntryAckedInATreeKnownNotFoundResolvesAtTheNextPullRound() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))], gestureId: "g1"))
+    try rig.engine.subscribe(Self.tree)
+    try rig.commit(Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g2"), in: Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(Self.tree, "not-found")]))
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [Self.tree: .notFound])
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(1, seq: 1), Rig.admitted(2, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 acked 2"])
+    rig.engine.puller.wants.all()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try rig.outbox() == [])
+  }
+
   // An unsubscribe removes only its own scopes: a subscribe landing while its transaction runs is kept, and pulled.
   @Test func aSubscribeDuringAnUnsubscribeIsKept() async throws {
     let kept = ScopeRef.tree("b_00000002")

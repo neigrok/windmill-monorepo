@@ -221,12 +221,21 @@ public final class EventLog: Sendable {
   }
 
   public var events: [EngineEvent] { log.withLock { $0 } }
+
+  // The events since the last drain, which leave the log.
+  public func drain() -> [EngineEvent] {
+    log.withLock { log in
+      defer { log = [] }
+      return log
+    }
+  }
 }
 
 // MARK: - Store faults
 
 // The domain kit's `failNextCommit()` (kit ER-9), on the store's crash-point hook: once armed, the next commit throws
-// before its transaction commits, as a full disk would, and nothing of it is stored.
+// before its transaction commits, as a full disk would, whether or not its body decided a gesture, and nothing of it is
+// stored.
 public final class CommitFaults: Sendable {
   public struct Injected: Error, Hashable {
     public init() {}
@@ -240,11 +249,71 @@ public final class CommitFaults: Sendable {
     armed.store(true, ordering: .relaxed)
   }
 
+  public func hit(_ point: CrashPoint) throws {
+    guard point == .beforeCommit(.commit), armed.exchange(false, ordering: .relaxed) else { return }
+    throw Injected()
+  }
+
   // The hook to build the store with.
   public var crashPoints: CrashPoints {
-    CrashPoints { [self] point in
-      guard point == .beforeCommit(.commit), armed.exchange(false, ordering: .relaxed) else { return }
-      throw Injected()
+    CrashPoints { [self] point in try hit(point) }
+  }
+}
+
+// The kill-at-every-step hook (design §9.5) over one store. Once begun, the crash points the store reaches are counted
+// from 0; the one armed kills the process, and so does every later one, since a dead process commits nothing more.
+// Begun unarmed, it records the store after every commit, the store as it was begun first, so a kill at point `k` must
+// leave the store as `recorded.states[(k + 1) / 2]` holds it: every commit before the point, and none after.
+public final class Killer: Sendable {
+  public struct Killed: Error {}
+
+  struct State {
+    var store: Store?
+    var armed: Int?
+    var dead = false
+    var points: [CrashPoint] = []
+    var states: [JSON] = []
+  }
+
+  let state = Mutex(State())
+
+  public init() {}
+
+  public var crashPoints: CrashPoints { CrashPoints { [self] point in try hit(point) } }
+
+  public func begin(killingAt point: Int?, store: Store) {
+    let now = Self.dump(store)
+    state.withLock { $0 = State(store: store, armed: point, states: [now]) }
+  }
+
+  public func end() {
+    state.withLock { $0 = State() }
+  }
+
+  public var isDead: Bool { state.withLock(\.dead) }
+  public var recorded: (points: [CrashPoint], states: [JSON]) { state.withLock { ($0.points, $0.states) } }
+
+  public func hit(_ point: CrashPoint) throws {
+    let (kill, recording) = state.withLock { state -> (Bool, Store?) in
+      guard let store = state.store else { return (false, nil) }
+      if state.dead { return (true, nil) }
+      state.points.append(point)
+      if state.armed == state.points.count - 1 {
+        state.dead = true
+        return (true, nil)
+      }
+      guard state.armed == nil, case .afterCommit = point else { return (false, nil) }
+      return (false, store)
     }
+    if kill { throw Killed() }
+    if let recording {
+      let now = Self.dump(recording)
+      state.withLock { $0.states.append(now) }
+    }
+  }
+
+  // The whole store as the corpus writes a device down; null before its first launch.
+  public static func dump(_ store: Store) -> JSON {
+    (try? store.read { try $0.device(rows: true).json }) ?? .null
   }
 }

@@ -238,6 +238,32 @@ struct LifecycleTests {
     #expect(rig.transport.calls.filter { if case .hello = $0 { true } else { false } }.count == 1)
   }
 
+  // §7.10 bind, §6.7: signed out, the person creates a board, opens its tree and titles it; the anonymous pull of the
+  // tree, before the board is sent, answers not-found. The sign-in rebinds the anon replica, which forgets what was not
+  // found to the signed-out principal: signed in as the owner, the open tree is pulled, draws the title the server now
+  // holds, and takes the next write.
+  @Test func aSignInForgetsTheTreesNotFoundToTheSignedOutPerson() async throws {
+    let phone = SteppedEngine(registry: Rig.probe, startMs: Rig.startMs, account: nil, rules: ProbeServerRules())
+    let tree = ScopeRef.tree("b_0000000a")
+    let engine = phone.engine
+    _ = try engine.commit(Rig.scope, Gesture(changes: [.create("board", id: .given("b_0000000a"))], atomic: true))
+    #expect(try engine.subscribe(tree) == .subscribed)
+    _ = try engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan"])]))
+    phone.sync()
+    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.known } == [tree: .notFound])
+
+    #expect(try await engine.signIn(account: "A", token: phone.server.token(for: "A")).isComplete)
+    phone.sync()
+    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.known } == [:])
+    #expect(try phone.drawn(tree, "meta").map { $0.values["title"] } == ["Plan"])
+    guard case .committed = try engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan B"])])) else {
+      throw RigError("the owner's next write into the open tree was refused")
+    }
+    phone.sync()
+    #expect(phone.server.rows(tree, of: "A").map { $0.lattice.fields["title"]?.value } == ["Plan B"])
+    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.outbox } == [])
+  }
+
   // MARK: Sign-out (§7.10)
 
   // The flush runs for at most SIGNOUT_FLUSH_MS; then the sender holds the replica, so nothing more is numbered and the
@@ -387,7 +413,7 @@ struct LifecycleTests {
     let before = (other: try Self.withoutOffsets(other.store.read { try $0.device(rows: true).json }, forkGuard: ""),
                   server: Self.rows(of: "A", on: network))
 
-    let session = try await phone.signIn(account: "A", token: network.token(for: "A"))
+    let session = try await phone.signIn(account: "A", token: network.server.token(for: "A"))
     #expect(session.decisions == [SignedOutDecision(product: "probe", counts: ["card": 1])])
     await Self.settle([phone, other.engine])
     #expect(Self.rows(of: "A", on: network) == before.server)
@@ -413,7 +439,7 @@ struct LifecycleTests {
   @Test(arguments: KillScenario.allCases)
   func aKillAtAnyStepReopensToWhatCommittedAndResumes(_ scenario: KillScenario) async throws {
     let world = try await World(scenario)
-    try world.phone.killer.begin(killingAt: nil, store: world.phone.store)
+    world.phone.killer.begin(killingAt: nil, store: world.phone.store)
     try await scenario.act(world)
     let recorded = world.phone.killer.recorded
     world.phone.killer.end()
@@ -424,7 +450,7 @@ struct LifecycleTests {
 
     for point in recorded.points.indices {
       let world = try await World(scenario)
-      try world.phone.killer.begin(killingAt: point, store: world.phone.store)
+      world.phone.killer.begin(killingAt: point, store: world.phone.store)
       do {
         try await scenario.act(world)
       } catch {}
@@ -663,58 +689,6 @@ struct ReplicaRow: Sendable, CustomTestStringConvertible {
   ]
 }
 
-// MARK: - Kill at every step
-
-// The kill-at-every-step hook (design §9.5) over one store. Once begun, the crash points the store reaches are counted
-// from 0; the one armed kills the process, and so does every later one, since a dead process commits nothing more.
-// Begun unarmed, it records the store after every commit.
-final class Killer: Sendable {
-  struct Killed: Error {}
-
-  struct State {
-    var store: Store?
-    var armed: Int?
-    var dead = false
-    var points: [CrashPoint] = []
-    var states: [JSON] = []
-  }
-
-  let state = Mutex(State())
-
-  var crashPoints: CrashPoints { CrashPoints { [self] point in try hit(point) } }
-
-  func begin(killingAt point: Int?, store: Store) throws {
-    let now = try store.read { try $0.device(rows: true).json }
-    state.withLock { $0 = State(store: store, armed: point, states: [now]) }
-  }
-
-  func end() {
-    state.withLock { $0 = State() }
-  }
-
-  var isDead: Bool { state.withLock(\.dead) }
-  var recorded: (points: [CrashPoint], states: [JSON]) { state.withLock { ($0.points, $0.states) } }
-
-  func hit(_ point: CrashPoint) throws {
-    let (kill, recording) = state.withLock { state -> (Bool, Store?) in
-      guard let store = state.store else { return (false, nil) }
-      if state.dead { return (true, nil) }
-      state.points.append(point)
-      if state.armed == state.points.count - 1 {
-        state.dead = true
-        return (true, nil)
-      }
-      guard state.armed == nil, case .afterCommit = point else { return (false, nil) }
-      return (false, store)
-    }
-    if kill { throw Killed() }
-    if let recording {
-      let now = try recording.read { try $0.device(rows: true).json }
-      state.withLock { $0.states.append(now) }
-    }
-  }
-}
-
 // A phone whose store outlives its engines, as its files would, beside its keychain and the fork guard's copy.
 final class Phone {
   let killer = Killer()
@@ -736,7 +710,7 @@ final class Phone {
       let identities = Identities(random: SeededRandomSource(seed: 11))
       _ = try store.firstLaunch(identities: identities)
       _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], identities: identities)
-      tokens.save(network.token(for: account), for: account)
+      tokens.save(network.server.token(for: account), for: account)
     }
     engine = try Phone.engine(store: store, network: network, clock: clock, tokens: tokens, forkGuard: forkGuard,
                               connectivity: connectivity, seed: 1)
@@ -765,7 +739,7 @@ final class Phone {
   }
 
   func signIn(_ answer: LineageAnswer) async throws {
-    let session = try await engine.signIn(account: "A", token: network.token(for: "A"))
+    let session = try await engine.signIn(account: "A", token: network.server.token(for: "A"))
     if !session.isComplete { try await session.complete(["probe": answer]) }
   }
 }

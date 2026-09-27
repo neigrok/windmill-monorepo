@@ -156,9 +156,10 @@ package actor Puller {
 
   // MARK: One request
 
-  // One request: its scopes, the wanted subscribed ones in subscription order. The wants are taken before the
-  // subscriptions are read, since a subscribe opens its scope before it wants it: a scope wanted is subscribed, and a
-  // subscribe that lands later leaves its want for the next round.
+  // One request: its scopes, the wanted subscribed ones in subscription order. The subscriptions are reconciled first, so
+  // an entry acked in a scope no longer followed resolves (§7.9). The wants are taken before the subscriptions are read,
+  // since a subscribe opens its scope before it wants it: a scope wanted is subscribed, and a subscribe that lands later
+  // leaves its want for the next round.
   func round() async -> PullerStep {
     let mono = core.clock.wall.reading().mono
     if wake.kicks != kicksSeen {
@@ -185,6 +186,7 @@ package actor Puller {
         seat = Seat(meta)
         wants.all()
       }
+      try core.reconcileSubscriptions()
       let wanted = wants.take()
       let subscribed = core.subscriptions(of: meta)
       taken = wanted.all ? subscribed : subscribed.filter(wanted.scopes.contains)

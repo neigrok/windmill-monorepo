@@ -1,12 +1,10 @@
 import SyncCore
 import SyncEngine
-import struct SyncModelServer.LiveSocket
-import struct SyncModelServer.ModelServer
 import Synchronization
 
 // Wire doubles (design §6.8): `ScriptedTransport` for component tests, `TranscriptTransport` for the corpus's
-// transcripts, `SimNetwork` for devices over one in-memory server, and `FakeLiveConnection`, the live socket each of
-// them hands out, whose server end the test or the network holds.
+// transcripts, and `FakeLiveConnection`, the live socket each of them and `SimNetwork` hand out, whose server end the
+// test or the network holds.
 
 // MARK: - Scripted
 
@@ -229,6 +227,27 @@ public final class FakeLiveConnection: LiveConnection {
   public var sent: [LiveRequest] { state.withLock(\.sent) }
   public var isClosed: Bool { state.withLock(\.closed) }
 
+  // A receive answers at once: a frame waits, or the socket has ended or closed.
+  public var canReceive: Bool { state.withLock { !$0.frames.isEmpty || $0.ended || $0.closed } }
+
+  // MARK: Faults on the way (design §9.3)
+
+  // The frames delivered and not yet received, in the order the engine will receive them.
+  public var waitingFrames: Int { state.withLock(\.frames.count) }
+
+  public func dropFrame(at index: Int) {
+    state.withLock { _ = $0.frames.remove(at: index) }
+  }
+
+  public func duplicateFrame(at index: Int) {
+    state.withLock { $0.frames.insert($0.frames[index], at: index) }
+  }
+
+  // The frame at `index` overtakes every frame before it.
+  public func overtake(at index: Int) {
+    state.withLock { $0.frames.insert($0.frames.remove(at: index), at: 0) }
+  }
+
   // Returns once the engine waits for the next frame, having received every frame delivered, or once the socket is
   // closed; at once if it is so now.
   public func drained() async {
@@ -360,92 +379,6 @@ public final class TranscriptTransport: SyncTransport {
       }
       guard !exchange.lost, let status = try? exchange.response.member("status").asInteger() else { return .unreachable }
       return Reply(status: Int(status), body: exchange.response["body"])
-    }
-  }
-}
-
-// MARK: - One in-memory server
-
-// One server process in memory for every device of a test (design §9.4): each call goes to the `ModelServer` at the
-// server clock's time as the account its token names, and a token the network did not issue is unauthenticated. Every
-// open socket receives the frames the server publishes to it as the call that published them returns; a `sub` is
-// answered at once for scopes its principal may not read, and a ping with a pong.
-public final class SimNetwork: SyncTransport {
-  struct State {
-    var server: ModelServer
-    var accounts: [String: String] = [:]
-    var sockets: [(socket: LiveSocket, connection: FakeLiveConnection)] = []
-  }
-
-  let state: Mutex<State>
-  let clock: any WallClock
-
-  public init(server: ModelServer, clock: any WallClock) {
-    state = Mutex(State(server: server))
-    self.clock = clock
-  }
-
-  public var server: ModelServer { state.withLock(\.server) }
-
-  // Every socket the network has opened, in the order it opened them.
-  public var connections: [FakeLiveConnection] { state.withLock { $0.sockets.map(\.connection) } }
-
-  // The session token that signs `account` in on this network.
-  public func token(for account: String) -> SessionToken {
-    state.withLock { $0.accounts["token-\(account)"] = account }
-    return SessionToken("token-\(account)")
-  }
-
-  public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    let answered = serve(as: token) { server, account, at in server.hello(account: account, at: at) }
-    return Reply(status: answered.status, body: answered.body)
-  }
-
-  public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    let answered = serve(as: token) { server, account, at in server.push(received: request.body, account: account, at: at) }
-    return Reply(status: answered.status, body: answered.body)
-  }
-
-  public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    let answered = serve(as: token) { server, account, at in server.pull(received: request.body, account: account, at: at) }
-    return Reply(status: answered.status, body: answered.body)
-  }
-
-  public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
-    let opened = state.withLock { state -> LiveSocket? in
-      guard let account = state.accounts[token.value] else { return nil }
-      return state.server.connect(account: account)
-    }
-    guard let opened else { return .answered(.failed(HTTPFailure(status: 401))) }
-    let connection = FakeLiveConnection { [weak self] request in self?.take(request, on: opened) }
-    state.withLock { $0.sockets.append((opened, connection)) }
-    return .answered(.ok(connection))
-  }
-
-  // One call as its token's account, at the server clock's time; then every socket gets what the call published.
-  func serve<Answer>(as token: SessionToken?, _ call: (inout ModelServer, String?, Int64) -> Answer) -> Answer {
-    let at = clock.nowMs()
-    let answer = state.withLock { state in call(&state.server, token.flatMap { state.accounts[$0.value] }, at) }
-    deliverFrames()
-    return answer
-  }
-
-  func take(_ request: LiveRequest, on socket: LiveSocket) {
-    switch request {
-    case .sub(let scopes): state.withLock { $0.server.subscribe(socket, to: scopes) }
-    case .unsub(let scopes): state.withLock { $0.server.unsubscribe(socket, from: scopes) }
-    case .ping: state.withLock { $0.sockets.first { $0.socket == socket } }?.connection.deliver(.pong)
-    }
-    deliverFrames()
-  }
-
-  // Each socket's frames, delivered under the network's lock, so two calls answered at once keep every socket's frames
-  // in the order the server published them.
-  func deliverFrames() {
-    state.withLock { state in
-      for (socket, connection) in state.sockets {
-        for frame in state.server.frames(for: socket) { try? connection.deliver(frame) }
-      }
     }
   }
 }

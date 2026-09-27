@@ -18,6 +18,20 @@ public protocol ServerRules: Sendable {
   func keptRevisions(_ revisions: [Revision]) -> [Revision]
 }
 
+// A product with no rules of its own conforms with an empty body: no command replays, every command is invalid, a check
+// appends nothing, and every superseded text head is kept.
+extension ServerRules {
+  public func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { false }
+
+  public func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    throw Refusal(.invalid)
+  }
+
+  public func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] { [] }
+
+  public func keptRevisions(_ revisions: [Revision]) -> [Revision] { revisions }
+}
+
 // What a handler or check may read: the locked rows of the intent's scope with this intent's joins over them, other
 // scopes as their principal may read them, and the product's own server state.
 public struct RuleContext: Sendable {

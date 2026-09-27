@@ -66,6 +66,9 @@ package actor LiveChannel {
 
   package var isOpen: Bool { socket != nil }
 
+  // Step mode: the socket open now, whose frames `receiveNext` takes.
+  package var connection: (any LiveConnection)? { socket?.connection }
+
   // The production driver: a kick ends any sleep early. The socket closes with the loop.
   func run() async {
     while !Task.isCancelled {

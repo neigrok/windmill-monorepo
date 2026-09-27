@@ -511,9 +511,10 @@ extension ReplicaBatch {
 }
 
 extension Store {
-  // An in-memory store holding `device` whole.
-  public static func inMemory(holding device: LoadedDevice, registry: Registry, limits: Limits = Limits()) throws -> Store {
-    let store = try Store.inMemory(registry: registry, limits: limits)
+  // An in-memory store holding `device` whole: a device restored from a backup, or one another was cloned into.
+  public static func inMemory(holding device: LoadedDevice, registry: Registry, limits: Limits = Limits(),
+                              crashPoints: CrashPoints = .none) throws -> Store {
+    let store = try Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints)
     _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(building: device)) }
     return store
   }

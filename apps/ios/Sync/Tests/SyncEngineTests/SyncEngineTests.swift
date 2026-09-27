@@ -288,7 +288,7 @@ struct SyncEngineTests {
     let connectivity = SwitchedConnectivity()
     let engine = try SyncEngine(
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), store: store, transport: network,
-      tokens: InMemoryTokenStore(["A": network.token(for: "A")]), forkGuard: InMemoryForkGuardStore(), clock: clock.engineClock,
+      tokens: InMemoryTokenStore(["A": network.server.token(for: "A")]), forkGuard: InMemoryForkGuardStore(), clock: clock.engineClock,
       random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
     return Device(store: store, engine: engine, connectivity: connectivity)
   }

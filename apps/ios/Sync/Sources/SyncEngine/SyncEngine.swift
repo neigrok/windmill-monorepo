@@ -214,13 +214,10 @@ public final class SyncEngine: Replica {
     return outcome
   }
 
-  // A scope no longer followed is forgotten, and its acked entries resolve. The set is read inside the write, after the
-  // scope left it, so a scope subscribed meanwhile stays.
+  // A scope no longer followed is forgotten, and its acked entries resolve.
   public func unsubscribe(_ scope: ScopeRef) throws {
     core.opened.withLock { $0.removeAll { $0 == scope } }
-    try core.write { store, _ in
-      try store.reconcile(subscribed: Set(try core.seat().map { core.subscriptions(of: $0) } ?? []))
-    }
+    try core.reconcileSubscriptions()
     core.wakes.live.kick()
   }
 
@@ -252,6 +249,16 @@ public final class SyncEngine: Replica {
   // One store Action as this instance, its changes and events published as the engine's own.
   package func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
     try core.write(action)
+  }
+
+  // What `notices(product)` and `undoOffers` show, read from the store now rather than through the main-actor views.
+  package func currentNotices(_ product: String) throws -> [Notice] {
+    try core.store.read { try ViewHub.loadNotices($0, of: product) }
+  }
+
+  package func currentUndoOffers() throws -> [UndoOffer] {
+    let deviceNow = core.clock.wall.nowMs()
+    return try core.store.read { try ViewHub.loadOffers($0, deviceNow: deviceNow) }
   }
 
   package var identities: any IdentitySource & Sendable { core.identities }
@@ -361,6 +368,14 @@ final class EngineCore: Sendable {
     }
     if paused { wakes.live.kick() }
     return paused
+  }
+
+  // §7.9 "When a scope leaves the subscription set, its acked entries resolve": every scope outside the set is forgotten,
+  // and every acked entry outside it resolves, since no pull will bring its row. The set is read inside the write, so a
+  // scope subscribed meanwhile stays. It runs when a scope is closed, and at each pull round: a scope the last process
+  // held open is not open in this one, and an entry may be acked in a scope no longer followed.
+  func reconcileSubscriptions() throws {
+    try write { store, _ in try store.reconcile(subscribed: Set(try seat().map { subscriptions(of: $0) } ?? [])) }
   }
 
   // §7.9, in the order the puller pulls and the live channel follows them: a bound replica subscribes the product

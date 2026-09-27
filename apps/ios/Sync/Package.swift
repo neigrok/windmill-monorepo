@@ -32,6 +32,7 @@ let package = Package(
     .testTarget(name: "SyncEngineTests", dependencies: ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "SyncEngine", "SyncModelServer", "SyncTesting"]),
     .testTarget(name: "SyncModelServerTests", dependencies: ["SyncCore", "SyncModelServer", "SyncTesting"]),
     .testTarget(name: "SyncConformanceTests", dependencies: ["SyncCore", "SyncAPI", "SyncReplica", "SyncModelServer", "SyncTesting"]),
+    .testTarget(name: "SyncTestingTests", dependencies: ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "SyncEngine", "SyncModelServer", "SyncTesting"]),
   ],
   swiftLanguageModes: [.v6]
 )

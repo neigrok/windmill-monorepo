@@ -275,7 +275,8 @@ public struct ReplicaLifecycle: Sendable {
   }
 
   // Step 2: a dormant replica of the account is rebound with every cursor null; otherwise the anon replica, when
-  // entries are left in it; otherwise a new bound replica. The bound replica's id.
+  // entries are left in it, forgetting what was not found to the signed-out principal, since the account may read it
+  // (§6.7); a scope known gone stays gone. Otherwise a new bound replica. The bound replica's id.
   func bind(_ account: String, in device: inout LoadedDevice, identities: IdentitySource) throws -> String {
     if let dormant = device.dormant(of: account) {
       _ = try Machines.replica.transition(from: .dormant, .signIn, to: .bound)
@@ -292,6 +293,9 @@ public struct ReplicaLifecycle: Sendable {
         replica.update { meta in
           meta.state = .bound
           meta.account = account
+        }
+        for (scope, kind) in replica.known.sorted(by: { $0.key < $1.key }) where kind == .notFound {
+          replica.apply(.deleteKnown(scope))
         }
       }
       return anon.id
@@ -435,13 +439,16 @@ public struct ReplicaLifecycle: Sendable {
     }
   }
 
-  // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not.
+  // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the
+  // replica knows gone or not found is outside it, whoever holds it open: it was unsubscribed when its page came
+  // (§7.5), and no pull brings its rows until a subscribe clears a not-found.
   public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws {
-    for scope in replica.cursors.keys.sorted() where !subscribed.contains(scope) {
+    let followed = subscribed.filter { replica.known[$0] == nil }
+    for scope in replica.cursors.keys.sorted() where !followed.contains(scope) {
       replica.apply(.forgetScope(scope))
       for entry in replica.entries(in: scope) where entry.state == .acked { try replica.move(entry.localId, .resolve) }
     }
-    for entry in replica.outbox where entry.state == .acked && !subscribed.contains(entry.scope) {
+    for entry in replica.outbox where entry.state == .acked && !followed.contains(entry.scope) {
       try replica.move(entry.localId, .resolve)
     }
   }
