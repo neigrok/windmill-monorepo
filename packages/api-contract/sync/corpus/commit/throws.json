@@ -4086,7 +4086,10 @@
           "complete": true,
           "unsent": 1,
           "ready": 1,
-          "sent": 0
+          "sent": 0,
+          "counted": [
+            "edit/0"
+          ]
         },
         {
           "throws": true

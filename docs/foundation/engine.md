@@ -320,17 +320,18 @@ names no product.
   domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
   field's bound does (D-9).
 - **Patterns** (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) are printable
-  ASCII. A value matches a pattern iff the pattern matches the whole value: an implementation uses a
-  whole-match API, since a search lets `$` match before a final line terminator in some dialects. A
-  pattern is `^`, a body, then `$`. The body holds only literal characters other than
-  `^$\.*+?()[]{}|`; `\` before one of `^$\.*+?()[]{}|/`; bracket classes of literal characters,
-  those escapes, `\-` and ascending ranges, not beginning with `:`, with no `[`, `&`, `~` or `--`
-  inside, and a bare `-` only first or last; groups `(…)` and `(?:…)`, the only place a `|` may
-  stand; and the quantifiers `?`, `*`, `+`, `{n}`, `{n,}` and `{n,m}`, each after an atom, with `n`
-  and `m` at most 65 535. Anything else (`.`, class escapes such as `\d`, `\s`, `\w` and `\b`,
+  ASCII, in a portable subset of ECMAScript regular expressions. A value matches a pattern iff the
+  pattern matches the whole value. A pattern is `^`, a body, then `$`. The body holds only literal
+  characters other than `^$\.*+?()[]{}|`; `\` before one of `^$\.*+?()[]{}|/`; bracket classes of
+  literal characters, those escapes, `\-` and ascending ranges, not beginning with `:`, with no `[`,
+  `&`, `~` or `--` inside, and a bare `-` only first or last; groups `(…)` and `(?:…)`, the only place
+  a `|` may stand; and the quantifiers `?`, `*`, `+`, `{n}`, `{n,}` and `{n,m}`, each after an atom,
+  with `n` and `m` at most 65 535. Anything else (`.`, class escapes such as `\d`, `\s`, `\w` and `\b`,
   negated classes, backreferences, lookaround, lazy quantifiers, flags) makes the registry invalid.
-  Each atom so matches one ASCII character, and every regex dialect, counting bytes or code points,
-  gives the same whole-match answer.
+  Each atom so matches one ASCII character, whether bytes or code points are counted. These semantics
+  define a match, not any named regex engine: an implementation matches by them, with an engine that
+  honours them for the subset or with a matcher of its own, and never by a search, which in some
+  dialects lets `$` match before a final line terminator.
 - **Commands:** `name`, `scope`, `origins`, `serverInternal`, `beforePull`, `args` (each of type
   `json`, `time`, `instant` or `ref<t>`, `optional` or not, with a `domain`) and `predicts`.
 
@@ -1262,7 +1263,8 @@ loop while state = bound ∧ ¬authPaused ∧ online:
           (no entry is numbered while a command entry is `sent`)
       an entry whose one-intent body, at that n and the current ackThrough, exceeds PUSH_MAX_BYTES
           is not numbered: it grew after commit (a restamp adds digits, a write map lengthens an
-          id), so it ends `refused` `too-large` by §7.7, with its notice, and its dependents fold
+          id), so it ends `refused` `too-large` by §7.7, with its notice (an orphan with none of
+          its own), and its dependents fold
   POST push jcs({ replica, ackThrough, intents: sent entries by n })   // the body is its jcs
   network error                 → backoff
   503 {retryAfterMs}            → sleep max(retryAfterMs, the backoff draw)
@@ -1286,7 +1288,7 @@ loop while state = bound ∧ ¬authPaused ∧ online:
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
          (liveHint: computed now by the product's view rule, Appendix A)
-kick (wake now, k := 0): commit, release, connectivity change, foreground, auth refresh; a kick
+kick (wake now, k := 0): commit, release, undo, connectivity change, foreground, auth refresh; a kick
          never cuts short, or resets k during, the backoff after a clock-skew recovery
 server-requested wait: a 503's or a retry's retryAfterMs, from the response's receipt; no push
          starts before it ends: a kick wakes the sender no earlier, and a leave (§7.3) attempts no
@@ -1306,9 +1308,11 @@ its scope, a subscribe the scope subscribed, and every other trigger every subsc
 request names at most `PULL_MAX_SCOPES` scopes; a run over more sends several.
 
 **Live socket.** A replica that pulls keeps one live socket, subscribed (`sub`) to the scopes it
-pulls. An open that fails, and a close, count as a reconnect: the puller runs at once. Opening again
-backs off as the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every
-failed open or close, and resets once a socket has stayed open 30 s. A `426` from any request stops
+pulls. An open that fails, and a socket that ends or fails (the server or the network closes it, or a
+`ping` goes unanswered), count as a reconnect: the puller runs at once. A close the client makes
+(leaving the foreground, going offline, a replica change) pulls nothing. Opening again backs off as
+the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or
+ended socket, and resets once a socket has stayed open 30 s. A `426` from any request stops
 sync until the app is upgraded (§9.6), on every tab (§7.8).
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
@@ -1454,8 +1458,8 @@ No entry is `sent` behind a command (§7.4), so every reference, born and guard 
 registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A register an entry
 carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source. The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
-entry takes one new stamp `n`: a fresh tick in commit order, in the actor of the entry's `stamp`
-(its author), or the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's
+entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
+the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's
 `stamp`; a write-map restamp leaves the entry's `stamp` unchanged. For each register that moves from
 `o` to `n`:
 1. the register takes `n`;
@@ -1511,8 +1515,11 @@ durable queue (Undo does not survive sign-in), before the decisions. While it is
 - For each product in which A holds records and the `anon` replica has entries, a **signed-out
   decision** is due: an explicit add or discard of exactly those entries, of every type, with no
   default and no "later". The engine exposes `anonCount(product)` per decision: the count, by type,
-  of the distinct records `(scope, type, id)` its entries create or change. How the decisions are
-  presented is product canon. Until every due decision is made the sign-in is not complete: the
+  of the distinct records `(scope, type, id)` its entries create or change. A decision covers exactly
+  the entries it counted: the engine pins their local ids, and when the product's entries differ at
+  the answer (a commit, an undo or a result in between), the decision is due again with the new
+  count. How the decisions are presented is product canon. Until every due decision is made the
+  sign-in is not complete: the
   `anon` replica stays active, no replica changes and nothing is sent. Cancelling an incomplete
   sign-in changes nothing more; it resumes, with a new hello and every decision still due, at the
   next engine start.
@@ -1534,20 +1541,32 @@ Then, in one local transaction:
    into `hlc` and `hlcHigh`. `authPaused := false`, and `pendingSignIn` is cleared.
 
 **Other transitions:**
-- **Sign-out of A:**
+- **Sign-out of A** is a session that ends only by the person's finish or Cancel, even with nothing
+  left to send:
   1. Every held entry is released into the durable queue (Undo does not survive sign-out), and the
      sender flushes the outbox for at most `SIGNOUT_FLUSH_MS`, then stops for this replica. A
      request still in flight is abandoned: results that arrive are recorded in the dormant replica,
      or dropped with a deleted one.
-  2. Acked entries resolve: the server holds them. If ready or sent entries remain, the product's
-     sign-out confirmation MUST state their count and offer Keep or Discard. The engine exposes
-     `unsentCount(replica)` as the ready and the sent counts: a sent entry may already have landed.
-  3. With none left, or on Keep: delete A's confirmed rows, `SpentId` rows, cursors, `KnownScope`
-     rows, staging and device rows, and set `state := dormant`; remaining entries are sent on the
-     next sign-in as A. On Discard: delete the replica, and its entries end `discarded`. Discard
-     removes them from this device; it cannot recall a sent entry the server may already have
-     admitted.
-  4. The `anon` replica, created if absent, becomes the active one.
+  2. The product's sign-out confirmation MUST state the count of ready and sent entries and offer
+     Keep or Discard when any remain, and a plain confirm, which is Keep, when none do. The engine
+     exposes `unsentCount(replica)` as the ready and the sent counts: a sent entry may already have
+     landed. Keep covers every entry, counted or not. A Discard covers exactly the entries it
+     counted: the engine pins their local ids, and when they differ at the answer (a result, a commit
+     in another tab), it asks again with the new count.
+  3. The finish, in one local transaction. Acked entries resolve: the server holds them. On Keep:
+     delete A's confirmed rows, `SpentId` rows, cursors, `KnownScope` rows, staging and device rows,
+     and set `state := dormant`; remaining entries are sent on the next sign-in as A. On Discard:
+     delete the replica, and its entries end `discarded`. Discard removes them from this device; it
+     cannot recall a sent entry the server may already have admitted.
+  4. The `anon` replica, created if absent, becomes the active one, and A's credential is deleted.
+
+  Cancel ends the session with A signed in: the sender resumes, and the released holds stay
+  released. A sign-out is not durable: a process death before the finish leaves A signed in, as
+  Cancel does, and nothing resumes it.
+- **Credentials.** The engine keeps an account's credential only while the account is bound or its
+  sign-in is pending (`pendingSignIn`). Engine start deletes every other stored credential, so a
+  deletion a finished sign-out did not reach (a process death after its transaction) is retried
+  there.
 - **Discard unsent** (explicit, for `dormant`): delete the replica. Its entries end `discarded`.
 - **Account change:** signing in as another account while A is `authPaused` is a sign-out of A,
   then a sign-in.
@@ -1578,7 +1597,7 @@ both places, without re-identifying. Re-identify, in one local transaction per r
 | `held` | `undo` | `undone` |
 | `held` | retired by a commit (§7.1 step 4): no command, and every delta removes a record the commit names | `undone` |
 | `ready` | numbered | `sent` |
-| `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice) |
+| `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice, or none for an orphan) |
 | `held`, `ready` | emptied by the silent fold of an undo or a retire (§7.3) | `undone` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |

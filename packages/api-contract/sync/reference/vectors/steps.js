@@ -162,10 +162,10 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(subscribe(replica, step.scope));
           break;
         case 'signIn':
-          answer(signIn(device, ctx, { account: step.account, holdsRecords: step.holdsRecords, decisions: step.decisions }));
+          answer(signIn(device, ctx, { account: step.account, holdsRecords: step.holdsRecords, decisions: step.decisions, counted: step.counted }));
           break;
         case 'signOut':
-          answer(signOut(device, ctx, { choice: step.choice }));
+          answer(signOut(device, ctx, { choice: step.choice, counted: step.counted }));
           break;
         case 'discardUnsent':
           discardUnsent(device, ctx, device.replica(step.replica));

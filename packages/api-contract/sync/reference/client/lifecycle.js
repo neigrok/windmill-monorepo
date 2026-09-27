@@ -72,16 +72,26 @@ function observeEntries(replica) {
   }
 }
 
+// Whether an answer's pinned local ids are the ones its question counts now; an answer without them
+// is given to the question as it stands.
+function sameCounted(pinned, counted) {
+  return pinned === undefined || (pinned.length === counted.length && pinned.every((localId, index) => localId === counted[index]));
+}
+
 // Sign-in as `account`, after a hello whose holdsRecords is given. `decisions[product]` is 'add' or
-// 'discard'. Answers {complete, due}; an incomplete sign-in changes nothing past the release of holds.
-export function signIn(device, ctx, { account, holdsRecords, decisions = {} }) {
+// 'discard', answering the question whose local ids `counted[product]` pins. Answers {complete, due},
+// each due decision with the local ids it counts; an incomplete sign-in changes nothing past the
+// release of holds, and a decision whose entries changed since its question is due again.
+export function signIn(device, ctx, { account, holdsRecords, decisions = {}, counted = {} }) {
   const { registry } = ctx;
   const anon = device.anonReplica();
   if (anon) releaseAll(anon, registry, ctx.ended);
   const due = Object.keys(registry.products).sort()
     .filter((product) => holdsRecords[product] && anon && entriesOf(registry, anon, product).length > 0)
-    .map((product) => ({ kind: 'signed-out', product, count: anonCount(registry, anon, product) }));
-  if (due.some((decision) => decisions[decision.product] !== 'add' && decisions[decision.product] !== 'discard')) {
+    .map((product) => ({ kind: 'signed-out', product, count: anonCount(registry, anon, product), counted: entriesOf(registry, anon, product).map((entry) => entry.localId) }));
+  const answered = (decision) => (decisions[decision.product] === 'add' || decisions[decision.product] === 'discard')
+    && sameCounted(counted[decision.product], decision.counted);
+  if (!due.every(answered)) {
     device.meta.pendingSignIn = { account };
     return { complete: false, due };
   }
@@ -126,15 +136,25 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {} }) {
   return { complete: true, due };
 }
 
-// Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS): acked entries resolve; with entries left
-// and no choice, answers {unsent, ready, sent} (Discard cannot recall a sent entry that may have landed).
-export function signOut(device, ctx, { choice } = {}) {
+// Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS). Without a finish (`choice` keep, the
+// confirm when nothing is left, or discard) it answers the question {unsent, ready, sent, counted},
+// the counted local ids of the ready and sent entries (Discard cannot recall a sent entry that may have
+// landed). Keep covers every entry; a Discard whose pinned `counted` differs from the entries now is
+// asked again. The finish resolves acked entries, which the server holds.
+export function signOut(device, ctx, { choice, counted } = {}) {
   const bound = device.activeReplica;
   releaseAll(bound, ctx.registry, ctx.ended);
+  const unsent = bound.entries().filter((entry) => entry.state === 'ready' || entry.state === 'sent');
+  const question = {
+    unsent: unsent.length,
+    ready: unsent.filter((entry) => entry.state === 'ready').length,
+    sent: unsent.filter((entry) => entry.state === 'sent').length,
+    counted: unsent.map((entry) => entry.localId),
+  };
+  const finished = choice === 'keep' || (choice === 'discard' && sameCounted(counted, question.counted));
+  if (!finished) return { complete: false, ...question };
   for (const entry of bound.entries()) if (entry.state === 'acked') moveEntry(bound, ctx.ended, entry, 'resolve');
-  const counts = { unsent: bound.outbox.length, ready: bound.entries().filter((entry) => entry.state === 'ready').length, sent: bound.entries().filter((entry) => entry.state === 'sent').length };
-  if (counts.unsent > 0 && choice !== 'keep' && choice !== 'discard') return { complete: false, ...counts };
-  if (counts.unsent === 0 || choice === 'keep') {
+  if (choice === 'keep') {
     bound.meta.state = transition(REPLICA_MACHINE, 'bound', 'sign-out-keep', 'dormant');
     bound.confirmed = {};
     bound.spentIds = {};
@@ -148,7 +168,7 @@ export function signOut(device, ctx, { choice } = {}) {
     device.remove(bound);
   }
   device.activeReplica = device.anonReplica() ?? device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: 'anon' }));
-  return { complete: true, ...counts };
+  return { complete: true, ...question };
 }
 
 export function discardUnsent(device, ctx, replica) {

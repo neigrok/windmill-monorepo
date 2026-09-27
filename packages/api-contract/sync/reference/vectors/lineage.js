@@ -99,6 +99,15 @@ function signIns() {
       ids: [NEW],
       steps: [{ op: 'signIn', account: 'A', holdsRecords: holds, deviceNow: 4000 }],
     }),
+    stepsVector('a decision pinned to entries that changed since its question is due again with the new count', {
+      device: device(ANON, anonWithWork()),
+      steps: [
+        { op: 'signIn', account: 'A', holdsRecords: holds, deviceNow: 4000 },
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0008', f: { title: 'Later' } }], { gestureId: 'late' }, 4001),
+        { op: 'signIn', account: 'A', holdsRecords: holds, decisions: { probe: 'add' }, counted: { probe: ['g1/0', 'g2/0', 'g3/0', 'g4/0', 'g5/0', 'g6/0'] }, deviceNow: 4002 },
+        { op: 'signIn', account: 'A', holdsRecords: holds, decisions: { probe: 'add' }, counted: { probe: ['g1/0', 'g2/0', 'g3/0', 'g4/0', 'g5/0', 'g6/0', 'late/0'] }, deviceNow: 4003 },
+      ],
+    }),
     stepsVector('anonCount counts, by type, the distinct records the product\'s entries create or change', {
       device: device(ANON, anonWithWork()),
       steps: [{ op: 'anonCount', replica: ANON, product: 'probe' }],
@@ -122,11 +131,16 @@ function boundWith(steps) {
 function signOuts() {
   const pending = [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], undefined, 5000)];
   const held = [commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, 5000)];
+  const acked = [
+    ...pending,
+    { op: 'push', deviceNow: 5001 },
+    { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { serverTime: 5002, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 2 }] } } },
+  ];
   return [
-    stepsVector('sign-out with an empty outbox purges the account\'s rows, cursors and device rows, leaves the replica dormant and starts an anon replica', {
+    stepsVector('sign-out with an empty outbox still waits for a finish; its confirm, Keep, purges the account\'s rows, cursors and device rows, leaves the replica dormant and starts an anon replica', {
       device: device(BOUND, boundWith([])),
       ids: [NEW],
-      steps: [{ op: 'signOut', deviceNow: 6000 }],
+      steps: [{ op: 'signOut', deviceNow: 6000 }, { op: 'signOut', choice: 'keep', deviceNow: 6001 }],
     }),
     stepsVector('sign-out with unsent entries and no choice releases holds and answers their count', {
       device: device(BOUND, boundWith(held)),
@@ -142,18 +156,37 @@ function signOuts() {
       ids: [NEW],
       steps: [{ op: 'signOut', choice: 'discard', deviceNow: 6000 }],
     }),
-    stepsVector('sign-out resolves acked entries, which the server admitted: they are not unsent', {
-      device: device(BOUND, boundWith([
-        ...pending,
-        { op: 'push', deviceNow: 5001 },
-        { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { serverTime: 5002, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 2 }] } } },
-      ])),
-      ids: [NEW],
+    stepsVector('acked entries are not unsent, and a question left unanswered resolves nothing: they stay acked', {
+      device: device(BOUND, boundWith(acked)),
       steps: [{ op: 'signOut', deviceNow: 6000 }],
+    }),
+    stepsVector('the finish resolves acked entries: the server holds them', {
+      device: device(BOUND, boundWith(acked)),
+      ids: [NEW],
+      steps: [{ op: 'signOut', deviceNow: 6000 }, { op: 'signOut', choice: 'keep', deviceNow: 6001 }],
+    }),
+    stepsVector('a Discard pinned to entries that changed since the question is asked again with the new count', {
+      device: device(BOUND, boundWith(pending)),
+      ids: [NEW],
+      steps: [
+        { op: 'signOut', deviceNow: 6000 },
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { tier: 'done' } }], { gestureId: 'late' }, 6001),
+        { op: 'signOut', choice: 'discard', counted: ['g1/0'], deviceNow: 6002 },
+        { op: 'signOut', choice: 'discard', counted: ['g1/0', 'late/0'], deviceNow: 6003 },
+      ],
+    }),
+    stepsVector('Keep covers every entry: an autosave between the question and the Keep does not ask again, and the dormant replica keeps both', {
+      device: device(BOUND, boundWith(pending)),
+      ids: [NEW],
+      steps: [
+        { op: 'signOut', deviceNow: 6000 },
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { tier: 'done' } }], { gestureId: 'autosave' }, 6001),
+        { op: 'signOut', choice: 'keep', counted: ['g1/0'], deviceNow: 6002 },
+      ],
     }),
     stepsVector('an existing anon replica becomes the active one', {
       device: device(BOUND, boundWith([]), { meta: freshMeta(ANON, 'anon'), device: { probe: { rack: { plates: [1] } } } }),
-      steps: [{ op: 'signOut', deviceNow: 6000 }],
+      steps: [{ op: 'signOut', choice: 'keep', deviceNow: 6000 }],
     }),
     stepsVector('an explicit discard deletes a dormant replica and ends its entries discarded', {
       device: device(ANON, { meta: freshMeta(ANON, 'anon') }, dormant(DORMANT_A, 'A')),

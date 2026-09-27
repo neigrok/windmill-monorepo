@@ -35,9 +35,10 @@ function heldBack(replica, registry) {
 // Numbers ready entries in commit order up to PUSH_MAX_INTENTS and while the request body, its jcs,
 // stays within PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back
 // entries, stopping after the first command entry or at a held-back one, and never while a command
-// entry is sent. An entry that no longer fits a request alone is refused instead of numbered, and the
-// entries its fold ends or changes are read afresh. `limit` (after a several-intent 400 or 413) sends at most that many sent entries and numbers
-// none beyond them. Answers the push request, or null.
+// entry is sent. An entry that no longer fits a request alone is refused instead of numbered; the
+// entries its fold ends or changes, and the held-back set its end changes, are read afresh. `limit`
+// (after a several-intent 400 or 413) sends at most that many sent entries and numbers none beyond
+// them. Answers the push request, or null.
 export function nextPush(replica, ctx, { limit } = {}) {
   const limits = ctx.limits ?? CONSTANTS;
   const maxIntents = Math.min(limits.PUSH_MAX_INTENTS, limit ?? Infinity);
@@ -46,7 +47,7 @@ export function nextPush(replica, ctx, { limit } = {}) {
   const sent = () => replica.entries().filter((entry) => entry.state === 'sent').sort((a, b) => a.n - b.n);
   if (!sent().some((entry) => entry.intent.cmd !== undefined)) {
     const intents = sent().map((entry) => entry.intent);
-    const back = heldBack(replica, ctx.registry);
+    let back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
       if (replica.entry(entry.localId) !== entry || entry.state !== 'ready') continue;
       if (back.has(entry)) {
@@ -57,6 +58,7 @@ export function nextPush(replica, ctx, { limit } = {}) {
       const bytesWith = (batch) => bodyBytes({ replica: meta.replica, ackThrough: meta.ackThrough, intents: batch });
       if (bytesWith([intent]) > limits.PUSH_MAX_BYTES) {
         refuseOutgrown(replica, ctx, entry);
+        back = heldBack(replica, ctx.registry);
         continue;
       }
       const fits = bytesWith([...intents, intent]) <= limits.PUSH_MAX_BYTES;

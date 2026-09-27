@@ -274,7 +274,8 @@ outcomes are `undone`, `resolved`, `refused`, `discarded`. Events:
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
 `ready`); `silent-fold` is "emptied by the silent fold of an undo or a retire" (to `undone`, no notice);
-`outgrown` is "at numbering, its one-intent body over `PUSH_MAX_BYTES`" (to `refused`, a notice);
+`outgrown` is "at numbering, its one-intent body over `PUSH_MAX_BYTES`" (to `refused`, a notice, or none
+for an orphan);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
 one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
@@ -670,8 +671,8 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found` |
 | `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found` or `ignored` |
 | `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
-| `signIn` | `account, holdsRecords, decisions?` | §7.10 | `{complete, due: [{kind, product, count}]}` |
-| `signOut` | `choice?` (`keep` or `discard`) | §7.10 | `{complete, unsent, ready, sent}` |
+| `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
+| `signOut` | `choice?` (`keep` or `discard`), `counted?` | §7.10 | `{complete, unsent, ready, sent, counted}` |
 | `discardUnsent` | `replica` | §7.10 | `null` |
 | `reidentify` | — | §7.11 | `null`; the instance takes the next actor |
 | `epochChange` | `epoch` | §7.5 step 1 | `null` |
@@ -760,7 +761,8 @@ push does. `push` numbers ready entries while the request body, `jcs({replica, a
 intents})`, stays within `PUSH_MAX_BYTES`; the first entry of a request always goes. An entry whose
 one-intent body, at the `n` it would take and the current `ackThrough`, exceeds `PUSH_MAX_BYTES` (it
 grew after commit) is not numbered: it ends `refused` `too-large` (event `outgrown`) with its notice,
-its dependents fold, and numbering goes on with the next entry. An `ok` whose
+an orphan with none of its own, its dependents fold, and numbering goes on with the next entry, what
+it held back included. An `ok` whose
 `seq` the scope's cursor already covers (`cleanSeq`, §7.5), in the same epoch, resolves its entry at
 once (event `resolve`).
 
@@ -853,8 +855,8 @@ re-identify and an epoch change.
   `(physNow, 0)` and `admittedHigh`'s `(ms, counter)`; the refused entry and every held and ready
   entry take one fresh tick each, in commit order. It restamps intent deltas, never `predict`, which
   only the write map restamps.
-- A restamp tick takes `(ms, counter)` from the shared clock and keeps the entry's author actor (the
-  actor of `entry.stamp`, §7.7's restamp rule).
+- A restamp tick is a fresh tick of the recovering instance's clock, in its actor, whichever instance
+  wrote the entry (§7.7's restamp rule).
 - A restamp moves only the registers the entry wrote: those stamped at or after `entry.stamp`, chosen
   before any register of the pass moves. A keyed put's life register carried unchanged from drawn is
   older and stays.
@@ -880,13 +882,19 @@ part through a write map. The reference does rewrite them.
 - `holdsRecords` is `{product: boolean}`, as hello answers it (§9.2).
 - `decisions` is `{product: 'add' | 'discard'}`.
 - The one decision kind is `signed-out` (R99).
-- A due decision's `count` is `anonCount`.
+- A due decision's `count` is `anonCount`, and its `counted` the local ids of the product's entries, in
+  commit order. `counted` in the step, `{product: localId[]}`, pins the question a decision answers:
+  when it differs from the entries at the answer, the decision is due again with the new count. A step
+  without it answers the question as it stands.
 - A sign-in clears `authPaused` on the replica it binds. An incomplete one records
   `DeviceMeta.pendingSignIn`; the completing one clears it.
-- Sign-out runs after the runner's flush (bounded by `SIGNOUT_FLUSH_MS`, I/O outside the step): it
-  releases holds, resolves acked entries, and answers the ready and sent entries it still holds.
-  Discard ends them `discarded` (it cannot recall a sent entry that may have landed); Keep purges
-  confirmed rows, spent ids, cursors, staging, known scopes and device rows.
+- Sign-out runs after the runner's flush (bounded by `SIGNOUT_FLUSH_MS`, I/O outside the step). It
+  releases holds and, until a `choice` finishes it, answers the question: the ready and sent entries,
+  counted and listed in `counted` (acked entries are not unsent). A step without a `choice` never
+  finishes, even with nothing left; `keep` is the plain confirm then. `keep` covers every entry,
+  counted or not; a `discard` whose `counted` differs from the entries now is asked again. The finish resolves acked entries; Discard ends the
+  rest `discarded` (it cannot recall a sent entry that may have landed); Keep purges confirmed rows,
+  spent ids, cursors, staging, known scopes and device rows.
 - `start.json`: `engineStart` on web; with an equal backup copy; with a missing or different copy
   (every replica re-identified, a new `forkGuard`, then a push under the new id); a first launch
   minting the first `forkGuard`; a pending sign-in answered.
