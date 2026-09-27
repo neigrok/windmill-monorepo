@@ -97,9 +97,12 @@ contents. Native acceptance and a same-key update check precede publication. See
 - [Journal architecture](backend/products/journal/ARCHITECTURE.md) and
   [gym architecture](backend/products/gym/ARCHITECTURE.md).
 - `docs/foundation/` holds specifications that apply to more than one product or platform:
-  [the sync engine](docs/foundation/engine.md) for every product and surface, and
-  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones. Both are specified
-  and not yet implemented.
+  [the sync engine](docs/foundation/engine.md) for every product and surface, built in the C++ server
+  (`backend/platform/**/sync*`) and the Swift client (`apps/ios/Sync`);
+  [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
+  domain is declared on, specified and not yet built; and
+  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not
+  yet built.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
   `docs/design/` holds written canon; Figma holds the drawings.
