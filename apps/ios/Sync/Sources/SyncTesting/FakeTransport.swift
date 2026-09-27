@@ -124,19 +124,30 @@ public final class ScriptedTransport: SyncTransport {
   }
 }
 
-// A call held until the test opens it; `reached` says whether a call waits at it.
+// A call held until the test opens it; `arrival()` returns once a call has reached it, so the test acts while the call
+// is in flight.
 public final class Gate: Sendable {
   struct State {
     var open = false
     var reached = false
     var waiters: [CheckedContinuation<Void, Never>] = []
+    var arrivals: [CheckedContinuation<Void, Never>] = []
   }
 
   let state = Mutex(State())
 
   public init() {}
 
-  public var reached: Bool { state.withLock(\.reached) }
+  // Returns once a call has reached the gate; at once if one has.
+  public func arrival() async {
+    await withCheckedContinuation { continuation in
+      let reached = state.withLock { state -> Bool in
+        if !state.reached { state.arrivals.append(continuation) }
+        return state.reached
+      }
+      if reached { continuation.resume() }
+    }
+  }
 
   public func open() {
     let waiters = state.withLock { state in
@@ -150,12 +161,14 @@ public final class Gate: Sendable {
   // Waits until the gate is open.
   public func pass() async {
     await withCheckedContinuation { continuation in
-      let open = state.withLock { state -> Bool in
+      let (open, arrivals) = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
         state.reached = true
         if !state.open { state.waiters.append(continuation) }
-        return state.open
+        defer { state.arrivals = [] }
+        return (state.open, state.arrivals)
       }
       if open { continuation.resume() }
+      for arrival in arrivals { arrival.resume() }
     }
   }
 }
@@ -164,6 +177,7 @@ public final class Gate: Sendable {
 
 // A socket the test holds the server's end of: each frame it delivers waits for the engine to receive it, the server
 // may end the socket, and every request the engine sends is logged and handed to `onSend`, as a server would take it.
+// `drained()` returns once the engine has taken every frame delivered.
 public final class FakeLiveConnection: LiveConnection {
   public struct Closed: Error {}
 
@@ -173,6 +187,7 @@ public final class FakeLiveConnection: LiveConnection {
     var ended = false
     var closed = false
     var receiver: CheckedContinuation<LiveFrame?, Never>?
+    var drains: [CheckedContinuation<Void, Never>] = []
   }
 
   let state = Mutex(State())
@@ -214,6 +229,19 @@ public final class FakeLiveConnection: LiveConnection {
   public var sent: [LiveRequest] { state.withLock(\.sent) }
   public var isClosed: Bool { state.withLock(\.closed) }
 
+  // Returns once the engine waits for the next frame, having received every frame delivered, or once the socket is
+  // closed; at once if it is so now.
+  public func drained() async {
+    await withCheckedContinuation { continuation in
+      let now = state.withLock { state -> Bool in
+        if state.receiver != nil || state.closed { return true }
+        state.drains.append(continuation)
+        return false
+      }
+      if now { continuation.resume() }
+    }
+  }
+
   // MARK: LiveConnection
 
   public func send(_ request: LiveRequest) async throws {
@@ -228,13 +256,15 @@ public final class FakeLiveConnection: LiveConnection {
   public func receive() async throws -> LiveFrame? {
     await withTaskCancellationHandler {
       await withCheckedContinuation { (continuation: CheckedContinuation<LiveFrame?, Never>) in
-        let ready = state.withLock { state -> LiveFrame?? in
-          if !state.frames.isEmpty { return .some(state.frames.removeFirst()) }
-          if state.ended || state.closed || Task.isCancelled { return .some(nil) }
+        let (ready, drains) = state.withLock { state -> (LiveFrame??, [CheckedContinuation<Void, Never>]) in
+          if !state.frames.isEmpty { return (.some(state.frames.removeFirst()), []) }
+          if state.ended || state.closed || Task.isCancelled { return (.some(nil), []) }
           state.receiver = continuation
-          return nil
+          defer { state.drains = [] }
+          return (nil, state.drains)
         }
         if let ready { continuation.resume(returning: ready) }
+        for drain in drains { drain.resume() }
       }
     } onCancel: {
       close()
@@ -242,13 +272,17 @@ public final class FakeLiveConnection: LiveConnection {
   }
 
   public func close() {
-    let receiver = state.withLock { state in
+    let (receiver, drains) = state.withLock { state in
       state.closed = true
       state.frames = []
-      defer { state.receiver = nil }
-      return state.receiver
+      defer {
+        state.receiver = nil
+        state.drains = []
+      }
+      return (state.receiver, state.drains)
     }
     receiver?.resume(returning: nil)
+    for drain in drains { drain.resume() }
   }
 }
 
@@ -352,6 +386,9 @@ public final class SimNetwork: SyncTransport {
   }
 
   public var server: ModelServer { state.withLock(\.server) }
+
+  // Every socket the network has opened, in the order it opened them.
+  public var connections: [FakeLiveConnection] { state.withLock { $0.sockets.map(\.connection) } }
 
   // The session token that signs `account` in on this network.
   public func token(for account: String) -> SessionToken {

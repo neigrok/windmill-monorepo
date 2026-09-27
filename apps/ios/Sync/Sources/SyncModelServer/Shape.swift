@@ -167,7 +167,7 @@ public enum IntentShape {
   }
 
   static func parse(_ json: JSON, isReplica: Bool, registry: Registry) throws(Refusal) -> CheckedIntent {
-    guard case .object(let object) = json, !holdsNul(json),
+    guard case .object(let object) = json, !json.holdsNul,
           (try? object.expectKeys(required: ["scope"], optional: ["n", "d", "guard", "cmd", "gestureId"])) != nil,
           case .string(let scopeText)? = object["scope"], let scope = try? ScopeRef(scopeText),
           let kind = registry.scopeKind(of: scope), Values.isScopeID(scope, registry: registry),
@@ -180,16 +180,6 @@ public enum IntentShape {
     let command = try object["cmd"].map { json throws(Refusal) in try commandOf(json, kind: kind, registry: registry) }
     guard !deltas.isEmpty || command != nil, Set(deltas.map(\.key)).count == deltas.count else { throw Refusal(.invalid) }
     return CheckedIntent(scope: scope, deltas: deltas, guards: guards, command: command)
-  }
-
-  // Any string of the intent, a key or a value at any depth, holding U+0000.
-  static func holdsNul(_ json: JSON) -> Bool {
-    switch json {
-    case .string(let text): text.utf8.contains(0)
-    case .array(let items): items.contains(where: holdsNul)
-    case .object(let object): object.members.contains { $0.key.utf8.contains(0) || holdsNul($0.value) }
-    case .null, .bool, .number: false
-    }
   }
 
   static func delta(_ json: JSON, kind: ScopeKind, isReplica: Bool, registry: Registry) throws(Refusal) -> PlannedDelta {
@@ -355,7 +345,8 @@ public enum IdentityRules {
   }
 }
 
-// Registry value checks: ids, field values and command arguments, in their units, domains and quanta.
+// Registry value checks: ids, field values and command arguments, in their units, domains and quanta. Every integer is
+// a safe integer (§9.1), as `asInteger` reads one.
 enum Values {
   static func array(_ json: JSON) throws(Refusal) -> [JSON] {
     guard case .array(let items) = json else { throw Refusal(.invalid) }
@@ -433,7 +424,7 @@ enum Values {
       return bounds?.admits(value) ?? true
     case .number(let integer, let min, let max):
       guard case .number(let number) = value else { return false }
-      if integer && number.value.rounded(.towardZero) != number.value { return false }
+      if integer && (try? value.asInteger()) == nil { return false }
       return number.value >= (min ?? -.infinity) && number.value <= (max ?? .infinity)
     case .boolean:
       if case .bool = value { return true }

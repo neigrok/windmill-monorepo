@@ -11,7 +11,8 @@ import Synchronization
 
 // The device's wall clock and the clock the engine sleeps on, both moved only by the test. `advance` moves the wall
 // and monotonic clocks together and wakes every sleeper whose deadline it passes; `jump` moves the wall clock alone, as
-// a person setting the time does; `skewMs` offsets the wall clock from true time; `reboot` starts a new boot.
+// a person setting the time does; `skewMs` offsets the wall clock from true time; `reboot` starts a new boot. A test of
+// the running loops learns from `asleep(until:)` that a loop sleeps, and until when.
 public final class SimClock: WallClock, Clock, Sendable {
   public struct Instant: InstantProtocol {
     public let ms: Int64
@@ -38,6 +39,7 @@ public final class SimClock: WallClock, Clock, Sendable {
     var boot = 1
     var nextSleeper = 0
     var sleepers: [Sleeper] = []
+    var watchers: [(deadline: Int64, continuation: CheckedContinuation<Void, Never>)] = []
   }
 
   let state: Mutex<State>
@@ -67,12 +69,14 @@ public final class SimClock: WallClock, Clock, Sendable {
     }
     try await withTaskCancellationHandler {
       try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, any Error>) in
-        let now = state.withLock { state -> Bool in
-          if deadline.ms <= state.mono || Task.isCancelled { return true }
+        let (now, watching) = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
+          if deadline.ms <= state.mono || Task.isCancelled { return (true, []) }
           state.sleepers.append(Sleeper(id: id, deadline: deadline.ms, continuation: continuation))
-          return false
+          defer { state.watchers.removeAll { $0.deadline == deadline.ms } }
+          return (false, state.watchers.filter { $0.deadline == deadline.ms }.map(\.continuation))
         }
         if now { continuation.resume() }
+        for watcher in watching { watcher.resume() }
       }
     } onCancel: {
       let cancelled = state.withLock { state in
@@ -86,11 +90,17 @@ public final class SimClock: WallClock, Clock, Sendable {
 
   // MARK: The test's hands
 
-  // How many tasks sleep on this clock now.
-  public var sleepers: Int { state.withLock(\.sleepers.count) }
-
-  // The monotonic ms each sleeper wakes at.
-  public var deadlines: [Int64] { state.withLock { $0.sleepers.map(\.deadline) } }
+  // Returns once a task sleeps on this clock until `deadline`, in monotonic ms; at once if one does now.
+  public func asleep(until deadline: Int64) async {
+    await withCheckedContinuation { continuation in
+      let now = state.withLock { state -> Bool in
+        if state.sleepers.contains(where: { $0.deadline == deadline }) { return true }
+        state.watchers.append((deadline, continuation))
+        return false
+      }
+      if now { continuation.resume() }
+    }
+  }
 
   public func advance(ms: Int64) {
     let woken = state.withLock { state in
@@ -167,12 +177,10 @@ public final class InMemoryForkGuardStore: ForkGuardStore {
   public func save(_ forkGuard: String) { copy.withLock { $0 = forkGuard } }
 }
 
-// A network switch the test flips; each flip runs the engine's handlers at once, on the test's thread. It counts how
-// often the engine asks, so a test can tell a loop that sleeps from one that spins.
+// A network switch the test flips; each flip runs the engine's handlers at once, on the test's thread.
 public final class SwitchedConnectivity: Connectivity {
   struct State {
     var online: Bool
-    var reads = 0
     var handlers: [@Sendable (Bool) -> Void] = []
   }
 
@@ -182,14 +190,7 @@ public final class SwitchedConnectivity: Connectivity {
     state = Mutex(State(online: online))
   }
 
-  public var isOnline: Bool {
-    state.withLock { state in
-      state.reads += 1
-      return state.online
-    }
-  }
-
-  public var reads: Int { state.withLock(\.reads) }
+  public var isOnline: Bool { state.withLock(\.online) }
 
   public func onChange(_ handler: @escaping @Sendable (Bool) -> Void) {
     state.withLock { $0.handlers.append(handler) }

@@ -6,7 +6,6 @@ import SyncCore
 import SyncReplica
 import SyncStore
 import SyncTesting
-import Synchronization
 import Testing
 
 // The observation pipeline (design §4.5): views refreshed from the store in commit order, notices, Undo offers, the
@@ -114,8 +113,9 @@ struct ObservationTests {
   }
 
   // A view released and asked for again while the hub awaits a load for an earlier change stays registered, and keeps
-  // refreshing. A commit on another thread holds the store, so the hub's first load waits while the view is made again.
-  @Test func aViewMadeAgainWhileTheHubLoadsKeepsRefreshing() async throws {
+  // refreshing. A commit on another thread holds the store, so once the hub has begun applying the status change its
+  // first load waits, and the view is made again meanwhile.
+  @Test(.timeLimit(.minutes(1))) func aViewMadeAgainWhileTheHubLoadsKeepsRefreshing() async throws {
     let rig = try Rig()
     let engine = rig.engine
     var views: [RecordsView] = []
@@ -125,19 +125,18 @@ struct ObservationTests {
     await engine.settle()
     let last = try #require(Array(engine.hub.liveRecords.keys).last)
     views.removeAll { RecordsView.Key(scope: $0.scope, type: $0.type, mode: $0.mode) == last }
-    let entered = Mutex(false)
     let release = DispatchSemaphore(value: 0)
-    let blocker = Thread {
-      _ = try? engine.commit(Rig.scope) { _ -> (Gesture?, Void) in
-        entered.withLock { $0 = true }
-        release.wait()
-        return (Gesture(changes: [Rig.card("card0009", "Blocker")]), ())
-      }
+    await withCheckedContinuation { (entered: CheckedContinuation<Void, Never>) in
+      Thread {
+        _ = try? engine.commit(Rig.scope) { _ -> (Gesture?, Void) in
+          entered.resume()
+          release.wait()
+          return (Gesture(changes: [Rig.card("card0009", "Blocker")]), ())
+        }
+      }.start()
     }
-    blocker.start()
-    try await eventually("the blocking commit to hold the store") { entered.withLock { $0 } }
     rig.connectivity.set(online: false)
-    try await Task.sleep(for: .milliseconds(100))
+    await engine.hub.begins(engine.core.publisher.published)
     release.signal()
     let again = engine.records(last.scope, last.type, last.mode)
     await engine.settle()

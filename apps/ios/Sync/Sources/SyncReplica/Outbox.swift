@@ -14,11 +14,12 @@ public struct Coalescing: Sendable {
   }
 
   // A ready plain entry joins the last earlier entry touching its record, when that one is ready, plain and never
-  // numbered, no command entry of the scope lies between them, and text comes from one engine instance. The earlier
-  // entry cancels with its dependents only when it is a create (its life alive at its born), the record is alive in
-  // neither drawn nor stored without the two entries, and the join leaves it dead. A held delete may still be undone and
-  // a held create or revive released, so both views are read; a revive never cancels, since the registers it carries
-  // outlive a later death, so a revive joined with a delete is sent as one delete.
+  // numbered, no command entry of the scope lies between them, text comes from one engine instance, and every fold by
+  // dependency (§7.7 step 3: an undo, a retire, a cancel, a refused source) removes the two and their join alike. The
+  // earlier entry cancels with its dependents only when it is a create (its life alive at its born), the record is
+  // alive in neither drawn nor stored without the two entries, and the join leaves it dead. A held delete may still be
+  // undone and a held create or revive released, so both views are read; a revive never cancels, since the registers it
+  // carries outlive a later death, so a revive joined with a delete is sent as one delete.
   @discardableResult
   public func coalesce(_ localId: String, in replica: inout LoadedReplica) throws -> Bool {
     guard let entry = replica.entry(localId), entry.state == .ready, entry.isPlain else { return false }
@@ -30,16 +31,18 @@ public struct Coalescing: Sendable {
     guard delta.texts.isEmpty || target.stamp.actor.utf8.elementsEqual(entry.stamp.actor.utf8) else { return false }
 
     let base = target.intent.deltas[0]
-    var joined = Delta(key: base.key, lattice: try Join.record(registry.type(delta.key.type), base.lattice, delta.lattice), texts: base.texts)
+    var joinedDelta = Delta(key: base.key, lattice: try Join.record(registry.type(delta.key.type), base.lattice, delta.lattice), texts: base.texts)
     for (name, write) in delta.texts {
-      joined.texts[name] = TextWrite(text: write.text, base: base.texts[name]?.base ?? write.base)
+      joinedDelta.texts[name] = TextWrite(text: write.text, base: base.texts[name]?.base ?? write.base)
     }
-    replica.update(entry: target.localId) { target in
-      target.intent.deltas = [joined]
-      if !base.texts.isEmpty || !delta.texts.isEmpty { target.baseTexts.merge(entry.baseTexts) { own, _ in own } }
-    }
+    var joined = target
+    joined.intent.deltas = [joinedDelta]
+    if !base.texts.isEmpty || !delta.texts.isEmpty { joined.baseTexts.merge(entry.baseTexts) { own, _ in own } }
+    guard foldAlike(target, entry, joined, in: replica) else { return false }
+
+    replica.update(entry: target.localId) { $0 = joined }
     try replica.move(localId, .coalesce)
-    guard let life = base.lattice.life, life.isAlive, life.stamp == base.lattice.born, joined.removes else { return true }
+    guard let life = base.lattice.life, life.isAlive, life.stamp == base.lattice.born, joinedDelta.removes else { return true }
     let isAliveWithoutTarget = { [replica] (mode: ViewMode) throws -> Bool in
       var without = replica.rows(target.scope).row(base.key)?.lattice ?? Lattice()
       for other in replica.entries(in: target.scope) where other.commitOrder != target.commitOrder && (other.state != .held || mode == .drawn) {
@@ -51,6 +54,29 @@ public struct Coalescing: Sendable {
     }
     if try !isAliveWithoutTarget(.drawn), try !isAliveWithoutTarget(.stored) { try cancel([(target, [base])], by: .coalesce, in: &replica) }
     return true
+  }
+
+  // A fold by dependency (§7.7 step 3: an undo, a retire, a cancel, a refused source) removes an entry with each
+  // earlier delta it depends on, and a joined entry folds whole. So `entry` joins `target` only if, for each delta of
+  // every other entry, `joined` depends on it exactly when `target` does and exactly when `entry` does, itself or
+  // through `target`: a put carrying the life a held put wrote joins no put writing a new life, and a create naming a
+  // held create joins no update that moves the reference away.
+  func foldAlike(_ target: OutboxEntry, _ entry: OutboxEntry, _ joined: OutboxEntry, in replica: LoadedReplica) -> Bool {
+    let dependsOn = { (source: OutboxEntry, deltas: [Delta], dependent: OutboxEntry) -> Bool in
+      guard source.commitOrder < dependent.commitOrder else { return false }
+      var dependents = Dependents(registry: registry)
+      dependents.absorb(scope: source.scope, deltas: deltas, stamp: source.stamp)
+      return dependents.part(of: dependent).any
+    }
+    let throughTarget = dependsOn(target, target.intent.deltas, entry)
+    let others = replica.outbox.filter { $0.commitOrder != target.commitOrder && $0.commitOrder != entry.commitOrder }
+    return others.allSatisfy { source in
+      source.drawnDeltas.allSatisfy { delta in
+        let targetDepends = dependsOn(source, [delta], target)
+        let entryDepends = dependsOn(source, [delta], entry) || (throughTarget && targetDepends)
+        return entryDepends == targetDepends && dependsOn(source, [delta], joined) == targetDepends
+      }
+    }
   }
 
   // A cancel's silent fold, which an undo and a retire share (§7.3): each source, with the deltas it gives up, ends by

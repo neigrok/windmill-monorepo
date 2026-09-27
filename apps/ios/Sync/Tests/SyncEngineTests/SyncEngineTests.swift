@@ -190,18 +190,21 @@ struct SyncEngineTests {
   }
 
   // The running timer sleeps on the monotonic clock: a wall clock set back while it sleeps holds the release until the
-  // wall clock reaches `releaseAt`.
-  @Test func theRunningTimerSleepsOnTheMonotonicClock() async throws {
+  // wall clock reaches `releaseAt`. The timer sleeps until 9 s on the monotonic clock; woken there with the wall clock
+  // 5 s behind, it sleeps until 14 s; the release it then makes kicks the sender.
+  @Test(.timeLimit(.minutes(1))) func theRunningTimerSleepsOnTheMonotonicClock() async throws {
     let rig = try Rig(drivesLoops: true)
     await rig.engine.start()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))
-    try await eventually("the timer to sleep") { rig.clock.sleepers == 1 }
+    await rig.clock.asleep(until: 9_000)
     rig.clock.jump(ms: -5_000)
     rig.clock.advance(ms: 9_000)
-    try await eventually("the timer to sleep again") { rig.clock.sleepers == 1 }
+    await rig.clock.asleep(until: 14_000)
     #expect(try rig.outbox() == ["g1/0 held"])
+    let kicks = rig.engine.sender.wake.kicks
     rig.clock.advance(ms: 5_000)
-    try await eventually("the release") { try rig.outbox() == ["g1/0 ready"] }
+    await rig.engine.sender.wake.asleep(seen: kicks + 1)
+    #expect(try rig.outbox() == ["g1/0 ready"])
   }
 
   @Test func undoRemovesAHeldGestureUntilItIsReleased() async throws {
@@ -313,6 +316,20 @@ struct SyncEngineTests {
     try device.engine.read(Rig.scope) { try $0.stored("card") }
   }
 
+  // Returns once no loop of `devices` has anything left to do: each waits on its wake having seen every kick, and each
+  // socket of `network` has handed every frame to its engine, with no kick since. Nothing else wakes a loop while the
+  // clock stands still: a round's timers wait on it, and only a loop's round calls the network.
+  static func quiescent(_ devices: [Device], on network: SimNetwork) async {
+    let wakes = devices.flatMap { [$0.engine.sender.wake, $0.engine.releaser.wake, $0.engine.puller.wake, $0.engine.live.wake] }
+    while true {
+      let kicks = wakes.map(\.kicks)
+      for socket in network.connections { await socket.drained() }
+      for (wake, seen) in zip(wakes, kicks) { await wake.asleep(seen: seen) }
+      for socket in network.connections { await socket.drained() }
+      if wakes.map(\.kicks) == kicks { return }
+    }
+  }
+
   // A's cards reach B: the first by a frame applied inline; the second while B is offline, so B's first frame after it
   // reconnects is past a gap and B pulls, which brings the second and the third. Both end holding the server's rows,
   // their digests checked.
@@ -340,7 +357,7 @@ struct SyncEngineTests {
     #expect(await b.engine.live.receiveNext())
     #expect(await b.engine.puller.step() == .frame(Rig.scope, .pull))
     #expect(await b.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
-    #expect(await b.engine.puller.step() == .idle)
+    #expect(await b.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
 
     #expect(await a.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
     let server = network.server.state.rows[ScopeKey(.product(account: "A", name: "probe"))] ?? [:]
@@ -356,17 +373,21 @@ struct SyncEngineTests {
   }
 
   // The same with every loop running: sockets open and scopes boot from `start()`, and A's commit reaches B, and
-  // resolves on A, with no step taken by hand, whether A's own frame or its push's answer comes first.
-  @Test func twoDevicesWithTheirLoopsRunningConverge() async throws {
+  // resolves on A, with no step taken by hand, whether A's own frame or its push's answer comes first. Each check waits
+  // for both devices' loops to have nothing left to do.
+  @Test(.timeLimit(.minutes(1))) func twoDevicesWithTheirLoopsRunningConverge() async throws {
     let clock = SimClock(wallMs: Rig.startMs)
     let network = Self.network(clock)
     let a = try Self.device(on: network, clock: clock, seed: 1, drivesLoops: true)
     let b = try Self.device(on: network, clock: clock, seed: 2, drivesLoops: true)
     await a.engine.start()
     await b.engine.start()
-    try await eventually("B's scope to boot") { try b.engine.read(Rig.scope) { try $0.firstPullComplete() } }
+    await Self.quiescent([a, b], on: network)
+    #expect(try b.engine.read(Rig.scope) { try $0.firstPullComplete() })
     _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")]))
-    try await eventually("A's card on B") { try Self.cards(b).count == 1 }
-    try await eventually("A's own entry to resolve") { try Self.cards(a) == Self.cards(b) }
+    await Self.quiescent([a, b], on: network)
+    #expect(try Self.cards(b).map(\.values) == [["title": "One"]])
+    #expect(try Self.cards(a) == Self.cards(b))
+    #expect(try a.store.read { try $0.device(rows: true).activeReplica }.outbox.isEmpty)
   }
 }

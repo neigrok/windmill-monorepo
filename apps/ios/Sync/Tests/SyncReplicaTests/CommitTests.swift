@@ -65,9 +65,10 @@ struct CommitTests {
 
   // Twenty runs of forty steps from the same replica. The apart replica marks every ready entry numbered as soon as it is
   // ready, so no later entry ever joins it. Both commit the same gestures, some held and some retiring what they name,
-  // and release and undo the same held ones.
-  @Test func coalescingNeverChangesWhatIsDrawn() throws {
-    var random = SeededRandom.fromEnvironment()
+  // and release and undo the same held ones, on the pinned seeds and on a fresh one, or SYNC_SEED.
+  @Test(arguments: [13317649172255833005, SeededRandom.fromEnvironment().seed])
+  func coalescingNeverChangesWhatIsDrawn(_ seed: UInt64) throws {
+    var random = SeededRandom(seed: seed)
     let planner = CommitPlanner(registry: Self.probe)
     let hold = Hold(registry: Self.probe)
     let identities = try QueuedIdentities([:])

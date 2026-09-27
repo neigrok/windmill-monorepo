@@ -85,7 +85,9 @@ final class ViewHub {
   var liveNotices: [[UInt8]: Weak<NoticesView>] = [:]
   var offersView: UndoOffers?
   var statusView: SyncStatus?
+  var begun: UInt64 = 0
   var applied: UInt64 = 0
+  var beginning: [(sequence: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
   var settling: [(through: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
 
   // Built beside the engine; each view is made on first use, loaded as the store stands.
@@ -96,14 +98,27 @@ final class ViewHub {
   // The one consumer of the published changes: each is applied whole before the next, so no view goes back in time.
   func run(_ changes: AsyncStream<(sequence: UInt64, change: StoreChange)>) async {
     for await (sequence, change) in changes {
+      begun = sequence
+      let begins = beginning.filter { $0.sequence <= sequence }
+      beginning.removeAll { $0.sequence <= sequence }
+      for waiter in begins { waiter.continuation.resume() }
       await apply(change)
       applied = sequence
       let settled = settling.filter { $0.through <= sequence }
       settling.removeAll { $0.through <= sequence }
       for waiter in settled { waiter.continuation.resume() }
     }
+    for waiter in beginning { waiter.continuation.resume() }
     for waiter in settling { waiter.continuation.resume() }
+    beginning = []
     settling = []
+  }
+
+  // Returns once the hub has begun applying change `sequence`. The hub holds the main actor until its first load, so a
+  // caller on the main actor runs again while that load is awaited, or once the change is applied.
+  func begins(_ sequence: UInt64) async {
+    guard begun < sequence else { return }
+    await withCheckedContinuation { beginning.append((sequence, $0)) }
   }
 
   // Returns once every change up to `sequence` is applied.

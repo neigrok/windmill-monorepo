@@ -163,6 +163,14 @@ public struct LoadedReplica: Sendable {
     if entry != before { apply(.putEntry(entry)) }
   }
 
+  // D-17: the product dismisses a notice, which hides it until content folds into it. False when the replica holds no
+  // notice `id`.
+  public mutating func dismiss(notice id: String) -> Bool {
+    guard let notice = notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else { return false }
+    if !notice.isDismissed { apply(.putNotice(notice.dismissed)) }
+    return true
+  }
+
   // §8.1 an entry's move by the machine: a terminal outcome removes it and is reported; a return to ready clears
   // its number and result. `change` is written with the new state, in the same write.
   @discardableResult

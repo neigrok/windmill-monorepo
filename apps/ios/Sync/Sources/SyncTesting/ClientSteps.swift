@@ -15,6 +15,8 @@ public protocol ClientDevice {
   mutating func releaseAll() throws
   mutating func releaseDue(at deviceNow: Int64) throws
   mutating func undo(_ gestureId: String) throws -> Bool
+  // D-17: the active replica's notice takes `dismissed`; a notice the replica does not hold throws.
+  mutating func dismiss(_ noticeId: String) throws
   mutating func push(limit: Int?) throws -> PushRequest?
   mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> Int?
@@ -84,6 +86,12 @@ public struct PlannedDevice: ClientDevice {
 
   public mutating func undo(_ gestureId: String) throws -> Bool {
     try device.modify(device.active) { try hold.undo(gestureId, in: &$0) }
+  }
+
+  public mutating func dismiss(_ noticeId: String) throws {
+    guard device.modify(device.active, { $0.dismiss(notice: noticeId) }) else {
+      throw VectorError("\(noticeId) is not a notice of \(device.active)")
+    }
   }
 
   public mutating func push(limit: Int?) throws -> PushRequest? {
@@ -228,6 +236,9 @@ public enum ClientSteps {
       try device.releaseDue(at: deviceNow)
       return .null
     case "undo": return .bool(try device.undo(step.member("gestureId").asString()))
+    case "dismiss":
+      try device.dismiss(step.member("id").asString())
+      return .null
     case "push":
       context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) })
       return context.lastPush?.json ?? .null

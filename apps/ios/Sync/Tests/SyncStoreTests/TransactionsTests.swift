@@ -70,45 +70,6 @@ struct TransactionsTests {
       """, ["throws"]),
   ]
 
-  // D-17: dismissing hides a notice and keeps it, since an orphan still names it; the orphan's refusal then folds its
-  // held-back dependent into that notice, which shows again.
-  @Test func aDismissedNoticeAnOrphanNamesStaysAndShowsAgainWhenTheOrphanIsRefused() throws {
-    let seeded = try LoadedDevice(json: try JSON(parsing: """
-      {"active": "rp_00000000000000000000000000000001", "replicas": [{"meta": {"replica": "rp_00000000000000000000000000000001",
-        "state": "bound", "account": "A", "nextN": 1, "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:",
-        "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]}
-      """), registry: Self.probe)
-    var device = try StoredDevice(seeding: seeded, registry: Self.probe, limits: Limits())
-    var context = StepContext(registry: Self.probe, identities: try QueuedIdentities([:]), actor: try Stamp.Actor(ClientSteps.actor))
-    let perform = { (device: inout StoredDevice, context: inout StepContext, step: String) in
-      _ = try ClientSteps.perform(try JSON(parsing: step), on: &device, context: &context)
-    }
-    let notices = { (device: StoredDevice) in try device.dump().member("replicas").asArray()[0]["notices"] }
-    for step in [
-      #"{"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0009", "f": {"title": "Nine"}}], "deviceNow": 5000}"#,
-      #"{"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0009", "f": {"title": "Fixed"}}, {"op": "create", "t": "card", "id": "card0010", "f": {"title": "Ten"}}], "opts": {"atomic": true}, "deviceNow": 5001}"#,
-      #"{"op": "push", "deviceNow": 5002}"#,
-      #"{"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0010", "f": {"title": "Edited"}}], "deviceNow": 5003}"#,
-      #"{"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "lastN": 1, "results": [{"n": 1, "s": "refused", "code": "invalid"}]}}, "deviceNow": 5004}"#,
-    ] { try perform(&device, &context, step) }
-    _ = try device.store.dismissNotice("notice:g1/0")
-    let nine: JSON = ["t": "card", "id": "card0009", "born": "5000:0:r_aaaaaaaaaaaa", "life": ["alive", "5000:0:r_aaaaaaaaaaaa"],
-                      "f": ["title": ["Nine", "5000:0:r_aaaaaaaaaaaa"]]]
-    let orphan: JSON = ["d": [
-      ["t": "card", "id": "card0009", "born": "5000:0:r_aaaaaaaaaaaa", "f": ["title": ["Fixed", "5001:0:r_aaaaaaaaaaaa"]]],
-      ["t": "card", "id": "card0010", "born": "5001:0:r_aaaaaaaaaaaa", "life": ["alive", "5001:0:r_aaaaaaaaaaaa"],
-       "f": ["title": ["Ten", "5001:0:r_aaaaaaaaaaaa"]]],
-    ]]
-    #expect(try notices(device) == [
-      ["id": "notice:g1/0", "scope": "self/probe", "code": "invalid", "at": 5004, "dismissed": true, "content": ["d": [nine], "dependents": [orphan]]],
-    ])
-    try perform(&device, &context, #"{"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5005, "epoch": "ep-1", "lastN": 2, "results": [{"n": 2, "s": "refused", "code": "unknown-record"}]}}, "deviceNow": 5005}"#)
-    let edited: JSON = ["d": [["t": "card", "id": "card0010", "born": "5001:0:r_aaaaaaaaaaaa", "f": ["title": ["Edited", "5003:0:r_aaaaaaaaaaaa"]]]]]
-    #expect(try notices(device) == [
-      ["id": "notice:g1/0", "scope": "self/probe", "code": "invalid", "at": 5004, "content": ["d": [nine], "dependents": [orphan, edited]]],
-    ])
-  }
-
   // §2.5 and §7.1: gesture ids are unique on the device, so a given gesture id that a dormant replica's notice or outbox
   // entry carries is malformed on the bound replica too, in the planners and in the store alike, and nothing is written.
   @Test(arguments: [
@@ -138,20 +99,53 @@ struct TransactionsTests {
       """#)
     var planned = PlannedDevice(seeded, registry: Self.probe, limits: Limits())
     var stored = try StoredDevice(seeding: seeded, registry: Self.probe, limits: Limits())
-    #expect(try [Self.failure(of: commit, on: &planned), Self.failure(of: commit, on: &stored)] == [.malformed, .malformed])
+    let taken = CommitFailure.malformed("the gesture id g is taken")
+    #expect(try [Self.failure(of: commit, on: &planned), Self.failure(of: commit, on: &stored)] == [taken, taken])
     #expect(try stored.dump() == seeded.json)
     #expect(try planned.dump() == seeded.json)
   }
 
-  // The kind of `CommitFailure` a step throws, nil when it throws none.
-  static func failure<Device: ClientDevice>(of step: JSON, on device: inout Device) throws -> CommitFailure.Kind? {
+  // The `CommitFailure` a step throws, nil when it throws none.
+  static func failure<Device: ClientDevice>(of step: JSON, on device: inout Device) throws -> CommitFailure? {
     var context = StepContext(registry: probe, identities: try QueuedIdentities([:]), actor: try Stamp.Actor(ClientSteps.actor))
     do {
       _ = try ClientSteps.perform(step, on: &device, context: &context)
       return nil
     } catch let failure as CommitFailure {
-      return failure.kind
+      return failure
     }
+  }
+
+  // §7.1: an error the read-and-commit body throws of its own is none of the three failures: the store's commit
+  // rethrows it unchanged, and nothing is written.
+  @Test func theBodysOwnErrorPassesThroughTheCommitAndNothingIsWritten() throws {
+    struct Declined: Error, Equatable {}
+    let device = try LoadedDevice(json: try JSON(parsing: """
+      {"active": "rp_00000000000000000000000000000001", "replicas": [{"meta": {"replica": "rp_00000000000000000000000000000001",
+        "state": "bound", "account": "A", "nextN": 1, "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:",
+        "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]}
+      """), registry: Self.probe)
+    let store = try Store.inMemory(holding: device, registry: Self.probe)
+    let instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: 1000, appVersion: "1")
+    let identities = try QueuedIdentities([:])
+    #expect(throws: Declined()) {
+      try store.commit(in: .product("probe"), instance: instance, identities: identities) { _ -> (Gesture?, Void) in
+        throw Declined()
+      }
+    }
+    #expect(try store.read { try $0.device(rows: true).json } == device.json)
+  }
+
+  // D-17: dismissing a notice the active replica does not hold throws, and nothing is written.
+  @Test func dismissingANoticeTheActiveReplicaDoesNotHoldThrows() throws {
+    let device = try LoadedDevice(json: try JSON(parsing: """
+      {"active": "rp_00000000000000000000000000000001", "replicas": [{"meta": {"replica": "rp_00000000000000000000000000000001",
+        "state": "bound", "account": "A", "nextN": 1, "hlc": {"ms": 0, "counter": 0}, "hlcHigh": "0:0:", "admittedHigh": "0:0:",
+        "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1", "ackThrough": 0, "authPaused": false}}]}
+      """), registry: Self.probe)
+    let store = try Store.inMemory(holding: device, registry: Self.probe)
+    #expect(throws: StoreError.noNotice("notice:g1/0")) { try store.dismissNotice("notice:g1/0") }
+    #expect(try store.read { try $0.device(rows: true).json } == device.json)
   }
 
   @Test(arguments: beyond.indices)
@@ -205,6 +199,7 @@ struct StoredDevice: ClientDevice {
   mutating func releaseAll() throws { _ = take(try store.releaseAll()) }
   mutating func releaseDue(at deviceNow: Int64) throws { take(try store.releaseDue(at: deviceNow)) }
   mutating func undo(_ gestureId: String) throws -> Bool { take(try store.undo(gestureId)) }
+  mutating func dismiss(_ noticeId: String) throws { take(try store.dismissNotice(noticeId)) }
   mutating func push(limit: Int?) throws -> PushRequest? { take(try store.number(limit: limit)) }
 
   // Each step of the answer in its own transaction, as the sender runs them.

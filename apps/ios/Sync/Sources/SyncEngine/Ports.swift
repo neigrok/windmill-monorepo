@@ -195,11 +195,13 @@ extension ProductBinding {
 // MARK: - Loop primitives
 
 // A loop's wake-up: `kick` is synchronous and never blocks, so a commit can call it; the loop waits for the next kick,
-// or for a kick or a timeout. Kicks are counted, so a kick that lands while the loop works is never lost.
+// or for a kick or a timeout. Kicks are counted, so a kick that lands while the loop works is never lost, and a loop
+// that waits has handled every kick so far, which is what a test of the running loops waits for.
 package final class Wake: Sendable {
   struct State {
     var kicks: UInt64 = 0
     var waiter: CheckedContinuation<Void, Never>?
+    var watchers: [(kicks: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
   }
 
   let state = Mutex(State())
@@ -221,13 +223,16 @@ package final class Wake: Sendable {
   package func wait(past seen: UInt64) async {
     await withTaskCancellationHandler {
       await withCheckedContinuation { continuation in
-        let now = state.withLock { state -> Bool in
-          if state.kicks != seen || Task.isCancelled { return true }
+        let (now, asleep) = state.withLock { state -> (Bool, [CheckedContinuation<Void, Never>]) in
+          if state.kicks != seen || Task.isCancelled { return (true, []) }
           precondition(state.waiter == nil, "one loop waits on a wake")
           state.waiter = continuation
-          return false
+          let kicks = state.kicks
+          defer { state.watchers.removeAll { $0.kicks <= kicks } }
+          return (false, state.watchers.filter { $0.kicks <= kicks }.map(\.continuation))
         }
         if now { continuation.resume() }
+        for watcher in asleep { watcher.resume() }
       }
     } onCancel: {
       let waiter = state.withLock { state in
@@ -245,6 +250,19 @@ package final class Wake: Sendable {
       group.addTask { try? await clock.sleep(for: duration) }
       await group.next()
       group.cancelAll()
+    }
+  }
+
+  // Returns once the loop waits on this wake having seen `kicks` kicks or more, so it has handled each of them; at once
+  // if it waits so now.
+  package func asleep(seen kicks: UInt64) async {
+    await withCheckedContinuation { continuation in
+      let now = state.withLock { state -> Bool in
+        if state.waiter != nil && state.kicks >= kicks { return true }
+        state.watchers.append((kicks, continuation))
+        return false
+      }
+      if now { continuation.resume() }
     }
   }
 }
@@ -269,6 +287,7 @@ package final class Turns: Sendable {
     var busy = false
     var nextWaiter = 0
     var waiting: [(id: Int, continuation: CheckedContinuation<Bool, Never>)] = []
+    var watchers: [(count: Int, continuation: CheckedContinuation<Void, Never>)] = []
   }
 
   let state = Mutex(State())
@@ -286,16 +305,19 @@ package final class Turns: Sendable {
     if taken { return true }
     return await withTaskCancellationHandler {
       await withCheckedContinuation { (continuation: CheckedContinuation<Bool, Never>) in
-        let answer = state.withLock { state -> Bool? in
-          if Task.isCancelled { return false }
+        let (answer, queued) = state.withLock { state -> (Bool?, [CheckedContinuation<Void, Never>]) in
+          if Task.isCancelled { return (false, []) }
           guard state.busy else {
             state.busy = true
-            return true
+            return (true, [])
           }
           state.waiting.append((id, continuation))
-          return nil
+          let count = state.waiting.count
+          defer { state.watchers.removeAll { $0.count <= count } }
+          return (nil, state.watchers.filter { $0.count <= count }.map(\.continuation))
         }
         if let answer { continuation.resume(returning: answer) }
+        for watcher in queued { watcher.resume() }
       }
     } onCancel: {
       let abandoned = state.withLock { state -> CheckedContinuation<Bool, Never>? in
@@ -316,6 +338,18 @@ package final class Turns: Sendable {
       return state.waiting.removeFirst().continuation
     }
     next?.resume(returning: true)
+  }
+
+  // Returns once `count` callers or more wait for the turn; at once if they do now.
+  package func queued(_ count: Int) async {
+    await withCheckedContinuation { continuation in
+      let now = state.withLock { state -> Bool in
+        if state.waiting.count >= count { return true }
+        state.watchers.append((count, continuation))
+        return false
+      }
+      if now { continuation.resume() }
+    }
   }
 }
 

@@ -1,4 +1,3 @@
-import Foundation
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -175,15 +174,5 @@ final class QueuedRandom: RandomSource {
 
   func next() -> UInt64 {
     queued.withLock { $0.isEmpty ? nil : $0.removeFirst() } ?? seeded.next()
-  }
-}
-
-// Polls until `condition` holds, for the tests that run the real loops; it runs on the caller's actor.
-func eventually(_ what: String, within seconds: Double = 5, isolation: isolated (any Actor)? = #isolation,
-                _ condition: () throws -> Bool) async throws {
-  let deadline = Date().addingTimeInterval(seconds)
-  while try !condition() {
-    guard Date() < deadline else { throw RigError("timed out waiting for \(what)") }
-    try await Task.sleep(for: .milliseconds(2))
   }
 }

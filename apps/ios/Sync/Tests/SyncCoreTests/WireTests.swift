@@ -3,7 +3,8 @@ import SyncTesting
 import Testing
 
 // §9.1 wire values are the same only byte for byte: a scope reference by its text, every other value by its JSON, so a
-// canonically equivalent look-alike ("\u{E9}" and "e\u{301}", "\u{212A}" and "K") is always another value.
+// canonically equivalent look-alike ("\u{E9}" and "e\u{301}", "\u{212A}" and "K") is always another value. U+0000 is
+// found at any depth, and a cursor decodes only safe integers.
 
 struct WireTests {
   @Test func scopeReferencesAreTheSameOnlyByteForByte() {
@@ -36,5 +37,24 @@ struct WireTests {
       Set(commands).count, Set(intents).count, Set(cursors).count,
     ]
     #expect(counts == [2, 2, 2, 2, 2, 2, 2, 2, 2])
+  }
+
+  // §6.1 step 2 and §7.1 step 7: U+0000 in any string, a key or a value at any depth.
+  @Test func aValueHoldsNulWhereverAStringOfItDoes() {
+    let values: [JSON] = [
+      "a\u{0}b", ["a", ["b\u{0}"]], ["a": ["b": "\u{0}"]], ["a\u{0}": 1], [["k\u{0}": .null]],
+      "a", ["a", 1, true, .null], ["a": ["b": "c"]], "\u{1}", 0,
+    ]
+    #expect(values.map(\.holdsNul) == [true, true, true, true, true, false, false, false, false, false])
+  }
+
+  // §9.1 Integers: a cursor whose `s` or `a` is beyond 2^53 − 1 in magnitude is undecodable.
+  @Test func aCursorDecodesOnlySafeIntegers() {
+    let safe: Int64 = 9_007_199_254_740_991
+    let cursors = [
+      Cursor(epoch: "ep-1", mode: .live, seq: safe), Cursor(epoch: "ep-1", mode: .live, seq: safe + 1),
+      Cursor(epoch: "ep-1", mode: .boot, seq: 1, asOf: safe), Cursor(epoch: "ep-1", mode: .boot, seq: 1, asOf: safe + 1),
+    ]
+    #expect(cursors.map { Cursor(decoding: $0.text) } == [cursors[0], nil, cursors[2], nil])
   }
 }

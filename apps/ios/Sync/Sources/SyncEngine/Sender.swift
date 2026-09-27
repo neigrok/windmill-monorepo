@@ -29,7 +29,7 @@ package actor Sender {
   let core: EngineCore
   let transport: any SyncTransport
   let answers: PushPlanner
-  let turns = Turns()
+  package nonisolated let turns = Turns()
   var wait = SenderWait()
   var batchLimit: Int?
   var kicksSeen: UInt64 = 0
@@ -56,8 +56,8 @@ package actor Sender {
   }
 
   // The leave flush (§7.3): rounds until nothing is left to send or the first that does not push again, with no
-  // sleeping. The first pushes whatever backoff is running, and leaves k and the backoff as they were. Cancelling it (the
-  // background time running out) ends it at its next turn, or its push with the network.
+  // sleeping. The first pushes through any backoff but a wait the server asked for, and leaves k and the backoff as they
+  // were. Cancelling it (the background time running out) ends it at its next turn, or its push with the network.
   func flushOnce() async {
     var leaving = true
     while !Task.isCancelled, await step(leaving: leaving) == .again { leaving = false }

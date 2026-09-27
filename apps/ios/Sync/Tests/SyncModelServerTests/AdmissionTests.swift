@@ -313,6 +313,40 @@ extension AdmissionTests {
     #expect(stored?.lattice.born == (try Stamp("20:0:r_aaaaaaaaaaaa")))
     #expect(admitted.result == .ok(seq: 2, write: [["t": "board", "id": "b_00000002", "born": "20:0:r_aaaaaaaaaaaa"]], detail: nil))
   }
+
+  // §6.1 step 10: a joined record carries the source of every delta that creates it, so a product rule tells the
+  // command's create from the intent's own create beside it.
+  @Test func aJoinedRecordCarriesTheSourceOfEachCreateOfIt_6_1_step10() throws {
+    let admission = Admission(registry: try Corpus.probeRegistry(), rules: Creators())
+    var state = ServerState(epoch: "ep-1")
+    let start = { (id: String) -> JSON in ["name": "probe.start", "args": ["id": .string(id), "startedAt": 100, "join": false]] }
+    let run: JSON = ["t": "run", "id": "run00001", "born": "100:0:r_aaaaaaaaaaaa", "life": ["alive", "100:0:r_aaaaaaaaaaaa"],
+                     "f": ["startedAt": [100, "100:0:r_aaaaaaaaaaaa"]]]
+    let beside = try admission.admit(["scope": "self/probe", "d": [run], "cmd": start("run00001")],
+                                     from: .replica(account: "A", replica: "rp_a", n: 1), at: 1_000_000, in: &state)
+    let alone = try admission.admit(["scope": "self/probe", "cmd": start("run00002")],
+                                    from: .replica(account: "A", replica: "rp_a", n: 2), at: 1_000_000, in: &state)
+    #expect(beside.result == .refused(Refusal(.invalid, detail: ["run/run00001": ["intent", "command"]])))
+    #expect(alone.result == .refused(Refusal(.invalid, detail: ["run/run00002": ["command"]])))
+  }
+}
+
+// The probe's rules, but `check` refuses every intent with the sources that created each record it is given.
+struct Creators: ServerRules {
+  let probe = ProbeServerRules()
+
+  func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { probe.replays(command, in: context) }
+
+  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    try probe.run(command, in: context)
+  }
+
+  func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
+    let creators = changes.map { ("\($0.key.type)/\($0.key.id)", JSON.array($0.createdBy.map { .string($0.rawValue) })) }
+    throw Refusal(.invalid, detail: .object(JSON.Object(uniqueKeysWithValues: creators)))
+  }
+
+  func keptRevisions(_ revisions: [Revision]) -> [Revision] { probe.keptRevisions(revisions) }
 }
 
 // A seeded SplitMix64, so a failing seed replays.

@@ -512,7 +512,8 @@ public struct Cursor: Sendable, Hashable {
     self.asOf = asOf
   }
 
-  // A text that is not the unpadded base64url of a cursor of this shape, or that does not re-encode to itself, is nil.
+  // A text that is not the unpadded base64url of a cursor of this shape, `s` and `a` safe integers (§9.1), or that does
+  // not re-encode to itself, is nil.
   public init?(decoding text: String) {
     guard let bytes = Base64URL.decode(text), let json = try? JSON(parsing: bytes), case .object(let object) = json,
           object.keys.allSatisfy({ ["e", "m", "s", "k", "a"].contains($0) }),
@@ -579,6 +580,21 @@ enum Base64URL {
       for index in 0..<(chunk.count - 1) { out.append(UInt8(word >> (16 - 8 * index) & 0xFF)) }
     }
     return out
+  }
+}
+
+// MARK: - U+0000
+
+extension JSON {
+  // A string of the value, a key or a value at any depth, holds U+0000: an intent holding one is refused (§6.1 step 2)
+  // and a commit building one throws (§7.1 step 7).
+  public var holdsNul: Bool {
+    switch self {
+    case .string(let text): text.utf8.contains(0)
+    case .array(let items): items.contains(where: \.holdsNul)
+    case .object(let object): object.members.contains { $0.key.utf8.contains(0) || $0.value.holdsNul }
+    case .null, .bool, .number: false
+    }
   }
 }
 

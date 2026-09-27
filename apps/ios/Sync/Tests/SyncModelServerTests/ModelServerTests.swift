@@ -3,9 +3,55 @@ import SyncModelServer
 import SyncTesting
 import Testing
 
-// Push and call bookkeeping the corpus does not pin: scripted refusals, faults per digest, and a real fault.
+// Push and call bookkeeping the corpus does not pin: the envelope's whole order, the binding before any `n`, scripted
+// refusals, faults per digest, a real fault, and a call's fault as one step.
 
 struct ModelServerTests {
+  // §9.1 and §6.2 step 1: the first failing check answers, in order: no principal, a body over PUSH_MAX_BYTES as
+  // received, a body of another shape (here without `ackThrough`), then more intents than PUSH_MAX_INTENTS.
+  @Test func thePushEnvelopeIsCheckedInItsOrder_9_1() throws {
+    var limits = ServerLimits()
+    limits.pushMaxBytes = 400
+    limits.pushMaxIntents = 1
+    var server = ModelServer(
+      registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"), limits: limits)
+    let body = { (intents: Int, ackThrough: JSON?) -> JSON in
+      var body: JSON.Object = ["replica": "rp_0000000000000000000000000000000a", "intents": .array((1...intents).map { n in
+        ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": .string("card000\(n)"), "born": "10:0:r_aaaaaaaaaaaa",
+                                                     "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]]
+      })]
+      body["ackThrough"] = ackThrough
+      return .object(body)
+    }
+    try #require(body(2, 0).jcs.count <= 400 && body(4, nil).jcs.count > 400)
+    let answers = [
+      server.push(body(4, nil), account: nil, at: 1_000),
+      server.push(body(4, nil), account: "A", at: 1_000),
+      server.push(body(2, nil), account: "A", at: 1_000),
+      server.push(body(2, 0), account: "A", at: 1_000),
+      server.push(body(1, 0), account: "A", at: 1_000),
+    ].map { reply -> JSON in [JSON(reply.status), reply.body["error"] ?? .null] }
+    #expect(answers == [[401, "unauthenticated"], [413, "request-too-large"], [400, "malformed"], [413, "request-too-large"], [200, .null]])
+  }
+
+  // §6.1 step 3.3 and §6.2 step 3: the row's account is checked before any `n` is compared with its `last_n`, so an `n`
+  // that would be a fork, the next one, or a gap all answer replica-foreign, and the tables stay as they were.
+  @Test func anotherAccountsReplicaIsForeignBeforeAnyNIsCompared_6_1_step3_3() throws {
+    var state = ServerState(epoch: "ep-1")
+    let replica = "rp_0000000000000000000000000000000a"
+    state.replicas[replica] = ReplicaBinding(account: "B", lastN: 3)
+    var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: state)
+    let answers = [Int64(2), 4, 9].map { n in
+      server.push(["replica": .string(replica), "ackThrough": 0, "intents": [
+        ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa",
+                                                    "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
+      ]], account: "A", at: 1_000).json
+    }
+    let foreign: JSON = ["status": 409, "body": ["serverTime": 1_000, "epoch": "ep-1", "error": "replica-foreign"]]
+    #expect(answers == [foreign, foreign, foreign])
+    #expect(server.state == state)
+  }
+
   @Test func aScriptedRefusalIsStoredAsStepRStoresItSoAResendIsAnsweredFromIt_INV4() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     server.refuse(code: "session-open", detail: ["why": "scripted"])
@@ -133,28 +179,23 @@ struct ModelServerTests {
     #expect(server.state.results[replica]?[1]?.faults == Constants.kPoison)
   }
 
-  // §6.3 as the reference runs it: a crash right after the last part commits leaves the row running with every part, and
-  // the call that takes the lease over answers the stored result and ends the row done, admitting nothing again.
-  @Test func aCallThatCrashedAfterItsLastPartIsAnsweredFromItsPartsOnceTheLeaseEnds_6_3() throws {
+  // §6.3 step 3 and §6.6: an admit that faults ends its call `internal`, its part and the done row in one step, so a
+  // crash right after that admit still leaves the call done, and a retry within the lease answers it.
+  @Test func aFaultEndsItsCallInOneStepThatNoCrashSplits_6_3_6_6() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     let create = { (id: String) -> JSON in
       ["scope": "self/probe", "d": [["t": "card", "id": .string(id), "born": .null, "life": ["alive", .null]]]]
     }
     let call = ServerCall(
       account: "A", requestId: "req-1", tool: "cards.add", args: ["n": 2], intents: [create("card0001"), create("card0002")])
-    let crashed = server.call(call, at: 1_000_000, faults: CallFaults(crashAfter: 2))
-    let running = server.state
-    let resumed = server.call(call, at: 1_000_000 + Constants.requestLeaseMs)
-    let key = RequestKey(account: "A", requestId: "req-1")
-    let parts: [Int: JSON] = [1: ["s": "ok", "seq": 1], 2: ["s": "ok", "seq": 2]]
-    #expect(crashed == nil)
-    #expect(running.requests[key] == RequestRecord(
-      digest: SHA256Hex.of(JSON.object(["tool": "cards.add", "args": ["n": 2]]).jcs), state: .running, startedAt: 1_000_000, parts: parts))
-    #expect(resumed == ["s": "ok", "seq": 2])
-    #expect(server.state.requests[key] == RequestRecord(
-      digest: SHA256Hex.of(JSON.object(["tool": "cards.add", "args": ["n": 2]]).jcs), state: .done,
-      startedAt: 1_000_000 + Constants.requestLeaseMs, parts: parts, result: ["s": "ok", "seq": 2]))
-    #expect(server.state.scopes[ScopeKey(.product(account: "A", name: "probe"))]?.seq == 2)
+    let faulted = server.call(call, at: 1_000_000, faults: CallFaults(crashAfter: 2, faultAt: 2))
+    let retried = server.call(call, at: 1_000_001)
+    #expect(faulted == ["s": "refused", "code": "internal"])
+    #expect(retried == ["s": "refused", "code": "internal"])
+    #expect(server.state.requests == [RequestKey(account: "A", requestId: "req-1"): RequestRecord(
+      digest: SHA256Hex.of(JSON.object(["tool": "cards.add", "args": ["n": 2]]).jcs), state: .done, startedAt: 1_000_000,
+      parts: [1: ["s": "ok", "seq": 1], 2: ["s": "refused", "code": "internal"]], result: ["s": "refused", "code": "internal"])])
+    #expect(server.state.scopes[ScopeKey(.product(account: "A", name: "probe"))]?.seq == 1)
   }
 
   @Test func aServerOriginFaultReturnsToItsCallerAsInternalAndEndsItsRequest_6_3_6_6() throws {

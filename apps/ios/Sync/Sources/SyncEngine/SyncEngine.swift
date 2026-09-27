@@ -116,7 +116,8 @@ public final class SyncEngine: Replica {
 
   // §7.1 in one transaction: the body reads through a context over it, then the decided gesture commits; a nil gesture
   // writes nothing and ticks no clock. A committed gesture kicks the sender, and a held one the release timer. It throws
-  // a `CommitFailure`, or the body's own error as the body threw it.
+  // a `CommitFailure` as the context, the planner or the store raised it, any other error of the transaction as a store
+  // failure, or the body's own error as the body threw it.
   public func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws
     -> (outcome: CommitOutcome?, value: T) {
     let committed: (outcome: CommitOutcome?, value: T)
@@ -137,8 +138,10 @@ public final class SyncEngine: Replica {
       }
     } catch let own as BodyError {
       throw own.error
+    } catch let failure as CommitFailure {
+      throw failure
     } catch {
-      throw CommitFailure(meeting: error)
+      throw CommitFailure(.storeFailure, "\(error)")
     }
     if case .committed(let receipt)? = committed.outcome {
       core.wakes.sender.kick()

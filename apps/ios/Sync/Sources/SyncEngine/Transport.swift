@@ -60,7 +60,8 @@ public protocol LiveConnection: Sendable {
 // HTTPS through an ephemeral `URLSession`: no cookies, no cache, no waiting for connectivity, since the engine decides
 // retries; 30 s of silence or 60 s in all ends a request, so a trickling server cannot hold the one push in flight. The
 // live socket has a session of its own, which ends a handshake after 30 s of silence and never ends an open socket for
-// its age. Every request carries `Sync-Schema` (§9.1); bodies and live messages are JCS bytes.
+// its age. Every request names the registry version it speaks (§9.1): hello, push and pull in the header `Sync-Schema`,
+// the live socket's upgrade in the query parameter `schema`. Bodies and live messages are JCS bytes.
 public final class HTTPTransport: SyncTransport {
   let baseURL: URL
   let schema: Int
@@ -94,14 +95,14 @@ public final class HTTPTransport: SyncTransport {
     await exchange("POST", "v1/sync/pull", body: request.json, token: token)
   }
 
-  // The upgrade request goes over `ws` or `wss` as the base URL goes over `http` or `https`; frames above
-  // LIVE_FRAME_BYTES fail the socket.
+  // §9.5 `GET /v1/sync/live?schema=<version>`, over `ws` or `wss` as the base URL goes over `http` or `https`; frames
+  // above LIVE_FRAME_BYTES fail the socket.
   public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
     var components = URLComponents(url: baseURL.appending(path: "v1/sync/live"), resolvingAgainstBaseURL: false)!
     components.scheme = components.scheme == "http" ? "ws" : "wss"
+    components.queryItems = [URLQueryItem(name: "schema", value: String(schema))]
     var request = URLRequest(url: components.url!)
     request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization")
-    carrySchema(on: &request)
     let task = liveSession.webSocketTask(with: request)
     task.maximumMessageSize = Constants.liveFrameBytes
     let opening = WebSocketOpening()
@@ -119,15 +120,10 @@ public final class HTTPTransport: SyncTransport {
     }
   }
 
-  // §9.1: every request names the registry version it speaks, the live socket's upgrade request included.
-  func carrySchema(on request: inout URLRequest) {
-    request.setValue(String(schema), forHTTPHeaderField: "Sync-Schema")
-  }
-
   func exchange<Body: ResponseBody>(_ method: String, _ path: String, body: JSON?, token: SessionToken?) async -> Reply<Body> {
     var request = URLRequest(url: baseURL.appending(path: path))
     request.httpMethod = method
-    carrySchema(on: &request)
+    request.setValue(String(schema), forHTTPHeaderField: "Sync-Schema")
     if let token { request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization") }
     if let body {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")

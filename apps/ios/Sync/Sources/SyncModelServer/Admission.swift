@@ -140,22 +140,23 @@ struct Place: Hashable {
   let key: RecordKey
 }
 
-// A delta and the scope it writes.
+// A delta, the scope it writes, and where it comes from.
 struct PlacedDelta: Hashable {
   let scope: ScopeKey
   let delta: PlannedDelta
+  let source: ChangeSource
 
   var place: Place { Place(scope: scope, key: delta.key) }
 }
 
 // One record the intent touches: its state as locked, the row its joins build with its fields as the last join wrote them
-// (before G1 drops a dead record's), and the ops that joined it.
+// (before G1 drops a dead record's), the ops that joined it, and the source of each create among them.
 struct Touched {
   let locked: IdState
   var joined: Row?
   var joinedFields: [String: Register] = [:]
-  var intentOp: Op?
   var ops: Set<Op> = []
+  var createdBy: [ChangeSource] = []
   var superseded: [String: TextState] = [:]
 
   var changed: Bool { joined.map { $0.content != locked.row?.content } ?? false }
@@ -192,18 +193,18 @@ struct AdmissionRun {
 
   mutating func admit(_ intent: CheckedIntent) throws -> AdmitResult {
     try lockScope(for: intent)
-    let deltas = try lockIdentities(intent.deltas, in: scope, fromIntent: true)
+    let deltas = try lockIdentities(intent.deltas, in: scope, from: .intent)
     let replay = intent.command.map { admission.rules.replays($0, in: context()) } ?? false
     if !replay { try checkGuards(intent.guards, writtenBy: deltas) }
     let outcome = try runCommand(intent.command)
     state.product = outcome?.product ?? state.product
-    var serverDeltas = try lockIdentities(outcome?.deltas ?? [], in: scope, fromIntent: false)
+    var commandDeltas = try lockIdentities(outcome?.deltas ?? [], in: scope, from: .command)
     for (created, written) in (outcome?.created ?? [:]).sorted(by: { $0.key < $1.key }) {
-      serverDeltas += try lockIdentities(written, in: created, fromIntent: false)
+      commandDeltas += try lockIdentities(written, in: created, from: .command)
     }
-    firstPassStamp = try join(deltas + serverDeltas, observing: deltas)
+    firstPassStamp = try join(deltas + commandDeltas, observing: deltas)
     let appended = try admission.rules.check(changes(), in: context())
-    _ = try join(try lockIdentities(appended, in: scope, fromIntent: false), observing: deltas)
+    _ = try join(try lockIdentities(appended, in: scope, from: .check), observing: deltas)
     try checkParents()
     assignSerials()
     try checkCaps()
@@ -246,7 +247,7 @@ struct AdmissionRun {
   }
 
   // The deltas that apply in `scope`; a delta §4.3 answers `ok` changes nothing and is dropped.
-  mutating func lockIdentities(_ deltas: [PlannedDelta], in scope: ScopeKey, fromIntent: Bool) throws(Refusal) -> [PlacedDelta] {
+  mutating func lockIdentities(_ deltas: [PlannedDelta], in scope: ScopeKey, from source: ChangeSource) throws(Refusal) -> [PlacedDelta] {
     var applying: [PlacedDelta] = []
     for delta in deltas {
       let type = registry.type(delta.key.type)!
@@ -256,8 +257,8 @@ struct AdmissionRun {
       case .ok: continue
       case .apply: break
       }
-      if fromIntent && origin.isReplica { try checkWriteOnce(delta, type: type, locked: locked) }
-      applying.append(PlacedDelta(scope: scope, delta: delta))
+      if source == .intent && origin.isReplica { try checkWriteOnce(delta, type: type, locked: locked) }
+      applying.append(PlacedDelta(scope: scope, delta: delta, source: source))
     }
     return applying
   }
@@ -300,9 +301,7 @@ struct AdmissionRun {
 
   mutating func join(_ deltas: [PlacedDelta], observing clientDeltas: [PlacedDelta]) throws -> Stamp? {
     let stamp = mintStamp(for: deltas, observing: clientDeltas)
-    for placed in deltas {
-      try join(placed.delta.minted(with: stamp), at: placed.place, op: placed.delta.op, fromIntent: clientDeltas.contains(placed))
-    }
+    for placed in deltas { try join(placed, minted: stamp) }
     try checkRecordBound()
     return stamp
   }
@@ -324,7 +323,9 @@ struct AdmissionRun {
     return state.clock.tick(physNow: serverNow, actor: Self.serverActor)
   }
 
-  mutating func join(_ delta: Delta, at place: Place, op: Op, fromIntent: Bool) throws {
+  mutating func join(_ placed: PlacedDelta, minted stamp: Stamp?) throws {
+    let delta = placed.delta.minted(with: stamp)
+    let place = placed.place
     let type = registry.type(delta.key.type)!
     var record = touched[place] ?? Touched(locked: lock(place))
     var row = record.joined ?? record.locked.row ?? Row(key: delta.key, seq: 0)
@@ -340,8 +341,8 @@ struct AdmissionRun {
     }
     if touched[place] == nil { order.append(place) }
     record.joined = row
-    record.ops.insert(op)
-    if fromIntent { record.intentOp = op }
+    record.ops.insert(placed.delta.op)
+    if placed.delta.op == .create { record.createdBy.append(placed.source) }
     touched[place] = record
   }
 
@@ -384,7 +385,7 @@ struct AdmissionRun {
   func changes() -> [RecordChange] {
     order.compactMap { place in
       guard let record = touched[place], let after = record.joined else { return nil }
-      return RecordChange(scope: place.scope, key: place.key, before: record.locked, after: after, op: record.intentOp)
+      return RecordChange(scope: place.scope, key: place.key, before: record.locked, after: after, createdBy: record.createdBy)
     }
   }
 

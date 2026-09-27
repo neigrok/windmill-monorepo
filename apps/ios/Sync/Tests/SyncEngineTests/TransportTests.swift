@@ -124,117 +124,172 @@ struct TransportTests {
 
   // MARK: The live socket (§9.5)
 
-  // A WebSocket server on the loopback: it keeps the upgrade's headers and every text message it receives, and sends
-  // what the test hands it.
-  final class SocketServer: Sendable {
+  // A listener on the loopback, told apart from the tests' other servers by its queue: `start` returns its port once it
+  // is ready, and `stop` returns once it is cancelled and its port closed.
+  final class Loopback: Sendable {
+    let listener: NWListener
+    let queue: DispatchQueue
+
+    init(using parameters: NWParameters, on queue: DispatchQueue) throws {
+      listener = try NWListener(using: parameters, on: .any)
+      self.queue = queue
+    }
+
+    func start() async throws -> UInt16 {
+      try await withCheckedThrowingContinuation { continuation in
+        listener.stateUpdateHandler = { [listener] state in
+          switch state {
+          case .ready:
+            listener.stateUpdateHandler = nil
+            continuation.resume(returning: listener.port!.rawValue)
+          case .failed(let error):
+            listener.stateUpdateHandler = nil
+            continuation.resume(throwing: error)
+          default:
+            break
+          }
+        }
+        listener.start(queue: queue)
+      }
+    }
+
+    func stop() async {
+      await withCheckedContinuation { continuation in
+        listener.stateUpdateHandler = { state in
+          if case .cancelled = state { continuation.resume() }
+        }
+        listener.cancel()
+      }
+    }
+
+    deinit {
+      listener.cancel()
+    }
+  }
+
+  // What a loopback server saw, shared with its handlers: each request's head, each text message, and the last
+  // connection.
+  final class Seen: Sendable {
     struct State {
-      var headers: [String: String] = [:]
+      var heads: [String] = []
       var received: [String] = []
+      var receivers: [(count: Int, continuation: CheckedContinuation<[String], Never>)] = []
       var connection: NWConnection?
     }
 
-    let listener: NWListener
-    let seen: Seen
-    let queue = DispatchQueue(label: "windmill.test.socket-server")
+    let state = Mutex(State())
+  }
+
+  // A WebSocket server on the loopback: it keeps every text message it receives, and sends what the test hands it.
+  final class SocketServer: Sendable {
+    let loopback: Loopback
+    let seen = Seen()
 
     init() throws {
-      let seen = Seen()
+      let queue = DispatchQueue(label: "windmill.test.socket-server")
       let options = NWProtocolWebSocket.Options()
-      options.setClientRequestHandler(queue) { _, headers in
-        seen.state.withLock { state in for header in headers { state.headers[header.name.lowercased()] = header.value } }
-        return NWProtocolWebSocket.Response(status: .accept, subprotocol: nil)
-      }
+      options.setClientRequestHandler(queue) { _, _ in NWProtocolWebSocket.Response(status: .accept, subprotocol: nil) }
       let parameters = NWParameters.tcp
       parameters.defaultProtocolStack.applicationProtocols.insert(options, at: 0)
-      listener = try NWListener(using: parameters, on: .any)
-      self.seen = seen
-      listener.newConnectionHandler = { [weak self, queue] connection in
+      loopback = try Loopback(using: parameters, on: queue)
+      loopback.listener.newConnectionHandler = { [seen] connection in
         seen.state.withLock { $0.connection = connection }
         connection.start(queue: queue)
-        self?.receive(on: connection, into: seen)
+        Self.receive(on: connection, into: seen)
       }
     }
 
-    // What the server saw, shared with its handlers.
-    final class Seen: Sendable {
-      let state = Mutex(State())
-    }
-
-    func receive(on connection: NWConnection, into seen: Seen) {
-      connection.receiveMessage { [weak self] content, _, _, error in
+    static func receive(on connection: NWConnection, into seen: Seen) {
+      connection.receiveMessage { content, _, _, error in
         guard error == nil else { return }
-        if let content { seen.state.withLock { $0.received.append(String(decoding: content, as: UTF8.self)) } }
-        self?.receive(on: connection, into: seen)
+        if let content {
+          let answered = seen.state.withLock { state -> [(CheckedContinuation<[String], Never>, [String])] in
+            state.received.append(String(decoding: content, as: UTF8.self))
+            let count = state.received.count
+            defer { state.receivers.removeAll { $0.count <= count } }
+            return state.receivers.filter { $0.count <= count }.map { ($0.continuation, state.received) }
+          }
+          for (receiver, received) in answered { receiver.resume(returning: received) }
+        }
+        Self.receive(on: connection, into: seen)
       }
     }
 
-    // The port once the server listens.
-    func start() async throws -> UInt16 {
-      listener.start(queue: queue)
-      for _ in 0..<500 {
-        if let port = listener.port?.rawValue, port != 0 { return port }
-        try await Task.sleep(for: .milliseconds(10))
+    // The text messages received, once there are `count` of them or more.
+    func received(_ count: Int) async -> [String] {
+      await withCheckedContinuation { continuation in
+        let received = seen.state.withLock { state -> [String]? in
+          guard state.received.count < count else { return state.received }
+          state.receivers.append((count, continuation))
+          return nil
+        }
+        if let received { continuation.resume(returning: received) }
       }
-      throw RigError("the socket server did not listen")
     }
 
     func send(_ text: String) {
       let context = NWConnection.ContentContext(identifier: "text", metadata: [NWProtocolWebSocket.Metadata(opcode: .text)])
       seen.state.withLock(\.connection)?.send(content: Data(text.utf8), contentContext: context, completion: .idempotent)
     }
-
-    var headers: [String: String] { seen.state.withLock(\.headers) }
-    var received: [String] { seen.state.withLock(\.received) }
-
-    deinit {
-      listener.cancel()
-    }
   }
 
-  // A server that answers every request with `status` and no upgrade.
+  // A server that reads each request's head, keeps it, and answers with `status` and no upgrade.
   final class RefusingServer: Sendable {
-    let listener: NWListener
-    let queue = DispatchQueue(label: "windmill.test.refusing-server")
+    let loopback: Loopback
+    let seen = Seen()
 
     init(status: Int) throws {
-      listener = try NWListener(using: .tcp, on: .any)
-      listener.newConnectionHandler = { [queue] connection in
+      let queue = DispatchQueue(label: "windmill.test.refusing-server")
+      loopback = try Loopback(using: .tcp, on: queue)
+      loopback.listener.newConnectionHandler = { [seen] connection in
         connection.start(queue: queue)
-        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { _, _, _, _ in
-          let answer = "HTTP/1.1 \(status) Refused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
-          connection.send(content: Data(answer.utf8), completion: .contentProcessed { _ in connection.cancel() })
+        Self.answer(connection, status: status, after: Data(), into: seen)
+      }
+    }
+
+    // Reads until the head's blank line, keeps the head, then answers and closes.
+    static func answer(_ connection: NWConnection, status: Int, after read: Data, into seen: Seen) {
+      connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { content, _, isComplete, error in
+        let head = read + (content ?? Data())
+        guard head.range(of: Data("\r\n\r\n".utf8)) != nil || isComplete || error != nil else {
+          return Self.answer(connection, status: status, after: head, into: seen)
         }
+        seen.state.withLock { $0.heads.append(String(decoding: head, as: UTF8.self)) }
+        let answer = "HTTP/1.1 \(status) Refused\r\nContent-Length: 0\r\nConnection: close\r\n\r\n"
+        connection.send(content: Data(answer.utf8), completion: .contentProcessed { _ in connection.cancel() })
       }
-    }
-
-    func start() async throws -> UInt16 {
-      listener.start(queue: queue)
-      for _ in 0..<500 {
-        if let port = listener.port?.rawValue, port != 0 { return port }
-        try await Task.sleep(for: .milliseconds(10))
-      }
-      throw RigError("the refusing server did not listen")
-    }
-
-    deinit {
-      listener.cancel()
     }
   }
 
-  // The upgrade carries the token and `Sync-Schema`; requests go as JCS text, and frames come back parsed.
-  @Test func aLiveSocketCarriesItsHeadersAndSpeaksJCS() async throws {
+  // §9.1, §9.5: the upgrade is `GET /v1/sync/live?schema=<version>`, the version in the query where every surface can
+  // put it and in no header, and the token in `Authorization` as every other request carries it.
+  @Test(.timeLimit(.minutes(1))) func theUpgradeCarriesTheSchemaInItsQueryAndTheToken() async throws {
+    let server = try RefusingServer(status: 426)
+    let port = try await server.loopback.start()
+    let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
+    _ = await transport.openLive(token: SessionToken("secret"))
+    let head = try #require(server.seen.state.withLock(\.heads).first)
+    let lines = head.components(separatedBy: "\r\n")
+    let headers = Dictionary(lines.dropFirst().compactMap { line -> (String, String)? in
+      guard let colon = line.firstIndex(of: ":") else { return nil }
+      return (line[..<colon].lowercased(), line[line.index(after: colon)...].trimmingCharacters(in: .whitespaces))
+    }, uniquingKeysWith: { first, _ in first })
+    #expect(lines.first == "GET /v1/sync/live?schema=3 HTTP/1.1")
+    #expect(headers["authorization"] == "Bearer secret")
+    #expect(headers["sync-schema"] == nil)
+  }
+
+  // Requests go as JCS text, and frames come back parsed.
+  @Test(.timeLimit(.minutes(1))) func aLiveSocketSpeaksJCS() async throws {
     let server = try SocketServer()
-    let port = try await server.start()
+    let port = try await server.loopback.start()
     let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
     guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
       throw RigError("the socket did not open")
     }
-    #expect(server.headers["authorization"] == "Bearer secret")
-    #expect(server.headers["sync-schema"] == "3")
     try await connection.send(.sub([.product("probe")]))
     try await connection.send(.ping)
-    try await eventually("the server to receive both") { server.received.count == 2 }
-    #expect(server.received == [#"{"op":"sub","scopes":["self/probe"]}"#, #"{"op":"ping"}"#])
+    #expect(await server.received(2) == [#"{"op":"sub","scopes":["self/probe"]}"#, #"{"op":"ping"}"#])
     server.send(#"{"op": "pong"}"#)
     server.send(#"{"op": "not-found", "scope": "tree/b_00000001"}"#)
     #expect(try await connection.receive() == .pong)
@@ -243,9 +298,9 @@ struct TransportTests {
   }
 
   // A frame above LIVE_FRAME_BYTES fails the socket.
-  @Test func aFrameAboveTheLimitFailsTheSocket() async throws {
+  @Test(.timeLimit(.minutes(1))) func aFrameAboveTheLimitFailsTheSocket() async throws {
     let server = try SocketServer()
-    let port = try await server.start()
+    let port = try await server.loopback.start()
     let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
     guard case .answered(.ok(let connection)) = await transport.openLive(token: SessionToken("secret")) else {
       throw RigError("the socket did not open")
@@ -255,10 +310,10 @@ struct TransportTests {
   }
 
   // An upgrade answered with a status opens no socket, and answers that status.
-  @Test(arguments: [401, 426])
+  @Test(.timeLimit(.minutes(1)), arguments: [401, 426])
   func aRefusedUpgradeAnswersItsStatus(_ status: Int) async throws {
     let server = try RefusingServer(status: status)
-    let port = try await server.start()
+    let port = try await server.loopback.start()
     let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
     guard case .answered(.failed(let failure)) = await transport.openLive(token: SessionToken("secret")) else {
       throw RigError("the refused upgrade was not answered with its status")
@@ -266,11 +321,11 @@ struct TransportTests {
     #expect(failure == HTTPFailure(status: status))
   }
 
-  @Test func noServerIsUnreachable() async throws {
+  // A port no server listens on any more answers nothing.
+  @Test(.timeLimit(.minutes(1))) func noServerIsUnreachable() async throws {
     let server = try RefusingServer(status: 401)
-    let port = try await server.start()
-    server.listener.cancel()
-    try await Task.sleep(for: .milliseconds(50))
+    let port = try await server.loopback.start()
+    await server.loopback.stop()
     let transport = HTTPTransport(baseURL: URL(string: "http://127.0.0.1:\(port)/")!, schema: 3)
     guard case .unreachable = await transport.openLive(token: SessionToken("secret")) else {
       throw RigError("a closed port was not unreachable")

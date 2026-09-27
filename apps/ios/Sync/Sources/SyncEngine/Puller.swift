@@ -20,9 +20,11 @@ package enum PullerStep: Sendable, Hashable {
   // Look again now: the replica changed while the request was being built or answered, or a 401 answered a token the
   // account has replaced since.
   case again
-  // Nothing wanted, no replica that pulls, offline, or the caller was cancelled before its turn: wait for a trigger, or
-  // for the fallback timer in the foreground.
+  // Nothing to pull (nothing wanted, no replica that pulls, offline) and no fallback pull ahead, or the caller was
+  // cancelled before its turn: wait for a trigger.
   case idle
+  // Nothing to pull now, in the foreground: wait for a trigger, or `ms` until the fallback pull.
+  case fallback(ms: Int64)
   // 401, or no token for the account: wait for re-authentication's kick.
   case paused
   // 426: nothing more is pulled by this process.
@@ -85,7 +87,7 @@ package actor Puller {
   let core: EngineCore
   let transport: any SyncTransport
   let pages: PageApplier
-  let turns = Turns()
+  package nonisolated let turns = Turns()
   var frames: [(frame: LiveFrame, replica: String)] = []
   var backoff = Backoff()
   var kicksSeen: UInt64 = 0
@@ -102,22 +104,14 @@ package actor Puller {
   package nonisolated var wake: Wake { core.wakes.puller }
   package nonisolated var wants: PullWants { core.pullWants }
 
-  // The production driver: a kick ends any sleep early; idle in the foreground, it sleeps until the fallback pull, which a
-  // round consumes when it is due, idle or not.
+  // The production driver: a kick ends any sleep early.
   func run() async {
     while !Task.isCancelled {
       let seen = wake.kicks
       switch await step() {
       case .frame, .pulled, .again: continue
-      case .paused, .stopped: await wake.wait(past: seen)
-      case .backoff(let ms): await wake.wait(past: seen, atMost: .milliseconds(ms), clock: core.clock.sleeper)
-      case .idle:
-        guard core.isForeground, let fallbackDue else {
-          await wake.wait(past: seen)
-          continue
-        }
-        let left = max(0, fallbackDue - core.clock.wall.reading().mono)
-        await wake.wait(past: seen, atMost: .milliseconds(left), clock: core.clock.sleeper)
+      case .idle, .paused, .stopped: await wake.wait(past: seen)
+      case .fallback(let ms), .backoff(let ms): await wake.wait(past: seen, atMost: .milliseconds(ms), clock: core.clock.sleeper)
       }
     }
   }
@@ -128,12 +122,15 @@ package actor Puller {
     wake.kick()
   }
 
-  // One frame or one request, once the step in flight has ended.
+  // One frame or one request, once the step in flight has ended. A round with nothing to pull in the foreground waits for
+  // the fallback pull, which a later round takes when it is due, whether it pulls or not.
   package func step() async -> PullerStep {
     guard await turns.take() else { return .idle }
     defer { turns.pass() }
     guard frames.isEmpty else { return apply(frames.removeFirst()) }
-    return await round()
+    let pulled = await round()
+    guard pulled == .idle, core.isForeground, let fallbackDue else { return pulled }
+    return .fallback(ms: max(0, fallbackDue - core.clock.wall.reading().mono))
   }
 
   // MARK: Frames

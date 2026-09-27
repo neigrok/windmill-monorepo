@@ -2,7 +2,7 @@ import SyncCore
 import SyncTesting
 import Testing
 
-// The registry against the probe (a JCS round trip), each rule by its exact error, quanta and measures.
+// The registry against the probe (a JCS round trip), each rule by its exact error, patterns, quanta and measures.
 
 struct RegistryTests {
   @Test func theProbeRegistryRoundTripsByJCS() throws {
@@ -33,11 +33,11 @@ struct RegistryTests {
     (registry(note { $0["origins"] = ["server"] }), #"type "note": origins always include replica"#),
     (registry(note { $0["origins"] = ["replica", "replica"] }), #"type "note": JSON shape: "replica" appears twice"#),
     (registry(note { $0["cap"] = 0 }), #"type "note": JSON shape: expected an integer of at least 1, found 0"#),
-    (registry(note {
-      $0["idPattern"] = "^(?:e\u{301}|x){3}$"
-      $0["mint"] = ["prefix": "", "alphabet": "e\u{301}x", "length": 3]
-    }),
-     "type \"note\": a minted id of e does not match ^(?:e\u{301}|x){3}$"),
+    (registry(note { $0["mint"] = ["prefix": "", "alphabet": "e\u{301}x", "length": 8] }),
+     "type \"note\": a minted id of \u{301} does not match ^[a-z]{8}$"),
+    (registry(note { $0["idPattern"] = "^.{8}$" }), #"type "note": the pattern ^.{8}$ is outside §2.4's patterns"#),
+    (registry(note { $0["idPattern"] = "^a{0,65536}$" }),
+     #"type "note": Swift's regex cannot compile the pattern ^a{0,65536}$"#),
     (registry(note { $0["visibleWhen"] = ["title"]; $0["fields"] = ["title": ["kind": "lww", "writer": "client"]] }),
      #"type "note": visibleWhen is for types without life"#),
     (registry(note { $0["scope"] = "tree"; $0["governs"] = "tree" }),
@@ -49,6 +49,19 @@ struct RegistryTests {
      #"type "note": field title: a bound states its unit"#),
     (registry(note(field: "title", ["kind": "lww", "writer": "client", "domain": ["type": "string", "min": 1]])),
      #"type "note": field title: a bound states its unit"#),
+    (registry(note(field: "tags", [
+      "kind": "lww", "writer": "client", "domain": ["type": "array", "items": ["type": "string", "max": 8]],
+    ])),
+     #"type "note": field tags: a bound states its unit"#),
+    (registry(note(field: "attachment", [
+      "kind": "lww", "writer": "client", "domain": ["type": "object", "properties": ["id": ["type": "string", "min": 1]]],
+    ])),
+     #"type "note": field attachment: a bound states its unit"#),
+    (registry(note(field: "attachment", [
+      "kind": "lww", "writer": "client",
+      "domain": ["type": "object", "properties": ["id": ["type": "string", "pattern": #"^\S{8,64}$"#]]],
+    ])),
+     #"type "note": field attachment: the pattern ^\S{8,64}$ is outside §2.4's patterns"#),
     (registry(note { $0["seeded"] = ["seedMax": 0, "ordinalMax": 9] }),
      #"type "note": JSON shape: expected an integer of at least 1, found 0"#),
     (registry(note(field: "tier", ["kind": "ranked", "writer": "client"])),
@@ -92,16 +105,55 @@ struct RegistryTests {
      "command p.go refers to the unknown type run"),
     (registry(note { _ in }, commands: [command { $0["origins"] = ["server"]; $0["beforePull"] = true }]),
      #"command "p.go": a beforePull command is server-internal"#),
+    (registry(note { _ in }, commands: [command {
+      $0["args"] = ["label": ["type": "json", "domain": ["type": "string", "max": 12]]]
+    }]),
+     #"command "p.go": argument label: a bound states its unit"#),
+    (registry(note { _ in }, commands: [command {
+      $0["args"] = ["label": ["type": "json", "domain": ["type": "string", "pattern": "^a|b$"]]]
+    }]),
+     #"command "p.go": argument label: the pattern ^a|b$ is outside §2.4's patterns"#),
+    (registry(note { _ in }, products: ["p": ["device": ["picture": ["keyPattern": "^picture:[^/]{8,64}$"]]]]),
+     #"product p: device row picture: the pattern ^picture:[^/]{8,64}$ is outside §2.4's patterns"#),
   ])
   func aBrokenRegistryIsRefusedNamingWhereAndWhy(_ registry: JSON, _ message: String) {
     let error = #expect(throws: RegistryError.self) { try Registry(json: registry) }
     #expect(error?.description == message)
   }
 
-  @Test func aPatternSearchesAsECMAScriptTestDoesAndDollarEndsTheText() throws {
-    #expect(try Pattern("^a|b$").matches("ab"))
-    #expect(try !Pattern("^[a-z]{3}$").matches("abc\n"))
-    #expect(try Pattern("^[a-z]{3}$").matches("abc"))
+  // §2.4: only the portable subset is a pattern, read alike by every dialect; Swift compiles the portable ones here.
+  @Test func onlyThePortableSubsetIsAPattern() {
+    let patterns = [
+      "^b_[0-9a-f]{8}$", "^[A-Za-z0-9_-]{8,64}$", "^[-a]$", "^(?:ab|cd)+$", "^(a|b)?c{2,}$", #"^a\.b\/c$"#, #"^[\]\-]$"#,
+      "^[--]$", #"^[\[-a]$"#, "^[a-]$", "^[-:]$",
+      "b_[0-9a-f]{8}$", "^b_[0-9a-f]{8}", "^a|b$", "^.{1,64}$", #"^\s+$"#, #"^\d+$"#, #"^\w+$"#, #"^a\b$"#, #"^\_$"#,
+      "^[^/]+$", "^[]$", "^[z-a]$", "^[a-b-c]$", "^[a--]$", "^[a&&b]$", "^[[a]]$", "^a+?$", "^a**$", "^a{3,2}$", "^a{,2}$",
+      "^(?=a)a$", #"^(a)\1$"#, "^a$b$", "^\u{E9}$", #"^a\$"#,
+    ]
+    let portable = [
+      true, true, true, true, true, true, true,
+      true, true, true, true,
+      false, false, false, false, false, false, false, false, false,
+      false, false, false, false, false, false, false, false, false, false, false,
+      false, false, false, false, false,
+    ]
+    #expect(patterns.map(Pattern.isPortable) == portable)
+    #expect(patterns.map { (try? Pattern($0)) != nil } == portable)
+  }
+
+  // A pattern matches the whole value, so `$` never stops before a final newline; a class's `:` and bare `-` stay
+  // literals, though Swift's Regex alone reads `[:alpha:]` as a POSIX class and `[--]` as subtraction.
+  @Test func aPatternMatchesTheWholeValue() throws {
+    let cases: [(pattern: String, text: String)] = [
+      ("^[a-z]+$", "abc"), ("^[a-z]+$", "abc\n"), ("^[a-z]+$", "abc1"), ("^(?:ab|cd)+$", "abcd"), ("^(?:ab|cd)+$", "abcda"),
+      (#"^a\.b\/c$"#, "a.b/c"), (#"^[\]\-]$"#, "-"), ("^[:alpha:]$", ":"), ("^[:alpha:]$", "z"), ("^[::]$", ":"),
+      ("^[a-z]{2}$", "e\u{301}"), ("^[--]$", "-"), ("^[--]$", ","), (#"^[\[-a]$"#, "_"), (#"^[\[-a]$"#, "-"),
+      ("^[a-]$", "-"), ("^[a-]$", "b"), ("^[-:]$", ":"), ("^[-:]$", "5"),
+    ]
+    #expect(try cases.map { try Pattern($0.pattern).matches($0.text) } == [
+      true, false, false, true, false, true, true, true, false, true, false, true, false, true, false, true, false, true,
+      false,
+    ])
   }
 
   @Test(arguments: [
@@ -127,17 +179,11 @@ struct RegistryTests {
     #expect(Quantum(step) == nil)
   }
 
-  // Registry names, argument types and mints are the same only byte for byte, never by canonical equivalence.
-  @Test func declarationsThatDifferOnlyByCanonicalEquivalenceAreDifferent() throws {
-    let mints = try ["\u{E9}", "e\u{301}"].map { prefix in
-      try Registry(json: Self.registry(Self.note {
-        $0["idPattern"] = "^.{9,10}$"
-        $0["mint"] = ["prefix": .string(prefix), "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 8]
-      })).type("note")?.mint
-    }
+  // Scope kinds and argument types are the same only byte for byte, never by canonical equivalence.
+  @Test func declarationsThatDifferOnlyByCanonicalEquivalenceAreDifferent() {
     let kinds: Set<ScopeKind> = [.product("\u{212A}"), .product("K"), .tree]
     let arguments: Set<ArgumentType> = [.ref("\u{212A}"), .ref("K"), .json]
-    #expect([kinds.count, arguments.count, Set(mints).count] == [3, 3, 2])
+    #expect([kinds.count, arguments.count] == [3, 3])
   }
 
   @Test func charsCountCodePointsAndBytesCountUTF8() {
@@ -173,9 +219,9 @@ struct RegistryTests {
     note { $0["fields"] = .object([name: definition]) }
   }
 
-  static func registry(_ types: JSON..., commands: [JSON] = []) -> JSON {
+  static func registry(_ types: JSON..., commands: [JSON] = [], products: JSON = ["p": [:]]) -> JSON {
     [
-      "registry": "test", "version": 1, "minVersion": 1, "products": ["p": [:]], "types": .array(types),
+      "registry": "test", "version": 1, "minVersion": 1, "products": products, "types": .array(types),
       "commands": .array(commands),
     ]
   }

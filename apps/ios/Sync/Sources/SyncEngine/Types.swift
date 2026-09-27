@@ -1,4 +1,3 @@
-import SyncAPI
 import SyncCore
 
 // The engine-only public types. The values products share live in SyncAPI.
@@ -18,31 +17,11 @@ public struct EngineConfig: Sendable {
 }
 
 public enum EngineError: Error, Hashable, CustomStringConvertible {
-  case readerEnded
-  case notAScope(ScopeRef)
-  case notInScope(type: String, scope: ScopeRef)
-  case mintsNoIDs(type: String)
   case notSignedIn
 
   public var description: String {
     switch self {
-    case .readerEnded: "a reader serves only inside the call that passed it"
-    case .notAScope(let scope): "\(scope) is no product, tree or overlay scope of the registry"
-    case .notInScope(let type, let scope): "\(type) is no type of \(scope)"
-    case .mintsNoIDs(let type): "\(type) mints no ids"
     case .notSignedIn: "no account is signed in on this device"
-    }
-  }
-}
-
-extension CommitFailure {
-  // §7.1: an error a commit met before its transaction committed. A misuse of the reader, or of the scope, is malformed;
-  // anything the planner or the store threw that is no `CommitFailure` is a store failure.
-  init(meeting error: any Error) {
-    switch error {
-    case let failure as CommitFailure: self = failure
-    case let misuse as EngineError: self.init(.malformed, misuse.description)
-    default: self.init(.storeFailure, "\(error)")
     }
   }
 }

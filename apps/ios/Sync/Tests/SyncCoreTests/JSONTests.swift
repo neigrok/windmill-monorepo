@@ -2,7 +2,7 @@ import SyncCore
 import SyncTesting
 import Testing
 
-// The Swift traps JSON must avoid, strict parsing, and the round trip of every value through its JCS text.
+// The Swift traps JSON must avoid, strict parsing, safe integers, and the round trip of every value through its JCS text.
 
 struct JSONTests {
   @Test func canonicallyEquivalentKeysStayTwoKeysInUTF16Order() throws {
@@ -38,6 +38,12 @@ struct JSONTests {
     let deepest = String(repeating: "[", count: JSON.maxDepth) + String(repeating: "]", count: JSON.maxDepth)
     #expect(try JSON(parsing: deepest).jcsText == deepest)
     #expect(throws: JSONError.tooDeep(offset: JSON.maxDepth)) { try JSON(parsing: "[" + deepest + "]") }
+  }
+
+  // §9.1: an integer read off the wire is a safe integer, at most 2^53 − 1 in magnitude.
+  @Test func anIntegerIsASafeInteger() {
+    let values: [JSON] = [9_007_199_254_740_991, -9_007_199_254_740_991, 9_007_199_254_740_992, -9_007_199_254_740_992, 1.5]
+    #expect(values.map { try? $0.asInteger() } == [9_007_199_254_740_991, -9_007_199_254_740_991, nil, nil, nil])
   }
 
   @Test func negativeZeroIsZero() throws {

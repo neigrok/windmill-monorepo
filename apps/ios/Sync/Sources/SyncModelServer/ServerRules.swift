@@ -65,14 +65,20 @@ public struct RuleContext: Sendable {
   }
 }
 
+// Where a delta of an admission comes from: the intent's own deltas, its command's handler (§6.1 step 8), or the
+// product's check (step 10).
+public enum ChangeSource: String, Sendable, Hashable {
+  case intent, command, check
+}
+
 // One record an intent touches, in its scope or in one a command of it writes into: its state as locked, its joined row,
-// and the op of the intent's own delta on it (nil when only a command or a check wrote it).
+// and the source of each delta that creates it, in join order.
 public struct RecordChange: Sendable, Hashable {
   public let scope: ScopeKey
   public let key: RecordKey
   public let before: IdState
   public let after: Row
-  public let op: Op?
+  public let createdBy: [ChangeSource]
 
   public var diesHere: Bool { before.isAlive && !after.isAlive }
 }

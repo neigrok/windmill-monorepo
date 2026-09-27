@@ -5,10 +5,15 @@ import SyncStore
 
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
-// rows it names with the scope's pending entries; a reader used after its call returns throws. The first failure of a
-// read or a mint is kept, and fails the commit whose body met it.
+// rows it names with the scope's pending entries. A misuse of the reader (a scope the registry does not hold, a type
+// outside it, a field that is no ref, a mint of a type that mints none, a use after its call returned) throws a
+// malformed `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or a
+// mint is kept, and fails the commit whose body met it.
 
 final class TransactionReader: CommitContext {
+  // What a read throws once the call that passed the reader has returned.
+  static let ended = CommitFailure.malformed("a reader serves only inside the call that passed it")
+
   let tx: StoreTransaction
   let core: EngineCore
   let scope: ScopeRef
@@ -20,7 +25,9 @@ final class TransactionReader: CommitContext {
 
   // `deviceNow`: the device clock this call reads at; `now` is physNow() at it (§10.2).
   init(_ tx: StoreTransaction, core: EngineCore, scope: ScopeRef, deviceNow: Int64) throws {
-    guard core.registry.scopeKind(of: scope) != nil else { throw EngineError.notAScope(scope) }
+    guard core.registry.scopeKind(of: scope) != nil else {
+      throw CommitFailure.malformed("\(scope) is no product, tree or overlay scope of the registry")
+    }
     let active = try tx.activeReplica()
     guard let replica = try tx.replica(active) else { throw StoreError.noReplica(active) }
     self.tx = tx
@@ -70,7 +77,7 @@ final class TransactionReader: CommitContext {
   // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
     try reading {
-      guard isOpen else { throw EngineError.readerEnded }
+      guard isOpen else { throw TransactionReader.ended }
       guard let product = registry.product(of: scope) else { return nil }
       return try tx.deviceRow(meta.replica, product: product, key: key)
     }
@@ -90,7 +97,7 @@ final class TransactionReader: CommitContext {
   func mintID(_ type: String) -> RecordID {
     precondition(isOpen, "a commit context mints only inside its commit")
     do {
-      guard let def = registry.type(type), def.mint != nil else { throw EngineError.mintsNoIDs(type: type) }
+      guard let def = registry.type(type), def.mint != nil else { throw CommitFailure.malformed("\(type) mints no ids") }
       try checkLives(type)
       let replica = try load(RowSelection(types: [type]))
       let drawn = try ScopeView(replica, scope, .drawn, registry: registry)
@@ -137,6 +144,9 @@ final class TransactionReader: CommitContext {
   // is so seen on both sides.
   func records(ofType type: String, where field: String, is id: RecordID, _ mode: ViewMode) throws -> [Record] {
     try checkLives(type)
+    guard registry.type(type)?.field(field)?.ref != nil else {
+      throw CommitFailure.malformed("\(type).\(field) is not a top-level ref field")
+    }
     let indexed = try tx.referencing(meta.replica, in: scope, type: type, field: field, target: id)
     let pending = try load(RowSelection()).entries(in: scope).filter { $0.state != .held || mode == .drawn }
       .flatMap(\.drawnDeltas).map(\.key).filter { $0.type.utf8.elementsEqual(type.utf8) }
@@ -149,14 +159,14 @@ final class TransactionReader: CommitContext {
   }
 
   func load(_ selection: RowSelection) throws -> LoadedReplica {
-    guard isOpen else { throw EngineError.readerEnded }
+    guard isOpen else { throw TransactionReader.ended }
     guard let replica = try tx.replica(meta.replica, reads: [scope: selection]) else { throw StoreError.noReplica(meta.replica) }
     return replica
   }
 
   func checkLives(_ type: String) throws {
-    guard isOpen else { throw EngineError.readerEnded }
-    guard registry.lives(type, in: scope) else { throw EngineError.notInScope(type: type, scope: scope) }
+    guard isOpen else { throw TransactionReader.ended }
+    guard registry.lives(type, in: scope) else { throw CommitFailure.malformed("\(type) is no type of \(scope)") }
   }
 
   // A folded record as products read it: its texts marked pending where an entry of the view writes them, its server

@@ -7,7 +7,8 @@ import SyncTesting
 import Testing
 
 // The readers a `read` and a commit's body get (§7.6, design §5.2): drawn and stored apart, the indexed read by a ref
-// field (ER-12), device rows, the first pull, ids minted inside a commit, and a reader that outlives its call.
+// field (ER-12), device rows, the first pull, ids minted inside a commit, and every misuse of a reader, which is
+// malformed (§7.1) wherever it surfaces.
 
 struct ReadersTests {
   // A product whose items name their list by an lww ref, so a pending write can move a reference.
@@ -44,22 +45,50 @@ struct ReadersTests {
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
 
-  @Test func aReaderUsedAfterItsCallThrows() throws {
+  // A reader a `read` or a commit passed, used after that call returned, is malformed; so is a commit whose body reads
+  // through such a reader and lets its error out.
+  @Test func aReaderUsedAfterItsCallIsMalformed() throws {
     let rig = try Rig(registry: Self.shelf)
+    let ended = CommitFailure(.malformed, "a reader serves only inside the call that passed it")
     var kept: (any ScopeReader)?
     _ = try rig.engine.read(Self.scope) { reader in
       kept = reader
       return try reader.drawn("item").count
     }
-    #expect(throws: EngineError.readerEnded) { try kept!.drawn("item") }
-    #expect(throws: EngineError.readerEnded) { try kept!.device("anything") }
+    #expect(throws: ended) { try kept!.drawn("item") }
+    #expect(throws: ended) { try kept!.device("anything") }
     var context: (any CommitContext)?
     _ = try rig.engine.commit(Self.scope) { body -> (Gesture?, Void) in
       context = body
       return (nil, ())
     }
-    #expect(throws: EngineError.readerEnded) { try context!.stored("item", "i_aaaa") }
-    #expect(throws: EngineError.readerEnded) { try context!.firstPullComplete() }
+    #expect(throws: ended) { try context!.stored("item", "i_aaaa") }
+    #expect(throws: ended) { try context!.firstPullComplete() }
+    #expect(throws: ended) { try rig.engine.commit(Self.scope) { _ -> (Gesture?, Int) in (nil, try kept!.drawn("item").count) } }
+  }
+
+  // §7.1: a read of a type outside the reader's scope, or by a field that is no ref, and a reader of a scope the
+  // registry does not hold, are malformed wherever they surface: through `read`, and inside a commit whether its body
+  // lets the error out or swallows it. A commit that met one writes nothing.
+  @Test func aMisuseOfAReaderIsMalformedThroughReadAndInsideACommit() throws {
+    let rig = try Rig()
+    let before = try rig.store.read { try $0.device(rows: true).json }
+    let misuses: [(scope: ScopeRef, failure: CommitFailure, use: (any ScopeReader) throws -> Void)] = [
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag") }),
+      (Rig.scope, CommitFailure(.malformed, "card.title is not a top-level ref field"), { _ = try $0.stored("card", where: "title", is: "card0001") }),
+      (.device("probe"), CommitFailure(.malformed, "device/probe is no product, tree or overlay scope of the registry"), { _ = try $0.drawn("card") }),
+    ]
+    for (scope, failure, use) in misuses {
+      #expect(throws: failure) { try rig.engine.read(scope, use) }
+      #expect(throws: failure) { try rig.engine.commit(scope) { context -> (Gesture?, Void) in (nil, try use(context)) } }
+      #expect(throws: failure) {
+        try rig.engine.commit(scope) { context -> (Gesture?, Void) in
+          _ = try? use(context)
+          return (Gesture(changes: [Rig.card("card0001", "One")]), ())
+        }
+      }
+    }
+    #expect(try rig.store.read { try $0.device(rows: true).json } == before)
   }
 
   @Test func aHeldDeleteIsGoneFromDrawnAndStillInStored() throws {
@@ -94,15 +123,6 @@ struct ReadersTests {
       }
     }
     #expect(lists == [["i_dddd"], ["i_bbbb", "i_dddd"], ["i_aaaa", "i_bbbb", "i_cccc"], ["i_aaaa", "i_cccc"]])
-    #expect(throws: StoreError.notARefField(type: "item", field: "name")) {
-      try rig.engine.read(Self.scope) { try $0.drawn("item", where: "name", is: "l_one") }
-    }
-  }
-
-  @Test func readsOutsideTheScopeThrow() throws {
-    let rig = try Rig()
-    #expect(throws: EngineError.notInScope(type: "tag", scope: Rig.scope)) { try rig.engine.read(Rig.scope) { try $0.drawn("tag") } }
-    #expect(throws: EngineError.notAScope(.device("probe"))) { try rig.engine.read(.device("probe")) { try $0.drawn("card") } }
   }
 
   @Test func deviceReadsTheRowsOfTheScopesProduct() throws {
@@ -113,16 +133,21 @@ struct ReadersTests {
     #expect(try rig.engine.read(Rig.scope) { try $0.device("rack") } == nil)
   }
 
-  // §9.1: a device row is found only by its key's bytes, never by a canonically equivalent look-alike.
-  @Test func aDeviceRowIsReadByItsKeysBytes() throws {
+  // §2.4, §9.1: a key pattern matches printable ASCII only, so a device key with a look-alike of a letter is never
+  // written, and the look-alike reads no row.
+  @Test func aDeviceKeyOutsideASCIIIsNeverWritten() throws {
     let notes = try Registry(json: JSON(parsing: """
       {"registry": "notes", "version": 1, "minVersion": 1, "types": [], "commands": [],
-       "products": {"notes": {"surfaces": ["ios"], "device": {"draft": {"keyPattern": "^draft:.+$"}}}}}
+       "products": {"notes": {"surfaces": ["ios"], "device": {"draft": {"keyPattern": "^draft:[a-z]+$"}}}}}
       """))
     let rig = try Rig(registry: notes)
     let scope = ScopeRef.product("notes")
-    try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "draft:\u{E9}", value: 1)]), in: scope)
-    #expect(try ["draft:\u{E9}", "draft:e\u{301}"].map { key in try rig.engine.read(scope) { try $0.device(key) } } == [1, nil])
+    try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "draft:e", value: 1)]), in: scope)
+    #expect(throws: CommitFailure(.malformed, "draft:\u{E9} is not a device row of notes")) {
+      try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "draft:\u{E9}", value: 2)]), in: scope)
+    }
+    let keys = ["draft:e", "draft:\u{E9}", "draft:e\u{301}"]
+    #expect(try keys.map { key in try rig.engine.read(scope) { try $0.device(key) } } == [1, nil, nil])
   }
 
   // §9.1, D-4: a reference the wire cannot carry, such as a tree id with a look-alike of an ASCII letter, names no scope:
@@ -131,10 +156,9 @@ struct ReadersTests {
     let rig = try Rig()
     let before = try rig.store.read { try $0.device(rows: true).json }
     let tree = ScopeRef.tree("t\u{E9}")
-    #expect(throws: CommitFailure(.malformed, EngineError.notAScope(tree).description)) {
-      try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))]))
-    }
-    #expect(throws: EngineError.notAScope(tree)) { try rig.engine.read(tree) { try $0.drawn("tag") } }
+    let noScope = CommitFailure(.malformed, "tree/t\u{E9} is no product, tree or overlay scope of the registry")
+    #expect(throws: noScope) { try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))])) }
+    #expect(throws: noScope) { try rig.engine.read(tree) { try $0.drawn("tag") } }
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)
   }
 

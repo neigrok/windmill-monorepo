@@ -433,9 +433,10 @@ extension JSON {
     return number.value
   }
 
+  // §9.1: every integer on the wire is a safe integer, at most 2^53 − 1 in magnitude.
   public func asInteger() throws(JSONError) -> Int64 {
     guard case .number(let number) = self, number.value.rounded(.towardZero) == number.value,
-          number.value.magnitude < 9_007_199_254_740_992 else { throw mismatch("an integer below 2^53") }
+          number.value.magnitude < 9_007_199_254_740_992 else { throw mismatch("a safe integer") }
     return Int64(number.value)
   }
 

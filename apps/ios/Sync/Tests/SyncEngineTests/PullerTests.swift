@@ -48,7 +48,7 @@ struct PullerTests {
     #expect(try Self.rows(rig) == [card.json])
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
     #expect(try rig.meta().serverEpoch == "ep-1")
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
     #expect(rig.transport.pulls.count == 1)
   }
 
@@ -67,7 +67,7 @@ struct PullerTests {
     ])
     #expect(try Self.rows(rig) == cards.map(\.json))
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(2), digest: ScopeDigest(rows: cards.map(\.json)), booted: true))
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
   // A reset page nulls the cursor, and the scope boots again: into staging, since confirmed rows exist, and staging
@@ -137,7 +137,7 @@ struct PullerTests {
     #expect(await events.next() == .digestMismatch(kind: "product", seq: 1))
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true, digestStop: "1.0"))
     #expect(rig.transport.pulls.map(\.scopes) == [[Self.pulled(Rig.scope, nil)], [Self.pulled(Rig.scope, nil)]])
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
   @Test func aMatchingCheckClearsTheMismatchReset() async throws {
@@ -206,7 +206,7 @@ struct PullerTests {
     try rig.engine.unsubscribe([Self.tree])
     #expect(try Self.cursor(rig, Self.tree) == nil)
     #expect(try Self.rows(rig, Self.tree) == [])
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
   // §8.3: a scope subscribed again boots, known gone or not found no more. Here a board's tree was opened before the
@@ -249,12 +249,13 @@ struct PullerTests {
     #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Rig.scope, kept])
   }
 
-  // In the foreground, PULL_FALLBACK_MS after the last full pull every scope is pulled again; in the background, never.
+  // In the foreground, PULL_FALLBACK_MS after the last full pull every scope is pulled again, and a round with nothing to
+  // pull waits for it; in the background, never.
   @Test func theFallbackPullsEveryScopeInTheForegroundOnly() async throws {
     let (rig, card) = try Self.booted()
     _ = await rig.engine.puller.step()
     rig.clock.advance(ms: Constants.pullFallbackMs - 1)
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: 1))
     rig.clock.advance(ms: 1)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, digestOf: [card])]))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
@@ -264,23 +265,20 @@ struct PullerTests {
     #expect(rig.transport.pulls.count == 2)
   }
 
-  // Offline once the fallback is due, the round takes the fallback and waits for the network's kick: the loop sleeps,
-  // and every scope is pulled when the device is back online.
-  @Test func offlineTheLoopSleepsOnceTheFallbackIsDue() async throws {
-    let rig = try Rig(account: "A", drivesLoops: true)
-    let connectivity = rig.connectivity
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
-    await rig.engine.start()
-    try await eventually("the first full pull") { rig.transport.pulls.count == 1 }
-    connectivity.set(online: false)
+  // Offline once the fallback is due, the round takes the fallback and asks for no timer, so the loop sleeps until the
+  // network's kick; every scope is pulled when the device is back online.
+  @Test func offlineARoundTakesTheDueFallbackAndWaitsForTheNetwork() async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    rig.connectivity.set(online: false)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
     rig.clock.advance(ms: Constants.pullFallbackMs)
-    try await Task.sleep(for: .milliseconds(50))
-    let before = connectivity.reads
-    try await Task.sleep(for: .milliseconds(300))
-    #expect(connectivity.reads - before < 50)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
-    connectivity.set(online: true)
-    try await eventually("the fallback pull once online") { rig.transport.pulls.count == 2 }
+    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .idle)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, digestOf: [card])]))
+    rig.connectivity.set(online: true)
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.transport.pulls.map(\.scopes) == [[Self.pulled(Rig.scope, nil)], [Self.pulled(Rig.scope, Self.live(1))]])
   }
 
   // MARK: Failures (design §6.3)
@@ -316,7 +314,7 @@ struct PullerTests {
     rig.transport.willAnswerPull(401, Rig.failure("unauthenticated"), after: gate)
     let puller = rig.engine.puller
     let stepping = Task { await puller.step() }
-    try await eventually("the pull to be in flight") { gate.reached }
+    await gate.arrival()
     try rig.engine.reauthenticate(token: SessionToken("token-2"))
     gate.open()
     #expect(await stepping.value == .again)
@@ -380,7 +378,7 @@ struct PullerTests {
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
     #expect(try Self.rows(rig) == [card.json, next.json])
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(2), digest: ScopeDigest(rows: [card.json, next.json]), booted: true))
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
     #expect(rig.transport.pulls.count == 1)
   }
 
@@ -395,7 +393,7 @@ struct PullerTests {
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     let sender = rig.engine.sender
     let pushing = Task { await sender.step() }
-    try await eventually("the push to be in flight") { gate.reached }
+    await gate.arrival()
     let row = try Rig.cardRow("card0001", "One", seq: 1)
     await rig.engine.puller.enqueue(try Rig.change(rows: [row], seq: 1, digestOf: [row]), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
@@ -469,13 +467,13 @@ struct PullerTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]), after: gate)
     let puller = rig.engine.puller
     let stepping = Task { await puller.step() }
-    try await eventually("the pull to be in flight") { gate.reached }
+    await gate.arrival()
     try rig.engine.unsubscribe([Self.tree])
     gate.open()
     #expect(await stepping.value == .pulled([PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .stale)]))
     #expect(try Self.cursor(rig, Self.tree) == nil)
     #expect(try Self.rows(rig, Self.tree) == [])
-    #expect(await rig.engine.puller.step() == .idle)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
   // Steps are single-flight: a step taken while a pull is in flight waits for it, then finds nothing left to pull.
@@ -485,13 +483,13 @@ struct PullerTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]), after: gate)
     let puller = rig.engine.puller
     let first = Task { await puller.step() }
-    try await eventually("the pull to be in flight") { gate.reached }
+    await gate.arrival()
     let second = Task { await puller.step() }
-    try await Task.sleep(for: .milliseconds(50))
+    await puller.turns.queued(1)
     #expect(rig.transport.pulls.count == 1)
     gate.open()
     #expect(await first.value == Self.applied(Rig.scope))
-    #expect(await second.value == .idle)
+    #expect(await second.value == .fallback(ms: Constants.pullFallbackMs))
     #expect(rig.transport.pulls.count == 1)
   }
 }

@@ -196,9 +196,12 @@ final class TranscriptDevice {
       try engine.subscribe(opening)
       subscribed += opening
       var step = await engine.puller.step()
-      if step == .idle {
+      switch step {
+      case .idle, .fallback:
         engine.puller.wants.add(scopes)
         step = await engine.puller.step()
+      default:
+        break
       }
       if let expected = line["returns"] {
         guard case .pulled(let reports) = step else { return around.transport.settle() + ["\(place): the puller \(step), not a pull"] }

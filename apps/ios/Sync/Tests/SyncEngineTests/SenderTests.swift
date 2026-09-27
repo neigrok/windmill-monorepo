@@ -45,11 +45,7 @@ struct SenderTests {
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], retry: ["n": 2, "retryAfterMs": 4_000]))
     #expect(await rig.engine.sender.step() == .wait(ms: 4_000))
     #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 sent 2", "g1/2 sent 3"])
-    rig.clock.advance(ms: 3_000)
-    rig.engine.foreground()
-    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
-    #expect(rig.transport.pushes.count == 1)
-    rig.clock.advance(ms: 1_000)
+    rig.clock.advance(ms: 4_000)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 3, [Rig.admitted(2, seq: 2), Rig.admitted(3, seq: 3)]))
     #expect(await rig.engine.sender.step() == .again)
     #expect(Self.numbers(rig.transport) == [[1, 2, 3], [2, 3]])
@@ -232,6 +228,55 @@ struct SenderTests {
     #expect(rig.transport.pushes.count == 1)
   }
 
+  // An answer asking for a 5 s wait: a 503, which admitted nothing, or a `retry` after the first intent. The next push
+  // then carries these numbers.
+  static func askingToWait(_ kind: String) -> (status: Int, body: JSON, next: [Int64]) {
+    kind == "503"
+      ? (503, ["error": "unavailable", "retryAfterMs": 5_000, "serverTime": JSON(Rig.startMs), "epoch": "ep-1"], [1, 2, 3])
+      : (200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], retry: ["n": 2, "retryAfterMs": 5_000]), [2, 3])
+  }
+
+  // §7.4: the wait the server asks for is a floor: a round a kick wakes inside it pushes nothing, and the first round
+  // after it pushes.
+  @Test(arguments: ["503", "retry"])
+  func aKickInsideTheWaitTheServerAskedForPushesNothing(_ kind: String) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.three)
+    let asked = Self.askingToWait(kind)
+    rig.transport.willAnswerPush(asked.status, asked.body)
+    #expect(await rig.engine.sender.step() == .wait(ms: 5_000))
+    rig.clock.advance(ms: 4_999)
+    rig.engine.foreground()
+    #expect(await rig.engine.sender.step() == .wait(ms: 1))
+    #expect(rig.transport.pushes.count == 1)
+    rig.clock.advance(ms: 1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 3, asked.next.map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(Self.numbers(rig.transport) == [[1, 2, 3], asked.next])
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 acked 2", "g1/2 acked 3"])
+  }
+
+  // §7.3, §7.4: a leave inside the wait the server asks for pushes nothing, though a leave pushes through any other
+  // backoff; a leave after it pushes.
+  @Test(arguments: ["503", "retry"])
+  func aLeaveInsideTheWaitTheServerAskedForPushesNothing(_ kind: String) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.three)
+    let asked = Self.askingToWait(kind)
+    rig.transport.willAnswerPush(asked.status, asked.body)
+    #expect(await rig.engine.sender.step() == .wait(ms: 5_000))
+    rig.clock.advance(ms: 4_999)
+    try rig.engine.leave()
+    await rig.engine.flushOnLeave()
+    #expect(rig.transport.pushes.count == 1)
+    rig.clock.advance(ms: 1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 3, asked.next.map { Rig.admitted($0, seq: $0) }))
+    try rig.engine.leave()
+    await rig.engine.flushOnLeave()
+    #expect(Self.numbers(rig.transport) == [[1, 2, 3], asked.next])
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 acked 2", "g1/2 acked 3"])
+  }
+
   // A conflict run is broken by any other answer: after a dropped push, a conflict is the first of a new run.
   @Test func aConflictAfterAnyOtherAnswerIsAFirstConflict() async throws {
     let rig = try Rig(account: "A")
@@ -273,7 +318,7 @@ struct SenderTests {
     rig.transport.willAnswerPush(401, Rig.failure("unauthenticated"), after: gate)
     let sender = rig.engine.sender
     let pushing = Task { await sender.step() }
-    try await eventually("the push to be in flight") { gate.reached }
+    await gate.arrival()
     try rig.engine.reauthenticate(token: SessionToken("token-2"))
     gate.open()
     #expect(await pushing.value == .again)
@@ -403,7 +448,7 @@ struct SenderTests {
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     let sender = rig.engine.sender
     let stepping = Task { await sender.step() }
-    try await eventually("the push to be in flight") { gate.reached }
+    await gate.arrival()
     var instance = Instance(actor: try Stamp.Actor("r_elsewhere00"), deviceNow: Rig.startMs, appVersion: "1.0")
     _ = try rig.store.reidentify(instance: &instance, identities: Identities(random: SeededRandomSource(seed: 3)))
     gate.open()
@@ -415,28 +460,31 @@ struct SenderTests {
 
   // MARK: The loop
 
-  @Test func theLoopSendsWhatACommitKicks() async throws {
+  // A commit's kick wakes the running loop, which sends the entry and sleeps again once it has handled the kick.
+  @Test(.timeLimit(.minutes(1))) func theLoopSendsWhatACommitKicks() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     await rig.engine.start()
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
     try rig.commit(Self.card1)
-    try await eventually("the commit to be acked") { try rig.outbox() == ["g1/0 acked 1"] }
+    await rig.engine.sender.wake.asleep(seen: rig.engine.sender.wake.kicks)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
   }
 
-  // The leave flush takes its turns beside the running loop: one push in flight at a time, and it returns once the
-  // outbox is drained.
-  @Test func theLeaveFlushTakesItsTurnsBesideTheLoop() async throws {
+  // The leave flush takes its turns beside the running loop: it waits behind the loop's push in flight, one push is in
+  // flight at a time, and it returns once the outbox is drained.
+  @Test(.timeLimit(.minutes(1))) func theLeaveFlushTakesItsTurnsBesideTheLoop() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     await rig.engine.start()
     let gate = Gate()
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(2, seq: 2)]))
     try rig.commit(Self.card1)
-    try await eventually("the first push to be in flight") { gate.reached }
+    await gate.arrival()
     try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], hold: true, gestureId: "g2"))
     try rig.engine.leave()
     let engine = rig.engine
     let flushing = Task { await engine.flushOnLeave() }
+    await engine.sender.turns.queued(1)
     gate.open()
     await flushing.value
     #expect(try rig.outbox() == ["g1/0 acked 1", "g2/0 acked 2"])
@@ -445,35 +493,35 @@ struct SenderTests {
   }
 
   // A flush drains inline before the loop starts, and the loop starts while that push is in flight: the loop's first
-  // push waits for it, so one push is ever in flight.
-  @Test func aLoopStartedDuringAnInlineFlushWaitsForItsPush() async throws {
+  // round waits for it, so one push is ever in flight.
+  @Test(.timeLimit(.minutes(1))) func aLoopStartedDuringAnInlineFlushWaitsForItsPush() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     try rig.commit(Self.card1)
     let gate = Gate()
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     let engine = rig.engine
     let flushing = Task { await engine.flushOnLeave() }
-    try await eventually("the flush's push to be in flight") { gate.reached }
+    await gate.arrival()
     await engine.start()
-    try await Task.sleep(for: .milliseconds(50))
+    await engine.sender.turns.queued(1)
     gate.open()
     await flushing.value
-    try await eventually("the outbox to drain") { try rig.outbox() == ["g1/0 acked 1"] }
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
     #expect(rig.transport.mostPushesInFlight == 1)
     #expect(Self.numbers(rig.transport) == [[1]])
   }
 
   // Two flushes before the loop runs (the leave flush and a second caller) take turns: one push in flight.
-  @Test func twoFlushesAtOnceSendOnePushAtATime() async throws {
+  @Test(.timeLimit(.minutes(1))) func twoFlushesAtOnceSendOnePushAtATime() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     try rig.commit(Self.card1)
     let gate = Gate()
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     let engine = rig.engine
     let first = Task { await engine.flushOnLeave() }
-    try await eventually("the first push to be in flight") { gate.reached }
+    await gate.arrival()
     let second = Task { await engine.flushOnLeave() }
-    try await Task.sleep(for: .milliseconds(50))
+    await engine.sender.turns.queued(1)
     gate.open()
     await first.value
     await second.value
@@ -481,37 +529,41 @@ struct SenderTests {
     #expect(Self.numbers(rig.transport) == [[1]])
   }
 
-  // While the server's pause runs the flush pushes nothing and returns at once, sleeping through none of it.
-  @Test func theLeaveFlushInsideTheServersPauseReturnsAtOnce() async throws {
+  // While the server's pause runs, the loop sleeps it out, and the flush pushes nothing and returns at once: the clock
+  // never moves, so it sleeps through none of the pause.
+  @Test(.timeLimit(.minutes(1))) func theLeaveFlushInsideTheServersPauseReturnsAtOnce() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     await rig.engine.start()
     rig.transport.willAnswerPush(503, ["error": "unavailable", "retryAfterMs": 60_000, "serverTime": JSON(Rig.startMs), "epoch": "ep-1"])
     try rig.commit(Self.card1)
-    try await eventually("the loop to sleep out the server's pause") {
-      rig.transport.pushes.count == 1 && rig.clock.deadlines.contains(60_000)
-    }
+    await rig.engine.sender.wake.asleep(seen: rig.engine.sender.wake.kicks)
+    await rig.clock.asleep(until: 60_000)
+    #expect(rig.transport.pushes.count == 1)
     try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
     await rig.engine.flushOnLeave()
     #expect(rig.transport.pushes.count == 1)
     #expect(try rig.outbox() == ["g1/0 sent 1", "g2/0 ready"])
   }
 
-  // The background time runs out while the loop's push is in flight: the flush waiting its turn returns at once.
-  @Test func aCancelledLeaveFlushReturnsWithoutWaitingForItsTurn() async throws {
+  // The background time runs out while the loop's push is in flight: the flush waiting its turn returns at once, and the
+  // loop records its push once it is answered.
+  @Test(.timeLimit(.minutes(1))) func aCancelledLeaveFlushReturnsWithoutWaitingForItsTurn() async throws {
     let rig = try Rig(account: "A", drivesLoops: true)
     await rig.engine.start()
     let gate = Gate()
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]), after: gate)
     try rig.commit(Self.card1)
-    try await eventually("the loop's push to be in flight") { gate.reached }
+    await gate.arrival()
     let engine = rig.engine
     let flushing = Task { await engine.flushOnLeave() }
-    try await Task.sleep(for: .milliseconds(20))
+    await engine.sender.turns.queued(1)
     flushing.cancel()
     await flushing.value
     #expect(rig.transport.pushes.count == 1)
+    let kicks = engine.sender.wake.kicks
     gate.open()
-    try await eventually("the loop's push to be recorded") { try rig.outbox() == ["g1/0 acked 1"] }
+    await engine.sender.wake.asleep(seen: kicks)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
   }
 
   // §7.3: leaving pushes once through the backoff after a clock-skew recovery, and leaves k and that backoff as they
@@ -564,7 +616,7 @@ struct SenderTests {
     #expect(try rig.outbox() == ["g1/0 acked 1"])
   }
 
-  // With no loop running, the flush drains inline.  // With no loop running, the flush drains inline.
+  // With no loop running, the flush drains inline.
   @Test func inStepModeTheLeaveFlushDrainsItself() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))

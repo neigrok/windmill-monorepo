@@ -139,7 +139,7 @@ struct LiveChannelTests {
     rig.clock.advance(ms: 25_000)
     let live = rig.engine.live
     let stepping = Task { await live.step() }
-    try await eventually("the ping to be on its way") { pinging.reached }
+    await pinging.arrival()
     socket.deliver(.pong)
     #expect(await live.receiveNext())
     pinging.open()
@@ -185,7 +185,7 @@ struct LiveChannelTests {
     rig.transport.willRefuseLive(401, after: gate)
     let live = rig.engine.live
     let stepping = Task { await live.step() }
-    try await eventually("the handshake to be on its way") { gate.reached }
+    await gate.arrival()
     try rig.engine.reauthenticate(token: SessionToken("token-2"))
     gate.open()
     #expect(await stepping.value == .again)
@@ -203,7 +203,7 @@ struct LiveChannelTests {
     rig.transport.willOpenLive(socket, after: gate)
     let live = rig.engine.live
     let stepping = Task { await live.step() }
-    try await eventually("the handshake to be on its way") { gate.reached }
+    await gate.arrival()
     try rig.engine.leave()
     gate.open()
     #expect(await stepping.value == .again)

@@ -852,22 +852,135 @@ public enum ArgumentType: Sendable, Hashable, CustomStringConvertible {
 
 // MARK: - Patterns and names
 
-// An ECMAScript registry pattern run as a Swift Regex, searched like `test`; compiled per match, as Regex is not Sendable.
+// §2.4 a registry pattern (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`), matched against the
+// whole value. It is in the portable subset, where every atom matches one ASCII character, so every regex dialect gives
+// the same answer; Swift's Regex reads it as `swiftSource`, and cannot compile a count of 65536 or more. Compiled per
+// match, as Regex is not Sendable.
 public struct Pattern: Sendable {
   public let source: String
+  let swiftSource: String
+
+  static let syntaxCharacters = #"^$\.*+?()[]{}|/"#
 
   public init(_ source: String) throws {
-    guard source.hasPrefix("^"), source.hasSuffix("$") else { throw RegistryError("\(source) is not an anchored pattern") }
-    _ = try Pattern.compile(source)
+    guard let swiftSource = Pattern.swiftSource(of: source) else {
+      throw RegistryError("the pattern \(source) is outside §2.4's patterns")
+    }
+    guard (try? Pattern.compile(swiftSource)) != nil else {
+      throw RegistryError("Swift's regex cannot compile the pattern \(source)")
+    }
     self.source = source
+    self.swiftSource = swiftSource
   }
 
   public func matches(_ text: String) -> Bool {
-    text.firstMatch(of: try! Pattern.compile(source)) != nil
+    text.wholeMatch(of: try! Pattern.compile(swiftSource)) != nil
   }
 
-  static func compile(_ source: String) throws -> Regex<AnyRegexOutput> {
-    try Regex(source).matchingSemantics(.unicodeScalar).asciiOnlyDigits().asciiOnlyWordCharacters()
+  public static func isPortable(_ source: String) -> Bool {
+    swiftSource(of: source) != nil
+  }
+
+  static func compile(_ swiftSource: String) throws -> Regex<AnyRegexOutput> {
+    try Regex(swiftSource).matchingSemantics(.unicodeScalar)
+  }
+
+  // §2.4's portable subset: printable ASCII, so one Character is one byte; `^` and `$` around literal characters,
+  // escaped syntax characters, bracket classes, groups (the only place a `|` may stand) and greedy quantifiers. The
+  // pattern in Swift's dialect, or nil outside the subset: the source as it stands, each class as `swiftClass` has it.
+  static func swiftSource(of source: String) -> String? {
+    guard source.isPrintableASCII, source.count >= 2, source.first == "^", source.last == "$" else { return nil }
+    let body = Array(source.dropFirst().dropLast())
+    var translation = "^"
+    var depth = 0
+    var quantifiable = false
+    var i = 0
+    while i < body.count {
+      switch body[i] {
+      case "\\":
+        guard let escaped = body.dropFirst(i + 1).first, syntaxCharacters.contains(escaped) else { return nil }
+        translation += "\\\(escaped)"
+        i += 2
+        quantifiable = true
+      case "[":
+        guard let bracketClass = swiftClass(body, from: i + 1) else { return nil }
+        translation += bracketClass.source
+        i = bracketClass.end + 1
+        quantifiable = true
+      case "(":
+        let marked = body.dropFirst(i + 1).first == "?"
+        guard !marked || body.dropFirst(i + 2).first == ":" else { return nil }
+        translation += marked ? "(?:" : "("
+        i += marked ? 3 : 1
+        depth += 1
+        quantifiable = false
+      case ")":
+        guard depth > 0 else { return nil }
+        translation += ")"
+        depth -= 1
+        i += 1
+        quantifiable = true
+      case "|":
+        guard depth > 0 else { return nil }
+        translation += "|"
+        i += 1
+        quantifiable = false
+      case "?", "*", "+", "{":
+        // A counted quantifier is `{n}`, `{n,}` or `{n,m}` with m ≥ n.
+        let counted = String(body[i...]).prefixMatch(of: #/\{([0-9]+)(?:,([0-9]*))?\}/#)?.output
+        guard quantifiable, body[i] != "{" || counted != nil else { return nil }
+        if let counted, let most = counted.2, !most.isEmpty, Double(most)! < Double(counted.1)! { return nil }
+        let quantifier = counted.map { String($0.0) } ?? String(body[i])
+        translation += quantifier
+        i += quantifier.count
+        quantifiable = false
+      case "^", "$", ".", "]", "}":
+        return nil
+      default:
+        translation.append(body[i])
+        i += 1
+        quantifiable = true
+      }
+    }
+    return depth == 0 ? translation + "$" : nil
+  }
+
+  // A bracket class of literal characters and ranges from `start`, just past its `[`: the class in Swift's dialect and
+  // the index of its `]`, or nil. A `-` is literal first or last, and otherwise joins two characters into an ascending
+  // range. Swift reads a class's `--` as subtraction and `[:` as a POSIX class, so every member but a letter or digit
+  // is escaped.
+  static func swiftClass(_ body: [Character], from start: Int) -> (source: String, end: Int)? {
+    guard body.dropFirst(start).first != "^" else { return nil }
+    var items: [Character?] = []  // nil is a bare `-`
+    var i = start
+    while i < body.count && body[i] != "]" {
+      if body[i] == "\\" {
+        guard let escaped = body.dropFirst(i + 1).first, (syntaxCharacters + "-").contains(escaped) else { return nil }
+        items.append(escaped)
+        i += 2
+      } else if "[&~".contains(body[i]) {
+        return nil
+      } else {
+        items.append(body[i] == "-" ? nil : body[i])
+        i += 1
+      }
+    }
+    guard i < body.count, !items.isEmpty else { return nil }
+    let swiftMember = { (member: Character) in member.isLetter || member.isNumber ? "\(member)" : "\\\(member)" }
+    var members = ""
+    var k = 0
+    while k < items.count {
+      if k + 2 < items.count && items[k + 1] == nil {
+        guard let low = items[k], let high = items[k + 2], low <= high else { return nil }
+        members += swiftMember(low) + "-" + swiftMember(high)
+        k += 3
+      } else {
+        guard items[k] != nil || k == 0 || k == items.count - 1 else { return nil }
+        members += swiftMember(items[k] ?? "-")
+        k += 1
+      }
+    }
+    return ("[\(members)]", i)
   }
 }
 

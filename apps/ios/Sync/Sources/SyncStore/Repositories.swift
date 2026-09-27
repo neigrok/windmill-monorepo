@@ -243,6 +243,7 @@ public struct StoreTransaction {
 public enum StoreError: Error, Hashable, CustomStringConvertible {
   case noDevice
   case noReplica(String)
+  case noNotice(String)
   case corrupt(String)
   case notARefField(type: String, field: String)
   case localIdTaken(String)
@@ -251,6 +252,7 @@ public enum StoreError: Error, Hashable, CustomStringConvertible {
     switch self {
     case .noDevice: "the store holds no device row; run its first launch"
     case .noReplica(let id): "the store holds no replica \(id)"
+    case .noNotice(let id): "the active replica holds no notice \(id)"
     case .corrupt(let column): "the store holds an unreadable \(column)"
     case .notARefField(let type, let field): "\(type).\(field) is not a top-level ref field"
     case .localIdTaken(let localId): "another replica holds the local id \(localId), which is unique on the device"

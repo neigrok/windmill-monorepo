@@ -79,6 +79,10 @@ public struct CommitPlanner: Sendable {
     let deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
     let predict = try gesture.predict.map { try builder.predicted($0) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
+    // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
+    // throws, before step 8's caps; predictions and device rows are never sent.
+    let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: gesture.command, gestureId: gesture.gestureId)
+    guard !sent.json.holdsNul else { throw CommitFailure.malformed("a string of the intents holds U+0000") }
     if let capped = try cappedType(deltas, stored: builder.stored), let cap = registry.type(capped)?.cap {
       return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
     }

@@ -56,13 +56,14 @@ public struct ModelServer: Sendable {
 
   // MARK: - Push
 
+  // §6.2: the envelope in §9.1's order, where the body as received is its JCS; the binding; then the intents in
+  // ascending `n`.
   public mutating func push(_ body: JSON, account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
     let serverNow = physNow(wall: wall)
     guard let account else { return failure(401, "unauthenticated", at: serverNow) }
+    guard body.jcs.count <= limits.pushMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
     guard let request = PushBody(body) else { return failure(400, "malformed", at: serverNow) }
-    guard request.intents.count <= limits.pushMaxIntents, body.jcs.count <= limits.pushMaxBytes else {
-      return failure(413, "request-too-large", at: serverNow)
-    }
+    guard request.intents.count <= limits.pushMaxIntents else { return failure(413, "request-too-large", at: serverNow) }
     if let binding = state.replicas[request.replica], !binding.account.isSameID(as: account) {
       return failure(409, "replica-foreign", at: serverNow)
     }
@@ -87,7 +88,7 @@ public struct ModelServer: Sendable {
   }
 
   // §6.2 step 4 for one intent: answered from `sync_results`, admitted, or the request stops (false) at a 409 or a
-  // retry.
+  // retry. One request runs at a time, so `last_n` here is the row as §6.1 step 3.3 re-checks it, after its binding.
   mutating func take(_ n: Int64, _ intent: JSON, of replica: String, account: String, at serverNow: Int64, faults: PushFaults,
                      into answer: inout PushAnswer) -> Bool {
     let lastN = state.replicas[replica]!.lastN
@@ -150,16 +151,20 @@ public struct ModelServer: Sendable {
 
   // MARK: - Server-origin calls
 
-  // §6.3: a tool call's admits in order, stopping at the first refusal. With a `requestId` the call is deduplicated
-  // by `sha256(jcs({tool, args}))`: each admit stores its result as part k, a resumed call answers its stored parts, and
-  // the call's result then ends its row `done`. The lookup, and a lease takeover, belong to the first admit the call
-  // runs, and roll back with it. Nil when the call ended unanswered.
+  // §6.3: a tool call's admits in order, stopping at the first refusal. A fault answers the caller `internal` at once
+  // (§6.6): a call holds no queue to retry it. With a `requestId` the call is deduplicated by
+  // `sha256(jcs({tool, args}))`: each admit stores its result as part k, a resumed call replays its stored parts, and the
+  // call's result then ends its row `done`. The lookup, and a lease takeover, belong to the first admit the call runs,
+  // and roll back with it. Nil when the call ended unanswered.
   public mutating func call(_ call: ServerCall, at wall: Int64, faults: CallFaults = CallFaults()) -> JSON? {
     let serverNow = physNow(wall: wall)
+    let internalRefusal = AdmitResult.refused(Refusal(.internal)).json
     guard let requestId = call.requestId else {
       var last: AdmitResult?
       for (index, intent) in call.intents.enumerated() {
-        let result = admitFromServer(intent, call: call, faulting: faults.faultAt == index + 1, at: serverNow)
+        guard let result = try? admitFromServer(intent, call: call, faulting: faults.faultAt == index + 1, at: serverNow) else {
+          return internalRefusal
+        }
         last = result
         if result.isRefused { break }
       }
@@ -170,16 +175,19 @@ public struct ModelServer: Sendable {
     }
     let key = RequestKey(account: call.account, requestId: requestId)
     let digest = SHA256Hex.of(JSON.object(["tool": .string(call.tool), "args": call.args]).jcs)
-    let before = state
+    // Step 1: the lookup, then the row inserted `running` or its lease taken over.
     if let row = state.requests[key] {
       guard row.digest == digest else { return AdmitResult.refused(Refusal(.requestConflict)).json }
       if row.state == .done { return row.result }
       guard serverNow - row.startedAt >= Constants.requestLeaseMs else { return AdmitResult.refused(Refusal(.requestRunning)).json }
     }
+    let before = state
     var row = state.requests[key] ?? RequestRecord(digest: digest, state: .running, startedAt: serverNow)
     row.startedAt = serverNow
     state.requests[key] = row
     let first = row.parts.count + 1
+    // Step 2: a stored part is replayed, running no admit and writing nothing; any other part is admitted and stored in
+    // a step of its own. A fault ends the call `internal`, its part and the done row with no step between.
     var result: JSON?
     for (index, intent) in call.intents.enumerated() {
       let k = index + 1
@@ -192,29 +200,31 @@ public struct ModelServer: Sendable {
         }
         var tagged = (try? intent.asObject()) ?? JSON.Object()
         tagged["gestureId"] = .string(requestId)
-        let admitted = admitFromServer(.object(tagged), call: call, faulting: faults.faultAt == k, at: serverNow).json
-        state.requests[key]!.parts[k] = admitted
+        guard let admitted = try? admitFromServer(.object(tagged), call: call, faulting: faults.faultAt == k, at: serverNow) else {
+          state.requests[key]!.parts[k] = internalRefusal
+          result = internalRefusal
+          break
+        }
+        state.requests[key]!.parts[k] = admitted.json
         state.requests[key]!.startedAt = serverNow
         if faults.crashAfter == k { return nil }
-        result = admitted
+        result = admitted.json
       }
       if result?["s"] == "refused" { break }
     }
+    // Step 3: the call's result ends its row `done`, after the last part's step.
     state.requests[key]!.state = .done
     state.requests[key]!.result = result
     return result
   }
 
-  // One admit of a call. A fault answers the caller `internal` at once (§6.6): it holds no queue to retry it.
-  mutating func admitFromServer(_ intent: JSON, call: ServerCall, faulting: Bool, at serverNow: Int64) -> AdmitResult {
-    do {
-      guard !faulting else { throw AdmissionFault(description: "injected") }
-      let admitted = try admission.admit(intent, from: .server(account: call.account, requestId: call.requestId), at: serverNow, in: &state)
-      publish(admitted.events)
-      return admitted.result
-    } catch {
-      return .refused(Refusal(.internal))
-    }
+  // One admit of a call, which throws when it faults.
+  mutating func admitFromServer(_ intent: JSON, call: ServerCall, faulting: Bool, at serverNow: Int64) throws(AdmissionFault)
+    -> AdmitResult {
+    guard !faulting else { throw AdmissionFault(description: "injected") }
+    let admitted = try admission.admit(intent, from: .server(account: call.account, requestId: call.requestId), at: serverNow, in: &state)
+    publish(admitted.events)
+    return admitted.result
   }
 
   // MARK: - Pull
@@ -369,7 +379,7 @@ public struct CallFaults: Sendable, Hashable {
 }
 
 // §9.3 a push body, exactly `{replica, ackThrough, intents}`: a replica id of D-3's form, `rp_` and 32 lowercase hex,
-// and an integer `n ≥ 1` on every intent, in ascending `n`.
+// a safe integer `ackThrough ≥ 0`, and a safe integer `n ≥ 1` on every intent (§9.1), in ascending `n`.
 struct PushBody {
   let replica: String
   let ackThrough: Int64
