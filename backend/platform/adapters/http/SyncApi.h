@@ -45,13 +45,18 @@ public:
 private:
   // Posts `work` to the pool, answering 503 when the pool refuses it. `work` answers the reply itself.
   void onWorker(Reply&& reply, std::function<SyncReply()> work);
-  // The Sync-Schema check every request passes first (§9.1): 400 when missing, 426 when older than minSchema.
-  std::optional<SyncReply> schemaRefusal(const drogon::HttpRequestPtr& req) const;
 
   SyncDeps deps_;
 };
 
 // Mounts /v1/sync/hello, /v1/sync/push and /v1/sync/pull.
 void registerSyncRoutes(drogon::HttpAppFramework& app, const std::shared_ptr<SyncApi>& api);
+
+// §9.1: the Sync-Schema check every request passes first, the live socket's upgrade included: 400 malformed when
+// the header is missing or not a decimal integer, 426 upgrade-required below `minSchema`.
+std::optional<SyncReply> schemaRefusal(const drogon::HttpRequestPtr& req, std::int64_t minSchema, Ms serverTime, const std::string& epoch);
+
+// A reply as the wire carries it: its status, and its body as JCS.
+drogon::HttpResponsePtr responseOf(const SyncReply& reply);
 
 }

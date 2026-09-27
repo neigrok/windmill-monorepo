@@ -1,6 +1,7 @@
 #include "platform/adapters/ws/SyncSocket.h"
 
 #include "platform/adapters/http/Caller.h"
+#include "platform/adapters/http/SyncApi.h"
 
 #include "platform/application/Heartbeat.h"
 #include "platform/domain/Auth.h"
@@ -136,6 +137,13 @@ void installSyncSocket(SyncSocketDeps deps) {
 }
 
 void linkSyncSocket() {}
+
+void SyncSchemaGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
+  if (!g_installed) return pass();
+  const SyncSocketDeps& deps = g_installed->deps;
+  if (const std::optional<SyncReply> refused = schemaRefusal(req, deps.minSchema, deps.clock->nowMs(), deps.epoch)) return refuse(responseOf(*refused));
+  pass();
+}
 
 void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
   if (!g_installed) return conn->forceClose();

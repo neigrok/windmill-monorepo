@@ -60,7 +60,7 @@ public:
 
   ReplicaRow bindReplica(SyncTxn&, const std::string& replica, const UserId& account, Ms now) override;
   std::optional<ReplicaRow> lockReplica(SyncTxn&, const std::string& replica) override;
-  void unbindReplica(SyncTxn&, const std::string& replica) override;
+  void unbindUnused(SyncTxn&, const std::string& replica) override;
   void setLastN(SyncTxn&, const std::string& replica, std::uint64_t n) override;
   std::optional<StoredResult> storedResult(SyncTxn&, const std::string& replica, std::uint64_t n) override;
   void putResult(SyncTxn&, const std::string& replica, const StoredResult& result) override;

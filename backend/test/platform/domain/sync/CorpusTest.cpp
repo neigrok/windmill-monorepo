@@ -232,7 +232,7 @@ Json::Value textScript(const Json::Value& input) {
 }
 
 Json::Value textDiff3(const Json::Value& input) {
-  const Diff3 merged = diff3(input["base"].asString(), input["head"].asString(), input["mine"].asString());
+  const Diff3 merged = diff3(input["base"].asString(), input["head"].asString(), input["mine"].asString(), Limits{}.mergeWorkCells);
   return object({{"text", merged.text}, {"conflict", merged.conflict}});
 }
 
@@ -247,7 +247,7 @@ Json::Value textMerge(const Json::Value& input) {
     if (base.rev && *base.rev != headRev && kept["rev"].asUInt64() == *base.rev) revision = kept["text"].asString();
   }
 
-  const std::optional<TextMerge> merge = mergeText(head, headRev, base, input["mine"].asString(), revision);
+  const std::optional<TextMerge> merge = mergeText(head, headRev, base, input["mine"].asString(), revision, Limits{}.mergeWorkCells);
   if (!merge) return object({{"refuse", "base-unknown"}});
   return object({{"text", merge->text},
                  {"conflict", merge->conflict},
@@ -303,6 +303,7 @@ void serverConstants(const Json::Value& constants) {
   CHECK_EQ(constants["PULL_MAX_SCOPES"].asUInt64(), limits.pullMaxScopes);
   CHECK_EQ(constants["LIVE_FRAME_BYTES"].asUInt64(), limits.liveFrameBytes);
   CHECK_EQ(constants["LIVE_INLINE_BYTES"].asUInt64(), limits.liveInlineBytes);
+  CHECK_EQ(constants["MERGE_WORK_CELLS"].asUInt64(), limits.mergeWorkCells);
 }
 
 Json::Value admitOverFakes(const Json::Value& input) {
@@ -333,6 +334,11 @@ void transcriptOverFakes(const std::vector<Json::Value>& lines) {
 Json::Value helloOverFakes(const Json::Value& input) {
   test::FakeWorld world;
   return test::helloVector(world, input);
+}
+
+Json::Value liveDeathOverFakes(const Json::Value& input) {
+  test::FakeWorld world;
+  return test::liveDeathVector(world, input);
 }
 
 [[maybe_unused]] const bool registered = [] {
@@ -367,6 +373,7 @@ Json::Value helloOverFakes(const Json::Value& input) {
       {"push/serve.json", pushOverFakes},
       {"pull/serve.json", pullOverFakes},
       {"pull/hello.json", helloOverFakes},
+      {"live/death.json", liveDeathOverFakes},
       {"protocol/", corpus::Transcript{transcriptOverFakes}},
 
       {"hlc/offset.json", corpus::ClientRole{"§10.4 offset samples"}},

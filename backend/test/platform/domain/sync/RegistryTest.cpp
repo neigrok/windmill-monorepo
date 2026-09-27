@@ -183,6 +183,12 @@ TEST(a_registry_refuses_a_document_the_schema_refuses) {
   CHECK_EQ(refusalOf([](Json::Value& r) { r["minVersion"] = 3; }), std::string("registry has a minVersion above its version"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["cap"] = 0; }),
            std::string("registry.types.item has a \"cap\" that is not an integer of at least 1"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["max"] = 12; }),
+           std::string("registry.types.item.fields.title has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["min"] = 1; }),
+           std::string("registry.types.item.fields.title has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["unit"] = "chars"; r["types"][0]["fields"]["title"]["max"] = 12; }),
+           std::string("(admitted)"));
 }
 
 TEST(a_registry_refuses_what_section_2_4_forbids) {

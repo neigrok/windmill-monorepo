@@ -5,14 +5,16 @@
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Wire.h"
 
+#include "test/platform/Fakes.h"
 #include "test/platform/application/sync/SyncWorld.h"
 #include "test/testing.h"
 
 #include <string>
 #include <variant>
 
-// What the golden corpus does not pin about Admission: the text merge's work bound, a base rev past every seq,
-// a string holding U+0000, and a replica bound to another account by the time its intent is admitted.
+// What the golden corpus does not pin about Admission: the text merge's work bound below MERGE_WORK_CELLS, a base
+// rev past every seq, a string holding U+0000, a replica binding a push's 409 took away or another account holds
+// by the time its intent is admitted, a fault in step R's own write, and the server's physical clock.
 
 using namespace wm;
 using namespace wm::sync;
@@ -67,22 +69,36 @@ Json::Value answeredOnly(const Json::Value& seeded, const Json::Value& intent, c
 
 }
 
-TEST(admission_refuses_a_text_merge_past_the_work_bound_too_large_and_reports_nothing) {
+TEST(admission_merges_a_text_past_the_work_bound_as_one_whole_conflict_and_marks_it_merged) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const Json::Value intent = memoIntent(parseJson(R"({"text": "rose bleu", "base": {"text": "red bleu"}})"));
+  const Json::Value ok = parseJson(R"({"s": "ok", "seq": 2})");
+  auto memoAfter = [&world, &intent](const Limits& limits) {
+    world.seed(markedOverlay());
+    Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures, limits);
+    const AdmitOutcome outcome = admitFirst(world, admission, intent);
+    const Json::Value result = std::holds_alternative<Admitted>(outcome) ? std::get<Admitted>(outcome).result : Json::Value();
+    return std::pair(result, world.dump()["rows"]["acct:A/overlay/b_00000001"][0]["x"]["memo"]);
+  };
+
+  // Each script, from three base tokens to three side tokens, takes 16 cells.
+  const auto [withinResult, withinMemo] = memoAfter(Limits{.mergeWorkCells = 16});
+  const auto [pastResult, pastMemo] = memoAfter(Limits{.mergeWorkCells = 15});
+
+  CHECK_EQ(jcs(withinResult), jcs(ok));
+  CHECK_EQ(jcs(withinMemo), jcs(parseJson(R"({"text": "rose blue", "rev": 2, "merged": false})")));
+  CHECK_EQ(jcs(pastResult), jcs(ok));
+  CHECK_EQ(jcs(pastMemo), jcs(parseJson(R"({"text": "red blue\n\nrose bleu", "rev": 2, "merged": true})")));
+}
+
+TEST(admission_refuses_a_whole_text_conflict_past_the_field_cap_too_large_and_reports_nothing) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
   world.seed(markedOverlay());
   const Json::Value seeded = world.dump();
-  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
-  std::string base;
-  std::string mine;
-  for (int i = 0; i < 1500; ++i) {
-    base += "a ";
-    mine += "b ";
-  }
-  Json::Value write(Json::objectValue);
-  write["text"] = mine;
-  write["base"]["text"] = base;
-  const Json::Value intent = memoIntent(write);
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures, Limits{.mergeWorkCells = 15});
+  const Json::Value intent = memoIntent(parseJson(R"({"text": "rose bleu, the colour of the sea", "base": {"text": "red bleu"}})"));
 
   const AdmitOutcome outcome = admitFirst(world, admission, intent);
 
@@ -152,4 +168,84 @@ TEST(admission_leaves_an_intent_of_a_replica_now_bound_to_another_account_unansw
   CHECK(std::holds_alternative<AlreadyAnswered>(refusable));
   CHECK_EQ(jcs(world.dump()), jcs(seeded));
   CHECK(world.feed.published.empty());
+}
+
+TEST(admission_binds_a_replica_again_when_a_push_s_409_took_its_binding_away) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Json::Value state = markedOverlay();
+  state.removeMember("replicas");
+  world.seed(state);
+  const Json::Value seeded = world.dump();
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const Json::Value intent = memoIntent(parseJson(R"({"text": "red blue", "base": {"rev": 1}})"));
+
+  const AdmitOutcome outcome = admitFirst(world, admission, intent);
+
+  const Json::Value ok = parseJson(R"({"s": "ok", "seq": 1})");
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  CHECK_EQ(jcs(std::get<Admitted>(outcome).result), jcs(ok));
+  Json::Value expected = seeded;
+  expected["replicas"]["rp_0000000000000000000000000000000a"] = parseJson(R"({"account": "A", "lastN": 0})");
+  CHECK_EQ(jcs(world.dump()), jcs(answeredOnly(expected, intent, ok)));
+}
+
+TEST(physical_clock_never_steps_back_when_the_wall_clock_does) {
+  wm::fake::FakeClock wall;
+  wall.now = 5'000;
+  PhysicalClock physNow(wall);
+
+  const std::uint64_t first = physNow.nowMs();
+  wall.now = 4'000;
+  const std::uint64_t afterStepBack = physNow.nowMs();
+  wall.now = 6'000;
+  const std::uint64_t afterCatchUp = physNow.nowMs();
+
+  CHECK_EQ(first, 5'000u);
+  CHECK_EQ(afterStepBack, 5'000u);
+  CHECK_EQ(afterCatchUp, 6'000u);
+}
+
+TEST(admission_tallies_a_fault_in_step_r_s_write_toward_poison_for_a_replica) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(markedOverlay());
+  const Json::Value seeded = world.dump();
+  wm::sync::fake::FaultingStore store(world.store(), wm::sync::fake::FaultingStore::Faults{.intents = {{1, FaultClass::fault}}});
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  const Json::Value refusable = memoIntent(parseJson(R"({"text": "red", "base": {"rev": "one"}})"));
+
+  const AdmitOutcome outcome = admission.admit(ReplicaOrigin{world.account("A"), "rp_0000000000000000000000000000000a", 1, intentDigest(refusable)},
+                                               refusable, 1'000'000);
+
+  REQUIRE(std::holds_alternative<Retry>(outcome));
+  CHECK_EQ(std::get<Retry>(outcome).afterMs, 0u);
+  Json::Value expected = seeded;
+  Json::Value tally = parseJson(R"({"n": 1, "result": null, "faults": 1})");
+  tally["digest"] = intentDigest(refusable).hex();
+  expected["results"]["rp_0000000000000000000000000000000a"].append(tally);
+  CHECK_EQ(jcs(world.dump()), jcs(expected));
+}
+
+TEST(admission_ends_a_call_refused_internal_when_step_r_s_write_faults) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(markedOverlay());
+  wm::sync::fake::FaultingStore store(world.store(), wm::sync::fake::FaultingStore::Faults{.parts = {{1, FaultClass::fault}}});
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  const Json::Value refusable = memoIntent(parseJson(R"({"text": "red", "base": {"rev": "one"}})"));
+  Json::Value call(Json::objectValue);
+  call["tool"] = "memo.write";
+  call["args"] = Json::Value(Json::objectValue);
+  const Digest256 digest = intentDigest(call);
+
+  const AdmitOutcome outcome = admission.admit(ServerOrigin{world.account("A"), CallPart{"req-1", 1, digest, true}}, refusable, 1'000'000);
+
+  const Json::Value internal = parseJson(R"({"s": "refused", "code": "internal"})");
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  CHECK_EQ(jcs(std::get<Admitted>(outcome).result), jcs(internal));
+  Json::Value done = parseJson(R"({"A": [{"requestId": "req-1", "state": "done", "startedAt": 1000000,
+      "parts": [{"k": 1, "result": {"s": "refused", "code": "internal"}}], "result": {"s": "refused", "code": "internal"}}]})");
+  done["A"][0]["digest"] = digest.hex();
+  CHECK_EQ(jcs(world.dump()["requests"]), jcs(done));
 }

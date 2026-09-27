@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/application/sync/SyncLive.h"
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Record.h"
@@ -132,9 +133,10 @@ public:
     return row == dbOf(txn).replicas.end() ? std::nullopt : std::optional(row->second);
   }
 
-  void unbindReplica(SyncTxn& txn, const std::string& replica) override {
-    dbOf(txn).replicas.erase(replica);
-    std::erase_if(dbOf(txn).results, [&replica](const auto& entry) { return entry.first.first == replica; });
+  void unbindUnused(SyncTxn& txn, const std::string& replica) override {
+    FakeDb& db = dbOf(txn);
+    const bool answered = std::any_of(db.results.begin(), db.results.end(), [&replica](const auto& entry) { return entry.first.first == replica; });
+    if (!answered && db.replicas.contains(replica) && db.replicas.at(replica).lastN == 0) db.replicas.erase(replica);
   }
 
   void setLastN(SyncTxn& txn, const std::string& replica, std::uint64_t n) override { dbOf(txn).replicas.at(replica).lastN = n; }
@@ -227,7 +229,7 @@ public:
     return inner_.bindReplica(txn, replica, account, now);
   }
   std::optional<ReplicaRow> lockReplica(SyncTxn& txn, const std::string& replica) override { return inner_.lockReplica(txn, replica); }
-  void unbindReplica(SyncTxn& txn, const std::string& replica) override { inner_.unbindReplica(txn, replica); }
+  void unbindUnused(SyncTxn& txn, const std::string& replica) override { inner_.unbindUnused(txn, replica); }
   void setLastN(SyncTxn& txn, const std::string& replica, std::uint64_t n) override { inner_.setLastN(txn, replica, n); }
   std::optional<StoredResult> storedResult(SyncTxn& txn, const std::string& replica, std::uint64_t n) override {
     return inner_.storedResult(txn, replica, n);
@@ -259,20 +261,30 @@ private:
   SyncStore& inner_;
 };
 
-// push/serve.json's `faults` (corpus/README.md) over any store: the admission of a listed intent n throws
-// inside its own transaction, at the putResult that would record its answer, so Admission's §6.6 path runs
-// as it does over a real failure. The tallies that path stores (faults ≥ 1) pass through.
+// The faults a corpus vector injects (corpus/README.md) over any store, each thrown inside the admission's own
+// transaction so Admission's §6.6 path runs as it does over a real failure: push/serve.json's `faults` by intent
+// n, at the putResult that would record its answer; admit/requests.json's `transientAt` and `faultAt` by admit
+// k, at the putRequest that would store part k. What that path stores itself (a tally, refused internal) passes
+// through.
 class FaultingStore final : public ForwardingStore {
 public:
-  FaultingStore(SyncStore& inner, std::map<std::uint64_t, FaultClass> faults) : ForwardingStore(inner), faults_(std::move(faults)) {}
+  struct Faults {
+    std::map<std::uint64_t, FaultClass> intents;
+    std::map<int, FaultClass> parts;
+  };
+
+  FaultingStore(SyncStore& inner, Faults faults) : ForwardingStore(inner), faults_(std::move(faults)) {}
 
   void putResult(SyncTxn& txn, const std::string& replica, const StoredResult& result) override {
-    const auto fault = faults_.find(result.n);
-    if (result.faults == 0 && fault != faults_.end()) {
-      if (fault->second == FaultClass::transient) throw InjectedTransient("an injected transient failure");
-      throw std::runtime_error("an injected fault");
-    }
+    if (result.faults == 0) inject(faults_.intents, result.n);
     ForwardingStore::putResult(txn, replica, result);
+  }
+
+  void putRequest(SyncTxn& txn, const UserId& account, const RequestRow& row) override {
+    const std::size_t hash = row.requestId.rfind('#');
+    const bool internal = row.result && (*row.result)["code"].asString() == "internal";
+    if (hash != std::string::npos && !internal) inject(faults_.parts, std::stoi(row.requestId.substr(hash + 1)));
+    ForwardingStore::putRequest(txn, account, row);
   }
 
   FaultClass classify(const std::exception& error) const override {
@@ -280,7 +292,15 @@ public:
   }
 
 private:
-  std::map<std::uint64_t, FaultClass> faults_;
+  template <typename Key>
+  static void inject(const std::map<Key, FaultClass>& faults, Key key) {
+    const auto fault = faults.find(key);
+    if (fault == faults.end()) return;
+    if (fault->second == FaultClass::transient) throw InjectedTransient("an injected transient failure");
+    throw std::runtime_error("an injected fault");
+  }
+
+  Faults faults_;
 };
 
 // Any registry type's typed rows, kept whole. `revisionsKept` is the product's text revision policy.
@@ -387,6 +407,14 @@ private:
     const auto found = book.find({scope, key});
     return found == book.end() ? std::nullopt : std::optional(found->second);
   }
+};
+
+// Every frame the engine queued on one live socket, in order.
+class RecordingSocket final : public LiveSocket {
+public:
+  void send(const Json::Value& frame) override { frames.append(frame); }
+
+  Json::Value frames = Json::Value(Json::arrayValue);
 };
 
 // Every change a committed admission published, in order.

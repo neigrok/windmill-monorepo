@@ -27,6 +27,7 @@ const char* needsPostgres() {
                             {"push/serve.json", [](const Json::Value& input) { return test::pushVector(world(), input); }},
                             {"pull/serve.json", [](const Json::Value& input) { return test::pullVector(world(), input); }},
                             {"pull/hello.json", [](const Json::Value& input) { return test::helloVector(world(), input); }},
+                            {"live/death.json", [](const Json::Value& input) { return test::liveDeathVector(world(), input); }},
                             {"protocol/", corpus::Transcript{[](const std::vector<Json::Value>& lines) { test::protocolTranscript(world(), lines); }}},
                         },
                         needsPostgres);

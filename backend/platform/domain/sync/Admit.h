@@ -62,7 +62,8 @@ struct TextRevision {
 };
 
 // One record of the intent after step 9: what a product's check reads and step 13 stores. `stored` and
-// `typed` are the record before the intent; `op` and `source` are its last delta's.
+// `typed` are the record before the intent; `op` and `source` are its last delta's. `joined` is after's lattice
+// as the join wrote it, before G1 dropped a dead record's fields: step 10 reads a parent reference there.
 struct Change {
   const TypeDef* type = nullptr;
   ScopeKey scope;
@@ -72,11 +73,15 @@ struct Change {
   std::optional<Row> typed;
   bool isNew = false;
   Row after;
+  LatticeRecord joined;
   std::vector<TextRevision> revisions;
 
   // Its lattice fields, texts (without revs) or serial values differ from the record before the intent.
   bool changed() const;
   bool wasAlive() const { return stored && stored->alive(); }
+  // `after` as step 13 stores it at `seq`: each newly merged text at rev `seq`, rc kept from the typed row (else
+  // serverNow), and ru serverNow.
+  Row storedAt(Seq seq, Ms serverNow) const;
 };
 
 // A text revision step 9 needs from the product (§6.11 step 1: a {rev} base that is not the head).
@@ -133,7 +138,7 @@ struct Governed {
 // The records one intent writes, from steps 5–6 through 13.
 class ChangeSet {
 public:
-  ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNow);
+  ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNow, const Limits& limits);
 
   // Step 6 for one delta step 5 locked: §4.3's decision, then §4.4's const and time rule for a client
   // delta. Queues it for the join unless §4.3 admits it without a change.
@@ -149,17 +154,18 @@ public:
   void mint(HlcClock& clock);
 
   // Step 9's text bases the product must load, then the join: every queued delta onto its record in order,
-  // the text merges, G1's field drop for a dead non-revivable record, and the record bound measured as step
-  // 13 would store the row at the next seq of its scope (`scopeSeqs`; a scope this intent creates is at 0).
+  // the text merges, G1's field drop for a dead non-revivable record, and the record bound on each record the
+  // intent changes, measured as step 13 would store it at the next seq of its scope (`scopeSeqs`; a scope this
+  // intent creates is at 0) before step 11 gives it a serial.
   std::set<RevisionWanted> revisionsWanted() const;
-  void join(const std::map<RevisionWanted, std::optional<std::string>>& revisions, const std::map<std::string, Seq>& scopeSeqs,
-            std::size_t maxRecordBytes);
+  void join(const std::map<RevisionWanted, std::optional<std::string>>& revisions, const std::map<std::string, Seq>& scopeSeqs);
 
   std::vector<Change>& changes() { return changes_; }
   const std::vector<Change>& changes() const { return changes_; }
 
-  // Step 10's parent rule on the joined records: the parents step 10 must look up outside the intent, then
-  // the rule (a create or update whose parent is not alive, a parent the intent creates counting).
+  // Step 10's parent rule on the joined records, every create and update included, a command's and a check's:
+  // the parents step 10 must look up outside the intent, then the rule (a create or update whose parent is not
+  // alive, a parent the intent creates counting). The reference is read before G1.
   std::set<RecordRef> parentsWanted() const;
   void checkParents(const std::map<RecordRef, std::optional<Row>>& storedParents) const;
 
@@ -196,6 +202,7 @@ private:
   const Registry& registry_;
   ScopeKey intentScope_;
   Ms serverNow_ = 0;
+  Limits limits_;
   std::vector<Queued> queued_;
   std::vector<Change> changes_;
   std::map<RecordRef, std::size_t> positions_;

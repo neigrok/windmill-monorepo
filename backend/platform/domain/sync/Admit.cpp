@@ -41,9 +41,9 @@ const FieldDef* parentFieldOf(const TypeDef& type) {
   return nullptr;
 }
 
-Json::Value valueOf(const Row& row, const std::string& field) {
-  const auto reg = row.lattice.f.find(field);
-  return reg == row.lattice.f.end() ? Json::Value(Json::nullValue) : reg->second.value;
+Json::Value valueOf(const LatticeRecord& lattice, const std::string& field) {
+  const auto reg = lattice.f.find(field);
+  return reg == lattice.f.end() ? Json::Value(Json::nullValue) : reg->second.value;
 }
 
 void observeRegisters(HlcClock& clock, const Delta& written, const LatticeRecord& other) {
@@ -89,6 +89,17 @@ bool Change::changed() const {
   return jcs(comparable(stored)) != jcs(comparable(after));
 }
 
+Row Change::storedAt(Seq seq, Ms serverNow) const {
+  Row row = after;
+  for (auto& [name, text] : row.x) {
+    if (text.rev == 0) text.rev = seq;
+  }
+  row.seq = seq;
+  row.rc = typed ? typed->rc : serverNow;
+  row.ru = serverNow;
+  return row;
+}
+
 std::string SerialWanted::key() const {
   Json::Value wire(Json::arrayValue);
   wire.append(scope.text());
@@ -99,8 +110,8 @@ std::string SerialWanted::key() const {
   return jcs(wire);
 }
 
-ChangeSet::ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNow)
-    : registry_(registry), intentScope_(std::move(intentScope)), serverNow_(serverNow) {}
+ChangeSet::ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNow, const Limits& limits)
+    : registry_(registry), intentScope_(std::move(intentScope)), serverNow_(serverNow), limits_(limits) {}
 
 void ChangeSet::admit(const TypeDef& type, const ScopeKey& scope, Delta delta, Source source, const Locked& locked) {
   const Op op = opOf(type, delta);
@@ -169,15 +180,14 @@ std::set<RevisionWanted> ChangeSet::revisionsWanted() const {
   return wanted;
 }
 
-void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>& revisions, const std::map<std::string, Seq>& scopeSeqs,
-                     std::size_t maxRecordBytes) {
+void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>& revisions, const std::map<std::string, Seq>& scopeSeqs) {
   changes_.clear();
   positions_.clear();
   for (const Queued& queued : queued_) {
     if (queued.delta.unminted()) throw std::logic_error("a delta reached the join with a stamp step 9 never minted");
     const RecordRef key{queued.scope, queued.delta.t, queued.delta.id};
-    Change* known = find(key);
-    const std::optional<Row> before = known ? std::optional<Row>(known->after) : queued.locked.stored;
+    Change* change = find(key);
+    const std::optional<Row> before = change ? std::optional<Row>(change->after) : queued.locked.stored;
 
     Row after{queued.delta.t, queued.delta.id};
     after.lattice = joinRecord(*queued.type, before ? before->lattice : LatticeRecord{}, queued.delta.lattice);
@@ -194,12 +204,7 @@ void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>&
       const TextVal head = before && stored != before->x.end() ? stored->second : TextVal{};
       std::optional<std::string> revision;
       if (const auto loaded = revisions.find(RevisionWanted{key, name, write.base.rev.value_or(0)}); loaded != revisions.end()) revision = loaded->second;
-      std::optional<TextMerge> merge;
-      try {
-        merge = mergeText(head.text, head.rev, write.base, write.text, revision);
-      } catch (const MergeTooLarge&) {
-        throw Refusal(code::tooLarge);
-      }
+      const std::optional<TextMerge> merge = mergeText(head.text, head.rev, write.base, write.text, revision, limits_.mergeWorkCells);
       if (!merge) throw Refusal(code::baseUnknown);
       if (static_cast<std::int64_t>(lengthIn(*field.unit, merge->text)) > *field.max) throw Refusal(code::tooLarge);
       const bool merged = mergedFlag(head.merged, head.text, *merge);
@@ -207,34 +212,31 @@ void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>&
       after.x[name] = TextVal{merge->text, 0, merged};
       if (head.rev > 0) superseded.push_back(TextRevision{name, head.rev, head.text});
     }
+    const LatticeRecord joined = after.lattice;
     if (!after.alive() && !queued.type->revivable) {
       after.lattice.f.clear();
       after.x.clear();
       after.v.clear();
     }
 
-    const std::optional<Row> typed = known ? known->typed : queued.locked.typed;
-    Row measured = after;
+    if (!change) {
+      const bool isNew = queued.locked.state.kind == IdState::Kind::none || queued.locked.state.kind == IdState::Kind::foreign;
+      positions_.emplace(key, changes_.size());
+      change = &changes_.emplace_back(Change{.type = queued.type,
+                                             .scope = queued.scope,
+                                             .stored = queued.locked.stored,
+                                             .typed = queued.locked.typed,
+                                             .isNew = isNew});
+    }
+    change->op = queued.op;
+    change->source = queued.source;
+    change->after = std::move(after);
+    change->joined = joined;
+    change->revisions.insert(change->revisions.end(), superseded.begin(), superseded.end());
+    if (!change->changed()) continue;
     const auto scopeSeq = scopeSeqs.find(queued.scope.text());
-    measured.seq = (scopeSeq == scopeSeqs.end() ? 0 : scopeSeq->second) + 1;
-    for (auto& [name, text] : measured.x) {
-      if (text.rev == 0) text.rev = measured.seq;
-    }
-    measured.rc = typed ? typed->rc : serverNow_;
-    measured.ru = serverNow_;
-    if (jcs(measured.toJson()).size() > maxRecordBytes) throw Refusal(code::tooLarge);
-
-    if (known) {
-      known->op = queued.op;
-      known->source = queued.source;
-      known->after = std::move(after);
-      known->revisions.insert(known->revisions.end(), superseded.begin(), superseded.end());
-      continue;
-    }
-    const bool isNew = queued.locked.state.kind == IdState::Kind::none || queued.locked.state.kind == IdState::Kind::foreign;
-    positions_.emplace(key, changes_.size());
-    changes_.push_back(Change{queued.type, queued.scope, queued.op, queued.source, queued.locked.stored, typed, isNew, std::move(after),
-                              std::move(superseded)});
+    const Seq next = (scopeSeq == scopeSeqs.end() ? 0 : scopeSeq->second) + 1;
+    if (jcs(change->storedAt(next, serverNow_).toJson()).size() > limits_.maxRecordBytes) throw Refusal(code::tooLarge);
   }
 }
 
@@ -255,7 +257,7 @@ std::set<RecordRef> ChangeSet::parentsWanted() const {
     const FieldDef* parent = parentFieldOf(*queued.type);
     if (!parent) continue;
     const Change* record = find(RecordRef{queued.scope, queued.delta.t, queued.delta.id});
-    const Json::Value parentId = valueOf(record->after, parent->name);
+    const Json::Value parentId = valueOf(record->joined, parent->name);
     if (parentId.isNull()) continue;
     const RecordRef key{queued.scope, *parent->ref, RecordId(parentId)};
     if (!find(key)) wanted.insert(key);
@@ -269,7 +271,7 @@ void ChangeSet::checkParents(const std::map<RecordRef, std::optional<Row>>& stor
     const FieldDef* parent = parentFieldOf(*queued.type);
     if (!parent) continue;
     const Change* record = find(RecordRef{queued.scope, queued.delta.t, queued.delta.id});
-    const Json::Value parentId = valueOf(record->after, parent->name);
+    const Json::Value parentId = valueOf(record->joined, parent->name);
     if (parentId.isNull()) throw Refusal(code::parentDead);
     const RecordRef key{queued.scope, *parent->ref, RecordId(parentId)};
     std::optional<Row> row;
@@ -286,7 +288,7 @@ std::vector<SerialWanted> ChangeSet::serialsWanted() const {
     for (const auto& [name, field] : change.type->fields) {
       if (field.kind != FieldKind::serial || change.after.v.contains(name)) continue;
       SerialWanted serial{change.scope, change.type, name, {}};
-      for (const std::string& next : field.serialNext) serial.match[next] = valueOf(change.after, next);
+      for (const std::string& next : field.serialNext) serial.match[next] = valueOf(change.after.lattice, next);
       wanted.push_back(std::move(serial));
     }
   }
@@ -300,11 +302,11 @@ void ChangeSet::assignSerials(const std::map<std::string, std::optional<std::int
     for (const auto& [name, field] : change.type->fields) {
       if (field.kind != FieldKind::serial || change.after.v.contains(name)) continue;
       SerialWanted serial{change.scope, change.type, name, {}};
-      for (const std::string& next : field.serialNext) serial.match[next] = valueOf(change.after, next);
+      for (const std::string& next : field.serialNext) serial.match[next] = valueOf(change.after.lattice, next);
       std::int64_t highest = storedMaxima.at(serial.key()).value_or(0);
       for (const Row* peer : numbered) {
         const bool sameRun = std::all_of(field.serialNext.begin(), field.serialNext.end(),
-                                         [&](const std::string& next) { return jcs(valueOf(*peer, next)) == jcs(valueOf(change.after, next)); });
+                                         [&](const std::string& next) { return jcs(valueOf(peer->lattice, next)) == jcs(valueOf(change.after.lattice, next)); });
         if (peer->t != change.after.t || !peer->alive() || peer->id == change.after.id || !sameRun) continue;
         if (const auto value = peer->v.find(name); value != peer->v.end()) highest = std::max(highest, value->second.asInt64());
       }
@@ -349,13 +351,7 @@ std::optional<ScopeWrite> ChangeSet::stage(const ScopeKey& scope, Seq seq, const
   }
   for (const Change& change : changes_) {
     if (change.scope != scope || !change.changed()) continue;
-    Row after = change.after;
-    for (auto& [name, text] : after.x) {
-      if (text.rev == 0) text.rev = write.seq;
-    }
-    after.seq = write.seq;
-    after.rc = change.typed ? change.typed->rc : serverNow_;
-    after.ru = serverNow_;
+    const Row after = change.storedAt(write.seq, serverNow_);
     const TypeDef& type = *change.type;
     std::optional<Row> typedAfter;
     if (!after.alive() && !type.revivable && type.deadRows == DeadRows::spent) {

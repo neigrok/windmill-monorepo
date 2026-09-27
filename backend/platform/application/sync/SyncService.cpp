@@ -49,9 +49,10 @@ bool isReplicaId(const Json::Value& replica) {
          std::all_of(id.begin() + 3, id.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
-// §6.2 step 2's shape: {replica: a D-3 replica id, ackThrough: integer ≥ 0, intents: [{n: integer ≥ 1, …}]}.
+// §6.2 step 1's shape: exactly {replica: a D-3 replica id, ackThrough: integer ≥ 0, intents: [{n: integer ≥ 1, …}]}.
 bool isPushRequest(const Json::Value& request) {
-  if (!request.isObject() || !isReplicaId(request["replica"]) || !request["ackThrough"].isUInt64() || !request["intents"].isArray()) return false;
+  if (!request.isObject() || request.size() != 3) return false;
+  if (!isReplicaId(request["replica"]) || !request["ackThrough"].isUInt64() || !request["intents"].isArray()) return false;
   return std::all_of(request["intents"].begin(), request["intents"].end(),
                      [](const Json::Value& intent) { return intent.isObject() && intent["n"].isUInt64() && intent["n"].asUInt64() >= 1; });
 }
@@ -103,7 +104,6 @@ public:
           retry = retryAt(n, 0);
           break;
         }
-        ++admitted;
         const AdmitOutcome outcome = admission_.admit(ReplicaOrigin{account_, replica_, n, digest}, *intent, serverNow_);
         if (const Retry* wait = std::get_if<Retry>(&outcome)) {
           retry = retryAt(n, wait->afterMs);
@@ -111,6 +111,7 @@ public:
         }
         lastN_ = n;
         if (const Admitted* answer = std::get_if<Admitted>(&outcome)) {
+          ++admitted;
           results.append(numbered(n, answer->result));
           continue;
         }
@@ -158,21 +159,21 @@ private:
     return stored->result;
   }
 
-  // A 409 answers no results, and keeps no binding this push inserted unless an intent was admitted under it.
+  // A 409 answers no results. A binding this push inserted goes with it, under the replica row's lock, while
+  // nothing was answered under it: an admission that then finds it gone inserts it again (§6.1 step 3.3).
   SyncReply conflict(Json::Value body, const std::string& error) {
     if (inserted_) {
       const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-      const std::optional<ReplicaRow> binding = store_.lockReplica(*txn, replica_);
-      if (binding && binding->lastN == 0) store_.unbindReplica(*txn, replica_);
+      if (store_.lockReplica(*txn, replica_)) store_.unbindUnused(*txn, replica_);
       txn->commit();
     }
     return failed(409, std::move(body), error);
   }
 
-  // Step 6.
+  // Step 6, in a push answered 200: the results the replica acknowledged, never past the last n answered.
   void prune() {
     const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-    store_.pruneResults(*txn, replica_, request_["ackThrough"].asUInt64());
+    store_.pruneResults(*txn, replica_, std::min(request_["ackThrough"].asUInt64(), lastN_));
     txn->commit();
   }
 

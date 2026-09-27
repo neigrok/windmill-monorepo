@@ -76,33 +76,37 @@ inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
 }
 
 // admit/requests.json: §6.3 for each call in order. `crashAfter: k` stops right after part k commits;
-// `transientAt: k` stops before admit k as a rolled-back transient would; neither finishes the call.
+// `transientAt: k` and `faultAt: k` fail admit k inside its own transaction (fake::FaultingStore), transiently
+// or as a fault, and the call stops at the answer Admission gives.
 inline Json::Value requestsVector(SyncWorld& world, const Json::Value& input) {
   BlockingThread::Mark blocking;
   world.seed(input["state"]);
-  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures, limitsOf(input));
   Json::Value results(Json::arrayValue);
   for (const Json::Value& call : input["calls"]) {
+    fake::FaultingStore::Faults faults;
+    if (call.isMember("transientAt")) faults.parts.emplace(call["transientAt"].asInt(), FaultClass::transient);
+    if (call.isMember("faultAt")) faults.parts.emplace(call["faultAt"].asInt(), FaultClass::fault);
+    fake::FaultingStore store(world.store(), faults);
+    Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures, limitsOf(input));
     const Ms serverNow = call["serverNow"].asUInt64();
     const std::optional<std::string> requestId = call.isMember("requestId") ? std::optional(call["requestId"].asString()) : std::nullopt;
-    ServerCall server(admission, world.store(), world.account(call["account"].asString()), requestId, call["tool"].asString(), call["args"]);
+    ServerCall server(admission, store, world.account(call["account"].asString()), requestId, call["tool"].asString(), call["args"]);
     Json::Value result(Json::nullValue);
     bool stopped = false;
     for (Json::ArrayIndex i = 0; i < call["intents"].size(); ++i) {
-      const int k = static_cast<int>(i) + 1;
-      if (call["transientAt"].asInt() == k) {
-        result = Json::Value(Json::nullValue);
-        stopped = true;
-        break;
-      }
       const AdmitOutcome outcome = server.admit(call["intents"][i], serverNow);
       if (const CallAnswered* answered = std::get_if<CallAnswered>(&outcome)) {
         result = answered->result;
         stopped = true;
         break;
       }
+      if (std::holds_alternative<Retry>(outcome)) {
+        result = Json::Value(Json::nullValue);
+        stopped = true;
+        break;
+      }
       result = std::get<Admitted>(outcome).result;
-      if (call["crashAfter"].asInt() == k) {
+      if (call["crashAfter"].asInt() == static_cast<int>(i) + 1) {
         result = Json::Value(Json::nullValue);
         stopped = true;
         break;

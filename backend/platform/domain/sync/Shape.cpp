@@ -47,7 +47,8 @@ bool isNumber(const Json::Value& value) {
   return value.isNumeric() && !value.isBool() && std::isfinite(value.asDouble());
 }
 
-// A bound in a unit (bytes when none is given): a string measured as itself, any other value as its JCS.
+// A bound in its unit (D-9; a string domain that states none measures bytes): a string measured as itself, any
+// other value as its JCS.
 bool withinBounds(std::optional<Unit> unit, std::optional<std::int64_t> min, std::optional<std::int64_t> max,
                   const Json::Value& value) {
   if (!min && !max) return true;

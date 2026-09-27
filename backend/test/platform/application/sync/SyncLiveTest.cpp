@@ -26,14 +26,6 @@ using namespace wm::sync;
 
 namespace {
 
-// Every frame the engine queued on one socket, in order.
-class RecordingSocket final : public LiveSocket {
-public:
-  void send(const Json::Value& frame) override { frames.append(frame); }
-
-  Json::Value frames = Json::Value(Json::arrayValue);
-};
-
 // Canonical server state with each scope's digest summed from its rows (§6.12).
 Json::Value withDigests(Json::Value state) {
   for (const std::string& key : state["scopes"].getMemberNames()) {
@@ -89,7 +81,7 @@ TEST(sync_live_sends_the_owner_of_a_product_scope_each_change_with_its_rows) {
   test::FakeWorld world;
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
 
   live.subscribe(*ann, parseJson(R"(["self/probe"])"));
@@ -109,7 +101,7 @@ TEST(sync_live_leaves_the_rows_out_of_a_change_frame_past_live_inline_bytes) {
   test::FakeWorld world;
   SyncLive live(world.catalog(), world.store(), Limits{.liveInlineBytes = 16});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
 
   live.subscribe(*ann, parseJson(R"(["self/probe"])"));
@@ -129,13 +121,13 @@ TEST(sync_live_answers_another_accounts_private_tree_exactly_as_an_absent_tree_a
   world.seed(boardState("private"));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto bob = std::make_shared<RecordingSocket>();
-  const auto guest = std::make_shared<RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
+  const auto guest = std::make_shared<fake::RecordingSocket>();
   live.open(bob, world.account("B"));
   live.open(guest, std::nullopt);
 
   live.subscribe(*bob, parseJson(R"(["tree/b_00000001", "self/overlay/b_00000001", "tree/b_0000000f", "self/overlay/b_0000000f",
-      "device/probe", "self/nope"])"));
+      "device/probe", "self/nope", "tree/B_00000001", "self/overlay/B_00000001"])"));
   live.subscribe(*guest, parseJson(R"(["tree/b_00000001", "self/probe"])"));
   live.subscribe(*bob, parseJson(R"(["tree/b_00000001", 7])"));
   live.subscribe(*bob, parseJson(R"({"scopes": ["tree/b_00000001"]})"));
@@ -144,7 +136,8 @@ TEST(sync_live_answers_another_accounts_private_tree_exactly_as_an_absent_tree_a
   CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([
       {"op": "not-found", "scope": "tree/b_00000001"}, {"op": "not-found", "scope": "self/overlay/b_00000001"},
       {"op": "not-found", "scope": "tree/b_0000000f"}, {"op": "not-found", "scope": "self/overlay/b_0000000f"},
-      {"op": "not-found", "scope": "device/probe"}, {"op": "not-found", "scope": "self/nope"}])")));
+      {"op": "not-found", "scope": "device/probe"}, {"op": "not-found", "scope": "self/nope"},
+      {"op": "not-found", "scope": "tree/B_00000001"}, {"op": "not-found", "scope": "self/overlay/B_00000001"}])")));
   CHECK_EQ(jcs(guest->frames), jcs(parseJson(R"([{"op": "not-found", "scope": "tree/b_00000001"}, {"op": "not-found", "scope": "self/probe"}])")));
 }
 
@@ -154,8 +147,8 @@ TEST(sync_live_ends_a_strangers_tree_and_overlay_subscriptions_when_the_owner_ma
   world.seed(boardState("public"));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
-  const auto bob = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
   live.open(bob, world.account("B"));
 
@@ -184,8 +177,8 @@ TEST(sync_live_answers_a_board_death_with_gone_to_its_owner_and_not_found_to_a_s
   world.seed(boardState("public"));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
-  const auto bob = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
   live.open(bob, world.account("B"));
 
@@ -217,7 +210,7 @@ TEST(sync_live_sends_one_scopes_frames_in_seq_order_while_its_writes_race) {
         "f": {"title": ["Card", "1000:0:r_aaaaaaaaaaaa"]}, "seq": 1, "rc": 1000, "ru": 1000}]}})")));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
   live.subscribe(*ann, parseJson(R"(["self/probe"])"));
 
@@ -261,7 +254,7 @@ TEST(sync_live_sign_out_ends_every_subscription_that_needs_an_account_and_keeps_
   world.seed(withDigests(state));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
 
   live.subscribe(*ann, parseJson(R"(["self/probe", "self/overlay/b_00000001", "tree/b_00000001", "tree/b_00000002"])"));
@@ -289,8 +282,8 @@ TEST(sync_live_sends_a_closed_socket_nothing_more) {
   world.seed(boardState("public"));
   SyncLive live(world.catalog(), world.store(), Limits{});
   Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<RecordingSocket>();
-  const auto bob = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
   live.open(bob, world.account("B"));
 
@@ -317,8 +310,8 @@ TEST(sync_live_decides_a_sub_by_what_was_published_while_its_snapshot_was_read) 
   world.seed(boardState("public"));
   AfterScopeRead store(world.store());
   SyncLive live(world.catalog(), store, Limits{});
-  const auto ann = std::make_shared<RecordingSocket>();
-  const auto bob = std::make_shared<RecordingSocket>();
+  const auto ann = std::make_shared<fake::RecordingSocket>();
+  const auto bob = std::make_shared<fake::RecordingSocket>();
   live.open(ann, world.account("A"));
   live.open(bob, world.account("B"));
   const ScopeKey tree = ScopeKey::tree("b_00000001");

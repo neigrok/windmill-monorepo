@@ -53,6 +53,11 @@ std::string_view trimStart(std::string_view text) {
   return text.substr(tokens.front().size());
 }
 
+// A region that emits both sides: head without its trailing whitespace, a blank line, mine without its leading.
+Diff3 conflictOf(std::string_view head, std::string_view mine) {
+  return Diff3{std::string(trimEnd(head)) + "\n\n" + std::string(trimStart(mine)), true};
+}
+
 std::string textOf(const std::vector<std::string>& tokens, std::size_t from, std::size_t to) {
   std::string text;
   for (std::size_t at = from; at < to; ++at) text += tokens[at];
@@ -140,7 +145,7 @@ struct Region {
     if (mineBlank) return Diff3{head};
     if (head.empty()) return Diff3{mine};
     if (mine.empty()) return Diff3{head};
-    return Diff3{std::string(trimEnd(head)) + "\n\n" + std::string(trimStart(mine)), true};
+    return conflictOf(head, mine);
   }
 };
 
@@ -188,7 +193,6 @@ std::vector<std::string> tokenize(std::string_view text) {
 std::vector<Edit> editScript(const std::vector<std::string>& from, const std::vector<std::string>& to) {
   const std::size_t n = from.size();
   const std::size_t m = to.size();
-  if ((n + 1) * (m + 1) > kMergeCells) throw MergeTooLarge("a text merge past the engine's work bound");
   // rest(i, j): the fewest deletes plus inserts that turn from[i..] into to[j..], row-major in one block.
   std::vector<std::uint32_t> cells((n + 1) * (m + 1));
   auto rest = [&cells, m](std::size_t i, std::size_t j) -> std::uint32_t& { return cells[i * (m + 1) + j]; };
@@ -220,10 +224,15 @@ std::vector<Edit> editScript(const std::vector<std::string>& from, const std::ve
   return script;
 }
 
-Diff3 diff3(std::string_view baseText, std::string_view headText, std::string_view mineText) {
+Diff3 diff3(std::string_view baseText, std::string_view headText, std::string_view mineText, std::size_t workCells) {
   const std::vector<std::string> base = tokenize(baseText);
-  std::vector<Hunk> hunks = hunksOf(editScript(base, tokenize(headText)), Side::head);
-  for (Hunk& hunk : hunksOf(editScript(base, tokenize(mineText)), Side::mine)) hunks.push_back(std::move(hunk));
+  const std::vector<std::string> head = tokenize(headText);
+  const std::vector<std::string> mine = tokenize(mineText);
+  auto cells = [&base](const std::vector<std::string>& side) { return (base.size() + 1) * (side.size() + 1); };
+  if (cells(head) > workCells || cells(mine) > workCells) return conflictOf(headText, mineText);
+
+  std::vector<Hunk> hunks = hunksOf(editScript(base, head), Side::head);
+  for (Hunk& hunk : hunksOf(editScript(base, mine), Side::mine)) hunks.push_back(std::move(hunk));
 
   Diff3 merged;
   std::size_t stable = 0;
@@ -238,13 +247,13 @@ Diff3 diff3(std::string_view baseText, std::string_view headText, std::string_vi
 }
 
 std::optional<TextMerge> mergeText(std::string_view head, Seq headRev, const TextBase& base, std::string_view mine,
-                                   const std::optional<std::string>& revision) {
+                                   const std::optional<std::string>& revision, std::size_t workCells) {
   const std::optional<std::string> baseText = baseTextOf(head, headRev, base, mine, revision);
   if (!baseText) return std::nullopt;
   if (mine == head) return TextMerge{std::string(head), false, *baseText};
   if (*baseText == head) return TextMerge{std::string(mine), false, *baseText};
   if (*baseText == mine) return TextMerge{std::string(head), false, *baseText};
-  Diff3 merged = diff3(*baseText, head, mine);
+  Diff3 merged = diff3(*baseText, head, mine, workCells);
   return TextMerge{std::move(merged.text), merged.conflict, *baseText};
 }
 

@@ -900,6 +900,7 @@ int main() {
   syncCatalog.seal();
   sync::PgSyncStore syncStore(pool, syncLimits.lockTimeoutMs);
   sync::ServerClock serverClock;
+  auto physNow = std::make_shared<sync::PhysicalClock>(*systemClock);
   auto syncLive = std::make_shared<sync::SyncLive>(syncCatalog, syncStore, syncLimits);
   sync::Admission admission(syncCatalog, syncStore, *syncLive, serverClock, *sentry, syncLimits);
   const std::string syncEpoch = [&syncStore] {
@@ -907,16 +908,21 @@ int main() {
     return syncStore.epoch(*txn);
   }();
   auto syncWorkers = std::make_shared<WorkerPool>("sync", kSyncWorkers, kSyncQueueCeiling);
-  auto syncService = std::make_shared<sync::SyncService>(syncCatalog, syncStore, admission, *systemClock);
+  auto syncService = std::make_shared<sync::SyncService>(syncCatalog, syncStore, admission, *physNow);
   sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncService,
                                                                                .auth = authService,
                                                                                .workers = syncWorkers,
-                                                                               .clock = systemClock,
+                                                                               .clock = physNow,
                                                                                .minSchema = syncRegistry.minVersion(),
                                                                                .epoch = syncEpoch,
                                                                                .limits = syncLimits}));
-  sync::installSyncSocket(sync::SyncSocketDeps{
-      .live = syncLive, .workers = syncWorkers, .auth = authService, .clock = systemClock, .allowedOrigins = allowedOrigins});
+  sync::installSyncSocket(sync::SyncSocketDeps{.live = syncLive,
+                                               .workers = syncWorkers,
+                                               .auth = authService,
+                                               .clock = physNow,
+                                               .allowedOrigins = allowedOrigins,
+                                               .minSchema = syncRegistry.minVersion(),
+                                               .epoch = syncEpoch});
   sync::linkSyncSocket();
 #endif
 

@@ -11,8 +11,8 @@
 
 #include <variant>
 
-// What admit/requests.json does not pin about ServerCall: a requestId that could name another call's part,
-// and a finish by a call whose requestId another call holds.
+// What admit/requests.json does not pin about ServerCall: a requestId that could name another call's part, a
+// finish by a call whose requestId another call holds, and a stored part a replay's refusal must not overwrite.
 
 using namespace wm;
 using namespace wm::sync;
@@ -25,6 +25,18 @@ Json::Value emptyProbe() {
           "digest": "0000000000000000000000000000000000000000000000000000000000000000"}}})");
 }
 
+// A's board b_00000001, alive with its tree.
+Json::Value boardWithTree() {
+  return parseJson(R"({"epoch": "ep-1", "clock": {"ms": 0, "counter": 0}, "accounts": {"A": {"name": "Ann"}},
+      "scopes": {
+        "acct:A/probe": {"kind": "product", "owner": "A", "state": "alive", "seq": 1, "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"},
+        "tree:b_00000001": {"kind": "tree", "owner": "A", "state": "alive", "seq": 0, "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000", "governedBy": "acct:A/probe#board#b_00000001"}},
+      "rows": {"acct:A/probe": [{"t": "board", "id": "b_00000001", "life": ["alive", "2000:0:r_aaaaaaaaaaaa"],
+          "born": "2000:0:r_aaaaaaaaaaaa", "seq": 1, "rc": 1000, "ru": 1000}]}})");
+}
+
 Json::Value cardAdd(const std::string& id) {
   Json::Value intent = parseJson(R"({"scope": "self/probe", "d": [{"t": "card", "born": null, "life": ["alive", null],
       "f": {"title": ["One", null]}}]})");
@@ -32,9 +44,9 @@ Json::Value cardAdd(const std::string& id) {
   return intent;
 }
 
-Digest256 callDigest(const Json::Value& args) {
+Digest256 callDigest(const Json::Value& args, const std::string& tool = "cards.add") {
   Json::Value call(Json::objectValue);
-  call["tool"] = "cards.add";
+  call["tool"] = tool;
   call["args"] = args;
   return intentDigest(call);
 }
@@ -90,4 +102,34 @@ TEST(server_call_finish_leaves_the_row_of_another_call_holding_its_request_id) {
   done["A"][0]["state"] = "done";
   done["A"][0]["result"] = parseJson(R"({"s": "ok", "seq": 1})");
   CHECK_EQ(jcs(world.dump()["requests"]), jcs(done));
+}
+
+TEST(server_call_replaying_a_stored_part_whose_scope_died_since_answers_that_part_and_overwrites_nothing) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  world.seed(boardWithTree());
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const Json::Value args = parseJson(R"({"title": "Plan"})");
+  const Json::Value retitle = parseJson(R"({"scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Plan", null]}}]})");
+  ServerCall crashed(admission, world.store(), world.account("A"), "req-1", "meta.retitle", args);
+  const AdmitOutcome first = crashed.admit(retitle, 1'000'000);
+  const AdmitOutcome boardDeath = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, parseJson(R"({"scope": "self/probe",
+      "d": [{"t": "board", "id": "b_00000001", "born": "2000:0:r_aaaaaaaaaaaa", "life": ["dead", null]}]})"), 1'000'001);
+  const Json::Value requestsBefore = world.dump()["requests"];
+
+  ServerCall retry(admission, world.store(), world.account("A"), "req-1", "meta.retitle", args);
+  const AdmitOutcome replayed = retry.admit(retitle, 1'000'000 + Limits{}.requestLeaseMs);
+
+  const Json::Value ok = parseJson(R"({"s": "ok", "seq": 1})");
+  REQUIRE(std::holds_alternative<Admitted>(first));
+  CHECK_EQ(jcs(std::get<Admitted>(first).result), jcs(ok));
+  REQUIRE(std::holds_alternative<Admitted>(boardDeath));
+  CHECK_EQ(jcs(std::get<Admitted>(boardDeath).result), jcs(parseJson(R"({"s": "ok", "seq": 2})")));
+  REQUIRE(std::holds_alternative<Admitted>(replayed));
+  CHECK_EQ(jcs(std::get<Admitted>(replayed).result), jcs(ok));
+  CHECK_EQ(jcs(world.dump()["requests"]), jcs(requestsBefore));
+  Json::Value running = parseJson(R"({"A": [{"requestId": "req-1", "state": "running", "startedAt": 1000000,
+      "parts": [{"k": 1, "result": {"s": "ok", "seq": 1}}]}]})");
+  running["A"][0]["digest"] = callDigest(args, "meta.retitle").hex();
+  CHECK_EQ(jcs(requestsBefore), jcs(running));
 }

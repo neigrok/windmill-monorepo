@@ -32,6 +32,14 @@ std::pair<std::string, std::string> globalIdOf(const std::string& type, const Re
 
 }
 
+std::uint64_t PhysicalClock::nowMs() {
+  const std::uint64_t wall = wall_.nowMs();
+  std::uint64_t highest = highest_.load();
+  while (wall > highest && !highest_.compare_exchange_weak(highest, wall)) {
+  }
+  return std::max(wall, highest);
+}
+
 HlcClock ServerClock::copy() const {
   std::lock_guard lock(mutex_);
   return HlcClock("srv", state_);
@@ -68,17 +76,21 @@ public:
       return answerFault(error);
     }
     std::unique_lock<std::timed_mutex> stripe;
-    try {
-      stripe = a_.takeStripe(shaped_->scope);
-      clock_ = a_.clock_.copy();
-      return admitUnderLock();
-    } catch (const Refusal& refusal) {
-      txn_.reset();
-      return answerRefusal(refusal.refused);
-    } catch (const std::exception& error) {
-      txn_.reset();
-      return answerFault(error);
-    }
+    AdmitOutcome outcome = [this, &stripe]() -> AdmitOutcome {
+      try {
+        stripe = a_.takeStripe(shaped_->scope);
+        clock_ = a_.clock_.copy();
+        return admitUnderLock();
+      } catch (const Refusal& refusal) {
+        txn_.reset();
+        return answerRefusal(refusal.refused);
+      } catch (const std::exception& error) {
+        txn_.reset();
+        return answerFault(error);
+      }
+    }();
+    txn_.reset();  // an answer that committed nothing rolls back before the scope's mutex is released
+    return outcome;
   }
 
   const Locked& lock(const std::string& type, const RecordId& id) override {
@@ -117,7 +129,7 @@ private:
     lockFreshIds();                                                       // 3.6
     checkAccess();                                                        // 3.7
     if (std::optional<AdmitOutcome> answered = lookUpCall()) return *answered;  // 4
-    changes_.emplace(registry_, scope(), now_);
+    changes_.emplace(registry_, scope(), now_, a_.limits_);
     lockIntentRecords();                                                  // 5
     admitDeltas(scope(), intent().d, caller_.server ? Source::server : Source::client);  // 6
     checkGuardsUnlessReplay();                                            // 7
@@ -143,10 +155,11 @@ private:
     return true;
   }
 
-  // The replica's row, locked in the open transaction: still bound to the origin's account, with n next.
+  // The replica's row, locked in the open transaction and inserted again at last_n 0 when a push's 409 deleted
+  // it (§6.2 step 3): still bound to the origin's account, with n next.
   bool isTurnOf(const ReplicaOrigin& origin) {
-    const std::optional<ReplicaRow> row = store().lockReplica(*txn_, origin.replica);
-    return row && row->account == origin.account && row->lastN + 1 == origin.n;
+    const ReplicaRow row = store().bindReplica(*txn_, origin.replica, origin.account, now_);
+    return row.account == origin.account && row.lastN + 1 == origin.n;
   }
 
   // 3.4 and 3.5: an overlay's tree held shared; an absent scope a write may create inserted; then, in one
@@ -202,20 +215,27 @@ private:
     return accessOf(scope(), facts, tree, caller_.account);
   }
 
-  // 4: a call's first admit looks the call up; every admit looks its own part up, and a stored part is its
-  // answer. The call row is running from here, its lease taken or refreshed.
+  // 4: the answer the store already holds for this admit, which writes nothing; otherwise the call's row is running
+  // from here, its lease taken, taken over or refreshed in this admit's transaction, so a transient failure of the
+  // admit takes it back.
   std::optional<AdmitOutcome> lookUpCall() {
     const CallPart* part = call();
     if (!part) return std::nullopt;
-    if (part->k == 1) {
-      if (std::optional<Json::Value> answered = callAnswer(*part)) return CallAnswered{*answered};
-    }
+    if (std::optional<AdmitOutcome> answered = storedAnswer(*part)) return answered;
     store().putRequest(*txn_, caller_.account, RequestRow{part->requestId, part->digest, true, std::nullopt, now_});
-    const std::optional<RequestRow> stored = store().request(*txn_, caller_.account, partId(*part));
+    return std::nullopt;
+  }
+
+  // §6.3 under the call's lock: the call's first admit to run looks the call up (its final result,
+  // request-conflict or request-running), and every admit finds its part k when a run of the call stored it.
+  std::optional<AdmitOutcome> storedAnswer(const CallPart& part) {
+    if (part.looksUp) {
+      if (std::optional<Json::Value> answered = callAnswer(part)) return CallAnswered{*answered};
+    }
+    const std::optional<RequestRow> stored = store().request(*txn_, caller_.account, partId(part));
     if (!stored || !stored->result) return std::nullopt;
-    txn_->commit();
-    if (stored->digest != part->digest) return CallAnswered{refusedResult(Refused{code::requestConflict, {}})};
-    return Admitted{*stored->result};
+    if (stored->digest != part.digest) return CallAnswered{refusedResult(Refused{code::requestConflict, {}})};
+    return Replayed{*stored->result};
   }
 
   // §6.3 step 1's lookup, under the call's lock.
@@ -282,7 +302,7 @@ private:
       const RecordRef& record = wanted.record;
       revisions.emplace(wanted, a_.catalog_.store(record.t).revisionText(*txn_, record.scope, record.id, wanted.field, wanted.rev));
     }
-    changes_->join(revisions, {{scope().text(), scopeRow_->seq}}, a_.limits_.maxRecordBytes);
+    changes_->join(revisions, {{scope().text(), scopeRow_->seq}});
   }
 
   // 10: each touched type's rules once, in registry order; the deltas they append pass 5, 6 and 9.
@@ -412,7 +432,8 @@ private:
     }
   }
 
-  // Step R: the refusal is the final answer, stored in a transaction of its own.
+  // Step R: the refusal is the final answer, stored in a transaction of its own. A failure of that transaction is
+  // classified as any other (§6.6).
   AdmitOutcome answerRefusal(const Refused& refused) {
     const Json::Value result = refusedResult(refused);
     try {
@@ -424,19 +445,11 @@ private:
         txn_->commit();
         return Admitted{result};
       }
-      if (const CallPart* part = call()) {
-        txn_ = store().begin(TxnMode::write);
-        store().lockRequest(*txn_, caller_.account, part->requestId);
-        if (part->k == 1) {
-          if (std::optional<Json::Value> answered = callAnswer(*part)) return CallAnswered{*answered};
-        }
-        finishCall(*part, result);
-        txn_->commit();
-      }
+      if (const CallPart* part = call()) return endCall(*part, result);
       return Admitted{result};
     } catch (const std::exception& error) {
-      if (a_.store_.classify(error) == FaultClass::fault) report(error);
-      return Retry{kTransientRetryMs};
+      txn_.reset();
+      return answerFault(error);
     }
   }
 
@@ -464,12 +477,7 @@ private:
         txn_->commit();
         return Admitted{internal};
       }
-      if (const CallPart* part = call()) {
-        txn_ = store().begin(TxnMode::write);
-        store().lockRequest(*txn_, caller_.account, part->requestId);
-        finishCall(*part, internal);
-        txn_->commit();
-      }
+      if (const CallPart* part = call()) return endCall(*part, internal);
       return Admitted{internal};
     } catch (const std::exception& second) {
       if (a_.store_.classify(second) == FaultClass::fault) report(second);
@@ -477,9 +485,16 @@ private:
     }
   }
 
-  void finishCall(const CallPart& part, const Json::Value& result) {
+  // Step R and §6.6 for a call: the result ends the call, stored as its part k and as its row, done, in a
+  // transaction of its own, unless the store already holds this admit's answer.
+  AdmitOutcome endCall(const CallPart& part, const Json::Value& result) {
+    txn_ = store().begin(TxnMode::write);
+    store().lockRequest(*txn_, caller_.account, part.requestId);
+    if (std::optional<AdmitOutcome> answered = storedAnswer(part)) return *answered;
     store().putRequest(*txn_, caller_.account, RequestRow{partId(part), part.digest, false, result, now_});
     store().putRequest(*txn_, caller_.account, RequestRow{part.requestId, part.digest, false, result, now_});
+    txn_->commit();
+    return Admitted{result};
   }
 
   void report(const std::exception& error) {

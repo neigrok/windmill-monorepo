@@ -29,7 +29,10 @@ AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
     return CallAnswered{refusedResult(Refused{code::invalid, {}})};
   }
   intent["gestureId"] = *requestId_;
-  return admission_.admit(ServerOrigin{account_, CallPart{*requestId_, k_, digest_}}, intent, serverNow);
+  const AdmitOutcome outcome = admission_.admit(ServerOrigin{account_, CallPart{*requestId_, k_, digest_, !ran_}}, intent, serverNow);
+  if (const Replayed* replayed = std::get_if<Replayed>(&outcome)) return Admitted{replayed->result};
+  ran_ = ran_ || std::holds_alternative<Admitted>(outcome);
+  return outcome;
 }
 
 void ServerCall::finish(const Json::Value& result, Ms serverNow) {

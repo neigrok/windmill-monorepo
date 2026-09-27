@@ -21,7 +21,8 @@ struct SyncReply {
 };
 
 // §6.2 step 5: how long one push may keep admitting. The first intent always runs; after `admitted`
-// admissions a spent budget answers retry {n, 0} naming the first unprocessed intent.
+// admissions a spent budget answers retry {n, 0} naming the first unprocessed intent. An answer read back from
+// sync_results is not an admission.
 class PushBudget {
 public:
   virtual ~PushBudget() = default;

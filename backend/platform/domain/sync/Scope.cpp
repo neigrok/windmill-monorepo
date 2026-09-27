@@ -55,10 +55,14 @@ std::string ScopeKey::ref() const {
 
 std::optional<ScopeKey> resolve(const Registry& registry, std::string_view ref, const std::optional<UserId>& caller) {
   const std::vector<std::string_view> parts = partsOf(ref);
-  if (parts.size() == 2 && parts[0] == "tree" && !parts[1].empty()) return ScopeKey::tree(std::string(parts[1]));
+  auto isTreeId = [&registry](std::string_view tree) {
+    const TypeDef* governing = registry.governingType();
+    return governing && !tree.empty() && governing->idPattern->matches(tree);
+  };
+  if (parts.size() == 2 && parts[0] == "tree") return isTreeId(parts[1]) ? std::optional(ScopeKey::tree(std::string(parts[1]))) : std::nullopt;
   if (!caller || parts[0] != "self") return std::nullopt;
   if (parts.size() == 2 && registry.products().contains(std::string(parts[1]))) return ScopeKey::product(*caller, std::string(parts[1]));
-  if (parts.size() == 3 && parts[1] == "overlay" && !parts[2].empty()) return ScopeKey::overlay(*caller, std::string(parts[2]));
+  if (parts.size() == 3 && parts[1] == "overlay" && isTreeId(parts[2])) return ScopeKey::overlay(*caller, std::string(parts[2]));
   return std::nullopt;
 }
 

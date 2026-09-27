@@ -47,7 +47,9 @@ private:
 };
 
 // §9.1 ScopeRef to its server key, `self` being the caller: nullopt for a reference the registry does not
-// declare, a device scope (never sent), or `self/…` without a caller.
+// declare (a tree or overlay whose <T> is outside the governing type's idPattern among them), a device scope
+// (never sent), or `self/…` without a caller. Admission refuses such a reference invalid; a pull and a sub
+// answer it not-found.
 std::optional<ScopeKey> resolve(const Registry&, std::string_view ref, const std::optional<UserId>& caller);
 
 // What the D-4 access rule reads of one sync_scopes row.

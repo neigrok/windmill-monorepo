@@ -92,6 +92,25 @@ TEST(sync_api_refuses_a_missing_or_old_sync_schema_and_a_body_it_cannot_take) {
            (std::pair<int, std::string>{413, R"({"epoch":"ep-1","error":"request-too-large","serverTime":1700000000000})"}));
 }
 
+TEST(sync_schema_refusal_serves_every_decimal_integer_at_or_above_min_schema_past_int64_included) {
+  auto refusalOf = [](const std::string& schema) {
+    auto req = drogon::HttpRequest::newHttpRequest();
+    if (!schema.empty()) req->addHeader("sync-schema", schema);
+    const std::optional<sync::SyncReply> refused = sync::schemaRefusal(req, 2, 1000, "ep-1");
+    return refused ? refused->body["error"].asString() : std::string("served");
+  };
+  CHECK_EQ(refusalOf("2"), std::string("served"));
+  CHECK_EQ(refusalOf("3"), std::string("served"));
+  CHECK_EQ(refusalOf("99999999999999999999"), std::string("served"));
+  CHECK_EQ(refusalOf("1"), std::string("upgrade-required"));
+  CHECK_EQ(refusalOf("-99999999999999999999"), std::string("upgrade-required"));
+  CHECK_EQ(refusalOf(""), std::string("malformed"));
+  CHECK_EQ(refusalOf("2.5"), std::string("malformed"));
+  CHECK_EQ(refusalOf("two"), std::string("malformed"));
+  CHECK_EQ(refusalOf(" 2"), std::string("malformed"));
+  CHECK_EQ(refusalOf("+2"), std::string("malformed"));
+}
+
 TEST(sync_api_admits_a_signed_in_push_and_answers_it_as_jcs) {
   Harness harness;
   sync::SyncApi api = harness.api(8);

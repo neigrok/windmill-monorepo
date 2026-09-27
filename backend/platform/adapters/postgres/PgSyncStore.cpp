@@ -219,8 +219,9 @@ std::optional<ReplicaRow> PgSyncStore::lockReplica(SyncTxn& txn, const std::stri
   return ReplicaRow{text(rows[0], "replica"), UserId{text(rows[0], "account")}, unsignedOf(rows[0], "last_n")};
 }
 
-void PgSyncStore::unbindReplica(SyncTxn& txn, const std::string& replica) {
-  sqlOf(txn).exec("delete from sync_replicas where replica = $1", pqxx::params{pgText(replica)});
+void PgSyncStore::unbindUnused(SyncTxn& txn, const std::string& replica) {
+  sqlOf(txn).exec("delete from sync_replicas where replica = $1 and last_n = 0 and not exists (select 1 from sync_results where replica = $1)",
+                  pqxx::params{pgText(replica)});
 }
 
 void PgSyncStore::setLastN(SyncTxn& txn, const std::string& replica, std::uint64_t n) {

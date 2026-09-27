@@ -268,6 +268,7 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
   }
   if (field.kind == FieldKind::serial && (!reader.has("serialNext") || field.writer != Writer::server))
     reader.fail("is serial without \"serialNext\" and the server as its writer");
+  if ((field.min || field.max) && !field.unit) reader.fail("has a bound without a \"unit\"");
   if (field.kind == FieldKind::text && (!field.unit || !field.max)) reader.fail("is text without a \"unit\" and a \"max\"");
   if (field.parent && !field.ref) reader.fail("is a parent without a \"ref\"");
   if (!field.opens.empty() && field.writer != Writer::server) reader.fail("opens a tree without the server as its writer");
@@ -533,6 +534,11 @@ Registry::Registry(const Json::Value& document) {
 
 const TypeDef* Registry::type(std::string_view typeName) const {
   const auto found = std::find_if(types_.begin(), types_.end(), [typeName](const TypeDef& type) { return type.name == typeName; });
+  return found == types_.end() ? nullptr : &*found;
+}
+
+const TypeDef* Registry::governingType() const {
+  const auto found = std::find_if(types_.begin(), types_.end(), [](const TypeDef& type) { return type.governsTree; });
   return found == types_.end() ? nullptr : &*found;
 }
 

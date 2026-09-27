@@ -220,6 +220,9 @@ public:
 
   const TypeDef* type(std::string_view typeName) const;
   const CommandDef* command(std::string_view commandName) const;
+  // D-5: the type whose records govern tree scopes, whose idPattern every tree id matches; nullptr when the
+  // registry declares no tree.
+  const TypeDef* governingType() const;
 
 private:
   std::string name_;

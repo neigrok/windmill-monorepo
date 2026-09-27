@@ -131,6 +131,7 @@ struct Limits {
   std::size_t pullMaxScopes = 64;
   std::size_t liveFrameBytes = 131'072;
   std::size_t liveInlineBytes = 65'536;
+  std::size_t mergeWorkCells = 4'194'304;
 };
 
 }

@@ -8,6 +8,7 @@
 #include "platform/ports/ChangeFeed.h"
 
 #include "test/platform/Fakes.h"
+#include "test/platform/application/sync/ServeCorpusRunners.h"
 #include "test/platform/application/sync/SyncWorld.h"
 #include "test/testing.h"
 
@@ -20,8 +21,8 @@
 #include <vector>
 
 // What the golden corpus does not pin about SyncService: the production push budget, the order a push takes
-// its intents in, the pull scope limit, a scope larger than one feed read, and an intent a concurrent push of
-// the same replica answered first.
+// its intents in, the pull scope limit, a scope larger than one feed read, an intent a concurrent push of the
+// same replica answered first, and a binding a concurrent push answered under by the time a 409 would delete it.
 
 using namespace wm;
 using namespace wm::sync;
@@ -46,6 +47,23 @@ public:
 
 private:
   std::function<void()> then_;
+};
+
+// A store whose `nth` replica lock first runs `then` on the transaction taking it: a concurrent push that
+// committed just before that lock was granted.
+class BeforeReplicaLock final : public sync::fake::ForwardingStore {
+public:
+  BeforeReplicaLock(SyncStore& inner, int nth, std::function<void(SyncTxn&)> then) : ForwardingStore(inner), nth_(nth), then_(std::move(then)) {}
+
+  std::optional<ReplicaRow> lockReplica(SyncTxn& txn, const std::string& replica) override {
+    if (++locks_ == nth_) then_(txn);
+    return ForwardingStore::lockReplica(txn, replica);
+  }
+
+private:
+  int nth_;
+  int locks_ = 0;
+  std::function<void(SyncTxn&)> then_;
 };
 
 }
@@ -208,4 +226,57 @@ TEST(sync_service_push_from_a_replica_id_outside_d3_is_malformed_and_binds_nothi
     CHECK_EQ(jcs(reply.body), jcs(malformed));
   }
   CHECK_EQ(jcs(world.dump()), jcs(seeded));
+}
+
+TEST(sync_service_push_spends_no_budget_on_an_n_a_concurrent_push_answered) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const Json::Value second = cardIntent(2, "card0002");
+  bool answered = false;
+  AfterCommit concurrentPush([&world, &second, &answered] {
+    if (std::exchange(answered, true)) return;
+    world.db().replicas.at("rp_0000000000000000000000000000000a").lastN = 2;
+    world.db().results[{"rp_0000000000000000000000000000000a", 2}] =
+        StoredResult{2, intentDigest(second), parseJson(R"({"s": "ok", "seq": 7})"), 0};
+  });
+  Admission admission(world.catalog(), world.store(), concurrentPush, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), world.store(), admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0001"));
+  request["intents"].append(second);
+  request["intents"].append(cardIntent(3, "card0003"));
+  test::CountBudget twoAdmissions(2);
+
+  const SyncReply reply = service.push(world.account("A"), request, twoAdmissions);
+
+  CHECK_EQ(reply.status, 200);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3,
+      "results": [{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 7}, {"n": 3, "s": "ok", "seq": 2}]})")));
+}
+
+TEST(sync_service_push_409_keeps_a_binding_it_inserted_once_a_concurrent_push_tallied_a_fault_under_it) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const Json::Value first = cardIntent(1, "card0001");
+  BeforeReplicaLock store(world.store(), 2, [&first](SyncTxn& txn) {
+    sync::fake::dbOf(txn).results[{"rp_0000000000000000000000000000000a", 1}] = StoredResult{1, intentDigest(first), std::nullopt, 1};
+  });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(2, "card0002"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), request, budget);
+
+  CHECK_EQ(reply.status, 409);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "gap"})")));
+  Json::Value tallied = parseJson(R"({"rp_0000000000000000000000000000000a": [{"n": 1, "result": null, "faults": 1}]})");
+  tallied["rp_0000000000000000000000000000000a"][0]["digest"] = intentDigest(first).hex();
+  CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}})")));
+  CHECK_EQ(jcs(world.dump()["results"]), jcs(tallied));
 }

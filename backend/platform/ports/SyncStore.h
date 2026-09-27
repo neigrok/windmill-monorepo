@@ -108,11 +108,12 @@ public:
   // marked dead at `now`. Answers every killed key, ascending.
   virtual std::vector<ScopeKey> killTree(SyncTxn&, const ScopeKey& tree, Ms now) = 0;
 
-  // §6.2 step 3: the replica's row, inserted with last_n 0 when absent; FOR UPDATE either way.
+  // §6.2 step 3 and §6.1 step 3.3: the replica's row, inserted with last_n 0 when absent; FOR UPDATE either way.
   virtual ReplicaRow bindReplica(SyncTxn&, const std::string& replica, const UserId& account, Ms now) = 0;
   virtual std::optional<ReplicaRow> lockReplica(SyncTxn&, const std::string& replica) = 0;
-  // A binding this push inserted, removed when the push answers 409 having admitted nothing under it.
-  virtual void unbindReplica(SyncTxn&, const std::string& replica) = 0;
+  // §6.2 step 3: a binding a push inserted and answers 409 on, deleted while its last_n is 0 and it holds no
+  // sync_results row. The caller holds the replica row's lock.
+  virtual void unbindUnused(SyncTxn&, const std::string& replica) = 0;
   virtual void setLastN(SyncTxn&, const std::string& replica, std::uint64_t n) = 0;
   virtual std::optional<StoredResult> storedResult(SyncTxn&, const std::string& replica, std::uint64_t n) = 0;
   virtual void putResult(SyncTxn&, const std::string& replica, const StoredResult& result) = 0;

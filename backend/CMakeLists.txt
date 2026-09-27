@@ -197,6 +197,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/sync/LatticeTest.cpp
   test/platform/domain/sync/FractionalIndexTest.cpp
   test/platform/domain/sync/TextMergeTest.cpp
+  test/platform/domain/sync/AdmitTest.cpp
   test/platform/domain/sync/CorpusTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp

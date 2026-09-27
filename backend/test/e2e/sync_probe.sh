@@ -76,6 +76,8 @@ check "$(field "['error']" < "$BODY")" "replica-forked" "and the error is replic
 check "$(push_all 1 "[$(card 2 cardE2E0002 Two),$(card 3 cardE2E0003 Three),$(card 4 cardE2E0004 Four)]")" '[{"n":2,"s":"ok","seq":2},{"n":3,"s":"ok","seq":3},{"code":"cap","detail":{"cap":3,"type":"card"},"n":4,"s":"refused"}]' \
   "a fourth card is refused by the cap of 3"
 check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d 'not json')" "400" "a body that is not JSON is malformed"
+EXTRA="{\"replica\":\"$REPLICA\",\"ackThrough\":0,\"intents\":[],\"device\":\"phone\"}"
+check "$(sync -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d "$EXTRA")" "400" "a body with a key beyond replica, ackThrough and intents is malformed"
 
 echo "a push body over 1 MiB (spilled by Drogon to a temp file)"
 python3 - "$REPLICA" "$NOW" > "$BODY.big" <<'PY'
@@ -130,8 +132,16 @@ def push_day(n, day, score):
 async def frame(ws):
     return json.loads(await asyncio.wait_for(ws.recv(), 5))
 
+async def refused(headers):
+    try:
+        async with websockets.connect(live, additional_headers=headers):
+            return "upgraded"
+    except websockets.InvalidStatus as error:
+        return error.response.status_code
+
 async def main():
-    async with websockets.connect(live, additional_headers={"Cookie": f"wm_session={secret}"}) as ws:
+    print(await refused({"Cookie": f"wm_session={secret}"}), await refused({"Cookie": f"wm_session={secret}", "Sync-Schema": "0"}))
+    async with websockets.connect(live, additional_headers={"Cookie": f"wm_session={secret}", "Sync-Schema": "1"}) as ws:
         await ws.send(json.dumps({"op": "ping"}))
         print((await frame(ws))["op"])
         await ws.send(json.dumps({"op": "sub", "scopes": ["self/probe", "tree/b_ffffffff"]}))
@@ -139,11 +149,11 @@ async def main():
         seq = push_day(6, "2026-09-02", 5)["results"][0]["seq"]
         change = await frame(ws)
         print(change["op"], change["scope"], change["seq"] == seq, [row["id"] for row in change.get("rows", [])])
-    async with websockets.connect(live) as guest:
+    async with websockets.connect(live, additional_headers={"Sync-Schema": "1"}) as guest:
         await guest.send(json.dumps({"op": "sub", "scopes": ["self/probe"]}))
         print(json.dumps(await frame(guest), sort_keys=True))
     try:
-        async with websockets.connect(live, additional_headers={"Origin": "https://elsewhere.example"}) as stranger:
+        async with websockets.connect(live, additional_headers={"Origin": "https://elsewhere.example", "Sync-Schema": "1"}) as stranger:
             await asyncio.wait_for(stranger.recv(), 5)
             print("stranger kept")
     except (websockets.ConnectionClosed, websockets.InvalidStatus):
@@ -152,11 +162,12 @@ async def main():
 asyncio.run(main())
 PY
 )"
-check "$(sed -n 1p <<<"$LIVE")" "pong" "ping answers pong"
-check "$(sed -n 2p <<<"$LIVE")" '{"op": "not-found", "scope": "tree/b_ffffffff"}' "a sub to an absent tree answers not-found"
-check "$(sed -n 3p <<<"$LIVE")" "change self/probe True ['2026-09-02']" "a push reaches the subscriber as a change frame at its seq, rows inline"
-check "$(sed -n 4p <<<"$LIVE")" '{"op": "not-found", "scope": "self/probe"}' "a signed-out sub to self/probe answers not-found"
-check "$(sed -n 5p <<<"$LIVE")" "stranger refused" "an upgrade from an origin off the allow-list is closed"
+check "$(sed -n 1p <<<"$LIVE")" "400 426" "an upgrade without Sync-Schema is malformed, and one below minSchema must upgrade"
+check "$(sed -n 2p <<<"$LIVE")" "pong" "ping answers pong"
+check "$(sed -n 3p <<<"$LIVE")" '{"op": "not-found", "scope": "tree/b_ffffffff"}' "a sub to an absent tree answers not-found"
+check "$(sed -n 4p <<<"$LIVE")" "change self/probe True ['2026-09-02']" "a push reaches the subscriber as a change frame at its seq, rows inline"
+check "$(sed -n 5p <<<"$LIVE")" '{"op": "not-found", "scope": "self/probe"}' "a signed-out sub to self/probe answers not-found"
+check "$(sed -n 6p <<<"$LIVE")" "stranger refused" "an upgrade from an origin off the allow-list is closed"
 
 rm -f "$JAR" "$BODY" "$BODY.big" "$BODY.huge"
 echo

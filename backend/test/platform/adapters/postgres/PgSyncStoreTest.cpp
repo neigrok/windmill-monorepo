@@ -108,10 +108,36 @@ TEST(pg_sync_store_binds_replicas_and_keeps_their_results_until_pruned) {
   store.pruneResults(*txn, replica, 2);
   CHECK_EQ(store.storedResult(*txn, replica, 1).has_value(), false);
   CHECK_EQ(store.storedResult(*txn, replica, 3)->faults, 3);
-  store.unbindReplica(*txn, replica);
-  CHECK_EQ(store.storedResult(*txn, replica, 3).has_value(), false);
-  CHECK_EQ(store.lockReplica(*txn, replica).has_value(), false);
+  store.unbindUnused(*txn, replica);
+  CHECK_EQ(store.storedResult(*txn, replica, 3)->faults, 3);
+  CHECK_EQ(store.lockReplica(*txn, replica)->lastN, 2u);
   txn->commit();
+}
+
+TEST(pg_sync_store_unbinds_only_a_replica_that_answered_nothing) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  test::PgWorld& world = emptyWorld();
+  SyncStore& store = world.store();
+  const std::string unused = "rp_000000000000000000000000000000b1";
+  const std::string tallied = "rp_000000000000000000000000000000b2";
+
+  std::unique_ptr<SyncTxn> txn = store.begin(TxnMode::write);
+  store.bindReplica(*txn, unused, world.account("A"), 100);
+  store.bindReplica(*txn, tallied, world.account("A"), 100);
+  store.putResult(*txn, tallied, StoredResult{1, sha256("intent"), std::nullopt, 1});
+  txn->commit();
+
+  txn = store.begin(TxnMode::write);
+  REQUIRE(store.lockReplica(*txn, unused).has_value());
+  store.unbindUnused(*txn, unused);
+  REQUIRE(store.lockReplica(*txn, tallied).has_value());
+  store.unbindUnused(*txn, tallied);
+  txn->commit();
+
+  txn = store.begin(TxnMode::write);
+  CHECK_EQ(store.lockReplica(*txn, unused).has_value(), false);
+  CHECK_EQ(store.lockReplica(*txn, tallied)->lastN, 0u);
+  CHECK_EQ(store.storedResult(*txn, tallied, 1)->faults, 1);
 }
 
 TEST(pg_sync_store_keeps_spent_ids_in_jcs_order_and_finds_them_in_other_scopes) {

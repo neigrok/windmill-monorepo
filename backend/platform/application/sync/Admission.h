@@ -5,12 +5,14 @@
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/ports/ChangeFeed.h"
+#include "platform/ports/Clock.h"
 #include "platform/ports/FailureReporter.h"
 #include "platform/ports/SyncStore.h"
 
 #include <json/json.h>
 
 #include <array>
+#include <atomic>
 #include <cstdint>
 #include <mutex>
 #include <optional>
@@ -37,16 +39,30 @@ private:
   HlcClock::State state_;
 };
 
+// §10.2 physNow() on the server, the serverNow every push, pull and call reads: the wall clock, never below the
+// greatest value it has returned in this process, so serverNow never steps back while the process runs.
+class PhysicalClock final : public Clock {
+public:
+  explicit PhysicalClock(Clock& wall) : wall_(wall) {}
+  std::uint64_t nowMs() override;
+
+private:
+  Clock& wall_;
+  std::atomic<std::uint64_t> highest_{0};
+};
+
 // The in-process mutex of a scope (§6.1 step 3.1) not taken within LOCK_TIMEOUT_MS: transient (§6.6).
 struct ScopeLockTimeout : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-// §6.3: the k-th admit of a server-origin call that carries a requestId, and the call's digest.
+// §6.3: the k-th admit of a server-origin call that carries a requestId, and the call's digest. `looksUp` marks
+// the call's first admit to run, which looks the call up in its own transaction.
 struct CallPart {
   std::string requestId;
   int k = 1;
   Digest256 digest;
+  bool looksUp = true;
 };
 
 // D-23.
@@ -77,7 +93,11 @@ struct Retry {
 struct CallAnswered {
   Json::Value result;
 };
-using AdmitOutcome = std::variant<Admitted, AlreadyAnswered, Retry, CallAnswered>;
+// §6.3 step 2: the call's part k was stored before; its result stands, and this admit wrote nothing.
+struct Replayed {
+  Json::Value result;
+};
+using AdmitOutcome = std::variant<Admitted, AlreadyAnswered, Retry, CallAnswered, Replayed>;
 
 // §6.1: admits one intent atomically, whatever its origin, and publishes what it committed (§6.8).
 class Admission {

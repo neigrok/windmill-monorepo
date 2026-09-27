@@ -2,6 +2,7 @@
 
 #include "platform/application/WorkerPool.h"
 #include "platform/application/sync/Admission.h"
+#include "platform/application/sync/SyncLive.h"
 #include "platform/application/sync/SyncService.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Wire.h"
@@ -12,13 +13,17 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <optional>
+#include <vector>
 
 // The server's readings of push/serve.json, pull/serve.json and pull/hello.json (corpus/README.md) through
-// SyncService, over any SyncWorld. Accounts in an input are the corpus's aliases.
+// SyncService, and of live/death.json through SyncLive, over any SyncWorld. Accounts in an input are the corpus's
+// aliases.
 
 namespace wm::sync::test {
 
@@ -60,9 +65,9 @@ inline Json::Value pushVector(SyncWorld& world, const Json::Value& input) {
   BlockingThread::Mark blocking;
   world.seed(input["state"]);
   const Limits limits = limitsOf(input);
-  std::map<std::uint64_t, FaultClass> faults;
+  fake::FaultingStore::Faults faults;
   for (const Json::Value& fault : input["faults"]) {
-    faults.emplace(fault["n"].asUInt64(), fault["kind"].asString() == "transient" ? FaultClass::transient : FaultClass::fault);
+    faults.intents.emplace(fault["n"].asUInt64(), fault["kind"].asString() == "transient" ? FaultClass::transient : FaultClass::fault);
   }
   fake::FaultingStore store(world.store(), faults);
   Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures, limits);
@@ -107,8 +112,8 @@ inline void protocolTranscript(SyncWorld& world, const std::vector<Json::Value>&
   for (std::size_t i = 1; i < lines.size(); ++i) {
     const Json::Value& line = lines[i];
     if (line.isMember("http")) {
-      std::map<std::uint64_t, FaultClass> faults;
-      for (const Json::Value& n : line["inject"]["fault"]) faults.emplace(n.asUInt64(), FaultClass::fault);
+      fake::FaultingStore::Faults faults;
+      for (const Json::Value& n : line["inject"]["fault"]) faults.intents.emplace(n.asUInt64(), FaultClass::fault);
       fake::FaultingStore store(world.store(), faults);
       Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
       wm::fake::FakeClock clock;
@@ -137,6 +142,37 @@ inline Json::Value helloVector(SyncWorld& world, const Json::Value& input) {
   clock.now = input["serverTime"].asUInt64();
   SyncService service(world.catalog(), world.store(), admission, clock);
   return object({{"response", responseOf(service.hello(callerOf(world, input["account"])))}});
+}
+
+// live/death.json: the frame a live socket of `account`, subscribed to `scope`, receives when the scope dies
+// (§6.8). The state is the one after the death, so the socket subscribes while its dead scopes are still alive,
+// and the death reaches it as an admission publishes one: each dead scope's key, ascending, as killTree answers
+// them. Null when no frame arrives.
+inline Json::Value liveDeathVector(SyncWorld& world, const Json::Value& input) {
+  BlockingThread::Mark blocking;
+  Json::Value beforeDeath = input["state"];
+  std::vector<ScopeKey> killed;
+  for (const std::string& key : beforeDeath["scopes"].getMemberNames()) {
+    Json::Value& scope = beforeDeath["scopes"][key];
+    if (scope["state"].asString() != "dead") continue;
+    scope["state"] = "alive";
+    scope.removeMember("deadAt");
+    killed.push_back(world.storeKey(key));
+  }
+  std::sort(killed.begin(), killed.end());
+  world.seed(beforeDeath);
+  SyncLive live(world.catalog(), world.store(), Limits{});
+  const auto socket = std::make_shared<fake::RecordingSocket>();
+  live.open(socket, world.account(input["account"].asString()));
+  Json::Value refs(Json::arrayValue);
+  refs.append(input["scope"]);
+  live.subscribe(*socket, refs);
+  CHECK_EQ(jcs(socket->frames), std::string("[]"));
+
+  live.publish(CommittedChange{beforeDeath.isMember("epoch") ? beforeDeath["epoch"].asString() : "ep-1", {}, killed});
+
+  CHECK(socket->frames.size() <= 1);
+  return object({{"frame", socket->frames.empty() ? Json::Value(Json::nullValue) : socket->frames[0]}});
 }
 
 }
