@@ -362,7 +362,7 @@ export class World {
     const held = device.replica.entries().filter((entry) => entry.state === 'held');
     if (held.length === 0) return;
     const gestureId = this.rng.pick(held).gestureId;
-    if (undoOffered(device.replica, gestureId, device.ctx().deviceNow)) undo(device.replica, device.ended, gestureId);
+    if (undoOffered(device.replica, gestureId, device.ctx().deviceNow)) undo(device.replica, this.registry, device.ended, gestureId);
   }
 
   startPush(device) {

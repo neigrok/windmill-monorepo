@@ -1,6 +1,6 @@
-// coalesce/*.json (§7.2): when a ready plain intent joins the last earlier entry on its record.
-// A create joined with a delete cancels only when the earlier entry made the record alive (a create or
-// a revive); an update joined with a delete keeps the delete.
+// coalesce/*.json (§7.2): when a ready plain intent joins the last earlier entry on its record; an entry
+// ever numbered takes no join. A create joined with a delete cancels only when the earlier entry made
+// the record alive (a create or a revive); an update joined with a delete keeps the delete.
 
 import { freshMeta } from '../client/replica.js';
 import { OTHER, row, st } from './fixtures.js';
@@ -132,6 +132,19 @@ function blocked() {
         commitStep('self/probe', [update('card0001', { tier: 'done' })], undefined, 5001),
       ],
     }),
+    stepsVector('a delete does not join a numbered create: the create an epoch change returned to ready and the delete are sent as two intents', {
+      device: device(),
+      ids: ['rp_00000000000000000000000000000002'],
+      actors: ['r_cccccccccccc'],
+      steps: [
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Kept' } }], undefined, 5000),
+        { op: 'push', deviceNow: 5000 },
+        { op: 'pushResponse', deviceNow: 5001, response: { status: 200, body: { serverTime: 5001, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 4 }] } } },
+        { op: 'epochChange', epoch: 'ep-2', deviceNow: 5002 },
+        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], undefined, 5003),
+        { op: 'push', deviceNow: 5004 },
+      ],
+    }),
     stepsVector('a command entry predicting the record is the last entry touching it and takes no join', {
       device: device(PROBE),
       steps: [
@@ -180,7 +193,7 @@ function cancels() {
         { op: 'releaseAll', deviceNow: 14002 },
       ],
     }),
-    stepsVector('a cancel leaves a sent dependent as it is', {
+    stepsVector('a dependent of a held create is held back unsent, so the cancel folds it too', {
       device: device({ 'self/probe': [BOARD_ROW], [TREE]: [ELM] }),
       steps: [
         commitStep(TREE, [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], { hold: true }, 5000),
@@ -195,19 +208,6 @@ function cancels() {
       steps: [
         commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Brief' } }], undefined, 5000),
         commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], undefined, 5001),
-      ],
-    }),
-    stepsVector('a create returned to ready by an epoch change is never cancelled: a later delete joins it and is still sent', {
-      device: device(),
-      ids: ['rp_00000000000000000000000000000002'],
-      actors: ['r_cccccccccccc'],
-      steps: [
-        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Kept' } }], undefined, 5000),
-        { op: 'push', deviceNow: 5000 },
-        { op: 'pushResponse', deviceNow: 5001, response: { status: 200, body: { serverTime: 5001, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 4 }] } } },
-        { op: 'epochChange', epoch: 'ep-2', deviceNow: 5002 },
-        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }], undefined, 5003),
-        { op: 'push', deviceNow: 5004 },
       ],
     }),
     stepsVector('a held delete released onto its ready create cancels both', {

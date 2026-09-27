@@ -156,6 +156,7 @@ export class Registry {
       for (const name of type.visibleWhen ?? []) if (!type.field(name)) fail(`${type.type}: visibleWhen names unknown ${name}`);
       for (const [name, field] of Object.entries(type.fields)) {
         if (field.ref && !this.types.has(field.ref)) fail(`${type.type}.${name}: ref to unknown ${field.ref}`);
+        if (field.domain?.type === 'fracKey' && !type.hasBorn) fail(`${type.type}.${name}: an order field belongs to a minted or derived type`);
         for (const next of field.serialNext ?? []) if (!type.field(next)) fail(`${type.type}.${name}: serialNext names unknown ${next}`);
         if (field.quantum !== undefined && field.domain?.type !== 'number') fail(`${type.type}.${name}: quantum needs a number domain`);
         if (field.opens) {

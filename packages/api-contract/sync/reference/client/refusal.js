@@ -6,14 +6,10 @@ import { sameJson } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { Stamp } from '../core/stamp.js';
 import { baseTextKey } from './commit.js';
-import { Dependents, commandRefs, isEmpty, removeDependent } from './dependents.js';
+import { Dependents, commandRefs, deltasOf, isEmpty, removeDependent } from './dependents.js';
 
 function isQueued(entry) {
   return entry.state === 'held' || entry.state === 'ready';
-}
-
-function deltasOf(entry) {
-  return [...(entry.intent.d ?? []), ...(entry.predict ?? [])];
 }
 
 function laterUnacked(replica, entry) {
@@ -97,26 +93,27 @@ function recoverBase(replica, ctx, refused) {
   moveEntry(replica, ctx.ended, refused, 'recover');
 }
 
-// §7.7 step 3: a queued dependent's dependent part is removed into the notice; a sent entry that is
-// wholly dependent is an orphan, in the notice; a partly dependent sent entry stays as it is.
-function foldDependents(replica, ctx, refused) {
-  const dependents = new Dependents(ctx.registry, refused.scope, deltasOf(refused));
+// §7.7 step 3: the dependents of a refused `source` fold into the notice of `origin`, the refused entry
+// itself or the one whose notice an orphan's content rides. A queued dependent part is removed; a
+// sent entry with any dependent part is an orphan, whole in the notice. An orphan is no source here:
+// its own dependents are held back (§7.4) until its result, and fold only when it is refused.
+function foldDependents(replica, ctx, source, origin) {
+  const dependents = new Dependents(ctx.registry);
+  dependents.absorb(source.scope, deltasOf(source), source.stamp);
   const folded = [];
-  for (const entry of replica.entries().filter((other) => other.commitOrder > refused.commitOrder)) {
+  for (const entry of replica.entries().filter((other) => other.commitOrder > source.commitOrder)) {
     const part = dependents.of(entry);
     if (!part.any) continue;
     if (entry.state === 'sent') {
-      if (!part.whole) continue;
-      dependents.absorb(entry.scope, deltasOf(entry));
       folded.push(contentOf(entry));
-      entry.orphanOf = refused.localId;
+      entry.orphanOf = origin;
       continue;
     }
     if (!isQueued(entry)) continue;
-    dependents.absorb(entry.scope, [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])]);
+    dependents.absorbPart(entry, part);
     folded.push(removeDependent(entry, part));
     if (isEmpty(entry)) {
-      entry.orphanOf = refused.localId;
+      entry.orphanOf = origin;
       moveEntry(replica, ctx.ended, entry, 'fold');
     }
   }
@@ -130,20 +127,32 @@ function contentOf(entry) {
   return content;
 }
 
-// A refusal of a sent entry: automatic recovery, or removal, folding and a notice (§7.7 steps 1-5).
-export function onRefused(replica, ctx, entry, result, response) {
-  if (entry.orphanOf !== undefined) {
-    moveEntry(replica, ctx.ended, entry, 'refuse');
-    return;
-  }
-  if (result.code === 'clock-skew') return recoverSkew(replica, ctx, entry, response.lastN);
-  if (result.code === 'base-unknown') return recoverBase(replica, ctx, entry);
-  moveEntry(replica, ctx.ended, entry, 'refuse');
-  const dependents = foldDependents(replica, ctx, entry);
-  const notice = { id: `notice:${entry.localId}`, scope: entry.scope, code: result.code, content: contentOf(entry), at: ctx.deviceNow };
-  if (result.detail !== undefined) notice.detail = result.detail;
+// §7.7 steps 2-4 for an entry refused by `event`: remove it, fold its dependents, and write its notice.
+function refuse(replica, ctx, entry, event, { code, detail }) {
+  moveEntry(replica, ctx.ended, entry, event);
+  const dependents = foldDependents(replica, ctx, entry, entry.localId);
+  const notice = { id: `notice:${entry.localId}`, scope: entry.scope, code, content: contentOf(entry), at: ctx.deviceNow };
+  if (detail !== undefined) notice.detail = detail;
   if (dependents.length) notice.content.dependents = dependents;
   replica.notices.push(notice);
+}
+
+// An orphan's refusal ends it with no notice of its own; its held-back dependents fold into the
+// origin's notice, its whole content their source.
+function refuseOrphan(replica, ctx, orphan) {
+  moveEntry(replica, ctx.ended, orphan, 'refuse');
+  const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
+  if (dependents.length === 0) return;
+  const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
+  notice.content.dependents = [...(notice.content.dependents ?? []), ...dependents];
+}
+
+// A refusal of a sent entry: automatic recovery, or removal, folding and a notice (§7.7 steps 1-5).
+export function onRefused(replica, ctx, entry, result, response) {
+  if (entry.orphanOf !== undefined) return refuseOrphan(replica, ctx, entry);
+  if (result.code === 'clock-skew') return recoverSkew(replica, ctx, entry, response.lastN);
+  if (result.code === 'base-unknown') return recoverBase(replica, ctx, entry);
+  refuse(replica, ctx, entry, 'refuse', result);
 }
 
 function rewriteId(registry, delta, w) {
@@ -170,10 +179,10 @@ export function applyWriteMap(replica, ctx, command, write) {
   for (const w of write) {
     if (w.from !== undefined) {
       for (const entry of replica.entries().filter(isQueued)) {
+        if (replica.entry(entry.localId) !== entry) continue; // ended by an earlier target-merged fold
         const deletesTarget = (entry.intent.d ?? []).some((delta) => delta.t === w.t && sameJson(delta.id, w.from) && delta.life?.[0] === 'dead');
         if (deletesTarget) {
-          replica.notices.push({ id: `notice:${entry.localId}`, scope: entry.scope, code: 'target-merged', content: contentOf(entry), at: ctx.deviceNow });
-          moveEntry(replica, ctx.ended, entry, 'target-merged');
+          refuse(replica, ctx, entry, 'target-merged', { code: 'target-merged' });
           continue;
         }
         rewriteEntry(registry, entry, w);

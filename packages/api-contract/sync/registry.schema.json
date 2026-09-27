@@ -425,6 +425,44 @@
               "idPattern"
             ]
           }
+        },
+        {
+          "description": "An order field (a fracKey domain, D-25) belongs to a minted or derived type.",
+          "if": {
+            "properties": {
+              "identity": {
+                "enum": [
+                  "keyed",
+                  "singleton"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "fields": {
+                "additionalProperties": {
+                  "not": {
+                    "required": [
+                      "domain"
+                    ],
+                    "properties": {
+                      "domain": {
+                        "required": [
+                          "type"
+                        ],
+                        "properties": {
+                          "type": {
+                            "const": "fracKey"
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
         }
       ]
     },

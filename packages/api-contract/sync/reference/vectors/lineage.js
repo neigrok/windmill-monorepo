@@ -79,7 +79,14 @@ function signIns() {
     stepsVector('a dormant replica of A is rebound; the anon entries, notices and new device rows move after its own', {
       device: device(ANON, anonWithWork(), dormant(DORMANT_A, 'A', {
         meta: { authPaused: true },
-        notices: [{ id: 'notice:x/0', scope: 'self/probe', code: 'stale', content: { d: [] }, at: 1500 }],
+        notices: [{
+          id: 'notice:x/0',
+          scope: 'self/probe',
+          code: 'stale',
+          detail: { t: 'card', id: 'card0001', field: 'title', current: st(1450, 0, 'r_cccccccccccc') },
+          content: { d: [{ t: 'card', id: 'card0001', born: st(1000), f: { title: ['Mine', st(1400)] } }] },
+          at: 1500,
+        }],
       })),
       steps: [{ op: 'signIn', account: 'A', holdsRecords: holds, decisions: { probe: 'add' }, deviceNow: 4000 }],
     }),
@@ -172,7 +179,7 @@ function starts() {
     stepsVector('engine start releases every held entry, and the instance takes a fresh actor that its next commit uses (web: no fork guard)', {
       device: device(ANON, anonWithWork()),
       actors: ['r_cccccccccccc'],
-      steps: [{ op: 'engineStart', deviceNow: 4000 }, commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'After start' } }], undefined, 4001)],
+      steps: [{ op: 'engineStart', deviceNow: 4000 }, commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'After start' } }], { gestureId: 'after-start' }, 4001)],
     }),
     stepsVector('a forkGuard equal to its backup-excluded copy keeps every replica id', {
       device: { ...device(BOUND, boundBusy()), meta: { forkGuard: FORK_GUARD } },

@@ -11,6 +11,7 @@ import { Registry } from '../core/registry.js';
 import { isVisible, recordKey } from '../core/rows.js';
 import { roundToQuantum } from '../core/values.js';
 import { coalesce } from './coalesce.js';
+import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
 export class CommitError extends Error {}
@@ -104,14 +105,11 @@ class DeltaBuilder {
     return delta;
   }
 
-  // §7.1 step 4: a move writes only its anchor's order field, as the update, put or write the type takes.
+  // §7.1 step 4: a move writes only its anchor's order field, by an update; only minted and derived
+  // types hold an order field (§2.4).
   move(type, change) {
     if (change.anchor === undefined) throw new CommitError('a move carries an anchor');
-    const current = this.existing(type, change);
-    const f = this.placed(type, change.id, {}, change.anchor);
-    if (type.hasBorn) return this.update(type, { op: 'update', id: change.id, f });
-    if (type.life) return this.put(type, { op: 'put', id: change.id, present: current.life?.[0] === 'alive', f });
-    return this.write(type, { op: 'write', id: change.id, f });
+    return this.update(type, { op: 'update', id: change.id, f: this.placed(type, change.id, {}, change.anchor) });
   }
 
   // The change's values with the anchor's order field at D-25's drop position: the anchor `below` is
@@ -295,33 +293,38 @@ function retiringEntries(replica, scope, retire) {
 
 // ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits}. `changes` is a list with its
 // `opts`, answering {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a
-// function of the views {drawn, stored} read in this transaction before the scope check, answering
-// {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}. A null gesture
-// writes nothing, ticks no clock and gives a null outcome. A throw writes nothing.
+// function of the views and the commit's one physNow reading {drawn, stored, now}, read in this
+// transaction before the scope check, answering {gesture: {changes, opts} | null, value}, and then
+// `commit` answers {outcome, value}. A null gesture writes nothing, ticks no clock and gives a null
+// outcome. A throw writes nothing.
 export function commit(replica, ctx, scope, changes, opts = {}) {
   if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`);
-  if (typeof changes !== 'function') return commitGesture(replica, ctx, scope, changes, opts);
-  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope) });
+  const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
+  if (typeof changes !== 'function') return commitGesture(replica, ctx, physNow, scope, changes, opts);
+  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope), now: physNow });
   if (!gesture) return { outcome: null, value };
-  return { outcome: commitGesture(replica, ctx, scope, gesture.changes, gesture.opts ?? {}), value };
+  return { outcome: commitGesture(replica, ctx, physNow, scope, gesture.changes, gesture.opts ?? {}), value };
 }
 
-// §7.1 steps 2–11. A cap refusal writes nothing, and a too-large refusal writes only its notice; neither
-// retires. The clock is written back once the commit is accepted.
-function commitGesture(replica, ctx, scope, changes, opts) {
+// §7.1 steps 2–11 on the commit's one physNow reading. The retire and the silent fold of its
+// dependents are planned first, and the diff reads views without them. A cap refusal writes nothing,
+// and a too-large refusal writes only its notice; neither retires. The clock is written back once the
+// commit is accepted.
+function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const { registry } = ctx;
   const limits = ctx.limits ?? CONSTANTS;
   const scopeRefusal = refusalOfScope(replica, registry, scope);
   if (scopeRefusal) return { refused: scopeRefusal };
 
-  const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
   const clock = new Clock(replica.meta.hlc, ctx.actor, () => physNow);
   clock.observe(replica.meta.hlcHigh);
   const stamp = clock.tick();
 
   const retiring = retiringEntries(replica, scope, opts.retire ?? []);
-  const drawnView = drawn(replica, registry, scope, retiring);
-  const storedView = stored(replica, registry, scope);
+  const folded = silentFoldOf(replica, registry, retiring.map((entry) => ({ entry, deltas: deltasOf(entry) })));
+  const gone = new Set([...retiring.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
+  const drawnView = drawn(replica, registry, scope, gone);
+  const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
   const deltas = changes.map((change) => builder.delta(change)).filter((delta) => delta !== null);
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
@@ -341,6 +344,7 @@ function commitGesture(replica, ctx, scope, changes, opts) {
   }
 
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
+  foldSilently(replica, ctx.ended, folded);
   replica.meta.hlc = clock.pair;
   const firstOrder = replica.nextCommitOrder();
   const entries = intents.map((intent, k) => {

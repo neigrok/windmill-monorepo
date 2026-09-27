@@ -92,6 +92,8 @@ test('registry.schema.json refuses broken registries', () => {
     'a mint alphabet of one character': broken((r) => { card(r).mint.alphabet = 'a'; }),
     'an opens field a client writes': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.writer = 'client'; }),
     'a beforePull command that is not server-internal': broken((r) => { command(r, 'probe.tick').serverInternal = false; }),
+    'an order field on a keyed type': broken((r) => { r.types.find((t) => t.type === 'day').fields.ord = { kind: 'lww', writer: 'client', domain: { type: 'fracKey' } }; }),
+    'an order field on a singleton': broken((r) => { r.types.find((t) => t.type === 'meta').fields.ord = { kind: 'lww', writer: 'client', domain: { type: 'fracKey' } }; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.notDeepEqual(errorsOf(SCHEMA, registry), [], name);
 });
@@ -109,6 +111,13 @@ test('the Registry refuses what the schema cannot express', () => {
     'opens values outside the domain': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.opens = ['secret']; }),
   };
   for (const [name, registry] of Object.entries(cases)) assert.throws(() => new Registry(registry), RegistryError, name);
+});
+
+test('the Registry, like the schema, keeps order fields on minted and derived types', () => {
+  const order = { kind: 'lww', writer: 'client', domain: { type: 'fracKey' } };
+  for (const t of ['day', 'meta']) {
+    assert.throws(() => new Registry(broken((r) => { r.types.find((type) => type.type === t).fields.ord = order; })), RegistryError, t);
+  }
 });
 
 test('scope references map to registry scope kinds', () => {

@@ -106,6 +106,14 @@ const CLIENT_PROBE = { 'self/probe': [...CARDS, row({ t: 'board', id: BOARD, lif
 // server's growth rule refuses `cap`.
 const CLIENT_BEHIND = { 'self/probe': [...CARDS.slice(0, 2), row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 })] };
 const newCard = (id) => ({ op: 'create', t: 'card', id, f: { title: 'Fourth' } });
+// A create the server refuses `invalid` at §6.1 step 2: a title one character over its 12.
+const tooLong = (id) => ({ op: 'create', t: 'card', id, f: { title: 'Thirteen char' } });
+
+// A client and a server holding the same one card and board, so two creates fit the cap.
+function inStep() {
+  const rows = [CARDS[0], row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 })];
+  return new ServerScript({ device: device({ 'self/probe': rows }), server: serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': rows } }) });
+}
 
 function folds() {
   const script = () => new ServerScript({ device: device(CLIENT_BEHIND), server: server() });
@@ -180,7 +188,7 @@ function folds() {
       ], { atomic: true }, 5001))
       .push(5001)
       .respond({ serverNow: 5002 })
-      .vector('a sent entry only partly dependent is no orphan: its own refusal writes a notice with its full content'),
+      .vector('a sent entry partly dependent is an orphan: the refused create\'s notice holds its whole content, and its own refusal ends it without a notice'),
     script()
       .withIds(['rp_00000000000000000000000000000002'])
       .withActors(['r_cccccccccccc'])
@@ -203,6 +211,25 @@ function folds() {
       .add(commitStep('self/overlay/b_00000002', [{ op: 'write', t: 'mark', id: 'oak', f: { done: true } }], undefined, 5002))
       .respond({ serverNow: 5003 })
       .vector('a refused tag create in one tree folds nothing of a same-id tag or mark in another tree'),
+    inStep()
+      .add(commitStep('self/probe', [tooLong('card0009')], undefined, 5000))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Fixed' } }, newCard('card0010')], { atomic: true }, 5001))
+      .push(5002)
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Edited' } }], undefined, 5003))
+      .respond({ serverNow: 5004 })
+      .push(5005)
+      .vector('an orphan\'s refusal folds its held-back dependents into the origin\'s notice: an edit of the record the orphan created is never sent'),
+    inStep()
+      .add(commitStep('self/probe', [tooLong('card0009')], undefined, 5000))
+      .add(commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0009' }, newCard('card0010')], { atomic: true }, 5001))
+      .push(5002)
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Edited' } }], undefined, 5003))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { tier: 'done' } }], { hold: true }, 5004))
+      .respond({ serverNow: 5005 })
+      .pushRound({ deviceNow: 5006 })
+      .add({ op: 'releaseAll', deviceNow: 5007 })
+      .pushRound({ deviceNow: 5008 })
+      .vector('an orphan the server admits releases its held-back dependents: a ready and a held edit of the record it created both land'),
   ];
 }
 
@@ -244,6 +271,24 @@ function restamps() {
       .respond({ serverNow: 5000, tRecv: skewed(5004) })
       .pushRound({ deviceNow: skewed(5005), serverNow: 5010, tRecv: skewed(5006) })
       .vector('a sent delete answered clock-skew in the same response follows its create\'s new born, so both land'),
+    script({ nextN: 2 })
+      .withIds(['rp_00000000000000000000000000000002'])
+      .withActors(['r_cccccccccccc'])
+      .add(commitStep('self/probe', [{ op: 'create', t: 'board', id: 'b_00000002' }], undefined, skewed(5000)))
+      .push(skewed(5001))
+      .respond({ serverNow: 5000, tRecv: skewed(5002) })
+      .add(commitStep('self/probe', [{ op: 'delete', t: 'board', id: 'b_00000002' }], undefined, skewed(5003)))
+      .pushRound({ deviceNow: skewed(5004), serverNow: 5010, tRecv: skewed(5005) })
+      .pushRound({ deviceNow: skewed(5006), serverNow: 5020, tRecv: skewed(5007) })
+      .vector('a skewed create that a 409 returned to ready takes no join from a later delete: recovery moves the delete\'s born with the create\'s life, and both land'),
+    script()
+      .add(commitStep('self/probe', [newCard('card0009')], { hold: true, gestureId: 'new' }, skewed(5000)))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], undefined, skewed(5001)))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Kept' } }], undefined, skewed(5002)))
+      .add({ op: 'undo', gestureId: 'new' })
+      .pushRound({ deviceNow: skewed(5003), serverNow: 5000, tRecv: skewed(5004) })
+      .pushRound({ deviceNow: skewed(5005), serverNow: 5010, tRecv: skewed(5006) })
+      .vector('undo of a skewed held create folds the update of its record silently, so no born is left that recovery cannot move, and the independent edit lands'),
     script()
       .add({ ...commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', f: { done: true }, x: { memo: 'from tab B' } }], undefined, skewed(5000)), actor: OTHER })
       .push(skewed(5000))

@@ -241,6 +241,9 @@
               }
             }
           ],
+          "opts": {
+            "gestureId": "after-start"
+          },
           "deviceNow": 4001
         }
       ]
@@ -253,7 +256,7 @@
         },
         {
           "localIds": [
-            "g1/0"
+            "after-start/0"
           ],
           "retired": [],
           "stamp": "4001:0:r_cccccccccccc"
@@ -462,8 +465,8 @@
                 }
               },
               {
-                "localId": "g1/0",
-                "gestureId": "g1",
+                "localId": "after-start/0",
+                "gestureId": "after-start",
                 "lineage": "anon",
                 "scope": "self/probe",
                 "state": "ready",
@@ -489,7 +492,7 @@
                       }
                     }
                   ],
-                  "gestureId": "g1"
+                  "gestureId": "after-start"
                 }
               }
             ],

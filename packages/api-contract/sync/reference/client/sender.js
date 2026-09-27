@@ -7,12 +7,34 @@ import { jcs } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { stampsOf } from '../core/rows.js';
 import { intentDigest } from '../core/wire.js';
+import { Dependents, deltasOf, scopedKey } from './dependents.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
 import { applyWriteMap, onRefused } from './refusal.js';
 
-// Numbers ready entries in commit order up to the batch limits, stopping after the first command
-// entry, and never while a command entry is sent. `limit` (after a several-intent 400 or 413) sends at
-// most that many sent entries and numbers none beyond them. Answers the push request, or null.
+// §7.4 held back: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
+// orphan awaiting its result, or touch a record an earlier held-back entry touches, by a delta, a guard
+// or a prediction.
+function heldBack(replica, registry) {
+  const sources = new Dependents(registry);
+  const touched = new Set();
+  const back = new Set();
+  for (const entry of replica.entries()) {
+    if (entry.state === 'ready') {
+      const records = [...deltasOf(entry), ...(entry.intent.guard ?? [])].map((target) => scopedKey(entry.scope, target.t, target.id));
+      if (sources.of(entry).any || records.some((record) => touched.has(record))) {
+        back.add(entry);
+        for (const record of records) touched.add(record);
+      }
+    }
+    if (entry.state === 'held' || back.has(entry) || entry.orphanOf !== undefined) sources.absorb(entry.scope, deltasOf(entry), entry.stamp);
+  }
+  return back;
+}
+
+// Numbers ready entries in commit order up to the batch limits, passing over held-back entries,
+// stopping after the first command entry or at a held-back one, and never while a command entry is
+// sent. `limit` (after a several-intent 400 or 413) sends at most that many sent entries and numbers
+// none beyond them. Answers the push request, or null.
 export function nextPush(replica, ctx, { limit } = {}) {
   const limits = ctx.limits ?? CONSTANTS;
   const maxIntents = Math.min(limits.PUSH_MAX_INTENTS, limit ?? Infinity);
@@ -22,7 +44,12 @@ export function nextPush(replica, ctx, { limit } = {}) {
   if (!sent().some((entry) => entry.intent.cmd !== undefined)) {
     let count = sent().length;
     let bytes = sent().reduce((sum, entry) => sum + Buffer.byteLength(jcs(entry.intent), 'utf8'), 0);
+    const back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
+      if (back.has(entry)) {
+        if (entry.intent.cmd !== undefined) break;
+        continue;
+      }
       const intent = { ...entry.intent, n: meta.nextN };
       const size = Buffer.byteLength(jcs(intent), 'utf8');
       if (count >= maxIntents || (count > 0 && bytes + size > limits.PUSH_MAX_BYTES)) break;

@@ -268,8 +268,8 @@ outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
 - scope: `first-write`, `governing-create`, `governing-delete`, `horizon`.
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
-`ready`); `coalesce` is both a commit that coalesces at once and "a never-numbered create or revive
-cancelled by a later delete"; `cancel` is "folded with such a cancel" (to `coalesced`, no notice);
+`ready`); `coalesce` is both a commit that coalesces at once and "a create or revive cancelled by a
+later delete"; `cancel` is "folded with such a cancel" (to `coalesced`, no notice);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
 one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
@@ -663,7 +663,7 @@ is answered for the caller to resume.
 | `{op: 'revive', t, id, f?}` | minted and derived types |
 | `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true |
 | `{op: 'write', t, id, f?, x?}` | keyed types without life, and singletons |
-| `{op: 'move', t, id, anchor}` | any type with an order field; writes only `anchor.field` |
+| `{op: 'move', t, id, anchor}` | minted and derived types, the only ones with an order field; an update of only `anchor.field` |
 
 - `changes: null` stands for a read-and-commit whose function decides no gesture: the step writes
   nothing, ticks no clock, takes no gesture id and returns `null`, before the scope check.
@@ -671,18 +671,21 @@ is answered for the caller to resume.
 - `anchor` is `{field, below}`: an order field (`fracKey`) and the id of the record just above the
   drop point, or `null` for the top. The field takes the D-25 drop key (`fracindex/drop.json`) over
   the type's visible records holding the field, `below` looked up in `drawn`, then in `stored`. An
-  anchor absent from both views throws, and so does a value for `field` in `f` beside it.
+  anchor absent from both views throws, and so does a value for `field` in `f` beside it. `below`
+  may name the moved record, its own anchor. An anchored create of an id already in `drawn` checks
+  its anchor, then is dropped.
 - `x` maps a text field to its new text, or to `{text, from}`, which names the text it was edited
   from. `from` defaults to the drawn text.
 
 **Opts** (`commit`):
 - `atomic`, `hold`: booleans.
 - `guard`: a list of registers `{t, id, field}`, guarded exactly, each at its `stored` stamp (`null`
-  when unset). A field the type does not declare as a lattice field, `life` or a text field throws.
+  when unset). A field the type does not declare as a lattice field, `life`, a text field, or a
+  register of a type another scope holds throws.
 - `retire`: a list of records `{t, id}`. Every held gesture of the scope that carries no command and
-  whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), and the
-  diff runs on `drawn` without it. `retired` lists those gesture ids; a refused commit retires
-  nothing.
+  whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), its
+  dependents folding silently as an undo's do, and the diff runs on views without either.
+  `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
 - `local`: `{deviceKey: value}`; `null` deletes the row.
@@ -763,19 +766,21 @@ write-map stamps.
 - `blocked.json`: intents that do not.
 - `cancel.json`: a create or revive joined with a delete, and the dependents it folds.
 
-The target E is the last *earlier* entry, in commit order, touching the intent's record. A join
-removes E iff E's delta had made the record alive (a create or a revive), E was never numbered (an
-entry ever sent may be on the server), and the joined life is dead. An update joined with a delete
-keeps the delete. No intent joins, or is joined by, an entry carrying `orphanOf`.
+The target E is the last *earlier* entry, in commit order, touching the intent's record. An entry
+with `numbered: true`, an orphan among them, takes no join: the intent stays an entry of its own. A
+join removes E iff E's delta had made the record alive (a create or a revive) and the joined life is
+dead. An update joined with a delete keeps the delete.
 
 A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
 and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.
-A sent entry is left as it is.
 
 ### hold/*.json
 
-- `release.json`
-- `undo.json`
+- `release.json`: releases, and numbering past held entries. A ready entry is held back, and `push`
+  does not number it, while it depends on a held or held-back entry or on an orphan awaiting its
+  result (the dependents of `refusal/*.json`), or touches, by a delta, a guard or a prediction, a
+  record an earlier held-back entry touches. Numbering stops at a held-back command entry.
+- `undo.json`: an undo folds the gesture's dependents silently, as a cancel does (`coalesce/*.json`).
 
 ### refusal/*.json
 
@@ -787,13 +792,19 @@ re-identify and an epoch change.
   referencing scope's tree: a tree type → `tree/<T>`, an overlay type → `self/overlay/<T>`, a product
   type → `self/<product>`. Dependents and `anonCount` key records this way.
 - A dependent is a later delta or command that touches or names a record the refused entry created,
-  or that targets a scope its governing record creates.
-  - Dependency is transitive through the records that folded dependents create.
+  that carries unchanged a life register it wrote (a keyed put that keeps presence, stamped before
+  its own gesture), or that targets a scope its governing record creates.
+  - Dependency is transitive through the records that folded dependents create and the life
+    registers they write.
   - Names include ref fields, key parts and command `ref<t>` arguments.
 - A queued dependent is removed; its entry ends `fold` when nothing is left of it.
-- A sent entry becomes an orphan (`orphanOf`) only when all its deltas, and its command if any, are
-  dependents. Its later result ends it without a notice of its own (`ok` → resolved, a refusal →
-  refused). A partly dependent sent entry is untouched, and its own refusal writes its own notice.
+- A sent entry with any dependent delta or command becomes an orphan (`orphanOf`), its whole
+  content in the notice. Its later result ends it without a notice of its own (`ok` → resolved, a
+  refusal → refused).
+- An orphan's whole content is a source: every record it creates and every life register it writes
+  make their own dependents, held back from numbering until its result. Its `ok` releases them, and
+  its content stays in the notice; its refusal folds them into the same notice, a sent one becoming
+  an orphan of the same origin.
 - The notice holds the refused entry's content and, under `dependents`, the removed and orphaned
   content.
 - Clock-skew recovery (§7.7 step 1): every later sent entry with `n` above the response's `lastN`

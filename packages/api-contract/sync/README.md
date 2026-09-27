@@ -40,8 +40,9 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 
 The reference is a pure, single-threaded model of the deterministic core. It does not model what no
 single-threaded run can observe: the global lock order, the per-scope mutex and the Postgres lock
-modes of §6.1 step 3, publishing frames before the mutex is released (§6.8), the sender's backoff and
-503 sleep (§7.4), the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the
+modes of §6.1 step 3, publishing frames before the mutex is released (§6.8), the server's clock
+source (§10.2 `physNow()`, which callers pass as `serverNow`), the sender's backoff and 503 sleep
+(§7.4), the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the
 sign-out step) and web tab leadership (§7.8).
 
 ## Reference layout
@@ -67,7 +68,7 @@ sign-out step) and web tab leadership (§7.8).
 | `client/views.js` | §7.6 |
 | `client/commit.js`, `client/coalesce.js`, `client/hold.js` | §7.1, §7.2, §7.3 |
 | `client/sender.js`, `client/puller.js` | §7.4, §7.5 |
-| `client/dependents.js` | §7.7 step 3's dependents, which a refusal and a §7.2 cancel both fold |
+| `client/dependents.js` | §7.7 step 3's dependents: a refusal's fold, the silent fold of a cancel, an undo and a retire (§7.2, §7.3), and §7.4's held-back entries |
 | `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps |
 | `client/subscriptions.js` | §7.9 |
 | `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor) |

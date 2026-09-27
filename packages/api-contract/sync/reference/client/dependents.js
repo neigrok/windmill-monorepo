@@ -1,11 +1,22 @@
-// §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, or
-// that target a scope its governing record creates; by (scope, t, id), and transitive through absorb().
-// The refusal fold (§7.7) and the create/delete cancel (§7.2) both use it.
+// §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, that
+// carry a life register a source wrote, or that target a scope its governing record creates; by
+// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold a cancel,
+// an undo and a retire share (§7.2, §7.3), and held-back numbering (§7.4) all use it.
 
+import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
+import { Stamp } from '../core/stamp.js';
 
-function scopedKey(scope, t, id) {
+export function deltasOf(entry) {
+  return [...(entry.intent.d ?? []), ...(entry.predict ?? [])];
+}
+
+export function scopedKey(scope, t, id) {
   return `${scope}|${recordKey(t, id)}`;
+}
+
+function lifeKey(scope, delta) {
+  return `${scopedKey(scope, delta.t, delta.id)}|${delta.life.join('@')}`;
 }
 
 // A reference names a record in the scope its type lives in: a product scope, or the tree and overlay
@@ -33,17 +44,19 @@ export function commandRefs(registry, cmd) {
 }
 
 export class Dependents {
-  constructor(registry, scope, deltas) {
+  constructor(registry) {
     this.registry = registry;
     this.created = new Set();
     this.governed = new Set();
-    this.absorb(scope, deltas);
+    this.lives = new Set();
   }
 
-  // The records these deltas create (a life made alive at its born) join the source's, with the scopes
-  // their governing records create.
-  absorb(scope, deltas) {
+  // A source's deltas, written at `stamp`: the records they create (a life made alive at its born),
+  // the scopes their governing records create, and the life registers they wrote (stamped at or after
+  // `stamp`), which a later keyed put may carry unchanged (§7.1 step 4).
+  absorb(scope, deltas, stamp) {
     for (const delta of deltas) {
+      if (delta.life && Stamp.compare(delta.life[1], stamp) >= 0) this.lives.add(lifeKey(scope, delta));
       if (delta.life?.[0] !== 'alive' || delta.born === undefined || delta.life[1] !== delta.born) continue;
       this.created.add(scopedKey(scope, delta.t, delta.id));
       if (this.registry.type(delta.t)?.governs === 'tree') {
@@ -63,11 +76,17 @@ export class Dependents {
     const deltas = entry.intent.d ?? [];
     const removed = deltas.filter((delta) => this.governed.has(entry.scope)
       || this.created.has(scopedKey(entry.scope, delta.t, delta.id))
+      || (delta.life !== undefined && this.lives.has(lifeKey(entry.scope, delta)))
       || refsOf(this.registry, delta).some((ref) => this.names(entry.scope, ref.t, ref.id)));
     const cmd = entry.intent.cmd;
     const cmdGone = cmd !== undefined
       && (this.governed.has(entry.scope) || commandRefs(this.registry, cmd).some((ref) => this.names(entry.scope, ref.t, ref.id)));
     return { removed, cmdGone, any: removed.length > 0 || cmdGone, whole: removed.length === deltas.length && (cmd === undefined || cmdGone) };
+  }
+
+  // A dependent part joins the sources, so dependency is transitive through the records it creates.
+  absorbPart(entry, { removed, cmdGone }) {
+    this.absorb(entry.scope, [...removed, ...(cmdGone ? entry.predict ?? [] : [])], entry.stamp);
   }
 }
 
@@ -94,4 +113,34 @@ export function removeDependent(entry, { removed, cmdGone }) {
 
 export function isEmpty(entry) {
   return entry.intent.d === undefined && entry.intent.cmd === undefined;
+}
+
+// The silent fold of a cancel (§7.2), which an undo and a retire share (§7.3), planned before anything
+// moves: `sources` are `[{entry, deltas}]`, each with the deltas it gives up, and the answer is each
+// later entry's dependent part, `[{entry, part}]`. Sources are never numbered, and §7.4 numbers no
+// entry that depends on one ahead of it, so a numbered dependent is a broken invariant.
+export function silentFoldOf(replica, registry, sources) {
+  const dependents = new Dependents(registry);
+  const parts = [];
+  for (const entry of replica.entries()) {
+    const source = sources.find((candidate) => candidate.entry === entry);
+    if (source) {
+      dependents.absorb(entry.scope, source.deltas, entry.stamp);
+      continue;
+    }
+    const part = dependents.of(entry);
+    if (!part.any) continue;
+    if (entry.state !== 'held' && entry.state !== 'ready') throw new Error(`${entry.localId} is ${entry.state} and depends on an entry never numbered`);
+    dependents.absorbPart(entry, part);
+    parts.push({ entry, part });
+  }
+  return parts;
+}
+
+// Applies a silent fold: no notice, and an entry left empty ends coalesced by cancel.
+export function foldSilently(replica, ended, parts) {
+  for (const { entry, part } of parts) {
+    removeDependent(entry, part);
+    if (isEmpty(entry)) moveEntry(replica, ended, entry, 'cancel');
+  }
 }

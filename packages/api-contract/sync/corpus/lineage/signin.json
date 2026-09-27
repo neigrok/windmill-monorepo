@@ -2526,8 +2526,26 @@
                 "id": "notice:x/0",
                 "scope": "self/probe",
                 "code": "stale",
+                "detail": {
+                  "t": "card",
+                  "id": "card0001",
+                  "field": "title",
+                  "current": "1450:0:r_cccccccccccc"
+                },
                 "content": {
-                  "d": []
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Mine",
+                          "1400:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ]
                 },
                 "at": 1500
               }
@@ -2807,8 +2825,26 @@
                 "id": "notice:x/0",
                 "scope": "self/probe",
                 "code": "stale",
+                "detail": {
+                  "t": "card",
+                  "id": "card0001",
+                  "field": "title",
+                  "current": "1450:0:r_cccccccccccc"
+                },
                 "content": {
-                  "d": []
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Mine",
+                          "1400:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ]
                 },
                 "at": 1500
               }

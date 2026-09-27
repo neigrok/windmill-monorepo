@@ -2050,6 +2050,902 @@
     }
   },
   {
+    "name": "a skewed create that a 409 returned to ready takes no join from a later delete: recovery moves the delete's born with the create's life, and both land",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "ids": [
+        "rp_00000000000000000000000000000002"
+      ],
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "create",
+              "t": "board",
+              "id": "b_00000002"
+            }
+          ],
+          "deviceNow": 405000
+        },
+        {
+          "op": "push",
+          "deviceNow": 405001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 409,
+            "body": {
+              "serverTime": 5000,
+              "epoch": "ep-1",
+              "error": "gap"
+            }
+          },
+          "deviceNow": 405002,
+          "tSend": 405001,
+          "tRecv": 405002
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "board",
+              "id": "b_00000002"
+            }
+          ],
+          "deviceNow": 405003
+        },
+        {
+          "op": "push",
+          "deviceNow": 405004
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-1",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "refused",
+                  "code": "clock-skew"
+                },
+                {
+                  "n": 2,
+                  "s": "refused",
+                  "code": "clock-skew"
+                }
+              ]
+            }
+          },
+          "deviceNow": 405005,
+          "tSend": 405004,
+          "tRecv": 405005
+        },
+        {
+          "op": "push",
+          "deviceNow": 405006
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5020,
+              "epoch": "ep-1",
+              "lastN": 4,
+              "results": [
+                {
+                  "n": 3,
+                  "s": "ok",
+                  "seq": 5
+                },
+                {
+                  "n": 4,
+                  "s": "ok",
+                  "seq": 6
+                }
+              ]
+            }
+          },
+          "deviceNow": 405007,
+          "tSend": 405006,
+          "tRecv": 405007
+        }
+      ],
+      "actors": [
+        "r_cccccccccccc"
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "405000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "board",
+                  "id": "b_00000002",
+                  "born": "405000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "405000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "405000:1:r_cccccccccccc"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "board",
+                  "id": "b_00000002",
+                  "born": "405000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "405000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "board",
+                  "id": "b_00000002",
+                  "born": "405000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "405000:1:r_cccccccccccc"
+                  ]
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000002",
+          "ackThrough": 2,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "board",
+                  "id": "b_00000002",
+                  "born": "5011:1:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "5011:1:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1",
+              "n": 3
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "board",
+                  "id": "b_00000002",
+                  "born": "5011:1:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "5011:2:r_cccccccccccc"
+                  ]
+                }
+              ],
+              "gestureId": "g2",
+              "n": 4
+            }
+          ]
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000002",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000002",
+              "state": "bound",
+              "nextN": 5,
+              "hlc": {
+                "ms": 5011,
+                "counter": 2
+              },
+              "hlcHigh": "5011:2:r_cccccccccccc",
+              "admittedHigh": "5011:2:r_cccccccccccc",
+              "serverOffsetMs": -399986,
+              "offsetSamples": [
+                {
+                  "offset": -400001,
+                  "rtt": 1
+                },
+                {
+                  "offset": -399994,
+                  "rtt": 1
+                },
+                {
+                  "offset": -399986,
+                  "rtt": 1
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 4,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 405007,
+                "mono": 405007,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5011:1:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000002",
+                      "born": "5011:1:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5011:1:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 3
+                },
+                "numbered": true,
+                "n": 3,
+                "digest": "fd9f30c57c99612e27d8561cf57b848bf86387c42f20ed85f593e29484202a28",
+                "resultSeq": 5,
+                "resultEpoch": "ep-1"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5011:2:r_cccccccccccc",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000002",
+                      "born": "5011:1:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "5011:2:r_cccccccccccc"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 4
+                },
+                "numbered": true,
+                "n": 4,
+                "digest": "0018c9bc065e12595b979d9f8b7cbd11456ebd521f84910dc2c8bbd2ae166cb7",
+                "resultSeq": 6,
+                "resultEpoch": "ep-1"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "undo of a skewed held create folds the update of its record silently, so no born is left that recovery cannot move, and the independent edit lands",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "create",
+              "t": "card",
+              "id": "card0009",
+              "f": {
+                "title": "Fourth"
+              }
+            }
+          ],
+          "opts": {
+            "hold": true,
+            "gestureId": "new"
+          },
+          "deviceNow": 405000
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0009",
+              "f": {
+                "title": "Renamed"
+              }
+            }
+          ],
+          "deviceNow": 405001
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "update",
+              "t": "card",
+              "id": "card0001",
+              "f": {
+                "title": "Kept"
+              }
+            }
+          ],
+          "deviceNow": 405002
+        },
+        {
+          "op": "undo",
+          "gestureId": "new"
+        },
+        {
+          "op": "push",
+          "deviceNow": 405003
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5000,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "refused",
+                  "code": "clock-skew"
+                }
+              ]
+            }
+          },
+          "deviceNow": 405004,
+          "tSend": 405003,
+          "tRecv": 405004
+        },
+        {
+          "op": "push",
+          "deviceNow": 405005
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-1",
+              "lastN": 2,
+              "results": [
+                {
+                  "n": 2,
+                  "s": "ok",
+                  "seq": 5
+                }
+              ]
+            }
+          },
+          "deviceNow": 405006,
+          "tSend": 405005,
+          "tRecv": 405006
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "new/0"
+          ],
+          "retired": [],
+          "stamp": "405000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "405001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "405002:0:r_aaaaaaaaaaaa"
+        },
+        true,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Kept",
+                      "405002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 1
+            }
+          ]
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 1,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Kept",
+                      "5001:1:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        },
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5001,
+                "counter": 1
+              },
+              "hlcHigh": "5001:1:r_aaaaaaaaaaaa",
+              "admittedHigh": "5001:1:r_aaaaaaaaaaaa",
+              "serverOffsetMs": -399995,
+              "offsetSamples": [
+                {
+                  "offset": -400003,
+                  "rtt": 1
+                },
+                {
+                  "offset": -399995,
+                  "rtt": 1
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 2,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 405006,
+                "mono": 405006,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1002:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1002:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 2",
+                      "1002:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+                "digest": "57176f740ab866eed0639b271e37114cb29d58079cceed8f948cb16a945255f2",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "acked",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5001:1:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Kept",
+                          "5001:1:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "numbered": true,
+                "n": 2,
+                "digest": "a5562ae68523690fd1481fc5d6089e228929cb6e5b844c620557040f948d2125",
+                "resultSeq": 5,
+                "resultEpoch": "ep-1"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "new/0",
+          "outcome": "undone",
+          "event": "undo"
+        },
+        {
+          "localId": "g1/0",
+          "outcome": "coalesced",
+          "event": "cancel"
+        }
+      ]
+    }
+  },
+  {
     "name": "a clock-skew restamp keeps each entry's author actor, so text from another instance still does not join",
     "input": {
       "device": {

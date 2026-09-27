@@ -125,7 +125,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(null);
           break;
         case 'undo':
-          answer(undo(replica, ended, step.gestureId));
+          answer(undo(replica, registry, ended, step.gestureId));
           break;
         case 'push':
           lastPush = nextPush(replica, ctx, step.limit === undefined ? {} : { limit: step.limit });

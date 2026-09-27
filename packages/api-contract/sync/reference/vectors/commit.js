@@ -173,6 +173,10 @@ function deltas() {
         { op: 'create', t: 'card', id: 'card0009', f: { title: 'Last' }, anchor: below('card0002') },
       ], { atomic: true })],
     }),
+    stepsVector('a move below itself is its own anchor: a key between its drawn key and the next greater stored key keeps its place', {
+      device: device(bound({ confirmed: LISTED })),
+      steps: [commitStep('self/probe', [{ op: 'move', t: 'card', id: 'card0001', anchor: below('card0001') }])],
+    }),
     stepsVector('a text equal to the drawn text writes nothing', {
       device: device(bound({ confirmed: { [OVERLAY]: [MARK] } })),
       steps: [commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'first draft' } }])],
@@ -483,6 +487,10 @@ function throws() {
       device: device(bound({ confirmed: LISTED })),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Lost' }, anchor: below('card0404') }])],
     }),
+    stepsVector('an anchored create of an id already in drawn checks its anchor before it is dropped: an absent anchor throws', {
+      device: device(bound({ confirmed: LISTED })),
+      steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'Again' }, anchor: below('card0404') }])],
+    }),
     stepsVector('a value for the anchored field beside the anchor throws', {
       device: device(bound({ confirmed: LISTED })),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Both', ord: 'a5' }, anchor: below('card0001') }])],
@@ -494,6 +502,10 @@ function throws() {
     stepsVector('a listed life throws', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { guard: [{ t: 'card', id: 'card0001', field: 'life' }] })],
+    }),
+    stepsVector('a guard on a type another scope holds throws', {
+      device: device(bound({ confirmed: { ...PROBE, [TREE]: TREE_ROWS } })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { guard: [{ t: 'tag', id: 'oak', field: 'label' }] })],
     }),
     stepsVector('a listed field the type does not declare throws', {
       device: device(bound({ confirmed: PROBE })),
@@ -530,6 +542,25 @@ function retire() {
       steps: [
         commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }),
         commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'One', tier: 'done' } }], { retire: [{ t: 'card', id: 'card0001' }] }, 5001),
+      ],
+    }),
+    stepsVector('a commit retiring two held gestures returns their gesture ids in commit order', {
+      device: device(bound({ confirmed: DAYS })),
+      steps: [
+        deleteDay(),
+        commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, 5001),
+        commitStep('self/probe', [
+          { op: 'update', t: 'card', id: 'card0001', f: { title: 'Back' } },
+          { op: 'put', t: 'day', id: DAY, f: { score: 9 } },
+        ], { retire: [{ t: 'card', id: 'card0001' }, ...theDay] }, 5002),
+      ],
+    }),
+    stepsVector('a retire folds a put that carries the retired delete\'s life, silently, and the retiring put writes over the record as it was', {
+      device: device(bound({ confirmed: DAYS })),
+      steps: [
+        deleteDay(),
+        commitStep('self/probe', [{ op: 'put', t: 'day', id: DAY, present: false, f: { score: 5 } }], undefined, 5001),
+        commitStep('self/probe', [{ op: 'put', t: 'day', id: DAY, f: { score: 5 } }], { retire: theDay }, 5002),
       ],
     }),
     stepsVector('a held gesture carrying a command is not retired: the put makes the record anew', {

@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
 import test from 'node:test';
-import { commit } from '../../client/commit.js';
-import { Replica } from '../../client/replica.js';
+import { CommitError, commit } from '../../client/commit.js';
+import { Device, Replica } from '../../client/replica.js';
 import { mintId } from '../../core/derive.js';
-import { registry, row, st } from '../../vectors/fixtures.js';
+import { ACTOR, registry, row, st } from '../../vectors/fixtures.js';
+import { runSteps } from '../../vectors/steps.js';
 
 function bound(confirmed = {}) {
   return new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'bound', account: 'A' }).meta, confirmed });
@@ -41,6 +43,21 @@ test('§7.1: a body answering no gesture writes nothing and ticks no clock, and 
   assert.deepEqual(answer, { outcome: null, value: 1 });
   assert.deepEqual(replica.toJSON(), before);
   assert.equal(gestures, 0);
+});
+
+// Every throwing commit of the corpus, run on the replica itself with no step rollback: the throw comes
+// before the commit writes anything, the clock included.
+test('§7.1: commit throws only before its transaction writes, so a throw leaves the replica as it was', () => {
+  const vectors = JSON.parse(readFileSync(new URL('../../../corpus/commit/throws.json', import.meta.url), 'utf8'));
+  for (const { name, input } of vectors) {
+    const last = input.steps.at(-1);
+    const replica = new Device(runSteps({ ...input, steps: input.steps.slice(0, -1) }).device).activeReplica;
+    const before = replica.toJSON();
+    const context = { registry, actor: last.actor ?? input.actor ?? ACTOR, deviceNow: last.deviceNow ?? 0, ended: [], nextGestureId: () => 'thrown' };
+    assert.throws(() => commit(replica, context, last.scope, last.changes, last.opts ?? {}), CommitError, name);
+    assert.deepEqual(replica.toJSON(), before, name);
+    assert.deepEqual(context.ended, [], name);
+  }
 });
 
 test('D-8: a minted id is the prefix and one alphabet character per draw', () => {
