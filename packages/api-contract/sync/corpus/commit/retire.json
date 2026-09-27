@@ -1839,8 +1839,8 @@
         },
         {
           "localId": "g2/0",
-          "outcome": "coalesced",
-          "event": "cancel"
+          "outcome": "undone",
+          "event": "silent-fold"
         }
       ]
     }
@@ -3384,6 +3384,30 @@
                       "t": "day",
                       "id": "2026-09-01",
                       "life": [
+                        "dead",
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "day",
+                      "id": "2026-09-01",
+                      "life": [
                         "alive",
                         "5001:0:r_aaaaaaaaaaaa"
                       ],
@@ -3395,20 +3419,14 @@
                       }
                     }
                   ],
-                  "gestureId": "g1"
+                  "gestureId": "g2"
                 }
               }
             ]
           }
         ]
       },
-      "ended": [
-        {
-          "localId": "g2/0",
-          "outcome": "coalesced",
-          "event": "coalesce"
-        }
-      ]
+      "ended": []
     }
   },
   {

@@ -12,7 +12,7 @@ import { registry } from '../../vectors/fixtures.js';
 import { runSteps } from '../../vectors/steps.js';
 
 const CORPUS = fileURLToPath(new URL('../../../corpus/', import.meta.url));
-const STEP_FILES = ['commit', 'coalesce', 'hold', 'refusal', 'write', 'lineage']
+const STEP_FILES = ['commit', 'hold', 'refusal', 'write', 'lineage']
   .flatMap((dir) => readdirSync(`${CORPUS}${dir}`).map((file) => `${dir}/${file}`))
   .concat(['pull/pages.json']);
 

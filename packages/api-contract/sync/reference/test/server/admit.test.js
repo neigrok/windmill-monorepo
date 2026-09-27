@@ -43,9 +43,9 @@ test('admission never changes the state it was given', () => {
   assert.equal(jcs(input.toJSON()), before);
 });
 
-// §11.2 #4: the lattice fields after admitting a set of plain intents none of which is refused are the
-// same in every order. The records exist beforehand; revives and deletes of a tag interleave freely.
-test('any permutation of non-refused plain intents yields equal lattice fields', () => {
+// §11.2 #4: the lattice fields after admitting a set of intents of one record without a guard or a
+// command, none of them refused, are the same in every order. The records exist beforehand; revives and deletes of a tag interleave freely.
+test('any permutation of non-refused one-record intents without guards or commands yields equal lattice fields', () => {
   const board = 'b_00000001';
   const born = '100:0:r_seed';
   const base = serverState({

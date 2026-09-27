@@ -20,15 +20,8 @@ import { ACTOR, Rng, product, registry } from '../../vectors/fixtures.js';
 const SERVER_NOW = 1_000_000;
 const DAYS = ['2026-09-01', '2026-09-02', '2026-09-03'];
 
-// A ready entry, numbered before, that creates (t, id): what a later gesture on the record must not
-// join (§7.2).
-function hasReturnedCreate(replica, t, id) {
-  return replica.entries().some((entry) => entry.state === 'ready' && entry.numbered
-    && (entry.intent.d ?? []).some((delta) => delta.t === t && delta.id === id && delta.life?.[0] === 'alive' && delta.born === delta.life[1]));
-}
-
 test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, retire and orphans meet later gestures on the same records', () => {
-  const tally = { deletesAfterReturn: 0, undone: 0, retired: 0, folded: 0, orphans: 0, orphansAdmitted: 0, recovered: 0 };
+  const tally = { undone: 0, retired: 0, folded: 0, orphans: 0, orphansAdmitted: 0, recovered: 0 };
   for (let seed = 1; seed <= 500; seed += 1) {
     const rng = new Rng(seed);
     let server = ServerState.empty({ epoch: 'ep-0', accounts: { A: { name: 'Ann' } } });
@@ -76,7 +69,6 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
       else if (roll === 1) commit(replica, ctx, 'self/probe', [{ op: 'create', t: 'board' }], { hold: rng.chance(0.3) });
       else if (roll === 2 && alive.some((record) => record.t !== 'day')) {
         const record = rng.pick(alive.filter((candidate) => candidate.t !== 'day'));
-        if (hasReturnedCreate(replica, record.t, record.id)) tally.deletesAfterReturn += 1;
         commit(replica, ctx, 'self/probe', [{ op: 'delete', t: record.t, id: record.id }], { hold: rng.chance(0.5) });
       } else if (roll === 3 && cards.length) {
         commit(replica, ctx, 'self/probe', [{ op: 'update', t: 'card', id: rng.pick(cards).id, f: { title: `renamed ${step}` } }]);
@@ -118,11 +110,10 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
     assert.deepEqual(unsettled, [], `seed ${seed}: every entry is acked or ends with the server clock held still`);
     assert.deepEqual([...skews].filter(([, count]) => count > 1), [], `seed ${seed}: no entry is refused clock-skew twice`);
     tally.recovered += skews.size;
-    tally.folded += ctx.ended.filter((end) => end.event === 'cancel').length;
+    tally.folded += ctx.ended.filter((end) => end.event === 'silent-fold').length;
     tally.orphans += ctx.ended.filter((end) => end.event === 'refuse' && end.orphanOf !== undefined).length;
     tally.orphansAdmitted += replica.entries().filter((entry) => entry.orphanOf !== undefined && entry.state === 'acked').length;
   }
-  assert.ok(tally.deletesAfterReturn > 100, `only ${tally.deletesAfterReturn} deletes followed a returned numbered create`);
   assert.ok(tally.undone > 400, `only ${tally.undone} held gestures were undone`);
   assert.ok(tally.retired > 30, `only ${tally.retired} held gestures were retired`);
   assert.ok(tally.folded > 40, `only ${tally.folded} entries folded silently`);

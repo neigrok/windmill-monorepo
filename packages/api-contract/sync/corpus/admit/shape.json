@@ -16863,5 +16863,505 @@
         }
       }
     }
+  },
+  {
+    "name": "an integer-domain value beyond the safe integers is invalid",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 1
+            },
+            "digest": "d37ebc4ad04264da2de0e0b5c7a2e3907f13e0c295c000472d5c0ba483aac038"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "449556d61ac3b79e5acd49c77c392d02fcb3d54a2518fd226a229493d5835efa"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "tier": [
+                  "draft",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "cardbbbb",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Bee",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "receipts": {
+            "acct:A/probe": {
+              "run00001": "run00001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "run",
+            "id": "run00001",
+            "born": "1100:0:srv",
+            "f": {
+              "endedAt": [
+                9007199254740992,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "invalid"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 1
+            },
+            "digest": "d37ebc4ad04264da2de0e0b5c7a2e3907f13e0c295c000472d5c0ba483aac038"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "449556d61ac3b79e5acd49c77c392d02fcb3d54a2518fd226a229493d5835efa"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "tier": [
+                  "draft",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "cardbbbb",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Bee",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "receipts": {
+            "acct:A/probe": {
+              "run00001": "run00001"
+            }
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an integer-domain value at the largest safe integer is admitted",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 1
+            },
+            "digest": "d37ebc4ad04264da2de0e0b5c7a2e3907f13e0c295c000472d5c0ba483aac038"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "449556d61ac3b79e5acd49c77c392d02fcb3d54a2518fd226a229493d5835efa"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "tier": [
+                  "draft",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "cardbbbb",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Bee",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "receipts": {
+            "acct:A/probe": {
+              "run00001": "run00001"
+            }
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "run",
+            "id": "run00001",
+            "born": "1100:0:srv",
+            "f": {
+              "endedAt": [
+                9007199254740991,
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 1
+            },
+            "digest": "9ec5af3449e36bfc007488134fbb3246b77ee53147ed6da5f1d48160fabf9f8c"
+          },
+          "acct:B/probe": {
+            "kind": "product",
+            "owner": "B",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "449556d61ac3b79e5acd49c77c392d02fcb3d54a2518fd226a229493d5835efa"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "tier": [
+                  "draft",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "endedAt": [
+                  9007199254740991,
+                  "1000000:0:srv"
+                ],
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 2000,
+              "ru": 1000000
+            }
+          ],
+          "acct:B/probe": [
+            {
+              "t": "card",
+              "id": "cardbbbb",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Bee",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "product": {
+          "receipts": {
+            "acct:A/probe": {
+              "run00001": "run00001"
+            }
+          }
+        }
+      }
+    }
   }
 ]

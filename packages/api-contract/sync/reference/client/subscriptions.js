@@ -1,5 +1,6 @@
-// §7.9 subscriptions: product scopes, and a tree and overlay per alive governing record. Leaving the set
-// forgets the scope and resolves its acked entries (§8.1).
+// §7.9 subscriptions: product scopes, and a tree and overlay per alive governing record. A subscribe
+// clears a known not-found scope, so its next pull boots it, and answers `gone` for a scope known gone,
+// whose death is final; leaving the set forgets the scope and resolves its acked entries (§8.1).
 
 import { moveEntry } from '../core/machines.js';
 import { isAlive } from '../core/rows.js';
@@ -18,6 +19,12 @@ export function subscriptionsOf(replica, registry, products) {
     }
   }
   return scopes.filter((scope) => !replica.known[scope]);
+}
+
+export function subscribe(replica, scope) {
+  if (replica.known[scope] === 'gone') return 'gone';
+  delete replica.known[scope];
+  return null;
 }
 
 export function unsubscribe(replica, ctx, scope) {

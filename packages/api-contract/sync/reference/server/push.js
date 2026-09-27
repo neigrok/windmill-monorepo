@@ -3,7 +3,7 @@
 
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
-import { intentDigest } from '../core/wire.js';
+import { bodyBytes, intentDigest } from '../core/wire.js';
 import { admit } from './admit.js';
 import { liveEventsOf } from './pull.js';
 
@@ -32,7 +32,7 @@ export function push({ state, registry, product, account, request, serverNow, bu
   const head = { serverTime: serverNow, epoch: state.epoch };
   const answer = (status, error) => ({ state, response: { status, body: { ...head, error } }, live: [], frames: [] });
   if (account === null || account === undefined) return answer(401, 'unauthenticated');
-  if (Buffer.byteLength(jcs(request), 'utf8') > limits.PUSH_MAX_BYTES) return answer(413, 'request-too-large');
+  if (bodyBytes(request) > limits.PUSH_MAX_BYTES) return answer(413, 'request-too-large');
   if (!isWellFormed(request)) return answer(400, 'malformed');
   if (request.intents.length > limits.PUSH_MAX_INTENTS) return answer(413, 'request-too-large');
   const { replica } = request;

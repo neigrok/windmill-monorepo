@@ -1,17 +1,17 @@
 // §8 the state machines as data. Every outbox state change in the client goes through `moveEntry`, so
 // a transition the table lacks throws; the replica and scope tables back the lifecycle and admission.
 
-export const TERMINAL_OUTCOMES = ['undone', 'coalesced', 'resolved', 'refused', 'discarded'];
+export const TERMINAL_OUTCOMES = ['undone', 'resolved', 'refused', 'discarded'];
 
 // §8.1. `from: null` is an intent not yet in the outbox.
 export const INTENT_MACHINE = [
   { from: [null], event: 'commit', to: ['held', 'ready'] },
-  { from: [null, 'ready'], event: 'coalesce', to: ['coalesced'] },
   { from: ['held'], event: 'release', to: ['ready'] },
   { from: ['held'], event: 'undo', to: ['undone'] },
   { from: ['held'], event: 'retire', to: ['undone'] },
   { from: ['ready'], event: 'number', to: ['sent'] },
-  { from: ['held', 'ready'], event: 'cancel', to: ['coalesced'] },
+  { from: ['ready'], event: 'outgrown', to: ['refused'] },
+  { from: ['held', 'ready'], event: 'silent-fold', to: ['undone'] },
   { from: ['held', 'ready'], event: 'fold', to: ['refused'] },
   { from: ['held', 'ready'], event: 'target-merged', to: ['refused'] },
   { from: ['sent'], event: 'ok', to: ['acked'] },

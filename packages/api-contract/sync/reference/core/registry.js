@@ -6,13 +6,15 @@ import { readFileSync } from 'node:fs';
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
 const SYNTAX_CHARACTERS = '^$\\.*+?()[]{}|/';
 const DASH = Symbol('dash');
+const MAX_REPEAT = 65_535;
 
 export class RegistryError extends Error {}
 
 // A bracket class of literal characters and ranges from `start`, just past its `[`: the index of its
-// `]`, or -1. A `-` is literal first or last, and otherwise joins two characters into a range.
+// `]`, or -1. A `-` is literal first or last, and otherwise joins two characters into a range. A class
+// beginning with `^` or `:`, or holding `--`, reads differently across dialects.
 function classEnd(body, start) {
-  if (body[start] === '^') return -1;
+  if (body[start] === '^' || body[start] === ':') return -1;
   const items = [];
   let i = start;
   while (i < body.length && body[i] !== ']') {
@@ -28,7 +30,7 @@ function classEnd(body, start) {
       i += 1;
     }
   }
-  if (i === body.length || items.length === 0) return -1;
+  if (i === body.length || items.length === 0 || body.slice(start, i).includes('--')) return -1;
   for (let k = 1; k < items.length - 1; k += 1) {
     if (items[k] !== DASH) continue;
     const [low, high] = [items[k - 1], items[k + 1]];
@@ -39,7 +41,8 @@ function classEnd(body, start) {
 }
 
 // §2.4 patterns: printable ASCII; `^` and `$` around literal characters, escaped syntax characters,
-// bracket classes, groups (alternation only inside one) and greedy quantifiers.
+// bracket classes, groups (alternation only inside one) and greedy quantifiers counting at most
+// MAX_REPEAT.
 export function isPortablePattern(source) {
   if (typeof source !== 'string' || !/^[ -~]*$/.test(source) || source.length < 2) return false;
   if (source[0] !== '^' || source[source.length - 1] !== '$') return false;
@@ -76,7 +79,8 @@ export function isPortablePattern(source) {
     } else if ('?*+{'.includes(char)) {
       const counted = /^\{(\d+)(?:,(\d*))?\}/.exec(body.slice(i));
       if (!quantifiable || (char === '{' && !counted)) return false;
-      if (counted && counted[2] !== undefined && counted[2] !== '' && Number(counted[2]) < Number(counted[1])) return false;
+      const [low, high] = counted ? [Number(counted[1]), counted[2] ? Number(counted[2]) : undefined] : [];
+      if (low > MAX_REPEAT || high > MAX_REPEAT || high < low) return false;
       i += counted ? counted[0].length : 1;
       quantifiable = false;
     } else if ('^$.]}'.includes(char)) {

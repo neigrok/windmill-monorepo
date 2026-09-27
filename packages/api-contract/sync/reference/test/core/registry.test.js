@@ -121,18 +121,20 @@ test('the Registry refuses what the schema cannot express', () => {
   for (const [name, registry] of Object.entries(cases)) assert.throws(() => new Registry(registry), RegistryError, name);
 });
 
-test('§2.4 patterns: only the portable subset, which every dialect reads alike', () => {
+test('§2.4 patterns: only the portable subset, which every dialect reads alike, repeat counts at most 65 535', () => {
   const patterns = [
     '^b_[0-9a-f]{8}$', '^[A-Za-z0-9_-]{8,64}$', '^[-a]$', '^(?:ab|cd)+$', '^(a|b)?c{2,}$', '^a\\.b\\/c$', '^[\\]\\-]$',
     'b_[0-9a-f]{8}$', '^b_[0-9a-f]{8}', '^a|b$', '^.{1,64}$', '^\\s+$', '^\\d+$', '^\\w+$', '^a\\b$', '^\\_$',
     '^[^/]+$', '^[]$', '^[z-a]$', '^[a-b-c]$', '^[a--]$', '^[a&&b]$', '^[[a]]$', '^a+?$', '^a**$', '^a{3,2}$', '^a{,2}$',
     '^(?=a)a$', '^(a)\\1$', '^a$b$', '^é$', '^a\\$',
+    '^a{65535}$', '^a{1,65535}$', '^[a:]$', '^a{65536}$', '^a{2,65536}$', '^[:a]$', '^[\\--a]$',
   ];
   assert.deepEqual(patterns.map(isPortablePattern), [
     true, true, true, true, true, true, true,
     false, false, false, false, false, false, false, false, false,
     false, false, false, false, false, false, false, false, false, false, false,
     false, false, false, false, false,
+    true, true, true, false, false, false, false,
   ]);
 });
 

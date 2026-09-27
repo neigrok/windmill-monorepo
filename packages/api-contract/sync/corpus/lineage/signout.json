@@ -735,8 +735,8 @@
       "returns": [
         {
           "complete": true,
-          "unsent": 1,
-          "ready": 1,
+          "unsent": 2,
+          "ready": 2,
           "sent": 0
         }
       ],
@@ -765,12 +765,12 @@
       },
       "ended": [
         {
-          "localId": "g2/0",
-          "outcome": "coalesced",
-          "event": "coalesce"
+          "localId": "g1/0",
+          "outcome": "discarded",
+          "event": "discard"
         },
         {
-          "localId": "g1/0",
+          "localId": "g2/0",
           "outcome": "discarded",
           "event": "discard"
         }
@@ -887,7 +887,6 @@
                 },
                 "n": 1,
                 "digest": "87a22cc9d81696fa7c98a14a5dd7dd2865acd5f92ae3e9c81bbb411620edbfac",
-                "numbered": true,
                 "resultSeq": 2,
                 "resultEpoch": "ep-1"
               }

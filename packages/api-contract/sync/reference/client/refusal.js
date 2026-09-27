@@ -54,8 +54,8 @@ function ownRegisters(entry) {
   return own;
 }
 
-// A fresh tick from the shared clock, in the actor of the instance that authored the entry (§7.2's
-// same-actor text rule keeps meaning one engine instance).
+// A fresh tick from the shared clock, in the actor of the instance that authored the entry (§7.7's
+// restamp rule).
 function authoredTick(clock, entry) {
   const { ms, counter } = Stamp.parse(clock.tick());
   return Stamp.encode({ ms, counter, actor: Stamp.parse(entry.stamp).actor });
@@ -156,6 +156,12 @@ export function dismiss(replica, noticeId) {
   const notice = replica.notices.find((candidate) => candidate.id === noticeId);
   if (!notice) throw new Error(`${noticeId} is not a notice of ${replica.id}`);
   notice.dismissed = true;
+}
+
+// §7.4: a ready entry that grew after commit past a request alone ends too-large before it is numbered,
+// with its notice, as a one-intent 413 would end it.
+export function refuseOutgrown(replica, ctx, entry) {
+  refuse(replica, ctx, entry, 'outgrown', { code: 'too-large' });
 }
 
 // A refusal of a sent entry: automatic recovery, or removal, folding and a notice (§7.7 steps 1-5).

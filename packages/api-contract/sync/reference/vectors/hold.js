@@ -1,21 +1,33 @@
-// hold/*.json (§7.3, §7.4): held gestures wait for their release, coalesce on release, and undo only
-// while every entry of the gesture is still held, folding their dependents silently; numbering passes
-// over held entries and holds back what depends on them.
+// hold/*.json (§7.3, §7.4): held gestures wait for their release and undo only while every entry of
+// the gesture is still held, folding their dependents silently; numbering passes over held entries and
+// holds back what depends on them.
 
 import { freshMeta } from '../client/replica.js';
+import { bodyBytes } from '../core/wire.js';
 import { row, st } from './fixtures.js';
-import { settle, stepsVector } from './steps.js';
+import { runSteps, settle, stepsVector } from './steps.js';
 
 const REPLICA = 'rp_00000000000000000000000000000001';
 
-function device() {
-  const confirmed = {
-    'self/probe': [
-      row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { title: ['One', st(1000)] }, seq: 1 }),
-      row({ t: 'card', id: 'card0002', life: ['alive', st(1100)], born: st(1100), f: { title: ['Two', st(1100)] }, seq: 2 }),
-    ],
-  };
+const BOARD = 'b_00000001';
+const TREE = `tree/${BOARD}`;
+const OVERLAY = `self/overlay/${BOARD}`;
+
+function device(confirmed = {
+  'self/probe': [
+    row({ t: 'card', id: 'card0001', life: ['alive', st(1000)], born: st(1000), f: { title: ['One', st(1000)] }, seq: 1 }),
+    row({ t: 'card', id: 'card0002', life: ['alive', st(1100)], born: st(1100), f: { title: ['Two', st(1100)] }, seq: 2 }),
+  ],
+}) {
   return settle({ active: REPLICA, replicas: [{ meta: freshMeta(REPLICA, 'bound', 'A'), confirmed }] });
+}
+
+// A board and its tree holding the tag elm.
+function treeDevice() {
+  return device({
+    'self/probe': [row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 1 })],
+    [TREE]: [row({ t: 'tag', id: 'elm', life: ['alive', st(950)], born: st(950), f: { label: ['Elm', st(950)] }, seq: 1 })],
+  });
 }
 
 const holdDelete = (id, deviceNow, gestureId) => ({ op: 'commit', scope: 'self/probe', changes: [{ op: 'delete', t: 'card', id }], opts: { hold: true, gestureId }, deviceNow });
@@ -23,7 +35,20 @@ const rename = (id, title, deviceNow) => ({ op: 'commit', scope: 'self/probe', c
 const probe = (changes, opts, deviceNow) => ({ op: 'commit', scope: 'self/probe', changes, ...(opts ? { opts } : {}), deviceNow });
 const holdCreate = (id, deviceNow) => probe([{ op: 'create', t: 'card', id, f: { title: 'New' } }], { hold: true, gestureId: 'new' }, deviceNow);
 
+// Two renames whose two-intent request body is one byte over the returned limit, which still admits
+// each rename's widest one-intent body at commit.
+function twoRenamesOverLimit(steps) {
+  const [entry1, entry2] = runSteps({ device: device(), steps }).device.replicas[0].outbox;
+  const limit = bodyBytes({ replica: REPLICA, ackThrough: 0, intents: [{ ...entry1.intent, n: 1 }, { ...entry2.intent, n: 2 }] }) - 1;
+  const widest = Number.MAX_SAFE_INTEGER;
+  for (const entry of [entry1, entry2]) {
+    if (bodyBytes({ replica: REPLICA, ackThrough: widest, intents: [{ ...entry.intent, n: widest }] }) > limit) throw new Error('the limit refuses a rename at commit');
+  }
+  return limit;
+}
+
 function releases() {
+  const renames = [rename('card0001', 'Uno', 5000), rename('card0002', 'Dos', 5001)];
   return [
     stepsVector('a held entry stays held before its releaseAt', {
       device: device(),
@@ -45,13 +70,23 @@ function releases() {
       device: device(),
       steps: [holdDelete('card0001', 5000, 'first'), holdDelete('card0002', 5001, 'second'), { op: 'releaseAll', deviceNow: 5002 }],
     }),
+    stepsVector('numbering stops before an entry that would take the request body, its jcs, over PUSH_MAX_BYTES; the next push sends it', {
+      device: device(),
+      limits: { PUSH_MAX_BYTES: twoRenamesOverLimit(renames) },
+      steps: [
+        ...renames,
+        { op: 'push', deviceNow: 5002 },
+        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 3 }] } } },
+        { op: 'push', deviceNow: 5004 },
+      ],
+    }),
     stepsVector('push numbers ready entries and passes over held ones', {
       device: device(),
       steps: [holdDelete('card0001', 5000, 'del'), rename('card0002', 'Dos', 5001), { op: 'push', deviceNow: 5002 }],
     }),
-    stepsVector('a released delete joins the ready update before it', {
+    stepsVector('a released delete is sent as its own intent, numbered after the ready update committed before it', {
       device: device(),
-      steps: [rename('card0001', 'Uno', 5000), holdDelete('card0001', 5001, 'del'), { op: 'releaseAll', deviceNow: 5002 }],
+      steps: [rename('card0001', 'Uno', 5000), holdDelete('card0001', 5001, 'del'), { op: 'releaseAll', deviceNow: 5002 }, { op: 'push', deviceNow: 5003 }],
     }),
     stepsVector('an update of a held create is held back unnumbered, a later independent edit is numbered past both, and the release numbers the two in commit order', {
       device: device(),
@@ -106,6 +141,34 @@ function undos() {
         probe([{ op: 'update', t: 'card', id: 'card0009', f: { tier: 'done' } }, { op: 'update', t: 'card', id: 'card0001', f: { title: 'Kept' } }], { atomic: true }, 5002),
         { op: 'undo', gestureId: 'new' },
         { op: 'push', deviceNow: 5003 },
+      ],
+    }),
+    stepsVector('undo of a held board create folds the writes to the tree and overlay it would govern silently: each ends undone', {
+      device: treeDevice(),
+      steps: [
+        probe([{ op: 'create', t: 'board', id: 'b_00000002' }], { hold: true, gestureId: 'board' }, 5000),
+        { op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5001 },
+        { op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'create', t: 'tag', label: 'First step' }], deviceNow: 5002 },
+        { op: 'commit', scope: 'self/overlay/b_00000002', changes: [{ op: 'write', t: 'mark', id: 'first-step', f: { done: true } }], deviceNow: 5003 },
+        { op: 'undo', gestureId: 'board' },
+      ],
+    }),
+    stepsVector('undo of a held tag create folds the link keyed by it and the mark on it silently', {
+      device: treeDevice(),
+      steps: [
+        { op: 'commit', scope: TREE, changes: [{ op: 'create', t: 'tag', id: 'oak', f: { label: 'Oak' } }], opts: { hold: true, gestureId: 'oak' }, deviceNow: 5000 },
+        { op: 'commit', scope: TREE, changes: [{ op: 'put', t: 'link', id: ['oak', 'elm'], f: { strength: 3 } }], deviceNow: 5001 },
+        { op: 'commit', scope: OVERLAY, changes: [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'look here' } }], deviceNow: 5002 },
+        { op: 'undo', gestureId: 'oak' },
+      ],
+    }),
+    stepsVector('undo of a held create keeps a later guard on its record: the guard names no stamp, since it reads stored, and the entry is sent with it', {
+      device: device(),
+      steps: [
+        holdCreate('card0009', 5000),
+        probe([{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { guard: [{ t: 'card', id: 'card0009', field: 'title' }] }, 5001),
+        { op: 'undo', gestureId: 'new' },
+        { op: 'push', deviceNow: 5002 },
       ],
     }),
     stepsVector('a keyed put that carries the life a held put wrote is held back, and the undo folds it silently', {

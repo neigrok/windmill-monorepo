@@ -85,6 +85,18 @@ class PullScript {
     return this.pull(scopes, serverNow).respond({ serverNow, limits, edit });
   }
 
+  // A push whose own change frame reaches the device before the response does.
+  pushFrameFirst(deviceNow) {
+    this.add({ op: 'push', deviceNow });
+    const { request } = this.lastRequest('push');
+    const out = push({ state: this.server, registry, product, account: 'A', request, serverNow: deviceNow });
+    this.server = out.state;
+    return this.add(
+      ...out.frames.map((event) => ({ op: 'frame', frame: event.frame, deviceNow })),
+      { op: 'pushResponse', response: out.response, deviceNow, tSend: deviceNow, tRecv: deviceNow },
+    );
+  }
+
   pushRound(deviceNow) {
     this.add({ op: 'push', deviceNow });
     const { request } = this.lastRequest('push');
@@ -212,6 +224,10 @@ function lives() {
     new PullScript({ device: device({ meta: { serverEpoch: 'ep-1', nextN: 3, ackThrough: 2 }, outbox: [acked(1, 'card0001', 3), acked(2, 'card0002', 5)] }), server: server() })
       .pullRound(['self/probe'], { serverNow: 5000 })
       .vector('a boot that ends resolves acked entries through its asOf'),
+    bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0003', f: { title: 'Mine' } }], deviceNow: 5001 })
+      .pushFrameFirst(5001)
+      .vector('an ok whose seq the frame before it already applied resolves in its own transaction'),
   ];
 }
 
@@ -252,7 +268,16 @@ function frames() {
     const script = framed();
     return script.add({ op: 'frame', frame: edit(next(script)), deviceNow: 5002 }).vector(name);
   };
+  const knownTree = new PullScript({ device: device({ meta: { serverEpoch: 'ep-1' }, known: { [TREE]: 'not-found' } }), server: server() })
+    .add({ op: 'subscribe', scope: TREE })
+    .add({ op: 'commit', scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Reopened' } }], deviceNow: 5001 })
+    .pullRound([TREE], { serverNow: 5002 });
+  const goneTree = new PullScript({ device: device({ meta: { serverEpoch: 'ep-1' }, known: { [TREE]: 'gone' } }), server: server({ treeState: 'dead' }) })
+    .add({ op: 'subscribe', scope: TREE })
+    .add({ op: 'commit', scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Reopened' } }], deviceNow: 5001 });
   return [
+    knownTree.vector('a subscribe clears a known scope: a commit to it is accepted, and its first pull boots it'),
+    goneTree.vector('a subscribe to a scope known gone answers gone and keeps the record: its death is final, so a commit to it refuses scope-dead'),
     build((frame) => frame, 'the next frame with rows applies inline and checks the digest'),
     build((frame) => ({ ...frame, seq: frame.seq + 1 }), 'a frame past the next seq asks for a pull'),
     build(({ rows, ...frame }) => frame, 'a frame without rows asks for a pull'),

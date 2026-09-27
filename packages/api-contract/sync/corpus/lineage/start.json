@@ -571,8 +571,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf",
-                "numbered": true
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
               },
               {
                 "localId": "g2/0",
@@ -683,8 +682,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf",
-                "numbered": true
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
               },
               {
                 "localId": "g2/0",
@@ -777,8 +775,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf",
-                "numbered": true
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
               },
               {
                 "localId": "g2/0",
@@ -1007,7 +1004,6 @@
                   "gestureId": "g1",
                   "n": 1
                 },
-                "numbered": true,
                 "n": 1,
                 "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
               },
@@ -1039,8 +1035,7 @@
                   "n": 2
                 },
                 "n": 2,
-                "digest": "95ad6410f57a20a44c61f483b73fd169dbd587a7bd1b9890be63c93d6f2e93fa",
-                "numbered": true
+                "digest": "95ad6410f57a20a44c61f483b73fd169dbd587a7bd1b9890be63c93d6f2e93fa"
               }
             ]
           },
@@ -1168,8 +1163,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf",
-                "numbered": true
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
               },
               {
                 "localId": "g2/0",
@@ -1283,8 +1277,7 @@
                     }
                   ],
                   "gestureId": "g1"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g2/0",

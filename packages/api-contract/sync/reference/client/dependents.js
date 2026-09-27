@@ -1,7 +1,7 @@
 // §7.7 step 3 dependents: later deltas and commands that touch or name a record a source created, that
 // carry a life register a source wrote, or that target a scope its governing record creates; by
-// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold a cancel,
-// an undo and a retire share (§7.2, §7.3), and held-back numbering (§7.4) all use it.
+// (scope, t, id), and transitive through absorb(). The refusal fold (§7.7), the silent fold of an undo
+// and a retire (§7.3), and held-back numbering (§7.4) all use it.
 
 import { moveEntry } from '../core/machines.js';
 import { recordKey } from '../core/rows.js';
@@ -115,10 +115,10 @@ export function isEmpty(entry) {
   return entry.intent.d === undefined && entry.intent.cmd === undefined;
 }
 
-// The silent fold of a cancel (§7.2), which an undo and a retire share (§7.3), planned before anything
-// moves: `sources` are `[{entry, deltas}]`, each with the deltas it gives up, and the answer is each
-// later entry's dependent part, `[{entry, part}]`. Sources are never numbered, and §7.4 numbers no
-// entry that depends on one ahead of it, so a numbered dependent is a broken invariant.
+// The silent fold of an undo and a retire (§7.3), planned before anything moves: `sources` are
+// `[{entry, deltas}]`, each with the deltas it gives up, and the answer is each later entry's dependent
+// part, `[{entry, part}]`. Sources are held, and §7.4 numbers no entry that depends on a held one, so a
+// numbered dependent is a broken invariant.
 export function silentFoldOf(replica, registry, sources) {
   const dependents = new Dependents(registry);
   const parts = [];
@@ -130,17 +130,17 @@ export function silentFoldOf(replica, registry, sources) {
     }
     const part = dependents.of(entry);
     if (!part.any) continue;
-    if (entry.state !== 'held' && entry.state !== 'ready') throw new Error(`${entry.localId} is ${entry.state} and depends on an entry never numbered`);
+    if (entry.state !== 'held' && entry.state !== 'ready') throw new Error(`${entry.localId} is ${entry.state} and depends on a held entry`);
     dependents.absorbPart(entry, part);
     parts.push({ entry, part });
   }
   return parts;
 }
 
-// Applies a silent fold: no notice, and an entry left empty ends coalesced by cancel.
+// Applies a silent fold: no notice, and an entry left empty ends undone.
 export function foldSilently(replica, ended, parts) {
   for (const { entry, part } of parts) {
     removeDependent(entry, part);
-    if (isEmpty(entry)) moveEntry(replica, ended, entry, 'cancel');
+    if (isEmpty(entry)) moveEntry(replica, ended, entry, 'silent-fold');
   }
 }

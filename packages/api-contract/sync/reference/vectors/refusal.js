@@ -189,18 +189,6 @@ function folds() {
       .push(5001)
       .respond({ serverNow: 5002 })
       .vector('a sent entry partly dependent is an orphan: the refused create\'s notice holds its whole content, and its own refusal ends it without a notice'),
-    script()
-      .withIds(['rp_00000000000000000000000000000002'])
-      .withActors(['r_cccccccccccc'])
-      .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
-      .push(5000)
-      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Newer' } }], undefined, 5001))
-      .push(5001)
-      .respond({ serverNow: 5002, budget: 1 })
-      .add({ op: 'reidentify', deviceNow: 5003 })
-      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Later edit' } }], undefined, 5004))
-      .pushRound({ deviceNow: 5005 })
-      .vector('an edit never joins an orphan: the orphan ends without a notice, the edit ends in its own'),
     new ServerScript({
       device: device({ ...CLIENT_BEHIND, 'tree/b_00000002': [row({ t: 'tag', id: 'oak', life: ['alive', st(1000)], born: st(1000), f: { label: ['Oak', st(1000)] }, seq: 1 })] }),
       server: server(),
@@ -235,6 +223,13 @@ function folds() {
       .pushRound({ deviceNow: 5001 })
       .add({ op: 'dismiss', id: 'notice:g1/0' })
       .vector('a dismissed notice is kept, hidden'),
+    inStep()
+      .add(commitStep('self/probe', [newCard('card0009')], { hold: true, gestureId: 'held' }, 5000))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], undefined, 5001))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Guarded' } }], { guard: [{ t: 'card', id: 'card0009', field: 'title' }] }, 5002))
+      .add({ op: 'undo', gestureId: 'held' })
+      .pushRound({ deviceNow: 5003 })
+      .vector('a guard on a register a held-back update of a held create wrote names its stamp: the undo empties the update, and the guarding entry is refused stale'),
     inStep()
       .add(commitStep('self/probe', [tooLong('card0009')], undefined, 5000))
       .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Fixed' } }, newCard('card0010')], { atomic: true }, 5001))
@@ -294,7 +289,7 @@ function restamps() {
       .add(commitStep('self/probe', [{ op: 'delete', t: 'board', id: 'b_00000002' }], undefined, skewed(5003)))
       .pushRound({ deviceNow: skewed(5004), serverNow: 5010, tRecv: skewed(5005) })
       .pushRound({ deviceNow: skewed(5006), serverNow: 5020, tRecv: skewed(5007) })
-      .vector('a skewed create that a 409 returned to ready takes no join from a later delete: recovery moves the delete\'s born with the create\'s life, and both land'),
+      .vector('a skewed create that a 409 returned to ready, then a delete of it: recovery moves the delete\'s born with the create\'s life, and both land'),
     script()
       .add(commitStep('self/probe', [newCard('card0009')], { hold: true, gestureId: 'new' }, skewed(5000)))
       .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Renamed' } }], undefined, skewed(5001)))
@@ -317,7 +312,7 @@ function restamps() {
       .push(skewed(5000))
       .respond({ serverNow: 5000, tRecv: skewed(5001) })
       .add(commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'from tab A' } }], undefined, skewed(5002)))
-      .vector('a clock-skew restamp keeps each entry\'s author actor, so text from another instance still does not join'),
+      .vector('a clock-skew restamp keeps each entry\'s author actor'),
     returnedCommand(),
     carriedLife(),
   ];
@@ -330,12 +325,11 @@ function returnedCommand() {
   const skewedIntent = { scope: 'self/probe', d: [{ t: 'card', id: 'card0001', born: st(1001), f: { title: ['Skewed', st(skewed(5000))] } }], gestureId: 'g1', n: 1 };
   const srv = st(5003, 0, 'srv');
   const entries = [
-    { localId: 'g1/0', gestureId: 'g1', lineage: 'A', scope: 'self/probe', state: 'sent', commitOrder: 1, releaseAt: 0, stamp: st(skewed(5000)), intent: skewedIntent, n: 1, digest: intentDigest(skewedIntent), numbered: true },
+    { localId: 'g1/0', gestureId: 'g1', lineage: 'A', scope: 'self/probe', state: 'sent', commitOrder: 1, releaseAt: 0, stamp: st(skewed(5000)), intent: skewedIntent, n: 1, digest: intentDigest(skewedIntent) },
     {
       localId: 'g2/0', gestureId: 'g2', lineage: 'A', scope: 'self/probe', state: 'ready', commitOrder: 2, releaseAt: 0, stamp: st(5001),
       intent: { scope: 'self/probe', cmd: { name: 'probe.start', args: { id: 'run00009', startedAt: 5001, join: true } }, gestureId: 'g2' },
       predict: [{ t: 'run', id: 'run00009', born: srv, life: ['alive', srv], f: { startedAt: [5001, srv] } }],
-      numbered: true,
     },
     { localId: 'g3/0', gestureId: 'g3', lineage: 'A', scope: 'self/probe', state: 'ready', commitOrder: 3, releaseAt: 0, stamp: st(5002), intent: { scope: 'self/probe', d: [{ t: 'run', id: 'run00009', born: srv, f: { label: ['Renamed', st(5002)] } }], gestureId: 'g3' } },
   ];

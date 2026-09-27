@@ -42,7 +42,7 @@ written from this README alone needs no other file than `../probe.registry.json`
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
 | server | `identity/table.json`, `admit/`, `text/`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json` |
-| client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `coalesce/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
+| client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
 
 ## The probe product
 
@@ -264,8 +264,8 @@ and fields hash as received.
 `input: {from, event, to?}` · `expect: {to}` or `{error: true}`: the §8 tables. `from: null` is an
 intent not yet enqueued (intent) or a replica not yet created (replica). With `to`, the answer is
 `to` iff the table allows that target; without it, the table's first target. The terminal intent
-outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
-- intent: `commit`, `coalesce`, `cancel`, `release`, `undo`, `retire`, `number`, `fold`, `target-merged`, `ok`,
+outcomes are `undone`, `resolved`, `refused`, `discarded`. Events:
+- intent: `commit`, `release`, `undo`, `retire`, `silent-fold`, `number`, `outgrown`, `fold`, `target-merged`, `ok`,
   `recover` (clock-skew, base-unknown), `refuse`, `transport`, `reidentify`,
   `skew-return`, `rewind`, `resolve`, `epoch`, `discard`;
 - replica: `first-launch`, `sign-in`, `sign-out-keep`, `sign-out-discard`, `discard`, `reidentify`
@@ -273,8 +273,8 @@ outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
 - scope: `first-write`, `governing-create`, `governing-delete`, `horizon`.
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
-`ready`); `coalesce` is both a commit that coalesces at once and "a create cancelled by a later delete";
-`cancel` is "folded with such a cancel" (to `coalesced`, no notice);
+`ready`); `silent-fold` is "emptied by the silent fold of an undo or a retire" (to `undone`, no notice);
+`outgrown` is "at numbering, its one-intent body over `PUSH_MAX_BYTES`" (to `refused`, a notice);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
 one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
@@ -489,14 +489,14 @@ written, which has no scope to die.
 
 A vector may carry `input.limits`, overriding constants for that call only. A runner that cannot
 configure a limit skips those vectors.
-- `pull/serve.json`: `PULL_PAGE_BYTES`.
+- `pull/serve.json`: `PULL_PAGE_BYTES` and `PULL_MAX_BYTES`.
 - `push/serve.json`: `PUSH_MAX_INTENTS` and `PUSH_MAX_BYTES`.
 - `admit/record-bound.json`: `MAX_RECORD_BYTES`.
 
 ### pull/serve.json and pull/hello.json (server)
 
 ```ts
-{name, input: {state, account: string|null, request: PullRequest, serverNow, limits?: {PULL_PAGE_BYTES}},
+{name, input: {state, account: string|null, request: PullRequest, serverNow, limits?: {PULL_PAGE_BYTES?, PULL_MAX_BYTES?}},
        expect: {response: {status, body}, state?, live?}}
 {name, input: {state, account: string|null, serverTime}, expect: {response: {status: 200, body: Hello}}}
 ```
@@ -504,7 +504,10 @@ configure a limit skips those vectors.
 - Before each requested scope's page, pull runs every `beforePull` command of the scope's kind in its own
   admission, as the scope owner's server origin, when the scope exists and the principal can read it.
   `expect.state` and `expect.live` (the admissions' live events) appear when that changed the state.
-- More than `PULL_MAX_SCOPES` scopes → `400 malformed`, and no state change.
+- The body as received is `jcs(request)`. Checks run in this order (§9.1), none changing the state:
+  a body over `PULL_MAX_BYTES` → 413 `request-too-large`; a body other than exactly `{scopes}`, each
+  scope exactly `{scope: string, cursor: string|null}`, or more than `PULL_MAX_SCOPES` scopes → 400
+  `malformed`.
 - A page's rows are cut when the next row's JCS would take the page past `PULL_PAGE_BYTES`, keeping at
   least one row. Vectors with `input.limits` shrink it to show paging; a runner that cannot configure
   the page size skips them.
@@ -552,8 +555,9 @@ has `step`, counting the lines after the header from 1, and is one of:
 
 - **client action** `{device, do, args, deviceNow, returns}`: `do` is a client step (`commit`,
   `release`, `releaseAll`, `signIn`, `signOut`, `reconcile`) with the step's arguments, or `load`,
-  which replaces the device's store with `args.device` (a restored or cloned store). `returns` is the
-  step's return value.
+  which replaces the device's store with `args.device` (a restored or cloned store) and keeps the
+  running engine instance and its actor. `returns` is the step's return value. The header's devices,
+  and a `load`'s, carry no `forkGuard`: no transcript runs an engine start.
 - **HTTP exchange** `{device, http: 'push'|'pull'|'hello', account, serverNow, deviceNow, request,
   response, inject?, lost?, returns?}`: `account` is the authenticated principal (`null` answers 401
   to a push). `inject.budget` is the number of admissions the push may run before it answers `retry`
@@ -656,6 +660,7 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `releaseAll` | — | §7.3 (leaving, engine start) | `null` |
 | `releaseDue` | `deviceNow` | §7.3 timer: every held entry with `releaseAt ≤ deviceNow` | `null` |
 | `undo` | `gestureId` | §7.3 | `true` iff every entry of the gesture was held |
+| `subscribe` | `scope` | §7.9: deletes a `not-found` `KnownScope` record; a `gone` one stays | `'gone'` for a scope known gone, else `null` |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
 | `pushResponse` | `response` | §7.4, for the last `push` | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
@@ -712,7 +717,8 @@ is answered for the caller to resume.
   register of a type another scope holds throws.
 - `retire`: a list of records `{t, id}`. Every held gesture of the scope that carries no command and
   whose every delta removes (`life → dead`) a listed record ends `undone` (event `retire`), its
-  dependents folding silently as an undo's do, and the diff runs on views without either.
+  dependents folding silently as an undo's do (event `silent-fold`), and the diff runs on views without
+  either.
   `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
@@ -750,7 +756,13 @@ pull response, and hello. After a one-intent 400 or 413 the entry ends `refused`
 and every later sent entry returns to ready (event `rewind`); an orphan ends without its own notice,
 and dependents fold. A 400 or 413 on several intents is one answer for the request, `{limit}`, and no
 notice. Every 400 emits `sync-push-malformed`. A pull answered 401 sets `authPaused`, as a
-push does. An entry records `numbered: true` the first time it is numbered, and keeps it.
+push does. `push` numbers ready entries while the request body, `jcs({replica, ackThrough,
+intents})`, stays within `PUSH_MAX_BYTES`; the first entry of a request always goes. An entry whose
+one-intent body, at the `n` it would take and the current `ackThrough`, exceeds `PUSH_MAX_BYTES` (it
+grew after commit) is not numbered: it ends `refused` `too-large` (event `outgrown`) with its notice,
+its dependents fold, and numbering goes on with the next entry. An `ok` whose
+`seq` the scope's cursor already covers (`cleanSeq`, §7.5), in the same epoch, resolves its entry at
+once (event `resolve`).
 
 **Offsets.** A sample is `offset = serverTime − floor((send.wall + recv.wall) / 2)` with
 `rtt = recv.mono − send.mono`. The replica keeps the last `OFFSET_SAMPLES` samples, and
@@ -788,8 +800,9 @@ write-map stamps.
 - `grouping.json`: intents, holds, lineage, device rows, `changes: null`, the scope check, and caps
   (§7.1 step 8): a gesture that, applied to `stored`, raises a capped type's visible count above its
   cap and above the count before answers `{refused: 'cap', detail: {type, cap}}` and writes nothing
-  (no entry, notice, clock write or gesture id); a held delete still occupies its slot. A too-large
-  gesture writes only its notice, no clock.
+  (no entry, notice, clock write or gesture id); a held delete still occupies its slot. A gesture is
+  too-large when an intent's one-intent push body, `jcs({replica, ackThrough, intents: [intent]})` with
+  `n` and `ackThrough` at 2^53 − 1, exceeds `PUSH_MAX_BYTES`; it writes only its notice, no clock.
 - `retire.json`: `opts.retire` (§7.1 step 4). A retired gesture ends `undone` by `retire`; the record
   keeps its untouched fields. A held gesture with a command, with a delta that does not remove, or
   removing an unlisted record; a ready delete; a held removal in another scope; and any held gesture
@@ -797,33 +810,17 @@ write-map stamps.
 - `throws.json`: commits that throw. The step answers `{throws: true}` and writes nothing, the clock
   included: a commit is one local transaction.
 
-### coalesce/*.json
-
-- `join.json`: intents that join.
-- `blocked.json`: intents that do not.
-- `cancel.json`: a create joined with a delete, the dependents it folds, and the joins with a delete
-  that keep it.
-
-The target E is the last *earlier* entry, in commit order, whose delta or prediction touches the
-intent's record; a guard touches nothing here. An entry
-with `numbered: true`, an orphan among them, takes no join: the intent stays an entry of its own. A
-join removes E iff E's delta is a create (its life `[alive, born]`), the record is alive in neither
-drawn nor stored without E and the intent, and the joined life is dead. Any other join keeps the
-delete: an update or a revive joined with a delete is one delete, and a delete, a revive and a delete
-end as one entry that deletes the record.
-
-A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
-and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.
-A guard makes nothing dependent: an entry that only guards a register of the cancelled record keeps
-its guard, and is sent with it (the server then refuses it `stale`).
-
 ### hold/*.json
 
-- `release.json`: releases, and numbering past held entries. A ready entry is held back, and `push`
-  does not number it, while it depends on a held or held-back entry or on an orphan awaiting its
-  result, sent or returned to ready (the dependents of `refusal/*.json`), or touches, by a delta, a guard or a prediction, a
-  record an earlier held-back entry touches. Numbering stops at a held-back command entry.
-- `undo.json`: an undo folds the gesture's dependents silently, as a cancel does (`coalesce/*.json`).
+- `release.json`: releases, and numbering past held entries. A released entry is sent as its own
+  intent, in commit order (§7.2). A ready entry is held back, and `push` does not number it, while it
+  depends on a held or held-back entry or on an orphan awaiting its result, sent or returned to ready
+  (the dependents of `refusal/*.json`), or touches, by a delta, a guard or a prediction, a record an
+  earlier held-back entry touches. Numbering stops at a held-back command entry.
+- `undo.json`: an undo folds the gesture's dependents silently (§7.3): their dependent deltas, the
+  guards on those records and dependent commands are removed with no notice, and an entry left empty
+  ends `undone` with event `silent-fold`. A guard names nothing: an entry that only guards a register
+  of the undone record keeps its guard.
 
 ### refusal/*.json
 
@@ -857,7 +854,7 @@ re-identify and an epoch change.
   entry take one fresh tick each, in commit order. It restamps intent deltas, never `predict`, which
   only the write map restamps.
 - A restamp tick takes `(ms, counter)` from the shared clock and keeps the entry's author actor (the
-  actor of `entry.stamp`), so §7.2's same-actor text rule keeps meaning one engine instance.
+  actor of `entry.stamp`, §7.7's restamp rule).
 - A restamp moves only the registers the entry wrote: those stamped at or after `entry.stamp`, chosen
   before any register of the pass moves. A keyed put's life register carried unchanged from drawn is
   older and stays.

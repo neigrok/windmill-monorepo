@@ -272,7 +272,6 @@
                 ],
                 "n": 1,
                 "digest": "177300124ab5a4c241db5e15f2b78e7678084ea28de55a395c685b9c79551030",
-                "numbered": true,
                 "resultSeq": 1,
                 "resultEpoch": "ep-1"
               },
@@ -700,51 +699,6 @@
             },
             "outbox": [
               {
-                "localId": "g1/0",
-                "gestureId": "g1",
-                "lineage": "A",
-                "scope": "self/probe",
-                "state": "acked",
-                "commitOrder": 1,
-                "releaseAt": 0,
-                "stamp": "5000:0:r_aaaaaaaaaaaa",
-                "intent": {
-                  "scope": "self/probe",
-                  "cmd": {
-                    "name": "probe.start",
-                    "args": {
-                      "id": "run00009",
-                      "startedAt": 5000,
-                      "join": true
-                    }
-                  },
-                  "gestureId": "g1",
-                  "n": 1
-                },
-                "predict": [
-                  {
-                    "t": "run",
-                    "id": "run00001",
-                    "born": "1300:0:srv",
-                    "life": [
-                      "alive",
-                      "1300:0:srv"
-                    ],
-                    "f": {
-                      "startedAt": [
-                        5000,
-                        "5000:0:r_aaaaaaaaaaaa"
-                      ]
-                    }
-                  }
-                ],
-                "n": 1,
-                "digest": "d15ebf249d0dcf9b32a68d0de76ffb202e6673118afc0b100e9eecfc6684a67a",
-                "numbered": true,
-                "resultSeq": 1,
-                "resultEpoch": "ep-1"
-              },
-              {
                 "localId": "g2/0",
                 "gestureId": "g2",
                 "lineage": "A",
@@ -882,6 +836,11 @@
           "localId": "g5/0",
           "outcome": "refused",
           "event": "target-merged"
+        },
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
         }
       ]
     }
@@ -1080,7 +1039,6 @@
                 ],
                 "n": 1,
                 "digest": "d15ebf249d0dcf9b32a68d0de76ffb202e6673118afc0b100e9eecfc6684a67a",
-                "numbered": true,
                 "resultSeq": 1,
                 "resultEpoch": "ep-1"
               }
@@ -1365,7 +1323,6 @@
                 ],
                 "n": 1,
                 "digest": "b1ee7f55b48e0f77348aa3ae25d861b6dd5b5119d3dc2f9745c77349bedce7c3",
-                "numbered": true,
                 "resultSeq": 2,
                 "resultEpoch": "ep-1"
               },
@@ -1640,7 +1597,6 @@
                 ],
                 "n": 1,
                 "digest": "177300124ab5a4c241db5e15f2b78e7678084ea28de55a395c685b9c79551030",
-                "numbered": true,
                 "resultSeq": 1,
                 "resultEpoch": "ep-1"
               },
@@ -1684,6 +1640,297 @@
         ]
       },
       "ended": []
+    }
+  },
+  {
+    "name": "an entry a join map lengthens past a request alone is refused too-large at numbering, with its notice, and never sent",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "run",
+                  "id": "run0000000000000000000000000000000000000000000000000000000000001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "64f999d01494379a81570d2656cbdf2894077dbf983d4598e690ad79e4874b40",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "probe.start",
+              "args": {
+                "id": "run00009",
+                "startedAt": 5000,
+                "join": true
+              }
+            },
+            "predict": [
+              {
+                "op": "create",
+                "t": "run",
+                "id": "run00009",
+                "f": {
+                  "startedAt": 5000
+                }
+              }
+            ]
+          },
+          "deviceNow": 5000
+        },
+        {
+          "op": "push",
+          "deviceNow": 5000
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "create",
+              "t": "lap",
+              "id": "lap00001",
+              "f": {
+                "runId": "run00009",
+                "weight": 40
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "pushResponse",
+          "response": {
+            "status": 200,
+            "body": {
+              "serverTime": 5010,
+              "epoch": "ep-1",
+              "lastN": 1,
+              "results": [
+                {
+                  "n": 1,
+                  "s": "ok",
+                  "seq": 1,
+                  "write": [
+                    {
+                      "t": "run",
+                      "id": "run0000000000000000000000000000000000000000000000000000000000001",
+                      "from": "run00009",
+                      "born": "1300:0:srv"
+                    }
+                  ]
+                }
+              ]
+            }
+          },
+          "deviceNow": 5011,
+          "tSend": 5000,
+          "tRecv": 5011
+        },
+        {
+          "op": "push",
+          "deviceNow": 5012
+        }
+      ],
+      "limits": {
+        "PUSH_MAX_BYTES": 383
+      }
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00009",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        null,
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "1300:0:srv",
+              "serverOffsetMs": 5,
+              "offsetSamples": [
+                {
+                  "offset": 5,
+                  "rtt": 11
+                }
+              ],
+              "serverEpoch": "ep-1",
+              "ackThrough": 1,
+              "authPaused": false,
+              "account": "A",
+              "clockReading": {
+                "wall": 5011,
+                "mono": 5011,
+                "boot": "boot-1"
+              }
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "run",
+                  "id": "run0000000000000000000000000000000000000000000000000000000000001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "64f999d01494379a81570d2656cbdf2894077dbf983d4598e690ad79e4874b40",
+                "booted": true
+              }
+            },
+            "notices": [
+              {
+                "id": "notice:g2/0",
+                "scope": "self/probe",
+                "code": "too-large",
+                "content": {
+                  "d": [
+                    {
+                      "t": "lap",
+                      "id": "lap00001",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "at": [
+                          5001,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "runId": [
+                          "run0000000000000000000000000000000000000000000000000000000000001",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "weight": [
+                          40,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ]
+                },
+                "at": 5012
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "resolved",
+          "event": "resolve"
+        },
+        {
+          "localId": "g2/0",
+          "outcome": "refused",
+          "event": "outgrown"
+        }
+      ]
     }
   }
 ]

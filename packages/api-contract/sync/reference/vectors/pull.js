@@ -1,5 +1,6 @@
 // pull/serve.json: §6.7 pages the server answers for a request, after its scopes' beforePull commands,
-// and §9.2 hello. A vector may shrink PULL_PAGE_BYTES through `input.limits` to show paging.
+// and §9.2 hello. A vector may shrink PULL_PAGE_BYTES through `input.limits` to show paging, or
+// PULL_MAX_BYTES to show the body bound.
 
 import { CONSTANTS } from '../core/constants.js';
 import { Cursor } from '../core/wire.js';
@@ -182,6 +183,10 @@ function serve() {
       account: 'A',
       request: { scopes: Array.from({ length: CONSTANTS.PULL_MAX_SCOPES + 1 }, (_, i) => ({ scope: `tree/b_${String(i).padStart(8, '0')}`, cursor: null })) },
     }),
+    pulled('a pull body over PULL_MAX_BYTES is 413, before its shape is read', {
+      state: plain, account: 'A', limits: { PULL_MAX_BYTES: 32 }, request: { scopes: [{ scope: 'self/probe' }] },
+    }),
+    pulled('a pull body other than {scopes: [{scope, cursor}]} is 400 malformed', { state: plain, account: 'A', request: { scopes: [{ scope: 'self/probe' }] } }),
     pulled('a signed-out principal reads a public tree and nothing of its own', {
       state: open,
       account: null,

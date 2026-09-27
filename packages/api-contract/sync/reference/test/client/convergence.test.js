@@ -1,5 +1,6 @@
-// §11.2 #3 (INV-6): plain intents admitted by the reference server; after the results and a pull to
-// the head, the client's drawn view equals the server's alive rows, and its digest equals the scope's.
+// §11.2 #3 (INV-6): intents of one record without a guard or a command, admitted by the reference
+// server; after the results and a pull to the head, the client's drawn view equals the server's alive
+// rows, and its digest equals the scope's.
 
 import assert from 'node:assert/strict';
 import { test } from 'node:test';

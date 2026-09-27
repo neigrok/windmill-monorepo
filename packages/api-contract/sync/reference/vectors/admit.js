@@ -271,6 +271,16 @@ function shape() {
       state: base,
       intent: { scope: 'self/probe', cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: BOUND } } },
     }),
+    admitted('an integer-domain value beyond the safe integers is invalid', {
+      state: base,
+      origin: SERVER_A,
+      intent: probe([{ t: 'run', id: 'run00001', born: SRV(1100), f: { endedAt: [2 ** 53, null] } }]),
+    }),
+    admitted('an integer-domain value at the largest safe integer is admitted', {
+      state: base,
+      origin: SERVER_A,
+      intent: probe([{ t: 'run', id: 'run00001', born: SRV(1100), f: { endedAt: [2 ** 53 - 1, null] } }]),
+    }),
   ];
 }
 

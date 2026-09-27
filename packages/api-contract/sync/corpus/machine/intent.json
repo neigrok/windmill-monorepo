@@ -22,28 +22,6 @@
     }
   },
   {
-    "name": "none --coalesce--> coalesced",
-    "input": {
-      "from": null,
-      "event": "coalesce",
-      "to": "coalesced"
-    },
-    "expect": {
-      "to": "coalesced"
-    }
-  },
-  {
-    "name": "ready --coalesce--> coalesced",
-    "input": {
-      "from": "ready",
-      "event": "coalesce",
-      "to": "coalesced"
-    },
-    "expect": {
-      "to": "coalesced"
-    }
-  },
-  {
     "name": "held --release--> ready",
     "input": {
       "from": "held",
@@ -88,25 +66,36 @@
     }
   },
   {
-    "name": "held --cancel--> coalesced",
+    "name": "ready --outgrown--> refused",
     "input": {
-      "from": "held",
-      "event": "cancel",
-      "to": "coalesced"
+      "from": "ready",
+      "event": "outgrown",
+      "to": "refused"
     },
     "expect": {
-      "to": "coalesced"
+      "to": "refused"
     }
   },
   {
-    "name": "ready --cancel--> coalesced",
+    "name": "held --silent-fold--> undone",
     "input": {
-      "from": "ready",
-      "event": "cancel",
-      "to": "coalesced"
+      "from": "held",
+      "event": "silent-fold",
+      "to": "undone"
     },
     "expect": {
-      "to": "coalesced"
+      "to": "undone"
+    }
+  },
+  {
+    "name": "ready --silent-fold--> undone",
+    "input": {
+      "from": "ready",
+      "event": "silent-fold",
+      "to": "undone"
+    },
+    "expect": {
+      "to": "undone"
     }
   },
   {
@@ -367,16 +356,6 @@
     }
   },
   {
-    "name": "illegal: sent --coalesce--> any",
-    "input": {
-      "from": "sent",
-      "event": "coalesce"
-    },
-    "expect": {
-      "error": true
-    }
-  },
-  {
     "name": "illegal: acked --refuse--> any",
     "input": {
       "from": "acked",
@@ -449,20 +428,40 @@
     }
   },
   {
-    "name": "illegal: sent --cancel--> any",
+    "name": "illegal: sent --silent-fold--> any",
     "input": {
       "from": "sent",
-      "event": "cancel"
+      "event": "silent-fold"
     },
     "expect": {
       "error": true
     }
   },
   {
-    "name": "illegal: acked --cancel--> any",
+    "name": "illegal: sent --outgrown--> any",
+    "input": {
+      "from": "sent",
+      "event": "outgrown"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: held --outgrown--> any",
+    "input": {
+      "from": "held",
+      "event": "outgrown"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: acked --silent-fold--> any",
     "input": {
       "from": "acked",
-      "event": "cancel"
+      "event": "silent-fold"
     },
     "expect": {
       "error": true

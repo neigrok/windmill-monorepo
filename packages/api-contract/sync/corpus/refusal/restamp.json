@@ -426,8 +426,7 @@
                     }
                   ],
                   "gestureId": "g2"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g3/0",
@@ -452,8 +451,7 @@
                     }
                   ],
                   "gestureId": "g3"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g4/0",
@@ -810,8 +808,7 @@
                     }
                   ],
                   "gestureId": "g1"
-                },
-                "numbered": true
+                }
               }
             ]
           }
@@ -1148,8 +1145,7 @@
                     }
                   ],
                   "gestureId": "g1"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g2/0",
@@ -1174,8 +1170,7 @@
                     }
                   ],
                   "gestureId": "g2"
-                },
-                "numbered": true
+                }
               }
             ]
           }
@@ -1548,7 +1543,6 @@
                 },
                 "n": 1,
                 "digest": "d7876e958ea65e09f67022ec259b3260874a6305fa0aade50ec0233ec8deda04",
-                "numbered": true,
                 "resultSeq": 5,
                 "resultEpoch": "ep-1"
               },
@@ -1581,8 +1575,7 @@
                     }
                   ],
                   "gestureId": "g2"
-                },
-                "numbered": true
+                }
               }
             ]
           }
@@ -2005,7 +1998,6 @@
                   "gestureId": "g1",
                   "n": 3
                 },
-                "numbered": true,
                 "n": 3,
                 "digest": "369b4b63b78c5ca16c647f1f1c4e7e68515b56833c4ae9f81b9d060250d0b2ef",
                 "resultSeq": 5,
@@ -2036,7 +2028,6 @@
                   "gestureId": "g2",
                   "n": 4
                 },
-                "numbered": true,
                 "n": 4,
                 "digest": "50a4287c5aad4c83f857e90cf0c78bb7e506ef85c2901bcfdf8ca6e5614e5768",
                 "resultSeq": 6,
@@ -2050,7 +2041,7 @@
     }
   },
   {
-    "name": "a skewed create that a 409 returned to ready takes no join from a later delete: recovery moves the delete's born with the create's life, and both land",
+    "name": "a skewed create that a 409 returned to ready, then a delete of it: recovery moves the delete's born with the create's life, and both land",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -2488,7 +2479,6 @@
                   "gestureId": "g1",
                   "n": 3
                 },
-                "numbered": true,
                 "n": 3,
                 "digest": "fd9f30c57c99612e27d8561cf57b848bf86387c42f20ed85f593e29484202a28",
                 "resultSeq": 5,
@@ -2519,7 +2509,6 @@
                   "gestureId": "g2",
                   "n": 4
                 },
-                "numbered": true,
                 "n": 4,
                 "digest": "0018c9bc065e12595b979d9f8b7cbd11456ebd521f84910dc2c8bbd2ae166cb7",
                 "resultSeq": 6,
@@ -2921,7 +2910,6 @@
                   "gestureId": "g2",
                   "n": 2
                 },
-                "numbered": true,
                 "n": 2,
                 "digest": "a5562ae68523690fd1481fc5d6089e228929cb6e5b844c620557040f948d2125",
                 "resultSeq": 5,
@@ -2939,8 +2927,8 @@
         },
         {
           "localId": "g1/0",
-          "outcome": "coalesced",
-          "event": "cancel"
+          "outcome": "undone",
+          "event": "silent-fold"
         }
       ]
     }
@@ -3349,8 +3337,7 @@
                     }
                   ],
                   "gestureId": "g2"
-                },
-                "numbered": true
+                }
               }
             ],
             "notices": [
@@ -3427,7 +3414,7 @@
     }
   },
   {
-    "name": "a clock-skew restamp keeps each entry's author actor, so text from another instance still does not join",
+    "name": "a clock-skew restamp keeps each entry's author actor",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -3749,8 +3736,7 @@
                 },
                 "baseTexts": {
                   "[\"mark\",\"oak\",\"memo\"]": ""
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g2/0",
@@ -3920,8 +3906,7 @@
                   "n": 1
                 },
                 "n": 1,
-                "digest": "b51c70f2e942b90afa704740b6c4ac2cee2ce91648e09df6d11cf4e601f0256a",
-                "numbered": true
+                "digest": "b51c70f2e942b90afa704740b6c4ac2cee2ce91648e09df6d11cf4e601f0256a"
               },
               {
                 "localId": "g2/0",
@@ -3960,8 +3945,7 @@
                       ]
                     }
                   }
-                ],
-                "numbered": true
+                ]
               },
               {
                 "localId": "g3/0",
@@ -4201,8 +4185,7 @@
                     }
                   ],
                   "gestureId": "g1"
-                },
-                "numbered": true
+                }
               },
               {
                 "localId": "g2/0",
@@ -4241,8 +4224,7 @@
                       ]
                     }
                   }
-                ],
-                "numbered": true
+                ]
               },
               {
                 "localId": "g3/0",

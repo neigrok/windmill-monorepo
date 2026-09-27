@@ -3,13 +3,13 @@
 // sample (§10.4).
 
 import { CONSTANTS } from '../core/constants.js';
-import { jcs } from '../core/jcs.js';
 import { moveEntry } from '../core/machines.js';
 import { stampsOf } from '../core/rows.js';
-import { intentDigest } from '../core/wire.js';
+import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, deltasOf, scopedKey } from './dependents.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
-import { applyWriteMap, onRefused } from './refusal.js';
+import { resolveCovered } from './puller.js';
+import { applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
 
 // §7.4 held back: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
 // orphan awaiting its result (sent, or returned to ready), or touch a record an earlier held-back entry
@@ -32,9 +32,11 @@ function heldBack(replica, registry) {
   return back;
 }
 
-// Numbers ready entries in commit order up to the batch limits, passing over held-back entries,
-// stopping after the first command entry or at a held-back one, and never while a command entry is
-// sent. `limit` (after a several-intent 400 or 413) sends at most that many sent entries and numbers
+// Numbers ready entries in commit order up to PUSH_MAX_INTENTS and while the request body, its jcs,
+// stays within PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back
+// entries, stopping after the first command entry or at a held-back one, and never while a command
+// entry is sent. An entry that no longer fits a request alone is refused instead of numbered, and the
+// entries its fold ends or changes are read afresh. `limit` (after a several-intent 400 or 413) sends at most that many sent entries and numbers
 // none beyond them. Answers the push request, or null.
 export function nextPush(replica, ctx, { limit } = {}) {
   const limits = ctx.limits ?? CONSTANTS;
@@ -43,25 +45,28 @@ export function nextPush(replica, ctx, { limit } = {}) {
   if (meta.state !== 'bound' || meta.authPaused) return null;
   const sent = () => replica.entries().filter((entry) => entry.state === 'sent').sort((a, b) => a.n - b.n);
   if (!sent().some((entry) => entry.intent.cmd !== undefined)) {
-    let count = sent().length;
-    let bytes = sent().reduce((sum, entry) => sum + Buffer.byteLength(jcs(entry.intent), 'utf8'), 0);
+    const intents = sent().map((entry) => entry.intent);
     const back = heldBack(replica, ctx.registry);
     for (const entry of replica.entries().filter((candidate) => candidate.state === 'ready')) {
+      if (replica.entry(entry.localId) !== entry || entry.state !== 'ready') continue;
       if (back.has(entry)) {
         if (entry.intent.cmd !== undefined) break;
         continue;
       }
       const intent = { ...entry.intent, n: meta.nextN };
-      const size = Buffer.byteLength(jcs(intent), 'utf8');
-      if (count >= maxIntents || (count > 0 && bytes + size > limits.PUSH_MAX_BYTES)) break;
+      const bytesWith = (batch) => bodyBytes({ replica: meta.replica, ackThrough: meta.ackThrough, intents: batch });
+      if (bytesWith([intent]) > limits.PUSH_MAX_BYTES) {
+        refuseOutgrown(replica, ctx, entry);
+        continue;
+      }
+      const fits = bytesWith([...intents, intent]) <= limits.PUSH_MAX_BYTES;
+      if (intents.length >= maxIntents || (intents.length > 0 && !fits)) break;
       entry.intent = intent;
       entry.n = meta.nextN;
       entry.digest = intentDigest(intent);
-      entry.numbered = true;
       moveEntry(replica, ctx.ended, entry, 'number');
       meta.nextN += 1;
-      count += 1;
-      bytes += size;
+      intents.push(intent);
       if (intent.cmd !== undefined) break;
     }
   }
@@ -113,6 +118,7 @@ export function onPushResponse(replica, ctx, request, response, timing) {
     entry.resultEpoch = body.epoch;
     replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
     if (result.write) applyWriteMap(replica, ctx, entry, result.write);
+    resolveCovered(replica, ctx, entry.scope);
   }
   meta.ackThrough = body.lastN;
   if (body.epoch !== meta.serverEpoch) epochChange(replica, ctx, body.epoch);
