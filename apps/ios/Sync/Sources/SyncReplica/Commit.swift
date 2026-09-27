@@ -4,14 +4,6 @@ import SyncCore
 // §7.1 commit: one gesture, one local transaction. A throw writes nothing; a cap refusal writes nothing and retires
 // nothing; a too-large refusal writes only its notice. The clock is written back once the commit is accepted.
 
-public struct CommitError: Error, Hashable, CustomStringConvertible {
-  public let description: String
-
-  init(_ description: String) {
-    self.description = description
-  }
-}
-
 public struct CommitPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
@@ -25,10 +17,11 @@ public struct CommitPlanner: Sendable {
 
   // §7.1 for a decided gesture. The read-and-commit form runs step 1, `checkWritable`, then its body through the
   // caller's reader, and commits here only when the body decides a gesture: a nil one writes nothing and ticks no clock.
+  // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool) throws -> CommitOutcome {
     try checkWritable(replica.meta)
-    return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities)
+    return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
   }
 
   // The rows a commit of `gesture` reads, for its Action to load first: the records its changes, predictions and
@@ -56,14 +49,19 @@ public struct CommitPlanner: Sendable {
 
   // Step 1: the replica is anon or bound.
   public func checkWritable(_ meta: ReplicaMeta) throws {
-    guard meta.state == .anon || meta.state == .bound else { throw CommitError("a \(meta.state.rawValue) replica does not commit") }
+    guard meta.state == .anon || meta.state == .bound else { throw CommitFailure(.notWritable, "a \(meta.state.rawValue) replica does not commit") }
   }
 
-  // Steps 2–11. The retire and its silent fold run on a working copy, which the diff reads and which the replica becomes
-  // once the commit is accepted.
+  // Steps 2–11, after the checks before step 2. The retire and its silent fold run on a working copy, which the diff reads
+  // and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource) throws -> CommitOutcome {
-    guard registry.scopeKind(of: scope) != nil else { throw CommitError("\(scope) is no scope of the registry") }
+                     identities: IdentitySource, gestureIdTaken: Bool) throws -> CommitOutcome {
+    guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
+    let product = try product(of: scope)
+    if let taken = gesture.gestureId, gestureIdTaken { throw CommitFailure.malformed("the gesture id \(taken) is taken") }
+    for row in gesture.local where registry.product(product)?.device.contains(where: { $0.keyPattern.matches(row.key) }) != true {
+      throw CommitFailure.malformed("\(row.key) is not a device row of \(product)")
+    }
     if try scopeIsDead(scope, in: replica) { return .refused(.scopeDead, detail: nil) }
 
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
@@ -78,19 +76,21 @@ public struct CommitPlanner: Sendable {
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
       stored: try ScopeView(retired, scope, .stored, registry: registry), identities: identities)
-    let deltas = try gesture.changes.compactMap { try builder.delta($0) }
+    let deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
     let predict = try gesture.predict.map { try builder.predicted($0) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
     if let capped = try cappedType(deltas, stored: builder.stored), let cap = registry.type(capped)?.cap {
       return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
     }
     let gestureId = try gesture.gestureId ?? identities.gestureID()
-    guard !replica.outbox.contains(where: { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }) else { throw CommitError("the gesture id \(gestureId) is taken") }
-    let intents = try group(deltas, guards: guards, gesture: gesture, scope: scope, gestureId: gestureId)
+    guard gesture.gestureId != nil || !replica.outbox.contains(where: { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }) else {
+      throw CommitFailure.malformed("the minted gesture id \(gestureId) is taken")
+    }
+    let intents = group(deltas, guards: guards, gesture: gesture, scope: scope, gestureId: gestureId)
 
     if intents.contains(where: { $0.json.jcs.count > limits.pushMaxBytes }) {
       replica.apply(.putNotice(Notice(
-        id: "notice:\(gestureId)/0", product: try product(of: scope), scope: scope, code: .tooLarge, detail: nil,
+        id: "notice:\(gestureId)/0", product: product, scope: scope, code: .tooLarge, detail: nil,
         content: NoticeContent(deltas: deltas, command: gesture.command), at: instance.deviceNow)))
       return .refused(.tooLarge, detail: nil)
     }
@@ -111,11 +111,7 @@ public struct CommitPlanner: Sendable {
     for entry in entries { replica.apply(.putEntry(entry)) }
     for entry in entries { try coalescing.coalesce(entry.localId, in: &replica) }
 
-    let product = try product(of: scope)
     for row in gesture.local {
-      guard registry.product(product)?.device.contains(where: { $0.keyPattern.matches(row.key) }) == true else {
-        throw CommitError("\(row.key) is not a device row of \(product)")
-      }
       if let value = row.value {
         replica.apply(.putDeviceRow(product: product, key: row.key, value))
       } else {
@@ -136,7 +132,7 @@ public struct CommitPlanner: Sendable {
   }
 
   func product(of scope: ScopeRef) throws -> String {
-    guard let product = registry.product(of: scope) else { throw CommitError("\(scope) belongs to no product") }
+    guard let product = registry.product(of: scope) else { throw CommitFailure.malformed("\(scope) belongs to no product") }
     return product
   }
 
@@ -175,9 +171,9 @@ public struct CommitPlanner: Sendable {
   func exactGuards(_ listed: [RegisterRef], in scope: ScopeRef, stored: ScopeView) throws -> [Guard] {
     var guards: [Guard] = []
     for register in listed {
-      guard registry.lives(register.type, in: scope) else { throw CommitError("a guard on \(register.type) does not live in \(scope)") }
+      guard registry.lives(register.type, in: scope) else { throw CommitFailure.malformed("a guard on \(register.type) does not live in \(scope)") }
       guard registry.type(register.type)?.field(register.field)?.kind.isLattice == true else {
-        throw CommitError("\(register.type).\(register.field) is not a guardable register")
+        throw CommitFailure.malformed("\(register.type).\(register.field) is not a guardable register")
       }
       let stamp = stored.record(register.key)?.lattice.fields[register.field]?.stamp
       let named = Guard(key: register.key, field: register.field, stamp: stamp)
@@ -186,11 +182,35 @@ public struct CommitPlanner: Sendable {
     return guards
   }
 
-  // Step 7: atomic, held or command gestures are one intent, which holds at most one delta per record (§6.1 step 2);
-  // otherwise one intent per record, each with its guards, and a guard on a record no delta writes rides the first.
-  func group(_ deltas: [Delta], guards: [Guard], gesture: Gesture, scope: ScopeRef, gestureId: String) throws -> [Intent] {
+  // Steps 4 and 7: a move and an update of one record fold into one delta, the update leaving the move's field alone.
+  // Any other changes that give one record two deltas throw: an intent changes a record at most once.
+  func oneDeltaPerRecord(_ built: [(change: Change, delta: Delta)]) throws -> [Delta] {
+    var deltas: [Delta] = []
+    var changes: [[Change]] = []
+    for (change, delta) in built {
+      guard let index = deltas.firstIndex(where: { $0.key == delta.key }) else {
+        deltas.append(delta)
+        changes.append([change])
+        continue
+      }
+      let pair = changes[index] + [change]
+      let move = pair.first { if case .move = $0.operation { true } else { false } }
+      let update = pair.first { if case .update = $0.operation { true } else { false } }
+      guard pair.count == 2, let move, let update, let field = move.anchor?.field else {
+        throw CommitFailure.malformed("an intent changes a record at most once")
+      }
+      guard update.values[field] == nil else { throw CommitFailure.malformed("\(delta.key.type).\(field) is written beside a move") }
+      changes[index] = pair
+      deltas[index].lattice.fields.merge(delta.lattice.fields) { $1 }
+      deltas[index].texts.merge(delta.texts) { $1 }
+    }
+    return deltas
+  }
+
+  // Step 7: atomic, held or command gestures are one intent; otherwise one intent per record, each with its guards, and a
+  // guard on a record no delta writes rides the first. `oneDeltaPerRecord` has left each record one delta.
+  func group(_ deltas: [Delta], guards: [Guard], gesture: Gesture, scope: ScopeRef, gestureId: String) -> [Intent] {
     if gesture.atomic || gesture.hold || gesture.command != nil {
-      guard Set(deltas.map(\.key)).count == deltas.count else { throw CommitError("one intent changes a record at most once") }
       guard !deltas.isEmpty || gesture.command != nil else { return [] }
       return [Intent(scope: scope, deltas: deltas, guards: guards, command: gesture.command, gestureId: gestureId)]
     }
@@ -238,7 +258,7 @@ struct DeltaBuilder {
     if change.anchor != nil {
       switch change.operation {
       case .create, .move: break
-      default: throw CommitError("an anchor goes with a create or a move")
+      default: throw CommitFailure.malformed("an anchor goes with a create or a move")
       }
     }
     switch change.operation {
@@ -267,7 +287,7 @@ struct DeltaBuilder {
   // A command's prediction: a create or an update of any field, server-written ones included.
   func predicted(_ change: Change) throws -> Delta {
     let type = try typeOf(change.type)
-    guard let id = change.id else { throw CommitError("a prediction names its record") }
+    guard let id = change.id else { throw CommitFailure.malformed("a prediction names its record") }
     let key = RecordKey(type.name, id)
     let current = drawn.record(key)
     var delta = Delta(key: key)
@@ -278,18 +298,18 @@ struct DeltaBuilder {
       delta.lattice.fields = try fields(type, change.values, current: nil, server: true)
     case .update:
       if type.hasBorn {
-        guard let current else { throw CommitError("a predicted update of \(key) absent from drawn") }
+        guard let current else { throw CommitFailure.malformed("a predicted update of \(key) absent from drawn") }
         delta.lattice.born = current.lattice.born
       }
       delta.lattice.fields = try fields(type, change.values, current: current, server: true)
     default:
-      throw CommitError("a prediction is a create or an update")
+      throw CommitFailure.malformed("a prediction is a create or an update")
     }
     return delta
   }
 
   func typeOf(_ name: String) throws -> TypeDef {
-    guard let type = registry.type(name), registry.lives(name, in: scope) else { throw CommitError("\(name) does not live in \(scope)") }
+    guard let type = registry.type(name), registry.lives(name, in: scope) else { throw CommitFailure.malformed("\(name) does not live in \(scope)") }
     return type
   }
 
@@ -302,13 +322,13 @@ struct DeltaBuilder {
       do {
         return RecordID(try SeededID(seed: seed, ordinal: ordinal, for: type).id)
       } catch {
-        throw CommitError("\(error)")
+        throw CommitFailure.malformed("\(error)")
       }
     case .derived(let label):
-      guard type.identity == .derived, let fallback = type.deriveFallback else { throw CommitError("\(type.name) does not derive ids") }
+      guard type.identity == .derived, let fallback = type.deriveFallback else { throw CommitFailure.malformed("\(type.name) does not derive ids") }
       return RecordID(DerivedID.from(label: label, fallback: fallback, taken: takenIDs(of: type).compactMap(\.string)))
     case .minted:
-      guard let mint = type.mint else { throw CommitError("\(type.name) does not mint ids") }
+      guard let mint = type.mint else { throw CommitFailure.malformed("\(type.name) does not mint ids") }
       let taken = takenIDs(of: type)
       let identities = self.identities
       let draw = { () throws -> RecordID in RecordID(try mint.id(drawing: identities.draw(below:))) }
@@ -324,7 +344,7 @@ struct DeltaBuilder {
   }
 
   mutating func create(_ type: TypeDef, _ newID: NewID, _ change: Change) throws -> Delta? {
-    guard type.hasBorn else { throw CommitError("\(type.name) is created by put or write") }
+    guard type.hasBorn else { throw CommitFailure.malformed("\(type.name) is created by put or write") }
     let id = try id(of: type, newID)
     ids.append(id)
     chosen.insert(id)
@@ -339,15 +359,17 @@ struct DeltaBuilder {
 
   // A move writes only its anchor's order field, by an update: only minted and derived types hold one (§2.4).
   mutating func move(_ type: TypeDef, _ id: RecordID, _ anchor: OrderAnchor?) throws -> Delta? {
-    guard let anchor else { throw CommitError("a move carries an anchor") }
+    guard let anchor else { throw CommitFailure.malformed("a move carries an anchor") }
     return try update(type, id, values: try placed(type, id, [:], anchor), texts: [:])
   }
 
   // The values with the anchor's order field at D-25's drop position: the anchor is looked up in drawn, then in
   // stored, and the list is the type's visible records that hold the field.
   func placed(_ type: TypeDef, _ id: RecordID, _ values: [String: JSON], _ anchor: OrderAnchor) throws -> [String: JSON] {
-    guard case .fracKey? = type.field(anchor.field)?.domain?.shape else { throw CommitError("\(type.name).\(anchor.field) is not an order field") }
-    guard values[anchor.field] == nil else { throw CommitError("\(type.name).\(anchor.field) is written beside an anchor") }
+    guard case .fracKey? = type.field(anchor.field)?.domain?.shape else {
+      throw CommitFailure.malformed("\(type.name).\(anchor.field) is not an order field")
+    }
+    guard values[anchor.field] == nil else { throw CommitFailure.malformed("\(type.name).\(anchor.field) is written beside an anchor") }
     do {
       let members = { (view: ScopeView) throws -> [ListMember] in
         try view.records(ofType: type.name).filter(view.isVisible).compactMap { record in
@@ -357,20 +379,20 @@ struct DeltaBuilder {
       }
       let key = try FractionalKey(dropping: id.json, below: anchor.below?.json, stored: members(stored), drawn: members(drawn))
       return values.merging([anchor.field: .string(key.text)]) { $1 }
-    } catch let error as CommitError {
+    } catch let error as CommitFailure {
       throw error
     } catch {
-      throw CommitError("no drop position: \(error)")
+      throw CommitFailure.malformed("no drop position: \(error)")
     }
   }
 
   func existing(_ type: TypeDef, _ id: RecordID) throws -> ViewRecord {
-    guard let current = drawn.record(RecordKey(type.name, id)) else { throw CommitError("\(type.name) \(id) is absent from drawn") }
+    guard let current = drawn.record(RecordKey(type.name, id)) else { throw CommitFailure.malformed("\(type.name) \(id) is absent from drawn") }
     return current
   }
 
   mutating func update(_ type: TypeDef, _ id: RecordID, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
-    guard type.hasBorn else { throw CommitError("\(type.name) is updated by put or write") }
+    guard type.hasBorn else { throw CommitFailure.malformed("\(type.name) is updated by put or write") }
     let current = try existing(type, id)
     var delta = Delta(key: current.key, lattice: Lattice(born: current.lattice.born))
     return try withChanges(&delta, type, values, edits, current: current) ? delta : nil
@@ -378,17 +400,17 @@ struct DeltaBuilder {
 
   mutating func remove(_ type: TypeDef, _ id: RecordID) throws -> Delta? {
     guard type.identity != .keyed else { return try put(type, id, present: false, values: [:], texts: [:]) }
-    guard type.hasBorn else { throw CommitError("\(type.name) has no life") }
+    guard type.hasBorn else { throw CommitFailure.malformed("\(type.name) has no life") }
     let current = try existing(type, id)
     return Delta(key: current.key, lattice: Lattice(life: Life(.dead, stamp), born: current.lattice.born))
   }
 
   func revive(_ type: TypeDef, _ id: RecordID, values: [String: JSON]) throws -> Delta? {
-    guard type.hasBorn else { throw CommitError("\(type.name) is not revived") }
+    guard type.hasBorn else { throw CommitFailure.malformed("\(type.name) is not revived") }
     let key = RecordKey(type.name, id)
     let current = drawn.record(key)
     guard let born = current?.lattice.born ?? replica.spentIDs(scope)[key]?.born else {
-      throw CommitError("a revive of \(key) without a born")
+      throw CommitFailure.malformed("a revive of \(key) without a born")
     }
     var delta = Delta(key: key, lattice: Lattice(life: Life(.alive, stamp), born: born))
     delta.lattice.fields = try fields(type, values, current: current)
@@ -397,10 +419,10 @@ struct DeltaBuilder {
 
   // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
-    guard type.identity == .keyed, type.life else { throw CommitError("\(type.name) is not keyed with life") }
+    guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }
     let key = RecordKey(type.name, id)
     let current = drawn.record(key)
-    guard present != nil || current != nil else { throw CommitError("a put keeping the presence of \(key) finds it absent from drawn") }
+    guard present != nil || current != nil else { throw CommitFailure.malformed("a put keeping the presence of \(key) finds it absent from drawn") }
     let presentBefore = current?.lattice.life?.isAlive == true
     let present = present ?? presentBefore
     var life = current?.lattice.life
@@ -413,7 +435,7 @@ struct DeltaBuilder {
   }
 
   mutating func write(_ type: TypeDef, _ id: RecordID, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
-    guard !type.life else { throw CommitError("\(type.name) has life") }
+    guard !type.life else { throw CommitFailure.malformed("\(type.name) has life") }
     let key = RecordKey(type.name, id)
     var delta = Delta(key: key)
     return try withChanges(&delta, type, values, edits, current: drawn.record(key)) ? delta : nil
@@ -432,8 +454,8 @@ struct DeltaBuilder {
               server: Bool = false) throws -> [String: Register] {
     var out: [String: Register] = [:]
     for (name, raw) in values {
-      guard let field = type.field(name), field.kind.isLattice else { throw CommitError("\(type.name).\(name) is not a lattice field") }
-      guard field.writer == .client || server else { throw CommitError("\(type.name).\(name) is written by the server") }
+      guard let field = type.field(name), field.kind.isLattice else { throw CommitFailure.malformed("\(type.name).\(name) is not a lattice field") }
+      guard field.writer == .client || server else { throw CommitFailure.malformed("\(type.name).\(name) is written by the server") }
       var value = raw
       if let quantum = field.quantum, case .number(let number) = raw, let rounded = JSON.Number(quantum.rounded(number.value)) {
         value = .number(rounded)
@@ -452,7 +474,7 @@ struct DeltaBuilder {
   mutating func texts(_ type: TypeDef, _ key: RecordKey, _ edits: [String: TextEdit], current: ViewRecord?) throws -> [String: TextWrite] {
     var out: [String: TextWrite] = [:]
     for (name, edit) in edits {
-      guard case .text? = type.field(name)?.kind else { throw CommitError("\(type.name).\(name) is not a text field") }
+      guard case .text? = type.field(name)?.kind else { throw CommitFailure.malformed("\(type.name).\(name) is not a text field") }
       let shown = current?.texts[name] ?? ""
       let from = edit.editedFrom ?? shown
       if edit.text.utf8.elementsEqual(shown.utf8) { continue }

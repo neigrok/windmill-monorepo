@@ -142,7 +142,7 @@ public struct StoreTransaction {
       Notice(
         id: record["id"], product: record["product"], scope: try ScopeRef(record["scope"] as String),
         code: RefusalCode(record["code"] as String), detail: try (record["detail"] as Data?).map(Blob.json),
-        content: try NoticeContent(json: Blob.json(record["content"])), at: record["at"])
+        content: try NoticeContent(json: Blob.json(record["content"])), at: record["at"], isDismissed: record["dismissed"])
     }
   }
 
@@ -155,6 +155,17 @@ public struct StoreTransaction {
   }
 
   // A row of `device/<product>`, found by its key's bytes as SQLite compares text.
+  // §2.5: an outbox entry or a notice of any replica on the device carries the gesture id, whose local ids are
+  // `<gestureId>/<k>` and notice ids `notice:<localId>`.
+  public func carries(gestureId: String) throws -> Bool {
+    if try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = ?)", arguments: [gestureId]) == true {
+      return true
+    }
+    let prefix = "notice:\(gestureId)/"
+    let noticed = try String.fetchAll(db, sql: "SELECT id FROM notice WHERE substr(id, 1, length(?1)) = ?1", arguments: [prefix])
+    return noticed.contains { Notice.gestureId(ofNotice: $0)?.utf8.elementsEqual(gestureId.utf8) == true }
+  }
+
   public func deviceRow(_ replica: String, product: String, key: String) throws -> JSON? {
     try Data.fetchOne(db, sql: "SELECT value FROM device_row WHERE replica = ? AND product = ? AND key = ?",
                       arguments: [replica, product, key]).map(Blob.json)

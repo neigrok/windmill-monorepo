@@ -57,13 +57,15 @@ struct Feed {
     let seq = record?.seq ?? 0
     let rows = access == .absent ? [] : state.feedRows(of: key).sorted { ($0.seq, $0.key) < ($1.seq, $1.key) }
     var page: JSON.Object = ["scope": .string(requested), "kind": "rows", "seq": JSON(seq), "digest": .string((record?.digest ?? .zero).hex)]
-    if case .tree = key.kind, let owner = record?.owner { page["header"] = ["owner": ["name": .string(state.accounts[owner] ?? "")]] }
+    if case .tree = key.kind, let owner = record?.owner {
+      page["header"] = ["owner": ["name": .string(state.accounts[AccountKey(owner)] ?? "")]]
+    }
     // Step 2; an absent scope answers, past the same cursor checks, an empty live page at seq 0.
     let body: Page
     switch cursor.map(Cursor.init(decoding:)) {
     case .some(nil):
       return answer("reset")
-    case .some(let cursor?) where cursor.epoch != state.epoch || cursor.seq > seq:
+    case .some(let cursor?) where !cursor.epoch.isSameID(as: state.epoch) || cursor.seq > seq:
       return answer("reset")
     case .some(let cursor?) where cursor.mode == .boot && access != .absent:
       body = boot(rows, asOf: cursor.asOf ?? seq, after: cursor, epoch: state.epoch)
@@ -135,22 +137,24 @@ struct Feed {
     }))
   }
 
+  // §2.4: a lifeless record is visible when a `visibleWhen` field holds a value other than null or "", or, without
+  // `visibleWhen`, when it holds any lattice register or text, whatever the value. Serial values never count.
   func isVisible(_ row: Row, of type: TypeDef) -> Bool {
     if type.identity == .singleton { return true }
     if type.life { return row.lattice.life?.isAlive == true }
-    let holds = { (name: String) -> Bool in
+    guard let visibleWhen = type.visibleWhen else { return !row.lattice.fields.isEmpty || !row.texts.isEmpty }
+    return visibleWhen.contains { name in
       if let text = row.texts[name] { return !text.text.isEmpty }
-      guard let value = row.lattice.fields[name]?.value ?? row.serials[name] else { return false }
+      guard let value = row.lattice.fields[name]?.value else { return false }
       return !value.isNull && value != ""
     }
-    return (type.visibleWhen ?? type.fields.map(\.name)).contains(where: holds)
   }
 }
 
-// §6.8 the sockets the model serves: each subscribed scope gets its frames while its principal may read it, a death
-// as `gone` to its owner and `not-found` to everyone else, and a lost read access as `not-found`.
-struct LiveChannel: Sendable, Hashable {
-  struct Subscriber: Sendable, Hashable {
+// §6.8 the sockets the model serves: each subscribed scope gets its frames while its principal may read it, a death as
+// a pull of the scope would answer it, and a lost read access as `not-found`.
+struct LiveChannel: Sendable {
+  struct Subscriber: Sendable {
     let account: String?
     var scopes: Set<ScopeKey> = []
     var frames: [JSON] = []
@@ -194,6 +198,13 @@ struct LiveChannel: Sendable, Hashable {
     return subscribers[socket]?.frames ?? []
   }
 
+  // A dying scope answers as a pull of it would (§6.7 step 1): `gone` to the tree's owner, for the tree and that owner's
+  // overlay, and `not-found` to everyone else. An overlay never written never was a scope, and sends nothing.
+  static func deathFrame(of key: ScopeKey, to account: String?, in state: ServerState, registry: Registry) -> JSON? {
+    guard state.scopes[key] != nil else { return nil }
+    return ["op": state.access(key, as: account, registry: registry) == .gone ? "gone" : "not-found", "scope": key.ref.json]
+  }
+
   mutating func publish(_ events: [LiveEvent], in state: ServerState, registry: Registry) {
     for socket in subscribers.keys.sorted() {
       var subscriber = subscribers[socket]!
@@ -202,8 +213,9 @@ struct LiveChannel: Sendable, Hashable {
         case .change(let key, let frame):
           if state.canRead(key, as: subscriber.account, registry: registry) { subscriber.frames.append(frame) }
         case .death(let key):
-          let owner = state.scopes[key]?.owner.isSameID(as: subscriber.account) == true
-          subscriber.frames.append(["op": owner ? "gone" : "not-found", "scope": key.ref.json])
+          if let frame = Self.deathFrame(of: key, to: subscriber.account, in: state, registry: registry) {
+            subscriber.frames.append(frame)
+          }
           subscriber.scopes.remove(key)
         }
       }

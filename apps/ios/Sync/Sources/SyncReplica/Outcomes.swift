@@ -105,8 +105,8 @@ public struct PushPlanner: Sendable {
   }
 
   // §7.4 held back, by commit order: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
-  // orphan awaiting its result, or touch, by a delta, a guard or a prediction, a record an earlier held-back entry
-  // touches.
+  // orphan awaiting its result (sent, or returned to ready), or touch, by a delta, a guard or a prediction, a record an
+  // earlier held-back entry touches.
   func heldBack(in replica: LoadedReplica) -> Set<Int64> {
     var sources = Dependents(registry: registry)
     var touched: Set<ScopedKey> = []
@@ -119,7 +119,8 @@ public struct PushPlanner: Sendable {
           touched.formUnion(records)
         }
       }
-      if entry.state == .held || back.contains(entry.commitOrder) || entry.orphanOf != nil {
+      let awaitsResult = entry.orphanOf != nil && (entry.state == .sent || entry.state == .ready)
+      if entry.state == .held || back.contains(entry.commitOrder) || awaitsResult {
         sources.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
       }
     }
@@ -197,10 +198,6 @@ public struct PushPlanner: Sendable {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)
     case .ok(let seq, let write):
-      guard entry.orphanOf == nil else {
-        try replica.move(entry.localId, .orphanOK)
-        return
-      }
       try replica.move(entry.localId, .ok) { entry in
         entry.resultSeq = seq
         entry.resultEpoch = epoch
@@ -215,7 +212,7 @@ public struct PushPlanner: Sendable {
   func refuse(_ localId: String, code: RefusalCode, detail: JSON?, lastN: Int64, in replica: inout LoadedReplica,
               instance: Instance) throws {
     guard let entry = replica.entry(localId) else { return }
-    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, code: code, in: &replica, at: instance.deviceNow) }
+    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, in: &replica) }
     if code == .clockSkew { return try recoverSkew(localId, lastN: lastN, in: &replica, instance: instance) }
     if code == .baseUnknown { return try recoverBase(localId, in: &replica) }
     try remove(entry, by: .refuse, code: code, detail: detail, in: &replica, at: instance.deviceNow)
@@ -228,28 +225,31 @@ public struct PushPlanner: Sendable {
     var content = entry.content
     content.dependents = try foldDependents(of: entry, into: entry.localId, in: &replica)
     replica.apply(.putNotice(Notice(
-      id: "notice:\(entry.localId)", product: try product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
+      id: "notice:\(entry.localId)", product: product(of: entry.scope), scope: entry.scope, code: code, detail: detail,
       content: content, at: deviceNow)))
   }
 
   // An orphan's refusal ends it with no notice of its own; its held-back dependents fold into its origin's notice, its
-  // whole content their source. A notice the person dismissed is written again with the dependents alone.
-  func refuseOrphan(_ orphan: OutboxEntry, of origin: String, code: RefusalCode, in replica: inout LoadedReplica,
-                    at deviceNow: Int64) throws {
+  // whole content their source. That notice is never deleted while an orphan names it (D-17), and new dependents show
+  // it again if it was dismissed.
+  func refuseOrphan(_ orphan: OutboxEntry, of origin: String, in replica: inout LoadedReplica) throws {
     try replica.move(orphan.localId, .refuse)
     let dependents = try foldDependents(of: orphan, into: origin, in: &replica)
     guard !dependents.isEmpty else { return }
     let id = "notice:\(origin)"
-    let notice = try replica.notices.first { $0.id.utf8.elementsEqual(id.utf8) }
-      ?? Notice(id: id, product: product(of: orphan.scope), scope: orphan.scope, code: code, detail: nil, content: NoticeContent(), at: deviceNow)
+    guard let notice = replica.notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }) else {
+      throw TransitionError(description: "\(id), which \(orphan.localId)'s orphanOf names, is gone (D-17 keeps it)")
+    }
     var content = notice.content
     content.dependents += dependents
     replica.apply(.putNotice(Notice(
-      id: id, product: notice.product, scope: notice.scope, code: notice.code, detail: notice.detail, content: content, at: notice.at)))
+      id: id, product: notice.product, scope: notice.scope, code: notice.code, detail: notice.detail, content: content, at: notice.at,
+      isDismissed: false)))
   }
 
-  func product(of scope: ScopeRef) throws -> String {
-    guard let product = registry.product(of: scope) else { throw CommitError("\(scope) belongs to no product") }
+  // An outbox entry's scope belongs to a product: a commit enqueues nowhere else.
+  func product(of scope: ScopeRef) -> String {
+    guard let product = registry.product(of: scope) else { preconditionFailure("\(scope) belongs to no product") }
     return product
   }
 

@@ -6,8 +6,8 @@ import SyncStore
 // §7.4 the sender: one per device, for the active replica while it is bound, not paused and online. Each round numbers
 // ready entries into a push, sends it with the account's token, and records the answer as its ordered transactions
 // (design §6.3), each revalidating the entries it names by replica and `n`; the round's outcome says what comes next.
-// Rounds are single-flight whoever runs them (the loop, the leave flush, the simulator), and no round pushes before
-// the time the server last asked it to wait.
+// Rounds are single-flight whoever runs them (the loop, the leave flush, the simulator). No round pushes before the time
+// the server last asked it to wait, and none but a leave's first pushes inside the backoff after a clock-skew recovery.
 
 package enum SenderStep: Sendable, Hashable {
   // Push again now.
@@ -20,7 +20,8 @@ package enum SenderStep: Sendable, Hashable {
   case stopped
   // A failure: wait for a kick or `ms`, whichever comes first.
   case backoff(ms: Int64)
-  // The server asked for this pause (a `retry` answer, a 503): a round before it ends pushes nothing.
+  // A pause no kick cuts short, which the server asked for (a `retry` answer, a 503) or which follows a clock-skew
+  // recovery: a round before it ends pushes nothing.
   case wait(ms: Int64)
 }
 
@@ -32,12 +33,10 @@ package actor Sender {
   let bindings: [any ProductBinding]
   let answers: PushPlanner
   package nonisolated let wake = Wake()
-  var backoff = Backoff()
+  var wait = SenderWait()
   var batchLimit: Int?
   var kicksSeen: UInt64 = 0
   var conflicts = 0
-  // The monotonic ms before which the server asked for no push.
-  var quietUntil: Int64?
   var turn: Int?
   var nextTurn = 0
   var waitingTurns: [(turn: Int, continuation: CheckedContinuation<Void, Never>)] = []
@@ -52,7 +51,7 @@ package actor Sender {
     answers = PushPlanner(registry: core.registry)
   }
 
-  // The production driver: a kick ends any sleep early, and a round inside the server's pause answers the rest of it.
+  // The production driver: a kick ends any sleep early, and a round inside a pause answers the rest of it.
   func run() async {
     while !Task.isCancelled {
       let seen = wake.kicks
@@ -64,18 +63,20 @@ package actor Sender {
     }
   }
 
-  // The leave flush: rounds until nothing is left to send or the first that does not push again, with no sleeping.
-  // Cancelling it (the background time running out) ends it at its next turn, or its push with the network.
+  // The leave flush (§7.3): rounds until nothing is left to send or the first that does not push again, with no
+  // sleeping. The first pushes whatever backoff is running, and leaves k and the backoff as they were. Cancelling it (the
+  // background time running out) ends it at its next turn, or its push with the network.
   func flushOnce() async {
-    while !Task.isCancelled, await step() == .again {}
+    var leaving = true
+    while !Task.isCancelled, await step(leaving: leaving) == .again { leaving = false }
   }
 
   // MARK: One round at a time
 
-  package func step() async -> SenderStep {
+  package func step(leaving: Bool = false) async -> SenderStep {
     guard let turn = await takeTurn() else { return .idle }
     defer { passTurn(from: turn) }
-    return await round()
+    return await round(leaving: leaving)
   }
 
   // Waits for the round in flight to end; nil when the caller is cancelled first.
@@ -114,17 +115,16 @@ package actor Sender {
 
   // MARK: One round
 
-  func round() async -> SenderStep {
+  func round(leaving: Bool) async -> SenderStep {
+    let mono = core.clock.wall.reading().mono
     if wake.kicks != kicksSeen {
       kicksSeen = wake.kicks
-      backoff.reset()
+      wait.kick(at: mono)
     }
     guard !core.upgradeRequired else { return .stopped }
-    if let quietUntil {
-      let mono = core.clock.wall.reading().mono
-      guard mono >= quietUntil else { return .wait(ms: quietUntil - mono) }
-      self.quietUntil = nil
-    }
+    if let left = wait.pauseLeft(at: mono, leaving: leaving) { return .wait(ms: left) }
+    let before = wait
+    defer { if leaving { wait.restoreBackoff(from: before) } }
     guard core.connectivity.isOnline else { return .idle }
     do {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
@@ -165,22 +165,33 @@ package actor Sender {
     }
   }
 
-  // A 200 that answers an intent of the request resets the halved batch, and any result but `clock-skew` resets the
-  // backoff. After a clock-skew recovery the sender backs off before the next push, longer each time in a row, and a
-  // `retry` beside it waits no less than it asks. A `retry` alone waits as asked. An answer that answers nothing and asks
-  // nothing would bring the same request straight back, so it backs off too.
+  // A 200 that answers an intent of the request resets the halved batch, and resets `k` unless a result is
+  // `clock-skew`. After a clock-skew recovery the sender pauses for a backoff, longer each time in a row, which no kick
+  // cuts short, and a `retry` beside it waits no less than it asks. A `retry` alone waits as asked. An answer that
+  // answers nothing and asks nothing would bring the same request straight back, so it backs off too.
   func next(after response: PushResponse, to request: PushRequest) -> SenderStep {
     conflicts = 0
     let answered = response.results.filter { result in request.intents.contains { $0.n == result.n } }
     let skewed = answered.contains { $0.verdict == .refused(.clockSkew) }
-    if !answered.isEmpty { batchLimit = nil }
-    if answered.contains(where: { $0.verdict != .refused(.clockSkew) }) { backoff.reset() }
-    if let retry = response.retry { return quiet(for: skewed ? nextBackoff(floorMs: retry.retryAfterMs) : retry.retryAfterMs) }
-    return answered.isEmpty || skewed ? .backoff(ms: nextBackoff(floorMs: 0)) : .again
+    if !answered.isEmpty {
+      batchLimit = nil
+      if !skewed { wait.reset() }
+    }
+    let mono = core.clock.wall.reading().mono
+    let asked = response.retry?.retryAfterMs
+    if let asked { wait.serverAsks(until: mono + asked) }
+    if skewed {
+      let backoff = nextBackoff(floorMs: 0)
+      wait.backsOffAfterSkew(until: mono + backoff)
+      return .wait(ms: max(backoff, asked ?? 0))
+    }
+    if let asked { return .wait(ms: asked) }
+    return answered.isEmpty ? .backoff(ms: nextBackoff(floorMs: 0)) : .again
   }
 
   // Design §6.3's rows: a 401 pauses; a 400 or 413 was halved or refused, so the next push differs; a conflict
-  // re-identified, and a second one in a row backs off; a 426 stops; a 503 waits no less than it asks.
+  // re-identified, and a second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a
+  // pause no kick cuts short, and a backoff.
   func next(after failure: HTTPFailure) -> SenderStep {
     conflicts = failure.status == 409 ? conflicts + 1 : 0
     switch failure.status {
@@ -190,15 +201,13 @@ package actor Sender {
     case 426:
       core.requireUpgrade()
       return .stopped
-    case 503: return quiet(for: nextBackoff(floorMs: failure.retryAfterMs ?? 0))
+    case 503:
+      let asked = failure.retryAfterMs ?? 0
+      wait.serverAsks(until: core.clock.wall.reading().mono + asked)
+      let ms = nextBackoff(floorMs: asked)
+      return ms > asked ? .backoff(ms: ms) : .wait(ms: asked)
     default: return .backoff(ms: nextBackoff(floorMs: 0))
     }
-  }
-
-  // The server's pause, kept on the monotonic clock so no round pushes before it ends.
-  func quiet(for ms: Int64) -> SenderStep {
-    quietUntil = core.clock.wall.reading().mono + ms
-    return .wait(ms: ms)
   }
 
   // The ceiling is 30 s while any product's live hint holds, else 300 s; a hint that cannot be read does not hold.
@@ -209,6 +218,57 @@ package actor Sender {
         (try? core.read(.product(binding.product)) { try binding.liveHint($0, physNow: physNow) }) == true
       }
     } ?? false
-    return backoff.next(ceilingMs: live ? Constants.backoffLiveCeilingMs : Constants.backoffCeilingMs, floorMs: floorMs, random: random)
+    return wait.backoff(ceilingMs: live ? Constants.backoffLiveCeilingMs : Constants.backoffCeilingMs, floorMs: floorMs, random: random)
+  }
+}
+
+// §7.4 the sender's wait between pushes. A backoff sleeps `max(floor, random(0, min(ceiling, 1 s · 2^k)))`, then k grows
+// by one. Two waits hold every push until they end on the monotonic clock: the time the server asked for (a `retry`, a
+// 503), and the backoff after a clock-skew recovery, which only a leave's push goes through. A kick resets k, except
+// during the backoff after a clock-skew recovery, which it neither cuts short nor resets.
+package struct SenderWait: Sendable {
+  package private(set) var k = 0
+  var serverAskEnd: Int64?
+  var skewBackoffEnd: Int64?
+
+  package init() {}
+
+  package mutating func backoff(ceilingMs: Int64, floorMs: Int64, random: any RandomSource) -> Int64 {
+    var bound = Constants.backoffBaseMs
+    for _ in 0..<k where bound < ceilingMs { bound *= 2 }
+    var draws = Draws(source: random)
+    let sleep = Int64.random(in: 0...min(ceilingMs, bound), using: &draws)
+    k += 1
+    return max(floorMs, sleep)
+  }
+
+  package mutating func reset() {
+    k = 0
+  }
+
+  package mutating func serverAsks(until end: Int64) {
+    serverAskEnd = end
+  }
+
+  package mutating func backsOffAfterSkew(until end: Int64) {
+    skewBackoffEnd = end
+  }
+
+  // A leave's push (§7.3) leaves k and the backoff after a clock-skew recovery as they were; a pause the server asked
+  // for stays.
+  package mutating func restoreBackoff(from earlier: SenderWait) {
+    k = earlier.k
+    skewBackoffEnd = earlier.skewBackoffEnd
+  }
+
+  package mutating func kick(at mono: Int64) {
+    if let skewBackoffEnd, mono < skewBackoffEnd { return }
+    k = 0
+  }
+
+  // The ms left before a round may push at `mono`, nil when it may push now.
+  package func pauseLeft(at mono: Int64, leaving: Bool) -> Int64? {
+    let ends = [serverAskEnd, leaving ? nil : skewBackoffEnd].compactMap { $0 }.filter { $0 > mono }
+    return ends.max().map { $0 - mono }
   }
 }

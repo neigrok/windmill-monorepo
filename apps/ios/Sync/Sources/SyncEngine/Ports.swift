@@ -6,8 +6,8 @@ import SyncReplica
 import Synchronization
 
 // The engine's ports to the device and the products: clocks, randomness, the session token and the fork guard's copy,
-// connectivity, and the product bindings; their platform-neutral production implementations; and the two primitives
-// every loop runs on, `Wake` and `Backoff`.
+// connectivity, and the product bindings; their platform-neutral production implementations; and `Wake`, the signal
+// every loop sleeps on.
 
 // MARK: - Clocks (§10)
 
@@ -244,25 +244,5 @@ package final class Wake: Sendable {
       await group.next()
       group.cancelAll()
     }
-  }
-}
-
-// §7.4 full-jitter backoff: `max(floor, random(0, min(ceiling, 1 s · 2^k)))`, then k grows until 2^k passes the
-// ceiling. A push result or a kick resets k.
-package struct Backoff: Sendable {
-  package private(set) var k = 0
-
-  package init() {}
-
-  package mutating func next(ceilingMs: Int64, floorMs: Int64, random: any RandomSource) -> Int64 {
-    let span = Constants.backoffBaseMs << k
-    var draws = Draws(source: random)
-    let draw = Int64.random(in: 0...min(ceilingMs, span), using: &draws)
-    if span < ceilingMs { k += 1 }
-    return max(floorMs, draw)
-  }
-
-  package mutating func reset() {
-    k = 0
   }
 }

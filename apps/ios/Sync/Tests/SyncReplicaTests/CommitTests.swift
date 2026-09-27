@@ -4,8 +4,8 @@ import SyncReplica
 import SyncTesting
 import Testing
 
-// Properties of §7.1–§7.3 over random gestures on the probe: coalescing never changes what is drawn (§11.2 property 2),
-// Undo leaves the store as the commit found it, and a commit over the rows its read set names decides exactly as one
+// Properties of §7.1–§7.3 over random gestures on the probe: coalescing never changes what is drawn, whatever is held,
+// released, undone or retired (§11.2 property 2), Undo leaves the store as the commit found it, and a commit over the rows its read set names decides exactly as one
 // over every row.
 
 struct CommitTests {
@@ -63,23 +63,53 @@ struct CommitTests {
     return view.all.filter(view.isVisible).map(\.json)
   }
 
+  // Twenty runs of forty steps from the same replica. The apart replica marks every ready entry numbered as soon as it is
+  // ready, so no later entry ever joins it. Both commit the same gestures, some held and some retiring what they name,
+  // and release and undo the same held ones.
   @Test func coalescingNeverChangesWhatIsDrawn() throws {
     var random = SeededRandom.fromEnvironment()
     let planner = CommitPlanner(registry: Self.probe)
+    let hold = Hold(registry: Self.probe)
     let identities = try QueuedIdentities([:])
-    var coalesced = try Self.replica()
-    var held = try Self.replica()
-    for step in 0..<200 {
-      let (scope, gesture) = Self.gesture(&random)
-      var holding = gesture
-      holding.hold = true
-      _ = try planner.commit(gesture, in: scope, to: &coalesced, as: Self.instance(2000 + Int64(step)), identities: identities)
-      _ = try planner.commit(holding, in: scope, to: &held, as: Self.instance(2000 + Int64(step)), identities: identities)
-      for scope in [Self.product, Self.overlay] {
-        #expect(try Self.visibleDrawn(coalesced, scope) == Self.visibleDrawn(held, scope), "seed \(random.seed), step \(step)")
-      }
+    let numberReady = { (replica: inout LoadedReplica) in
+      for entry in replica.outbox where entry.state == .ready && !entry.numbered { replica.update(entry: entry.localId) { $0.numbered = true } }
     }
-    #expect(coalesced.outbox.count < held.outbox.count, "seed \(random.seed): some writes coalesced")
+    var joins = 0
+    for run in 0..<20 {
+      var joined = try Self.replica()
+      var apart = try Self.replica()
+      for step in 0..<40 {
+        let deviceNow = 2000 + Int64(step) * 1000
+        let place = "seed \(random.seed), run \(run), step \(step)"
+        var held: [String] = []
+        for entry in joined.outbox where entry.state == .held && !held.contains(entry.gestureId) { held.append(entry.gestureId) }
+        switch Int.random(in: 0..<10, using: &random) {
+        case 0:
+          try hold.releaseDue(at: deviceNow, in: &joined)
+          for entry in apart.outbox where entry.state == .held && entry.releaseAt <= deviceNow {
+            try hold.release(entry.localId, in: &apart)
+            numberReady(&apart)
+          }
+        case 1 where !held.isEmpty:
+          let gestureId = random.pick(held)
+          #expect(try hold.undo(gestureId, in: &joined) == hold.undo(gestureId, in: &apart), "\(place)")
+        default:
+          var (scope, gesture) = Self.gesture(&random)
+          gesture.hold = random.chance(0.3)
+          gesture.gestureId = "g\(step)"
+          if random.chance(0.2) { gesture.retire = gesture.changes.compactMap { change in change.id.map { RecordRef(type: change.type, id: $0) } } }
+          let outcome = try planner.commit(gesture, in: scope, to: &joined, as: Self.instance(deviceNow), identities: identities, gestureIdTaken: false)
+          #expect(try planner.commit(gesture, in: scope, to: &apart, as: Self.instance(deviceNow), identities: identities, gestureIdTaken: false) == outcome, "\(place)")
+        }
+        numberReady(&apart)
+        for scope in [Self.product, Self.overlay] {
+          #expect(try Self.visibleDrawn(joined, scope) == Self.visibleDrawn(apart, scope), "\(place)")
+        }
+      }
+      #expect(apart.events.filter { if case .ended(_, _, .coalesce, _) = $0 { true } else { false } } == [], "seed \(random.seed), run \(run)")
+      joins += joined.events.filter { if case .ended(_, _, .coalesce, _) = $0 { true } else { false } }.count
+    }
+    #expect(joins > 100, "seed \(random.seed): only \(joins) joins happened")
   }
 
   @Test func undoLeavesTheStoreAsTheCommitFoundItButForTheClock() throws {
@@ -93,7 +123,8 @@ struct CommitTests {
       holding.hold = true
       holding.gestureId = "held\(step)"
       let before = replica.json
-      let outcome = try planner.commit(holding, in: scope, to: &replica, as: Self.instance(3000 + Int64(step)), identities: try QueuedIdentities([:]))
+      let outcome = try planner.commit(holding, in: scope, to: &replica, as: Self.instance(3000 + Int64(step)),
+                                       identities: try QueuedIdentities([:]), gestureIdTaken: false)
       guard case .committed(let receipt) = outcome, !receipt.localIds.isEmpty else { continue }
       #expect(try hold.undo("held\(step)", in: &replica), "seed \(random.seed), step \(step)")
       var after = try replica.json.asObject()
@@ -105,7 +136,8 @@ struct CommitTests {
       #expect(JSON.object(after) == before, "seed \(random.seed), step \(step)")
       var plain = gesture
       plain.gestureId = "plain\(step)"
-      _ = try planner.commit(plain, in: scope, to: &replica, as: Self.instance(3000 + Int64(step)), identities: try QueuedIdentities([:]))
+      _ = try planner.commit(plain, in: scope, to: &replica, as: Self.instance(3000 + Int64(step)),
+                                       identities: try QueuedIdentities([:]), gestureIdTaken: false)
     }
   }
 
@@ -119,8 +151,8 @@ struct CommitTests {
       gesture.gestureId = "step\(step)"
       var partial = try Self.partial(whole, reads: planner.reads(of: gesture, in: scope))
       let instance = Self.instance(4000 + Int64(step))
-      let wholeOutcome = try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]))
-      let partialOutcome = try planner.commit(gesture, in: scope, to: &partial, as: instance, identities: try QueuedIdentities([:]))
+      let wholeOutcome = try planner.commit(gesture, in: scope, to: &whole, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+      let partialOutcome = try planner.commit(gesture, in: scope, to: &partial, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
       #expect(partialOutcome == wholeOutcome, "seed \(random.seed), step \(step)")
       #expect(partial.writes == Array(whole.writes.suffix(partial.writes.count)), "seed \(random.seed), step \(step)")
     }
@@ -148,7 +180,7 @@ struct CommitTests {
     for (id, card) in [("g\u{E9}", "card0001"), ("ge\u{301}", "card0002")] {
       _ = try planner.commit(
         Gesture(changes: [.update("card", RecordID(card), ["title": "Held"])], hold: true, gestureId: id), in: Self.product,
-        to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]))
+        to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]), gestureIdTaken: false)
     }
     #expect(try Hold(registry: Self.probe).undo("ge\u{301}", in: &replica))
     #expect(replica.outbox.map { Array($0.localId.utf8) } == [Array("g\u{E9}/0".utf8)])
@@ -157,10 +189,10 @@ struct CommitTests {
   // A scope the registry cannot name, here a tree id the wire cannot carry, throws even for a command alone.
   @Test func aScopeTheRegistryCannotNameThrows() throws {
     var replica = try Self.replica()
-    #expect(throws: CommitError.self) {
+    #expect(throws: CommitFailure.self) {
       try CommitPlanner(registry: Self.probe).commit(
         Gesture(changes: [], command: Command(name: "probe.copy", args: ["src": "b_00000001", "dst": "b_00000002"])),
-        in: .tree("b_0000000\u{E9}"), to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]))
+        in: .tree("b_0000000\u{E9}"), to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]), gestureIdTaken: false)
     }
     #expect(replica.writes == [])
   }
@@ -168,10 +200,10 @@ struct CommitTests {
   // A put that keeps presence changes a record drawn holds, as an update does; one drawn does not hold throws.
   @Test func aPutKeepingPresenceOfARecordAbsentFromDrawnThrows() throws {
     var replica = try Self.replica()
-    #expect(throws: CommitError.self) {
+    #expect(throws: CommitFailure.self) {
       try CommitPlanner(registry: Self.probe).commit(
         Gesture(changes: [.put("day", "2026-09-27", present: nil, ["score": 7])]), in: Self.product, to: &replica, as: Self.instance(5000),
-        identities: try QueuedIdentities([:]))
+        identities: try QueuedIdentities([:]), gestureIdTaken: false)
     }
     #expect(replica.writes == [])
   }

@@ -66,9 +66,10 @@ struct SenderTests {
     let receipt = try rig.commit(Self.card1)
     #expect(receipt.stamp.ms == Rig.startMs + 600_000)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "clock-skew")], serverTime: Rig.startMs))
-    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
     #expect(try rig.outbox() == ["g1/0 ready"])
     #expect(try rig.meta().serverOffsetMs == -600_000)
+    rig.clock.advance(ms: 1_000)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.admitted(2, seq: 1)]))
     #expect(await rig.engine.sender.step() == .again)
     let restamped = try Stamp("\(Rig.startMs):1:\(receipt.stamp.actor)")
@@ -78,8 +79,8 @@ struct SenderTests {
     #expect(try rig.active().notices.isEmpty)
   }
 
-  // §7.4: `k` resets on any result but clock-skew, so recoveries in a row back off longer each time, and the next other
-  // result starts the backoff over: the dropped push after it backs off from 1 s again.
+  // §7.4: `k` resets on a response with results unless one is clock-skew, so recoveries in a row back off longer each
+  // time, and the next other result starts the backoff over: the dropped push after it backs off from 1 s again.
   @Test func clockSkewRecoveriesInARowBackOffLongerUntilAnotherResult() async throws {
     let rig = try Rig(account: "A")
     rig.random.queue(raw: .max, count: 4)
@@ -91,8 +92,12 @@ struct SenderTests {
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 7, [Rig.admitted(7, seq: 1)]))
     rig.transport.willDropPush()
     var sleeps: [SenderStep] = []
-    for _ in 0..<5 { sleeps.append(await rig.engine.sender.step()) }
-    #expect(sleeps == [.backoff(ms: 1_000), .backoff(ms: 2_000), .backoff(ms: 4_000), .again, .backoff(ms: 1_000)])
+    for _ in 0..<5 {
+      let step = await rig.engine.sender.step()
+      sleeps.append(step)
+      if case .wait(let ms) = step { rig.clock.advance(ms: ms) }
+    }
+    #expect(sleeps == [.wait(ms: 1_000), .wait(ms: 2_000), .wait(ms: 4_000), .again, .backoff(ms: 1_000)])
     #expect(Self.numbers(rig.transport) == [[1, 2], [3, 4], [5, 6], [7, 8], [8]])
     #expect(try rig.outbox() == ["g1/0 acked 7", "g2/0 sent 8"])
   }
@@ -108,6 +113,30 @@ struct SenderTests {
     rig.engine.foreground()
     #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
     #expect(rig.transport.pushes.count == 1)
+  }
+
+  // §7.4: the backoff after a clock-skew recovery holds through a kick, which neither cuts it short nor resets k, so the
+  // next recovery backs off longer still; the next other result resets k.
+  @Test func aKickNeitherCutsShortNorResetsTheBackoffAfterAClockSkewRecovery() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 3)
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "clock-skew")]))
+    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
+    rig.clock.advance(ms: 500)
+    rig.engine.foreground()
+    #expect(await rig.engine.sender.step() == .wait(ms: 500))
+    #expect(rig.transport.pushes.count == 1)
+    rig.clock.advance(ms: 500)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.refused(2, "clock-skew")]))
+    #expect(await rig.engine.sender.step() == .wait(ms: 2_000))
+    rig.clock.advance(ms: 2_000)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 3, [Rig.admitted(3, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Two")], gestureId: "g2"))
+    rig.transport.willDropPush()
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    #expect(Self.numbers(rig.transport) == [[1], [2], [3], [4]])
   }
 
   @Test func anEpochChangeInAnAnswerReturnsOtherEpochsAcksAndReidentifies() async throws {
@@ -155,6 +184,7 @@ struct SenderTests {
     #expect(rig.transport.pushes.count == 3)
   }
 
+  // §7.4: a kick wakes the sender at once from any other backoff and resets k.
   @Test func aKickResetsTheBackoff() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)
@@ -463,7 +493,57 @@ struct SenderTests {
     try await eventually("the loop's push to be recorded") { try rig.outbox() == ["g1/0 acked 1"] }
   }
 
-  // With no loop running, the flush drains inline.
+  // §7.3: leaving pushes once through the backoff after a clock-skew recovery, and leaves k and that backoff as they
+  // were: the next round still waits out the backoff, and the next recovery backs off from where k stood.
+  @Test func leavingPushesOnceThroughTheBackoffAfterAClockSkewRecovery() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 3)
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "clock-skew")]))
+    #expect(await rig.engine.sender.step() == .wait(ms: 1_000))
+    rig.clock.advance(ms: 200)
+    rig.transport.willDropPush()
+    try rig.engine.leave()
+    await rig.engine.flushOnLeave()
+    #expect(Self.numbers(rig.transport) == [[1], [2]])
+    #expect(await rig.engine.sender.step() == .wait(ms: 800))
+    rig.clock.advance(ms: 800)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 2, [Rig.refused(2, "clock-skew")]))
+    #expect(await rig.engine.sender.step() == .wait(ms: 2_000))
+    #expect(Self.numbers(rig.transport) == [[1], [2], [2]])
+  }
+
+  // §7.3: leaving with nothing held releases nothing, so nothing kicks, and the leave's push, dropped too, leaves k where
+  // the two dropped pushes before it put it: the next backoff draws up to 4 s.
+  @Test func leavingWithNothingHeldLeavesANetworkBackoffsKAsItWas() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    rig.random.queue(raw: .max, count: 4)
+    for _ in 0..<4 { rig.transport.willDropPush() }
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    #expect(await rig.engine.sender.step() == .backoff(ms: 2_000))
+    try rig.engine.leave()
+    await rig.engine.flushOnLeave()
+    #expect(await rig.engine.sender.step() == .backoff(ms: 4_000))
+    #expect(Self.numbers(rig.transport) == [[1], [1], [1], [1]])
+  }
+
+  // §7.4: a 503 that asks for no wait backs off by the draw alone, which a kick cuts short, as it cuts any backoff but the
+  // one after a clock-skew recovery.
+  @Test func aKickCutsShortTheBackoffAfterA503ThatAskedForNoWait() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(503, ["error": "unavailable", "serverTime": JSON(Rig.startMs), "epoch": "ep-1"])
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    rig.clock.advance(ms: 1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    rig.engine.foreground()
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+  }
+
+  // With no loop running, the flush drains inline.  // With no loop running, the flush drains inline.
   @Test func inStepModeTheLeaveFlushDrainsItself() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))

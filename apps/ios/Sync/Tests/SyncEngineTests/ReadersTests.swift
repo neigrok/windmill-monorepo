@@ -126,12 +126,14 @@ struct ReadersTests {
   }
 
   // §9.1, D-4: a reference the wire cannot carry, such as a tree id with a look-alike of an ASCII letter, names no scope:
-  // it is neither read nor written, so no look-alike of a tree reaches the store.
+  // it is neither read nor written, so no look-alike of a tree reaches the store. The commit is malformed (§7.1).
   @Test func aScopeTheWireCannotCarryIsNeitherReadNorWritten() throws {
     let rig = try Rig()
     let before = try rig.store.read { try $0.device(rows: true).json }
     let tree = ScopeRef.tree("t\u{E9}")
-    #expect(throws: EngineError.notAScope(tree)) { try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))])) }
+    #expect(throws: CommitFailure(.malformed, EngineError.notAScope(tree).description)) {
+      try rig.engine.commit(tree, Gesture(changes: [.create("tag", id: .given("sail"))]))
+    }
     #expect(throws: EngineError.notAScope(tree)) { try rig.engine.read(tree) { try $0.drawn("tag") } }
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)
   }
@@ -156,10 +158,11 @@ struct ReadersTests {
     #expect(minted == ["b_11111111", "b_22222222"])
   }
 
+  // A misuse of the read-and-commit context: the commit is malformed (§7.1).
   @Test func aMintOfATypeWithNoMintFailsItsCommitAndWritesNothing() throws {
     let rig = try Rig()
     let before = try rig.store.read { try $0.device(rows: true).json }
-    #expect(throws: EngineError.mintsNoIDs(type: "day")) {
+    #expect(throws: CommitFailure(.malformed, "day mints no ids")) {
       try rig.engine.commit(Rig.scope) { context -> (Gesture?, Void) in
         (Gesture(changes: [.put("day", context.mintID("day"), present: true)]), ())
       }

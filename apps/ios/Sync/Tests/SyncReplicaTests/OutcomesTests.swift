@@ -24,7 +24,8 @@ struct OutcomesTests {
       changes: [], command: Command(name: "probe.start", args: ["id": "runmine1", "startedAt": 5000, "join": true]),
       predict: [.create("run", id: .given("runmine1"), ["startedAt": 5000])], local: [DeviceWrite(key: "rack", value: ["run": "runmine1"])],
       gestureId: "start")
-    _ = try CommitPlanner(registry: Self.probe).commit(start, in: .product("probe"), to: &replica, as: instance, identities: identities)
+    _ = try CommitPlanner(registry: Self.probe).commit(start, in: .product("probe"), to: &replica, as: instance, identities: identities,
+                                                        gestureIdTaken: false)
     let planner = PushPlanner(registry: Self.probe, rewriteDeviceValue: rewrite)
     let request = try #require(try planner.number(&replica))
     let joined = try PushResponse(json: [
@@ -153,7 +154,7 @@ struct OutcomesTests {
                                identities: identities)
       }
       let commit = { (replica: inout LoadedReplica, gesture: Gesture) throws -> CommitReceipt? in
-        guard case .committed(let receipt) = try commits.commit(gesture, in: product, to: &replica, as: instance, identities: identities)
+        guard case .committed(let receipt) = try commits.commit(gesture, in: product, to: &replica, as: instance, identities: identities, gestureIdTaken: false)
         else { return nil }
         return receipt
       }
@@ -230,8 +231,8 @@ struct OutcomesTests {
       for case .ended(_, _, let event, let orphanOf) in replica.events {
         if event == .cancel { tally.folded += 1 }
         if event == .refuse && orphanOf != nil { tally.orphans += 1 }
-        if event == .orphanOK { tally.orphansAdmitted += 1 }
       }
+      tally.orphansAdmitted += replica.outbox.filter { $0.orphanOf != nil && $0.state == .acked }.count
     }
     let seed = "seed \(random.seed)"
     #expect(tally.deletesAfterReturn > 40, "\(seed): only \(tally.deletesAfterReturn) deletes followed a returned numbered create")

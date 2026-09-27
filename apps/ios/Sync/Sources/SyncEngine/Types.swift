@@ -1,3 +1,4 @@
+import SyncAPI
 import SyncCore
 
 // The engine-only public types. The values products share live in SyncAPI.
@@ -32,4 +33,21 @@ public enum EngineError: Error, Hashable, CustomStringConvertible {
     case .notSignedIn: "no account is signed in on this device"
     }
   }
+}
+
+extension CommitFailure {
+  // §7.1: an error a commit met before its transaction committed. A misuse of the reader, or of the scope, is malformed;
+  // anything the planner or the store threw that is no `CommitFailure` is a store failure.
+  init(meeting error: any Error) {
+    switch error {
+    case let failure as CommitFailure: self = failure
+    case let misuse as EngineError: self.init(.malformed, misuse.description)
+    default: self.init(.storeFailure, "\(error)")
+    }
+  }
+}
+
+// An error a commit's body threw of its own, carried out of the transaction to its caller unchanged.
+struct BodyError: Error {
+  let error: any Error
 }

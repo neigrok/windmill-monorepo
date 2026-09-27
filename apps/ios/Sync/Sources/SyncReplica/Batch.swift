@@ -23,9 +23,10 @@ public enum ReplicaWrite: Sendable, Hashable {
   case forgetScope(ScopeRef)
   case putKnown(ScopeRef, KnownKind)
   case deleteKnown(ScopeRef)
-  // A new notice goes after the others; one rewritten keeps its place.
+  // A new notice goes after the others; one rewritten keeps its place. No write deletes a notice: they leave only with
+  // their whole replica, or move, after the others, to the replica a sign-in binds (D-17).
   case putNotice(Notice)
-  case deleteNotice(String)
+  case moveNotice(Notice)
   case putDeviceRow(product: String, key: String, JSON)
   case deleteDeviceRow(product: String, key: String)
   case deleteDeviceRows(product: String)

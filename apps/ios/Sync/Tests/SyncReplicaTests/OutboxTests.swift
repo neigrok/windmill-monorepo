@@ -4,8 +4,9 @@ import SyncReplica
 import SyncTesting
 import Testing
 
-// §7.2 cancel: a join cancels only an entry that made its record alive, one without which drawn holds the record not
-// alive. A delete that absorbed a revive of a live record did not, so a later delete joining it is still sent.
+// §7.2 cancel: a join cancels only an entry whose delta holds an alive life and a born, without which the record is
+// alive in neither drawn nor stored. A delete that absorbed a revive of a live record fails the first, and a revive of a
+// record only a held delete kills fails the second, so a later delete joining either is still sent.
 
 struct OutboxTests {
   static let probe = try! Corpus.probeRegistry()
@@ -42,6 +43,30 @@ struct OutboxTests {
     ]])
     #expect(try answer.member("ended") == [
       ["localId": "g2/0", "outcome": "coalesced", "event": "coalesce"], ["localId": "g3/0", "outcome": "coalesced", "event": "coalesce"],
+    ])
+  }
+
+  // A held delete, then a revive, then a delete that joins the revive: only the held delete kills the tag in drawn, and
+  // stored still holds it alive, so the revive does not cancel. The Undo of the held delete leaves the person's final
+  // delete, which is drawn and sent.
+  @Test func aDeleteJoiningAReviveOfARecordOnlyAHeldDeleteKillsSurvivesItsUndo() throws {
+    let input = try JSON(parsing: """
+      {"device": \(Self.device), "steps": [
+        {"op": "commit", "scope": "tree/b_00000001", "changes": [{"op": "delete", "t": "tag", "id": "tone"}], "opts": {"hold": true}, "deviceNow": 1000},
+        {"op": "commit", "scope": "tree/b_00000001", "changes": [{"op": "revive", "t": "tag", "id": "tone"}], "deviceNow": 1001},
+        {"op": "commit", "scope": "tree/b_00000001", "changes": [{"op": "delete", "t": "tag", "id": "tone"}], "deviceNow": 1002},
+        {"op": "undo", "gestureId": "g1", "deviceNow": 1003},
+        {"op": "push", "deviceNow": 1004}]}
+      """)
+    let answer = try ClientSteps.run(input, registry: Self.probe) { PlannedDevice($0, registry: Self.probe, limits: $1) }
+    #expect(try answer.member("returns").asArray().suffix(2) == [true, [
+      "replica": "rp_00000000000000000000000000000001", "ackThrough": 0, "intents": [
+        ["n": 1, "scope": "tree/b_00000001", "gestureId": "g2",
+         "d": [["t": "tag", "id": "tone", "born": "901:0:r_bbbbbbbbbbbb", "life": ["dead", "1002:0:r_aaaaaaaaaaaa"]]]],
+      ],
+    ]])
+    #expect(try answer.member("ended") == [
+      ["localId": "g3/0", "outcome": "coalesced", "event": "coalesce"], ["localId": "g1/0", "outcome": "undone", "event": "undo"],
     ])
   }
 }

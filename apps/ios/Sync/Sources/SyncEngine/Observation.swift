@@ -189,7 +189,7 @@ final class ViewHub {
 
   nonisolated static func loadNotices(_ tx: StoreTransaction, of product: String) throws -> [Notice] {
     let active = try tx.activeReplica()
-    return try tx.replica(active, notices: true)?.notices.filter { $0.product.utf8.elementsEqual(product.utf8) } ?? []
+    return try tx.replica(active, notices: true)?.notices.filter { !$0.isDismissed && $0.product.utf8.elementsEqual(product.utf8) } ?? []
   }
 
   // §7.3: a held gesture is offered for Undo while every entry of it is held and `releaseAt` is still ahead.
@@ -261,7 +261,8 @@ public final class RecordsView {
   }
 }
 
-// The durable refusals of one product in the active replica (D-17), in the order they were written.
+// The durable refusals of one product in the active replica (D-17) that the person has not dismissed, in the order they
+// were written.
 @MainActor @Observable
 public final class NoticesView {
   public let product: String

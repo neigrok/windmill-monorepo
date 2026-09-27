@@ -169,7 +169,6 @@ public struct ReplicaLifecycle: Sendable {
     if let anon = device.anon, !anon.id.utf8.elementsEqual(target.utf8), !anon.outbox.isEmpty {
       device.modify(anon.id) { anon in
         for entry in anon.outbox { anon.apply(.deleteEntry(entry.localId)) }
-        for notice in anon.notices { anon.apply(.deleteNotice(notice.id)) }
       }
       device.modify(target) { target in
         for entry in anon.outbox {
@@ -182,7 +181,7 @@ public struct ReplicaLifecycle: Sendable {
             target.apply(.putDeviceRow(product: product, key: key, value))
           }
         }
-        for notice in anon.notices { target.apply(.putNotice(notice)) }
+        for notice in anon.notices { target.apply(.moveNotice(notice)) }
       }
       _ = try Machines.replica.transition(from: .anon, .signIn, to: .deleted)
       device.remove(anon.id)

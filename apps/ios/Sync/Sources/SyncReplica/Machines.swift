@@ -61,7 +61,6 @@ public enum IntentEvent: String, Sendable, Hashable, CaseIterable {
   case commit, coalesce, cancel, release, undo, retire, number, fold
   case targetMerged = "target-merged"
   case ok, recover, refuse
-  case orphanOK = "orphan-ok"
   case transport, reidentify
   case skewReturn = "skew-return"
   case rewind, resolve, epoch, discard
@@ -95,7 +94,6 @@ public enum Machines {
     ([.sent], .ok, [.state(.acked)]),
     ([.sent], .recover, [.state(.ready)]),
     ([.sent], .refuse, [.ended(.refused)]),
-    ([.sent], .orphanOK, [.ended(.resolved)]),
     ([.sent], .transport, [.state(.sent)]),
     ([.sent], .reidentify, [.state(.ready)]),
     ([.sent], .skewReturn, [.state(.ready)]),

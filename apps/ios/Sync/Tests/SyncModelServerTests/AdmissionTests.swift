@@ -84,6 +84,183 @@ struct AdmissionTests {
   }
 }
 
+// Folders and docs on boards, a product the probe cannot express: a board governs a tree of folders and docs, each doc
+// sits in a folder (its parent) and is numbered by a serial, `p.copy` copies a board's docs (and, when asked, its folders)
+// into the tree of a board it creates, and a doc whose joined folder is dead dies with a server delete.
+struct Boards: ServerRules {
+  static let registry: JSON = [
+    "registry": "test", "version": 1, "minVersion": 1, "products": ["p": [:]],
+    "types": [
+      [
+        "type": "board", "scope": "product:p", "identity": "minted", "idSpace": "global", "idPattern": "^b[0-9]$",
+        "mint": ["prefix": "b", "alphabet": "0123456789", "length": 1], "life": true, "revivable": false, "deadRows": "keep",
+        "governs": "tree", "origins": ["replica", "server"], "fields": [:],
+      ],
+      [
+        "type": "folder", "scope": "tree", "identity": "minted", "idSpace": "scope", "idPattern": "^f[0-9]$",
+        "mint": ["prefix": "f", "alphabet": "0123456789", "length": 1], "life": true, "revivable": false, "deadRows": "keep",
+        "origins": ["replica", "server"], "fields": [:],
+      ],
+      [
+        "type": "doc", "scope": "tree", "identity": "minted", "idSpace": "scope", "idPattern": "^d[0-9]$",
+        "mint": ["prefix": "d", "alphabet": "0123456789", "length": 1], "life": true, "revivable": false, "deadRows": "keep",
+        "origins": ["replica", "server"], "fields": [
+          "folderId": ["kind": "lww", "writer": "client", "ref": "folder", "parent": true],
+          "no": ["kind": "serial", "writer": "server", "serialNext": []],
+        ],
+      ],
+    ],
+    "commands": [[
+      "name": "p.copy", "scope": "product:p", "origins": ["replica", "server"], "serverInternal": false,
+      "args": ["src": ["type": "ref<board>"], "dst": ["type": "ref<board>"], "folders": ["type": "json", "domain": ["type": "boolean"]]],
+      "predicts": ["board"],
+    ]],
+  ]
+
+  // Board b1, and tree:b1 holding folder f1 and doc d1 in it: the state the reference run of the copies started from.
+  static let state = #"""
+    {"epoch": "ep-1", "clock": {"ms": 0, "counter": 0},
+     "scopes": {
+      "acct:A/p": {
+       "kind": "product",
+       "owner": "A",
+       "state": "alive",
+       "seq": 1,
+       "counters": {},
+       "digest": "c4d6434a28c31cdac4775ab4253b134d2490c4dd894a844580c9375e05671d8f"
+      },
+      "tree:b1": {
+       "kind": "tree",
+       "owner": "A",
+       "state": "alive",
+       "seq": 1,
+       "counters": {},
+       "digest": "ff75f30c73537970e975376b59f64283e0d73eeb5052fa46336b500a4b1771a9",
+       "governedBy": "acct:A/p#board#b1"
+      }
+     },
+     "rows": {
+      "acct:A/p": [
+       {
+        "t": "board",
+        "id": "b1",
+        "life": ["alive", "10:0:r_aaaaaaaaaaaa"],
+        "born": "10:0:r_aaaaaaaaaaaa",
+        "seq": 1,
+        "rc": 1000,
+        "ru": 1000
+       }
+      ],
+      "tree:b1": [
+       {
+        "t": "folder",
+        "id": "f1",
+        "life": ["alive", "11:0:r_aaaaaaaaaaaa"],
+        "born": "11:0:r_aaaaaaaaaaaa",
+        "seq": 1,
+        "rc": 1000,
+        "ru": 1000
+       },
+       {
+        "t": "doc",
+        "id": "d1",
+        "life": ["alive", "12:0:r_aaaaaaaaaaaa"],
+        "born": "12:0:r_aaaaaaaaaaaa",
+        "f": {"folderId": ["f1", "12:0:r_aaaaaaaaaaaa"]},
+        "v": {"no": 1},
+        "seq": 1,
+        "rc": 1000,
+        "ru": 1000
+       }
+      ]
+     }}
+    """#
+
+  func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { false }
+
+  func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
+    let destination = RecordKey("board", RecordID((try? command.args["dst"]?.asString()) ?? ""))
+    let copied = context.rows(ofTree: (try? command.args["src"]?.asString()) ?? "")
+      .filter { $0.isAlive && ($0.key.type == "doc" || (command.args["folders"] == true && $0.key.type == "folder")) }
+    return CommandOutcome(
+      deltas: [.serverCreate(destination)], write: [WriteClaim(key: destination, born: .minted)], product: context.product,
+      created: [ScopeKey(.tree(destination.id.description)): copied.map(PlannedDelta.copy(of:))])
+  }
+
+  func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
+    changes.filter { change in
+      guard change.scope == context.scope, change.key.type == "doc", change.after.isAlive,
+            case .string(let folder)? = change.after.lattice.fields["folderId"]?.value else { return false }
+      if case .dead = context.idState(of: RecordKey("folder", RecordID(folder))) { return true }
+      return false
+    }
+    .map { PlannedDelta.serverDelete($0.key, born: $0.after.lattice.born) }
+  }
+
+  func keptRevisions(_ revisions: [Revision]) -> [Revision] { revisions }
+
+  // The intents admitted in order from the fixture: the last one's result, and the tables before and after it.
+  static func admit(_ intents: [JSON], limits: ServerLimits = ServerLimits()) throws
+    -> (last: AdmitResult, before: ServerState, after: ServerState) {
+    let admission = Admission(registry: try Registry(json: registry), rules: Boards(), limits: limits)
+    var state = try ServerState(json: JSON(parsing: Array(Self.state.utf8)))
+    var before = state
+    var last = AdmitResult.refused(Refusal(.invalid))
+    for (n, intent) in intents.enumerated() {
+      before = state
+      last = try admission.admit(intent, from: .replica(account: "A", replica: "rp_a", n: Int64(n + 1)), at: 1_000_000, in: &state).result
+    }
+    return (last, before, state)
+  }
+}
+
+// Steps 9 to 11 on every record the intent touches: in its scope, and in the scope of a board a copy creates (step 14).
+extension AdmissionTests {
+  static func copy(folders: Bool) -> JSON {
+    ["scope": "self/p", "cmd": ["name": "p.copy", "args": ["src": "b1", "dst": "b2", "folders": .bool(folders)]]]
+  }
+
+  // The parent rule reads the reference as the join wrote it, before G1 drops a dead record's fields: a doc moved into a
+  // dead folder, which the product's check then deletes, is parent-dead, whatever folder it was stored in.
+  @Test func theParentRuleReadsTheJoinedReferenceBeforeG1_6_1_step10() throws {
+    let folder = { (life: String, at: Int) -> JSON in
+      ["scope": "tree/b1", "d": [["t": "folder", "id": "f2", "born": "20:0:r_aaaaaaaaaaaa",
+                                  "life": [.string(life), .string("\(at):0:r_aaaaaaaaaaaa")]]]]
+    }
+    let move: JSON = [
+      "scope": "tree/b1", "d": [["t": "doc", "id": "d1", "born": "12:0:r_aaaaaaaaaaaa", "f": ["folderId": ["f2", "22:0:r_aaaaaaaaaaaa"]]]],
+    ]
+    let admitted = try Boards.admit([folder("alive", 20), folder("dead", 21), move])
+    #expect(admitted.last == .refused(Refusal(.parentDead)))
+    #expect(admitted.after == admitted.before)
+  }
+
+  @Test func aDocCopiedIntoACreatedTreeWithoutItsFolderIsParentDead_6_1_step10_step14() throws {
+    let admitted = try Boards.admit([Self.copy(folders: false)])
+    #expect(admitted.last == .refused(Refusal(.parentDead)))
+    #expect(admitted.after == admitted.before)
+  }
+
+  @Test func aCopyNumbersTheDocsItWritesIntoTheTreeItCreates_6_1_step11_step14() throws {
+    let admitted = try Boards.admit([Self.copy(folders: true)])
+    #expect(admitted.last == .ok(seq: 2, write: [["t": "board", "id": "b2", "born": "1000000:0:srv"]], detail: nil))
+    #expect(admitted.after.rows[ScopeKey(.tree("b2"))].map { $0.values.sorted { $0.key < $1.key }.map(\.json) } == [
+      ["t": "doc", "id": "d1", "life": ["alive", "12:0:r_aaaaaaaaaaaa"], "born": "12:0:r_aaaaaaaaaaaa",
+       "f": ["folderId": ["f1", "12:0:r_aaaaaaaaaaaa"]], "v": ["no": 1], "seq": 1, "rc": 1_000_000, "ru": 1_000_000],
+      ["t": "folder", "id": "f1", "life": ["alive", "11:0:r_aaaaaaaaaaaa"], "born": "11:0:r_aaaaaaaaaaaa", "seq": 1, "rc": 1_000_000,
+       "ru": 1_000_000],
+    ])
+  }
+
+  // The reference admits this copy at MAX_RECORD_BYTES 169 and refuses it at 168: the doc it writes, before its serial.
+  @Test(arguments: [(169, false), (168, true)])
+  func theRowsACopyWritesIntoTheTreeItCreatesAreMeasuredBeforeTheirSerial_6_1_step9(_ bound: Int, _ refused: Bool) throws {
+    var limits = ServerLimits()
+    limits.maxRecordBytes = bound
+    #expect(try Boards.admit([Self.copy(folders: true)], limits: limits).last.isRefused == refused)
+  }
+}
+
 extension AdmissionTests {
   // Review F4: a client delta §4.3 answers `ok` writes nothing, so the server stamp does not observe it (§10.3).
   @Test func aClientDeltaAnsweredOkIsNotObservedByTheServerStamp_10_3() throws {

@@ -13,7 +13,7 @@ public struct ProbeServerRules: ServerRules {
   public func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool {
     switch command.name {
     case "probe.start": receipt(of: command.string("id"), in: context) != nil
-    case "probe.copy": copySource(of: command.string("dst"), in: context).map { $0 == command.string("src") } ?? false
+    case "probe.copy": copySource(of: command.string("dst"), in: context)?.isSameID(as: command.string("src")) ?? false
     default: false
     }
   }
@@ -32,27 +32,25 @@ public struct ProbeServerRules: ServerRules {
   // deletes included, at the next pass's server stamp.
   public func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
     if changes.contains(where: { $0.key.type == "run" && $0.op == .create }) { throw Refusal(.invalid) }
-    let dying = Set(changes.filter { $0.key.type == "run" && $0.diesHere }.compactMap(\.key.id.string))
+    let dying = changes.filter { $0.key.type == "run" && $0.diesHere }.map { $0.key.id.json }
     guard !dying.isEmpty else { return [] }
     var laps = Dictionary(uniqueKeysWithValues: context.records(ofType: "lap").filter(\.isAlive).map { ($0.key, $0) })
     for change in changes where change.key.type == "lap" {
       if case .alive(let locked) = change.before { laps[change.key] = locked }
     }
     return laps.values.sorted { $0.key < $1.key }
-      .filter { lap in
-        guard case .string(let run)? = lap.lattice.fields["runId"]?.value else { return false }
-        return dying.contains(run)
-      }
+      .filter { lap in lap.lattice.fields["runId"].map { dying.contains($0.value) } ?? false }
       .map { PlannedDelta.serverDelete($0.key, born: $0.lattice.born) }
   }
 
+  // Revisions sort by record, field and rev, so each field's latest is the last of its run.
   public func keptRevisions(_ revisions: [Revision]) -> [Revision] {
-    var latest: [String: Revision] = [:]
-    for revision in revisions {
-      let slot = revision.key.description + "#" + revision.field
-      if latest[slot].map({ $0.rev < revision.rev }) ?? true { latest[slot] = revision }
+    var latest: [Revision] = []
+    for revision in revisions.sorted() {
+      if let last = latest.last, last.key == revision.key, last.field.isSameID(as: revision.field) { latest.removeLast() }
+      latest.append(revision)
     }
-    return latest.values.sorted()
+    return latest
   }
 
   // MARK: - Commands

@@ -133,7 +133,9 @@ public struct LoadedReplica: Sendable {
       } else {
         loadedNotices?.append(notice)
       }
-    case .deleteNotice(let id): loadedNotices?.removeAll { $0.id.utf8.elementsEqual(id.utf8) }
+    case .moveNotice(let notice):
+      loadedNotices?.removeAll { $0.id.utf8.elementsEqual(notice.id.utf8) }
+      loadedNotices?.append(notice)
     case .putDeviceRow(let product, let key, let value): deviceRows[product, default: JSON.Object()][key] = value
     case .deleteDeviceRow(let product, let key): deviceRows[product]?[key] = nil
     case .deleteDeviceRows(let product): deviceRows[product] = nil
@@ -206,7 +208,7 @@ public struct LoadedReplica: Sendable {
     case .putRow(let scope, let row): change.touch(scope, [row.key])
     case .deleteRow(let scope, let key): change.touch(scope, [key])
     case .swapStaging(let scope), .forgetScope(let scope): change.scopes.insert(scope)
-    case .putNotice, .deleteNotice: change.notices = true
+    case .putNotice, .moveNotice: change.notices = true
     case .beginStaging, .putStagedRow, .deleteStagedRow, .stagingDigest, .dropStaging, .putSpent: break
     }
   }
@@ -249,6 +251,14 @@ public struct LoadedDevice: Sendable {
   }
 
   public var anon: LoadedReplica? { replicas.first { $0.meta.state == .anon } }
+
+  // §2.5: an outbox entry or a notice of any replica on the device carries the gesture id.
+  public func carries(gestureId: String) -> Bool {
+    replicas.contains { replica in
+      replica.outbox.contains { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
+        || replica.notices.contains { Notice.gestureId(ofNotice: $0.id)?.utf8.elementsEqual(gestureId.utf8) == true }
+    }
+  }
 
   public func dormant(of account: String) -> LoadedReplica? {
     replicas.first { $0.meta.state == .dormant && $0.meta.account?.utf8.elementsEqual(account.utf8) == true }

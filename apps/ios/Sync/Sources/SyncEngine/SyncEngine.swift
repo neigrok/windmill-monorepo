@@ -74,17 +74,30 @@ public final class SyncEngine: Replica {
   // MARK: Replica
 
   // §7.1 in one transaction: the body reads through a context over it, then the decided gesture commits; a nil gesture
-  // writes nothing and ticks no clock. A committed gesture kicks the sender, and a held one the release timer.
+  // writes nothing and ticks no clock. A committed gesture kicks the sender, and a held one the release timer. It throws
+  // a `CommitFailure`, or the body's own error as the body threw it.
   public func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws
     -> (outcome: CommitOutcome?, value: T) {
-    let committed = try core.write { store, instance in
-      try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow] tx in
-        let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow)
-        defer { context.end() }
-        let decided = try body(context)
-        try context.finish()
-        return decided
+    let committed: (outcome: CommitOutcome?, value: T)
+    do {
+      committed = try core.write { store, instance in
+        try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow] tx in
+          let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow)
+          defer { context.end() }
+          let decided: (Gesture?, T)
+          do {
+            decided = try body(context)
+          } catch {
+            throw context.failure ?? BodyError(error: error)
+          }
+          try context.finish()
+          return decided
+        }
       }
+    } catch let own as BodyError {
+      throw own.error
+    } catch {
+      throw CommitFailure(meeting: error)
     }
     if case .committed(let receipt)? = committed.outcome {
       sender.wake.kick()
@@ -140,10 +153,10 @@ public final class SyncEngine: Replica {
 
   // MARK: App lifecycle (§7.3)
 
-  // Leaving the app: every held entry is released into the durable queue at once, so Undo is not offered again.
+  // Leaving the app: every held entry is released into the durable queue at once, so Undo is not offered again, and a
+  // release kicks the sender (§7.3).
   public func leave() throws {
-    try core.write { store, _ in try store.releaseAll() }
-    sender.wake.kick()
+    if try core.write({ store, _ in try store.releaseAll() }) { sender.wake.kick() }
   }
 
   // The leave flush: one drain, joined with the sender's loop.

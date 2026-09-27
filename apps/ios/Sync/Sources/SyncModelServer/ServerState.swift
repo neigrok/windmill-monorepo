@@ -1,12 +1,13 @@
 import SyncCore
 
 // §2.1 the generic platform tables and the typed rows of every scope, as one value; `json` is the corpus's
-// canonical server state, so a copy is a transaction and dropping it is a rollback.
+// canonical server state, so a copy is a transaction and dropping it is a rollback. Every value here holding text is
+// equal to another only byte for byte (§9.1): two states are equal when their canonical forms are.
 
 public struct ServerState: Sendable, Hashable {
   public var epoch: String
   public var clock: HLC
-  public var accounts: [String: String]
+  public var accounts: [AccountKey: String]
   public var scopes: [ScopeKey: ScopeRecord]
   public var rows: [ScopeKey: [RecordKey: Row]]
   public var spent: [ScopeKey: [RecordKey: SpentRow]]
@@ -16,7 +17,7 @@ public struct ServerState: Sendable, Hashable {
   public var requests: [RequestKey: RequestRecord]
   public var product: JSON.Object
 
-  public init(epoch: String, clock: HLC = HLC(), accounts: [String: String] = [:]) {
+  public init(epoch: String, clock: HLC = HLC(), accounts: [AccountKey: String] = [:]) {
     self.epoch = epoch
     self.clock = clock
     self.accounts = accounts
@@ -36,7 +37,9 @@ public struct ServerState: Sendable, Hashable {
       required: ["epoch", "clock"],
       optional: ["accounts", "scopes", "rows", "spent", "revisions", "replicas", "results", "requests", "product"])
     self.init(epoch: try root.member("epoch").asString(), clock: try HLC(json: root.member("clock")))
-    accounts = try JSON.map(root["accounts"]) { try $0.member("name").asString() }
+    for (account, entry) in try root["accounts"]?.asObject().members ?? [] {
+      accounts[AccountKey(account)] = try entry.member("name").asString()
+    }
     for (text, scope) in try root["scopes"]?.asObject().members ?? [] {
       let key = try ScopeKey(parsing: text)
       scopes[key] = try ScopeRecord(json: scope, key: key)
@@ -67,7 +70,8 @@ public struct ServerState: Sendable, Hashable {
   // Empty parts are left out; every list is in the corpus's order.
   public var json: JSON {
     var root: JSON.Object = ["epoch": .string(epoch), "clock": clock.json]
-    root["accounts"] = JSON.object(from: accounts) { ["name": .string($0)] }
+    let names = accounts.map { account, name -> (String, JSON) in (account.text, ["name": .string(name)]) }
+    root["accounts"] = names.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: names))
     root["scopes"] = Self.byScope(scopes) { key, record in record.json(kind: key.kindName) }
     root["rows"] = Self.byScope(rows) { _, byKey in
       byKey.isEmpty ? nil : .array(byKey.sorted { $0.key < $1.key }.map(\.value.json))
@@ -89,6 +93,9 @@ public struct ServerState: Sendable, Hashable {
     root["product"] = product.isEmpty ? nil : .object(product)
     return .object(root)
   }
+
+  public static func == (lhs: ServerState, rhs: ServerState) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 
   // A part keyed by scope key text; a scope whose value encodes to nil is left out, and so is an empty part.
   static func byScope<Value>(_ map: [ScopeKey: Value], _ encode: (ScopeKey, Value) -> JSON?) -> JSON? {
@@ -229,15 +236,18 @@ public struct ScopeKey: Sendable, Hashable, Comparable, CustomStringConvertible 
     }
   }
 
+  // Read by bytes, so an account or a tree id keeps every scalar it holds.
   public init(parsing text: String) throws {
-    if text.hasPrefix("tree:") {
-      self.init(.tree(String(text.dropFirst("tree:".count))))
+    let bytes = Array(text.utf8)
+    if bytes.starts(with: "tree:".utf8) {
+      self.init(.tree(String(decoding: bytes.dropFirst(5), as: UTF8.self)))
       return
     }
-    let parts = text.dropFirst("acct:".count).split(separator: "/", omittingEmptySubsequences: false).map(String.init)
-    switch (text.hasPrefix("acct:"), parts.count) {
+    let parts = bytes.dropFirst(5).split(separator: UInt8(ascii: "/"), omittingEmptySubsequences: false)
+      .map { String(decoding: $0, as: UTF8.self) }
+    switch (bytes.starts(with: "acct:".utf8), parts.count) {
     case (true, 2): self.init(.product(account: parts[0], name: parts[1]))
-    case (true, 3) where parts[1] == "overlay": self.init(.overlay(account: parts[0], tree: parts[2]))
+    case (true, 3) where parts[1].isSameID(as: "overlay"): self.init(.overlay(account: parts[0], tree: parts[2]))
     default: throw JSONError.shape("\(text) is not a scope key")
     }
   }
@@ -347,6 +357,18 @@ public struct ScopeRecord: Sendable, Hashable {
     deadAt = try object["deadAt"]?.asInteger()
   }
 
+  public static func == (lhs: ScopeRecord, rhs: ScopeRecord) -> Bool {
+    lhs.owner.isSameID(as: rhs.owner) && lhs.state == rhs.state && lhs.seq == rhs.seq && lhs.counters == rhs.counters
+      && lhs.digest == rhs.digest && lhs.governedBy.map { Array($0.utf8) } == rhs.governedBy.map { Array($0.utf8) }
+      && lhs.deadAt == rhs.deadAt
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(owner.utf8))
+    hasher.combine(seq)
+    hasher.combine(digest)
+  }
+
   // §2.1 `governed_by` of a tree: `<scope>#<type>#<id>` of its governing record.
   static func governor(scope: ScopeKey, key: RecordKey) -> String {
     "\(scope.text)#\(key.type)#\(key.id.description)"
@@ -438,6 +460,9 @@ public struct Revision: Sendable, Hashable, Comparable {
     ["t": .string(key.type), "id": key.id.json, "field": .string(field), "rev": JSON(rev), "text": .string(text)]
   }
 
+  public static func == (lhs: Revision, rhs: Revision) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
+
   public static func < (lhs: Revision, rhs: Revision) -> Bool {
     if lhs.key != rhs.key { return lhs.key < rhs.key }
     if !lhs.field.utf8.elementsEqual(rhs.field.utf8) { return lhs.field.utf8.lexicographicallyPrecedes(rhs.field.utf8) }
@@ -464,6 +489,25 @@ public struct ReplicaBinding: Sendable, Hashable {
   }
 
   var json: JSON { ["account": .string(account), "lastN": JSON(lastN)] }
+
+  public static func == (lhs: ReplicaBinding, rhs: ReplicaBinding) -> Bool { lhs.json == rhs.json }
+  public func hash(into hasher: inout Hasher) { hasher.combine(json) }
+}
+
+// An account as a table key: the same only byte for byte (§9.1).
+public struct AccountKey: Sendable, Hashable, ExpressibleByStringLiteral {
+  public let text: String
+
+  public init(_ text: String) {
+    self.text = text
+  }
+
+  public init(stringLiteral text: String) {
+    self.init(text)
+  }
+
+  public static func == (lhs: AccountKey, rhs: AccountKey) -> Bool { lhs.text.isSameID(as: rhs.text) }
+  public func hash(into hasher: inout Hasher) { hasher.combine(Array(text.utf8)) }
 }
 
 // A `sync_requests` key (§2.1): an account and a request id, the same only byte for byte.
@@ -522,6 +566,15 @@ public struct StoredResult: Sendable, Hashable {
   func json(n: Int64) -> JSON {
     ["n": JSON(n), "digest": .string(digest), "result": result ?? .null, "faults": JSON(faults)]
   }
+
+  public static func == (lhs: StoredResult, rhs: StoredResult) -> Bool {
+    lhs.digest.isSameID(as: rhs.digest) && lhs.result == rhs.result && lhs.faults == rhs.faults
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(digest.utf8))
+    hasher.combine(faults)
+  }
 }
 
 // A `sync_requests` row (§6.3): running until the call's last admit, with each admit's result as part k.
@@ -561,5 +614,15 @@ public struct RequestRecord: Sendable, Hashable {
     ]
     object["result"] = result
     return .object(object)
+  }
+
+  public static func == (lhs: RequestRecord, rhs: RequestRecord) -> Bool {
+    lhs.digest.isSameID(as: rhs.digest) && lhs.state == rhs.state && lhs.startedAt == rhs.startedAt && lhs.parts == rhs.parts
+      && lhs.result == rhs.result
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(digest.utf8))
+    hasher.combine(startedAt)
   }
 }

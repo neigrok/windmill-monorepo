@@ -93,10 +93,41 @@ struct SyncEngineTests {
     let rig = try Rig(crashPoints: faults.crashPoints)
     let before = try rig.store.read { try $0.device(rows: true).json }
     faults.failNextCommit()
-    #expect(throws: CommitFaults.Injected()) { try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1")) }
+    #expect(throws: CommitFailure(.storeFailure, "Injected()")) {
+      try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
+    }
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g2"))
     #expect(try rig.outbox() == ["g2/0 ready"])
+  }
+
+  // A commit that throws names one of three failures by where it arose: a replica that does not write, a malformed
+  // gesture or a misuse of the body's context, or a store that could not commit. The body's own error comes back as the
+  // body threw it, and none of them writes anything.
+  @Test func aCommitFailsNotWritableMalformedOrInTheStoreAndPassesTheBodysOwnError() throws {
+    struct Declined: Error, Equatable {}
+    let faults = CommitFaults()
+    let rig = try Rig(account: "A", crashPoints: faults.crashPoints)
+    let before = try rig.store.read { try $0.device(rows: true).json }
+    #expect(throws: CommitFailure(.malformed, "card card0404 is absent from drawn")) {
+      try rig.engine.commit(Rig.scope, Gesture(changes: [.update("card", "card0404", ["title": "Absent"])]))
+    }
+    #expect(throws: CommitFailure(.malformed, "mark is no type of self/probe")) {
+      try rig.engine.commit(Rig.scope) { context -> (Gesture?, Int) in (nil, try context.drawn("mark").count) }
+    }
+    #expect(throws: CommitFailure(.malformed, "mark is no type of self/probe")) {
+      try rig.engine.commit(Rig.scope) { context -> (Gesture?, Int) in (nil, (try? context.drawn("mark").count) ?? 0) }
+    }
+    #expect(throws: Declined()) { try rig.engine.commit(Rig.scope) { _ -> (Gesture?, Int) in throw Declined() } }
+    faults.failNextCommit()
+    #expect(throws: CommitFailure(.storeFailure, "Injected()")) { try rig.commit(Gesture(changes: [Rig.card("card0001", "One")])) }
+    #expect(try rig.store.read { try $0.device(rows: true).json } == before)
+    var dormant = try rig.meta()
+    dormant.state = .dormant
+    _ = try rig.store.write(.commit) { _ in Planned((), ReplicaBatch(writes: [.replica(dormant.replica, .meta(dormant))])) }
+    #expect(throws: CommitFailure(.notWritable, "a dormant replica does not commit")) {
+      try rig.commit(Gesture(changes: [Rig.card("card0001", "One")]))
+    }
   }
 
   // Once the transaction has committed, the receipt comes back. The steps after it (publishing to the views and the

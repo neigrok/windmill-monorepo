@@ -14,10 +14,11 @@ public struct Coalescing: Sendable {
   }
 
   // A ready plain entry joins the last earlier entry touching its record, when that one is ready, plain and never
-  // numbered, no command entry of the scope lies between them, and text comes from one engine instance. An entry that
-  // made its record alive, a create or a revive, cancels with its dependents when the join leaves it dead. It made the
-  // record alive only if drawn without it holds the record not alive, so a cancel never changes what is drawn (§11.2
-  // property 2): a delete that absorbed a revive of a live record did not, and is sent.
+  // numbered, no command entry of the scope lies between them, and text comes from one engine instance. The earlier
+  // entry cancels with its dependents only when it is a create (its life alive at its born), the record is alive in
+  // neither drawn nor stored without the two entries, and the join leaves it dead. A held delete may still be undone and
+  // a held create or revive released, so both views are read; a revive never cancels, since the registers it carries
+  // outlive a later death, so a revive joined with a delete is sent as one delete.
   @discardableResult
   public func coalesce(_ localId: String, in replica: inout LoadedReplica) throws -> Bool {
     guard let entry = replica.entry(localId), entry.state == .ready, entry.isPlain else { return false }
@@ -38,14 +39,17 @@ public struct Coalescing: Sendable {
       if !base.texts.isEmpty || !delta.texts.isEmpty { target.baseTexts.merge(entry.baseTexts) { own, _ in own } }
     }
     try replica.move(localId, .coalesce)
-    guard joined.lattice.born != nil, joined.removes, base.lattice.life?.isAlive == true else { return true }
-    var without = replica.rows(target.scope).row(base.key)?.lattice ?? Lattice()
-    for other in replica.entries(in: target.scope) where other.commitOrder != target.commitOrder {
-      for delta in other.drawnDeltas where delta.key == base.key {
-        without = try Join.record(registry.type(base.key.type), without, delta.lattice)
+    guard let life = base.lattice.life, life.isAlive, life.stamp == base.lattice.born, joined.removes else { return true }
+    let isAliveWithoutTarget = { [replica] (mode: ViewMode) throws -> Bool in
+      var without = replica.rows(target.scope).row(base.key)?.lattice ?? Lattice()
+      for other in replica.entries(in: target.scope) where other.commitOrder != target.commitOrder && (other.state != .held || mode == .drawn) {
+        for delta in other.drawnDeltas where delta.key == base.key {
+          without = try Join.record(registry.type(base.key.type), without, delta.lattice)
+        }
       }
+      return without.life?.isAlive == true
     }
-    if without.life?.isAlive != true { try cancel([(target, [base])], by: .coalesce, in: &replica) }
+    if try !isAliveWithoutTarget(.drawn), try !isAliveWithoutTarget(.stored) { try cancel([(target, [base])], by: .coalesce, in: &replica) }
     return true
   }
 
@@ -206,9 +210,12 @@ public struct Hold: Sendable {
     return true
   }
 
-  // Leaving the app, engine start, sign-in and sign-out release every held entry.
-  public func releaseAll(in replica: inout LoadedReplica) throws {
-    for entry in replica.outbox where entry.state == .held { try release(entry.localId, in: &replica) }
+  // Leaving the app, engine start, sign-in and sign-out release every held entry. True iff there was one.
+  @discardableResult
+  public func releaseAll(in replica: inout LoadedReplica) throws -> Bool {
+    let held = replica.outbox.filter { $0.state == .held }
+    for entry in held { try release(entry.localId, in: &replica) }
+    return !held.isEmpty
   }
 
   // The in-process timer: every held entry whose `releaseAt` has come.

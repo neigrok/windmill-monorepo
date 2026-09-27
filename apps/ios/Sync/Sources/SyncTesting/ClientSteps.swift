@@ -30,6 +30,8 @@ public protocol ClientDevice {
   mutating func reidentify(instance: inout Instance, identities: IdentitySource) throws
   mutating func changeEpoch(to epoch: String, instance: inout Instance, identities: IdentitySource) throws
   func anonCount(of product: String, in replica: String) throws -> [String: Int]
+  // The active replica with every row loaded, which a `view` step folds.
+  func activeReplica() throws -> LoadedReplica
   // The whole store in the corpus's device form, and every event since the device was built.
   func dump() throws -> JSON
   var events: [EngineEvent] { get }
@@ -56,12 +58,13 @@ public struct PlannedDevice: ClientDevice {
   public var events: [EngineEvent] { device.events }
 
   public mutating func commit(_ gesture: Gesture?, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> CommitOutcome? {
-    try device.modify(device.active) { replica in
+    let gestureIdTaken = gesture?.gestureId.map(device.carries(gestureId:)) ?? false
+    return try device.modify(device.active) { replica in
       guard let gesture else {
         try commits.checkWritable(replica.meta)
         return nil
       }
-      return try commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities)
+      return try commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
     }
   }
 
@@ -146,19 +149,24 @@ public struct PlannedDevice: ClientDevice {
     return lifecycle.anonCount(of: product, in: replica)
   }
 
+  public func activeReplica() throws -> LoadedReplica { device.activeReplica }
+
   public func dump() throws -> JSON { device.json }
 }
 
 // MARK: - The runner
 
-// What one device's steps share: its identity queues, the actor its instance holds, and the requests awaiting answers.
+// What one device's steps share: the registry, its identity queues, the actor its instance holds, and the requests
+// awaiting answers.
 public struct StepContext {
+  public let registry: Registry
   public let identities: QueuedIdentities
   public var actor: Stamp.Actor
   var lastPush: PushRequest?
   var lastPull: PullRequest?
 
-  public init(identities: QueuedIdentities, actor: Stamp.Actor) {
+  public init(registry: Registry, identities: QueuedIdentities, actor: Stamp.Actor) {
+    self.registry = registry
     self.identities = identities
     self.actor = actor
   }
@@ -173,13 +181,14 @@ public enum ClientSteps {
                                                device makeDevice: (LoadedDevice, Limits) throws -> Device) throws -> JSON {
     let limits = Limits(pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)))
     var device = try makeDevice(try LoadedDevice(json: input.member("device"), registry: registry), limits)
-    var context = StepContext(identities: try QueuedIdentities(input), actor: try Stamp.Actor(input["actor"]?.asString() ?? ClientSteps.actor))
+    var context = StepContext(
+      registry: registry, identities: try QueuedIdentities(input), actor: try Stamp.Actor(input["actor"]?.asString() ?? ClientSteps.actor))
     var returns: [JSON] = []
     for step in try input.member("steps").asArray() {
       let before = (device: device, identities: context.identities.snapshot(), context: context)
       do {
         returns.append(try perform(step, on: &device, context: &context))
-      } catch let error where error is CommitError || error is TransitionError {
+      } catch let error where error is CommitFailure || error is TransitionError {
         device = before.device
         context = before.context
         context.identities.restore(before.identities)
@@ -269,6 +278,16 @@ public enum ClientSteps {
     case "anonCount":
       let counts = try device.anonCount(of: try step.member("product").asString(), in: try step.member("replica").asString())
       return JSON.object(from: counts) { JSON($0) } ?? [:]
+    case "view":
+      let scope = try ScopeRef(json: step.member("scope"))
+      let replica = try device.activeReplica()
+      let view = try ScopeView(replica, scope, try step.member("withHeld").asBool() ? .drawn : .stored, registry: context.registry)
+      let stored = try ScopeView(replica, scope, .stored, registry: context.registry)
+      let capped = context.registry.types.filter { $0.cap != nil && $0.scope == context.registry.scopeKind(of: scope) }
+      return [
+        "records": .array(view.all.map(\.json)),
+        "capCount": .object(JSON.Object(uniqueKeysWithValues: capped.map { ($0.name, JSON(stored.visibleCount($0.name))) })),
+      ]
     case let op:
       throw VectorError("unknown step \(op)")
     }

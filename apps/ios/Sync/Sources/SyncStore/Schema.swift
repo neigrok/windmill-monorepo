@@ -158,14 +158,15 @@ enum Schema {
     CREATE INDEX        outbox_state ON outbox(replica, state, commit_order);
 
     CREATE TABLE notice (
-      id      TEXT PRIMARY KEY,
-      replica TEXT NOT NULL REFERENCES replica ON DELETE CASCADE,
-      product TEXT NOT NULL,
-      scope   TEXT NOT NULL,
-      code    TEXT NOT NULL,
-      detail  BLOB NULL,
-      content BLOB NOT NULL,
-      at      INTEGER NOT NULL
+      id        TEXT PRIMARY KEY,
+      replica   TEXT NOT NULL REFERENCES replica ON DELETE CASCADE,
+      product   TEXT NOT NULL,
+      scope     TEXT NOT NULL,
+      code      TEXT NOT NULL,
+      detail    BLOB NULL,
+      content   BLOB NOT NULL,
+      at        INTEGER NOT NULL,
+      dismissed INTEGER NOT NULL CHECK (dismissed IN (0, 1))
     );
 
     CREATE TABLE device_row (

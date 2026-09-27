@@ -140,11 +140,11 @@ public struct CheckedCommand: Sendable, Hashable {
   public var name: String { definition.name }
 
   public static func == (lhs: CheckedCommand, rhs: CheckedCommand) -> Bool {
-    lhs.name == rhs.name && lhs.args == rhs.args
+    lhs.name.isSameID(as: rhs.name) && lhs.args == rhs.args
   }
 
   public func hash(into hasher: inout Hasher) {
-    hasher.combine(name)
+    hasher.combine(Array(name.utf8))
     hasher.combine(args)
   }
 }
@@ -167,8 +167,8 @@ public enum IntentShape {
   }
 
   static func parse(_ json: JSON, isReplica: Bool, registry: Registry) throws(Refusal) -> CheckedIntent {
-    guard case .object(let object) = json,
-          object.keys.allSatisfy({ ["n", "scope", "d", "guard", "cmd", "gestureId"].contains($0) }),
+    guard case .object(let object) = json, !holdsNul(json),
+          (try? object.expectKeys(required: ["scope"], optional: ["n", "d", "guard", "cmd", "gestureId"])) != nil,
           case .string(let scopeText)? = object["scope"], let scope = try? ScopeRef(scopeText),
           let kind = registry.scopeKind(of: scope), Values.isScopeID(scope, registry: registry),
           object["gestureId"].map({ if case .string = $0 { true } else { false } }) ?? true
@@ -182,8 +182,18 @@ public enum IntentShape {
     return CheckedIntent(scope: scope, deltas: deltas, guards: guards, command: command)
   }
 
+  // Any string of the intent, a key or a value at any depth, holding U+0000.
+  static func holdsNul(_ json: JSON) -> Bool {
+    switch json {
+    case .string(let text): text.utf8.contains(0)
+    case .array(let items): items.contains(where: holdsNul)
+    case .object(let object): object.members.contains { $0.key.utf8.contains(0) || holdsNul($0.value) }
+    case .null, .bool, .number: false
+    }
+  }
+
   static func delta(_ json: JSON, kind: ScopeKind, isReplica: Bool, registry: Registry) throws(Refusal) -> PlannedDelta {
-    guard case .object(let object) = json, object.keys.allSatisfy({ ["t", "id", "life", "born", "f", "x"].contains($0) }),
+    guard case .object(let object) = json, (try? object.expectKeys(required: ["t", "id"], optional: ["life", "born", "f", "x"])) != nil,
           case .string(let typeName)? = object["t"], let type = registry.type(typeName), type.scope == kind,
           let idJSON = object["id"], Values.isID(idJSON, of: type, registry: registry), let id = try? RecordID(json: idJSON)
     else { throw Refusal(.invalid) }
@@ -200,7 +210,7 @@ public enum IntentShape {
     var texts: [String: TextWrite] = [:]
     for (name, write) in try Values.object(object["x"] ?? [:]) {
       guard let field = type.field(name), case .text = field.kind, !isReplica || field.writer == .client,
-            case .object(let parts) = write, parts.keys.sorted() == ["base", "text"],
+            case .object(let parts) = write, (try? parts.expectKeys(required: ["base", "text"])) != nil,
             case .string(let text)? = parts["text"], let base = parts["base"].flatMap(textBase)
       else { throw Refusal(.invalid) }
       texts[name] = TextWrite(text: text, base: base)
@@ -229,7 +239,7 @@ public enum IntentShape {
   }
 
   static func guardOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> Guard {
-    guard case .object(let object) = json, object.keys.sorted() == ["field", "id", "stamp", "t"],
+    guard case .object(let object) = json, (try? object.expectKeys(required: ["field", "id", "stamp", "t"])) != nil,
           case .string(let typeName)? = object["t"], let type = registry.type(typeName), type.scope == kind,
           let idJSON = object["id"], Values.isID(idJSON, of: type, registry: registry), let id = try? RecordID(json: idJSON),
           case .string(let fieldName)? = object["field"], let field = type.field(fieldName), field.kind.isLattice,
@@ -241,7 +251,7 @@ public enum IntentShape {
   }
 
   static func commandOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> CheckedCommand {
-    guard case .object(let object) = json, object.keys.sorted() == ["args", "name"],
+    guard case .object(let object) = json, (try? object.expectKeys(required: ["args", "name"])) != nil,
           case .string(let name)? = object["name"], let definition = registry.command(name), definition.scope == kind,
           case .object(let args)? = object["args"],
           args.keys.allSatisfy({ key in definition.args.contains { $0.name.utf8.elementsEqual(key.utf8) } })
@@ -399,7 +409,7 @@ enum Values {
     if value.isNull { return field.domain?.nullable ?? (field.ref == nil) }
     if let target = field.ref, !(registry.type(target).map { isID(value, of: $0, registry: registry) } ?? false) { return false }
     if let quantum = field.quantum, case .number(let number) = value, !quantum.holds(number.value) { return false }
-    return withinLength(value, unit: field.unit, min: field.min, max: field.max)
+    return field.bounds?.admits(value) ?? true
   }
 
   static func accepts(_ value: JSON, for argument: ArgumentDef, registry: Registry) -> Bool {
@@ -413,22 +423,14 @@ enum Values {
     }
   }
 
-  // A bound in its unit: a string's own length, any other value's JCS text.
-  static func withinLength(_ value: JSON, unit: MeasureUnit?, min: Int?, max: Int?) -> Bool {
-    guard min != nil || max != nil else { return true }
-    let text = if case .string(let string) = value { string } else { value.jcsText }
-    let length = (unit ?? .chars).length(of: text)
-    return length >= (min ?? 0) && length <= (max ?? Int.max)
-  }
-
   static func accepts(_ value: JSON, in domain: Domain) -> Bool {
     if value.isNull { return domain.nullable }
     switch domain.shape {
-    case .string(let allowed, let pattern, let unit, let min, let max):
+    case .string(let allowed, let pattern, let bounds):
       guard case .string(let text) = value else { return false }
       if let allowed, !allowed.contains(where: { $0.utf8.elementsEqual(text.utf8) }) { return false }
       if let pattern, !pattern.matches(text) { return false }
-      return withinLength(value, unit: unit, min: min, max: max)
+      return bounds?.admits(value) ?? true
     case .number(let integer, let min, let max):
       guard case .number(let number) = value else { return false }
       if integer && number.value.rounded(.towardZero) != number.value { return false }

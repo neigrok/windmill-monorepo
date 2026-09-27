@@ -1,7 +1,9 @@
 import SyncCore
 
 // §6.11 the server's text merge: tokens, the least shortest edit script, diff3 over its hunks, and the merge of one
-// text write onto the stored head. Tokens compare by their Unicode scalars, never by canonical equivalence.
+// text write onto the stored head. Tokens compare by their Unicode scalars, never by canonical equivalence. An edit
+// script takes (base tokens + 1) × (side tokens + 1) cells; past `workCells` diff3 computes none and makes the whole text
+// one conflict.
 
 public enum TextMerge {
   public enum Edit: String, Sendable {
@@ -14,6 +16,16 @@ public enum TextMerge {
     public let conflict: Bool
     public let merged: Bool
     public let baseText: String
+
+    public static func == (lhs: Merged, rhs: Merged) -> Bool {
+      lhs.text.utf8.elementsEqual(rhs.text.utf8) && lhs.conflict == rhs.conflict && lhs.merged == rhs.merged
+        && lhs.baseText.utf8.elementsEqual(rhs.baseText.utf8)
+    }
+
+    public func hash(into hasher: inout Hasher) {
+      hasher.combine(Array(text.utf8))
+      hasher.combine(merged)
+    }
   }
 
   // ECMAScript `\s`, exactly.
@@ -133,9 +145,13 @@ public enum TextMerge {
     return hunks
   }
 
-  public static func diff3(base: String, head: String, mine: String) -> (text: String, conflict: Bool) {
+  public static func diff3(base: String, head: String, mine: String, workCells: Int) -> (text: String, conflict: Bool) {
     let baseTokens = tokens(base)
-    let all = (hunks(from: baseTokens, to: tokens(head), isHead: true) + hunks(from: baseTokens, to: tokens(mine), isHead: false))
+    let headTokens = tokens(head)
+    let mineTokens = tokens(mine)
+    let cells = { (side: [String]) in (baseTokens.count + 1) * (side.count + 1) }
+    if cells(headTokens) > workCells || cells(mineTokens) > workCells { return (conflict(head, mine), true) }
+    let all = (hunks(from: baseTokens, to: headTokens, isHead: true) + hunks(from: baseTokens, to: mineTokens, isHead: false))
       .sorted { ($0.start, $0.end, $0.isHead ? 0 : 1) < ($1.start, $1.end, $1.isHead ? 0 : 1) }
     var regions: [(start: Int, end: Int, hunks: [Hunk])] = []
     for hunk in all {
@@ -175,7 +191,12 @@ public enum TextMerge {
     if mineWhitespaceOnly { return (head, false) }
     if head.isEmpty { return (mine, false) }
     if mine.isEmpty { return (head, false) }
-    return (trimmed(head, leading: false) + "\n\n" + trimmed(mine, leading: true), true)
+    return (conflict(head, mine), true)
+  }
+
+  // A conflict emits both sides: head without its trailing whitespace, a blank line, and mine without its leading.
+  static func conflict(_ head: String, _ mine: String) -> String {
+    trimmed(head, leading: false) + "\n\n" + trimmed(mine, leading: true)
   }
 
   // One side's text over a region's base range, its hunks applied.
@@ -201,10 +222,10 @@ public enum TextMerge {
 
   // Steps 1–2 of §6.11 and step 4's `merged`; `revision` answers a superseded head by its rev.
   public static func merge(
-    head: TextState, base: TextBase, mine: String, revision: (Int64) -> String?
+    head: TextState, base: TextBase, mine: String, workCells: Int, revision: (Int64) -> String?
   ) throws(Refusal) -> Merged {
     let baseText = try resolve(base, head: head, mine: mine, revision: revision)
-    let (text, conflict) = merged(base: baseText, head: head.text, mine: mine)
+    let (text, conflict) = merged(base: baseText, head: head.text, mine: mine, workCells: workCells)
     let isMerged = conflict || (head.merged && !baseText.utf8.elementsEqual(head.text.utf8))
     return Merged(text: text, conflict: conflict, merged: isMerged, baseText: baseText)
   }
@@ -230,10 +251,10 @@ public enum TextMerge {
     return longer.starts(with: prefix)
   }
 
-  static func merged(base: String, head: String, mine: String) -> (String, Bool) {
+  static func merged(base: String, head: String, mine: String, workCells: Int) -> (String, Bool) {
     if mine.utf8.elementsEqual(head.utf8) { return (head, false) }
     if base.utf8.elementsEqual(head.utf8) { return (mine, false) }
     if base.utf8.elementsEqual(mine.utf8) { return (head, false) }
-    return diff3(base: base, head: head, mine: mine)
+    return diff3(base: base, head: head, mine: mine, workCells: workCells)
   }
 }

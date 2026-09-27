@@ -27,8 +27,43 @@ public protocol CommitContext: ScopeReader {
   func mintID(_ type: String) -> RecordID
 }
 
+// §7.1 a commit that throws, before its transaction commits, throws this, of one of three kinds told apart by where it
+// arises. A `Refused` outcome is a result, never a failure.
+public struct CommitFailure: Error, Hashable, Sendable, CustomStringConvertible {
+  public enum Kind: String, Hashable, Sendable {
+    // Step 1: the replica's state forbids writes.
+    case notWritable = "not-writable"
+    // A programming error: a check before step 2, a throw of steps 2 to 10, or a misuse of the read-and-commit context.
+    case malformed
+    // Anything else: the transaction could not commit, and nothing is written.
+    case storeFailure = "store-failure"
+  }
+
+  public let kind: Kind
+  public let description: String
+
+  public init(_ kind: Kind, _ description: String) {
+    self.kind = kind
+    self.description = description
+  }
+
+  public static func malformed(_ description: String) -> CommitFailure {
+    CommitFailure(.malformed, description)
+  }
+
+  public static func == (lhs: CommitFailure, rhs: CommitFailure) -> Bool {
+    lhs.kind == rhs.kind && lhs.description.utf8.elementsEqual(rhs.description.utf8)
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(kind)
+    hasher.combine(Array(description.utf8))
+  }
+}
+
 public protocol Replica: Sendable {
-  // §7.1 read-and-commit: the body decides a gesture from the views, or nil to write nothing and tick no clock.
+  // §7.1 read-and-commit: the body decides a gesture from the views, or nil to write nothing and tick no clock. Throws a
+  // `CommitFailure`, or the body's own error as it threw it.
   func commit<T>(_ scope: ScopeRef, _ body: (any CommitContext) throws -> (Gesture?, T)) throws -> (outcome: CommitOutcome?, value: T)
   // §7.3: true iff every entry of the gesture was still held, and so removed.
   func undo(_ gestureId: String) throws -> Bool

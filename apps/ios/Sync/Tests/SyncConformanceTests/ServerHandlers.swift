@@ -23,13 +23,17 @@ enum ServerHandlers {
     "text/diff3.json": { input in
       let merged = TextMerge.diff3(
         base: try input.member("base").asString(), head: try input.member("head").asString(),
-        mine: try input.member("mine").asString())
+        mine: try input.member("mine").asString(), workCells: Constants.mergeWorkCells)
       return ["text": .string(merged.text), "conflict": .bool(merged.conflict)]
     },
     "text/merge.json": { try textMerge($0) },
     "admit/requests.json": { try requests($0) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
+    "live/death.json": { input in
+      let server = try makeServer(input)
+      return ["frame": server.deathFrame(of: try ScopeRef(json: input.member("scope")), for: try account(input)) ?? .null]
+    },
     "pull/hello.json": { input in
       var server = try makeServer(input)
       return ["response": server.hello(account: try account(input), at: try input.member("serverTime").asInteger()).json]
@@ -93,7 +97,9 @@ enum ServerHandlers {
     let mine = try input.member("mine").asString()
     let revisions = try input.member("revisions").asArray().map { (try $0.member("rev").asInteger(), try $0.member("text").asString()) }
     do throws(Refusal) {
-      let merged = try TextMerge.merge(head: stored, base: base, mine: mine) { rev in revisions.first { $0.0 == rev }?.1 }
+      let merged = try TextMerge.merge(head: stored, base: base, mine: mine, workCells: Constants.mergeWorkCells) { rev in
+        revisions.first { $0.0 == rev }?.1
+      }
       return ["text": .string(merged.text), "conflict": .bool(merged.conflict), "merged": .bool(merged.merged), "baseText": .string(merged.baseText)]
     } catch let refusal {
       return ["refuse": refusal.code.json]
@@ -113,7 +119,8 @@ enum ServerHandlers {
     return ["result": admitted.result.json, "state": state.json]
   }
 
-  // `{state, calls}`: §6.3 for each call in order; a call ended by `crashAfter` or `transientAt` answers null.
+  // `{state, calls}`: §6.3 for each call in order; a call ended by `crashAfter` or `transientAt` answers null, and
+  // `faultAt` faults that admit.
   static func requests(_ input: JSON) throws -> JSON {
     var server = try makeServer(input)
     var results: [JSON] = []
@@ -122,7 +129,9 @@ enum ServerHandlers {
         account: try call.member("account").asString(), requestId: try call["requestId"]?.asString(),
         tool: try call.member("tool").asString(), args: try call.member("args"), intents: try call.member("intents").asArray())
       let faults = CallFaults(
-        crashAfter: try call["crashAfter"].map { Int(try $0.asInteger()) }, transientAt: try call["transientAt"].map { Int(try $0.asInteger()) })
+        crashAfter: try call["crashAfter"].map { Int(try $0.asInteger()) },
+        transientAt: try call["transientAt"].map { Int(try $0.asInteger()) },
+        faultAt: try call["faultAt"].map { Int(try $0.asInteger()) })
       results.append(server.call(serverCall, at: try call.member("serverNow").asInteger(), faults: faults) ?? .null)
     }
     return ["results": .array(results), "state": server.state.json]
@@ -188,7 +197,7 @@ enum ServerHandlers {
         if let device = try line["device"]?.asString(), let account { accounts[device] = account }
       } else if let frame = line["frame"] {
         let device = try line.member("device").asString()
-        if !isPublished(frame, to: accounts[device], among: published, in: server.state) {
+        if !isPublished(frame, to: accounts[device], among: published, by: server) {
           differences.append("\(place): the server never sent \(frame.jcsText)")
         }
       }
@@ -196,13 +205,11 @@ enum ServerHandlers {
     return differences
   }
 
-  static func isPublished(_ frame: JSON, to account: String?, among events: [LiveEvent], in state: ServerState) -> Bool {
+  static func isPublished(_ frame: JSON, to account: String?, among events: [LiveEvent], by server: ModelServer) -> Bool {
     events.contains { event in
       switch event {
-      case .change(_, let sent): return sent == frame
-      case .death(let key):
-        let op = state.scopes[key]?.owner.isSameID(as: account) == true ? "gone" : "not-found"
-        return frame == ["op": .string(op), "scope": key.ref.json]
+      case .change(_, let sent): sent == frame
+      case .death(let key): ScopeKey(key.ref, account: account) == key && server.deathFrame(of: key.ref, for: account) == frame
       }
     }
   }

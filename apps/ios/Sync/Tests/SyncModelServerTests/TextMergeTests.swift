@@ -33,14 +33,16 @@ struct TextMergeTests {
     return lengths[0][0]
   }
 
-  // Every non-whitespace token a side inserted, with every base token both sides kept, is in the result as often.
-  @Test func aMergeKeepsEveryInsertedTokenAndEveryBaseTokenNeitherSideDeleted_INV12() {
+  // Every non-whitespace token a side inserted, with every base token both sides kept, is in the result as often: region
+  // by region, and as one whole-text conflict past the work bound.
+  @Test(arguments: [Constants.mergeWorkCells, 1])
+  func aMergeKeepsEveryInsertedTokenAndEveryBaseTokenNeitherSideDeleted_INV12(workCells: Int) {
     var draws = SplitMix64(seed: 12)
     for _ in 0..<600 {
       let base = randomText(&draws)
       let head = randomText(&draws)
       let mine = randomText(&draws)
-      let merged = TextMerge.diff3(base: base, head: head, mine: mine)
+      let merged = TextMerge.diff3(base: base, head: head, mine: mine, workCells: workCells)
       let result = counts(TextMerge.tokens(merged.text))
       let headScript = TextMerge.script(TextMerge.tokens(base), TextMerge.tokens(head))
       let mineScript = TextMerge.script(TextMerge.tokens(base), TextMerge.tokens(mine))

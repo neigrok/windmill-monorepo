@@ -83,15 +83,10 @@ struct BatchWriter {
         """, arguments: [replica, scope.text, kind.rawValue])
     case .deleteKnown(let scope):
       try db.execute(sql: "DELETE FROM known_scope WHERE replica = ? AND scope = ?", arguments: [replica, scope.text])
-    case .putNotice(let notice):
-      try db.execute(sql: """
-        INSERT INTO notice (replica, id, product, scope, code, detail, content, at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-        ON CONFLICT (id) DO UPDATE SET replica = excluded.replica, product = excluded.product, scope = excluded.scope,
-          code = excluded.code, detail = excluded.detail, content = excluded.content, at = excluded.at
-        """, arguments: [replica, notice.id, notice.product, notice.scope.text, notice.code.text, notice.detail.map(Blob.of),
-                         Blob.of(notice.content.json), notice.at])
-    case .deleteNotice(let id):
-      try db.execute(sql: "DELETE FROM notice WHERE id = ? AND replica = ?", arguments: [id, replica])
+    case .putNotice(let notice): try put(notice, in: replica)
+    case .moveNotice(let notice):
+      try db.execute(sql: "DELETE FROM notice WHERE id = ?", arguments: [notice.id])
+      try put(notice, in: replica)
     case .putDeviceRow(let product, let key, let value):
       try db.execute(sql: """
         INSERT INTO device_row (replica, product, key, value) VALUES (?, ?, ?, ?)
@@ -130,6 +125,20 @@ struct BatchWriter {
       try db.execute(sql: "UPDATE \(table) SET replica = ? WHERE replica = ?", arguments: [id, replica])
     }
     try db.execute(sql: "UPDATE device SET active_replica = ? WHERE active_replica = ?", arguments: [id, replica])
+  }
+
+  // MARK: Notices
+
+  // A notice keeps its replica: the same id under another replica is refused, as a local id is.
+  func put(_ notice: Notice, in replica: String) throws {
+    try db.execute(sql: """
+      INSERT INTO notice (replica, id, product, scope, code, detail, content, at, dismissed) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+      ON CONFLICT (id) DO UPDATE SET product = excluded.product, scope = excluded.scope, code = excluded.code,
+        detail = excluded.detail, content = excluded.content, at = excluded.at, dismissed = excluded.dismissed
+      WHERE notice.replica = excluded.replica
+      """, arguments: [replica, notice.id, notice.product, notice.scope.text, notice.code.text, notice.detail.map(Blob.of),
+                       Blob.of(notice.content.json), notice.at, notice.isDismissed])
+    guard db.changesCount == 1 else { throw StoreError.localIdTaken(notice.id) }
   }
 
   // MARK: The outbox

@@ -238,6 +238,7 @@ public struct TypeDef: Sendable {
     guard !governsTree || (identity == .minted && revivable == false) else {
       throw RegistryError("a governing type is minted and not revivable")
     }
+    guard !governsTree || idSpace == .global else { throw RegistryError("a governing type's ids are global") }
     guard revivable != true || deadRows == .keep else { throw RegistryError("a revivable type keeps its dead rows") }
     guard origins.contains(.replica) else { throw RegistryError("origins always include replica") }
     guard visibleWhen == nil || !life else { throw RegistryError("visibleWhen is for types without life") }
@@ -259,7 +260,7 @@ public struct TypeDef: Sendable {
       guard scope == .tree, identity == .singleton else {
         throw RegistryError("field \(field.name): opens is for a field of a tree singleton")
       }
-      guard case .string(let allowed?, _, _, _, _)? = field.domain?.shape else { continue }
+      guard case .string(let allowed?, _, _)? = field.domain?.shape else { continue }
       for value in opens where !allowed.contains(where: { $0.utf8.elementsEqual(value.utf8) }) {
         throw RegistryError("field \(field.name): opens the value \(value) outside its domain")
       }
@@ -432,9 +433,7 @@ public struct FieldDef: Sendable {
   public let writer: Writer
   public let ref: String?
   public let parent: Bool
-  public let unit: MeasureUnit?
-  public let min: Int?
-  public let max: Int?
+  public let bounds: Bounds?
   public let domain: Domain?
   public let quantum: Quantum?
   public let opens: [String]?
@@ -454,9 +453,7 @@ public struct FieldDef: Sendable {
         guard try parent.asBool() else { throw RegistryError("parent is true or absent") }
         return true
       } ?? false
-      unit = try object["unit"].map { try MeasureUnit(decoding: $0.asString()) }
-      min = try object["min"].map { Int(try $0.asInteger(atLeast: 0)) }
-      max = try object["max"].map { Int(try $0.asInteger(atLeast: 1)) }
+      bounds = try Bounds(in: object)
       domain = try object["domain"].map { try Domain(json: $0) }
       quantum = try object["quantum"].map { step in
         guard let quantum = Quantum(try step.asDouble()) else { throw RegistryError("a quantum is an integer or 1/k") }
@@ -464,7 +461,7 @@ public struct FieldDef: Sendable {
       }
       opens = try object["opens"]?.asDistinctStrings()
       guard !parent || ref != nil else { throw RegistryError("the parent field is a ref") }
-      guard !kind.isText || (unit != nil && max != nil) else { throw RegistryError("a text field has unit and max") }
+      guard !kind.isText || bounds?.max != nil else { throw RegistryError("a text field has unit and max") }
       guard !kind.isSerial || writer == .server else { throw RegistryError("a serial field is server-written") }
       guard quantum == nil || domain?.isNumber == true else { throw RegistryError("a quantum needs a number domain") }
       guard opens == nil || (writer == .server && opens?.isEmpty == false) else {
@@ -479,9 +476,7 @@ public struct FieldDef: Sendable {
     var object: JSON.Object = ["kind": .string(kind.name), "writer": .string(writer.rawValue)]
     object["ref"] = ref.map { .string($0) }
     object["parent"] = parent ? true : nil
-    object["unit"] = unit.map { .string($0.rawValue) }
-    object["min"] = min.map { JSON($0) }
-    object["max"] = max.map { JSON($0) }
+    bounds?.write(into: &object)
     object["domain"] = domain?.json
     object["quantum"] = quantum.map { .number(JSON.Number($0.step)!) }
     object["opens"] = opens.map { .array($0.map { .string($0) }) }
@@ -578,6 +573,43 @@ public enum MeasureUnit: String, Sendable, CaseIterable {
   }
 }
 
+// D-9 a length bound, always in its stated unit: a string is measured itself, any other value by its JCS text.
+public struct Bounds: Sendable, Hashable {
+  public let unit: MeasureUnit
+  public let min: Int?
+  public let max: Int?
+
+  public init(unit: MeasureUnit, min: Int? = nil, max: Int? = nil) {
+    self.unit = unit
+    self.min = min
+    self.max = max
+  }
+
+  // The `unit`, `min` and `max` keys of a field or a string domain; nil when it states none, and a bound without its
+  // unit is refused.
+  init?(in object: JSON.Object) throws {
+    let min = try object["min"].map { Int(try $0.asInteger(atLeast: 0)) }
+    let max = try object["max"].map { Int(try $0.asInteger(atLeast: 1)) }
+    guard let unit = try object["unit"].map({ try MeasureUnit(decoding: $0.asString()) }) else {
+      guard min == nil && max == nil else { throw RegistryError("a bound states its unit") }
+      return nil
+    }
+    self.init(unit: unit, min: min, max: max)
+  }
+
+  public func admits(_ value: JSON) -> Bool {
+    let text = if case .string(let string) = value { string } else { value.jcsText }
+    let length = unit.length(of: text)
+    return length >= (min ?? 0) && length <= (max ?? Int.max)
+  }
+
+  func write(into object: inout JSON.Object) {
+    object["unit"] = .string(unit.rawValue)
+    object["min"] = min.map { JSON($0) }
+    object["max"] = max.map { JSON($0) }
+  }
+}
+
 // A number field's step, rounded half away from zero in doubles (SPEC-GAP 12); the server accepts only fixed points.
 public struct Quantum: Sendable, Hashable {
   public let step: Double
@@ -611,7 +643,7 @@ public struct Domain: Sendable {
   public let shape: Shape
 
   public indirect enum Shape: Sendable {
-    case string(allowed: [String]?, pattern: Pattern?, unit: MeasureUnit?, min: Int?, max: Int?)
+    case string(allowed: [String]?, pattern: Pattern?, bounds: Bounds?)
     case number(integer: Bool, min: Double?, max: Double?)
     case boolean
     case fracKey
@@ -638,9 +670,7 @@ public struct Domain: Sendable {
       shape = .string(
         allowed: allowed,
         pattern: try object["pattern"].map { try Pattern($0.asString()) },
-        unit: try object["unit"].map { try MeasureUnit(decoding: $0.asString()) },
-        min: try object["min"].map { Int(try $0.asInteger(atLeast: 0)) },
-        max: try object["max"].map { Int(try $0.asInteger(atLeast: 1)) })
+        bounds: try Bounds(in: object))
     case "number":
       try object.expectKeys(required: ["type"], optional: ["nullable", "integer", "min", "max"])
       shape = .number(
@@ -675,13 +705,11 @@ public struct Domain: Sendable {
   var json: JSON {
     var object = JSON.Object()
     switch shape {
-    case .string(let allowed, let pattern, let unit, let min, let max):
+    case .string(let allowed, let pattern, let bounds):
       object["type"] = "string"
       object["enum"] = allowed.map { .array($0.map { .string($0) }) }
       object["pattern"] = pattern.map { .string($0.source) }
-      object["unit"] = unit.map { .string($0.rawValue) }
-      object["min"] = min.map { JSON($0) }
-      object["max"] = max.map { JSON($0) }
+      bounds?.write(into: &object)
     case .number(let integer, let min, let max):
       object["type"] = "number"
       object["integer"] = integer ? true : nil

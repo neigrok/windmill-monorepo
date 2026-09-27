@@ -65,9 +65,10 @@ public struct RuleContext: Sendable {
   }
 }
 
-// One record an intent touches: its state as locked, its joined row, and the op of the intent's own delta on it
-// (nil when only a command or a check wrote it).
+// One record an intent touches, in its scope or in one a command of it writes into: its state as locked, its joined row,
+// and the op of the intent's own delta on it (nil when only a command or a check wrote it).
 public struct RecordChange: Sendable, Hashable {
+  public let scope: ScopeKey
   public let key: RecordKey
   public let before: IdState
   public let after: Row

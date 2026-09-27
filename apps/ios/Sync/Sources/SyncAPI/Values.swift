@@ -397,7 +397,8 @@ public struct NoticeContent: Hashable, Sendable {
   }
 }
 
-// D-17 the durable record of a refused intent, for its product to describe.
+// D-17 the durable record of a refused intent, for its product to describe. Dismissing a notice hides it; it is never
+// deleted while an outbox entry's `orphanOf` names it.
 public struct Notice: Hashable, Sendable, Identifiable {
   public let id: String
   public let product: String
@@ -406,9 +407,10 @@ public struct Notice: Hashable, Sendable, Identifiable {
   public let detail: JSON?
   public let content: NoticeContent
   public let at: Int64
+  public let isDismissed: Bool
 
   public init(id: String, product: String, scope: ScopeRef, code: RefusalCode, detail: JSON?, content: NoticeContent,
-              at: Int64) {
+              at: Int64, isDismissed: Bool = false) {
     self.id = id
     self.product = product
     self.scope = scope
@@ -416,11 +418,13 @@ public struct Notice: Hashable, Sendable, Identifiable {
     self.detail = detail
     self.content = content
     self.at = at
+    self.isDismissed = isDismissed
   }
 
   public static func == (lhs: Notice, rhs: Notice) -> Bool {
     lhs.id.utf8.elementsEqual(rhs.id.utf8) && lhs.product.utf8.elementsEqual(rhs.product.utf8) && lhs.scope == rhs.scope
       && lhs.code == rhs.code && lhs.detail == rhs.detail && lhs.content == rhs.content && lhs.at == rhs.at
+      && lhs.isDismissed == rhs.isDismissed
   }
 
   public func hash(into hasher: inout Hasher) {
@@ -431,6 +435,7 @@ public struct Notice: Hashable, Sendable, Identifiable {
     hasher.combine(detail)
     hasher.combine(content)
     hasher.combine(at)
+    hasher.combine(isDismissed)
   }
 }
 

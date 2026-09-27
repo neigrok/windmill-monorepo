@@ -72,15 +72,15 @@ public struct ModelServer: Sendable {
     for (n, intent) in request.intents {
       guard take(n, intent, of: request.replica, account: account, at: serverNow, faults: faults, into: &answer) else { break }
     }
+    let lastN = state.replicas[request.replica]!.lastN
     if let conflict = answer.conflict {
-      if bound && answer.admissions == 0 { state.replicas[request.replica] = nil }
+      if bound && lastN == 0 && state.results[request.replica] == nil { state.replicas[request.replica] = nil }
       return Reply(status: 409, body: failure(409, conflict, at: serverNow).body, events: answer.events)
     }
-    state.results[request.replica] = state.results[request.replica]?.filter { $0.key > request.ackThrough }
-    if state.results[request.replica]?.isEmpty == true { state.results[request.replica] = nil }
+    let pruned = state.results[request.replica]?.filter { $0.key > min(request.ackThrough, lastN) }
+    state.results[request.replica] = pruned?.isEmpty == false ? pruned : nil
     var reply: JSON.Object = [
-      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "lastN": JSON(state.replicas[request.replica]!.lastN),
-      "results": .array(answer.results),
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "lastN": JSON(lastN), "results": .array(answer.results),
     ]
     reply["retry"] = answer.retry
     return Reply(status: 200, body: .object(reply), events: answer.events)
@@ -151,51 +151,64 @@ public struct ModelServer: Sendable {
   // MARK: - Server-origin calls
 
   // §6.3: a tool call's admits in order, stopping at the first refusal. With a `requestId` the call is deduplicated
-  // by `sha256(jcs({tool, args}))`, and each admit stores its result as part k. Nil when the call ended unanswered.
+  // by `sha256(jcs({tool, args}))`: each admit stores its result as part k, a resumed call answers its stored parts, and
+  // the call's result then ends its row `done`. The lookup, and a lease takeover, belong to the first admit the call
+  // runs, and roll back with it. Nil when the call ended unanswered.
   public mutating func call(_ call: ServerCall, at wall: Int64, faults: CallFaults = CallFaults()) -> JSON? {
     let serverNow = physNow(wall: wall)
     guard let requestId = call.requestId else {
       var last: AdmitResult?
-      for intent in call.intents {
-        let result = admitFromServer(intent, call: call, at: serverNow)
+      for (index, intent) in call.intents.enumerated() {
+        let result = admitFromServer(intent, call: call, faulting: faults.faultAt == index + 1, at: serverNow)
         last = result
         if result.isRefused { break }
       }
       return last?.json
     }
+    guard !requestId.isEmpty, !requestId.utf8.contains(where: { $0 == UInt8(ascii: "#") || $0 == 0 }) else {
+      return AdmitResult.refused(Refusal(.invalid)).json
+    }
     let key = RequestKey(account: call.account, requestId: requestId)
     let digest = SHA256Hex.of(JSON.object(["tool": .string(call.tool), "args": call.args]).jcs)
+    let before = state
     if let row = state.requests[key] {
       guard row.digest == digest else { return AdmitResult.refused(Refusal(.requestConflict)).json }
       if row.state == .done { return row.result }
       guard serverNow - row.startedAt >= Constants.requestLeaseMs else { return AdmitResult.refused(Refusal(.requestRunning)).json }
-      state.requests[key]!.startedAt = serverNow
     }
+    var row = state.requests[key] ?? RequestRecord(digest: digest, state: .running, startedAt: serverNow)
+    row.startedAt = serverNow
+    state.requests[key] = row
+    let first = row.parts.count + 1
+    var result: JSON?
     for (index, intent) in call.intents.enumerated() {
       let k = index + 1
-      if state.requests[key]?.parts[k] != nil { continue }
-      if faults.transientAt == k { return nil }
-      var tagged = (try? intent.asObject()) ?? JSON.Object()
-      tagged["gestureId"] = .string(requestId)
-      let result = admitFromServer(.object(tagged), call: call, at: serverNow)
-      let last = result.isRefused || k == call.intents.count
-      var row = state.requests[key] ?? RequestRecord(digest: digest, state: .running, startedAt: serverNow)
-      row.startedAt = serverNow
-      row.parts[k] = result.json
-      if last {
-        row.state = .done
-        row.result = result.json
+      if let part = state.requests[key]!.parts[k] {
+        result = part
+      } else {
+        if faults.transientAt == k {
+          if k == first { state = before }
+          return nil
+        }
+        var tagged = (try? intent.asObject()) ?? JSON.Object()
+        tagged["gestureId"] = .string(requestId)
+        let admitted = admitFromServer(.object(tagged), call: call, faulting: faults.faultAt == k, at: serverNow).json
+        state.requests[key]!.parts[k] = admitted
+        state.requests[key]!.startedAt = serverNow
+        if faults.crashAfter == k { return nil }
+        result = admitted
       }
-      state.requests[key] = row
-      if last { return result.json }
-      if faults.crashAfter == k { return nil }
+      if result?["s"] == "refused" { break }
     }
-    return state.requests[key]?.result
+    state.requests[key]!.state = .done
+    state.requests[key]!.result = result
+    return result
   }
 
-  // One admit of a call. A fault returns to the caller as `internal` (§6.6), the result its request row keeps.
-  mutating func admitFromServer(_ intent: JSON, call: ServerCall, at serverNow: Int64) -> AdmitResult {
+  // One admit of a call. A fault answers the caller `internal` at once (§6.6): it holds no queue to retry it.
+  mutating func admitFromServer(_ intent: JSON, call: ServerCall, faulting: Bool, at serverNow: Int64) -> AdmitResult {
     do {
+      guard !faulting else { throw AdmissionFault(description: "injected") }
       let admitted = try admission.admit(intent, from: .server(account: call.account, requestId: call.requestId), at: serverNow, in: &state)
       publish(admitted.events)
       return admitted.result
@@ -209,11 +222,12 @@ public struct ModelServer: Sendable {
   // §6.7: each requested scope runs its `beforePull` commands, then answers one page from the tables as they stand.
   public mutating func pull(_ body: JSON, account: String?, at wall: Int64) -> Reply {
     let serverNow = physNow(wall: wall)
-    guard case .object(let object) = body, object.keys == ["scopes"], case .array(let requested)? = object["scopes"],
+    guard case .object(let object) = body, (try? object.expectKeys(required: ["scopes"])) != nil,
+          case .array(let requested)? = object["scopes"],
           requested.count <= limits.pullMaxScopes else { return failure(400, "malformed", at: serverNow) }
     var scopes: [(scope: String, cursor: String?)] = []
     for entry in requested {
-      guard case .object(let pulled) = entry, pulled.keys.sorted() == ["cursor", "scope"],
+      guard case .object(let pulled) = entry, (try? pulled.expectKeys(required: ["cursor", "scope"])) != nil,
             case .string(let scope)? = pulled["scope"], let cursor = pulled["cursor"] else { return failure(400, "malformed", at: serverNow) }
       switch cursor {
       case .null: scopes.append((scope, nil))
@@ -260,6 +274,12 @@ public struct ModelServer: Sendable {
 
   public mutating func unsubscribe(_ socket: LiveSocket, from scopes: [ScopeRef]) {
     live.unsubscribe(socket.id, from: scopes)
+  }
+
+  // The frame a socket of `account` subscribed to `scope` receives when the scope dies; nil when it receives none.
+  public func deathFrame(of scope: ScopeRef, for account: String?) -> JSON? {
+    guard let key = ScopeKey(scope, account: account) else { return nil }
+    return LiveChannel.deathFrame(of: key, to: account, in: state, registry: registry)
   }
 
   // The frames a socket has been sent since it last took them, in the order they left.
@@ -322,28 +342,43 @@ public struct ServerCall: Sendable, Hashable {
     self.args = args
     self.intents = intents
   }
-}
 
-// Faults a call meets: a crash right after admit k commits, or admit k failing transiently and rolling back.
-public struct CallFaults: Sendable, Hashable {
-  public var crashAfter: Int?
-  public var transientAt: Int?
+  public static func == (lhs: ServerCall, rhs: ServerCall) -> Bool {
+    lhs.account.isSameID(as: rhs.account) && lhs.requestId.map { Array($0.utf8) } == rhs.requestId.map { Array($0.utf8) }
+      && lhs.tool.isSameID(as: rhs.tool) && lhs.args == rhs.args && lhs.intents == rhs.intents
+  }
 
-  public init(crashAfter: Int? = nil, transientAt: Int? = nil) {
-    self.crashAfter = crashAfter
-    self.transientAt = transientAt
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(Array(account.utf8))
+    hasher.combine(args)
   }
 }
 
-// §9.3 a push body, `{replica, ackThrough, intents}` with an integer `n ≥ 1` on every intent, in ascending `n`.
+// Faults a call meets: a crash right after admit k commits, admit k failing transiently and rolling back, or admit k
+// faulting.
+public struct CallFaults: Sendable, Hashable {
+  public var crashAfter: Int?
+  public var transientAt: Int?
+  public var faultAt: Int?
+
+  public init(crashAfter: Int? = nil, transientAt: Int? = nil, faultAt: Int? = nil) {
+    self.crashAfter = crashAfter
+    self.transientAt = transientAt
+    self.faultAt = faultAt
+  }
+}
+
+// §9.3 a push body, exactly `{replica, ackThrough, intents}`: a replica id of D-3's form, `rp_` and 32 lowercase hex,
+// and an integer `n ≥ 1` on every intent, in ascending `n`.
 struct PushBody {
   let replica: String
   let ackThrough: Int64
   let intents: [(n: Int64, intent: JSON)]
 
   init?(_ body: JSON) {
-    guard case .object(let object) = body, object.keys.sorted() == ["ackThrough", "intents", "replica"],
+    guard case .object(let object) = body, (try? object.expectKeys(required: ["ackThrough", "intents", "replica"])) != nil,
           case .string(let replica)? = object["replica"], replica.isPrintableASCII,
+          replica.wholeMatch(of: #/rp_[0-9a-f]{32}/#) != nil,
           let ackThrough = try? object["ackThrough"]?.asInteger(atLeast: 0),
           case .array(let intents)? = object["intents"] else { return nil }
     var numbered: [(n: Int64, intent: JSON)] = []

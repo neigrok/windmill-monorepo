@@ -20,6 +20,19 @@ public enum IntentOrigin: Sendable, Hashable {
   }
 
   var kind: Origin { isReplica ? .replica : .server }
+
+  public static func == (lhs: IntentOrigin, rhs: IntentOrigin) -> Bool {
+    switch (lhs, rhs) {
+    case (.replica(let a, let r, let n), .replica(let b, let s, let m)): a.isSameID(as: b) && r.isSameID(as: s) && n == m
+    case (.server(let a, let r), .server(let b, let s)): a.isSameID(as: b) && r.map { Array($0.utf8) } == s.map { Array($0.utf8) }
+    default: false
+    }
+  }
+
+  public func hash(into hasher: inout Hasher) {
+    hasher.combine(isReplica)
+    hasher.combine(Array(account.utf8))
+  }
 }
 
 public struct Refusal: Error, Sendable, Hashable {
@@ -75,6 +88,7 @@ public struct ServerLimits: Sendable, Hashable {
   public var pullPageBytes = Constants.pullPageBytes
   public var pullMaxScopes = Constants.pullMaxScopes
   public var liveInlineBytes = Constants.liveInlineBytes
+  public var mergeWorkCells = Constants.mergeWorkCells
 
   public init() {}
 
@@ -120,10 +134,26 @@ public struct Admission: Sendable {
   }
 }
 
-// One record the intent touches: its state as locked, the row its joins build, and the ops that joined it.
+// A record where it lives: in the intent's scope, or in a scope a command of the intent writes into (§6.1 step 14).
+struct Place: Hashable {
+  let scope: ScopeKey
+  let key: RecordKey
+}
+
+// A delta and the scope it writes.
+struct PlacedDelta: Hashable {
+  let scope: ScopeKey
+  let delta: PlannedDelta
+
+  var place: Place { Place(scope: scope, key: delta.key) }
+}
+
+// One record the intent touches: its state as locked, the row its joins build with its fields as the last join wrote them
+// (before G1 drops a dead record's), and the ops that joined it.
 struct Touched {
   let locked: IdState
   var joined: Row?
+  var joinedFields: [String: Register] = [:]
   var intentOp: Op?
   var ops: Set<Op> = []
   var superseded: [String: TextState] = [:]
@@ -132,7 +162,8 @@ struct Touched {
   var diesHere: Bool { locked.isAlive && joined?.isAlive == false }
 }
 
-// One admission in progress: its own copy of the tables, which the caller keeps only on success.
+// One admission in progress: its own copy of the tables, which the caller keeps only on success. Steps 5 to 13 run over
+// every record the intent touches, in its scope and in the scopes a command of it writes into, which step 15 creates.
 struct AdmissionRun {
   static let serverActor = try! Stamp.Actor("srv")
 
@@ -141,9 +172,9 @@ struct AdmissionRun {
   let serverNow: Int64
   let scope: ScopeKey
   var state: ServerState
-  var locks: [RecordKey: IdState] = [:]
-  var touched: [RecordKey: Touched] = [:]
-  var order: [RecordKey] = []
+  var locks: [Place: IdState] = [:]
+  var touched: [Place: Touched] = [:]
+  var order: [Place] = []
   var firstPassStamp: Stamp?
   var createdScopes: [ScopeKey] = []
   var changeEvents: [LiveEvent] = []
@@ -161,22 +192,27 @@ struct AdmissionRun {
 
   mutating func admit(_ intent: CheckedIntent) throws -> AdmitResult {
     try lockScope(for: intent)
-    let deltas = try lockIdentities(intent.deltas, fromIntent: true)
+    let deltas = try lockIdentities(intent.deltas, in: scope, fromIntent: true)
     let replay = intent.command.map { admission.rules.replays($0, in: context()) } ?? false
     if !replay { try checkGuards(intent.guards, writtenBy: deltas) }
     let outcome = try runCommand(intent.command)
     state.product = outcome?.product ?? state.product
-    let serverDeltas = try lockIdentities(outcome?.deltas ?? [], fromIntent: false)
+    var serverDeltas = try lockIdentities(outcome?.deltas ?? [], in: scope, fromIntent: false)
+    for (created, written) in (outcome?.created ?? [:]).sorted(by: { $0.key < $1.key }) {
+      serverDeltas += try lockIdentities(written, in: created, fromIntent: false)
+    }
     firstPassStamp = try join(deltas + serverDeltas, observing: deltas)
     let appended = try admission.rules.check(changes(), in: context())
-    _ = try join(try lockIdentities(appended, fromIntent: false), observing: deltas)
+    _ = try join(try lockIdentities(appended, in: scope, fromIntent: false), observing: deltas)
     try checkParents()
     assignSerials()
     try checkCaps()
-    apply()
+    apply(scope)
     applyLifecycle()
-    try writeCreatedScopes(outcome?.created ?? [:])
-    let write = outcome.map { $0.write.map { $0.json(minted: firstPassStamp, born: touched[$0.key]?.joined?.lattice.born) } }
+    try applyCreatedScopes()
+    let write = outcome.map { outcome in
+      outcome.write.map { $0.json(minted: firstPassStamp, born: touched[Place(scope: scope, key: $0.key)]?.joined?.lattice.born) }
+    }
     return .ok(seq: state.scopes[scope]!.seq, write: write, detail: outcome?.detail)
   }
 
@@ -202,26 +238,26 @@ struct AdmissionRun {
 
   // MARK: - Steps 5–6: each record locked, each delta through §4.3, and §4.4's const and time rule
 
-  mutating func lock(_ key: RecordKey) -> IdState {
-    if let locked = locks[key] { return locked }
-    let locked = state.idState(of: key, in: scope, registry: registry)
-    locks[key] = locked
+  mutating func lock(_ place: Place) -> IdState {
+    if let locked = locks[place] { return locked }
+    let locked = state.idState(of: place.key, in: place.scope, registry: registry)
+    locks[place] = locked
     return locked
   }
 
-  // The deltas that apply; a delta §4.3 answers `ok` changes nothing and is dropped.
-  mutating func lockIdentities(_ deltas: [PlannedDelta], fromIntent: Bool) throws(Refusal) -> [PlannedDelta] {
-    var applying: [PlannedDelta] = []
+  // The deltas that apply in `scope`; a delta §4.3 answers `ok` changes nothing and is dropped.
+  mutating func lockIdentities(_ deltas: [PlannedDelta], in scope: ScopeKey, fromIntent: Bool) throws(Refusal) -> [PlacedDelta] {
+    var applying: [PlacedDelta] = []
     for delta in deltas {
       let type = registry.type(delta.key.type)!
-      let locked = lock(delta.key)
+      let locked = lock(Place(scope: scope, key: delta.key))
       switch IdentityRules.verdict(delta.op, on: locked, born: delta.born, revivable: type.revivable == true) {
       case .refuse(let code): throw Refusal(code)
       case .ok: continue
       case .apply: break
       }
       if fromIntent && origin.isReplica { try checkWriteOnce(delta, type: type, locked: locked) }
-      applying.append(delta)
+      applying.append(PlacedDelta(scope: scope, delta: delta))
     }
     return applying
   }
@@ -240,10 +276,10 @@ struct AdmissionRun {
 
   // MARK: - Step 7: guards, unless the command is a replay
 
-  mutating func checkGuards(_ guards: [Guard], writtenBy deltas: [PlannedDelta]) throws(Refusal) {
+  mutating func checkGuards(_ guards: [Guard], writtenBy deltas: [PlacedDelta]) throws(Refusal) {
     for check in guards {
-      let stored = lock(check.key).row?.lattice.fields[check.field]
-      let written = deltas.first { $0.key == check.key }?.fields[check.field]?.slot.stamp
+      let stored = lock(Place(scope: scope, key: check.key)).row?.lattice.fields[check.field]
+      let written = deltas.first { $0.delta.key == check.key }?.delta.fields[check.field]?.slot.stamp
       let holds = stored?.stamp == check.stamp || (stored != nil && written == stored?.stamp)
       guard holds else {
         throw Refusal(.stale, detail: [
@@ -262,77 +298,83 @@ struct AdmissionRun {
 
   // MARK: - Step 9: one pass of server stamps, the joins, text merges and the record bound
 
-  mutating func join(_ deltas: [PlannedDelta], observing clientDeltas: [PlannedDelta]) throws -> Stamp? {
+  mutating func join(_ deltas: [PlacedDelta], observing clientDeltas: [PlacedDelta]) throws -> Stamp? {
     let stamp = mintStamp(for: deltas, observing: clientDeltas)
-    for delta in deltas { try join(delta.minted(with: stamp), op: delta.op, fromIntent: clientDeltas.contains(delta)) }
+    for placed in deltas {
+      try join(placed.delta.minted(with: stamp), at: placed.place, op: placed.delta.op, fromIntent: clientDeltas.contains(placed))
+    }
     try checkRecordBound()
     return stamp
   }
 
   // §10.3: one tick per pass that holds server deltas, after observing every register they write, as stored and as a
   // client delta of this intent writes it.
-  mutating func mintStamp(for deltas: [PlannedDelta], observing clientDeltas: [PlannedDelta]) -> Stamp? {
-    let serverDeltas = deltas.filter(\.hasServerSlots)
+  mutating func mintStamp(for deltas: [PlacedDelta], observing clientDeltas: [PlacedDelta]) -> Stamp? {
+    let serverDeltas = deltas.filter(\.delta.hasServerSlots)
     guard !serverDeltas.isEmpty else { return nil }
-    for delta in serverDeltas {
-      let stored = lock(delta.key).row
-      for register in delta.serverRegisters {
+    for placed in serverDeltas {
+      let stored = lock(placed.place).row
+      for register in placed.delta.serverRegisters {
         if let stamp = stored?.stamp(of: register) { state.clock.observe(stamp) }
-        for client in clientDeltas where client.key == delta.key {
-          if let stamp = client.givenStamp(of: register) { state.clock.observe(stamp) }
+        for client in clientDeltas where client.place == placed.place {
+          if let stamp = client.delta.givenStamp(of: register) { state.clock.observe(stamp) }
         }
       }
     }
     return state.clock.tick(physNow: serverNow, actor: Self.serverActor)
   }
 
-  mutating func join(_ delta: Delta, op: Op, fromIntent: Bool) throws {
+  mutating func join(_ delta: Delta, at place: Place, op: Op, fromIntent: Bool) throws {
     let type = registry.type(delta.key.type)!
-    var record = touched[delta.key] ?? Touched(locked: lock(delta.key))
+    var record = touched[place] ?? Touched(locked: lock(place))
     var row = record.joined ?? record.locked.row ?? Row(key: delta.key, seq: 0)
     row.lattice = try Join.record(type, row.lattice, delta.lattice)
+    record.joinedFields = row.lattice.fields
     for (name, write) in delta.texts.sorted(by: { $0.key < $1.key }) {
-      try merge(write, into: &row, field: type.field(name)!, superseded: &record.superseded)
+      try merge(write, into: &row, in: place.scope, field: type.field(name)!, superseded: &record.superseded)
     }
     if row.lattice.life?.isAlive == false && type.revivable != true {
       row.lattice.fields = [:]
       row.texts = [:]
       row.serials = [:]
     }
-    if touched[delta.key] == nil { order.append(delta.key) }
+    if touched[place] == nil { order.append(place) }
     record.joined = row
     record.ops.insert(op)
     if fromIntent { record.intentOp = op }
-    touched[delta.key] = record
+    touched[place] = record
   }
 
-  // §6.11 onto the head this intent has so far; a new head takes this intent's seq as its rev.
-  func merge(_ write: TextWrite, into row: inout Row, field: FieldDef, superseded: inout [String: TextState]) throws(Refusal) {
+  // §6.11 onto the head this intent has so far; a new head takes its scope's next seq as its rev.
+  func merge(_ write: TextWrite, into row: inout Row, in scope: ScopeKey, field: FieldDef,
+             superseded: inout [String: TextState]) throws(Refusal) {
     let head = row.texts[field.name] ?? TextState(text: "", rev: 0, merged: false)
     let key = row.key
-    let merged = try TextMerge.merge(head: head, base: write.base, mine: write.text) { rev in
+    let merged = try TextMerge.merge(head: head, base: write.base, mine: write.text, workCells: admission.limits.mergeWorkCells) { rev in
       state.revisionText(of: key, field: field.name, rev: rev, in: scope)
     }
-    guard (field.unit ?? .bytes).length(of: merged.text) <= (field.max ?? .max) else { throw Refusal(.tooLarge) }
+    if let bounds = field.bounds, bounds.unit.length(of: merged.text) > bounds.max ?? .max { throw Refusal(.tooLarge) }
     if merged.text.utf8.elementsEqual(head.text.utf8) && merged.merged == head.merged { return }
     if let stored = row.texts[field.name], superseded[field.name] == nil { superseded[field.name] = stored }
-    row.texts[field.name] = TextState(text: merged.text, rev: nextSeq, merged: merged.merged)
+    row.texts[field.name] = TextState(text: merged.text, rev: nextSeq(of: scope), merged: merged.merged)
   }
 
-  // Each changed row as step 13 would store it, text bases aside, stays within MAX_RECORD_BYTES.
+  // Each changed row as step 13 would store it, text bases and the serial step 11 has yet to give aside, stays within
+  // MAX_RECORD_BYTES.
   func checkRecordBound() throws(Refusal) {
-    for key in order {
-      guard let record = touched[key], record.changed, let row = record.joined else { continue }
-      if stored(row, key: key).json.jcs.count > admission.limits.maxRecordBytes { throw Refusal(.tooLarge) }
+    for place in order {
+      guard let record = touched[place], record.changed, let row = record.joined else { continue }
+      if stored(row, at: place).json.jcs.count > admission.limits.maxRecordBytes { throw Refusal(.tooLarge) }
     }
   }
 
-  var nextSeq: Int64 { state.scopes[scope]!.seq + 1 }
+  // A scope step 15 has yet to create stands at seq 0.
+  func nextSeq(of scope: ScopeKey) -> Int64 { (state.scopes[scope]?.seq ?? 0) + 1 }
 
-  func stored(_ joined: Row, key: RecordKey) -> Row {
+  func stored(_ joined: Row, at place: Place) -> Row {
     var row = joined
-    row.seq = nextSeq
-    row.rc = state.rows[scope]?[key]?.rc ?? serverNow
+    row.seq = nextSeq(of: place.scope)
+    row.rc = state.rows[place.scope]?[place.key]?.rc ?? serverNow
     row.ru = serverNow
     return row
   }
@@ -340,99 +382,100 @@ struct AdmissionRun {
   // MARK: - Step 10: product rules, then the parent rule, on the joined records
 
   func changes() -> [RecordChange] {
-    order.compactMap { key in
-      guard let record = touched[key], let after = record.joined else { return nil }
-      return RecordChange(key: key, before: record.locked, after: after, op: record.intentOp)
+    order.compactMap { place in
+      guard let record = touched[place], let after = record.joined else { return nil }
+      return RecordChange(scope: place.scope, key: place.key, before: record.locked, after: after, op: record.intentOp)
     }
   }
 
   func context() -> RuleContext {
-    RuleContext(
+    let joined = touched.filter { $0.key.scope == scope }.compactMap { place, record in record.joined.map { (place.key, $0) } }
+    return RuleContext(
       registry: registry, scope: scope, origin: origin, serverNow: serverNow, state: state,
-      joined: touched.compactMapValues(\.joined))
+      joined: Dictionary(uniqueKeysWithValues: joined))
   }
 
-  // A create or update whose parent is not alive among the joined records is `parent-dead`. The reference is read
-  // before a death in this intent thinned the row (G1).
+  // Every create or update, a command's or an appended one's included, whose parent is not alive among the joined
+  // records is `parent-dead`. The reference is read as the join wrote it, before G1 drops a dead record's fields.
   mutating func checkParents() throws(Refusal) {
-    for key in order {
-      guard let record = touched[key], !record.ops.isDisjoint(with: [.create, .update]), let row = record.joined,
-            let parent = registry.type(key.type)?.fields.first(where: \.parent), let target = parent.ref,
-            case .string(let id)? = (row.lattice.fields[parent.name] ?? record.locked.row?.lattice.fields[parent.name])?.value
+    for place in order {
+      guard let record = touched[place], !record.ops.isDisjoint(with: [.create, .update]),
+            let parent = registry.type(place.key.type)?.fields.first(where: \.parent), let target = parent.ref,
+            case .string(let id)? = record.joinedFields[parent.name]?.value
       else { continue }
-      let parentKey = RecordKey(target, RecordID(id))
-      let parentScope = registry.scope(ofType: target, from: scope.ref).flatMap { ScopeKey($0, account: state.scopes[scope]!.owner) }
-      let alive = parentScope == scope
-        ? (touched[parentKey]?.joined?.isAlive ?? lock(parentKey).isAlive)
-        : parentScope.map { state.idState(of: parentKey, in: $0, registry: registry).isAlive } ?? false
-      if !alive { throw Refusal(.parentDead) }
+      guard let parentScope = registry.scope(ofType: target, from: place.scope.ref)
+        .flatMap({ ScopeKey($0, account: state.scopes[scope]!.owner) }) else { throw Refusal(.parentDead) }
+      let parentPlace = Place(scope: parentScope, key: RecordKey(target, RecordID(id)))
+      if !(touched[parentPlace]?.joined?.isAlive ?? lock(parentPlace).isAlive) { throw Refusal(.parentDead) }
     }
   }
 
   // MARK: - Step 11: serials for new records, in admission order
 
   mutating func assignSerials() {
-    for key in order {
-      guard var record = touched[key], var row = record.joined, row.isAlive, !record.locked.isAlive,
-            let type = registry.type(key.type) else { continue }
+    for place in order {
+      guard var record = touched[place], var row = record.joined, row.isAlive, !record.locked.isAlive,
+            let type = registry.type(place.key.type) else { continue }
       for field in type.fields {
         guard case .serial(let next) = field.kind, row.serials[field.name] == nil else { continue }
         let shared = next.map { row.lattice.fields[$0]?.value }
-        let highest = joinedRows(ofType: key.type)
-          .filter { peer in peer.key != key && peer.isAlive && next.map { peer.lattice.fields[$0]?.value } == shared }
+        let highest = joinedRows(ofType: place.key.type, in: place.scope)
+          .filter { peer in peer.key != place.key && peer.isAlive && next.map { peer.lattice.fields[$0]?.value } == shared }
           .compactMap { try? $0.serials[field.name]?.asInteger() }
           .max() ?? 0
         row.serials[field.name] = JSON(highest + 1)
       }
       record.joined = row
-      touched[key] = record
+      touched[place] = record
     }
   }
 
-  func joinedRows(ofType type: String) -> [Row] {
+  func joinedRows(ofType type: String, in scope: ScopeKey) -> [Row] {
     var byKey = (state.rows[scope] ?? [:]).filter { $0.key.type == type }
-    for (key, record) in touched where key.type == type { byKey[key] = record.joined }
+    for (place, record) in touched where place.scope == scope && place.key.type == type { byKey[place.key] = record.joined }
     return Array(byKey.values)
   }
 
-  // MARK: - Step 12: caps by the growth rule
+  // MARK: - Step 12: caps by the growth rule, in each scope the intent writes
 
-  func netAliveChange(of type: String) -> Int {
-    touched.filter { $0.key.type == type }.reduce(0) { sum, entry in
+  func netAliveChange(of type: String, in scope: ScopeKey) -> Int {
+    touched.filter { $0.key.scope == scope && $0.key.key.type == type }.reduce(0) { sum, entry in
       sum + (entry.value.joined?.isAlive == true ? 1 : 0) - (entry.value.locked.isAlive ? 1 : 0)
     }
   }
 
   func checkCaps() throws(Refusal) {
-    for type in registry.types {
-      guard let cap = type.cap else { continue }
-      let before = state.scopes[scope]!.counters[type.name] ?? 0
-      let after = before + netAliveChange(of: type.name)
-      if after > cap && after > before {
-        throw Refusal(.cap, detail: ["type": .string(type.name), "cap": JSON(cap)])
+    for written in Set(order.map(\.scope)) {
+      for type in registry.types {
+        guard let cap = type.cap else { continue }
+        let before = state.scopes[written]?.counters[type.name] ?? 0
+        let after = before + netAliveChange(of: type.name, in: written)
+        if after > cap && after > before {
+          throw Refusal(.cap, detail: ["type": .string(type.name), "cap": JSON(cap)])
+        }
       }
     }
   }
 
   // MARK: - Step 13: apply at the next seq, with counters, spent rows, receipt times, digest and revisions
 
-  mutating func apply() {
-    let changed = order.filter { touched[$0]!.changed }
+  mutating func apply(_ written: ScopeKey) {
+    let changed = order.filter { $0.scope == written && touched[$0]!.changed }
     guard !changed.isEmpty else { return }
-    var record = state.scopes[scope]!
-    let rows = changed.map { stored(touched[$0]!.joined!, key: $0) }
-    record.seq = nextSeq
+    var record = state.scopes[written]!
+    let rows = changed.map { stored(touched[$0]!.joined!, at: $0) }
+    record.seq = nextSeq(of: written)
     for type in registry.types where type.cap != nil {
-      let net = netAliveChange(of: type.name)
+      let net = netAliveChange(of: type.name, in: written)
       if net != 0 || record.counters[type.name] != nil { record.counters[type.name] = (record.counters[type.name] ?? 0) + net }
     }
-    let superseded = changed.flatMap { key in
-      touched[key]!.superseded.map { Revision(key: key, field: $0.key, rev: $0.value.rev, text: $0.value.text) }
+    let superseded = changed.flatMap { place in
+      touched[place]!.superseded.map { Revision(key: place.key, field: $0.key, rev: $0.value.rev, text: $0.value.text) }
     }
     if !superseded.isEmpty {
-      state.revisions[scope] = admission.rules.keptRevisions((state.revisions[scope] ?? []) + superseded).sorted()
+      state.revisions[written] = admission.rules.keptRevisions((state.revisions[written] ?? []) + superseded).sorted()
     }
-    commit(rows, into: scope, as: record)
+    commit(rows, into: written, as: record)
   }
 
   // Rows at the scope's new seq: the digest takes each, the typed and spent tables hold them, and one frame carries them.
@@ -459,18 +502,30 @@ struct AdmissionRun {
     state.spent[scope, default: [:]][row.key] = SpentRow(born: row.lattice.born, lifeStamp: row.lattice.life!.stamp, seq: row.seq)
   }
 
+  // MARK: - Step 14: a command's writes into the scopes this intent created, each at its own seq and digest
+
+  mutating func applyCreatedScopes() throws {
+    for written in Set(order.map(\.scope)).subtracting([scope]).sorted() {
+      guard createdScopes.contains(written) else {
+        throw AdmissionFault(description: "a command wrote into \(written), which this intent did not create")
+      }
+      apply(written)
+    }
+  }
+
   // MARK: - Step 15: a governing create inserts its tree; a governing death kills the tree and its overlays
 
   mutating func applyLifecycle() {
     let owner = state.scopes[scope]!.owner
-    for key in order {
-      guard let record = touched[key], record.changed, registry.type(key.type)?.governsTree == true else { continue }
-      let tree = ScopeKey(.tree(key.id.description))
+    for place in order {
+      guard let record = touched[place], record.changed, registry.type(place.key.type)?.governsTree == true else { continue }
+      let tree = ScopeKey(.tree(place.key.id.description))
       if case .none = record.locked, record.joined?.isAlive == true, state.scopes[tree] == nil {
-        state.scopes[tree] = ScopeRecord(owner: owner, born: .governingCreate, governedBy: ScopeRecord.governor(scope: scope, key: key))
+        state.scopes[tree] = ScopeRecord(
+          owner: owner, born: .governingCreate, governedBy: ScopeRecord.governor(scope: place.scope, key: place.key))
         createdScopes.append(tree)
       }
-      if record.diesHere { kill(tree: key.id.description) }
+      if record.diesHere { kill(tree: place.key.id.description) }
     }
   }
 
@@ -479,29 +534,6 @@ struct AdmissionRun {
     for key in governed.sorted() {
       guard state.scopes[key]!.die(at: serverNow) else { continue }
       deathEvents.append(.death(key))
-    }
-  }
-
-  // MARK: - Step 14: a command's writes into the scopes this intent created, at their own seq and digest
-
-  mutating func writeCreatedScopes(_ created: [ScopeKey: [PlannedDelta]]) throws {
-    for (key, deltas) in created.sorted(by: { $0.key < $1.key }) where !deltas.isEmpty {
-      guard createdScopes.contains(key), var record = state.scopes[key] else {
-        throw AdmissionFault(description: "a command wrote into \(key), which this intent did not create")
-      }
-      record.seq += 1
-      var rows: [Row] = []
-      for delta in deltas {
-        let written = delta.minted(with: firstPassStamp)
-        let type = registry.type(delta.key.type)!
-        let row = Row(
-          key: delta.key, lattice: try Join.record(type, Lattice(), written.lattice),
-          texts: written.texts.mapValues { TextState(text: $0.text, rev: record.seq, merged: false) },
-          seq: record.seq, rc: serverNow, ru: serverNow)
-        if type.cap != nil, row.isAlive { record.counters[type.name, default: 0] += 1 }
-        rows.append(row)
-      }
-      commit(rows, into: key, as: record)
     }
   }
 }

@@ -468,19 +468,33 @@ extension NoticeContent {
 }
 
 extension Notice {
-  // The stored form names no product; the registry gives it from the scope.
+  // The stored form names no product; the registry gives it from the scope. `dismissed` appears only when true.
   public init(json: JSON, registry: Registry) throws {
     let scope = try ScopeRef(json: json.member("scope"))
     guard let product = registry.product(of: scope) else { throw JSONError.shape("\(scope) belongs to no product") }
     self.init(
       id: try json.member("id").asString(), product: product, scope: scope, code: RefusalCode(try json.member("code").asString()),
-      detail: json["detail"], content: try NoticeContent(json: json.member("content")), at: try json.member("at").asInteger())
+      detail: json["detail"], content: try NoticeContent(json: json.member("content")), at: try json.member("at").asInteger(),
+      isDismissed: try json["dismissed"]?.asBool() ?? false)
   }
 
   public var storedJSON: JSON {
     var object: JSON.Object = ["id": .string(id), "scope": scope.json, "code": code.json, "content": content.json, "at": JSON(at)]
     object["detail"] = detail
+    object["dismissed"] = isDismissed ? true : nil
     return .object(object)
+  }
+
+  // The gesture of the entry a notice holds: its id is `notice:<gestureId>/<k>`.
+  public static func gestureId(ofNotice id: String) -> String? {
+    let bytes = id.utf8
+    guard bytes.starts(with: "notice:".utf8), let slash = bytes.lastIndex(of: UInt8(ascii: "/")) else { return nil }
+    return String(decoding: bytes[bytes.index(bytes.startIndex, offsetBy: "notice:".utf8.count)..<slash], as: UTF8.self)
+  }
+
+  // D-17: the same notice, hidden from its product's list.
+  public var dismissed: Notice {
+    Notice(id: id, product: product, scope: scope, code: code, detail: detail, content: content, at: at, isDismissed: true)
   }
 }
 

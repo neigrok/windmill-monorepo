@@ -28,7 +28,9 @@ extension Store {
       let (gesture, value) = try decide(tx)
       guard let gesture else { return Planned((nil, value), ReplicaBatch()) }
       var replica = try loaded(active, in: tx, reads: planners.commits.reads(of: gesture, in: scope))
-      let outcome = try planners.commits.commit(gesture, in: scope, to: &replica, as: instance, identities: identities)
+      let gestureIdTaken = try gesture.gestureId.map(tx.carries(gestureId:)) ?? false
+      let outcome = try planners.commits.commit(
+        gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
       return Planned((outcome, value), replica.batch)
     }
   }
@@ -53,7 +55,7 @@ extension Store {
   }
 
   // Leaving the app, and sign-out's first step: every held entry released.
-  public func releaseAll() throws -> Written<Void> {
+  public func releaseAll() throws -> Written<Bool> {
     try onActive(.release, releasing: true) { replica in try planners.hold.releaseAll(in: &replica) }
   }
 
@@ -64,10 +66,13 @@ extension Store {
     }
   }
 
+  // D-17: a dismissed notice is hidden, never deleted, since an orphan's refusal may still fold into it.
   public func dismissNotice(_ id: String) throws -> Written<Void> {
     try write(.dismissNotice) { tx in
       var replica = try loaded(try tx.activeReplica(), in: tx, notices: true)
-      replica.apply(.deleteNotice(id))
+      if let notice = replica.notices.first(where: { $0.id.utf8.elementsEqual(id.utf8) }), !notice.isDismissed {
+        replica.apply(.putNotice(notice.dismissed))
+      }
       return Planned((), replica.batch)
     }
   }

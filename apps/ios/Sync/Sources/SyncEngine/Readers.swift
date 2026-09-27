@@ -5,7 +5,8 @@ import SyncStore
 
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
-// rows it names with the scope's pending entries; a reader used after its call returns throws.
+// rows it names with the scope's pending entries; a reader used after its call returns throws. The first failure of a
+// read or a mint is kept, and fails the commit whose body met it.
 
 final class TransactionReader: CommitContext {
   let tx: StoreTransaction
@@ -15,7 +16,7 @@ final class TransactionReader: CommitContext {
   let now: Int64
   var isOpen = true
   var minted: Set<RecordID> = []
-  var mintFailure: (any Error)?
+  var failure: (any Error)?
 
   // `deviceNow`: the device clock this call reads at; `now` is physNow() at it (§10.2).
   init(_ tx: StoreTransaction, core: EngineCore, scope: ScopeRef, deviceNow: Int64) throws {
@@ -36,36 +37,50 @@ final class TransactionReader: CommitContext {
     isOpen = false
   }
 
-  // A commit's body is over: a mint that failed inside it fails the commit.
+  // A commit's body is over: a read or a mint that failed inside it fails the commit.
   func finish() throws {
-    if let mintFailure { throw mintFailure }
+    if let failure { throw failure }
+  }
+
+  // One read, its failure kept.
+  func reading<Value>(_ read: () throws -> Value) throws -> Value {
+    do {
+      return try read()
+    } catch {
+      failure = failure ?? error
+      throw error
+    }
   }
 
   // MARK: ScopeReader
 
-  func drawn(_ type: String, _ id: RecordID) throws -> Record? { try record(RecordKey(type, id), .drawn) }
-  func stored(_ type: String, _ id: RecordID) throws -> Record? { try record(RecordKey(type, id), .stored) }
-  func drawn(_ type: String) throws -> [Record] { try records(ofType: type, .drawn) }
-  func stored(_ type: String) throws -> [Record] { try records(ofType: type, .stored) }
+  func drawn(_ type: String, _ id: RecordID) throws -> Record? { try reading { try record(RecordKey(type, id), .drawn) } }
+  func stored(_ type: String, _ id: RecordID) throws -> Record? { try reading { try record(RecordKey(type, id), .stored) } }
+  func drawn(_ type: String) throws -> [Record] { try reading { try records(ofType: type, .drawn) } }
+  func stored(_ type: String) throws -> [Record] { try reading { try records(ofType: type, .stored) } }
 
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    try records(ofType: type, where: field, is: id, .drawn)
+    try reading { try records(ofType: type, where: field, is: id, .drawn) }
   }
 
   func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    try records(ofType: type, where: field, is: id, .stored)
+    try reading { try records(ofType: type, where: field, is: id, .stored) }
   }
 
   // Found by the key's bytes, as the store compares text.
   func device(_ key: String) throws -> JSON? {
-    guard isOpen else { throw EngineError.readerEnded }
-    guard let product = registry.product(of: scope) else { return nil }
-    return try tx.deviceRow(meta.replica, product: product, key: key)
+    try reading {
+      guard isOpen else { throw EngineError.readerEnded }
+      guard let product = registry.product(of: scope) else { return nil }
+      return try tx.deviceRow(meta.replica, product: product, key: key)
+    }
   }
 
   func firstPullComplete() throws -> Bool {
-    let replica = try load(RowSelection())
-    return ReplicaLifecycle(registry: registry).firstPullComplete(scope, in: replica, subscribed: core.subscriptions(of: meta))
+    try reading {
+      let replica = try load(RowSelection())
+      return ReplicaLifecycle(registry: registry).firstPullComplete(scope, in: replica, subscribed: core.subscriptions(of: meta))
+    }
   }
 
   // MARK: CommitContext
@@ -86,7 +101,7 @@ final class TransactionReader: CommitContext {
       minted.insert(id)
       return id
     } catch {
-      mintFailure = mintFailure ?? error
+      failure = failure ?? error
       return RecordID("")
     }
   }

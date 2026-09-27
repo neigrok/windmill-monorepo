@@ -19,7 +19,8 @@ public enum Transcripts {
       devices[name] = try makeDevice(try LoadedDevice(json: json, registry: registry))
       let actors = try header["actors"]?[name]?.asArray().map { try $0.asString() } ?? [ClientSteps.actor]
       let queues: JSON = ["ids": header["ids"]?[name] ?? [], "actors": .array(actors.dropFirst().map { .string($0) })]
-      contexts[name] = StepContext(identities: try QueuedIdentities(queues, gestures: gestures), actor: try Stamp.Actor(actors[0]))
+      contexts[name] = StepContext(
+        registry: registry, identities: try QueuedIdentities(queues, gestures: gestures), actor: try Stamp.Actor(actors[0]))
     }
 
     var differences: [String] = []

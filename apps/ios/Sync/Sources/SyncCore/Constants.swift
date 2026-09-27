@@ -27,4 +27,5 @@ public enum Constants {
   public static let liveFrameBytes = 131_072
   public static let liveInlineBytes = 65_536
   public static let keepaliveBytes = 65_536
+  public static let mergeWorkCells = 4_194_304
 }
