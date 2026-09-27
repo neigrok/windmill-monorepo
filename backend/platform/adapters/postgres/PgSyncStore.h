@@ -59,7 +59,7 @@ public:
   std::vector<ScopeKey> killTree(SyncTxn&, const ScopeKey& tree, Ms now) override;
 
   ReplicaRow bindReplica(SyncTxn&, const std::string& replica, const UserId& account, Ms now) override;
-  std::optional<ReplicaRow> lockReplica(SyncTxn&, const std::string& replica) override;
+  std::optional<ReplicaRow> replica(SyncTxn&, const std::string& replica, RowLock lock) override;
   void unbindUnused(SyncTxn&, const std::string& replica) override;
   void setLastN(SyncTxn&, const std::string& replica, std::uint64_t n) override;
   std::optional<StoredResult> storedResult(SyncTxn&, const std::string& replica, std::uint64_t n) override;

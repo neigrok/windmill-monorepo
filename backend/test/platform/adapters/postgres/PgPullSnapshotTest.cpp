@@ -42,12 +42,12 @@ std::string dayOf(int index) {
   return day;
 }
 
-Json::Value pullRequest(const std::string& cursor) {
+std::string pullRequest(const std::string& cursor) {
   Json::Value request(Json::objectValue);
   Json::Value& scope = request["scopes"].append(Json::Value(Json::objectValue));
   scope["scope"] = "self/probe";
   scope["cursor"] = cursor.empty() ? Json::Value(Json::nullValue) : Json::Value(cursor);
-  return request;
+  return jcs(request);
 }
 
 }

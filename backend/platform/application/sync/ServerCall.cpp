@@ -40,7 +40,7 @@ void ServerCall::finish(const Json::Value& result, Ms serverNow) {
   std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
   store_.lockRequest(*txn, account_, *requestId_);
   const std::optional<RequestRow> call = store_.request(*txn, account_, *requestId_);
-  if (!call || call->digest != digest_) return;
+  if (!call || call->digest != digest_ || !call->running) return;
   store_.putRequest(*txn, account_, RequestRow{*requestId_, digest_, false, result, serverNow});
   txn->commit();
 }

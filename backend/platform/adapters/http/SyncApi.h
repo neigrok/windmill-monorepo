@@ -12,7 +12,10 @@
 #include <cstdint>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace wm::sync {
 
@@ -21,7 +24,7 @@ struct SyncDeps {
   std::shared_ptr<AuthService> auth;
   std::shared_ptr<WorkerPool> workers;
   std::shared_ptr<Clock> clock;
-  // The registry's minVersion: an older Sync-Schema is answered 426 (§9.6).
+  // The registry's minVersion: an older version is answered 426 (§9.6).
   std::int64_t minSchema = 1;
   // Read once at boot: a restore restarts the process. Only the 503 answered on the IO thread carries it.
   std::string epoch;
@@ -30,8 +33,9 @@ struct SyncDeps {
 
 // §9.2–§9.4 over HTTP. A handler runs on the IO thread only long enough to post its work to the pool; at
 // the pool's ceiling it answers 503 {error: "unavailable", retryAfterMs} without touching the database.
-// On the worker: the caller (the session cookie or a Bearer token), the Sync-Schema header, then the body.
-// Bodies are written as JCS, so every number crosses the wire exactly as the digest hashed it (§6.12).
+// On the worker, in §9.1's order: the Sync-Schema header, then the caller (the session cookie or a Bearer
+// token) and the body as received, which the service checks. Bodies are written as JCS, so every number
+// crosses the wire exactly as the digest hashed it (§6.12).
 class SyncApi {
 public:
   using Reply = std::function<void(const drogon::HttpResponsePtr&)>;
@@ -45,6 +49,8 @@ public:
 private:
   // Posts `work` to the pool, answering 503 when the pool refuses it. `work` answers the reply itself.
   void onWorker(Reply&& reply, std::function<SyncReply()> work);
+  // §9.1's first check, on the version the header Sync-Schema carries.
+  std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
 
   SyncDeps deps_;
 };
@@ -52,9 +58,16 @@ private:
 // Mounts /v1/sync/hello, /v1/sync/push and /v1/sync/pull.
 void registerSyncRoutes(drogon::HttpAppFramework& app, const std::shared_ptr<SyncApi>& api);
 
-// §9.1: the Sync-Schema check every request passes first, the live socket's upgrade included: 400 malformed when
-// the header is missing or not a decimal integer, 426 upgrade-required below `minSchema`.
-std::optional<SyncReply> schemaRefusal(const drogon::HttpRequestPtr& req, std::int64_t minSchema, Ms serverTime, const std::string& epoch);
+// §9.1: the check every request passes first, on the registry version as its one carrier holds it (each value
+// it holds): hello, push and pull carry it in the header Sync-Schema, the live socket's upgrade in the query
+// parameter `schema`. 400 malformed unless the carrier holds exactly one decimal integer, 426 upgrade-required
+// below `minSchema`.
+std::optional<SyncReply> schemaRefusal(const std::vector<std::string>& versions, std::int64_t minSchema, Ms serverTime,
+                                       const std::string& epoch);
+
+// The live upgrade's carrier: every value of the query parameter `schema` in a query string, percent-decoded, in
+// order.
+std::vector<std::string> schemaParameters(std::string_view query);
 
 // A reply as the wire carries it: its status, and its body as JCS.
 drogon::HttpResponsePtr responseOf(const SyncReply& reply);

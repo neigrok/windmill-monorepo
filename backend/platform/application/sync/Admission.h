@@ -82,10 +82,15 @@ using Origin = std::variant<ReplicaOrigin, ServerOrigin>;
 struct Admitted {
   Json::Value result;
 };
-// The replica's last_n moved past n under the lock: another push answered n, whose stored result stands.
-struct AlreadyAnswered {};
-// §6.6: transient, or a fault below K_POISON; nothing was admitted.
+// §6.1 step 3.3: under the replica row's lock, n was not the replica's next, and nothing was admitted. The push
+// answers the turn as §6.2 step 4 does: another push answered n, the row is bound to another account, or n is
+// past the next.
+struct OutOfTurn {
+  Turn turn = Turn::answered;
+};
+// §6.6: transient, or a fault below K_POISON; nothing was admitted. A transient failure waits `kTransientMs`.
 struct Retry {
+  static constexpr std::uint32_t kTransientMs = 1000;
   std::uint32_t afterMs = 0;
 };
 // §6.3's lookup answered the whole call without admitting: request-conflict, request-running, or the
@@ -97,7 +102,7 @@ struct CallAnswered {
 struct Replayed {
   Json::Value result;
 };
-using AdmitOutcome = std::variant<Admitted, AlreadyAnswered, Retry, CallAnswered, Replayed>;
+using AdmitOutcome = std::variant<Admitted, OutOfTurn, Retry, CallAnswered, Replayed>;
 
 // §6.1: admits one intent atomically, whatever its origin, and publishes what it committed (§6.8).
 class Admission {

@@ -7,11 +7,14 @@
 #include "test/testing.h"
 
 #include <future>
+#include <optional>
+#include <vector>
 #include <memory>
 #include <string>
 
 // SyncApi's gates, driven in-process over the fakes: the 503 it answers on the IO thread when the pool is
-// full, the Sync-Schema check, the body size and shape, and a signed-in round trip whose body is JCS.
+// full, §9.1's envelope in its order (the version, the principal, the body's size, then its shape), the live
+// upgrade's version carrier, and a signed-in round trip whose body is JCS.
 
 using namespace wm;
 using namespace wm::fake;
@@ -78,37 +81,51 @@ TEST(sync_api_answers_503_with_a_wait_when_the_pool_takes_no_more_work) {
   CHECK_EQ(body, std::string(R"({"epoch":"ep-1","error":"unavailable","retryAfterMs":1000,"serverTime":1700000000000})"));
 }
 
-TEST(sync_api_refuses_a_missing_or_old_sync_schema_and_a_body_it_cannot_take) {
+TEST(sync_api_answers_the_envelope_in_section_9_1_s_order) {
   Harness harness;
   sync::SyncApi api = harness.api(8);
   const std::string session = harness.signIn();
-  CHECK_EQ(answer(&sync::SyncApi::hello, api, request(drogon::Get, "/v1/sync/hello", "", "")),
-           (std::pair<int, std::string>{400, R"({"epoch":"ep-1","error":"malformed","serverTime":1700000000000})"}));
+  const std::string oversized(2'097'153, ' ');
+  const std::pair<int, std::string> malformed{400, R"({"epoch":"ep-1","error":"malformed","serverTime":1700000000000})"};
+  const std::pair<int, std::string> tooLarge{413, R"({"epoch":"ep-1","error":"request-too-large","serverTime":1700000000000})"};
+  CHECK_EQ(answer(&sync::SyncApi::hello, api, request(drogon::Get, "/v1/sync/hello", "", "")), malformed);
   CHECK_EQ(answer(&sync::SyncApi::hello, api, request(drogon::Get, "/v1/sync/hello", "", "0")),
            (std::pair<int, std::string>{426, R"({"epoch":"ep-1","error":"upgrade-required","serverTime":1700000000000})"}));
-  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", "{\"replica\":", "1", session)),
-           (std::pair<int, std::string>{400, R"({"epoch":"ep-1","error":"malformed","serverTime":1700000000000})"}));
-  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", std::string(2'097'153, ' '), "1", session)),
-           (std::pair<int, std::string>{413, R"({"epoch":"ep-1","error":"request-too-large","serverTime":1700000000000})"}));
+  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", oversized, "0")),
+           (std::pair<int, std::string>{426, R"({"epoch":"ep-1","error":"upgrade-required","serverTime":1700000000000})"}));
+  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", oversized, "1")),
+           (std::pair<int, std::string>{401, R"({"epoch":"ep-1","error":"unauthenticated","serverTime":1700000000000})"}));
+  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", oversized, "1", session)), tooLarge);
+  CHECK_EQ(answer(&sync::SyncApi::push, api, request(drogon::Post, "/v1/sync/push", "{\"replica\":", "1", session)), malformed);
+  CHECK_EQ(answer(&sync::SyncApi::pull, api, request(drogon::Post, "/v1/sync/pull", "{\"scopes\":", "1", session)), malformed);
 }
 
-TEST(sync_schema_refusal_serves_every_decimal_integer_at_or_above_min_schema_past_int64_included) {
-  auto refusalOf = [](const std::string& schema) {
-    auto req = drogon::HttpRequest::newHttpRequest();
-    if (!schema.empty()) req->addHeader("sync-schema", schema);
-    const std::optional<sync::SyncReply> refused = sync::schemaRefusal(req, 2, 1000, "ep-1");
+TEST(sync_schema_refusal_serves_one_decimal_integer_at_or_above_min_schema_past_int64_included) {
+  auto refusalOf = [](const std::vector<std::string>& versions) {
+    const std::optional<sync::SyncReply> refused = sync::schemaRefusal(versions, 2, 1000, "ep-1");
     return refused ? refused->body["error"].asString() : std::string("served");
   };
-  CHECK_EQ(refusalOf("2"), std::string("served"));
-  CHECK_EQ(refusalOf("3"), std::string("served"));
-  CHECK_EQ(refusalOf("99999999999999999999"), std::string("served"));
-  CHECK_EQ(refusalOf("1"), std::string("upgrade-required"));
-  CHECK_EQ(refusalOf("-99999999999999999999"), std::string("upgrade-required"));
-  CHECK_EQ(refusalOf(""), std::string("malformed"));
-  CHECK_EQ(refusalOf("2.5"), std::string("malformed"));
-  CHECK_EQ(refusalOf("two"), std::string("malformed"));
-  CHECK_EQ(refusalOf(" 2"), std::string("malformed"));
-  CHECK_EQ(refusalOf("+2"), std::string("malformed"));
+  CHECK_EQ(refusalOf({"2"}), std::string("served"));
+  CHECK_EQ(refusalOf({"3"}), std::string("served"));
+  CHECK_EQ(refusalOf({"99999999999999999999"}), std::string("served"));
+  CHECK_EQ(refusalOf({"1"}), std::string("upgrade-required"));
+  CHECK_EQ(refusalOf({"-99999999999999999999"}), std::string("upgrade-required"));
+  CHECK_EQ(refusalOf({}), std::string("malformed"));
+  CHECK_EQ(refusalOf({"2", "2"}), std::string("malformed"));
+  CHECK_EQ(refusalOf({""}), std::string("malformed"));
+  CHECK_EQ(refusalOf({"2.5"}), std::string("malformed"));
+  CHECK_EQ(refusalOf({"two"}), std::string("malformed"));
+  CHECK_EQ(refusalOf({" 2"}), std::string("malformed"));
+  CHECK_EQ(refusalOf({"+2"}), std::string("malformed"));
+}
+
+TEST(the_live_upgrade_carries_its_version_as_every_schema_query_parameter_percent_decoded) {
+  using Versions = std::vector<std::string>;
+  CHECK_EQ(sync::schemaParameters("schema=2"), (Versions{"2"}));
+  CHECK_EQ(sync::schemaParameters("token=x&schema=2&schema=3"), (Versions{"2", "3"}));
+  CHECK_EQ(sync::schemaParameters("sch%65ma=%32"), (Versions{"2"}));
+  CHECK_EQ(sync::schemaParameters("schema&schemas=2&xschema=2"), (Versions{""}));
+  CHECK_EQ(sync::schemaParameters(""), (Versions{}));
 }
 
 TEST(sync_api_admits_a_signed_in_push_and_answers_it_as_jcs) {

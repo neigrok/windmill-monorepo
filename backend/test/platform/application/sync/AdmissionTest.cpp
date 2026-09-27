@@ -13,8 +13,9 @@
 #include <variant>
 
 // What the golden corpus does not pin about Admission: the text merge's work bound below MERGE_WORK_CELLS, a base
-// rev past every seq, a string holding U+0000, a replica binding a push's 409 took away or another account holds
-// by the time its intent is admitted, a fault in step R's own write, and the server's physical clock.
+// rev that is a double past the safe integers, a string holding U+0000, a replica binding a push's 409 took away or
+// another account holds by the time its intent is admitted, a fault in step R's own write, and the server's
+// physical clock.
 
 using namespace wm;
 using namespace wm::sync;
@@ -109,7 +110,7 @@ TEST(admission_refuses_a_whole_text_conflict_past_the_field_cap_too_large_and_re
   CHECK(world.failures.reports.empty());
 }
 
-TEST(admission_answers_base_unknown_for_a_base_rev_past_every_seq) {
+TEST(admission_refuses_a_base_rev_past_the_safe_integers_invalid) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
   world.seed(markedOverlay());
@@ -119,7 +120,7 @@ TEST(admission_answers_base_unknown_for_a_base_rev_past_every_seq) {
 
   const AdmitOutcome outcome = admitFirst(world, admission, intent);
 
-  const Json::Value refused = parseJson(R"({"s": "refused", "code": "base-unknown"})");
+  const Json::Value refused = parseJson(R"({"s": "refused", "code": "invalid"})");
   REQUIRE(std::holds_alternative<Admitted>(outcome));
   CHECK_EQ(jcs(std::get<Admitted>(outcome).result), jcs(refused));
   CHECK_EQ(jcs(world.dump()), jcs(answeredOnly(seeded, intent, refused)));
@@ -164,8 +165,10 @@ TEST(admission_leaves_an_intent_of_a_replica_now_bound_to_another_account_unansw
   const AdmitOutcome admissible = admitFirst(world, admission, memoIntent(parseJson(R"({"text": "red", "base": {"rev": 1}})")));
   const AdmitOutcome refusable = admitFirst(world, admission, memoIntent(parseJson(R"({"text": "red", "base": {"rev": "one"}})")));
 
-  CHECK(std::holds_alternative<AlreadyAnswered>(admissible));
-  CHECK(std::holds_alternative<AlreadyAnswered>(refusable));
+  REQUIRE(std::holds_alternative<OutOfTurn>(admissible));
+  CHECK(std::get<OutOfTurn>(admissible).turn == Turn::foreign);
+  REQUIRE(std::holds_alternative<OutOfTurn>(refusable));
+  CHECK(std::get<OutOfTurn>(refusable).turn == Turn::foreign);
   CHECK_EQ(jcs(world.dump()), jcs(seeded));
   CHECK(world.feed.published.empty());
 }

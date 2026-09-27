@@ -1,6 +1,7 @@
 #include "platform/domain/sync/Registry.h"
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <initializer_list>
 #include <set>
@@ -9,6 +10,69 @@
 namespace wm::sync {
 
 namespace {
+
+// §2.4's syntax characters: a pattern matches one literally only escaped.
+constexpr std::string_view kSyntaxCharacters = "^$\\.*+?()[]{}|/";
+
+bool isOneOf(std::string_view characters, char c) {
+  return characters.find(c) != std::string_view::npos;
+}
+
+// A bracket class from `start`, just past its `[`: literals, escaped syntax characters and `\-`, and ascending
+// ranges, with no negation, no `[`, `&` or `~`, and a bare `-` only first or last. The index of its `]`, or none.
+std::optional<std::size_t> classEnd(std::string_view body, std::size_t start) {
+  struct Item {
+    char c;
+    bool dash;  // a bare `-`, which joins its neighbours into a range
+  };
+  if (start < body.size() && body[start] == '^') return std::nullopt;
+  std::vector<Item> items;
+  std::size_t i = start;
+  while (i < body.size() && body[i] != ']') {
+    if (body[i] == '\\') {
+      if (i + 1 == body.size() || !(isOneOf(kSyntaxCharacters, body[i + 1]) || body[i + 1] == '-')) return std::nullopt;
+      items.push_back(Item{body[i + 1], false});
+      i += 2;
+    } else if (isOneOf("[&~", body[i])) {
+      return std::nullopt;
+    } else {
+      items.push_back(Item{body[i], body[i] == '-'});
+      ++i;
+    }
+  }
+  if (i == body.size() || items.empty()) return std::nullopt;
+  for (std::size_t k = 1; k + 1 < items.size(); ++k) {
+    if (!items[k].dash) continue;
+    const Item& low = items[k - 1];
+    const Item& high = items[k + 1];
+    if (low.dash || high.dash || low.c > high.c) return std::nullopt;
+    if (k + 2 < items.size() - 1 && items[k + 2].dash) return std::nullopt;
+  }
+  return i;
+}
+
+// The count a quantifier spells in decimal digits, or none.
+std::optional<std::uint64_t> countOf(std::string_view digits) {
+  std::uint64_t count = 0;
+  const auto [end, error] = std::from_chars(digits.data(), digits.data() + digits.size(), count);
+  if (digits.empty() || error != std::errc{} || end != digits.data() + digits.size()) return std::nullopt;
+  return count;
+}
+
+// A counted quantifier `{n}`, `{n,}` or `{n,m}` with n ≤ m, from `start`, just past its `{`: the index of its
+// `}`, or none.
+std::optional<std::size_t> countEnd(std::string_view body, std::size_t start) {
+  const std::size_t close = body.find('}', start);
+  if (close == std::string_view::npos) return std::nullopt;
+  const std::string_view counts = body.substr(start, close - start);
+  const std::size_t comma = counts.find(',');
+  const std::optional<std::uint64_t> low = countOf(counts.substr(0, comma));
+  if (!low) return std::nullopt;
+  if (comma == std::string_view::npos || comma + 1 == counts.size()) return close;
+  const std::optional<std::uint64_t> high = countOf(counts.substr(comma + 1));
+  if (!high || *high < *low) return std::nullopt;
+  return close;
+}
 
 const Pattern& productNames() {
   static const Pattern pattern{"^[a-z][a-z0-9]*$"};
@@ -140,8 +204,15 @@ private:
   std::string path_;
 };
 
-Unit unitOf(const Reader& reader, const char* key) {
-  return reader.oneOf<Unit>(key, {{"chars", Unit::chars}, {"bytes", Unit::bytes}});
+// D-9: `min` and `max` in the `unit` they state; a bound without its unit fails.
+std::optional<Bounds> boundsOf(const Reader& reader) {
+  const std::optional<std::int64_t> min = reader.optionalInteger("min", 0);
+  const std::optional<std::int64_t> max = reader.optionalInteger("max", 1);
+  if (!reader.has("unit")) {
+    if (min || max) reader.fail("has a bound without a \"unit\"");
+    return std::nullopt;
+  }
+  return Bounds{.unit = reader.oneOf<Unit>("unit", {{"chars", Unit::chars}, {"bytes", Unit::bytes}}), .min = min, .max = max};
 }
 
 Domain domainOf(const Json::Value& json, const std::string& path) {
@@ -150,12 +221,9 @@ Domain domainOf(const Json::Value& json, const std::string& path) {
 
   if (type == "string") {
     const Reader reader(json, path, {"type", "nullable", "enum", "pattern", "unit", "min", "max"});
-    Domain domain{.type = Domain::Type::string, .nullable = reader.optionalBoolean("nullable")};
+    Domain domain{.type = Domain::Type::string, .nullable = reader.optionalBoolean("nullable"), .bounds = boundsOf(reader)};
     if (reader.has("enum")) domain.oneOf = reader.names("enum", nullptr, true);
     if (reader.has("pattern")) domain.pattern = reader.pattern("pattern");
-    if (reader.has("unit")) domain.unit = unitOf(reader, "unit");
-    domain.minLength = reader.optionalInteger("min", 0);
-    domain.maxLength = reader.optionalInteger("max", 1);
     return domain;
   }
   if (type == "number") {
@@ -233,11 +301,9 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
                                                {"text", FieldKind::text}}),
       .writer = reader.oneOf<Writer>("writer", {{"client", Writer::client}, {"server", Writer::server}}),
       .parent = reader.trueOrAbsent("parent"),
-      .min = reader.optionalInteger("min", 0),
-      .max = reader.optionalInteger("max", 1),
+      .bounds = boundsOf(reader),
   };
   if (reader.has("ref")) field.ref = reader.name("ref", memberNames());
-  if (reader.has("unit")) field.unit = unitOf(reader, "unit");
   if (reader.has("domain")) field.domain = domainOf(reader.value("domain"), reader.at("domain"));
   if (reader.has("serialNext")) field.serialNext = reader.names("serialNext", &memberNames(), false);
   if (reader.has("opens")) field.opens = reader.names("opens", nullptr, true);
@@ -268,8 +334,7 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
   }
   if (field.kind == FieldKind::serial && (!reader.has("serialNext") || field.writer != Writer::server))
     reader.fail("is serial without \"serialNext\" and the server as its writer");
-  if ((field.min || field.max) && !field.unit) reader.fail("has a bound without a \"unit\"");
-  if (field.kind == FieldKind::text && (!field.unit || !field.max)) reader.fail("is text without a \"unit\" and a \"max\"");
+  if (field.kind == FieldKind::text && !(field.bounds && field.bounds->max)) reader.fail("is text without a \"unit\" and a \"max\"");
   if (field.parent && !field.ref) reader.fail("is a parent without a \"ref\"");
   if (!field.opens.empty() && field.writer != Writer::server) reader.fail("opens a tree without the server as its writer");
   for (const std::string& value : field.opens) {
@@ -444,13 +509,65 @@ ProductDef productOf(const std::string& name, const Json::Value& json, const std
 }
 
 Pattern::Pattern(std::string source) : source_(std::move(source)) {
-  if (source_.size() < 2 || source_.front() != '^' || source_.back() != '$')
-    throw RegistryError("the pattern " + source_ + " is not anchored with ^ and $");
+  if (!isPortable(source_)) throw RegistryError("the pattern " + source_ + " is outside §2.4's portable patterns");
   try {
     regex_ = std::regex(source_, std::regex::ECMAScript);
   } catch (const std::regex_error&) {
     throw RegistryError("the pattern " + source_ + " does not compile");
   }
+}
+
+bool Pattern::isPortable(std::string_view source) {
+  const bool printable = std::all_of(source.begin(), source.end(), [](char c) { return c >= ' ' && c <= '~'; });
+  if (!printable || source.size() < 2 || source.front() != '^' || source.back() != '$') return false;
+  const std::string_view body = source.substr(1, source.size() - 2);
+  int depth = 0;
+  bool quantifiable = false;  // the last token is an atom or a group, which a quantifier may follow
+  std::size_t i = 0;
+  while (i < body.size()) {
+    const char c = body[i];
+    if (c == '\\') {
+      if (i + 1 == body.size() || !isOneOf(kSyntaxCharacters, body[i + 1])) return false;
+      i += 2;
+      quantifiable = true;
+    } else if (c == '[') {
+      const std::optional<std::size_t> end = classEnd(body, i + 1);
+      if (!end) return false;
+      i = *end + 1;
+      quantifiable = true;
+    } else if (c == '(') {
+      const bool special = i + 1 < body.size() && body[i + 1] == '?';
+      if (special && (i + 2 == body.size() || body[i + 2] != ':')) return false;
+      i += special ? 3 : 1;
+      ++depth;
+      quantifiable = false;
+    } else if (c == ')') {
+      if (depth == 0) return false;
+      --depth;
+      ++i;
+      quantifiable = true;
+    } else if (c == '|') {
+      if (depth == 0) return false;
+      ++i;
+      quantifiable = false;
+    } else if (c == '?' || c == '*' || c == '+' || c == '{') {
+      if (!quantifiable) return false;
+      if (c == '{') {
+        const std::optional<std::size_t> end = countEnd(body, i + 1);
+        if (!end) return false;
+        i = *end + 1;
+      } else {
+        ++i;
+      }
+      quantifiable = false;
+    } else if (isOneOf("^$.]}", c)) {
+      return false;
+    } else {
+      ++i;
+      quantifiable = true;
+    }
+  }
+  return depth == 0;
 }
 
 bool Pattern::matches(std::string_view text) const {

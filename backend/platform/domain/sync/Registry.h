@@ -20,11 +20,16 @@ struct RegistryError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-// An anchored ECMAScript regular expression, compiled once. It matches bytes, so a pattern that must
-// count non-ASCII characters cannot use '.'.
+// §2.4's portable pattern, compiled once and matched against the whole value: printable ASCII, `^`, a body of
+// literals, escaped syntax characters, bracket classes of literals and ascending ranges, groups (the only place
+// a `|` may stand) and greedy quantifiers, then `$`. Every atom matches one ASCII character, so std::regex on
+// bytes answers as every other dialect does.
 class Pattern {
 public:
+  // Throws RegistryError for a source outside the portable subset.
   explicit Pattern(std::string source);
+
+  static bool isPortable(std::string_view source);
 
   bool matches(std::string_view text) const;
   const std::string& source() const { return source_; }
@@ -52,6 +57,14 @@ private:
 
 enum class Unit { chars, bytes };
 
+// D-9: the length bounds of a field or a string domain, in the unit they state. The registry states a unit
+// whenever it states a bound, so a bound never falls back to a unit of its own choosing.
+struct Bounds {
+  Unit unit = Unit::bytes;
+  std::optional<std::int64_t> min;
+  std::optional<std::int64_t> max;
+};
+
 // A value's shape (registry.schema.json `domain`). Each type reads only its own members; `nullable`
 // admits null as well.
 struct Domain {
@@ -63,9 +76,7 @@ struct Domain {
 
   std::vector<std::string> oneOf;  // string `enum`
   std::optional<Pattern> pattern;
-  std::optional<Unit> unit;
-  std::optional<std::int64_t> minLength;
-  std::optional<std::int64_t> maxLength;
+  std::optional<Bounds> bounds;    // a string's, present iff the domain states its unit
 
   bool integer = false;
   std::optional<double> min;
@@ -110,9 +121,7 @@ struct FieldDef {
   Writer writer = Writer::client;
   std::optional<std::string> ref;  // D-10: the type whose id the field holds
   bool parent = false;             // the one ref whose target must be alive (§6.1 step 9)
-  std::optional<Unit> unit;
-  std::optional<std::int64_t> min;
-  std::optional<std::int64_t> max;
+  std::optional<Bounds> bounds;    // present iff the field states its unit
   std::optional<Domain> domain;
   std::optional<Quantum> quantum;
   std::vector<std::string> serialNext;

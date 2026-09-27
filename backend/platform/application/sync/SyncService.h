@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <optional>
+#include <string_view>
 
 namespace wm::sync {
 
@@ -40,14 +41,16 @@ private:
   std::chrono::steady_clock::time_point deadline_;
 };
 
-// §9.2 hello, §6.2 push and §6.7 pull over the engine's ports. Every method runs on a blocking thread (§6).
+// §9.2 hello, §6.2 push and §6.7 pull over the engine's ports, each from its caller and its body as received.
+// A request's registry version is checked before it reaches the service (§9.1); push and pull check the rest
+// of §9.1's envelope here, in its order. Every method runs on a blocking thread (§6).
 class SyncService {
 public:
   SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock);
 
   SyncReply hello(const std::optional<UserId>& caller);
-  SyncReply push(const std::optional<UserId>& caller, const Json::Value& request, PushBudget& budget);
-  SyncReply pull(const std::optional<UserId>& caller, const Json::Value& request);
+  SyncReply push(const std::optional<UserId>& caller, std::string_view body, PushBudget& budget);
+  SyncReply pull(const std::optional<UserId>& caller, std::string_view body);
 
 private:
   const SyncCatalog& catalog_;

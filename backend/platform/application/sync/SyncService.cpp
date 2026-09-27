@@ -9,7 +9,9 @@
 #include <algorithm>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
+#include <string_view>
 #include <tuple>
 #include <utility>
 #include <variant>
@@ -49,12 +51,27 @@ bool isReplicaId(const Json::Value& replica) {
          std::all_of(id.begin() + 3, id.end(), [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
-// §6.2 step 1's shape: exactly {replica: a D-3 replica id, ackThrough: integer ≥ 0, intents: [{n: integer ≥ 1, …}]}.
+// The body as JSON, or none when it is not strict JSON (§9.1 step 4).
+std::optional<Json::Value> parsed(std::string_view body) {
+  try {
+    return parseJson(body);
+  } catch (const JsonError&) {
+    return std::nullopt;
+  }
+}
+
+// A §9.1 safe integer of at least `least`.
+bool isSafeAtLeast(const Json::Value& value, std::uint64_t least) {
+  return isSafeInteger(value) && value.asDouble() >= static_cast<double>(least);
+}
+
+// §6.2 step 1's shape: exactly {replica: a D-3 replica id, ackThrough: a safe integer ≥ 0, intents: [{n: a safe
+// integer ≥ 1, …}]}.
 bool isPushRequest(const Json::Value& request) {
   if (!request.isObject() || request.size() != 3) return false;
-  if (!isReplicaId(request["replica"]) || !request["ackThrough"].isUInt64() || !request["intents"].isArray()) return false;
+  if (!isReplicaId(request["replica"]) || !isSafeAtLeast(request["ackThrough"], 0) || !request["intents"].isArray()) return false;
   return std::all_of(request["intents"].begin(), request["intents"].end(),
-                     [](const Json::Value& intent) { return intent.isObject() && intent["n"].isUInt64() && intent["n"].asUInt64() >= 1; });
+                     [](const Json::Value& intent) { return intent.isObject() && isSafeAtLeast(intent["n"], 1); });
 }
 
 // §9.4 PullRequest: {scopes: [{scope: string, cursor: string | null}]}.
@@ -98,8 +115,13 @@ public:
     for (const Json::Value* intent : byN()) {
       const std::uint64_t n = (*intent)["n"].asUInt64();
       const Digest256 digest = intentDigest(*intent);
-      if (n > lastN_ + 1) return conflict(std::move(body), "gap");
-      if (n == lastN_ + 1) {
+      const std::optional<Turn> read = turnOf(n);
+      if (!read) {
+        retry = retryAt(n, Retry::kTransientMs);
+        break;
+      }
+      Turn turn = *read;
+      if (turn == Turn::next) {
         if (budget.spent(admitted)) {
           retry = retryAt(n, 0);
           break;
@@ -109,20 +131,21 @@ public:
           retry = retryAt(n, wait->afterMs);
           break;
         }
-        lastN_ = n;
         if (const Admitted* answer = std::get_if<Admitted>(&outcome)) {
           ++admitted;
           results.append(numbered(n, answer->result));
           continue;
         }
+        // An overlapping push reached the replica's lock first.
+        turn = std::get<OutOfTurn>(outcome).turn;
       }
-      // n was answered before: by an earlier push, or by a concurrent one that reached the replica's lock first.
+      if (turn == Turn::foreign) return conflict(std::move(body), "replica-foreign");
+      if (turn == Turn::gap) return conflict(std::move(body), "gap");
       const std::optional<Json::Value> stored = storedAnswer(n, digest);
       if (!stored) return conflict(std::move(body), "replica-forked");
       results.append(numbered(n, *stored));
     }
-    prune();
-    body["lastN"] = Json::UInt64(lastN_);
+    body["lastN"] = Json::UInt64(prune());
     body["results"] = std::move(results);
     if (retry) body["retry"] = *retry;
     return SyncReply{200, std::move(body)};
@@ -132,13 +155,26 @@ private:
   // Step 3: an absent binding is inserted at last_n 0; a replica bound to another account is foreign.
   bool bind() {
     const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-    const bool absent = !store_.lockReplica(*txn, replica_);
+    const bool absent = !store_.replica(*txn, replica_, RowLock::update);
     const ReplicaRow binding = store_.bindReplica(*txn, replica_, account_, serverNow_);
     if (binding.account != account_) return false;
     txn->commit();
     inserted_ = absent;
-    lastN_ = binding.lastN;
     return true;
+  }
+
+  // Step 4's comparison of n with last_n as read under the replica row's lock, never a value read earlier. A
+  // binding an overlapping push's 409 took away reads as this account's at last_n 0: the admission inserts it
+  // again (§6.1 step 3.3). None when the read failed transiently: the push answers the results so far (§6.6).
+  std::optional<Turn> turnOf(std::uint64_t n) {
+    try {
+      const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
+      const std::optional<ReplicaRow> row = store_.replica(*txn, replica_, RowLock::update);
+      return row.value_or(ReplicaRow{replica_, account_, 0}).turnOf(account_, n);
+    } catch (const std::exception& error) {
+      if (store_.classify(error) == FaultClass::transient) return std::nullopt;
+      throw;
+    }
   }
 
   // Step 4 takes the intents in ascending n, equal n's in the order the request carried them.
@@ -160,21 +196,29 @@ private:
   }
 
   // A 409 answers no results. A binding this push inserted goes with it, under the replica row's lock, while
-  // nothing was answered under it: an admission that then finds it gone inserts it again (§6.1 step 3.3).
+  // nothing was answered under it and it is still this account's: an admission that then finds it gone inserts
+  // it again (§6.1 step 3.3).
   SyncReply conflict(Json::Value body, const std::string& error) {
     if (inserted_) {
       const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-      if (store_.lockReplica(*txn, replica_)) store_.unbindUnused(*txn, replica_);
+      const std::optional<ReplicaRow> row = store_.replica(*txn, replica_, RowLock::update);
+      if (row && row->account == account_) store_.unbindUnused(*txn, replica_);
       txn->commit();
     }
     return failed(409, std::move(body), error);
   }
 
-  // Step 6, in a push answered 200: the results the replica acknowledged, never past the last n answered.
-  void prune() {
+  // Step 6, in a push answered 200: the results the replica acknowledged, never past its last_n, which the response
+  // answers as lastN. The row is read without its lock, so an overlapping push's admission never holds the answer
+  // up: last_n only grows, and a binding past last_n 0 is never taken away. A binding no longer this account's
+  // prunes nothing.
+  std::uint64_t prune() {
     const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-    store_.pruneResults(*txn, replica_, std::min(request_["ackThrough"].asUInt64(), lastN_));
+    const std::optional<ReplicaRow> row = store_.replica(*txn, replica_, RowLock::none);
+    if (!row || row->account != account_) return 0;
+    store_.pruneResults(*txn, replica_, std::min(request_["ackThrough"].asUInt64(), row->lastN));
     txn->commit();
+    return row->lastN;
   }
 
   SyncStore& store_;
@@ -184,7 +228,6 @@ private:
   const std::string replica_;
   const Ms serverNow_;
   bool inserted_ = false;
-  std::uint64_t lastN_ = 0;
 };
 
 // One stream of a page's merge, a type's typed rows or its spent ids as thin dead rows, read in (seq, id)
@@ -483,26 +526,28 @@ SyncReply SyncService::hello(const std::optional<UserId>& caller) {
   return SyncReply{200, std::move(body)};
 }
 
-SyncReply SyncService::push(const std::optional<UserId>& caller, const Json::Value& request, PushBudget& budget) {
+SyncReply SyncService::push(const std::optional<UserId>& caller, std::string_view body, PushBudget& budget) {
   const Ms serverNow = clock_.nowMs();
   const Limits& limits = admission_.limits();
-  Json::Value body = envelope(serverNow, epochOf(store_));
-  if (!caller) return failed(401, std::move(body), "unauthenticated");
-  if (!isPushRequest(request)) return failed(400, std::move(body), "malformed");
-  if (request["intents"].size() > limits.pushMaxIntents || jcs(request).size() > limits.pushMaxBytes) {
-    return failed(413, std::move(body), "request-too-large");
-  }
-  return ReplicaPush(store_, admission_, *caller, request, serverNow).run(budget, std::move(body));
+  Json::Value answer = envelope(serverNow, epochOf(store_));
+  if (!caller) return failed(401, std::move(answer), "unauthenticated");
+  if (body.size() > limits.pushMaxBytes) return failed(413, std::move(answer), "request-too-large");
+  const std::optional<Json::Value> request = parsed(body);
+  if (!request || !isPushRequest(*request)) return failed(400, std::move(answer), "malformed");
+  if ((*request)["intents"].size() > limits.pushMaxIntents) return failed(413, std::move(answer), "request-too-large");
+  return ReplicaPush(store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
 }
 
-SyncReply SyncService::pull(const std::optional<UserId>& caller, const Json::Value& request) {
+SyncReply SyncService::pull(const std::optional<UserId>& caller, std::string_view body) {
   const Ms serverNow = clock_.nowMs();
-  Json::Value body = envelope(serverNow, epochOf(store_));
-  if (!isPullRequest(request) || request["scopes"].size() > admission_.limits().pullMaxScopes) return failed(400, std::move(body), "malformed");
+  Json::Value answer = envelope(serverNow, epochOf(store_));
+  const std::optional<Json::Value> request = parsed(body);
+  if (!request || !isPullRequest(*request)) return failed(400, std::move(answer), "malformed");
+  if ((*request)["scopes"].size() > admission_.limits().pullMaxScopes) return failed(400, std::move(answer), "malformed");
   ScopePull pull(catalog_, store_, admission_, caller, serverNow);
-  Json::Value& pages = body["pages"] = Json::Value(Json::arrayValue);
-  for (const Json::Value& wanted : request["scopes"]) pages.append(pull.page(wanted));
-  return SyncReply{200, std::move(body)};
+  Json::Value& pages = answer["pages"] = Json::Value(Json::arrayValue);
+  for (const Json::Value& wanted : (*request)["scopes"]) pages.append(pull.page(wanted));
+  return SyncReply{200, std::move(answer)};
 }
 
 }

@@ -2,6 +2,8 @@
 
 #include "platform/domain/sync/Wire.h"
 
+#include <algorithm>
+
 namespace wm::probe {
 
 using namespace sync;
@@ -14,7 +16,9 @@ bool isOpen(const Row& run) {
 
 void requireStartedRuns(const std::vector<Change>& changes) {
   for (const Change& change : changes) {
-    if (change.type->name == "run" && change.op == Op::create && change.source != Source::command) throw Refusal(code::invalid);
+    if (change.type->name != "run") continue;
+    const bool createdElsewhere = std::any_of(change.createdBy.begin(), change.createdBy.end(), [](Source source) { return source != Source::command; });
+    if (createdElsewhere) throw Refusal(code::invalid);
   }
 }
 

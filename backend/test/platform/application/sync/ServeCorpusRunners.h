@@ -60,7 +60,7 @@ inline Json::Value liveEventsOf(SyncWorld& world, const Limits& limits) {
   return events;
 }
 
-// push/serve.json: §6.2 once, under the vector's budget, faults and limits.
+// push/serve.json: §6.2 once, under the vector's budget, faults and limits, with jcs(request) as the body received.
 inline Json::Value pushVector(SyncWorld& world, const Json::Value& input) {
   BlockingThread::Mark blocking;
   world.seed(input["state"]);
@@ -77,7 +77,7 @@ inline Json::Value pushVector(SyncWorld& world, const Json::Value& input) {
   CountBudget budget(input.isMember("budget") ? std::optional<std::size_t>(input["budget"].asUInt64()) : std::nullopt);
 
   world.feed.published.clear();
-  const SyncReply reply = service.push(callerOf(world, input["account"]), input["request"], budget);
+  const SyncReply reply = service.push(callerOf(world, input["account"]), jcs(input["request"]), budget);
   return object({{"response", responseOf(reply)}, {"state", world.dump()}, {"frames", liveEventsOf(world, limits)}});
 }
 
@@ -94,7 +94,7 @@ inline Json::Value pullVector(SyncWorld& world, const Json::Value& input) {
   SyncService service(world.catalog(), world.store(), admission, clock);
 
   world.feed.published.clear();
-  const SyncReply reply = service.pull(callerOf(world, input["account"]), input["request"]);
+  const SyncReply reply = service.pull(callerOf(world, input["account"]), jcs(input["request"]));
   Json::Value answer = object({{"response", responseOf(reply)}});
   const Json::Value after = world.dump();
   if (jcs(after) != jcs(before)) answer["state"] = after;
@@ -122,8 +122,8 @@ inline void protocolTranscript(SyncWorld& world, const std::vector<Json::Value>&
       const std::optional<UserId> caller = callerOf(world, line["account"]);
       const std::string http = line["http"].asString();
       CountBudget budget(line["inject"].isMember("budget") ? std::optional<std::size_t>(line["inject"]["budget"].asUInt64()) : std::nullopt);
-      const SyncReply reply = http == "push" ? service.push(caller, line["request"], budget)
-                              : http == "pull" ? service.pull(caller, line["request"])
+      const SyncReply reply = http == "push" ? service.push(caller, jcs(line["request"]), budget)
+                              : http == "pull" ? service.pull(caller, jcs(line["request"]))
                                                : service.hello(caller);
       corpus::checkSame(responseOf(reply), line["response"], __FILE__, __LINE__);
       continue;

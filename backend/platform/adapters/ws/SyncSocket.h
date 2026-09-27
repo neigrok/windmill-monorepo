@@ -32,9 +32,10 @@ void installSyncSocket(SyncSocketDeps deps);
 // Referenced from main so the static WS registration in SyncSocket.cpp is not dropped by the linker.
 void linkSyncSocket();
 
-// §9.1 on the upgrade to /v1/sync/live, before the connection upgrades: a request whose Sync-Schema is missing or
-// not a decimal integer is answered 400 malformed, one below minSchema 426 upgrade-required. Drogon creates it by
-// the name SyncSocket's path list gives.
+// §9.1 and §9.5 on the upgrade to /v1/sync/live?schema=<version>, before the connection upgrades: the version is
+// read from the query parameter `schema` alone, since a browser WebSocket cannot send headers. One that is missing,
+// repeated or not a decimal integer is answered 400 malformed, one below minSchema 426 upgrade-required. Drogon
+// creates the gate by the name SyncSocket's path list gives.
 class SyncSchemaGate : public drogon::HttpFilter<SyncSchemaGate> {
 public:
   void doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) override;

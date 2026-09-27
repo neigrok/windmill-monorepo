@@ -128,7 +128,7 @@ public:
     return dbOf(txn).replicas.emplace(replica, ReplicaRow{replica, account, 0}).first->second;
   }
 
-  std::optional<ReplicaRow> lockReplica(SyncTxn& txn, const std::string& replica) override {
+  std::optional<ReplicaRow> replica(SyncTxn& txn, const std::string& replica, RowLock) override {
     const auto row = dbOf(txn).replicas.find(replica);
     return row == dbOf(txn).replicas.end() ? std::nullopt : std::optional(row->second);
   }
@@ -228,7 +228,7 @@ public:
   ReplicaRow bindReplica(SyncTxn& txn, const std::string& replica, const UserId& account, Ms now) override {
     return inner_.bindReplica(txn, replica, account, now);
   }
-  std::optional<ReplicaRow> lockReplica(SyncTxn& txn, const std::string& replica) override { return inner_.lockReplica(txn, replica); }
+  std::optional<ReplicaRow> replica(SyncTxn& txn, const std::string& replica, RowLock lock) override { return inner_.replica(txn, replica, lock); }
   void unbindUnused(SyncTxn& txn, const std::string& replica) override { inner_.unbindUnused(txn, replica); }
   void setLastN(SyncTxn& txn, const std::string& replica, std::uint64_t n) override { inner_.setLastN(txn, replica, n); }
   std::optional<StoredResult> storedResult(SyncTxn& txn, const std::string& replica, std::uint64_t n) override {

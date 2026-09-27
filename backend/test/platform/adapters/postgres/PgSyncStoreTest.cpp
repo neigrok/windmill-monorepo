@@ -86,7 +86,7 @@ TEST(pg_sync_store_binds_replicas_and_keeps_their_results_until_pruned) {
   const Digest256 digest = sha256("intent");
 
   std::unique_ptr<SyncTxn> txn = store.begin(TxnMode::write);
-  CHECK_EQ(store.lockReplica(*txn, replica).has_value(), false);
+  CHECK_EQ(store.replica(*txn, replica, RowLock::update).has_value(), false);
   const ReplicaRow bound = store.bindReplica(*txn, replica, world.account("A"), 100);
   CHECK_EQ(bound.lastN, 0u);
   store.setLastN(*txn, replica, 2);
@@ -97,7 +97,7 @@ TEST(pg_sync_store_binds_replicas_and_keeps_their_results_until_pruned) {
   txn->commit();
 
   txn = store.begin(TxnMode::write);
-  const ReplicaRow locked = *store.lockReplica(*txn, replica);
+  const ReplicaRow locked = *store.replica(*txn, replica, RowLock::update);
   CHECK_EQ(locked.account, world.account("A"));
   CHECK_EQ(locked.lastN, 2u);
   const StoredResult first = *store.storedResult(*txn, replica, 1);
@@ -110,7 +110,7 @@ TEST(pg_sync_store_binds_replicas_and_keeps_their_results_until_pruned) {
   CHECK_EQ(store.storedResult(*txn, replica, 3)->faults, 3);
   store.unbindUnused(*txn, replica);
   CHECK_EQ(store.storedResult(*txn, replica, 3)->faults, 3);
-  CHECK_EQ(store.lockReplica(*txn, replica)->lastN, 2u);
+  CHECK_EQ(store.replica(*txn, replica, RowLock::update)->lastN, 2u);
   txn->commit();
 }
 
@@ -128,15 +128,15 @@ TEST(pg_sync_store_unbinds_only_a_replica_that_answered_nothing) {
   txn->commit();
 
   txn = store.begin(TxnMode::write);
-  REQUIRE(store.lockReplica(*txn, unused).has_value());
+  REQUIRE(store.replica(*txn, unused, RowLock::update).has_value());
   store.unbindUnused(*txn, unused);
-  REQUIRE(store.lockReplica(*txn, tallied).has_value());
+  REQUIRE(store.replica(*txn, tallied, RowLock::update).has_value());
   store.unbindUnused(*txn, tallied);
   txn->commit();
 
   txn = store.begin(TxnMode::write);
-  CHECK_EQ(store.lockReplica(*txn, unused).has_value(), false);
-  CHECK_EQ(store.lockReplica(*txn, tallied)->lastN, 0u);
+  CHECK_EQ(store.replica(*txn, unused, RowLock::update).has_value(), false);
+  CHECK_EQ(store.replica(*txn, tallied, RowLock::update)->lastN, 0u);
   CHECK_EQ(store.storedResult(*txn, tallied, 1)->faults, 1);
 }
 

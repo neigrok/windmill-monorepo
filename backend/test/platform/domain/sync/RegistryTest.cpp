@@ -79,9 +79,11 @@ TEST(the_probe_card_reads_as_declared) {
   CHECK_FALSE(card->governsTree);
 
   const FieldDef& title = card->fields.at("title");
-  CHECK(title.kind == FieldKind::lww && title.writer == Writer::client && title.unit == Unit::chars);
-  CHECK_EQ(title.min, std::optional<std::int64_t>(1));
-  CHECK_EQ(title.max, std::optional<std::int64_t>(12));
+  CHECK(title.kind == FieldKind::lww && title.writer == Writer::client);
+  REQUIRE(title.bounds.has_value());
+  CHECK(title.bounds->unit == Unit::chars);
+  CHECK_EQ(title.bounds->min, std::optional<std::int64_t>(1));
+  CHECK_EQ(title.bounds->max, std::optional<std::int64_t>(12));
   CHECK(title.domain->type == Domain::Type::string);
 
   const FieldDef& size = card->fields.at("size");
@@ -143,7 +145,7 @@ TEST(the_probe_types_carry_every_identity_class) {
   CHECK(mark.scope.kind == ScopeKind::overlay && !mark.life);
   CHECK_EQ(mark.keyRef, std::optional<std::string>("tag"));
   CHECK_EQ(mark.visibleWhen, (std::vector<std::string>{"done", "memo"}));
-  CHECK(mark.fields.at("memo").kind == FieldKind::text && mark.fields.at("memo").unit == Unit::bytes);
+  CHECK(mark.fields.at("memo").kind == FieldKind::text && mark.fields.at("memo").bounds->unit == Unit::bytes);
   CHECK(mark.origins.replica && !mark.origins.server);
 }
 
@@ -177,9 +179,9 @@ TEST(a_registry_refuses_a_document_the_schema_refuses) {
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["kind"] = "set"; }),
            std::string("registry.types.item.fields.title has a \"kind\" outside its enumeration: set"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["idPattern"] = "i_[0-9]+"; }),
-           std::string("registry.types.item.idPattern: the pattern i_[0-9]+ is not anchored with ^ and $"));
+           std::string("registry.types.item.idPattern: the pattern i_[0-9]+ is outside §2.4's portable patterns"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["idPattern"] = "^i_[0-9+$"; }),
-           std::string("registry.types.item.idPattern: the pattern ^i_[0-9+$ does not compile"));
+           std::string("registry.types.item.idPattern: the pattern ^i_[0-9+$ is outside §2.4's portable patterns"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["minVersion"] = 3; }), std::string("registry has a minVersion above its version"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["cap"] = 0; }),
            std::string("registry.types.item has a \"cap\" that is not an integer of at least 1"));
@@ -247,6 +249,60 @@ TEST(a_registry_refuses_a_field_its_kind_cannot_hold) {
            std::string("registry.types.item.fields.size.quantum: a quantum is an integer or 1/k for an integer k"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","quantum":0.5})"); }),
            std::string("registry.types.item.fields.size has a quantum without a number domain"));
+}
+
+TEST(a_registry_refuses_a_string_domain_bound_without_its_unit_at_any_depth) {
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type": "string", "max": 12})"); }),
+           std::string("registry.types.item.fields.title.domain has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type": "string", "min": 1})"); }),
+           std::string("registry.types.item.fields.title.domain has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type": "array", "items": {"type": "string", "max": 12}})");
+           }),
+           std::string("registry.types.item.fields.title.domain.items has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["commands"][0]["args"]["label"] = parseJson(R"({"type": "json", "domain": {"type": "object", "properties": {"name": {"type": "string", "max": 12}}}})");
+           }),
+           std::string("registry.commands.p.sweep.args.label.domain.properties.name has a bound without a \"unit\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type": "string", "unit": "bytes", "max": 12})"); }),
+           std::string("(admitted)"));
+}
+
+TEST(a_registry_refuses_a_pattern_outside_section_2_4_s_portable_subset_wherever_it_sits) {
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["idPattern"] = "^i_.{12}$"; }),
+           std::string("registry.types.item.idPattern: the pattern ^i_.{12}$ is outside §2.4's portable patterns"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type": "string", "pattern": "^\\S+$"})"); }),
+           std::string("registry.types.item.fields.title.domain.pattern: the pattern ^\\S+$ is outside §2.4's portable patterns"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["device"]["picture"] = parseJson(R"({"keyPattern": "^picture:[^/]{8,64}$"})"); }),
+           std::string("registry.products.p.device.picture.keyPattern: the pattern ^picture:[^/]{8,64}$ is outside §2.4's portable patterns"));
+}
+
+// The reference's table (core/registry.js isPortablePattern): the first seven are portable, the rest not.
+TEST(a_portable_pattern_is_the_subset_every_dialect_reads_alike) {
+  const std::vector<std::string> portable{"^b_[0-9a-f]{8}$", "^[A-Za-z0-9_-]{8,64}$", "^[-a]$", "^(?:ab|cd)+$", "^(a|b)?c{2,}$", "^a\\.b\\/c$",
+                                          "^[\\]\\-]$"};
+  const std::vector<std::string> outside{"b_[0-9a-f]{8}$", "^b_[0-9a-f]{8}", "^a|b$", "^.{1,64}$", "^\\s+$", "^\\d+$", "^\\w+$", "^a\\b$",
+                                         "^\\_$", "^[^/]+$", "^[]$", "^[z-a]$", "^[a-b-c]$", "^[a--]$", "^[a&&b]$", "^[[a]]$", "^a+?$",
+                                         "^a**$", "^a{3,2}$", "^a{,2}$", "^(?=a)a$", "^(a)\\1$", "^a$b$", "^\xc3\xa9$", "^a\\$"};
+  for (const std::string& source : portable) {
+    CHECK(Pattern::isPortable(source));
+    CHECK(Pattern{source}.source() == source);
+  }
+  for (const std::string& source : outside) CHECK_FALSE(Pattern::isPortable(source));
+}
+
+TEST(a_pattern_matches_the_whole_value_as_every_dialect_does) {
+  const Pattern lower{"^[a-z]+$"};
+  CHECK(lower.matches("abc"));
+  CHECK_FALSE(lower.matches("abc\n"));
+  CHECK_FALSE(lower.matches("xabcx!"));
+  const Pattern escaped{"^[\\]\\-]$"};
+  CHECK(escaped.matches("]"));
+  CHECK(escaped.matches("-"));
+  CHECK_FALSE(escaped.matches("\\"));
+  const Pattern grouped{"^(?:ab|cd)+/$"};
+  CHECK(grouped.matches("abcdab/"));
+  CHECK_FALSE(grouped.matches("abc/"));
 }
 
 // SPEC-GAP 12: roundHalfAway(x × k) ÷ k for q = 1/k, roundHalfAway(x ÷ q) × q for an integer q, in doubles.
