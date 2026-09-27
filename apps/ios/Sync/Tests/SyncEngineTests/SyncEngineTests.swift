@@ -42,7 +42,7 @@ struct SyncEngineTests {
   @Test func theBodyDecidesACommandAndItsPredictionInsideTheTransaction() throws {
     let rig = try Rig()
     let (outcome, run) = try rig.engine.commit(Rig.scope) { context -> (Gesture?, RecordID) in
-      let run = context.mintID("run")
+      let run = try context.mintID("run")
       let start = Command(name: "probe.start", args: ["id": run.json, "startedAt": JSON(context.now), "join": false])
       let predicted = Change.create("run", id: .given(run), ["startedAt": JSON(context.now)])
       return (Gesture(changes: [], command: start, predict: [predicted], gestureId: "g1"), run)
@@ -222,6 +222,22 @@ struct SyncEngineTests {
     #expect(try rig.outbox() == ["g2/0 ready"])
   }
 
+  // An Undo's silent fold frees the part of an atomic entry that did not depend on the held create, which nothing holds
+  // back any more: the Undo wakes the sender, whose next round sends it.
+  @Test func anUndoThatFreesAHeldBackEntryWakesTheSender() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Held")], hold: true, gestureId: "g1"))
+    try rig.commit(Gesture(
+      changes: [.update("card", "card0001", ["title": "Edited"]), Rig.card("card0002", "Mine")], atomic: true, gestureId: "g2"))
+    #expect(await rig.engine.sender.step() == .idle)
+    let kicks = rig.engine.sender.wake.kicks
+    #expect(try rig.engine.undo("g1"))
+    #expect(rig.engine.sender.wake.kicks == kicks + 1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(rig.transport.pushes.map { $0.intents.map { $0.deltas.map(\.key) } } == [[[RecordKey("card", "card0002")]]])
+  }
+
   @Test func aRetireUndoesTheHeldRemovalOfTheRecordItRewrites() throws {
     let rig = try Rig()
     let day = RecordID("2026-09-27")
@@ -230,7 +246,7 @@ struct SyncEngineTests {
     let rewrite = try rig.commit(Gesture(
       changes: [.put("day", day, present: true, ["score": 6])], retire: [RecordRef(type: "day", id: day)], gestureId: "g3"))
     #expect(rewrite.retired == ["g2"])
-    #expect(try rig.outbox() == ["g1/0 ready"])
+    #expect(try rig.outbox() == ["g1/0 ready", "g3/0 ready"])
     #expect(try rig.engine.read(Rig.scope) { try $0.drawn("day", day)?.values } == ["score": 6])
   }
 
@@ -249,8 +265,9 @@ struct SyncEngineTests {
 
   @Test func mintIDDrawsByTheTypesMint() throws {
     let rig = try Rig()
-    let board = rig.engine.mintID("board")
+    let board = try rig.engine.mintID("board")
     #expect(Rig.probe.type("board")!.idPattern!.matches(board.string!))
+    #expect(throws: CommitFailure(.malformed, "day mints no ids")) { try rig.engine.mintID("day") }
     #expect(try rig.engine.physNow() == Rig.startMs)
   }
 

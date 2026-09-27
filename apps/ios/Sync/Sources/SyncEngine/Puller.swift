@@ -6,11 +6,11 @@ import Synchronization
 
 // §7.5 the puller: one per device, for the active replica. Each step applies one live frame from its queue, or pulls
 // the scopes wanted in one request and records the answer as its ordered transactions (the offset sample, the epoch,
-// then one per page), each revalidating the replica it was asked for and the scope's subscription. Triggers want
-// scopes: engine start, foreground, a live reconnect and the fallback timer want every subscribed scope; a new
-// subscription, a frame that is not admitted, a page that stops short of the head, and a push acked at a seq its
-// scope's rows already hold want their own. A new seat wants every scope again. Steps are single-flight whoever runs
-// them, so a frame and a page never race on a cursor.
+// then one per page), each revalidating the replica it was asked for and the scope's subscription. Each trigger wants
+// its own scopes: engine start, foreground, a live reconnect and the fallback timer want every subscribed scope; a new
+// subscription, and a frame that is not admitted (a live gap), want their own; a page that stops short of the head
+// wants its scope again. A new seat wants every scope again. Steps are single-flight whoever runs them, so a frame and
+// a page never race on a cursor.
 
 package enum PullerStep: Sendable, Hashable {
   // A queued frame: its scope, and its outcome, nil when it was dropped (its replica or subscription gone).

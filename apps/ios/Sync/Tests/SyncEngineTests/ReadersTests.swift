@@ -45,8 +45,8 @@ struct ReadersTests {
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
 
-  // A reader a `read` or a commit passed, used after that call returned, is malformed; so is a commit whose body reads
-  // through such a reader and lets its error out.
+  // A reader a `read` or a commit passed, used after that call returned, is malformed, a mint included; so is a commit
+  // whose body reads through such a reader and lets its error out.
   @Test func aReaderUsedAfterItsCallIsMalformed() throws {
     let rig = try Rig(registry: Self.shelf)
     let ended = CommitFailure(.malformed, "a reader serves only inside the call that passed it")
@@ -64,6 +64,7 @@ struct ReadersTests {
     }
     #expect(throws: ended) { try context!.stored("item", "i_aaaa") }
     #expect(throws: ended) { try context!.firstPullComplete() }
+    #expect(throws: ended) { try context!.mintID("item") }
     #expect(throws: ended) { try rig.engine.commit(Self.scope) { _ -> (Gesture?, Int) in (nil, try kept!.drawn("item").count) } }
   }
 
@@ -177,7 +178,7 @@ struct ReadersTests {
     rig.random.queue(symbol: 1, of: 16, count: 8)
     rig.random.queue(symbol: 2, of: 16, count: 8)
     let (_, minted) = try rig.engine.commit(Rig.scope) { context -> (Gesture?, [RecordID]) in
-      (nil, [context.mintID("board"), context.mintID("board")])
+      (nil, [try context.mintID("board"), try context.mintID("board")])
     }
     #expect(minted == ["b_11111111", "b_22222222"])
   }
@@ -188,7 +189,7 @@ struct ReadersTests {
     let before = try rig.store.read { try $0.device(rows: true).json }
     #expect(throws: CommitFailure(.malformed, "day mints no ids")) {
       try rig.engine.commit(Rig.scope) { context -> (Gesture?, Void) in
-        (Gesture(changes: [.put("day", context.mintID("day"), present: true)]), ())
+        (Gesture(changes: [.put("day", try context.mintID("day"), present: true)]), ())
       }
     }
     #expect(try rig.store.read { try $0.device(rows: true).json } == before)

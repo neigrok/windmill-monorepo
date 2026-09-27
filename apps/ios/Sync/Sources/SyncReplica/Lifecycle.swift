@@ -85,6 +85,11 @@ public enum SignOutFinish: Sendable, Hashable {
   case changed(SignOut)
 }
 
+// A subscribe (§7.9): the scope is pulled and followed, or the replica knows it gone, and nothing is pulled.
+public enum SubscribeOutcome: String, Sendable, Hashable {
+  case subscribed, gone
+}
+
 public struct ReplicaLifecycle: Sendable {
   public let registry: Registry
   let hold: Hold
@@ -418,9 +423,16 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Subscriptions (§7.9)
 
-  // Scopes subscribed again: one the replica knows gone or not found is known no more, so its next pull boots it (§8.3).
-  public func subscribe(_ replica: inout LoadedReplica, to scopes: [ScopeRef]) {
-    for scope in scopes where replica.known[scope] != nil { replica.apply(.deleteKnown(scope)) }
+  // A scope the replica knows not found is known no more, so its first pull boots it; one it knows gone stays gone, since
+  // a scope's death is final (INV-13).
+  public func subscribe(_ replica: inout LoadedReplica, to scope: ScopeRef) -> SubscribeOutcome {
+    switch replica.known[scope] {
+    case .gone?: return .gone
+    case .notFound?:
+      replica.apply(.deleteKnown(scope))
+      return .subscribed
+    case nil: return .subscribed
+    }
   }
 
   // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not.

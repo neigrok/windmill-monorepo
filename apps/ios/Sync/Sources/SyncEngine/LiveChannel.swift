@@ -3,14 +3,15 @@ import SyncCore
 import SyncReplica
 import SyncStore
 
-// §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device online and
-// the app in the foreground. On open it follows every subscribed scope the replica does not know gone or not found, then
-// has the puller pull them all (the reconnect trigger); while open it keeps what it follows in step with the
-// subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping forcing a reconnect. Change, gone and
-// not-found frames go to the puller's queue, a pong keeps the heartbeat, and any other op is ignored. A socket that ends
-// or fails is reopened after the channel's own backoff, which the first pong of a socket resets; a 401 at the handshake
-// pauses the replica, and a 426 stops the channel for the process. When the loops run, a reader task per socket
-// receives its frames; in step mode the caller receives them.
+// §7.5 and §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device
+// online and the app in the foreground. On open it follows every subscribed scope the replica does not know gone or not
+// found, then has the puller pull them all (the reconnect trigger); while open it keeps what it follows in step with
+// the subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping forcing a reconnect. Change, gone and
+// not-found frames go to the puller's queue, a pong keeps the heartbeat, and any other op is ignored. An open that
+// fails, and a socket that ends or fails, count as a reconnect too, so the puller pulls every scope at once; the next
+// socket opens after the channel's own backoff, with its own `k` and a 30 s ceiling, `k` reset once a socket has
+// stayed open 30 s. A 401 at the handshake pauses the replica, and a 426 stops the channel for the process. When the
+// loops run, a reader task per socket receives its frames; in step mode the caller receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -31,15 +32,18 @@ package enum LiveStep: Sendable, Hashable {
 package actor LiveChannel {
   static let pingMs: Int64 = 25_000
   static let pongMs: Int64 = 10_000
+  // Appendix B's live reopen backoff: its ceiling, and how long a socket stays open before `k` resets.
+  static let reopenCeilingMs: Int64 = 30_000
+  static let settledMs: Int64 = 30_000
 
   struct Socket {
     let connection: any LiveConnection
     let replica: String
     let generation: Int
+    let openedAt: Int64
     var following: [ScopeRef] = []
     var pingedAt: Int64
     var pongDue: Int64?
-    var ponged = false
   }
 
   let core: EngineCore
@@ -105,8 +109,10 @@ package actor LiveChannel {
     return await open(meta, account: account)
   }
 
-  // The leave flush's end, and every state that wants no socket: the socket closes, and the next one opens at once.
+  // The leave flush's end, and every state that wants no socket: the socket closes, and the next one opens at once. A
+  // socket that stayed open `settledMs` resets the reopen backoff's `k`.
   package func close() {
+    if let socket, now() - socket.openedAt >= Self.settledMs { backoff.reset() }
     socket?.connection.close()
     socket = nil
     reader?.cancel()
@@ -146,7 +152,7 @@ package actor LiveChannel {
         return .again
       }
       generation += 1
-      socket = Socket(connection: connection, replica: meta.replica, generation: generation, pingedAt: now())
+      socket = Socket(connection: connection, replica: meta.replica, generation: generation, openedAt: now(), pingedAt: now())
       if core.config.drivesLoops { read(connection, generation: generation) }
       let kept = await keep(meta)
       core.pullWants.all()
@@ -222,10 +228,6 @@ package actor LiveChannel {
     switch frame {
     case .pong:
       self.socket?.pongDue = nil
-      if !socket.ponged {
-        self.socket?.ponged = true
-        backoff.reset()
-      }
     case .other:
       break
     case .change, .gone, .notFound:
@@ -242,16 +244,19 @@ package actor LiveChannel {
 
   // MARK: Reopening
 
-  // Closes the socket, and opens the next one after a backoff.
+  // A failed open, or a socket that ended or failed: a reconnect, so the puller pulls every scope at once, and the next
+  // socket opens after a backoff.
   func reopenLater() -> LiveStep {
     close()
+    core.pullWants.all()
+    puller.wake.kick()
     let ms = nextBackoff()
     reopenAt = now() + ms
     return .backoff(ms: ms)
   }
 
   func nextBackoff() -> Int64 {
-    backoff.next(ceilingMs: core.backoffCeilingMs(), floorMs: 0, random: core.random)
+    backoff.next(ceilingMs: Self.reopenCeilingMs, floorMs: 0, random: core.random)
   }
 
   func now() -> Int64 {

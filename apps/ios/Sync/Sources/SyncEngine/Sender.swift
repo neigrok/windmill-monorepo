@@ -109,7 +109,9 @@ package actor Sender {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
       guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
       guard let token = core.tokens.token(for: account) else { return try core.pauseAuth(seat.replica, sentUnder: nil) ? .paused : .again }
-      guard let request = try core.write({ store, _ in try store.number(limit: batchLimit) }) else { return .idle }
+      guard let request = try core.write({ store, instance in try store.number(limit: batchLimit, at: instance.deviceNow) }) else {
+        return .idle
+      }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
       let send = core.clock.wall.reading()
       let reply = await transport.push(request, token: token)
@@ -122,8 +124,7 @@ package actor Sender {
   // The answer's transactions in order: the offset sample first, then the results, the ack and the epoch, or the
   // failure's own move; a 401 pauses only while `token` is still the account's. A replica gone since the request
   // (re-identified, signed out) drops the rest of the answer, which then says nothing about the replica now active: the
-  // next round looks again. An entry acked at a seq its scope's rows already hold (its own frame came first) has the
-  // puller pull the scope, whose page resolves it.
+  // next round looks again.
   func record(_ reply: Reply<PushResponse>, to request: PushRequest, under token: SessionToken, timing: Timing) throws -> SenderStep {
     guard case .answered(let answer) = reply else {
       conflicts = 0
@@ -142,14 +143,9 @@ package actor Sender {
         try store.apply(step, replica: id, instance: &instance, timing: timing, identities: core.identities)
       }
     }
-    guard let replica else { return .again }
+    guard replica != nil else { return .again }
     switch answer {
     case .ok(let response):
-      let resolvable = try core.store.resolvableScopes(of: replica)
-      if !resolvable.isEmpty {
-        core.pullWants.add(resolvable)
-        core.wakes.puller.kick()
-      }
       return next(after: response, to: request)
     case .failed(let failure):
       return next(after: failure, paused: paused)

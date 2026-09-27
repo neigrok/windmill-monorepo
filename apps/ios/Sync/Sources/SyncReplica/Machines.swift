@@ -30,7 +30,7 @@ public enum EntryState: String, Sendable, Hashable, CaseIterable {
 
 // D-15 the terminal outcomes; an entry that reaches one leaves the outbox.
 public enum Outcome: String, Sendable, Hashable, CaseIterable {
-  case undone, coalesced, resolved, refused, discarded
+  case undone, resolved, refused, discarded
 }
 
 // Where an intent can be: an outbox state, or a terminal outcome.
@@ -58,7 +58,9 @@ public enum IntentNode: Sendable, Hashable, CustomStringConvertible {
 
 // The events of §8.1's rows, named as `machine/intent.json` names them.
 public enum IntentEvent: String, Sendable, Hashable, CaseIterable {
-  case commit, coalesce, cancel, release, undo, retire, number, fold
+  case commit, release, undo, retire
+  case silentFold = "silent-fold"
+  case number, outgrown, fold
   case targetMerged = "target-merged"
   case ok, recover, refuse
   case transport, reidentify
@@ -83,12 +85,12 @@ public enum ReplicaEvent: String, Sendable, Hashable, CaseIterable {
 public enum Machines {
   public static let intent = StateMachine<EntryState, IntentEvent, IntentNode>(rows: [
     ([nil], .commit, [.state(.held), .state(.ready)]),
-    ([nil, .ready], .coalesce, [.ended(.coalesced)]),
     ([.held], .release, [.state(.ready)]),
     ([.held], .undo, [.ended(.undone)]),
     ([.held], .retire, [.ended(.undone)]),
     ([.ready], .number, [.state(.sent)]),
-    ([.held, .ready], .cancel, [.ended(.coalesced)]),
+    ([.ready], .outgrown, [.ended(.refused)]),
+    ([.held, .ready], .silentFold, [.ended(.undone)]),
     ([.held, .ready], .fold, [.ended(.refused)]),
     ([.held, .ready], .targetMerged, [.ended(.refused)]),
     ([.sent], .ok, [.state(.acked)]),

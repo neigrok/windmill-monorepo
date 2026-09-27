@@ -120,9 +120,20 @@ public struct HelloResponse: Sendable, Hashable {
   }
 }
 
+// MARK: - Request bodies
+
+// §9.1 a request on the wire: a client sends its JCS bytes (§7.4), which is the body a server measures as received.
+public protocol RequestBody {
+  var json: JSON { get }
+}
+
+extension RequestBody {
+  public var body: [UInt8] { json.jcs }
+}
+
 // MARK: - Push
 
-public struct PushRequest: Sendable, Hashable {
+public struct PushRequest: Sendable, Hashable, RequestBody {
   public let replica: String
   public let ackThrough: Int64
   public let intents: [Intent]
@@ -131,6 +142,13 @@ public struct PushRequest: Sendable, Hashable {
     self.replica = replica
     self.ackThrough = ackThrough
     self.intents = intents
+  }
+
+  // §7.1 step 8: the widest request `intent` goes in alone, its `n` and `ackThrough` at their widest, 2^53 − 1.
+  public init(widestFor intent: Intent, of replica: String) {
+    var numbered = intent
+    numbered.n = JSON.maxSafeInteger
+    self.init(replica: replica, ackThrough: JSON.maxSafeInteger, intents: [numbered])
   }
 
   public var json: JSON {
@@ -223,7 +241,7 @@ public struct PushResponse: Sendable, Hashable {
 
 // MARK: - Pull
 
-public struct PullRequest: Sendable, Hashable {
+public struct PullRequest: Sendable, Hashable, RequestBody {
   // One scope and the cursor it is pulled from; nil boots it.
   public struct Pulled: Sendable, Hashable {
     public let scope: ScopeRef

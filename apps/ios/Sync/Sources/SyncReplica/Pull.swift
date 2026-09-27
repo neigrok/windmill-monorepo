@@ -169,7 +169,7 @@ public struct PageApplier: Sendable {
       record.booted = true
       try resolveAcked(in: scope, through: cursor.seq, in: &replica)
     }
-    if cursor.mode == .live { try resolveAcked(in: scope, through: cursor.key == nil ? cursor.seq : cursor.seq - 1, in: &replica) }
+    if let cleanSeq = cursor.cleanSeq { try resolveAcked(in: scope, through: cleanSeq, in: &replica) }
     if cursor.isLiveAtSeq && cursor.seq == page.seq && replica.staging[scope] == nil {
       record = checkDigest(record, of: scope, received: page.digest, seq: page.seq, appVersion: instance.appVersion, in: &replica)
     }
@@ -196,17 +196,6 @@ public struct PageApplier: Sendable {
     }
     replica.apply(staged ? .putStagedRow(scope, row) : .putRow(scope, row))
     return digest.replacing(previous?.json, with: row.json)
-  }
-
-  // The scopes holding acked entries whose result the scope's rows already hold: a push answered after its scope's own
-  // frame. A pull of such a scope resolves them (§7.5 step 2).
-  public func resolvable(in replica: LoadedReplica) -> Set<ScopeRef> {
-    Set(replica.outbox.filter { entry in
-      guard entry.state == .acked, let resultSeq = entry.resultSeq,
-            entry.resultEpoch.map(JSON.string) == replica.meta.serverEpoch.map(JSON.string),
-            let cursor = replica.cursors[entry.scope]?.cursor.flatMap(Cursor.init(decoding:)), cursor.mode == .live else { return false }
-      return resultSeq <= (cursor.key == nil ? cursor.seq : cursor.seq - 1)
-    }.map(\.scope))
   }
 
   // Acked entries of the scope in the replica's epoch whose result the rows now hold.

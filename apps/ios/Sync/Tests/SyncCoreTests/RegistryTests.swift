@@ -36,8 +36,7 @@ struct RegistryTests {
     (registry(note { $0["mint"] = ["prefix": "", "alphabet": "e\u{301}x", "length": 8] }),
      "type \"note\": a minted id of \u{301} does not match ^[a-z]{8}$"),
     (registry(note { $0["idPattern"] = "^.{8}$" }), #"type "note": the pattern ^.{8}$ is outside §2.4's patterns"#),
-    (registry(note { $0["idPattern"] = "^a{0,65536}$" }),
-     #"type "note": Swift's regex cannot compile the pattern ^a{0,65536}$"#),
+    (registry(note { $0["idPattern"] = "^a{0,65536}$" }), #"type "note": the pattern ^a{0,65536}$ is outside §2.4's patterns"#),
     (registry(note { $0["visibleWhen"] = ["title"]; $0["fields"] = ["title": ["kind": "lww", "writer": "client"]] }),
      #"type "note": visibleWhen is for types without life"#),
     (registry(note { $0["scope"] = "tree"; $0["governs"] = "tree" }),
@@ -121,38 +120,40 @@ struct RegistryTests {
     #expect(error?.description == message)
   }
 
-  // §2.4: only the portable subset is a pattern, read alike by every dialect; Swift compiles the portable ones here.
+  // §2.4: only the portable subset is a pattern, read alike by every dialect: no class beginning with `:` or holding
+  // `--`, and no count above 65 535. Swift compiles the portable ones here.
   @Test func onlyThePortableSubsetIsAPattern() {
     let patterns = [
       "^b_[0-9a-f]{8}$", "^[A-Za-z0-9_-]{8,64}$", "^[-a]$", "^(?:ab|cd)+$", "^(a|b)?c{2,}$", #"^a\.b\/c$"#, #"^[\]\-]$"#,
-      "^[--]$", #"^[\[-a]$"#, "^[a-]$", "^[-:]$",
+      #"^[\[-a]$"#, "^[a-]$", "^[-:]$", "^a{65535}$", "^a{1,65535}$", "^[a:]$",
       "b_[0-9a-f]{8}$", "^b_[0-9a-f]{8}", "^a|b$", "^.{1,64}$", #"^\s+$"#, #"^\d+$"#, #"^\w+$"#, #"^a\b$"#, #"^\_$"#,
       "^[^/]+$", "^[]$", "^[z-a]$", "^[a-b-c]$", "^[a--]$", "^[a&&b]$", "^[[a]]$", "^a+?$", "^a**$", "^a{3,2}$", "^a{,2}$",
       "^(?=a)a$", #"^(a)\1$"#, "^a$b$", "^\u{E9}$", #"^a\$"#,
+      "^a{65536}$", "^a{2,65536}$", "^[:a]$", "^[:alpha:]$", "^[--]$", #"^[\--a]$"#,
     ]
     let portable = [
       true, true, true, true, true, true, true,
-      true, true, true, true,
+      true, true, true, true, true, true,
       false, false, false, false, false, false, false, false, false,
       false, false, false, false, false, false, false, false, false, false, false,
       false, false, false, false, false,
+      false, false, false, false, false, false,
     ]
     #expect(patterns.map(Pattern.isPortable) == portable)
     #expect(patterns.map { (try? Pattern($0)) != nil } == portable)
   }
 
   // A pattern matches the whole value, so `$` never stops before a final newline; a class's `:` and bare `-` stay
-  // literals, though Swift's Regex alone reads `[:alpha:]` as a POSIX class and `[--]` as subtraction.
+  // literals.
   @Test func aPatternMatchesTheWholeValue() throws {
     let cases: [(pattern: String, text: String)] = [
       ("^[a-z]+$", "abc"), ("^[a-z]+$", "abc\n"), ("^[a-z]+$", "abc1"), ("^(?:ab|cd)+$", "abcd"), ("^(?:ab|cd)+$", "abcda"),
-      (#"^a\.b\/c$"#, "a.b/c"), (#"^[\]\-]$"#, "-"), ("^[:alpha:]$", ":"), ("^[:alpha:]$", "z"), ("^[::]$", ":"),
-      ("^[a-z]{2}$", "e\u{301}"), ("^[--]$", "-"), ("^[--]$", ","), (#"^[\[-a]$"#, "_"), (#"^[\[-a]$"#, "-"),
-      ("^[a-]$", "-"), ("^[a-]$", "b"), ("^[-:]$", ":"), ("^[-:]$", "5"),
+      (#"^a\.b\/c$"#, "a.b/c"), (#"^[\]\-]$"#, "-"), ("^[a:]$", ":"), ("^[a:]$", "b"), ("^[a-z]{2}$", "e\u{301}"),
+      (#"^[\[-a]$"#, "_"), (#"^[\[-a]$"#, "-"), ("^[a-]$", "-"), ("^[a-]$", "b"), ("^[-:]$", ":"), ("^[-:]$", "5"),
+      ("^a{65535}$", String(repeating: "a", count: 65_535)), ("^a{65535}$", String(repeating: "a", count: 65_534)),
     ]
     #expect(try cases.map { try Pattern($0.pattern).matches($0.text) } == [
-      true, false, false, true, false, true, true, true, false, true, false, true, false, true, false, true, false, true,
-      false,
+      true, false, false, true, false, true, true, true, false, false, true, false, true, false, true, false, true, false,
     ])
   }
 

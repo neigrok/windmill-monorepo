@@ -24,6 +24,7 @@ public enum Constants {
   public static let pushWorkMs: Int64 = 50
   public static let pullPageBytes = 1_048_576
   public static let pullMaxScopes = 64
+  public static let pullMaxBytes = 65_536
   public static let liveFrameBytes = 131_072
   public static let liveInlineBytes = 65_536
   public static let keepaliveBytes = 65_536

@@ -147,17 +147,19 @@ public final class SyncEngine: Replica {
     return committed
   }
 
+  // An Undo's silent fold may leave sendable what the held gesture held back, so an Undo kicks the sender.
   public func undo(_ gestureId: String) throws -> Bool {
-    try core.write { store, _ in try store.undo(gestureId) }
+    let undone = try core.write { store, _ in try store.undo(gestureId) }
+    if undone { core.wakes.sender.kick() }
+    return undone
   }
 
   public func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
     try core.read(scope, body)
   }
 
-  public func mintID(_ type: String) -> RecordID {
-    guard let def = core.registry.type(type), let id = core.identities.mint(def) else { preconditionFailure("\(type) mints no ids") }
-    return id
+  public func mintID(_ type: String) throws -> RecordID {
+    try core.identities.mint(type, in: core.registry)
   }
 
   public func physNow() throws -> Int64 {
@@ -194,24 +196,28 @@ public final class SyncEngine: Replica {
 
   // MARK: Subscriptions (§7.9)
 
-  // Tree and overlay scopes followed beyond the products' own, while they are open: a scope known gone or not found is
-  // forgotten as known, so it boots again (§8.3), and each is pulled at once and followed live. A signed-out replica
+  // A tree or overlay scope followed beyond the products' own while a product holds it open: a scope known not found is
+  // known no more, so its first pull boots it, and it is pulled at once and followed live. A scope known gone stays
+  // gone, since its death is final (INV-13): the subscribe answers `.gone`, and nothing is pulled. A signed-out replica
   // follows only trees.
-  public func subscribe(_ scopes: [ScopeRef]) throws {
-    precondition(scopes.allSatisfy { $0.tree != nil }, "only tree and overlay scopes are subscribed by hand")
-    try core.write { store, _ in try store.subscribe(scopes) }
+  @discardableResult
+  public func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome {
+    precondition(scope.tree != nil, "only tree and overlay scopes are subscribed by hand")
+    let outcome = try core.write { store, _ in try store.subscribe(scope) }
+    guard outcome == .subscribed else { return outcome }
     core.opened.withLock { opened in
-      for scope in scopes where !opened.contains(scope) { opened.append(scope) }
+      if !opened.contains(scope) { opened.append(scope) }
     }
-    core.pullWants.add(scopes)
+    core.pullWants.add([scope])
     core.wakes.puller.kick()
     core.wakes.live.kick()
+    return outcome
   }
 
-  // Scopes no longer followed: each is forgotten, and its acked entries resolve. The set is read inside the write, after
-  // the scopes left it, so a scope subscribed meanwhile stays.
-  public func unsubscribe(_ scopes: [ScopeRef]) throws {
-    core.opened.withLock { $0.removeAll(where: scopes.contains) }
+  // A scope no longer followed is forgotten, and its acked entries resolve. The set is read inside the write, after the
+  // scope left it, so a scope subscribed meanwhile stays.
+  public func unsubscribe(_ scope: ScopeRef) throws {
+    core.opened.withLock { $0.removeAll { $0 == scope } }
     try core.write { store, _ in
       try store.reconcile(subscribed: Set(try core.seat().map { core.subscriptions(of: $0) } ?? []))
     }

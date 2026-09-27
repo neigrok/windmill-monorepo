@@ -47,12 +47,11 @@ public struct StoreTransaction {
       known: try known(of: id), notices: notices ? try self.notices(of: id) : nil, deviceRows: try deviceRows(of: id), wholeScopes: false)
   }
 
-  // Every replica with its notices and the rows `reads` names from its outbox: what the lifecycle planners read. `rows`
-  // loads every row instead.
-  public func device(rows: Bool = false, reads: ([OutboxEntry]) -> [ScopeRef: RowSelection] = { _ in [:] }) throws -> LoadedDevice {
+  // Every replica with its notices: what the lifecycle planners read. `rows` loads every row too.
+  public func device(rows: Bool = false) throws -> LoadedDevice {
     guard let device = try deviceMeta() else { throw StoreError.noDevice }
     let replicas = try replicaIDs().map { id in
-      rows ? try wholeReplica(id) : try replica(id, reads: reads(try outbox(of: id)), notices: true)!
+      rows ? try wholeReplica(id) : try replica(id, notices: true)!
     }
     return LoadedDevice(meta: device.meta, active: device.active, replicas: replicas)
   }
@@ -105,7 +104,6 @@ public struct StoreTransaction {
         releaseAt: record["release_at"], stamp: try Stamp(record["stamp"] as String), intent: try Intent(json: Blob.json(record["intent"])),
         predict: try (record["predict"] as Data?).map { try Blob.json($0).asArray().map { try Delta(json: $0) } } ?? [],
         baseTexts: Dictionary(uniqueKeysWithValues: try baseTexts.map { (try TextRef(text: $0.key), try $0.value.asString()) }))
-      entry.numbered = record["numbered"]
       entry.digest = (record["digest"] as Data?).map(Blob.hex)
       entry.resultSeq = record["result_seq"]
       entry.resultEpoch = record["result_epoch"]

@@ -854,40 +854,36 @@ public enum ArgumentType: Sendable, Hashable, CustomStringConvertible {
 
 // §2.4 a registry pattern (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`), matched against the
 // whole value. It is in the portable subset, where every atom matches one ASCII character, so every regex dialect gives
-// the same answer; Swift's Regex reads it as `swiftSource`, and cannot compile a count of 65536 or more. Compiled per
-// match, as Regex is not Sendable.
+// the same whole-match answer; Swift's Regex reads it as `swiftSource`. Compiled per match, as Regex is not Sendable.
 public struct Pattern: Sendable {
   public let source: String
   let swiftSource: String
 
   static let syntaxCharacters = #"^$\.*+?()[]{}|/"#
+  // Swift's Regex fails from 65 536, and `std::regex` from 2^31.
+  static let maxRepeat = 65_535
 
   public init(_ source: String) throws {
     guard let swiftSource = Pattern.swiftSource(of: source) else {
       throw RegistryError("the pattern \(source) is outside §2.4's patterns")
     }
-    guard (try? Pattern.compile(swiftSource)) != nil else {
-      throw RegistryError("Swift's regex cannot compile the pattern \(source)")
-    }
     self.source = source
     self.swiftSource = swiftSource
   }
 
+  // Every pattern of the subset compiles in Swift's dialect.
   public func matches(_ text: String) -> Bool {
-    text.wholeMatch(of: try! Pattern.compile(swiftSource)) != nil
+    text.wholeMatch(of: try! Regex(swiftSource).matchingSemantics(.unicodeScalar)) != nil
   }
 
   public static func isPortable(_ source: String) -> Bool {
     swiftSource(of: source) != nil
   }
 
-  static func compile(_ swiftSource: String) throws -> Regex<AnyRegexOutput> {
-    try Regex(swiftSource).matchingSemantics(.unicodeScalar)
-  }
-
   // §2.4's portable subset: printable ASCII, so one Character is one byte; `^` and `$` around literal characters,
-  // escaped syntax characters, bracket classes, groups (the only place a `|` may stand) and greedy quantifiers. The
-  // pattern in Swift's dialect, or nil outside the subset: the source as it stands, each class as `swiftClass` has it.
+  // escaped syntax characters, bracket classes, groups (the only place a `|` may stand) and greedy quantifiers counting
+  // at most `maxRepeat`. The pattern in Swift's dialect, or nil outside the subset: the source as it stands, each class
+  // as `swiftClass` has it.
   static func swiftSource(of source: String) -> String? {
     guard source.isPrintableASCII, source.count >= 2, source.first == "^", source.last == "$" else { return nil }
     let body = Array(source.dropFirst().dropLast())
@@ -926,10 +922,14 @@ public struct Pattern: Sendable {
         i += 1
         quantifiable = false
       case "?", "*", "+", "{":
-        // A counted quantifier is `{n}`, `{n,}` or `{n,m}` with m ≥ n.
+        // A counted quantifier is `{n}`, `{n,}` or `{n,m}` with n ≤ m ≤ maxRepeat.
         let counted = String(body[i...]).prefixMatch(of: #/\{([0-9]+)(?:,([0-9]*))?\}/#)?.output
         guard quantifiable, body[i] != "{" || counted != nil else { return nil }
-        if let counted, let most = counted.2, !most.isEmpty, Double(most)! < Double(counted.1)! { return nil }
+        if let counted {
+          let least = Double(counted.1)!
+          let most = counted.2.flatMap { $0.isEmpty ? nil : Double($0)! }
+          guard least <= Double(maxRepeat), most.map({ least <= $0 && $0 <= Double(maxRepeat) }) ?? true else { return nil }
+        }
         let quantifier = counted.map { String($0.0) } ?? String(body[i])
         translation += quantifier
         i += quantifier.count
@@ -947,10 +947,10 @@ public struct Pattern: Sendable {
 
   // A bracket class of literal characters and ranges from `start`, just past its `[`: the class in Swift's dialect and
   // the index of its `]`, or nil. A `-` is literal first or last, and otherwise joins two characters into an ascending
-  // range. Swift reads a class's `--` as subtraction and `[:` as a POSIX class, so every member but a letter or digit
-  // is escaped.
+  // range. A class beginning with `^` or `:`, or holding `--` anywhere, reads differently across dialects, and is none.
+  // Every member but a letter or digit is escaped, as Swift's Regex reads more of a class than the subset allows.
   static func swiftClass(_ body: [Character], from start: Int) -> (source: String, end: Int)? {
-    guard body.dropFirst(start).first != "^" else { return nil }
+    guard let first = body.dropFirst(start).first, first != "^", first != ":" else { return nil }
     var items: [Character?] = []  // nil is a bare `-`
     var i = start
     while i < body.count && body[i] != "]" {
@@ -965,7 +965,7 @@ public struct Pattern: Sendable {
         i += 1
       }
     }
-    guard i < body.count, !items.isEmpty else { return nil }
+    guard i < body.count, !items.isEmpty, !String(body[start..<i]).contains("--") else { return nil }
     let swiftMember = { (member: Character) in member.isLetter || member.isNumber ? "\(member)" : "\\\(member)" }
     var members = ""
     var k = 0

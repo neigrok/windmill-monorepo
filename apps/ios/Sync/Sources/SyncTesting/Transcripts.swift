@@ -160,7 +160,7 @@ final class TranscriptDevice {
       return Transcripts.compare(ClientSteps.json(signIn), returns, "\(place): signIn returned")
     case "reconcile":
       let scopes = try args.member("scopes").asArray().map { try ScopeRef(json: $0) }
-      try engine.unsubscribe(subscribed.filter { !scopes.contains($0) })
+      for scope in subscribed where !scopes.contains(scope) { try engine.unsubscribe(scope) }
       subscribed = subscribed.filter(scopes.contains)
       return Transcripts.compare(.null, returns, "\(place): reconcile returned")
     case "load":
@@ -191,7 +191,7 @@ final class TranscriptDevice {
     case "pull":
       let scopes = try request!.member("scopes").asArray().map { try ScopeRef(json: $0.member("scope")) }
       let opening = scopes.filter { $0.tree != nil && !subscribed.contains($0) }
-      try engine.subscribe(opening)
+      for scope in opening { try engine.subscribe(scope) }
       subscribed += opening
       var step = await engine.puller.step()
       switch step {

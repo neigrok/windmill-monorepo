@@ -180,18 +180,17 @@ struct LifecycleTests {
 
   // Answers count for the work the person was shown: a decision left unanswered throws, and work made signed out while
   // the question was up changes it, so the answer changes nothing and the question is asked again. The count alone does
-  // not say so: a card deleted and another made leave it as it was.
+  // not say so: an edit of the card shown leaves it as it was.
   @Test func anAnswerCountsOnlyForTheWorkThePersonWasShown() async throws {
     let rig = try Rig()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "Shown")]))
     let session = try await rig.signIn("A", holds: ["probe": true])
     await #expect(throws: EngineError.decisionMissing(product: "probe")) { try await session.complete([:]) }
-    try rig.commit(Gesture(changes: [.delete("card", "card0001")]))
-    try rig.commit(Gesture(changes: [Rig.card("card0002", "Never shown")]))
+    try rig.commit(Gesture(changes: [.update("card", "card0001", ["title": "Edited, never shown"])]))
     await #expect(throws: EngineError.signInChanged) { try await session.complete(["probe": .discard]) }
-    try rig.commit(Gesture(changes: [Rig.card("card0003", "Also new")]))
+    try rig.commit(Gesture(changes: [Rig.card("card0002", "Also new")]))
     await #expect(throws: EngineError.signInChanged) { try await session.complete(["probe": .discard]) }
-    #expect(try rig.replicas() == ["anon active entries: 2 new id"])
+    #expect(try rig.replicas() == ["anon active entries: 3 new id"])
     #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
 
     rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true]))

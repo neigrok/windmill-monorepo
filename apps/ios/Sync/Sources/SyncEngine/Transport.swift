@@ -88,11 +88,11 @@ public final class HTTPTransport: SyncTransport {
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    await exchange("POST", "v1/sync/push", body: request.json, token: token)
+    await exchange("POST", "v1/sync/push", body: request.body, token: token)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    await exchange("POST", "v1/sync/pull", body: request.json, token: token)
+    await exchange("POST", "v1/sync/pull", body: request.body, token: token)
   }
 
   // §9.5 `GET /v1/sync/live?schema=<version>`, over `ws` or `wss` as the base URL goes over `http` or `https`; frames
@@ -120,14 +120,14 @@ public final class HTTPTransport: SyncTransport {
     }
   }
 
-  func exchange<Body: ResponseBody>(_ method: String, _ path: String, body: JSON?, token: SessionToken?) async -> Reply<Body> {
+  func exchange<Body: ResponseBody>(_ method: String, _ path: String, body: [UInt8]?, token: SessionToken?) async -> Reply<Body> {
     var request = URLRequest(url: baseURL.appending(path: path))
     request.httpMethod = method
     request.setValue(String(schema), forHTTPHeaderField: "Sync-Schema")
     if let token { request.setValue("Bearer \(token.value)", forHTTPHeaderField: "Authorization") }
     if let body {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-      request.httpBody = Data(body.jcs)
+      request.httpBody = Data(body)
     }
     guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else {
       return .unreachable

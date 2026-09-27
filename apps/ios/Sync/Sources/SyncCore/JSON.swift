@@ -9,6 +9,8 @@ public enum JSON: Sendable, CustomStringConvertible {
   case object(Object)
 
   public static let maxDepth = 128
+  // §9.1: the widest integer on the wire, 2^53 − 1.
+  public static let maxSafeInteger: Int64 = 9_007_199_254_740_991
 }
 
 // MARK: - Numbers
@@ -346,6 +348,8 @@ struct JSONParser {
     return unit
   }
 
+  // §9.1: a literal whose value is not a finite double (`1e400`), or a nonzero literal that rounds to zero (`1e-400`),
+  // is malformed; `jcs` prints neither.
   mutating func number() throws(JSONError) -> JSON.Number {
     let start = index
     if peek() == UInt8(ascii: "-") { index += 1 }
@@ -358,6 +362,7 @@ struct JSONParser {
       index += 1
       guard try digits() > 0 else { throw .syntax("a fraction needs digits", offset: index) }
     }
+    let mantissa = bytes[start..<index]
     if peek() == UInt8(ascii: "e") || peek() == UInt8(ascii: "E") {
       index += 1
       if peek() == UInt8(ascii: "+") || peek() == UInt8(ascii: "-") { index += 1 }
@@ -367,6 +372,8 @@ struct JSONParser {
     guard let value = Double(text), let number = JSON.Number(value) else {
       throw .syntax("the number \(text) is not a finite double", offset: start)
     }
+    let isZeroLiteral = mantissa.allSatisfy { $0 == UInt8(ascii: "-") || $0 == UInt8(ascii: ".") || $0 == UInt8(ascii: "0") }
+    guard value != 0 || isZeroLiteral else { throw .syntax("the nonzero number \(text) rounds to zero", offset: start) }
     return number
   }
 
@@ -436,7 +443,7 @@ extension JSON {
   // §9.1: every integer on the wire is a safe integer, at most 2^53 − 1 in magnitude.
   public func asInteger() throws(JSONError) -> Int64 {
     guard case .number(let number) = self, number.value.rounded(.towardZero) == number.value,
-          number.value.magnitude < 9_007_199_254_740_992 else { throw mismatch("a safe integer") }
+          number.value.magnitude <= Double(JSON.maxSafeInteger) else { throw mismatch("a safe integer") }
     return Int64(number.value)
   }
 

@@ -67,41 +67,51 @@ public struct PushPlanner: Sendable {
 
   // MARK: Numbering
 
-  // Numbers ready entries in commit order up to the batch limits, passing over held-back entries, stopping after the
-  // first command entry or at a held-back one, and never while a command entry is sent. `limit`, after a several-intent
-  // 400 or 413, sends at most that many sent entries and numbers none beyond them. The request, or nil when there is
-  // nothing to send.
-  public func number(_ replica: inout LoadedReplica, limit: Int? = nil) throws -> PushRequest? {
+  // Numbers ready entries in commit order up to PUSH_MAX_INTENTS and while the request body stays within
+  // PUSH_MAX_BYTES (the first entry of a request always goes), passing over held-back entries, stopping after the first
+  // command entry or at a held-back one, and never while a command entry is sent. An entry that no longer fits a request
+  // alone grew after commit (a restamp adds digits, a write map lengthens an id): it is refused too-large at
+  // `deviceNow` instead, and each later entry is read again, as its fold may have ended or changed it, and what is held
+  // back is found again, as an orphan's refusal frees what waited on it. `limit`, after a several-intent 400 or 413,
+  // sends at most that many sent entries and numbers none beyond them. The request, or nil when there is nothing to
+  // send.
+  public func number(_ replica: inout LoadedReplica, limit: Int? = nil, at deviceNow: Int64) throws -> PushRequest? {
     guard replica.meta.state == .bound, !replica.meta.authPaused else { return nil }
     let maxIntents = min(limits.pushMaxIntents, limit ?? .max)
     let sent = { (replica: LoadedReplica) in replica.outbox.filter { $0.state == .sent }.sorted { $0.n! < $1.n! } }
+    let request = { (replica: LoadedReplica, intents: [Intent]) in
+      PushRequest(replica: replica.meta.replica, ackThrough: replica.meta.ackThrough, intents: intents)
+    }
     if !sent(replica).contains(where: { $0.intent.command != nil }) {
-      var count = sent(replica).count
-      var bytes = sent(replica).reduce(0) { $0 + $1.intent.json.jcs.count }
-      let back = heldBack(in: replica)
-      for entry in replica.outbox where entry.state == .ready {
+      var intents = sent(replica).map(\.intent)
+      var back = heldBack(in: replica)
+      for candidate in replica.outbox where candidate.state == .ready {
+        guard let entry = replica.entry(candidate.localId), entry.state == .ready else { continue }
         if back.contains(entry.commitOrder) {
           if entry.intent.command != nil { break }
           continue
         }
         var intent = entry.intent
         intent.n = replica.meta.nextN
-        let size = intent.json.jcs.count
-        if count >= maxIntents || (count > 0 && bytes + size > limits.pushMaxBytes) { break }
+        if request(replica, [intent]).body.count > limits.pushMaxBytes {
+          try refuseOutgrown(entry, in: &replica, at: deviceNow)
+          back = heldBack(in: replica)
+          continue
+        }
+        let fits = request(replica, intents + [intent]).body.count <= limits.pushMaxBytes
+        if intents.count >= maxIntents || (!intents.isEmpty && !fits) { break }
         try replica.move(entry.localId, .number) { entry in
           entry.intent = intent
           entry.digest = intent.digest
-          entry.numbered = true
         }
         replica.update { $0.nextN += 1 }
-        count += 1
-        bytes += size
+        intents.append(intent)
         if intent.command != nil { break }
       }
     }
     let batch = sent(replica).prefix(maxIntents)
     guard !batch.isEmpty else { return nil }
-    return PushRequest(replica: replica.meta.replica, ackThrough: replica.meta.ackThrough, intents: batch.map(\.intent))
+    return request(replica, batch.map(\.intent))
   }
 
   // §7.4 held back, by commit order: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
@@ -191,7 +201,8 @@ public struct PushPlanner: Sendable {
 
   // MARK: Results
 
-  // A result applies only to the entry still sent with its n; any other entry moved on since the request.
+  // A result applies only to the entry still sent with its n; any other entry moved on since the request. An `ok` whose
+  // seq its scope's cursor already covers in the same epoch (its own page or frame came first) resolves at once (§7.5).
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.outbox.first(where: { $0.state == .sent && $0.n == result.n }) else { return }
     switch result.verdict {
@@ -204,6 +215,10 @@ public struct PushPlanner: Sendable {
       }
       replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
       if let write { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
+      let cleanSeq = replica.cursors[entry.scope]?.cursor.flatMap(Cursor.init(decoding:))?.cleanSeq
+      if let cleanSeq, seq <= cleanSeq, replica.meta.serverEpoch.map(JSON.string) == .string(epoch) {
+        try replica.move(entry.localId, .resolve)
+      }
     }
   }
 
@@ -212,10 +227,17 @@ public struct PushPlanner: Sendable {
   func refuse(_ localId: String, code: RefusalCode, detail: JSON?, lastN: Int64, in replica: inout LoadedReplica,
               instance: Instance) throws {
     guard let entry = replica.entry(localId) else { return }
-    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, in: &replica) }
+    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, by: .refuse, in: &replica) }
     if code == .clockSkew { return try recoverSkew(localId, lastN: lastN, in: &replica, instance: instance) }
     if code == .baseUnknown { return try recoverBase(localId, in: &replica) }
     try remove(entry, by: .refuse, code: code, detail: detail, in: &replica, at: instance.deviceNow)
+  }
+
+  // §7.4: a ready entry too large for a request alone ends too-large by §7.7 before it is numbered, as a one-intent 413
+  // would end it: an orphan into its origin's notice, any other entry with a notice of its own.
+  func refuseOutgrown(_ entry: OutboxEntry, in replica: inout LoadedReplica, at deviceNow: Int64) throws {
+    if let origin = entry.orphanOf { return try refuseOrphan(entry, of: origin, by: .outgrown, in: &replica) }
+    try remove(entry, by: .outgrown, code: .tooLarge, detail: nil, in: &replica, at: deviceNow)
   }
 
   // §7.7 steps 2–4: the entry ends by `event`, its dependents fold, and its notice holds its content and theirs.
@@ -229,11 +251,11 @@ public struct PushPlanner: Sendable {
       content: content, at: deviceNow)))
   }
 
-  // An orphan's refusal ends it with no notice of its own; its held-back dependents fold into its origin's notice, its
-  // whole content their source. That notice is never deleted while an orphan names it (D-17), and new dependents show
-  // it again if it was dismissed.
-  func refuseOrphan(_ orphan: OutboxEntry, of origin: String, in replica: inout LoadedReplica) throws {
-    try replica.move(orphan.localId, .refuse)
+  // An orphan's refusal ends it by `event` with no notice of its own; its held-back dependents fold into its origin's
+  // notice, its whole content their source. That notice is never deleted while an orphan names it (D-17), and new
+  // dependents show it again if it was dismissed.
+  func refuseOrphan(_ orphan: OutboxEntry, of origin: String, by event: IntentEvent, in replica: inout LoadedReplica) throws {
+    try replica.move(orphan.localId, event)
     let dependents = try foldDependents(of: orphan, into: origin, in: &replica)
     guard !dependents.isEmpty else { return }
     let id = "notice:\(origin)"
@@ -309,7 +331,7 @@ public struct PushPlanner: Sendable {
   }
 
   // §7.7 step 1 for base-unknown: every text delta falls back to the text it was edited from, which the entry keeps
-  // under the delta's key from its commit through every coalesce and rewrite.
+  // under the delta's key from its commit through every rewrite.
   func recoverBase(_ localId: String, in replica: inout LoadedReplica) throws {
     replica.update(entry: localId) { entry in
       for index in entry.intent.deltas.indices {

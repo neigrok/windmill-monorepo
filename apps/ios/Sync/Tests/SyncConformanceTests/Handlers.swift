@@ -17,7 +17,7 @@ enum Handlers {
       [
         "HOLD_MS": JSON(Constants.holdMs), "LEAVE_DEBOUNCE_MS": JSON(Constants.leaveDebounceMs),
         "SIGNOUT_FLUSH_MS": JSON(Constants.signoutFlushMs), "CLOCK_JUMP_MS": JSON(Constants.clockJumpMs),
-        "PULL_MAX_SCOPES": JSON(Constants.pullMaxScopes),
+        "PULL_MAX_SCOPES": JSON(Constants.pullMaxScopes), "PULL_MAX_BYTES": JSON(Constants.pullMaxBytes),
         "MAX_SKEW_MS": JSON(Constants.maxSkewMs), "K_POISON": JSON(Constants.kPoison),
         "LOCK_TIMEOUT_MS": JSON(Constants.lockTimeoutMs), "PULL_FALLBACK_MS": JSON(Constants.pullFallbackMs),
         "BACKOFF_BASE_MS": JSON(Constants.backoffBaseMs), "BACKOFF_CEILING_MS": JSON(Constants.backoffCeilingMs),

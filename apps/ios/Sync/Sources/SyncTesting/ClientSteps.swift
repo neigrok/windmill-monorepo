@@ -17,7 +17,7 @@ public protocol ClientDevice {
   mutating func undo(_ gestureId: String) throws -> Bool
   // D-17: the active replica's notice takes `dismissed`; a notice the replica does not hold throws.
   mutating func dismiss(_ noticeId: String) throws
-  mutating func push(limit: Int?) throws -> PushRequest?
+  mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest?
   mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> Int?
   mutating func hello(serverTime: Int64?, timing: Timing) throws
@@ -26,6 +26,7 @@ public protocol ClientDevice {
   mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)]
   mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome
+  mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome
   mutating func reconcile(_ scopes: Set<ScopeRef>) throws
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
                        identities: IdentitySource) throws -> SignIn
@@ -94,8 +95,8 @@ public struct PlannedDevice: ClientDevice {
     }
   }
 
-  public mutating func push(limit: Int?) throws -> PushRequest? {
-    try device.modify(device.active) { try pushes.number(&$0, limit: limit) }
+  public mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? {
+    try device.modify(device.active) { try pushes.number(&$0, limit: limit, at: deviceNow) }
   }
 
   public mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
@@ -127,6 +128,10 @@ public struct PlannedDevice: ClientDevice {
 
   public mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome {
     try device.modify(device.active) { try pages.apply(frame, to: &$0, instance: instance) }
+  }
+
+  public mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome {
+    device.modify(device.active) { lifecycle.subscribe(&$0, to: scope) }
   }
 
   public mutating func reconcile(_ scopes: Set<ScopeRef>) throws {
@@ -240,7 +245,7 @@ public enum ClientSteps {
       try device.dismiss(step.member("id").asString())
       return .null
     case "push":
-      context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) })
+      context.lastPush = try device.push(limit: try step["limit"].map { Int(try $0.asInteger()) }, at: deviceNow)
       return context.lastPush?.json ?? .null
     case "pushResponse":
       guard let request = context.lastPush else { throw VectorError("pushResponse without a push") }
@@ -261,6 +266,9 @@ public enum ClientSteps {
       let outcomes = try device.receive(try answer(step, PullResponse.init(json:)), to: request, instance: &instance, timing: timing, identities: identities)
       return .array(outcomes.map { ["scope": $0.scope.json, "outcome": .string($0.outcome.rawValue)] })
     case "frame": return .string(try device.apply(try LiveFrame(json: step.member("frame")), instance: instance).rawValue)
+    case "subscribe":
+      let outcome = try device.subscribe(try ScopeRef(json: step.member("scope")))
+      return outcome == .gone ? .string(outcome.rawValue) : .null
     case "reconcile":
       try device.reconcile(Set(try step.member("scopes").asArray().map { try ScopeRef(json: $0) }))
       return .null

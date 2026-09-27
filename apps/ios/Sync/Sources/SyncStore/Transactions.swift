@@ -46,17 +46,17 @@ extension Store {
   }
 
   public func release(_ localId: String) throws -> Written<Bool> {
-    try onActive(.release, releasing: true) { replica in try planners.hold.release(localId, in: &replica) }
+    try onActive(.release) { replica in try planners.hold.release(localId, in: &replica) }
   }
 
   // The release timer: every held entry whose `releaseAt` has come.
   public func releaseDue(at deviceNow: Int64) throws -> Written<Void> {
-    try onActive(.release, releasing: true) { replica in try planners.hold.releaseDue(at: deviceNow, in: &replica) }
+    try onActive(.release) { replica in try planners.hold.releaseDue(at: deviceNow, in: &replica) }
   }
 
   // Leaving the app, and sign-out's first step: every held entry released. True iff there was one.
   public func releaseAll(_ tx: TxName = .release) throws -> Written<Bool> {
-    try onActive(tx, releasing: true) { replica in try planners.hold.releaseAll(in: &replica) }
+    try onActive(tx) { replica in try planners.hold.releaseAll(in: &replica) }
   }
 
   // §7.3 and §7.11 at engine start: holds released, a new actor, and the fork guard checked.
@@ -78,9 +78,10 @@ extension Store {
 
   // MARK: Sending (§7.4)
 
-  // Numbering: the request to send, or nil.
-  public func number(limit: Int? = nil) throws -> Written<PushRequest?> {
-    try onActive(.number) { replica in try planners.pushes.number(&replica, limit: limit) }
+  // Numbering: the request to send, or nil. An entry refused as it is numbered may be an orphan, whose refusal folds
+  // into its origin's stored notice, so the notices are loaded.
+  public func number(limit: Int? = nil, at deviceNow: Int64) throws -> Written<PushRequest?> {
+    try onActive(.number, notices: true) { replica in try planners.pushes.number(&replica, limit: limit, at: deviceNow) }
   }
 
   // One step of a push answer, for the replica the request was numbered in; a replica gone since drops it. The
@@ -139,9 +140,9 @@ extension Store {
     }
   }
 
-  // Scopes subscribed again boot, known gone or not found no more.
-  public func subscribe(_ scopes: [ScopeRef]) throws -> Written<Void> {
-    try onActive(.subscriptions) { replica in planners.lifecycle.subscribe(&replica, to: scopes) }
+  // A scope known not found boots again; one known gone stays gone.
+  public func subscribe(_ scope: ScopeRef) throws -> Written<SubscribeOutcome> {
+    try onActive(.subscriptions) { replica in planners.lifecycle.subscribe(&replica, to: scope) }
   }
 
   // A scope leaving the subscription set is forgotten, and acked entries outside the set resolve.
@@ -219,11 +220,6 @@ extension Store {
 
   // MARK: Reading
 
-  // The scopes of `replica` holding acked entries a pull of the scope would resolve.
-  public func resolvableScopes(of replica: String) throws -> Set<ScopeRef> {
-    try read { tx in try tx.replica(replica).map(planners.pages.resolvable(in:)) ?? [] }
-  }
-
   // The scopes `replica` knows gone or not found (§7.5), which it neither pulls nor follows live.
   public func knownScopes(of replica: String) throws -> [ScopeRef: KnownKind] {
     try read { tx in try tx.known(of: replica) }
@@ -240,22 +236,19 @@ extension Store {
     return replica
   }
 
-  // A planner over the active replica, which reads no rows, or, when it may release held entries, the rows their
-  // coalescing reads.
-  func onActive<Value>(_ tx: TxName, releasing: Bool = false, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
+  // A planner over the active replica, which reads no rows; `notices` loads its notices.
+  func onActive<Value>(_ tx: TxName, notices: Bool = false, _ plan: (inout LoadedReplica) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      let active = try transaction.activeReplica()
-      let reads = releasing ? planners.hold.reads(releasing: try transaction.outbox(of: active)) : [:]
-      var replica = try loaded(active, in: transaction, reads: reads)
+      var replica = try loaded(try transaction.activeReplica(), in: transaction, notices: notices)
       let value = try plan(&replica)
       return Planned(value, replica.batch)
     }
   }
 
-  // A planner over every replica of the device, which may release their held entries: the rows their coalescing reads.
+  // A planner over every replica of the device, which reads no rows.
   func onDevice<Value>(_ tx: TxName, _ plan: (inout LoadedDevice) throws -> Value) throws -> Written<Value> {
     try write(tx) { transaction in
-      var device = try transaction.device(reads: planners.hold.reads(releasing:))
+      var device = try transaction.device()
       let value = try plan(&device)
       return Planned(value, device.batch)
     }

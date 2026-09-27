@@ -56,14 +56,15 @@ public struct ModelServer: Sendable {
 
   // MARK: - Push
 
-  // §6.2: the envelope in §9.1's order, where the body as received is its JCS; the binding; then the intents in
-  // ascending `n`.
-  public mutating func push(_ body: JSON, account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
+  // §6.2 over the body as received: the envelope in §9.1's order, the binding, then the intents in ascending `n`. A
+  // transient failure in the binding, before any intent is taken, answers 503 (§6.6).
+  public mutating func push(received body: [UInt8], account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
     let serverNow = physNow(wall: wall)
     guard let account else { return failure(401, "unauthenticated", at: serverNow) }
-    guard body.jcs.count <= limits.pushMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
-    guard let request = PushBody(body) else { return failure(400, "malformed", at: serverNow) }
+    guard body.count <= limits.pushMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
+    guard let request = (try? JSON(parsing: body)).flatMap(PushBody.init) else { return failure(400, "malformed", at: serverNow) }
     guard request.intents.count <= limits.pushMaxIntents else { return failure(413, "request-too-large", at: serverNow) }
+    guard !faults.transientAtBind else { return unavailable(at: serverNow) }
     if let binding = state.replicas[request.replica], !binding.account.isSameID(as: account) {
       return failure(409, "replica-foreign", at: serverNow)
     }
@@ -85,6 +86,11 @@ public struct ModelServer: Sendable {
     ]
     reply["retry"] = answer.retry
     return Reply(status: 200, body: .object(reply), events: answer.events)
+  }
+
+  // A push a client sends: its body, as received, is the request's JCS.
+  public mutating func push(_ request: JSON, account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
+    push(received: request.jcs, account: account, at: wall, faults: faults)
   }
 
   // §6.2 step 4 for one intent: answered from `sync_results`, admitted, or the request stops (false) at a 409 or a
@@ -147,6 +153,14 @@ public struct ModelServer: Sendable {
 
   func failure(_ status: Int, _ error: String, at serverNow: Int64) -> Reply {
     Reply(status: status, body: ["serverTime": JSON(serverNow), "epoch": .string(state.epoch), "error": .string(error)])
+  }
+
+  // §6.6: a transient failure before a push takes its first intent.
+  func unavailable(at serverNow: Int64) -> Reply {
+    Reply(status: 503, body: [
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "error": "unavailable",
+      "retryAfterMs": JSON(Self.transientRetryAfterMs),
+    ])
   }
 
   // MARK: - Server-origin calls
@@ -229,21 +243,13 @@ public struct ModelServer: Sendable {
 
   // MARK: - Pull
 
-  // §6.7: each requested scope runs its `beforePull` commands, then answers one page from the tables as they stand.
-  public mutating func pull(_ body: JSON, account: String?, at wall: Int64) -> Reply {
+  // §6.7 over the body as received: the envelope in §9.1's order, then each requested scope runs its `beforePull`
+  // commands and answers one page from the tables as they stand.
+  public mutating func pull(received body: [UInt8], account: String?, at wall: Int64) -> Reply {
     let serverNow = physNow(wall: wall)
-    guard case .object(let object) = body, (try? object.expectKeys(required: ["scopes"])) != nil,
-          case .array(let requested)? = object["scopes"],
-          requested.count <= limits.pullMaxScopes else { return failure(400, "malformed", at: serverNow) }
-    var scopes: [(scope: String, cursor: String?)] = []
-    for entry in requested {
-      guard case .object(let pulled) = entry, (try? pulled.expectKeys(required: ["cursor", "scope"])) != nil,
-            case .string(let scope)? = pulled["scope"], let cursor = pulled["cursor"] else { return failure(400, "malformed", at: serverNow) }
-      switch cursor {
-      case .null: scopes.append((scope, nil))
-      case .string(let text): scopes.append((scope, text))
-      default: return failure(400, "malformed", at: serverNow)
-      }
+    guard body.count <= limits.pullMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
+    guard let scopes = (try? JSON(parsing: body)).flatMap(PullBody.init)?.scopes, scopes.count <= limits.pullMaxScopes else {
+      return failure(400, "malformed", at: serverNow)
     }
     var events: [LiveEvent] = []
     var pages: [JSON] = []
@@ -253,6 +259,11 @@ public struct ModelServer: Sendable {
     }
     return Reply(
       status: 200, body: ["serverTime": JSON(serverNow), "epoch": .string(state.epoch), "pages": .array(pages)], events: events)
+  }
+
+  // A pull a client sends: its body, as received, is the request's JCS.
+  public mutating func pull(_ request: JSON, account: String?, at wall: Int64) -> Reply {
+    pull(received: request.jcs, account: account, at: wall)
   }
 
   // Each `beforePull` command of the scope's kind, in its own admission as the scope owner's server origin, when
@@ -322,17 +333,20 @@ public struct LiveSocket: Sendable, Hashable {
   public let id: Int
 }
 
-// Faults a push meets (§6.6): a budget of admissions standing for PUSH_WORK_MS, and injected faults by `n`.
+// Faults a push meets (§6.6): a budget of admissions standing for PUSH_WORK_MS, a transient failure in the binding, and
+// injected faults by `n`.
 public struct PushFaults: Sendable, Hashable {
   public enum Kind: String, Sendable {
     case transient, fault
   }
 
   public var budget: Int?
+  public var transientAtBind: Bool
   public var byN: [Int64: Kind]
 
-  public init(budget: Int? = nil, byN: [Int64: Kind] = [:]) {
+  public init(budget: Int? = nil, transientAtBind: Bool = false, byN: [Int64: Kind] = [:]) {
     self.budget = budget
+    self.transientAtBind = transientAtBind
     self.byN = byN
   }
 }
@@ -399,6 +413,28 @@ struct PushBody {
     self.replica = replica
     self.ackThrough = ackThrough
     self.intents = numbered.sorted { $0.n < $1.n }
+  }
+}
+
+// §9.4 a pull body, exactly `{scopes}`, each scope exactly `{scope, cursor}` with a string scope and a string or null
+// cursor.
+struct PullBody {
+  let scopes: [(scope: String, cursor: String?)]
+
+  init?(_ body: JSON) {
+    guard case .object(let object) = body, (try? object.expectKeys(required: ["scopes"])) != nil,
+          case .array(let requested)? = object["scopes"] else { return nil }
+    var scopes: [(scope: String, cursor: String?)] = []
+    for entry in requested {
+      guard case .object(let pulled) = entry, (try? pulled.expectKeys(required: ["cursor", "scope"])) != nil,
+            case .string(let scope)? = pulled["scope"] else { return nil }
+      switch pulled["cursor"] {
+      case .null?: scopes.append((scope, nil))
+      case .string(let cursor)?: scopes.append((scope, cursor))
+      default: return nil
+      }
+    }
+    self.scopes = scopes
   }
 }
 

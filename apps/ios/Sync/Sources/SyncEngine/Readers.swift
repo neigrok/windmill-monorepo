@@ -6,9 +6,9 @@ import SyncStore
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
 // rows it names with the scope's pending entries. A misuse of the reader (a scope the registry does not hold, a type
-// outside it, a field that is no ref, a mint of a type that mints none, a use after its call returned) throws a
-// malformed `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or a
-// mint is kept, and fails the commit whose body met it.
+// outside it, a field that is no ref, a mint of a type that mints none, a read or a mint after its call returned) throws
+// a malformed `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or
+// a mint is kept, and fails the commit whose body met it.
 
 final class TransactionReader: CommitContext {
   // What a read throws once the call that passed the reader has returned.
@@ -92,24 +92,18 @@ final class TransactionReader: CommitContext {
 
   // MARK: CommitContext
 
-  // A CSPRNG id by the type's mint, drawn again while drawn, spent or minted earlier in this call holds it. A failure
-  // answers a placeholder and fails the commit once its body returns.
-  func mintID(_ type: String) -> RecordID {
-    precondition(isOpen, "a commit context mints only inside its commit")
-    do {
-      guard let def = registry.type(type), def.mint != nil else { throw CommitFailure.malformed("\(type) mints no ids") }
+  // A CSPRNG id by the type's mint, drawn again while drawn, spent or minted earlier in this call holds it.
+  func mintID(_ type: String) throws -> RecordID {
+    try reading {
       try checkLives(type)
       let replica = try load(RowSelection(types: [type]))
       let drawn = try ScopeView(replica, scope, .drawn, registry: registry)
       let taken = minted.union(drawn.records(ofType: type).map(\.key.id))
         .union(replica.spentIDs(scope).keys.filter { $0.type.utf8.elementsEqual(type.utf8) }.map(\.id))
-      var id = core.identities.mint(def)!
-      while taken.contains(id) { id = core.identities.mint(def)! }
+      var id = try core.identities.mint(type, in: registry)
+      while taken.contains(id) { id = try core.identities.mint(type, in: registry) }
       minted.insert(id)
       return id
-    } catch {
-      failure = failure ?? error
-      return RecordID("")
     }
   }
 

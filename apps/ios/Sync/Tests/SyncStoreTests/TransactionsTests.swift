@@ -200,7 +200,7 @@ struct StoredDevice: ClientDevice {
   mutating func releaseDue(at deviceNow: Int64) throws { take(try store.releaseDue(at: deviceNow)) }
   mutating func undo(_ gestureId: String) throws -> Bool { take(try store.undo(gestureId)) }
   mutating func dismiss(_ noticeId: String) throws { take(try store.dismissNotice(noticeId)) }
-  mutating func push(limit: Int?) throws -> PushRequest? { take(try store.number(limit: limit)) }
+  mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? { take(try store.number(limit: limit, at: deviceNow)) }
 
   // Each step of the answer in its own transaction, as the sender runs them.
   mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
@@ -246,6 +246,7 @@ struct StoredDevice: ClientDevice {
     guard let scope = frame.scope else { return .ignored }
     return take(try store.apply(frame, replica: active(), subscribed: [scope], instance: instance))!.outcome
   }
+  mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome { take(try store.subscribe(scope)) }
   mutating func reconcile(_ scopes: Set<ScopeRef>) throws { take(try store.reconcile(subscribed: scopes)) }
 
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],

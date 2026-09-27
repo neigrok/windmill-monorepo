@@ -6,8 +6,9 @@ import SyncStore
 import SyncTesting
 import Testing
 
-// §9.5 the live channel over a scripted transport and a fake socket: when a socket is wanted, what it follows, the
-// reconnect pull, the heartbeat, the frames it hands the puller, and how it reopens, pauses and stops.
+// §7.5 and §9.5 the live channel over a scripted transport and a fake socket: when a socket is wanted, what it follows,
+// the reconnect pull after an open, a failed open and a close, the heartbeat, the frames it hands the puller, and how it
+// reopens, pauses and stops.
 
 struct LiveChannelTests {
   static let tree = ScopeRef.tree("b_00000001")
@@ -41,7 +42,7 @@ struct LiveChannelTests {
   // It follows a new subscription, and stops following a scope the replica learns is gone.
   @Test func itFollowsNewSubscriptionsAndDropsScopesKnownGone() async throws {
     let (rig, socket) = try await Self.open()
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
     await rig.engine.puller.enqueue(.gone(Self.tree), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .gone))
@@ -149,20 +150,55 @@ struct LiveChannelTests {
     #expect(socket.isClosed == false)
   }
 
-  // The backoff grows with each failed open, and a socket's first pong resets it: the next reopen waits from 1 s again.
-  @Test func theBackoffGrowsUntilASocketsFirstPong() async throws {
+  // An open that fails, and a socket that ends, count as a reconnect as an open does: the puller pulls every scope at once.
+  @Test func aFailedOpenAndAnEndedSocketPullEveryScopeAtOnce() async throws {
     let rig = try Rig(account: "A")
-    rig.random.queue(raw: .max, count: 3)
+    let pulled = PullerStep.pulled([PageReport(scope: Rig.scope, outcome: .applied)])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    rig.random.queue(raw: .max, count: 2)
     #expect(await rig.engine.live.step() == .backoff(ms: 1_000))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
     rig.clock.advance(ms: 1_000)
-    #expect(await rig.engine.live.step() == .backoff(ms: 2_000))
-    rig.clock.advance(ms: 2_000)
     let socket = FakeLiveConnection()
     rig.transport.willOpenLive(socket)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    socket.deliver(.pong)
-    #expect(await rig.engine.live.receiveNext())
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
     socket.end()
+    #expect(await rig.engine.live.receiveNext() == false)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == pulled)
+    #expect(rig.transport.pulls.count == 4)
+  }
+
+  // Reopening backs off with the channel's own k up to its own 30 s ceiling, whatever the sender's; k resets once a
+  // socket has stayed open 30 s, so only then does the next reopen wait from 1 s again.
+  @Test func theReopenBackoffStopsAtThirtySecondsAndResetsOnceASocketStaysOpenThirtySeconds() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 9)
+    var waits: [Int64] = []
+    for _ in 0..<7 {
+      guard case .backoff(let ms) = await rig.engine.live.step() else { throw RigError("the open did not fail") }
+      waits.append(ms)
+      rig.clock.advance(ms: ms)
+    }
+    #expect(waits == [1_000, 2_000, 4_000, 8_000, 16_000, 30_000, 30_000])
+    let brief = FakeLiveConnection()
+    rig.transport.willOpenLive(brief)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    rig.clock.advance(ms: 29_999)
+    brief.end()
+    #expect(await rig.engine.live.receiveNext() == false)
+    #expect(await rig.engine.live.step() == .backoff(ms: 30_000))
+    rig.clock.advance(ms: 30_000)
+    let settled = FakeLiveConnection()
+    rig.transport.willOpenLive(settled)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    rig.clock.advance(ms: 30_000)
+    settled.end()
     #expect(await rig.engine.live.receiveNext() == false)
     #expect(await rig.engine.live.step() == .backoff(ms: 1_000))
   }

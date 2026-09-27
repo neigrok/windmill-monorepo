@@ -4,9 +4,8 @@ import SyncReplica
 import SyncTesting
 import Testing
 
-// Properties of §7.1–§7.3 over random gestures on the probe: coalescing never changes what is drawn, whatever is held,
-// released, undone or retired (§11.2 property 2), Undo leaves the store as the commit found it, and a commit over the rows its read set names decides exactly as one
-// over every row.
+// Properties of §7.1–§7.3 over random gestures on the probe: Undo leaves the store as the commit found it, and a commit
+// over the rows its read set names decides exactly as one over every row.
 
 struct CommitTests {
   static let probe = try! Corpus.probeRegistry()
@@ -31,8 +30,8 @@ struct CommitTests {
     return LoadedReplica(meta: meta, confirmed: [product: Rows(rows), overlay: Rows([mark])], wholeScopes: true)
   }
 
-  // Plain writes by one engine instance: updates, deletes and revives of confirmed cards, keyed puts, and text and field
-  // writes of a mark. A revive joined into a delete of a live card, then deleted again, meets the cancel rule.
+  // Writes of one record each by one engine instance: updates, deletes and revives of confirmed cards, keyed puts, and
+  // text and field writes of a mark.
   static func gesture(_ random: inout SeededRandom) -> (scope: ScopeRef, gesture: Gesture) {
     if random.chance(0.25) {
       let change: Change = random.chance(0.5)
@@ -56,61 +55,6 @@ struct CommitTests {
 
   static func instance(_ deviceNow: Int64) -> Instance {
     Instance(actor: try! Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: deviceNow, appVersion: "1")
-  }
-
-  static func visibleDrawn(_ replica: LoadedReplica, _ scope: ScopeRef) throws -> [JSON] {
-    let view = try ScopeView(replica, scope, .drawn, registry: probe)
-    return view.all.filter(view.isVisible).map(\.json)
-  }
-
-  // Twenty runs of forty steps from the same replica. The apart replica marks every ready entry numbered as soon as it is
-  // ready, so no later entry ever joins it. Both commit the same gestures, some held and some retiring what they name,
-  // and release and undo the same held ones, on the pinned seeds and on a fresh one, or SYNC_SEED.
-  @Test(arguments: [13317649172255833005, SeededRandom.fromEnvironment().seed])
-  func coalescingNeverChangesWhatIsDrawn(_ seed: UInt64) throws {
-    var random = SeededRandom(seed: seed)
-    let planner = CommitPlanner(registry: Self.probe)
-    let hold = Hold(registry: Self.probe)
-    let identities = try QueuedIdentities([:])
-    let numberReady = { (replica: inout LoadedReplica) in
-      for entry in replica.outbox where entry.state == .ready && !entry.numbered { replica.update(entry: entry.localId) { $0.numbered = true } }
-    }
-    var joins = 0
-    for run in 0..<20 {
-      var joined = try Self.replica()
-      var apart = try Self.replica()
-      for step in 0..<40 {
-        let deviceNow = 2000 + Int64(step) * 1000
-        let place = "seed \(random.seed), run \(run), step \(step)"
-        var held: [String] = []
-        for entry in joined.outbox where entry.state == .held && !held.contains(entry.gestureId) { held.append(entry.gestureId) }
-        switch Int.random(in: 0..<10, using: &random) {
-        case 0:
-          try hold.releaseDue(at: deviceNow, in: &joined)
-          for entry in apart.outbox where entry.state == .held && entry.releaseAt <= deviceNow {
-            try hold.release(entry.localId, in: &apart)
-            numberReady(&apart)
-          }
-        case 1 where !held.isEmpty:
-          let gestureId = random.pick(held)
-          #expect(try hold.undo(gestureId, in: &joined) == hold.undo(gestureId, in: &apart), "\(place)")
-        default:
-          var (scope, gesture) = Self.gesture(&random)
-          gesture.hold = random.chance(0.3)
-          gesture.gestureId = "g\(step)"
-          if random.chance(0.2) { gesture.retire = gesture.changes.compactMap { change in change.id.map { RecordRef(type: change.type, id: $0) } } }
-          let outcome = try planner.commit(gesture, in: scope, to: &joined, as: Self.instance(deviceNow), identities: identities, gestureIdTaken: false)
-          #expect(try planner.commit(gesture, in: scope, to: &apart, as: Self.instance(deviceNow), identities: identities, gestureIdTaken: false) == outcome, "\(place)")
-        }
-        numberReady(&apart)
-        for scope in [Self.product, Self.overlay] {
-          #expect(try Self.visibleDrawn(joined, scope) == Self.visibleDrawn(apart, scope), "\(place)")
-        }
-      }
-      #expect(apart.events.filter { if case .ended(_, _, .coalesce, _) = $0 { true } else { false } } == [], "seed \(random.seed), run \(run)")
-      joins += joined.events.filter { if case .ended(_, _, .coalesce, _) = $0 { true } else { false } }.count
-    }
-    #expect(joins > 100, "seed \(random.seed): only \(joins) joins happened")
   }
 
   @Test func undoLeavesTheStoreAsTheCommitFoundItButForTheClock() throws {

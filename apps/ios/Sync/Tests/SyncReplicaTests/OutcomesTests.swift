@@ -27,7 +27,7 @@ struct OutcomesTests {
     _ = try CommitPlanner(registry: Self.probe).commit(start, in: .product("probe"), to: &replica, as: instance, identities: identities,
                                                         gestureIdTaken: false)
     let planner = PushPlanner(registry: Self.probe, rewriteDeviceValue: rewrite)
-    let request = try #require(try planner.number(&replica))
+    let request = try #require(try planner.number(&replica, at: 5000))
     let joined = try PushResponse(json: [
       "serverTime": 5010, "epoch": "ep-1", "lastN": 1,
       "results": [["n": 1, "s": "ok", "seq": 3, "write": [["t": "run", "id": "runtheir", "from": "runmine1", "born": "4000:0:srv"]]]],
@@ -117,6 +117,77 @@ struct OutcomesTests {
     ])
   }
 
+  // §7.4 and §7.7: an orphan back in ready that no longer fits a request alone is refused too-large at numbering as an
+  // orphan's refusal ends it: into its origin's notice, which shows again, with no notice of its own. The entries it held
+  // back lose their dependent parts to that notice too; g4/0, left empty, ends, while g3/0 keeps its independent day,
+  // which nothing holds back any more, and is numbered in the same pass.
+  @Test func anOrphanThatOutgrowsARequestEndsInItsOriginsNotice() throws {
+    let long = String(repeating: "x", count: 400)
+    let at = { (stamp: String) in "\(stamp):0:r_aaaaaaaaaaaa" }
+    let created = { (id: String, title: String, stamp: String) -> JSON in
+      ["t": "card", "id": .string(id), "born": .string(at(stamp)), "life": ["alive", .string(at(stamp))],
+       "f": ["title": [.string(title), .string(at(stamp))]]]
+    }
+    let edited = { (title: String, stamp: String) -> JSON in
+      ["t": "card", "id": "card0010", "born": .string(at("5001")), "f": ["title": [.string(title), .string(at(stamp))]]]
+    }
+    let day: JSON = ["t": "day", "id": "2026-09-01", "life": ["alive", .string(at("5003"))], "f": ["score": [1, .string(at("5003"))]]]
+    let entry = { (k: Int, deltas: [JSON], stamp: String, orphanOf: String?) -> JSON in
+      var entry: JSON.Object = [
+        "localId": .string("g\(k)/0"), "gestureId": .string("g\(k)"), "lineage": "A", "scope": "self/probe", "state": "ready",
+        "commitOrder": JSON(k), "releaseAt": 0, "stamp": .string(at(stamp)),
+        "intent": ["scope": "self/probe", "d": .array(deltas), "gestureId": .string("g\(k)")],
+      ]
+      entry["orphanOf"] = orphanOf.map { .string($0) }
+      return .object(entry)
+    }
+    let meta: JSON = [
+      "replica": "rp_1", "state": "bound", "account": "A", "nextN": 3, "hlc": ["ms": 5004, "counter": 0],
+      "hlcHigh": .string(at("5004")), "admittedHigh": "0:0:", "serverOffsetMs": 0, "offsetSamples": [], "serverEpoch": "ep-1",
+      "ackThrough": 0, "authPaused": false,
+    ]
+    let origin: JSON = [
+      "id": "notice:g1/0", "scope": "self/probe", "code": "invalid", "at": 5002, "dismissed": true,
+      "content": ["d": [created("card0009", "One", "5000")], "dependents": [["d": [created("card0010", "Two", "5001")]]]],
+    ]
+    let input: JSON = [
+      "device": ["active": "rp_1", "replicas": [[
+        "meta": meta, "notices": [origin],
+        "outbox": [
+          entry(2, [created("card0010", long, "5001")], "5001", "g1/0"), entry(3, [edited("Edited", "5003"), day], "5003", nil),
+          entry(4, [edited("Again", "5004")], "5004", nil),
+        ],
+      ]]],
+      "steps": [["op": "push", "deviceNow": 5005]],
+      "limits": ["PUSH_MAX_BYTES": 400],
+    ]
+    let answer = try ClientSteps.run(input, registry: Self.probe) { PlannedDevice($0, registry: Self.probe, limits: $1) }
+    let intent: JSON = ["n": 3, "scope": "self/probe", "d": [day], "gestureId": "g3"]
+    var numbered = try entry(3, [day], "5003", nil).asObject()
+    numbered["state"] = "sent"
+    numbered["intent"] = intent
+    numbered["n"] = 3
+    numbered["digest"] = .string(try Intent(json: intent).digest)
+    var after = try meta.asObject()
+    after["nextN"] = 4
+    #expect(answer == [
+      "returns": [["replica": "rp_1", "ackThrough": 0, "intents": [intent]]],
+      "device": ["active": "rp_1", "replicas": [[
+        "meta": .object(after), "outbox": [.object(numbered)],
+        "notices": [[
+          "id": "notice:g1/0", "scope": "self/probe", "code": "invalid", "at": 5002,
+          "content": ["d": [created("card0009", "One", "5000")], "dependents": [
+            ["d": [created("card0010", "Two", "5001")]], ["d": [edited("Edited", "5003")]], ["d": [edited("Again", "5004")]],
+          ]],
+        ]],
+      ]]],
+      "ended": [
+        ["localId": "g2/0", "outcome": "refused", "event": "outgrown", "orphanOf": "g1/0"],
+        ["localId": "g4/0", "outcome": "refused", "event": "fold", "orphanOf": "g1/0"],
+      ],
+    ])
+  }
+
   // §11.2 property 8 (INV-14): a device an hour or more ahead of the model server creates, edits and deletes records,
   // holds creates and keyed puts, undoes and retires them, sends creates the server refuses `invalid` and atomic entries
   // that depend on them in part, while 409s and restores under a new epoch return its numbered entries to ready. With
@@ -129,7 +200,7 @@ struct OutcomesTests {
     let commits = CommitPlanner(registry: Self.probe)
     let hold = Hold(registry: Self.probe)
     let pushes = PushPlanner(registry: Self.probe)
-    var tally = (deletesAfterReturn: 0, undone: 0, retired: 0, folded: 0, orphans: 0, orphansAdmitted: 0, recovered: 0)
+    var tally = (undone: 0, retired: 0, folded: 0, orphans: 0, orphansAdmitted: 0, recovered: 0)
     for run in 0..<500 {
       let context = "seed \(random.seed), run \(run)"
       var server = ModelServer(registry: Self.probe, rules: ProbeServerRules(), state: ServerState(epoch: "ep-0"))
@@ -175,9 +246,6 @@ struct OutcomesTests {
           _ = try commit(&replica, Gesture(changes: [.create("board")], hold: random.chance(0.3)))
         case 2 where alive.contains { $0.key.type != "day" }:
           let record = random.pick(alive.filter { $0.key.type != "day" })
-          if replica.outbox.contains(where: { entry in
-            entry.state == .ready && entry.numbered && entry.intent.deltas.contains { $0.key == record.key && $0.creates }
-          }) { tally.deletesAfterReturn += 1 }
           _ = try commit(&replica, Gesture(changes: [.delete(record.key.type, record.key.id)], hold: random.chance(0.5)))
         case 3 where !cards.isEmpty:
           _ = try commit(&replica, Gesture(changes: [.update("card", random.pick(cards).key.id, ["title": "renamed"])]))
@@ -201,7 +269,7 @@ struct OutcomesTests {
           let touch: Change = random.chance(0.5) ? .delete("card", card) : .update("card", card, ["body": "edited"])
           _ = try commit(&replica, Gesture(changes: [touch, .create("card", ["title": "new"])], atomic: true, hold: random.chance(0.2)))
         default:
-          guard let request = try pushes.number(&replica) else { continue }
+          guard let request = try pushes.number(&replica, at: deviceNow) else { continue }
           switch Int.random(in: 0..<4, using: &random) {
           case 0:
             try answer(&replica, &instance, request, .failed(HTTPFailure(status: 409, error: "gap", serverTime: serverNow, epoch: server.state.epoch)))
@@ -221,7 +289,7 @@ struct OutcomesTests {
 
       try hold.releaseAll(in: &replica)
       for _ in 0..<40 {
-        guard let request = try pushes.number(&replica) else { break }
+        guard let request = try pushes.number(&replica, at: deviceNow) else { break }
         try answer(&replica, &instance, request, try serve(&server, request))
       }
       #expect(replica.outbox.filter { $0.state != .acked }.map { "\($0.localId) \($0.state)" } == [],
@@ -229,13 +297,12 @@ struct OutcomesTests {
       #expect(skews.filter { $0.value > 1 }.map(\.key).sorted() == [], "\(context): no entry is refused clock-skew twice")
       tally.recovered += skews.count
       for case .ended(_, _, let event, let orphanOf) in replica.events {
-        if event == .cancel { tally.folded += 1 }
+        if event == .silentFold { tally.folded += 1 }
         if event == .refuse && orphanOf != nil { tally.orphans += 1 }
       }
       tally.orphansAdmitted += replica.outbox.filter { $0.orphanOf != nil && $0.state == .acked }.count
     }
     let seed = "seed \(random.seed)"
-    #expect(tally.deletesAfterReturn > 40, "\(seed): only \(tally.deletesAfterReturn) deletes followed a returned numbered create")
     #expect(tally.undone > 150, "\(seed): only \(tally.undone) held gestures were undone")
     #expect(tally.retired > 20, "\(seed): only \(tally.retired) held gestures were retired")
     #expect(tally.folded > 25, "\(seed): only \(tally.folded) entries folded silently")

@@ -547,6 +547,13 @@ public struct Cursor: Sendable, Hashable {
   // Live without a key: the cursor is at a whole seq (§7.5 steps 3 and 4).
   public var isLiveAtSeq: Bool { mode == .live && key == nil }
 
+  // §7.5 cleanSeq: the last seq a live cursor has received whole, the one before its own while it carries a key; nil
+  // while booting.
+  public var cleanSeq: Int64? {
+    guard mode == .live else { return nil }
+    return key == nil ? seq : seq - 1
+  }
+
   public static func == (lhs: Cursor, rhs: Cursor) -> Bool { lhs.json == rhs.json }
   public func hash(into hasher: inout Hasher) { hasher.combine(json) }
 }

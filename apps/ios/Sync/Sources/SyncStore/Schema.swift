@@ -140,7 +140,6 @@ enum Schema {
       commit_order INTEGER NOT NULL,
       release_at   INTEGER NOT NULL DEFAULT 0,
       stamp        TEXT NOT NULL,
-      numbered     INTEGER NOT NULL DEFAULT 0,
       intent       BLOB NOT NULL,
       predict      BLOB NULL,
       base_texts   BLOB NULL,

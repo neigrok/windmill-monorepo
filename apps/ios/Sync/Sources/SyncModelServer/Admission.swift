@@ -87,6 +87,7 @@ public struct ServerLimits: Sendable, Hashable {
   public var pushMaxBytes = Constants.pushMaxBytes
   public var pullPageBytes = Constants.pullPageBytes
   public var pullMaxScopes = Constants.pullMaxScopes
+  public var pullMaxBytes = Constants.pullMaxBytes
   public var liveInlineBytes = Constants.liveInlineBytes
   public var mergeWorkCells = Constants.mergeWorkCells
 
@@ -95,11 +96,13 @@ public struct ServerLimits: Sendable, Hashable {
   // The corpus's `limits` knobs, by their spec names.
   public init(json: JSON?) throws {
     let knobs = try json?.asObject() ?? JSON.Object()
-    try knobs.expectKeys(required: [], optional: ["MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "PULL_PAGE_BYTES"])
+    try knobs.expectKeys(
+      required: [], optional: ["MAX_RECORD_BYTES", "PUSH_MAX_INTENTS", "PUSH_MAX_BYTES", "PULL_PAGE_BYTES", "PULL_MAX_BYTES"])
     maxRecordBytes = try knobs["MAX_RECORD_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? maxRecordBytes
     pushMaxIntents = try knobs["PUSH_MAX_INTENTS"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxIntents
     pushMaxBytes = try knobs["PUSH_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pushMaxBytes
     pullPageBytes = try knobs["PULL_PAGE_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullPageBytes
+    pullMaxBytes = try knobs["PULL_MAX_BYTES"].map { Int(try $0.asInteger(atLeast: 1)) } ?? pullMaxBytes
   }
 }
 

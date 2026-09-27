@@ -402,12 +402,12 @@ public final class SimNetwork: SyncTransport {
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    let answered = serve(as: token) { server, account, at in server.push(request.json, account: account, at: at) }
+    let answered = serve(as: token) { server, account, at in server.push(received: request.body, account: account, at: at) }
     return Reply(status: answered.status, body: answered.body)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    let answered = serve(as: token) { server, account, at in server.pull(request.json, account: account, at: at) }
+    let answered = serve(as: token) { server, account, at in server.pull(received: request.body, account: account, at: at) }
     return Reply(status: answered.status, body: answered.body)
   }
 

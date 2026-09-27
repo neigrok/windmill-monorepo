@@ -3,8 +3,9 @@ import SyncModelServer
 import SyncTesting
 import Testing
 
-// Push and call bookkeeping the corpus does not pin: the envelope's whole order, the binding before any `n`, scripted
-// refusals, faults per digest, a real fault, and a call's fault as one step.
+// Push, pull and call bookkeeping the corpus does not pin: the envelopes' whole order over the body as received, number
+// literals, the binding before any `n` and its transient failure, scripted refusals, faults per digest, a real fault,
+// and a call's fault as one step.
 
 struct ModelServerTests {
   // §9.1 and §6.2 step 1: the first failing check answers, in order: no principal, a body over PUSH_MAX_BYTES as
@@ -32,6 +33,55 @@ struct ModelServerTests {
       server.push(body(1, 0), account: "A", at: 1_000),
     ].map { reply -> JSON in [JSON(reply.status), reply.body["error"] ?? .null] }
     #expect(answers == [[401, "unauthenticated"], [413, "request-too-large"], [400, "malformed"], [413, "request-too-large"], [200, .null]])
+  }
+
+  // §9.1: the pull envelope over the body as received: a body over PULL_MAX_BYTES before it is parsed, then a body that
+  // is not JSON or not exactly `{scopes: [{scope, cursor}]}`, then more scopes than PULL_MAX_SCOPES.
+  @Test func thePullEnvelopeIsCheckedInItsOrder_9_1() throws {
+    var limits = ServerLimits()
+    limits.pullMaxBytes = 90
+    limits.pullMaxScopes = 1
+    var server = ModelServer(
+      registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"), limits: limits)
+    let scopes = { (count: Int) -> JSON in ["scopes": .array((0..<count).map { _ in ["scope": "self/probe", "cursor": .null] })] }
+    let bodies: [[UInt8]] = [
+      Array(("{\"scopes\": [" + String(repeating: " ", count: 90) + "]}").utf8), Array("{\"scopes\": [}".utf8),
+      Array(#"{"scopes":[{"scope":"self/probe"}]}"#.utf8), Array(#"{"scopes":[{"scope":"self/probe","cursor":7}]}"#.utf8),
+      scopes(2).jcs, scopes(1).jcs,
+    ]
+    try #require(bodies.dropFirst().allSatisfy { $0.count <= 90 })
+    let answers = bodies.map { body -> JSON in
+      let reply = server.pull(received: body, account: "A", at: 1_000)
+      return [JSON(reply.status), reply.body["error"] ?? .null]
+    }
+    #expect(answers == [
+      [413, "request-too-large"], [400, "malformed"], [400, "malformed"], [400, "malformed"], [400, "malformed"], [200, .null],
+    ])
+  }
+
+  // §9.1: a number literal that is not a finite double, or a nonzero one that rounds to zero, makes a push body
+  // malformed, before any intent is taken.
+  @Test(arguments: ["1e400", "1e-400"])
+  func aNumberLiteralNoDoubleHoldsIsMalformed_9_1(_ literal: String) throws {
+    var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
+    let body = #"{"ackThrough":0,"intents":[{"n":1,"scope":"self/probe","d":[{"t":"day","id":"2026-09-01","life":["alive","10:0:r_aaaaaaaaaaaa"],"f":{"score":["#
+      + literal + #","10:0:r_aaaaaaaaaaaa"]}}]}],"replica":"rp_0000000000000000000000000000000a"}"#
+    let reply = server.push(received: Array(body.utf8), account: "A", at: 1_000)
+    #expect(reply.json == ["status": 400, "body": ["serverTime": 1_000, "epoch": "ep-1", "error": "malformed"]])
+    #expect(server.state == ServerState(epoch: "ep-1"))
+  }
+
+  // §6.6: a transient failure in the binding, before the push takes its first intent, answers 503 with retryAfterMs
+  // 1000, and binds nothing.
+  @Test func aTransientFailureInTheBindingIsUnavailable_6_6() throws {
+    var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
+    let reply = server.push(["replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": [
+      ["n": 1, "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
+    ]], account: "A", at: 1_000, faults: PushFaults(transientAtBind: true))
+    #expect(reply.json == ["status": 503, "body": [
+      "serverTime": 1_000, "epoch": "ep-1", "error": "unavailable", "retryAfterMs": 1_000,
+    ]])
+    #expect(server.state == ServerState(epoch: "ep-1"))
   }
 
   // §6.1 step 3.3 and §6.2 step 3: the row's account is checked before any `n` is compared with its `last_n`, so an `n`

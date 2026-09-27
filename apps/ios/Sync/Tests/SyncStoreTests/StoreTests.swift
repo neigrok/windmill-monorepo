@@ -57,7 +57,7 @@ struct StoreTests {
     try PushResult(json: ["n": JSON(n), "s": "ok", "seq": JSON(seq)])
   }
 
-  // Commits plain and held, Undo, the release timer, numbering, and a push answer's sample, results and ack.
+  // Commits, held and not, Undo, the release timer, numbering, and a push answer's sample, results and ack.
   static func sending() throws -> [Step] {
     [
       commit("update", at: 5000, Gesture(changes: [.update("card", "card0001", ["title": "Two"])], gestureId: "u1")),
@@ -66,7 +66,7 @@ struct StoreTests {
       Step(name: "undo") { store in _ = try store.undo("d1") },
       commit("held delete again", at: 5003, Gesture(changes: [.delete("card", "card0001")], hold: true, gestureId: "d2")),
       Step(name: "release timer") { store in _ = try store.releaseDue(at: 5003 + Constants.holdMs) },
-      Step(name: "number") { store in _ = try store.number() },
+      Step(name: "number") { store in _ = try store.number(at: 14_000) },
       push(.sample(serverTime: 14_100), at: 14_050),
       push(.result(try result(1, seq: 2), lastN: 2, epoch: "ep-1"), at: 14_050),
       push(.result(try result(2, seq: 3), lastN: 2, epoch: "ep-1"), at: 14_050),

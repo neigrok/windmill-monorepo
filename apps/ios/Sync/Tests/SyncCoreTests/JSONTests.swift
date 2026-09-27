@@ -28,6 +28,13 @@ struct JSONTests {
     #expect(throws: JSONError.self) { try JSON(parsing: text) }
   }
 
+  // §9.1: a literal that is not a finite double, or a nonzero one that rounds to zero, is malformed; a zero literal of any
+  // spelling, and the smallest subnormal, are numbers.
+  @Test func aNumberLiteralIsAFiniteDoubleAndNeverANonzeroThatRoundsToZero() {
+    let literals = ["1e400", "1e-400", "-0.001e-400", "0.0000e-400", "-0e5", "0.000", "5e-324", "1e308"]
+    #expect(literals.map { (try? JSON(parsing: $0)).map(\.jcsText) } == [nil, nil, nil, "0", "0", "0", "5e-324", "1e+308"])
+  }
+
   @Test func rawControlCharactersAndInvalidUTF8AreRefused() {
     #expect(throws: JSONError.self) { try JSON(parsing: "\"a\u{1}b\"") }
     #expect(throws: JSONError.self) { try JSON(parsing: [0x22, 0xC3, 0x28, 0x22]) }

@@ -157,7 +157,7 @@ struct PullerTests {
   @Test func aRequestNamesAtMostPullMaxScopesAndTheRestGoNext() async throws {
     let rig = try Rig(account: "A")
     let trees = (1...Constants.pullMaxScopes).map { ScopeRef.tree("b_\(String(format: "%08x", $0))") }
-    try rig.engine.subscribe(trees)
+    for tree in trees { try rig.engine.subscribe(tree) }
     rig.transport.willAnswerPull(200, Rig.pulled([]))
     rig.transport.willAnswerPull(200, Rig.pulled([]))
     #expect(await rig.engine.puller.step() == .pulled([]))
@@ -165,10 +165,12 @@ struct PullerTests {
     #expect(rig.transport.pulls.map { $0.scopes.map(\.scope) } == [[Rig.scope] + trees.dropLast(), [trees.last!]])
   }
 
-  // A scope the replica knows gone or not found is left out of every request.
-  @Test func aScopeKnownGoneIsLeftOut() async throws {
+  // A scope the replica knows gone or not found is left out of every request; subscribed again, one known gone answers
+  // `.gone` and stays gone, since its death is final, while one known not found is pulled again from a boot.
+  @Test func aScopeKnownGoneIsLeftOutAndStaysGone() async throws {
     let rig = try Rig(account: "A")
-    try rig.engine.subscribe([Self.tree, Self.overlay])
+    try rig.engine.subscribe(Self.tree)
+    try rig.engine.subscribe(Self.overlay)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(Self.tree, "gone"), Rig.page(Self.overlay, "not-found")]))
     #expect(await rig.engine.puller.step() == .pulled([
       PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .gone),
@@ -179,13 +181,20 @@ struct PullerTests {
     rig.engine.foreground()
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(0))]))
+    #expect(try rig.engine.subscribe(Self.tree) == .gone)
+    #expect(try rig.engine.subscribe(Self.overlay) == .subscribed)
+    #expect(try rig.active().known == [Self.tree: .gone])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.overlay))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.overlay, nil)]))
   }
 
   // §7.9: a signed-out replica pulls only the trees it opens, and without a token.
   @Test func aSignedOutReplicaPullsOnlyTheTreesItOpensWithoutAToken() async throws {
     let rig = try Rig()
     #expect(await rig.engine.puller.step() == .idle)
-    try rig.engine.subscribe([Self.tree, Self.overlay])
+    try rig.engine.subscribe(Self.tree)
+    try rig.engine.subscribe(Self.overlay)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
     #expect(rig.transport.calls == [.pull(PullRequest(scopes: [Self.pulled(Self.tree, nil)]), token: nil)])
@@ -199,28 +208,28 @@ struct PullerTests {
     _ = await rig.engine.puller.step()
     let meta = try Rig.metaRow(seq: 1)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1)]))
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
     #expect(try Self.rows(rig, Self.tree) == [meta.json])
-    try rig.engine.unsubscribe([Self.tree])
+    try rig.engine.unsubscribe(Self.tree)
     #expect(try Self.cursor(rig, Self.tree) == nil)
     #expect(try Self.rows(rig, Self.tree) == [])
     #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
-  // §8.3: a scope subscribed again boots, known gone or not found no more. Here a board's tree was opened before the
-  // board's push landed and answered not-found; opened again once the board exists, it is pulled, and written.
+  // §7.9: a scope subscribed again boots, known not found no more. Here a board's tree was opened before the board's
+  // push landed and answered not-found; opened again once the board exists, it is pulled, and written.
   @Test func aScopeKnownNotFoundIsPulledOnceSubscribedAgain() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))]))
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(Self.tree, "not-found")]))
     _ = await rig.engine.puller.step()
     #expect(try rig.active().known == [Self.tree: .notFound])
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
     #expect(await rig.engine.sender.step() == .again)
-    try rig.engine.subscribe([Self.tree])
+    #expect(try rig.engine.subscribe(Self.tree) == .subscribed)
     #expect(try rig.active().known == [:])
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
@@ -237,12 +246,12 @@ struct PullerTests {
     let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
       guard point == .beforeCommit(.subscriptions), let running = engine.withLock({ $0 }) else { return }
       subscribing.withLock { task in
-        if task == nil { task = Task.detached { try? running.subscribe([kept]) } }
+        if task == nil { task = Task.detached { _ = try? running.subscribe(kept) } }
       }
     })
     engine.withLock { $0 = rig.engine }
-    try rig.engine.subscribe([Self.tree])
-    try rig.engine.unsubscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
+    try rig.engine.unsubscribe(Self.tree)
     await subscribing.withLock { $0 }?.value
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: kept, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, kept))
@@ -328,7 +337,7 @@ struct PullerTests {
   @Test func a401ToASignedOutPullBacksOff() async throws {
     let rig = try Rig()
     rig.random.queue(raw: .max, count: 1)
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     rig.transport.willAnswerPull(401, Rig.failure("unauthenticated"))
     #expect(await rig.engine.puller.step() == .backoff(ms: 1_000))
     #expect(try rig.meta().authPaused == false)
@@ -382,9 +391,9 @@ struct PullerTests {
     #expect(rig.transport.pulls.count == 1)
   }
 
-  // §8.1: an entry acked at a seq its scope's rows already hold (its own frame came before its push's answer) has the
-  // scope pulled, whose live page resolves it.
-  @Test func anEntryAckedAfterItsOwnFrameResolvesAtTheNextPage() async throws {
+  // §7.5: an `ok` whose seq its scope's cursor already covers (its own frame came before its push's answer) resolves in
+  // the result's own transaction, and nothing is pulled for it.
+  @Test func anEntryAckedAfterItsOwnFrameResolvesAtOnce() async throws {
     let rig = try Rig(account: "A")
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     _ = await rig.engine.puller.step()
@@ -399,11 +408,9 @@ struct PullerTests {
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
     gate.open()
     #expect(await pushing.value == .again)
-    #expect(try rig.outbox() == ["g1/0 acked 1"])
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, digestOf: [row])]))
-    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(1))]))
     #expect(try rig.outbox() == [])
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(rig.transport.pulls.count == 1)
   }
 
   // A frame past a gap, without its rows, or of another epoch is not admitted: the scope is pulled from its cursor.
@@ -429,7 +436,7 @@ struct PullerTests {
   @Test(arguments: [KnownKind.gone, .notFound])
   func aGoneOrNotFoundFrameForgetsItsScope(_ kind: KnownKind) async throws {
     let rig = try Rig(account: "A")
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]))
     _ = await rig.engine.puller.step()
     let frame: LiveFrame = kind == .gone ? .gone(Self.tree) : .notFound(Self.tree)
@@ -462,13 +469,13 @@ struct PullerTests {
   // A tree unsubscribed while its boot is in flight: its page is stale, and nothing of it is kept.
   @Test func aPageOfAScopeUnsubscribedWhileInFlightIsStale() async throws {
     let rig = try Rig(account: "A")
-    try rig.engine.subscribe([Self.tree])
+    try rig.engine.subscribe(Self.tree)
     let gate = Gate()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]), after: gate)
     let puller = rig.engine.puller
     let stepping = Task { await puller.step() }
     await gate.arrival()
-    try rig.engine.unsubscribe([Self.tree])
+    try rig.engine.unsubscribe(Self.tree)
     gate.open()
     #expect(await stepping.value == .pulled([PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .stale)]))
     #expect(try Self.cursor(rig, Self.tree) == nil)

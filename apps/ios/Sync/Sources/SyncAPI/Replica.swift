@@ -23,8 +23,9 @@ public protocol ScopeReader {
 public protocol CommitContext: ScopeReader {
   // physNow() for this commit; the same value fills a create's unset time fields.
   var now: Int64 { get }
-  // A CSPRNG id by the type's registry `mint`, never one taken in the views.
-  func mintID(_ type: String) -> RecordID
+  // A CSPRNG id by the type's registry `mint`, never one taken in the views. A type that mints none, or a mint after the
+  // call that passed the context returned, throws malformed.
+  func mintID(_ type: String) throws -> RecordID
 }
 
 // §7.1 a commit that throws, before its transaction commits, throws this, of one of three kinds told apart by where it
@@ -68,7 +69,8 @@ public protocol Replica: Sendable {
   // §7.3: true iff every entry of the gesture was still held, and so removed.
   func undo(_ gestureId: String) throws -> Bool
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T
-  func mintID(_ type: String) -> RecordID
+  // A CSPRNG id by the type's registry `mint`; a type that mints none throws malformed.
+  func mintID(_ type: String) throws -> RecordID
   // §10.2: the device wall clock plus the active replica's server offset.
   func physNow() throws -> Int64
 }

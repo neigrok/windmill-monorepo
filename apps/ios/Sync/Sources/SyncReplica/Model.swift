@@ -168,7 +168,6 @@ public struct OutboxEntry: Sendable, Hashable {
   public var commitOrder: Int64
   public var releaseAt: Int64
   public var stamp: Stamp
-  public var numbered: Bool
   public var intent: Intent
   public var predict: [Delta]
   public var baseTexts: [TextRef: String]
@@ -187,7 +186,6 @@ public struct OutboxEntry: Sendable, Hashable {
     self.commitOrder = commitOrder
     self.releaseAt = releaseAt
     self.stamp = stamp
-    numbered = false
     self.intent = intent
     self.predict = predict
     self.baseTexts = baseTexts
@@ -200,9 +198,6 @@ public struct OutboxEntry: Sendable, Hashable {
 
   // The intent's deltas, then the prediction's: everything the entry draws (§7.6).
   public var drawnDeltas: [Delta] { intent.deltas + predict }
-
-  // §7.2 plain: one delta, no guard, no command and no prediction.
-  public var isPlain: Bool { intent.deltas.count == 1 && intent.guards.isEmpty && intent.command == nil && predict.isEmpty }
 
   public func touches(_ key: RecordKey) -> Bool { drawnDeltas.contains { $0.key == key } }
 
@@ -221,7 +216,6 @@ public struct OutboxEntry: Sendable, Hashable {
       baseTexts: Dictionary(uniqueKeysWithValues: try (object["baseTexts"]?.asObject().members ?? []).map {
         (try TextRef(text: $0.key), try $0.value.asString())
       }))
-    numbered = try object["numbered"]?.asBool() ?? false
     digest = try object["digest"]?.asString()
     resultSeq = try object["resultSeq"].map { try $0.asInteger() }
     resultEpoch = try object["resultEpoch"]?.asString()
@@ -234,7 +228,6 @@ public struct OutboxEntry: Sendable, Hashable {
       "state": .string(state.rawValue), "commitOrder": JSON(commitOrder), "releaseAt": JSON(releaseAt), "stamp": stamp.json,
       "intent": intent.json,
     ]
-    object["numbered"] = numbered ? true : nil
     object["predict"] = predict.isEmpty ? nil : .array(predict.map(\.json))
     object["baseTexts"] = baseTexts.isEmpty ? nil : .object(JSON.Object(uniqueKeysWithValues: baseTexts.map { ($0.key.text, .string($0.value)) }))
     object["n"] = n.map { JSON($0) }

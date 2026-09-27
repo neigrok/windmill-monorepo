@@ -1,109 +1,8 @@
 import SyncAPI
 import SyncCore
 
-// The outbox's own moves: coalescing and the silent fold a cancel, an undo and a retire share (§7.2, §7.3), hold,
-// release and undo (§7.3), and the dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
-
-// MARK: - Coalescing (§7.2)
-
-public struct Coalescing: Sendable {
-  public let registry: Registry
-
-  public init(registry: Registry) {
-    self.registry = registry
-  }
-
-  // A ready plain entry joins the last earlier entry touching its record, when that one is ready, plain and never
-  // numbered, no command entry of the scope lies between them, text comes from one engine instance, and every fold by
-  // dependency (§7.7 step 3: an undo, a retire, a cancel, a refused source) removes the two and their join alike. The
-  // earlier entry cancels with its dependents only when it is a create (its life alive at its born), the record is
-  // alive in neither drawn nor stored without the two entries, and the join leaves it dead. A held delete may still be
-  // undone and a held create or revive released, so both views are read; a revive never cancels, since the registers it
-  // carries outlive a later death, so a revive joined with a delete is sent as one delete.
-  @discardableResult
-  public func coalesce(_ localId: String, in replica: inout LoadedReplica) throws -> Bool {
-    guard let entry = replica.entry(localId), entry.state == .ready, entry.isPlain else { return false }
-    let delta = entry.intent.deltas[0]
-    let earlier = replica.entries(in: entry.scope).filter { $0.commitOrder < entry.commitOrder }
-    guard let target = earlier.last(where: { $0.touches(delta.key) }), target.state == .ready, !target.numbered, target.isPlain
-    else { return false }
-    guard !earlier.contains(where: { $0.commitOrder > target.commitOrder && $0.intent.command != nil }) else { return false }
-    guard delta.texts.isEmpty || target.stamp.actor.utf8.elementsEqual(entry.stamp.actor.utf8) else { return false }
-
-    let base = target.intent.deltas[0]
-    var joinedDelta = Delta(key: base.key, lattice: try Join.record(registry.type(delta.key.type), base.lattice, delta.lattice), texts: base.texts)
-    for (name, write) in delta.texts {
-      joinedDelta.texts[name] = TextWrite(text: write.text, base: base.texts[name]?.base ?? write.base)
-    }
-    var joined = target
-    joined.intent.deltas = [joinedDelta]
-    if !base.texts.isEmpty || !delta.texts.isEmpty { joined.baseTexts.merge(entry.baseTexts) { own, _ in own } }
-    guard foldAlike(target, entry, joined, in: replica) else { return false }
-
-    replica.update(entry: target.localId) { $0 = joined }
-    try replica.move(localId, .coalesce)
-    guard let life = base.lattice.life, life.isAlive, life.stamp == base.lattice.born, joinedDelta.removes else { return true }
-    let isAliveWithoutTarget = { [replica] (mode: ViewMode) throws -> Bool in
-      var without = replica.rows(target.scope).row(base.key)?.lattice ?? Lattice()
-      for other in replica.entries(in: target.scope) where other.commitOrder != target.commitOrder && (other.state != .held || mode == .drawn) {
-        for delta in other.drawnDeltas where delta.key == base.key {
-          without = try Join.record(registry.type(base.key.type), without, delta.lattice)
-        }
-      }
-      return without.life?.isAlive == true
-    }
-    if try !isAliveWithoutTarget(.drawn), try !isAliveWithoutTarget(.stored) { try cancel([(target, [base])], by: .coalesce, in: &replica) }
-    return true
-  }
-
-  // A fold by dependency (§7.7 step 3: an undo, a retire, a cancel, a refused source) removes an entry with each
-  // earlier delta it depends on, and a joined entry folds whole. So `entry` joins `target` only if, for each delta of
-  // every other entry, `joined` depends on it exactly when `target` does and exactly when `entry` does, itself or
-  // through `target`: a put carrying the life a held put wrote joins no put writing a new life, and a create naming a
-  // held create joins no update that moves the reference away.
-  func foldAlike(_ target: OutboxEntry, _ entry: OutboxEntry, _ joined: OutboxEntry, in replica: LoadedReplica) -> Bool {
-    let dependsOn = { (source: OutboxEntry, deltas: [Delta], dependent: OutboxEntry) -> Bool in
-      guard source.commitOrder < dependent.commitOrder else { return false }
-      var dependents = Dependents(registry: registry)
-      dependents.absorb(scope: source.scope, deltas: deltas, stamp: source.stamp)
-      return dependents.part(of: dependent).any
-    }
-    let throughTarget = dependsOn(target, target.intent.deltas, entry)
-    let others = replica.outbox.filter { $0.commitOrder != target.commitOrder && $0.commitOrder != entry.commitOrder }
-    return others.allSatisfy { source in
-      source.drawnDeltas.allSatisfy { delta in
-        let targetDepends = dependsOn(source, [delta], target)
-        let entryDepends = dependsOn(source, [delta], entry) || (throughTarget && targetDepends)
-        return entryDepends == targetDepends && dependsOn(source, [delta], joined) == targetDepends
-      }
-    }
-  }
-
-  // A cancel's silent fold, which an undo and a retire share (§7.3): each source, with the deltas it gives up, ends by
-  // `event`, and every later held or ready entry loses its dependent part without a notice; one left empty ends
-  // coalesced by cancel. The parts are found before anything moves. A source was never numbered, and §7.4 numbers no
-  // entry that depends on one ahead of it.
-  func cancel(_ sources: [(entry: OutboxEntry, deltas: [Delta])], by event: IntentEvent, in replica: inout LoadedReplica) throws {
-    var dependents = Dependents(registry: registry)
-    var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
-    for entry in replica.outbox {
-      if let source = sources.first(where: { $0.entry.commitOrder == entry.commitOrder }) {
-        dependents.absorb(scope: entry.scope, deltas: source.deltas, stamp: entry.stamp)
-        continue
-      }
-      let part = dependents.part(of: entry)
-      guard part.any else { continue }
-      precondition(entry.isQueued, "\(entry.localId) is \(entry.state) and depends on an entry never numbered")
-      dependents.absorb(part, of: entry)
-      parts.append((entry, part))
-    }
-    for source in sources { try replica.move(source.entry.localId, event) }
-    for (entry, part) in parts {
-      replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
-      if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .cancel) }
-    }
-  }
-}
+// The outbox's own moves: hold, release and undo, with the silent fold an undo and a retire share (§7.3), and the
+// dependents that folds, refusals and held-back numbering read (§7.7 step 3, §7.4).
 
 // MARK: - Dependents (§7.7 step 3)
 
@@ -211,28 +110,17 @@ extension OutboxEntry {
 // MARK: - Hold, release, undo (§7.3)
 
 public struct Hold: Sendable {
-  public let coalescing: Coalescing
+  public let registry: Registry
 
   public init(registry: Registry) {
-    coalescing = Coalescing(registry: registry)
+    self.registry = registry
   }
 
-  // The rows a release reads, for its Action to load first: the record of each held plain entry, whose coalescing
-  // decides a cancel by the record's confirmed row.
-  public func reads(releasing outbox: [OutboxEntry]) -> [ScopeRef: RowSelection] {
-    var reads: [ScopeRef: RowSelection] = [:]
-    for entry in outbox where entry.state == .held && entry.isPlain {
-      reads[entry.scope, default: RowSelection()].keys.insert(entry.intent.deltas[0].key)
-    }
-    return reads
-  }
-
-  // A held entry becomes ready and coalesces; true if it was held.
+  // A held entry becomes ready; true if it was held.
   @discardableResult
   public func release(_ localId: String, in replica: inout LoadedReplica) throws -> Bool {
     guard replica.entry(localId)?.state == .held else { return false }
     try replica.move(localId, .release)
-    try coalescing.coalesce(localId, in: &replica)
     return true
   }
 
@@ -251,11 +139,35 @@ public struct Hold: Sendable {
     }
   }
 
-  // True iff every entry of the gesture was held, and so removed, its dependents folded as a cancel folds them.
+  // True iff every entry of the gesture was held, and so removed, its dependents folded silently.
   public func undo(_ gestureId: String, in replica: inout LoadedReplica) throws -> Bool {
     let gesture = replica.outbox.filter { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }
     guard !gesture.isEmpty, gesture.allSatisfy({ $0.state == .held }) else { return false }
-    try coalescing.cancel(gesture.map { ($0, $0.drawnDeltas) }, by: .undo, in: &replica)
+    try end(gesture, by: .undo, in: &replica)
     return true
+  }
+
+  // The silent fold of an undo and a retire (§7.1 step 4): the held entries end by `event`, and every later held or
+  // ready entry loses its dependent part without a notice; one left empty ends undone. The parts are found before
+  // anything moves. §7.4 numbers no entry that depends on a held one, so the fold never meets a sent entry.
+  func end(_ held: [OutboxEntry], by event: IntentEvent, in replica: inout LoadedReplica) throws {
+    var dependents = Dependents(registry: registry)
+    var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
+    for entry in replica.outbox {
+      if held.contains(where: { $0.commitOrder == entry.commitOrder }) {
+        dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
+        continue
+      }
+      let part = dependents.part(of: entry)
+      guard part.any else { continue }
+      precondition(entry.isQueued, "\(entry.localId) is \(entry.state) and depends on a held entry")
+      dependents.absorb(part, of: entry)
+      parts.append((entry, part))
+    }
+    for entry in held { try replica.move(entry.localId, event) }
+    for (entry, part) in parts {
+      replica.update(entry: entry.localId) { _ = Dependents.remove(part, from: &$0) }
+      if replica.entry(entry.localId)!.isEmpty { try replica.move(entry.localId, .silentFold) }
+    }
   }
 }

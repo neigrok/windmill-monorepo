@@ -103,10 +103,10 @@ public final class Identities: IdentitySource, Sendable {
 }
 
 extension IdentitySource {
-  // A CSPRNG id of `type` by its registry `mint`; nil when the type mints none or the source cannot draw.
-  func mint(_ type: TypeDef) -> RecordID? {
-    guard let mint = type.mint else { return nil }
-    return try? RecordID(mint.id(drawing: draw(below:)))
+  // A CSPRNG id of `type` by its registry `mint`; a type that mints none throws malformed.
+  func mint(_ type: String, in registry: Registry) throws -> RecordID {
+    guard let mint = registry.type(type)?.mint else { throw CommitFailure.malformed("\(type) mints no ids") }
+    return RecordID(try mint.id(drawing: draw(below:)))
   }
 }
 

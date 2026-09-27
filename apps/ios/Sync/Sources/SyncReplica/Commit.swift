@@ -7,12 +7,12 @@ import SyncCore
 public struct CommitPlanner: Sendable {
   public let registry: Registry
   public let limits: Limits
-  let coalescing: Coalescing
+  let hold: Hold
 
   public init(registry: Registry, limits: Limits = Limits()) {
     self.registry = registry
     self.limits = limits
-    coalescing = Coalescing(registry: registry)
+    hold = Hold(registry: registry)
   }
 
   // §7.1 for a decided gesture. The read-and-commit form runs step 1, `checkWritable`, then its body through the
@@ -71,7 +71,7 @@ public struct CommitPlanner: Sendable {
 
     let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
     var retired = replica
-    try coalescing.cancel(retiring.map { ($0, $0.drawnDeltas) }, by: .retire, in: &retired)
+    try hold.end(retiring, by: .retire, in: &retired)
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
@@ -92,7 +92,9 @@ public struct CommitPlanner: Sendable {
     }
     let intents = group(deltas, guards: guards, gesture: gesture, scope: scope, gestureId: gestureId)
 
-    if intents.contains(where: { $0.json.jcs.count > limits.pushMaxBytes }) {
+    // Step 8: an intent the widest request cannot carry alone refuses the gesture, so an entry as committed always fits
+    // a request alone.
+    if intents.contains(where: { PushRequest(widestFor: $0, of: replica.meta.replica).body.count > limits.pushMaxBytes }) {
       replica.apply(.putNotice(Notice(
         id: "notice:\(gestureId)/0", product: product, scope: scope, code: .tooLarge, detail: nil,
         content: NoticeContent(deltas: deltas, command: gesture.command), at: instance.deviceNow)))
@@ -113,7 +115,6 @@ public struct CommitPlanner: Sendable {
         predict: gesture.command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
     }
     for entry in entries { replica.apply(.putEntry(entry)) }
-    for entry in entries { try coalescing.coalesce(entry.localId, in: &replica) }
 
     for row in gesture.local {
       if let value = row.value {
