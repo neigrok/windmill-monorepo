@@ -5,13 +5,16 @@ repository groups code by surface, then product.
 
 ```text
 backend/                    C++20 modular monolith
-  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry and AI usage
+  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry, AI usage and
+                            the sync engine server
     infra/                  composition roots for the server and standalone MCP transports
   products/
     roadmap/                tree domain, synchronization and roadmap adapters
     journal/                pages, nudges, voice and echoes
     gym/                    training log, routines, Coach and gym adapters
-  db/                       idempotent schema and analyst funnel views
+    probe/                  the sync engine's test-only product; linked into tests and
+                            windmill_server_probe, never into windmill_server
+  db/                       idempotent schema, the probe's test schema and analyst funnel views
   deploy/                   Docker Compose, Caddy and production configuration
   test/                     platform/, products/, e2e/ and golden/
 web/                        Vite/React superapp for all three products

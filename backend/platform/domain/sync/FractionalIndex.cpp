@@ -141,8 +141,8 @@ std::string dropKey(const std::vector<OrderedMember>& stored, const std::vector<
     if (found == list.end()) return std::nullopt;
     return found->key;
   };
-  std::optional<std::string> anchor = keyIn(others);
-  if (!anchor) anchor = keyIn(drawn);
+  std::optional<std::string> anchor = keyIn(drawn);
+  if (!anchor) anchor = keyIn(others);
   if (!anchor) throw OrderKeyError("the drop anchor is not in the list");
   const auto successor = std::find_if(others.begin(), others.end(), [&anchor](const OrderedMember& member) { return member.key > *anchor; });
   return between(anchor, successor == others.end() ? std::nullopt : std::optional(successor->key));

@@ -13,6 +13,10 @@ namespace wm {
 // Where a resolved caller is left on the request for anything downstream that needs it — the access log.
 inline constexpr char kCallerAttribute[] = "wm.caller";
 
+// The session secret a request presents: the wm_session cookie, else a Bearer token; empty for none. A
+// WebSocket upgrade presents it the same way.
+std::string sessionSecretOf(const drogon::HttpRequestPtr& req);
+
 // Who is behind this request: the wm_session cookie, or a Bearer token, resolved to an account —
 // empty for an anonymous caller. One home for the trust boundary, shared by every REST surface.
 std::optional<User> callerUserOf(const drogon::HttpRequestPtr& req, AuthService& auth);

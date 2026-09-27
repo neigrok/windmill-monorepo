@@ -2,7 +2,7 @@
 
 #include "platform/domain/sync/Jcs.h"
 
-#include "test/platform/domain/sync/ProbeRegistry.h"
+#include "products/probe/ProbeRegistry.h"
 #include "test/testing.h"
 
 #include <cmath>
@@ -202,7 +202,9 @@ TEST(a_registry_refuses_what_section_2_4_forbids) {
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["scope"] = "product:q"; }),
            std::string("registry.types.item lives in the undeclared product \"q\""));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["scope"] = "tree"; r["types"][0]["governs"] = "tree"; }),
-           std::string("registry.types.item governs a tree without being a terminal minted type of a product scope"));
+           std::string("registry.types.item governs a tree without being a terminal minted type of a product scope in the global id space"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["governs"] = "tree"; }),
+           std::string("registry.types.item governs a tree without being a terminal minted type of a product scope in the global id space"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["life"] = false; }),
            std::string("registry.types.item is minted or derived without life"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["commands"][0]["origins"].append("replica"); }),

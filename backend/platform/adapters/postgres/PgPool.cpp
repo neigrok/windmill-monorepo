@@ -26,7 +26,7 @@ std::unique_ptr<pqxx::connection> PgPool::acquire() {
     if (open_ < maxConnections_) break;
     if (!returned_.wait_for(lock, acquireTimeout_,
                             [this] { return !idle_.empty() || open_ < maxConnections_; }))
-      throw std::runtime_error("postgres pool exhausted: all " + std::to_string(maxConnections_) +
+      throw PgPoolExhausted("postgres pool exhausted: all " + std::to_string(maxConnections_) +
                                " connections have been borrowed for longer than a transaction "
                                "should live, which means one was never returned");
   }

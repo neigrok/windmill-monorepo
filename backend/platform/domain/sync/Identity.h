@@ -1,5 +1,6 @@
 #pragma once
 
+#include "platform/domain/sync/Record.h"
 #include "platform/domain/sync/Registry.h"
 
 #include <cstdint>
@@ -29,5 +30,28 @@ struct SeededId {
 
   std::string text() const { return seed + "-" + std::to_string(n); }
 };
+
+// §4.1: the op a delta's shape names for its type, or invalid for any other shape.
+enum class Op { create, update, remove, revive, put, write, invalid };
+Op opOf(const TypeDef& type, const Delta& delta);
+std::string_view nameOf(Op op);
+
+// §4.2: an id's state in a scope, with the born of a record that has one.
+struct IdState {
+  enum class Kind { none, foreign, alive, dead };
+  Kind kind = Kind::none;
+  std::optional<Stamp> born;
+
+  bool exists() const { return kind == Kind::alive || kind == Kind::dead; }
+};
+std::string_view nameOf(IdState::Kind kind);
+
+// §4.3: what admission does with one delta. `ok` admits the intent without changing the record.
+struct Decision {
+  enum class Verdict { apply, ok, refuse };
+  Verdict verdict = Verdict::apply;
+  std::string code;
+};
+Decision decide(const TypeDef& type, Op op, const IdState& state, const std::optional<Stamp>& deltaBorn);
 
 }

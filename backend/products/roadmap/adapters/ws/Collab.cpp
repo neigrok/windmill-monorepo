@@ -1,5 +1,7 @@
 #include "products/roadmap/adapters/ws/Collab.h"
 
+#include "platform/adapters/http/Caller.h"
+
 #include "products/roadmap/adapters/json/SubgraphJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "products/roadmap/application/TreeRoom.h"
@@ -89,11 +91,7 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
   }
 
   // Frames carry no cookie: resolve the session at the upgrade; anyone else is a read-only guest.
-  std::string secret = req->getCookie("wm_session");
-  if (secret.empty()) {
-    std::string authorization = req->getHeader("authorization");
-    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
-  }
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> user = auth_.authenticate(secret);
   // Keep the digest, never the secret, so a write can re-prove the session.
   if (user) {

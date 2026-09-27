@@ -1,5 +1,7 @@
 #pragma once
 
+#include "platform/application/WorkerPool.h"
+
 #include <trantor/net/EventLoopThread.h>
 #include <trantor/utils/Logger.h>
 
@@ -31,10 +33,16 @@ public:
 
   // Run work on the heartbeat's own loop rather than parking a request thread on it; this also
   // serialises an operator's pass behind the heartbeat's instead of racing it.
-  void queue(std::function<void()> work) { thread_.getLoop()->queueInLoop(std::move(work)); }
+  void queue(std::function<void()> work) {
+    thread_.getLoop()->queueInLoop([work = std::move(work)] {
+      BlockingThread::Mark blocking;
+      work();
+    });
+  }
 
 private:
   void beat() {
+    BlockingThread::Mark blocking;
     try {
       pass_();
     } catch (const std::exception& error) {

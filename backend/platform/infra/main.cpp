@@ -98,9 +98,23 @@
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/routes.h"
 
+#ifdef WM_SYNC_PROBE
+#include "platform/adapters/http/SyncApi.h"
+#include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/adapters/ws/SyncSocket.h"
+#include "platform/application/WorkerPool.h"
+#include "platform/application/sync/Admission.h"
+#include "platform/application/sync/SyncCatalog.h"
+#include "platform/application/sync/SyncLive.h"
+#include "platform/application/sync/SyncService.h"
+#include "products/probe/ProbeRegistry.h"
+#include "products/probe/adapters/postgres/PgProbe.h"
+#endif
+
 #include <drogon/drogon.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cctype>
 #include <cstdlib>
 #include <memory>
@@ -126,12 +140,23 @@ int envDays(const char* name, int fallback) {
 int main() {
   using namespace wm;
 
-  // Also sizes the database pool: a pool ceiling below the thread count turns into waits and 500s.
+#ifdef WM_SYNC_PROBE
+  // windmill_server_probe serves the probe, a test and dev product: never where the app is served over https.
+  if (const char* appUrl = std::getenv("WINDMILL_APP_URL"); appUrl && std::string(appUrl).rfind("https://", 0) == 0) {
+    std::fprintf(stderr, "windmill_server_probe refuses an https WINDMILL_APP_URL: the probe product never runs in production\n");
+    return 1;
+  }
+#endif
+
+  // Also sizes the database pool, with the sync engine's workers (engine.md §6) beside the IO threads.
   const unsigned int ioThreads = std::max(4u, std::thread::hardware_concurrency());
+  constexpr std::size_t kSyncWorkers = 4;
+  constexpr std::size_t kSyncQueueCeiling = 256;
 
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
-  auto pool = std::make_shared<PgPool>(connString, ioThreads + PgPool::kReservedConnections);
+  auto pool = std::make_shared<PgPool>(
+      connString, std::min(PgPool::kMaxConnections, ioThreads + kSyncWorkers + PgPool::kReservedConnections));
   const Hlc genesis{1, 0, "genesis"};
 
   auto trees = std::make_shared<PgTreeRepository>(pool);
@@ -480,7 +505,7 @@ int main() {
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
     resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, PATCH, POST, DELETE, OPTIONS");
-    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
+    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization, sync-schema");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
   });
@@ -863,6 +888,37 @@ int main() {
                        .askService = gymAsk,
                        .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
+
+#ifdef WM_SYNC_PROBE
+  // The sync engine (engine.md) over the probe product and db/probe.sql. windmill_server composes no
+  // registry yet, since no product has adopted the engine, so it mounts none of /v1/sync.
+  const sync::Registry& syncRegistry = probe::registry();
+  const sync::Limits syncLimits;
+  sync::SyncCatalog syncCatalog(syncRegistry);
+  probe::PgProbe probeTables(syncRegistry);
+  probeTables.bindTo(syncCatalog);
+  syncCatalog.seal();
+  sync::PgSyncStore syncStore(pool, syncLimits.lockTimeoutMs);
+  sync::ServerClock serverClock;
+  auto syncLive = std::make_shared<sync::SyncLive>(syncCatalog, syncStore, syncLimits);
+  sync::Admission admission(syncCatalog, syncStore, *syncLive, serverClock, *sentry, syncLimits);
+  const std::string syncEpoch = [&syncStore] {
+    const std::unique_ptr<sync::SyncTxn> txn = syncStore.begin(sync::TxnMode::snapshot);
+    return syncStore.epoch(*txn);
+  }();
+  auto syncWorkers = std::make_shared<WorkerPool>("sync", kSyncWorkers, kSyncQueueCeiling);
+  auto syncService = std::make_shared<sync::SyncService>(syncCatalog, syncStore, admission, *systemClock);
+  sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncService,
+                                                                               .auth = authService,
+                                                                               .workers = syncWorkers,
+                                                                               .clock = systemClock,
+                                                                               .minSchema = syncRegistry.minVersion(),
+                                                                               .epoch = syncEpoch,
+                                                                               .limits = syncLimits}));
+  sync::installSyncSocket(sync::SyncSocketDeps{
+      .live = syncLive, .workers = syncWorkers, .auth = authService, .clock = systemClock, .allowedOrigins = allowedOrigins});
+  sync::linkSyncSocket();
+#endif
 
   // EVERY product that sends mail must appear in this list, or it keeps mailing an address the
   // provider has already called dead. An empty secret refuses every delivery (Svix retries): set

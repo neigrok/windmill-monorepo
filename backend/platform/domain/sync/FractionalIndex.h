@@ -31,10 +31,10 @@ struct OrderedMember {
   auto operator<=>(const OrderedMember&) const = default;
 };
 
-// D-25 drop position: the key of `moved` dropped just below the drawn member `above` (nullopt: at the
-// top). It lies between `above`'s key and the next greater key among the stored members other than
-// `moved`; at the top, before the first of them; with no greater key, after `above`. So a member that
-// is stored but not drawn, as a held delete is, keeps its stored place.
+// D-25 drop position: the key of `moved` dropped just below the member `above` (nullopt: at the top),
+// looked up in `drawn`, then in `stored`. It lies between `above`'s key and the next greater key among
+// the stored members other than `moved`; at the top, before the first of them; with no greater key,
+// after `above`. So a member that is stored but not drawn, as a held delete is, keeps its stored place.
 std::string dropKey(const std::vector<OrderedMember>& stored, const std::vector<OrderedMember>& drawn, std::string_view moved,
                     const std::optional<std::string>& above);
 

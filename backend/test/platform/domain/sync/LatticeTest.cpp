@@ -2,7 +2,7 @@
 
 #include "platform/domain/sync/Jcs.h"
 
-#include "test/platform/domain/sync/ProbeRegistry.h"
+#include "products/probe/ProbeRegistry.h"
 #include "test/testing.h"
 
 #include <algorithm>

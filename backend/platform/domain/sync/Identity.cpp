@@ -1,5 +1,7 @@
 #include "platform/domain/sync/Identity.h"
 
+#include "platform/domain/sync/Wire.h"
+
 #include <cctype>
 #include <charconv>
 #include <stdexcept>
@@ -43,6 +45,78 @@ std::optional<SeededId> SeededId::parse(std::string_view id) {
   const auto [end, error] = std::from_chars(ordinal.data(), ordinal.data() + ordinal.size(), n);
   if (error != std::errc{} || end != ordinal.data() + ordinal.size()) return std::nullopt;
   return SeededId{std::string(id.substr(0, cut)), n};
+}
+
+Op opOf(const TypeDef& type, const Delta& delta) {
+  const std::optional<Life>& life = delta.lattice.life;
+  const std::optional<Stamp>& born = delta.lattice.born;
+  if (type.identity == Identity::minted || type.identity == Identity::derived) {
+    if (!born) return Op::invalid;
+    if (!life) return Op::update;
+    if (!life->alive()) return Op::remove;
+    return life->stamp == *born ? Op::create : Op::revive;
+  }
+  if (born) return Op::invalid;
+  if (type.identity == Identity::keyed && type.life) return life ? Op::put : Op::invalid;
+  return life ? Op::invalid : Op::write;
+}
+
+std::string_view nameOf(Op op) {
+  switch (op) {
+    case Op::create: return "create";
+    case Op::update: return "update";
+    case Op::remove: return "delete";
+    case Op::revive: return "revive";
+    case Op::put: return "put";
+    case Op::write: return "write";
+    case Op::invalid: break;
+  }
+  return "invalid";
+}
+
+std::string_view nameOf(IdState::Kind kind) {
+  switch (kind) {
+    case IdState::Kind::none: return "none";
+    case IdState::Kind::foreign: return "foreign";
+    case IdState::Kind::alive: return "alive";
+    case IdState::Kind::dead: break;
+  }
+  return "dead";
+}
+
+Decision decide(const TypeDef& type, Op op, const IdState& state, const std::optional<Stamp>& deltaBorn) {
+  using Verdict = Decision::Verdict;
+  using Kind = IdState::Kind;
+  const Decision apply{Verdict::apply, ""};
+  const Decision ok{Verdict::ok, ""};
+  auto refuse = [](const std::string& code) { return Decision{Verdict::refuse, code}; };
+
+  if (op == Op::invalid) return refuse(code::invalid);
+  if (op == Op::put || op == Op::write) return apply;
+  const bool sameBorn = state.born == deltaBorn;
+  const bool alive = state.kind == Kind::alive;
+  const bool elsewhere = state.kind == Kind::none || state.kind == Kind::foreign;
+
+  switch (op) {
+    case Op::create:
+      if (state.kind == Kind::none) return apply;
+      if (state.kind == Kind::foreign) return refuse(code::idTaken);
+      if (alive) return sameBorn ? apply : refuse(code::idTaken);
+      return sameBorn ? ok : refuse(code::idSpent);
+    case Op::update:
+      if (elsewhere || !sameBorn) return refuse(code::unknownRecord);
+      return alive ? apply : refuse(code::recordDead);
+    case Op::remove:
+      if (elsewhere || !sameBorn) return ok;
+      return apply;
+    case Op::revive:
+      if (elsewhere || !sameBorn) return refuse(code::unknownRecord);
+      if (alive) return apply;
+      return type.revivable ? apply : refuse(code::idSpent);
+    default:
+      break;
+  }
+  return refuse(code::invalid);
 }
 
 }

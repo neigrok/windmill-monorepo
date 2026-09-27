@@ -381,6 +381,86 @@ update ai_usage set cost_floor_nanos = cost_nanos where cost_floor_nanos = 0 and
 create index if not exists ai_usage_user_ts on ai_usage (user_id, ts);
 create index if not exists ai_usage_ts on ai_usage (ts);
 
+-- ── Sync engine (platform/, docs/foundation/engine.md §2.1) ──────────────────────────────────
+-- The engine's own tables. A product's synced types live in its own typed tables (§2.2), which the
+-- engine reaches only through the product's store. Times the engine writes (dead_at, last_seen,
+-- started_at) are epoch milliseconds from the engine's clock.
+
+-- One row: the database's epoch. A restore from backup MUST regenerate it, so that clients see the
+-- epoch change and resend what the restored database lost (§7.5).
+create table if not exists sync_meta (
+  one   boolean primary key default true check (one),
+  epoch text not null
+);
+insert into sync_meta (epoch) values (replace(gen_random_uuid()::text, '-', '')) on conflict (one) do nothing;
+
+-- One row per server scope (D-4): 'acct:<A>/<product>', 'tree:<T>' or 'acct:<A>/overlay/<T>'. A tree
+-- is governed_by '<scope>#<type>#<id>', an overlay by 'tree:<T>'. `digest` is the scope digest (§6.12),
+-- 32 big-endian bytes. `counters` hold the alive count of each capped type (§6.5). `open` mirrors whether
+-- the tree's opening field holds an opening value (D-4), written with that field.
+create table if not exists sync_scopes (
+  key         text primary key,
+  kind        text not null check (kind in ('product', 'tree', 'overlay')),
+  owner       uuid not null references users(id),
+  governed_by text,
+  state       text not null default 'alive' check (state in ('alive', 'dead')),
+  seq         bigint not null default 0 check (seq >= 0),
+  counters    jsonb not null default '{}'::jsonb,
+  digest      bytea not null default decode(repeat('00', 32), 'hex') check (octet_length(digest) = 32),
+  open        boolean not null default false,
+  dead_at     bigint,
+  created_at  timestamptz not null default now(),
+  check ((state = 'dead') = (dead_at is not null))
+);
+create index if not exists sync_scopes_governed_by on sync_scopes (governed_by) where governed_by is not null;
+create index if not exists sync_scopes_owner on sync_scopes (owner);
+create index if not exists sync_scopes_dead_at on sync_scopes (dead_at) where state = 'dead';
+
+create table if not exists sync_replicas (
+  replica   text primary key,
+  account   uuid not null references users(id),
+  last_n    bigint not null default 0 check (last_n >= 0),
+  last_seen bigint not null
+);
+create index if not exists sync_replicas_account on sync_replicas (account);
+create index if not exists sync_replicas_last_seen on sync_replicas (last_seen);
+
+-- One final answer per (replica, n); a row whose result is null only tallies faults (§6.6).
+create table if not exists sync_results (
+  replica text not null references sync_replicas(replica) on delete cascade,
+  n       bigint not null check (n > 0),
+  digest  bytea not null check (octet_length(digest) = 32),
+  result  jsonb,
+  faults  int not null default 0,
+  primary key (replica, n)
+);
+
+-- The dead records of `deadRows: spent` types, kept for the scope's lifetime (G2). `id` is a string id
+-- itself, or a tuple's JCS; a keyed type's row has no born.
+create table if not exists sync_spent (
+  scope_key  text not null references sync_scopes(key),
+  type       text not null,
+  id         text not null,
+  born       text,
+  life_stamp text not null,
+  seq        bigint not null,
+  primary key (scope_key, type, id)
+);
+create index if not exists sync_spent_feed on sync_spent (scope_key, type, seq);
+create index if not exists sync_spent_global on sync_spent (type, id);
+
+-- §6.3: one row per server-origin call (request_id) and one per admit of it (request_id#k).
+create table if not exists sync_requests (
+  account    uuid not null references users(id),
+  request_id text not null,
+  digest     bytea not null check (octet_length(digest) = 32),
+  state      text not null check (state in ('running', 'done')),
+  result     jsonb,
+  started_at bigint not null,
+  primary key (account, request_id)
+);
+create index if not exists sync_requests_started_at on sync_requests (started_at);
+
 -- ── Paddle billing ──────────────────────────────────────────────────────────────────────────
 -- Every notification upserts here: access gating reads this database and never the Paddle API. An
 -- account bridges to a Paddle customer by email (citext, matching users.email).

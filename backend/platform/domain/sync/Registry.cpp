@@ -300,8 +300,9 @@ void checkType(const Reader& reader, const TypeDef& type) {
   if (!reader.has("key") && !type.idPattern) reader.fail("has neither a \"key\" nor an \"idPattern\"");
   if (type.seeded && type.identity != Identity::minted) reader.fail("seeds ids without being minted");
   if (type.revivable && type.deadRows != DeadRows::keep) reader.fail("is revivable without keeping its dead rows");
-  if (type.governsTree && (type.identity != Identity::minted || type.revivable || type.scope.kind != ScopeKind::product))
-    reader.fail("governs a tree without being a terminal minted type of a product scope");
+  if (type.governsTree && (type.identity != Identity::minted || type.revivable || type.scope.kind != ScopeKind::product ||
+                           type.idSpace != IdSpace::global))
+    reader.fail("governs a tree without being a terminal minted type of a product scope in the global id space");
   if (!type.origins.replica) reader.fail("has origins without replica");
   if (!type.visibleWhen.empty() && type.life) reader.fail("declares visibleWhen with life");
   for (const std::string& fieldName : type.visibleWhen) {

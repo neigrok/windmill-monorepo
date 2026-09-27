@@ -7,8 +7,9 @@
 
 namespace wm::probe {
 
-// packages/api-contract/sync/probe.registry.json, the test-only product the corpus is written against,
-// embedded into the test binary at build time (CMakeLists.txt, wm_embed_registry).
+// packages/api-contract/sync/probe.registry.json, embedded at build time (CMakeLists.txt, wm_embed_registry):
+// the product the golden corpus is written against. Only the test binaries and windmill_server_probe link
+// it; windmill_server never does.
 std::string_view registryText();
 
 inline const sync::Registry& registry() {

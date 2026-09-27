@@ -46,7 +46,7 @@ COPY --from=contract sync/corpus /contract/sync/corpus
 # ctest registers must be listed, or ctest fails on a missing executable, not a red test.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract \
  && cmake --build build -j"$(nproc)" \
-      --target windmill_server windmill_mcp_http windmill_domain_tests windmill_mcp_tests windmill_adapters_tests
+      --target windmill_server windmill_mcp_http windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
 # red suite fails the image, and a PR that only builds this stage still gets tested.
@@ -54,6 +54,10 @@ RUN ctest --test-dir build --output-on-failure
 
 # Belt and braces: prove the binaries exist before we carry them to the runtime stage.
 RUN test -x build/windmill_server && test -x build/windmill_mcp_http
+
+# The probe is the sync engine's test and dev product: it must never ship. windmill_server links no probe
+# code, and the runtime stage carries only db/schema.sql, never db/probe.sql.
+RUN ! nm -C build/windmill_server | grep -q 'wm::probe::'
 
 ########################  runtime  ########################
 # Same Ubuntu 22.04 userland as the builder, so glibc/libstdc++ ABI matches exactly.

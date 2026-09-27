@@ -63,10 +63,21 @@ add_library(windmill_platform
   platform/domain/sync/Lattice.cpp
   platform/domain/sync/FractionalIndex.cpp
   platform/domain/sync/Identity.cpp
+  platform/domain/sync/TextMerge.cpp
+  platform/domain/sync/Scope.cpp
+  platform/domain/sync/Wire.cpp
+  platform/domain/sync/Shape.cpp
+  platform/domain/sync/Admit.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
+  platform/application/WorkerPool.cpp
+  platform/application/sync/SyncCatalog.cpp
+  platform/application/sync/Admission.cpp
+  platform/application/sync/ServerCall.cpp
+  platform/application/sync/SyncService.cpp
+  platform/application/sync/SyncLive.cpp
   platform/ports/ToolHost.cpp)
 target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
 
@@ -144,6 +155,17 @@ add_library(windmill_gym
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
+# --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
+# worked example of a product on the engine. Only the test binaries and windmill_server_probe link it;
+# windmill_server never does, and the Dockerfile proves it. Its Postgres adapter folds in under the
+# Drogon guard below.
+add_library(windmill_probe
+  products/probe/domain/ProbeRules.cpp
+  products/probe/application/ProbeProduct.cpp)
+target_include_directories(windmill_probe PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_probe PUBLIC windmill_platform)
+wm_embed_registry(windmill_probe wm::probe registryText "${WM_API_CONTRACT_DIR}/sync/probe.registry.json")
+
 # Drogon + libpqxx gate the real adapters (SPEC §11). Found here, up front, because Drogon also
 # exports Trantor and jsoncpp as imported targets — and TendingService (in the roadmap core) needs
 # both: its agent loop runs on a private trantor event-loop thread so the durable half can answer
@@ -174,6 +196,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/sync/RegistryTest.cpp
   test/platform/domain/sync/LatticeTest.cpp
   test/platform/domain/sync/FractionalIndexTest.cpp
+  test/platform/domain/sync/TextMergeTest.cpp
   test/platform/domain/sync/CorpusTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
@@ -185,6 +208,12 @@ add_executable(windmill_domain_tests
   test/platform/application/OAuthServiceTest.cpp
   test/platform/application/McpKeyServiceTest.cpp
   test/platform/application/MailSweepTest.cpp
+  test/platform/application/WorkerPoolTest.cpp
+  test/platform/application/sync/SyncCatalogTest.cpp
+  test/platform/application/sync/AdmissionTest.cpp
+  test/platform/application/sync/ServerCallTest.cpp
+  test/platform/application/sync/SyncServiceTest.cpp
+  test/platform/application/sync/SyncLiveTest.cpp
   test/products/roadmap/domain/IdsTest.cpp
   test/products/roadmap/domain/LooseGraphTest.cpp
   test/products/roadmap/domain/LegendTest.cpp
@@ -240,10 +269,8 @@ add_executable(windmill_domain_tests
   test/products/gym/application/ThreadServiceTest.cpp
   test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/application/BodyweightServiceTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym)
-# The probe registry is test-only (a product nobody ships), and the corpus is read from the contract
-# at run time, so the runner sees every file the contract holds.
-wm_embed_registry(windmill_domain_tests wm::probe registryText "${WM_API_CONTRACT_DIR}/sync/probe.registry.json")
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe)
+# The corpus is read from the contract at run time, so the runner sees every file the contract holds.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CORPUS_DIR="${WM_API_CONTRACT_DIR}/sync/corpus")
 
 enable_testing()
@@ -302,7 +329,11 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/paddle/BillingApi.cpp
     platform/adapters/mcp/McpServer.cpp
     platform/adapters/mcp/McpHttpEndpoint.cpp
-    platform/adapters/mcp/CompositeToolHost.cpp)
+    platform/adapters/mcp/CompositeToolHost.cpp
+    platform/adapters/postgres/PgSyncStore.cpp
+    platform/adapters/postgres/PgTableType.cpp
+    platform/adapters/http/SyncApi.cpp
+    platform/adapters/ws/SyncSocket.cpp)
   target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto CURL::libcurl)
 
   # Roadmap adapters: the roadmap tools an AI agent drives (RoadmapTools), the sync/room socket,
@@ -400,6 +431,12 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal windmill_gym)
   message(STATUS "windmill_server enabled (Drogon + libpqxx found)")
 
+  # The same server with the sync engine over the probe product (db/probe.sql): the test and dev stack's
+  # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.
+  add_executable(windmill_server_probe platform/infra/main.cpp)
+  target_compile_definitions(windmill_server_probe PRIVATE WM_SYNC_PROBE=1)
+  target_link_libraries(windmill_server_probe PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe)
+
   add_executable(windmill_mcp platform/infra/mcp_main.cpp)            # stdio transport (local hosts)
   target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
 
@@ -424,6 +461,23 @@ if(Drogon_FOUND AND libpqxx_FOUND)
   target_compile_definitions(windmill_mcp_tests PRIVATE
     WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json")
   add_test(NAME mcp COMMAND windmill_mcp_tests)
+
+  # The probe's Postgres adapter, on the probe library (never linked into windmill_server).
+  target_sources(windmill_probe PRIVATE products/probe/adapters/postgres/PgProbe.cpp)
+
+  # The sync engine over Postgres alone, so `ctest -R sync` runs it without every product's Pg suite. Its
+  # cases skip unless WM_PG_TEST is set against a database holding db/schema.sql and db/probe.sql.
+  add_executable(windmill_sync_tests
+    test/http_main.cpp
+    test/platform/adapters/http/SyncApiTest.cpp
+    test/platform/adapters/postgres/PgSyncCorpusTest.cpp
+    test/platform/adapters/postgres/PgSyncStoreTest.cpp
+    test/platform/adapters/postgres/PgAdmissionConcurrencyTest.cpp
+    test/platform/adapters/postgres/PgPullSnapshotTest.cpp
+    test/products/probe/adapters/postgres/PgProbeTest.cpp)
+  target_link_libraries(windmill_sync_tests PRIVATE windmill_probe)
+  target_compile_definitions(windmill_sync_tests PRIVATE WM_SYNC_CORPUS_DIR="${WM_API_CONTRACT_DIR}/sync/corpus")
+  add_test(NAME sync COMMAND windmill_sync_tests)
 
   add_executable(windmill_adapters_tests
     test/http_main.cpp

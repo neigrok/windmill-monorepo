@@ -87,7 +87,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # three binaries: domain · mcp · adapters
+ctest --test-dir build --output-on-failure       # four binaries: domain · mcp · adapters · sync
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -102,6 +102,25 @@ The Postgres integration cases need a live database with `db/schema.sql` applied
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
   ctest --test-dir build -R adapters -V
+```
+
+The sync engine's Postgres suite (`windmill_sync_tests`, the `sync` test) replays the golden corpus,
+the store conformance cases and the concurrency cases over `db/schema.sql` plus the probe's
+`db/probe.sql`. It wipes every `sync_*` and `probe_*` row as it goes, so give it a throwaway database:
+
+```sh
+createdb -h /tmp wm_sync_test
+psql -h /tmp -d wm_sync_test -f db/schema.sql -f db/probe.sql
+WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ctest --test-dir build -R sync -V
+```
+
+`windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
+that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https.
+`test/e2e/sync_probe.sh` drives it over HTTP:
+
+```sh
+DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 ./build/windmill_server_probe &
+WM_E2E_DB=wm_sync_test PORT=8089 bash test/e2e/sync_probe.sh
 ```
 
 Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` inside the Docker
