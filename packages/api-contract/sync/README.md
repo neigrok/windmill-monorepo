@@ -26,13 +26,17 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 
 `registry.schema.json` is the authoritative registry format (engine.md D-7, §2.4). A registry declares:
 
-- a root with `registry`, `version` (the `Sync-Schema` header, `hello.schema`), `minVersion`
-  (`hello.minSchema`) and `products`, each with its `surfaces` (§7.9) and its device-scope rows
-  (`device`, with `keyPattern` and `localOnly`);
+- a root with `registry`, `version` (the version every request carries, §9.1; `hello.schema`),
+  `minVersion` (`hello.minSchema`) and `products`, each with its `surfaces` (§7.9) and its
+  device-scope rows (`device`, with `keyPattern` and `localOnly`);
 - types, with `mint` (the CSPRNG recipe: prefix, alphabet, length), `seeded`, `key` (a `ref`, or a
   `tuple` of named refs whose JCS is the identity), `singletonId` and `derive.fallback`;
-- fields, with `min`, `max`, a structured `domain`, and `opens` (the values of a tree singleton's
-  server-written field that open the tree to every reader, D-4);
+- fields, with `min`, `max` and their `unit`, a structured `domain` (a string domain's bounds state
+  their `unit` too), and `opens` (the values of a tree singleton's server-written field that open the
+  tree to every reader, D-4);
+- patterns (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) in §2.4's portable
+  subset, which `core/registry.js` checks: printable ASCII, `^…$`, literals, escaped syntax
+  characters, bracket classes of literals and ranges, groups and greedy quantifiers;
 - commands, with arguments `{type, optional?, domain?}`, `predicts`, and `beforePull` (a
   server-internal command run before every pull of its scope, §6.7).
 
@@ -41,11 +45,13 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 The reference is a pure, single-threaded model of the deterministic core. It does not model what no
 single-threaded run can observe, nor the HTTP envelope:
 - the global lock order, the per-scope mutex and the Postgres lock modes of §6.1 step 3, and two
-  pushes of one replica racing over its binding (§6.2 step 3);
+  pushes of one replica that overlap, over its binding or its `last_n` (§6.2 steps 3 and 4);
 - publishing frames before the mutex is released (§6.8);
 - the server's clock source (§10.2 `physNow()`, which callers pass as `serverNow`);
-- the `Sync-Schema` header (§9.1);
-- the sender's sleeping and its 503 wait (§7.4); `SenderWait` models only when it may push again;
+- the registry version's carriers, the `Sync-Schema` header and the live upgrade's `schema` parameter
+  (§9.1); the reference push takes `jcs(request)` as the body received;
+- the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
+  waits included;
 - the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step);
 - web tab leadership (§7.8).
 
@@ -56,8 +62,8 @@ single-threaded run can observe, nor the HTTP envelope:
 | `core/stamp.js`, `core/clock.js` | D-1, §3.1, §10 |
 | `core/jcs.js` | RFC 8785 (§3.2 `jcs`) |
 | `core/merge.js` | §3.2 register and record joins |
-| `core/registry.js`, `core/values.js` | §2.4, and §6.1 step 2's value checks and §7.1's quantum rounding |
-| `core/rows.js`, `core/wire.js` | §9.1 rows and deltas, §6.2 intent digest, §9.4 cursors |
+| `core/registry.js`, `core/values.js` | §2.4 (the portable patterns and stated units included), and §6.1 step 2's value checks and §7.1's quantum rounding |
+| `core/rows.js`, `core/wire.js` | §9.1 rows and deltas, §6.2 intent digest, §9.4 cursors, and the U+0000 rule both roles check an intent by (§6.1 step 2, §7.1 step 7) |
 | `core/digest.js` | §6.12 |
 | `core/fracindex.js` | D-25, its drop position |
 | `core/derive.js` | D-26, D-8 seeded and minted ids |
@@ -73,7 +79,7 @@ single-threaded run can observe, nor the HTTP envelope:
 | `client/commit.js`, `client/coalesce.js`, `client/hold.js` | §7.1, §7.2, §7.3 |
 | `client/sender.js`, `client/puller.js` | §7.4, §7.5 |
 | `client/dependents.js` | §7.7 step 3's dependents: a refusal's fold, the silent fold of a cancel, an undo and a retire (§7.2, §7.3), and §7.4's held-back entries |
-| `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps |
+| `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps, and D-17's dismissal |
 | `client/subscriptions.js` | §7.9 |
 | `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor) |
 | `vectors/` | corpus builders, one per corpus directory; `steps.js` is the client-step language |

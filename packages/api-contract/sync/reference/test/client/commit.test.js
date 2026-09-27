@@ -51,13 +51,23 @@ test('§7.1: commit throws only before its transaction writes, so a throw leaves
   const vectors = JSON.parse(readFileSync(new URL('../../../corpus/commit/throws.json', import.meta.url), 'utf8'));
   for (const { name, input } of vectors) {
     const last = input.steps.at(-1);
-    const replica = new Device(runSteps({ ...input, steps: input.steps.slice(0, -1) }).device).activeReplica;
-    const before = replica.toJSON();
-    const context = { registry, actor: last.actor ?? input.actor ?? ACTOR, deviceNow: last.deviceNow ?? 0, ended: [], nextGestureId: () => 'thrown' };
-    assert.throws(() => commit(replica, context, last.scope, last.changes, last.opts ?? {}), CommitError, name);
-    assert.deepEqual(replica.toJSON(), before, name);
+    const device = new Device(runSteps({ ...input, steps: input.steps.slice(0, -1) }).device);
+    const before = device.toJSON();
+    const context = { registry, actor: last.actor ?? input.actor ?? ACTOR, deviceNow: last.deviceNow ?? 0, ended: [], device, nextGestureId: () => 'thrown' };
+    assert.throws(() => commit(device.activeReplica, context, last.scope, last.changes, last.opts ?? {}), CommitError, name);
+    assert.deepEqual(device.toJSON(), before, name);
     assert.deepEqual(context.ended, [], name);
   }
+});
+
+test('§7.1: an error the read-and-commit body throws passes through unchanged, and nothing is written', () => {
+  const replica = bound({ 'self/probe': [CARD] });
+  const before = replica.toJSON();
+  const thrown = new RangeError('the product\'s own');
+  assert.throws(() => commit(replica, ctx(), 'self/probe', () => {
+    throw thrown;
+  }), (error) => error === thrown);
+  assert.deepEqual(replica.toJSON(), before);
 });
 
 test('§7.1: a replica that is not writable and a malformed commit are distinct failures', () => {

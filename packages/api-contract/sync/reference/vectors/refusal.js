@@ -230,6 +230,20 @@ function folds() {
       .add({ op: 'releaseAll', deviceNow: 5007 })
       .pushRound({ deviceNow: 5008 })
       .vector('an orphan the server admits releases its held-back dependents: a ready and a held edit of the record it created both land'),
+    script()
+      .add(commitStep('self/probe', [newCard('card0009')], undefined, 5000))
+      .pushRound({ deviceNow: 5001 })
+      .add({ op: 'dismiss', id: 'notice:g1/0' })
+      .vector('a dismissed notice is kept, hidden'),
+    inStep()
+      .add(commitStep('self/probe', [tooLong('card0009')], undefined, 5000))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0009', f: { title: 'Fixed' } }, newCard('card0010')], { atomic: true }, 5001))
+      .push(5002)
+      .respond({ serverNow: 5003, budget: 1 })
+      .add({ op: 'dismiss', id: 'notice:g1/0' })
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Edited' } }], undefined, 5004))
+      .pushRound({ deviceNow: 5005 })
+      .vector('content folding into a dismissed notice shows it again: an orphan\'s refusal folds its held-back dependent there'),
   ];
 }
 

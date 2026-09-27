@@ -521,6 +521,10 @@ function commands() {
     admitted('probe.copy onto a dead board id is id-taken', { state: afterCopy, intent: copy('b_0000000b', 'b_00000004') }),
     admitted('a run created by a plain delta is invalid', { state: empty, intent: probe([create('run', 'run00001', s(5000), { startedAt: 5000 })]) }),
     admitted('a run created by a server-origin delta is invalid', { state: empty, origin: SERVER_A, intent: probe([{ t: 'run', id: 'run00001', born: null, life: ['alive', null], f: { startedAt: [5000, null] } }]) }),
+    admitted('a run created by a delta beside probe.start of the same run is invalid: only the command creates it', {
+      state: empty,
+      intent: probe([create('run', 'run00001', s(5000), { startedAt: 5000 })], { cmd: { name: 'probe.start', args: { id: 'run00001', startedAt: 5000, join: false } } }),
+    }),
   ];
 }
 
@@ -734,6 +738,7 @@ function text() {
     admitted('a base naming a kept older rev merges with diff3', { state: withRevision, intent: write('pink red blue', { rev: 2 }) }),
     admitted('a base naming a pruned rev is base-unknown', { state: withRevision, intent: write('pink red blue', { rev: 1 }) }),
     admitted('a base naming a future rev is base-unknown', { state: ov([memo('red blue', 1)]), intent: write('red', { rev: 9 }) }),
+    admitted('a base rev beyond the safe integers is invalid', { state: ov([memo('red blue', 1)]), intent: write('red', { rev: 2 ** 53 }) }),
     admitted('a base text other than the head merges with diff3', { state: ov([memo('red green blue', 3)]), intent: write('red blue gold', { text: 'red blue' }) }),
     admitted('changes on both sides of one region conflict and set merged', { state: ov([memo('red green blue', 3)]), intent: write('red gold blue', { text: 'red blue' }) }),
     admitted('a write based on the head clears merged', { state: ov([memo('red green\n\ngold blue', 3, true)]), intent: write('red gold blue', { rev: 3 }) }),
@@ -836,6 +841,15 @@ function requests() {
     sequence('an empty requestId is invalid, and nothing is stored', base, [call({ requestId: '' })]),
     sequence('a requestId holding # is invalid', base, [call({ requestId: 'req#1' })]),
     sequence('a requestId holding U+0000 is invalid', base, [call({ requestId: 'req\u00001' })]),
+    sequence('a crash right after the last part leaves the row running; a retry after the lease replays both parts and writes the result', base, [
+      call({ crashAfter: 2 }),
+      call({ serverNow: NOW + 1 }),
+      call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS }),
+    ]),
+    sequence('a resumed call stops at a stored refused part, which is its result, and runs no later admit', base, [
+      { ...call({ crashAfter: 2 }), intents: [createCard('card0001', 'One'), createCard('card0002', ''), createCard('card0003', 'Three')] },
+      { ...call({ serverNow: NOW + CONSTANTS.REQUEST_LEASE_MS }), intents: [createCard('card0001', 'One'), createCard('card0002', ''), createCard('card0003', 'Three')] },
+    ]),
     sequence('a refused admit ends the call with that result', base, [
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')] },
       { ...call({}), intents: [createCard('card0001', 'One'), createCard('card0002', '')], serverNow: NOW + 1 },

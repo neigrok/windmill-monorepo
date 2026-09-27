@@ -11,6 +11,7 @@ import { CommitError, commit } from '../client/commit.js';
 import { release, releaseAll, releaseDue, undo } from '../client/hold.js';
 import { anonCount, discardUnsent, engineStart, epochChange, reidentify, renewActor, signIn, signOut } from '../client/lifecycle.js';
 import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
+import { dismiss } from '../client/refusal.js';
 import { Device } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../client/sender.js';
 import { reconcile } from '../client/subscriptions.js';
@@ -94,6 +95,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       ended,
       telemetry,
       appVersion: step.appVersion ?? '1',
+      device,
       nextGestureId: () => `g${(gestures += 1)}`,
       newReplicaId: () => queues.take('ids'),
       newActor: () => queues.take('actors'),
@@ -126,6 +128,10 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           break;
         case 'undo':
           answer(undo(replica, registry, ended, step.gestureId));
+          break;
+        case 'dismiss':
+          dismiss(replica, step.id);
+          answer(null);
           break;
         case 'push':
           lastPush = nextPush(replica, ctx, step.limit === undefined ? {} : { limit: step.limit });

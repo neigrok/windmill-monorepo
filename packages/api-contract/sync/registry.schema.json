@@ -23,7 +23,7 @@
       "pattern": "^[a-z][a-z0-9-]*$"
     },
     "version": {
-      "description": "The registry version, sent in every request's Sync-Schema header and answered as hello.schema (§9.1, §9.2).",
+      "description": "The registry version every request carries, in the Sync-Schema header or, on the live upgrade, the schema query parameter; answered as hello.schema (§9.1, §9.2).",
       "type": "integer",
       "minimum": 1
     },
@@ -69,9 +69,9 @@
       "pattern": "^[a-z][A-Za-z0-9]*$"
     },
     "regex": {
-      "description": "An anchored ECMAScript regular expression without flags.",
+      "description": "A portable pattern (engine.md §2.4): printable ASCII, `^` and `$` around literal characters, escaped syntax characters, bracket classes of literals and ranges, groups holding any alternation, and the greedy quantifiers ? * + {n,m}; matched against the whole value. `.`, class escapes, negated classes, backreferences, lookaround, lazy quantifiers and flags are outside it.",
       "type": "string",
-      "pattern": "^\\^.*\\$$"
+      "pattern": "^\\^[ -~]*\\$$"
     },
     "scope": {
       "description": "The scope kind a type or command lives in (D-4): a product scope `product:<name>`, a governed `tree` scope, or an account's `overlay` of a tree.",
@@ -708,7 +708,34 @@
               "type": "integer",
               "minimum": 1
             }
-          }
+          },
+          "allOf": [
+            {
+              "description": "A bound states its unit (D-9).",
+              "if": {
+                "required": [
+                  "min"
+                ]
+              },
+              "then": {
+                "required": [
+                  "unit"
+                ]
+              }
+            },
+            {
+              "if": {
+                "required": [
+                  "max"
+                ]
+              },
+              "then": {
+                "required": [
+                  "unit"
+                ]
+              }
+            }
+          ]
         },
         {
           "type": "object",

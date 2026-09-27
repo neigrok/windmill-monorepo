@@ -62,6 +62,7 @@ class Stage {
       ended: this.ended[name],
       telemetry: [],
       appVersion: '1',
+      device: this.devices[name],
       nextGestureId: () => `g${(this.gestures += 1)}`,
       newReplicaId: () => take(this.ids[name], 'replica id'),
       newActor: () => take(this.actorQueues[name], 'actor'),

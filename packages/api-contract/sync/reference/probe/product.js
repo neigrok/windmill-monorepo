@@ -121,13 +121,14 @@ export class ProbeProduct {
     return { deltas, write: [] };
   }
 
-  // Product rules on the joined records: runs are created only by probe.start, and a run this intent
-  // kills kills its alive laps in the same seq, a lap the intent itself deletes included.
+  // Product rules on the joined records: runs are created only by probe.start, so a create by any
+  // other delta is invalid even beside the command; and a run this intent kills kills its alive laps
+  // in the same seq, a lap the intent itself deletes included.
   check(ctx, records) {
     const appended = [];
     for (const record of records) {
       if (record.type.type !== 'run') continue;
-      if (record.op === 'create' && record.source !== 'command') throw new Refusal('invalid');
+      if (record.createdBy.some((source) => source !== 'command')) throw new Refusal('invalid');
       if (!record.original || !isAlive(record.original) || isAlive(record.after)) continue;
       for (const lap of ctx.rowsOf('lap')) {
         if (lap.life[0] !== 'alive' || lap.f?.runId?.[0] !== record.after.id) continue;
