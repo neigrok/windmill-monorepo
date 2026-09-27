@@ -120,10 +120,12 @@ function foldDependents(replica, ctx, source, origin) {
   return folded;
 }
 
+// An entry's content as a notice keeps it: a snapshot, which no later recovery, restamp or write map
+// changes (§7.7 step 4).
 function contentOf(entry) {
   const content = {};
-  if (entry.intent.d?.length) content.d = entry.intent.d;
-  if (entry.intent.cmd) content.cmd = entry.intent.cmd;
+  if (entry.intent.d?.length) content.d = structuredClone(entry.intent.d);
+  if (entry.intent.cmd) content.cmd = structuredClone(entry.intent.cmd);
   return content;
 }
 
@@ -144,6 +146,7 @@ function refuseOrphan(replica, ctx, orphan) {
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
   if (dependents.length === 0) return;
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
+  if (!notice) throw new Error(`notice:${orphan.orphanOf}, which ${orphan.localId}'s orphanOf names, is gone (D-17 keeps it)`);
   notice.content.dependents = [...(notice.content.dependents ?? []), ...dependents];
 }
 

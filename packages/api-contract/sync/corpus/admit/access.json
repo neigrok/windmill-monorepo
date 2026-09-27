@@ -4247,6 +4247,169 @@
     }
   },
   {
+    "name": "an account canonically equivalent to the owner, but not byte-equal, writing the private tree is not-found",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "Åsa": {
+            "name": "Lookalike"
+          },
+          "Åsa": {
+            "name": "Owner"
+          }
+        },
+        "scopes": {
+          "acct:Åsa/probe": {
+            "kind": "product",
+            "owner": "Åsa",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "Åsa",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "2be3ffcec48d1effc3cb9fa0acc8690091fa0ed44c41797709cbe2a207b32dfb",
+            "governedBy": "acct:Åsa/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:Åsa/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "Åsa",
+        "replica": "rp_0000000000000000000000000000000c",
+        "n": 1
+      },
+      "intent": {
+        "scope": "tree/b_00000001",
+        "d": [
+          {
+            "t": "meta",
+            "id": "meta",
+            "f": {
+              "title": [
+                "Mine",
+                "5000:0:r_bbbbbbbbbbbb"
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "not-found"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "Åsa": {
+            "name": "Lookalike"
+          },
+          "Åsa": {
+            "name": "Owner"
+          }
+        },
+        "scopes": {
+          "acct:Åsa/probe": {
+            "kind": "product",
+            "owner": "Åsa",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "ebc41c27fd23cc61823a43f3362722bf92a6ffea3191e96d1f20cf4b42c3e9e8"
+          },
+          "tree:b_00000001": {
+            "kind": "tree",
+            "owner": "Åsa",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "2be3ffcec48d1effc3cb9fa0acc8690091fa0ed44c41797709cbe2a207b32dfb",
+            "governedBy": "acct:Åsa/probe#board#b_00000001"
+          }
+        },
+        "rows": {
+          "acct:Åsa/probe": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "2000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "2000:0:r_aaaaaaaaaaaa",
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ],
+          "tree:b_00000001": [
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
     "name": "an invalid intent is invalid before access is checked",
     "input": {
       "state": {

@@ -227,6 +227,14 @@ function cancels() {
         { op: 'releaseAll', deviceNow: 14001 },
       ],
     }),
+    stepsVector('a delete, a revive and a delete of a confirmed record join without cancelling: alive without the joined entry, the record keeps its final delete', {
+      device: device({ 'self/probe': [BOARD_ROW], [TREE]: TREE_ROWS }),
+      steps: [
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5000),
+        commitStep(TREE, [{ op: 'revive', t: 'tag', id: 'oak' }], undefined, 5001),
+        commitStep(TREE, [{ op: 'delete', t: 'tag', id: 'oak' }], undefined, 5002),
+      ],
+    }),
     stepsVector('a revive and a delete of a spent record, both unsent, cancel', {
       device: settle({
         active: REPLICA,

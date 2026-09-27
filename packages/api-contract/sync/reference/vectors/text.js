@@ -66,6 +66,11 @@ const DIFF3 = [
 ];
 
 const STORED = { text: 'hello world', rev: 7, merged: false };
+
+// MERGE_WORK_CELLS at 4 194 304 = 2048²: 1024 one-letter words are 2047 tokens, so a script between two
+// such texts takes exactly the bound, and one more token takes it over.
+const WORDS = (first, last) => [first, ...Array(1022).fill('w'), last].join(' ');
+const AT_BOUND = { text: WORDS('x', 'w'), rev: 9, merged: false };
 const REVISIONS = [{ rev: 3, text: 'hello' }];
 
 function merge(name, stored, base, mine, revisions = []) {
@@ -96,6 +101,8 @@ export function files() {
       merge('merged resets when the writer saw the head', { text: 'x\n\ny', rev: 9, merged: true }, { rev: 9 }, 'x and y'),
       merge('merged stays while the base is older than the head', { text: 'x\n\ny tail', rev: 9, merged: true }, { text: 'x\n\ny' }, 'START x\n\ny'),
       merge('a conflict sets merged', { text: 'a x c', rev: 9, merged: false }, { text: 'a b c' }, 'a y c'),
+      merge('diff3 scripts of exactly MERGE_WORK_CELLS cells merge region by region', AT_BOUND, { text: WORDS('w', 'w') }, WORDS('w', 'y')),
+      merge('a diff3 script over MERGE_WORK_CELLS cells makes the whole text one conflict, and merged', AT_BOUND, { text: WORDS('w', 'w') }, `${WORDS('w', 'y')} `),
     ],
   };
 }

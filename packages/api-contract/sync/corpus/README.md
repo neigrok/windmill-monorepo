@@ -15,7 +15,9 @@ written from this README alone needs no other file than `../probe.registry.json`
 - **Registers** are `[value, stamp]`, a life is `["alive"|"dead", stamp]`, a born is a stamp. In `join/`
   vectors an absent register is `null` (distinct from `[null, stamp]`, a register holding null).
 - **Ids** are strings, or arrays for a tuple-keyed type (the probe's `link`), whose JCS is their
-  identity. Records sort by type, then by the UTF-8 bytes of the JCS of the id.
+  identity. Records sort by type, then by the UTF-8 bytes of the JCS of the id. Ids, accounts, scope
+  keys and `requestId`s compare byte for byte (engine.md §9.1): some vectors carry two accounts that
+  are canonically equivalent and differ in their bytes, and treat them as two accounts.
 - **Rows** (§9.1) carry `t`, `id`, `seq`, `rc`, `ru` always; `life` and `born` when the record has them;
   `f`, `x` and `v` only when non-empty. A thin dead row is `{t, id, life, born?, seq}`.
 - **Errors**: a vector whose function must fail expects `{error: true}`; a client step that must throw
@@ -37,7 +39,7 @@ written from this README alone needs no other file than `../probe.registry.json`
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
-| server | `identity/table.json`, `admit/`, `text/`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `machine/scope.json` |
+| server | `identity/table.json`, `admit/`, `text/`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json` |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `coalesce/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
 
 ## The probe product
@@ -261,15 +263,15 @@ intent not yet enqueued (intent) or a replica not yet created (replica). With `t
 `to` iff the table allows that target; without it, the table's first target. The terminal intent
 outcomes are `undone`, `coalesced`, `resolved`, `refused`, `discarded`. Events:
 - intent: `commit`, `coalesce`, `cancel`, `release`, `undo`, `retire`, `number`, `fold`, `target-merged`, `ok`,
-  `recover` (clock-skew, base-unknown), `refuse`, `orphan-ok`, `transport`, `reidentify`,
+  `recover` (clock-skew, base-unknown), `refuse`, `transport`, `reidentify`,
   `skew-return`, `rewind`, `resolve`, `epoch`, `discard`;
 - replica: `first-launch`, `sign-in`, `sign-out-keep`, `sign-out-discard`, `discard`, `reidentify`
   (keeps the state; `deleted` is a replica removed from the device);
 - scope: `first-write`, `governing-create`, `governing-delete`, `horizon`.
 
 The intent events map to §8.1's rows: `commit` is "commit with hold / without hold" (to `held` or
-`ready`); `coalesce` is both a commit that coalesces at once and "a create or revive cancelled by a
-later delete"; `cancel` is "folded with such a cancel" (to `coalesced`, no notice);
+`ready`); `coalesce` is both a commit that coalesces at once and "cancelled by a later delete";
+`cancel` is "folded with such a cancel" (to `coalesced`, no notice);
 `recover` is "`clock-skew`, `base-unknown`"; `refuse` is "another refusal; 400 or 413 on a one-intent
 request"; `skew-return` is "an earlier entry's `clock-skew` recovery" and `rewind` "a 400 or 413 on a
 one-intent request", both for a later unprocessed sent entry; `resolve` is every `acked → resolved`
@@ -316,7 +318,9 @@ with a quadratic table of remaining distances.
 
 `input: {stored: {text, rev, merged}, base: {rev} | {text}, mine, revisions: [{rev, text}]}` ·
 `expect: {text, conflict, merged, baseText}` or `{refuse: "base-unknown"}`: §6.11 steps 1–2 and the
-merged flag of step 4.
+merged flag of step 4. When a `diff3` edit script, base → head or base → mine, would take over
+`MERGE_WORK_CELLS` cells, `(base tokens + 1) × (side tokens + 1)`, the whole text is one conflict:
+`rtrim(head) + "\n\n" + ltrim(mine)`, with `conflict` and `merged` true.
 - `{rev}` equal to `stored.rev` resolves to `stored.text`; another rev resolves from `revisions`,
   or refuses `base-unknown`.
 - `{text: ""}` resolves to the head when `mine`'s tokens start with all of the head's, and to `mine`
@@ -397,13 +401,18 @@ intent creates is admitted and a lap under a run it deletes is `parent-dead`.
 
 ### admit/record-bound.json (server)
 
-§6.1 step 9's bound is measured on the joined row as step 13 would store it:
-- at `seq = scope.seq + 1`;
+§6.1 step 9's bound is measured on every row the intent changes, in its scope or in a scope it
+creates, as step 13 would store it:
+- at `seq = scope.seq + 1` (1 in a scope the intent creates);
 - with `rc` (kept from the stored row, else `serverNow`) and `ru = serverNow`;
-- with every newly merged text's `rev` = that seq.
+- with every newly merged text's `rev` = that seq;
+- without the serial step 11 has yet to give a new record.
 
-Text bases never count. The vectors admit a row whose stored encoding is exactly the bound, refuse
-`too-large` one byte under it, and admit a text write whose base alone is longer than the bound.
+Text bases never count, and a row the intent leaves unchanged is not measured. The vectors admit a row
+whose stored encoding is exactly the bound, refuse `too-large` one byte under it, admit a text write
+whose base alone is longer than the bound, admit a new lap whose row is at the bound before its serial,
+admit a write that changes nothing whatever the bound, and refuse a copy whose rows in the tree it
+creates are over the bound.
 
 ### admit/requests.json (server)
 
@@ -416,8 +425,11 @@ Run §6.3 for each call in order against the evolving state: `digest = sha256(jc
 admit k is part k, each in its own transaction, and every intent carries `gestureId = requestId`.
 The call stops at its first refusal, which is its result. `crashAfter: k` ends the call right after
 part k commits (the row stays `running`); its result is `null`. `transientAt: k` makes admit k fail
-transiently (rolled back): the row stays `running` with the parts before k (none when k is 1, since
-the row is stored by the first admit's transaction), and the result is `null`. A stored row with another digest →
+transiently (rolled back): the row stays `running` with the parts before k, and the result is `null`.
+When k is the first admit this call runs, the rollback also takes back the row's insertion (a fresh
+call) or the lease takeover (a resumed one), so the state is unchanged. `faultAt: k` makes admit k
+fault: the call ends `refused internal`, stored as part k and as the row's result, `done`. A
+`requestId` that is empty or holds `#` or U+0000 answers `invalid` and stores nothing. A stored row with another digest →
 `request-conflict`; `done` → its result; `running` with `serverNow − startedAt < REQUEST_LEASE_MS` →
 `request-running`; older → taken over (`startedAt := serverNow`) and resumed after the stored parts.
 
@@ -432,8 +444,9 @@ LiveEvent = {key, frame: ChangeFrame} | {key, dead: true}
 
 Run §6.2 once against `state`. Checks run in this order:
 1. no principal → 401 `unauthenticated`;
-2. a body that is not `{replica: string, ackThrough: integer ≥ 0, intents: [{n: integer ≥ 1, …}]}` →
-   400 `malformed`;
+2. a body that is not exactly `{replica, ackThrough, intents}`, with `replica` of D-3's form (`rp_`
+   and 32 lowercase hex), `ackThrough` an integer ≥ 0 and `intents` `[{n: integer ≥ 1, …}]` → 400
+   `malformed`;
 3. more intents than `PUSH_MAX_INTENTS`, or `jcs(request)` over `PUSH_MAX_BYTES` → 413
    `request-too-large`;
 4. a replica bound to another account → 409 `replica-foreign`.
@@ -444,7 +457,10 @@ ascending `n` (§6.2 step 4).
 - A 409 `gap` or `replica-forked` answers no results. When the request inserted the binding and nothing
   was admitted under it, the binding is not kept; admissions an earlier intent of the request committed
   are kept.
-- `budget` is the number of admissions before `retry {n, retryAfterMs: 0}`.
+- `budget` is the number of admissions before `retry {n, retryAfterMs: 0}`; an answer replayed from
+  `sync_results` is not an admission.
+- A request answered 200 prunes the replica's results with `n ≤ min(ackThrough, lastN)`; any other
+  answer prunes nothing.
 - `faults` makes the admission of that `n` fault:
   - `transient` records nothing (the binding stays) and answers `retry {n, retryAfterMs: 1000}`.
   - `fault` counts `faults + 1` in the `(replica, n)` result row, with `result: null`, and answers
@@ -454,9 +470,15 @@ ascending `n` (§6.2 step 4).
   there is the change frame `{op: 'change', scope, epoch, seq, digest, rows?}` of its scope. It is
   followed by one `{key, dead: true}` per scope the admission killed (a governing delete: the tree and
   every overlay of it), in ascending key order.
-- A subscriber receives a death event as `{op: 'gone', scope}` when it owns the scope, and
-  `{op: 'not-found', scope}` otherwise. `scope` is the wire reference: `tree/<T>`, or `self/overlay/<T>`
-  for the overlay's owner.
+- A subscriber receives a death event as `live/death.json` gives it.
+
+### live/death.json (server)
+
+`input: {state, account, scope}` · `expect: {frame}`: the frame a live socket of `account`, subscribed
+to `scope` (a wire reference), receives when that scope dies (§6.8). It answers as a pull of the scope
+would (§6.7 step 1): `{op: 'gone', scope}` to the tree's owner, for the tree and for that owner's
+overlay, and `{op: 'not-found', scope}` to everyone else; `null`, no frame, for an overlay never
+written, which has no scope to die.
 
 ### Limits knobs
 
@@ -688,8 +710,11 @@ is answered for the caller to resume.
   `retired` lists those gesture ids in commit order; a refused commit retires nothing.
 - `cmd`: `{name, args}`.
 - `predict`: a list of `create` and `update` changes. A prediction may write server fields.
-- `local`: `{deviceKey: value}`; `null` deletes the row.
-- `gestureId`.
+- `local`: `{deviceKey: value}`; `null` deletes the row. A key matching none of the product's device
+  rows (`keyPattern`) throws.
+- `gestureId`: one an outbox entry already carries throws.
+
+A gesture whose changes give one record two deltas throws: an intent changes a record at most once.
 
 **Ids and order.**
 - A gesture's id is `opts.gestureId`. Otherwise it is `g1`, `g2` and so on, counting within the
@@ -768,8 +793,10 @@ write-map stamps.
 
 The target E is the last *earlier* entry, in commit order, touching the intent's record. An entry
 with `numbered: true`, an orphan among them, takes no join: the intent stays an entry of its own. A
-join removes E iff E's delta had made the record alive (a create or a revive) and the joined life is
-dead. An update joined with a delete keeps the delete.
+join removes E iff E's delta holds an alive life and a born, the record is not alive in drawn without
+E and the intent, and the joined life is dead. An update joined with a delete keeps the delete, and so
+does a revive of a record alive without it: a delete, a revive and a delete of a confirmed record end
+as one entry that deletes it.
 
 A cancel also folds the cancelled record's dependents (§7.7 step 3's definition) silently: their deltas
 and commands are removed with no notice, and an entry left empty ends `coalesced` with event `cancel`.
@@ -778,7 +805,7 @@ and commands are removed with no notice, and an entry left empty ends `coalesced
 
 - `release.json`: releases, and numbering past held entries. A ready entry is held back, and `push`
   does not number it, while it depends on a held or held-back entry or on an orphan awaiting its
-  result (the dependents of `refusal/*.json`), or touches, by a delta, a guard or a prediction, a
+  result, sent or returned to ready (the dependents of `refusal/*.json`), or touches, by a delta, a guard or a prediction, a
   record an earlier held-back entry touches. Numbering stops at a held-back command entry.
 - `undo.json`: an undo folds the gesture's dependents silently, as a cancel does (`coalesce/*.json`).
 
@@ -799,8 +826,8 @@ re-identify and an epoch change.
   - Names include ref fields, key parts and command `ref<t>` arguments.
 - A queued dependent is removed; its entry ends `fold` when nothing is left of it.
 - A sent entry with any dependent delta or command becomes an orphan (`orphanOf`), its whole
-  content in the notice. Its later result ends it without a notice of its own (`ok` → resolved, a
-  refusal → refused).
+  content in the notice. Its `ok` makes it `acked` like any `ok`; its refusal ends it `refused`,
+  with no notice of its own.
 - An orphan's whole content is a source: every record it creates and every life register it writes
   make their own dependents, held back from numbering until its result. Its `ok` releases them, and
   its content stays in the notice; its refusal folds them into the same notice, a sent one becoming

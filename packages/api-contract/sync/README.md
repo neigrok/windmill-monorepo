@@ -39,11 +39,15 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 ## What the reference does not model
 
 The reference is a pure, single-threaded model of the deterministic core. It does not model what no
-single-threaded run can observe: the global lock order, the per-scope mutex and the Postgres lock
-modes of §6.1 step 3, publishing frames before the mutex is released (§6.8), the server's clock
-source (§10.2 `physNow()`, which callers pass as `serverNow`), the sender's backoff and 503 sleep
-(§7.4), the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the
-sign-out step) and web tab leadership (§7.8).
+single-threaded run can observe, nor the HTTP envelope:
+- the global lock order, the per-scope mutex and the Postgres lock modes of §6.1 step 3, and two
+  pushes of one replica racing over its binding (§6.2 step 3);
+- publishing frames before the mutex is released (§6.8);
+- the server's clock source (§10.2 `physNow()`, which callers pass as `serverNow`);
+- the `Sync-Schema` header (§9.1);
+- the sender's sleeping and its 503 wait (§7.4); `SenderWait` models only when it may push again;
+- the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step);
+- web tab leadership (§7.8).
 
 ## Reference layout
 

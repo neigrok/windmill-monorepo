@@ -29,6 +29,14 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// Any string of the value, a key or a value at any depth, holding U+0000 (§6.1 step 2).
+function holdsNul(value) {
+  if (typeof value === 'string') return value.includes('\u0000');
+  if (Array.isArray(value)) return value.some(holdsNul);
+  if (isObject(value)) return Object.entries(value).some(([key, inner]) => key.includes('\u0000') || holdsNul(inner));
+  return false;
+}
+
 // Answers {result, state, writes, killed}: `writes` lists each changed scope's applied rows, the
 // intent's scope first, then scopes it created (§6.1 step 14); `killed` the scopes a death killed.
 export function admit({ state, registry, product, origin, intent, serverNow, limits = CONSTANTS }) {
@@ -78,6 +86,7 @@ class Admission {
     this.scopeKind = this.registry.scopeKindOf(this.intent?.scope);
     const target = scopeKeyOf(this.registry, this.intent?.scope, this.origin.account);
     if (target === null) throw new Refusal('invalid');
+    if (target.tree !== undefined && checkId(this.registry, this.registry.governingType, target.tree)) throw new Refusal('invalid');
     this.target = target;
     this.scopeKey = target.key;
   }
@@ -86,7 +95,7 @@ class Admission {
   // the clamp of time values.
   checkShape() {
     const { intent } = this;
-    if (!isObject(intent) || Object.keys(intent).some((key) => !INTENT_KEYS.has(key))) throw new Refusal('invalid');
+    if (!isObject(intent) || Object.keys(intent).some((key) => !INTENT_KEYS.has(key)) || holdsNul(intent)) throw new Refusal('invalid');
     const deltas = intent.d ?? [];
     if (!Array.isArray(deltas) || (deltas.length === 0 && intent.cmd === undefined)) throw new Refusal('invalid');
     const seen = new Set();
@@ -285,17 +294,21 @@ class Admission {
       if (before?.v || change.delta.v) after.v = { ...(before?.v ?? {}), ...(change.delta.v ?? {}) };
       const { texts, revisions } = this.mergeTexts(change, before);
       if (Object.keys(texts).length) after.x = { ...(after.x ?? {}), ...texts };
+      const joinedFields = after.f;
       if (!isAlive(after) && !change.type.revivable) for (const part of ['f', 'x', 'v']) delete after[part];
       const typedBefore = known ? known.typedBefore : this.work.row(change.scopeKey, change.delta.t, change.delta.id);
-      if (this.storedBytes(change.scopeKey, after, typedBefore) > this.limits.MAX_RECORD_BYTES) throw new Refusal('too-large');
+      const original = known ? known.original : before;
+      const changes = !sameJson(comparable(original), comparable(after));
+      if (changes && this.storedBytes(change.scopeKey, after, typedBefore) > this.limits.MAX_RECORD_BYTES) throw new Refusal('too-large');
       this.records.set(key, {
         scopeKey: change.scopeKey,
         type: change.type,
         delta: change.delta,
         op: change.op,
         source: change.source,
-        original: known ? known.original : before,
+        original,
         typedBefore,
+        joinedFields,
         isNew: known ? known.isNew : change.idState.state === 'none' || change.idState.state === 'foreign',
         after,
         revisions: [...(known?.revisions ?? []), ...revisions],
@@ -303,7 +316,8 @@ class Admission {
     }
   }
 
-  // The joined row's encoding as step 13 would store it: at the next seq, with rc, ru and new text revs.
+  // The joined row's encoding as step 13 would store it: at the next seq, with rc, ru and new text revs,
+  // and without the serial step 11 has yet to assign. Only a row the intent changes is measured.
   storedBytes(scopeKey, after, typedBefore) {
     const seq = (this.work.scope(scopeKey)?.seq ?? 0) + 1;
     const x = after.x && Object.fromEntries(Object.entries(after.x).map(([name, text]) => [name, { ...text, rev: text.rev ?? seq }]));
@@ -365,6 +379,7 @@ class Admission {
         base: write.base,
         mine: write.text,
         revisionText: (rev) => this.work.revisionsOf(change.scopeKey, change.delta.t, change.delta.id, name).find((r) => r.rev === rev)?.text,
+        limits: this.limits,
       });
       if (merge.refuse) throw new Refusal(merge.refuse);
       if (lengthIn(field.unit, merge.text) > field.max) throw new Refusal('too-large');
@@ -377,7 +392,8 @@ class Admission {
   }
 
   // Step 10's parent rule, over the joined records: a create or update whose parent is not alive; a
-  // parent created in the same intent counts.
+  // parent created in the same intent counts. The reference is read as the join wrote it, before G1
+  // drops a dead record's fields.
   checkParents() {
     for (const change of this.changes) {
       if (change.op !== 'create' && change.op !== 'update') continue;
@@ -385,7 +401,7 @@ class Admission {
       if (!name) continue;
       const record = this.records.get(`${change.scopeKey}|${recordKey(change.delta.t, change.delta.id)}`).after;
       const ref = change.type.field(name).ref;
-      const parentId = record.f?.[name]?.[0];
+      const parentId = this.records.get(`${change.scopeKey}|${recordKey(change.delta.t, change.delta.id)}`).joinedFields?.[name]?.[0];
       const parent = this.records.get(`${change.scopeKey}|${recordKey(ref, parentId)}`)?.after ?? this.work.stored(change.scopeKey, ref, parentId);
       if (!parent || !isAlive(parent)) throw new Refusal('parent-dead');
     }

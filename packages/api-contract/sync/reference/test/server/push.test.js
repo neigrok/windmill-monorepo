@@ -201,15 +201,21 @@ test('push/serve.json replays through push, frames and death events included', (
   }
 });
 
-test('a scope that dies is gone to its owner and not-found to every other subscriber', () => {
+test('a dying tree answers each subscriber as a pull would: gone to the tree owner, not-found to everyone else', () => {
   const [vector] = JSON.parse(readFileSync(new URL('../../../corpus/push/serve.json', import.meta.url), 'utf8')).filter((v) => /board delete/.test(v.name));
   const after = new ServerState(vector.expect.state);
   const deaths = vector.expect.frames.filter((event) => event.dead);
   assert.deepEqual(deaths.map((event) => event.key), ['acct:A/overlay/b_00000001', 'acct:B/overlay/b_00000001', 'tree:b_00000001']);
-  assert.deepEqual(deaths.map((event) => [deathFrameFor(after, event.key, 'A'), deathFrameFor(after, event.key, 'B')]), [
-    [{ op: 'gone', scope: 'self/overlay/b_00000001' }, { op: 'not-found', scope: 'self/overlay/b_00000001' }],
-    [{ op: 'not-found', scope: 'self/overlay/b_00000001' }, { op: 'gone', scope: 'self/overlay/b_00000001' }],
-    [{ op: 'gone', scope: 'tree/b_00000001' }, { op: 'not-found', scope: 'tree/b_00000001' }],
+  assert.deepEqual([
+    deathFrameFor(after, 'acct:A/overlay/b_00000001', 'A'),
+    deathFrameFor(after, 'acct:B/overlay/b_00000001', 'B'),
+    deathFrameFor(after, 'tree:b_00000001', 'A'),
+    deathFrameFor(after, 'tree:b_00000001', 'B'),
+  ], [
+    { op: 'gone', scope: 'self/overlay/b_00000001' },
+    { op: 'not-found', scope: 'self/overlay/b_00000001' },
+    { op: 'gone', scope: 'tree/b_00000001' },
+    { op: 'not-found', scope: 'tree/b_00000001' },
   ]);
 });
 

@@ -17,7 +17,6 @@ export const INTENT_MACHINE = [
   { from: ['sent'], event: 'ok', to: ['acked'] },
   { from: ['sent'], event: 'recover', to: ['ready'] },
   { from: ['sent'], event: 'refuse', to: ['refused'] },
-  { from: ['sent'], event: 'orphan-ok', to: ['resolved'] },
   { from: ['sent'], event: 'transport', to: ['sent'] },
   { from: ['sent'], event: 'reidentify', to: ['ready'] },
   { from: ['sent'], event: 'skew-return', to: ['ready'] },

@@ -1,6 +1,9 @@
-// §6.3 server-origin calls, deduplicated per (account, requestId) by sha256(jcs({tool, args})); each
-// admit k stores part k in its own transaction. `crashAfter: k` stops after part k; `transientAt: k`
-// fails admit k transiently, rolled back, leaving the row running. Live events as push's.
+// §6.3 server-origin calls, deduplicated per (account, requestId) by sha256(jcs({tool, args})); a
+// requestId is a non-empty string without `#` or U+0000, else the call is invalid. Each admit k stores
+// part k in its own transaction, and a run's first admit also holds the lookup and any lease takeover.
+// `crashAfter: k` stops after part k; `transientAt: k` fails admit k transiently, rolled back;
+// `faultAt: k` faults admit k, which ends the call `refused internal`, stored as done. Live events as
+// push's.
 
 import { createHash } from 'node:crypto';
 import { CONSTANTS } from '../core/constants.js';
@@ -8,11 +11,13 @@ import { jcs } from '../core/jcs.js';
 import { admit } from './admit.js';
 import { liveEventsOf } from './pull.js';
 
+const INTERNAL = Object.freeze({ s: 'refused', code: 'internal' });
+
 function callDigest(tool, args) {
   return createHash('sha256').update(jcs({ tool, args }), 'utf8').digest('hex');
 }
 
-export function serverCall({ state, registry, product, account, requestId, tool, args, intents, serverNow, crashAfter, transientAt, limits = CONSTANTS }) {
+export function serverCall({ state, registry, product, account, requestId, tool, args, intents, serverNow, crashAfter, transientAt, faultAt, limits = CONSTANTS }) {
   const origin = { kind: 'server', account };
   let work = state.clone();
   const live = [];
@@ -26,13 +31,15 @@ export function serverCall({ state, registry, product, account, requestId, tool,
 
   if (requestId === undefined) {
     let result;
-    for (const intent of intents) {
+    for (const [index, intent] of intents.entries()) {
+      if (faultAt === index + 1) return done(work, INTERNAL);
       result = admitOne(intent);
       if (result.s === 'refused') break;
     }
     return done(work, result);
   }
 
+  if (typeof requestId !== 'string' || requestId === '' || /[#\u0000]/.test(requestId)) return done(state, { s: 'refused', code: 'invalid' });
   const digest = callDigest(tool, args);
   work.requests[account] ??= {};
   const stored = work.requests[account][requestId];
@@ -43,6 +50,7 @@ export function serverCall({ state, registry, product, account, requestId, tool,
   work.requests[account][requestId] = row;
   row.startedAt = serverNow;
 
+  const first = row.parts.length + 1;
   let result;
   for (const [index, intent] of intents.entries()) {
     const k = index + 1;
@@ -50,7 +58,13 @@ export function serverCall({ state, registry, product, account, requestId, tool,
     if (part) {
       result = part.result;
     } else {
-      if (transientAt === k) return done(k === 1 ? state : work, null);
+      if (transientAt === k) return done(k === first ? state : work, null);
+      if (faultAt === k) {
+        work.requests[account][requestId] = row;
+        row.parts.push({ k, result: INTERNAL });
+        Object.assign(row, { state: 'done', result: INTERNAL, startedAt: serverNow });
+        return done(work, INTERNAL);
+      }
       result = admitOne({ ...intent, gestureId: requestId });
       work.requests[account][requestId] = row;
       row.parts.push({ k, result });

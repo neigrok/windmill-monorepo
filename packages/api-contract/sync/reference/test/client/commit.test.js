@@ -60,6 +60,23 @@ test('§7.1: commit throws only before its transaction writes, so a throw leaves
   }
 });
 
+test('§7.1: a replica that is not writable and a malformed commit are distinct failures', () => {
+  const dormant = new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'dormant', account: 'A' }).meta });
+  const kindOf = (act) => {
+    try {
+      act();
+    } catch (error) {
+      assert.ok(error instanceof CommitError);
+      return error.kind;
+    }
+    return null;
+  };
+  assert.deepEqual([
+    kindOf(() => commit(dormant, ctx(), 'self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'One' } }])),
+    kindOf(() => commit(bound(), ctx(), 'self/probe', [{ op: 'update', t: 'card', id: 'card0404', f: { title: 'Absent' } }])),
+  ], ['not-writable', 'malformed']);
+});
+
 test('D-8: a minted id is the prefix and one alphabet character per draw', () => {
   const board = registry.type('board');
   const draws = [3, 15, 10, 9, 12, 1, 14, 0];

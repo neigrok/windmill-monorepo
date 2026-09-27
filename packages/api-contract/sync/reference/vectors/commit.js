@@ -511,6 +511,21 @@ function throws() {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { guard: [{ t: 'card', id: 'card0001', field: 'colour' }] })],
     }),
+    stepsVector('two changes that give one record two deltas throw: an intent changes a record at most once', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }, { op: 'update', t: 'card', id: 'card0001', f: { tier: 'done' } }], { atomic: true })],
+    }),
+    stepsVector('a gestureId an outbox entry already carries throws', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno' } }], { gestureId: 'edit' }),
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0002', f: { title: 'Dos' } }], { gestureId: 'edit' }, 5001),
+      ],
+    }),
+    stepsVector('a device row whose key matches none of its product\'s rows throws', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [], { local: { plates: [10] } })],
+    }),
     stepsVector('a throwing change leaves the gesture\'s earlier changes and the clock unwritten', {
       device: device(bound({ confirmed: PROBE })),
       steps: [
