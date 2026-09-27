@@ -55,7 +55,8 @@ single-threaded run can observe, nor the HTTP envelope:
 - the live socket's reopen backoff and the cross-tab `upgrade` signal (§7.5, §7.8);
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
-- the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step);
+- the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step), and
+  stored credentials (§7.10);
 - web tab leadership (§7.8).
 
 ## Reference layout

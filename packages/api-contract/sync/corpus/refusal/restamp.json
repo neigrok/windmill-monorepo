@@ -2325,10 +2325,10 @@
                 {
                   "t": "board",
                   "id": "b_00000002",
-                  "born": "5011:1:r_aaaaaaaaaaaa",
+                  "born": "5011:1:r_cccccccccccc",
                   "life": [
                     "alive",
-                    "5011:1:r_aaaaaaaaaaaa"
+                    "5011:1:r_cccccccccccc"
                   ]
                 }
               ],
@@ -2341,7 +2341,7 @@
                 {
                   "t": "board",
                   "id": "b_00000002",
-                  "born": "5011:1:r_aaaaaaaaaaaa",
+                  "born": "5011:1:r_cccccccccccc",
                   "life": [
                     "dead",
                     "5011:2:r_cccccccccccc"
@@ -2462,17 +2462,17 @@
                 "state": "acked",
                 "commitOrder": 1,
                 "releaseAt": 0,
-                "stamp": "5011:1:r_aaaaaaaaaaaa",
+                "stamp": "5011:1:r_cccccccccccc",
                 "intent": {
                   "scope": "self/probe",
                   "d": [
                     {
                       "t": "board",
                       "id": "b_00000002",
-                      "born": "5011:1:r_aaaaaaaaaaaa",
+                      "born": "5011:1:r_cccccccccccc",
                       "life": [
                         "alive",
-                        "5011:1:r_aaaaaaaaaaaa"
+                        "5011:1:r_cccccccccccc"
                       ]
                     }
                   ],
@@ -2480,7 +2480,7 @@
                   "n": 3
                 },
                 "n": 3,
-                "digest": "fd9f30c57c99612e27d8561cf57b848bf86387c42f20ed85f593e29484202a28",
+                "digest": "7018c59165e96897d1b65ae3aea0d222912be00103f1f5257584a1a101db445f",
                 "resultSeq": 5,
                 "resultEpoch": "ep-1"
               },
@@ -2499,7 +2499,7 @@
                     {
                       "t": "board",
                       "id": "b_00000002",
-                      "born": "5011:1:r_aaaaaaaaaaaa",
+                      "born": "5011:1:r_cccccccccccc",
                       "life": [
                         "dead",
                         "5011:2:r_cccccccccccc"
@@ -2510,7 +2510,7 @@
                   "n": 4
                 },
                 "n": 4,
-                "digest": "0018c9bc065e12595b979d9f8b7cbd11456ebd521f84910dc2c8bbd2ae166cb7",
+                "digest": "db72556d98f828f1128e41b08c5e8e054d0a6e61b9972733aad9fea5bf24f52d",
                 "resultSeq": 6,
                 "resultEpoch": "ep-1"
               }
@@ -3414,7 +3414,7 @@
     }
   },
   {
-    "name": "a clock-skew restamp keeps each entry's author actor",
+    "name": "a clock-skew restamp gives every entry, another instance's included, a fresh tick of the recovering instance",
     "input": {
       "device": {
         "active": "rp_00000000000000000000000000000001",
@@ -3709,7 +3709,7 @@
                 "state": "ready",
                 "commitOrder": 1,
                 "releaseAt": 0,
-                "stamp": "5001:1:r_bbbbbbbbbbbb",
+                "stamp": "5001:1:r_aaaaaaaaaaaa",
                 "intent": {
                   "scope": "self/overlay/b_00000001",
                   "d": [
@@ -3719,7 +3719,7 @@
                       "f": {
                         "done": [
                           true,
-                          "5001:1:r_bbbbbbbbbbbb"
+                          "5001:1:r_aaaaaaaaaaaa"
                         ]
                       },
                       "x": {

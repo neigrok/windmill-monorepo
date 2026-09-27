@@ -6320,5 +6320,852 @@
         }
       ]
     }
+  },
+  {
+    "name": "an orphan that outgrew a request alone ends without a notice of its own, and its held-back dependent folds into the origin's notice",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e122fd96db171babbad4c336ccfec4dc0970aaf6ed8ee854446598911335a909",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Fixed",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0010",
+                      "born": "5002:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5002:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "body": [
+                          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "title": [
+                          "Ten",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                },
+                "orphanOf": "g1/0"
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0010",
+                      "born": "5002:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Tenth",
+                          "5003:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g3"
+                }
+              }
+            ],
+            "notices": [
+              {
+                "id": "notice:g1/0",
+                "scope": "self/probe",
+                "code": "invalid",
+                "content": {
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Thirteen char",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "dependents": [
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0009",
+                          "born": "5001:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Fixed",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        },
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "life": [
+                            "alive",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "f": {
+                            "body": [
+                              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ],
+                            "title": [
+                              "Ten",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "at": 5003
+              }
+            ]
+          }
+        ]
+      },
+      "limits": {
+        "PUSH_MAX_BYTES": 618
+      },
+      "steps": [
+        {
+          "op": "push",
+          "deviceNow": 5004
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        null
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e122fd96db171babbad4c336ccfec4dc0970aaf6ed8ee854446598911335a909",
+                "booted": true
+              }
+            },
+            "notices": [
+              {
+                "id": "notice:g1/0",
+                "scope": "self/probe",
+                "code": "invalid",
+                "content": {
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Thirteen char",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "dependents": [
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0009",
+                          "born": "5001:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Fixed",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        },
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "life": [
+                            "alive",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "f": {
+                            "body": [
+                              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ],
+                            "title": [
+                              "Ten",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Tenth",
+                              "5003:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "at": 5003
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g2/0",
+          "outcome": "refused",
+          "event": "outgrown",
+          "orphanOf": "g1/0"
+        },
+        {
+          "localId": "g3/0",
+          "outcome": "refused",
+          "event": "fold",
+          "orphanOf": "g1/0"
+        }
+      ]
+    }
+  },
+  {
+    "name": "the refusal of an outgrown orphan frees what it held back: a partly dependent entry keeps its own part, and an entry held back behind it is numbered in the same push",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e122fd96db171babbad4c336ccfec4dc0970aaf6ed8ee854446598911335a909",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Fixed",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0010",
+                      "born": "5002:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5002:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "body": [
+                          "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ],
+                        "title": [
+                          "Ten",
+                          "5002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                },
+                "orphanOf": "g1/0"
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0010",
+                      "born": "5002:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Tenth",
+                          "5003:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    },
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Uno",
+                          "5003:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g3"
+                }
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "5004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "done",
+                          "5004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              }
+            ],
+            "notices": [
+              {
+                "id": "notice:g1/0",
+                "scope": "self/probe",
+                "code": "invalid",
+                "content": {
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Thirteen char",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "dependents": [
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0009",
+                          "born": "5001:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Fixed",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        },
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "life": [
+                            "alive",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "f": {
+                            "body": [
+                              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ],
+                            "title": [
+                              "Ten",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "at": 5003
+              }
+            ]
+          }
+        ]
+      },
+      "limits": {
+        "PUSH_MAX_BYTES": 618
+      },
+      "steps": [
+        {
+          "op": "push",
+          "deviceNow": 5004
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Uno",
+                      "5003:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g3",
+              "n": 1
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "tier": [
+                      "done",
+                      "5004:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g4",
+              "n": 2
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1001:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Card 1",
+                      "1001:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6MX0",
+                "digest": "e122fd96db171babbad4c336ccfec4dc0970aaf6ed8ee854446598911335a909",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "5003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "title": [
+                          "Uno",
+                          "5003:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g3",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "d03027e370d074711d77332c8f4c5957faef4d55c36848671ceaf4f28708fe53"
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "5004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0001",
+                      "born": "1001:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "done",
+                          "5004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g4",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "c8767b75ead22cd8b8c2d951a8b5a3d04cac2b8e6f78f3a46ece9fcc82edf24a"
+              }
+            ],
+            "notices": [
+              {
+                "id": "notice:g1/0",
+                "scope": "self/probe",
+                "code": "invalid",
+                "content": {
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "5001:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Thirteen char",
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "dependents": [
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0009",
+                          "born": "5001:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Fixed",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        },
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "life": [
+                            "alive",
+                            "5002:0:r_aaaaaaaaaaaa"
+                          ],
+                          "f": {
+                            "body": [
+                              "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ],
+                            "title": [
+                              "Ten",
+                              "5002:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    },
+                    {
+                      "d": [
+                        {
+                          "t": "card",
+                          "id": "card0010",
+                          "born": "5002:0:r_aaaaaaaaaaaa",
+                          "f": {
+                            "title": [
+                              "Tenth",
+                              "5003:0:r_aaaaaaaaaaaa"
+                            ]
+                          }
+                        }
+                      ]
+                    }
+                  ]
+                },
+                "at": 5003
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g2/0",
+          "outcome": "refused",
+          "event": "outgrown",
+          "orphanOf": "g1/0"
+        }
+      ]
+    }
   }
 ]

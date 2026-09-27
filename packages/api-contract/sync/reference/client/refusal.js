@@ -54,13 +54,6 @@ function ownRegisters(entry) {
   return own;
 }
 
-// A fresh tick from the shared clock, in the actor of the instance that authored the entry (§7.7's
-// restamp rule).
-function authoredTick(clock, entry) {
-  const { ms, counter } = Stamp.parse(clock.tick());
-  return Stamp.encode({ ms, counter, actor: Stamp.parse(entry.stamp).actor });
-}
-
 // §7.7 step 1 for clock-skew. The caller has already taken the response's offset sample.
 function recoverSkew(replica, ctx, refused, lastN) {
   const { meta } = replica;
@@ -75,7 +68,7 @@ function recoverSkew(replica, ctx, refused, lastN) {
   let high = meta.admittedHigh;
   const plan = replica.entries().filter(isQueued).map((entry) => ({ entry, own: ownRegisters(entry) }));
   for (const { entry, own } of plan) {
-    const n = authoredTick(clock, entry);
+    const n = clock.tick();
     for (const [delta, register] of own) moveRegister(replica, entry, delta, register, n);
     entry.stamp = n;
     high = Stamp.max(high, n);
@@ -139,10 +132,11 @@ function refuse(replica, ctx, entry, event, { code, detail }) {
   replica.notices.push(notice);
 }
 
-// An orphan's refusal ends it with no notice of its own; its held-back dependents fold into the
-// origin's notice, its whole content their source, and show that notice again if it was dismissed.
-function refuseOrphan(replica, ctx, orphan) {
-  moveEntry(replica, ctx.ended, orphan, 'refuse');
+// An orphan's refusal, by the server or as outgrown, ends it with no notice of its own; its held-back
+// dependents fold into the origin's notice, its whole content their source, and show that notice again
+// if it was dismissed.
+function refuseOrphan(replica, ctx, orphan, event = 'refuse') {
+  moveEntry(replica, ctx.ended, orphan, event);
   const dependents = foldDependents(replica, ctx, orphan, orphan.orphanOf);
   if (dependents.length === 0) return;
   const notice = replica.notices.find((candidate) => candidate.id === `notice:${orphan.orphanOf}`);
@@ -159,9 +153,10 @@ export function dismiss(replica, noticeId) {
 }
 
 // §7.4: a ready entry that grew after commit past a request alone ends too-large before it is numbered,
-// with its notice, as a one-intent 413 would end it.
+// with its notice, or, an orphan, with none of its own, as a one-intent 413 would end it.
 export function refuseOutgrown(replica, ctx, entry) {
-  refuse(replica, ctx, entry, 'outgrown', { code: 'too-large' });
+  if (entry.orphanOf !== undefined) return refuseOrphan(replica, ctx, entry, 'outgrown');
+  return refuse(replica, ctx, entry, 'outgrown', { code: 'too-large' });
 }
 
 // A refusal of a sent entry: automatic recovery, or removal, folding and a notice (§7.7 steps 1-5).
@@ -228,7 +223,7 @@ export function applyWriteMap(replica, ctx, command, write) {
       }
     }
     if (named.length === 0) continue;
-    const n = authoredTick(clock, entry);
+    const n = clock.tick();
     for (const [delta, register] of named) moveRegister(replica, entry, delta, register, n);
     replica.meta.hlcHigh = Stamp.max(replica.meta.hlcHigh, n);
   }

@@ -2,7 +2,7 @@
 // refusal folds its dependents into one notice; clock-skew and base-unknown recover automatically.
 
 import { freshMeta } from '../client/replica.js';
-import { intentDigest } from '../core/wire.js';
+import { bodyBytes, intentDigest } from '../core/wire.js';
 import { pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
@@ -110,6 +110,28 @@ const newCard = (id) => ({ op: 'create', t: 'card', id, f: { title: 'Fourth' } }
 const tooLong = (id) => ({ op: 'create', t: 'card', id, f: { title: 'Thirteen char' } });
 
 // A client and a server holding the same one card and board, so two creates fit the cap.
+// An orphan returned to ready that has grown past a request alone (a restamp adds digits), with the
+// origin's notice already written, and `later` entries behind it. PUSH_MAX_BYTES sits one byte under the
+// orphan's one-intent body, which a long body text makes the largest of all.
+function outgrownOrphan(name, later) {
+  const rows = [row({ t: 'card', id: 'card0001', life: ['alive', st(1001)], born: st(1001), f: { title: ['Card 1', st(1001)] }, seq: 1 })];
+  const entry = (k, d, extra = {}) => ({
+    localId: `g${k}/0`, gestureId: `g${k}`, lineage: 'A', scope: 'self/probe', state: 'ready', commitOrder: k, releaseAt: 0, stamp: st(5000 + k),
+    intent: { scope: 'self/probe', d, gestureId: `g${k}` }, ...extra,
+  });
+  const created = { t: 'card', id: 'card0009', born: st(5001), life: ['alive', st(5001)], f: { title: ['Thirteen char', st(5001)] } };
+  const orphan = entry(2, [
+    { t: 'card', id: 'card0009', born: st(5001), f: { title: ['Fixed', st(5002)] } },
+    { t: 'card', id: 'card0010', born: st(5002), life: ['alive', st(5002)], f: { body: ['x'.repeat(200), st(5002)], title: ['Ten', st(5002)] } },
+  ], { orphanOf: 'g1/0' });
+  const notice = { id: 'notice:g1/0', scope: 'self/probe', code: 'invalid', content: { d: [created], dependents: [{ d: orphan.intent.d }] }, at: 5003 };
+  const outbox = [orphan, ...later.map((d, index) => entry(3 + index, d))];
+  const limit = bodyBytes({ replica: REPLICA, ackThrough: 0, intents: [{ ...orphan.intent, n: 1 }] }) - 1;
+  const base = device({ 'self/probe': rows }, { nextN: 1 });
+  Object.assign(base.replicas[0], { outbox, notices: [notice] });
+  return stepsVector(name, { device: base, limits: { PUSH_MAX_BYTES: limit }, steps: [{ op: 'push', deviceNow: 5004 }] });
+}
+
 function inStep() {
   const rows = [CARDS[0], row({ t: 'board', id: BOARD, life: ['alive', st(900)], born: st(900), seq: 4 })];
   return new ServerScript({ device: device({ 'self/probe': rows }), server: serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': rows } }) });
@@ -312,7 +334,7 @@ function restamps() {
       .push(skewed(5000))
       .respond({ serverNow: 5000, tRecv: skewed(5001) })
       .add(commitStep(OVERLAY, [{ op: 'write', t: 'mark', id: 'oak', x: { memo: 'from tab A' } }], undefined, skewed(5002)))
-      .vector('a clock-skew restamp keeps each entry\'s author actor'),
+      .vector('a clock-skew restamp gives every entry, another instance\'s included, a fresh tick of the recovering instance'),
     returnedCommand(),
     carriedLife(),
   ];
@@ -510,7 +532,16 @@ function transports() {
 
 export function files() {
   return {
-    'refusal/fold.json': folds(),
+    'refusal/fold.json': [
+      ...folds(),
+      outgrownOrphan('an orphan that outgrew a request alone ends without a notice of its own, and its held-back dependent folds into the origin\'s notice', [
+        [{ t: 'card', id: 'card0010', born: st(5002), f: { title: ['Tenth', st(5003)] } }],
+      ]),
+      outgrownOrphan('the refusal of an outgrown orphan frees what it held back: a partly dependent entry keeps its own part, and an entry held back behind it is numbered in the same push', [
+        [{ t: 'card', id: 'card0010', born: st(5002), f: { title: ['Tenth', st(5003)] } }, { t: 'card', id: 'card0001', born: st(1001), f: { title: ['Uno', st(5003)] } }],
+        [{ t: 'card', id: 'card0001', born: st(1001), f: { tier: ['done', st(5004)] } }],
+      ]),
+    ],
     'refusal/restamp.json': restamps(),
     'refusal/base-unknown.json': baseUnknowns(),
     'refusal/transport.json': transports(),
