@@ -99,7 +99,7 @@ public final class ActionRunner: Sendable {
   }
 
   // §9.2 one ordered, fail-fast pipeline: no nesting, one local transaction, load, decide, the gone check, translate,
-  // then the engine's outcome mapped.
+  // then the engine's outcome mapped, a refusal the commit wrote into a notice delivered by the outcome alone.
   func perform<Loaded, Result, Refusal: ProductRefusal>(
     in scope: ScopeRef, load: (Reader) throws -> Loaded, decide: (Loaded, IDSource) throws(Violation) -> Decision<Result, Refusal>
   ) throws -> Outcome<Result, Refusal> {
@@ -127,6 +127,7 @@ public final class ActionRunner: Sendable {
       } catch let failure as CommitFailure where failure.kind == .malformed {
         preconditionFailure("a malformed commit is a programming fault (ER-14): \(failure)")
       }
+      if case .refused(_, _, let notice?)? = committed.outcome { try replica.dismissNotice(notice) }
       return committed.value.outcome(of: committed.outcome, registry: registry)
     }
   }
@@ -145,7 +146,7 @@ enum Step<Result, Refusal: ProductRefusal> {
     case (.writing(let plan, let result), .committed(let receipt)?):
       let wroteNothing = receipt.localIds.isEmpty && receipt.retired.isEmpty && plan.deviceWrites.isEmpty
       return wroteNothing ? .unchanged(result) : .committed(result, receipt)
-    case (.writing(let plan, _), .refused(let code, let detail)?):
+    case (.writing(let plan, _), .refused(let code, let detail, _)?):
       let subject = plan.subject(ofRefusal: code, detail: detail, registry: registry)
       return .refused(Refusal(Refused(code, subject: subject, detail: detail, path: .predicted)))
     case (.writing, nil):

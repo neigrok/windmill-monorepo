@@ -468,10 +468,10 @@ package final class Simulator {
         count("gesture \(planned.label)")
         if !receipt.retired.isEmpty { count("retired") }
         if receipt.releaseAt != nil, rng.chance(0.2), (try? engine.undo(receipt.gestureId)) == true { count("undo at once") }
-      case .refused(let code, _):
+      case .refused(let code, _, let notice):
         count("commit refused \(code)")
-        if code == .tooLarge, phone.noticeIDs().subtracting(notices).isEmpty {
-          violations.append("INV-3 \(phone.name): \(planned.label) refused too-large at commit with no notice")
+        if code == .tooLarge, notice.map(phone.noticeIDs().subtracting(notices).contains) != true {
+          violations.append("INV-3 \(phone.name): \(planned.label) refused too-large at commit with no notice it names")
         }
       }
     } catch let failure as CommitFailure where failure.kind == .notWritable {

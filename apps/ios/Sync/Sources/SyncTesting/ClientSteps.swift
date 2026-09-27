@@ -381,7 +381,7 @@ public enum ClientSteps {
     switch outcome {
     case .committed(let receipt):
       return ["localIds": .array(receipt.localIds.map { .string($0) }), "retired": .array(receipt.retired.map { .string($0) }), "stamp": receipt.stamp.json]
-    case .refused(let code, let detail):
+    case .refused(let code, let detail, _):
       var object: JSON.Object = ["refused": code.json]
       object["detail"] = detail
       return .object(object)

@@ -95,10 +95,11 @@ public struct CommitPlanner: Sendable {
     // Step 8: an intent the widest request cannot carry alone refuses the gesture, so an entry as committed always fits
     // a request alone.
     if intents.contains(where: { PushRequest(widestFor: $0, of: replica.meta.replica).body.count > limits.pushMaxBytes }) {
+      let notice = "notice:\(gestureId)/0"
       replica.apply(.putNotice(Notice(
-        id: "notice:\(gestureId)/0", product: product, scope: scope, code: .tooLarge, detail: nil,
+        id: notice, product: product, scope: scope, code: .tooLarge, detail: nil,
         content: NoticeContent(deltas: deltas, command: gesture.command), at: instance.deviceNow)))
-      return .refused(.tooLarge, detail: nil)
+      return .refused(.tooLarge, detail: nil, notice: notice)
     }
 
     replica = retired

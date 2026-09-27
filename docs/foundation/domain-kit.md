@@ -7,8 +7,8 @@ client's design, whose public API the kit binds to.
 
 ## §0 Status and scope
 
-**Status:** Specified; not yet implemented. Swift implements it first; Kotlin implements it from this
-spec. Both pass the shared vectors of §15.
+**Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
+implementation passes the shared vectors of §15.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -26,7 +26,8 @@ not a kit consumer. Every type the kit writes lives in a product scope (engine D
   public API (§17). It owns no table, file, socket or request.
 - **Engine algorithms.** Diffing, stamps, id minting, guards, grouping, the commit-time cap and size
   checks, drop positions, holds, retires, folding and the write map stay in the engine (engine §7).
-  Quantum rounding and text measures are `SyncCore` functions the kit calls (ER-11).
+  Quantum rounding and text measures are `SyncCore`'s `Quantum` and `MeasureUnit`, which the kit calls
+  (ER-11).
 - **Lifecycle.** Sign-in, sign-out, lineage decisions, leaving the app and the Coach turn wire are
   driven by the app shell through the engine.
 - **Product rules.** A product's rules, copy and derived reads are the product's, beside its code.
@@ -42,8 +43,8 @@ with their test support `DomainKitTesting` and `:domain-kit-testing`.
 `:sync-api` (ER-1) hold `RecordID`, `RecordRef`, `RegisterRef`, `OrderAnchor`, `NewID`, `TextEdit`,
 `Change`, `Command`, `DeviceWrite`, `Gesture`, `CommitOutcome`, `CommitReceipt`, `ViewMode`,
 `Record`, `Notice`, `UndoOffer`, the `Replica` port and the readers `ScopeReader` and
-`CommitContext`. `SyncCore` holds `JSON`, `Stamp`, `ScopeRef`, `Registry`, `RefusalCode`, quantum
-rounding, text measures and the engine's `Constants`. `SyncSchema` holds the generated registry and
+`CommitContext`. `SyncCore` holds `JSON`, `Stamp`, `ScopeRef`, `Registry`, `RefusalCode`, `Quantum`,
+`MeasureUnit` and the engine's `Constants`. `SyncSchema` holds the generated registry and
 names. Together they are the kit's whole lower boundary.
 
 **D-3 Layer.** One of: engine API, engine runtime, kit, product domain, UI, test, composition (the
@@ -202,15 +203,15 @@ literals are not tokens.
 | `<P>Domain` | `SyncCore`, `SyncAPI`, `SyncSchema`, `DomainKit` | yes |
 | `SyncCore` | `CryptoKit`, in its digest file only | — |
 | `SyncAPI`, `SyncSchema` | `SyncCore` | — |
-| every other non-test module | package modules (of the three packages or a remote package): its declared direct dependencies; SDK modules (any other): any, but the layers below import no UI framework, and only `SyncStore` imports `SQLite3`, `CoreData` or `SwiftData` | — |
+| every other non-test module | package modules (of §2.1's packages or a remote package): its declared direct dependencies; SDK modules (any other): any, but the layers below import no UI framework, and only `SyncStore` imports `SQLite3`, `CoreData` or `SwiftData` | — |
 
 - No kit, kit test support, product domain, engine API, engine runtime or engine test support module of
-  the three packages imports `SwiftUI`, `UIKit` (`SyncIOS` may), `AppKit`, `Combine` or a framework
+  §2.1's packages imports `SwiftUI`, `UIKit` (`SyncIOS` may), `AppKit`, `Combine` or a framework
   bringing `UIKit` or `AppKit` (`AuthenticationServices`, `StoreKit`, `SafariServices`,
   `LinkPresentation`, `QuickLook`, `PhotosUI`, `MapKit`, `AVKit`, `WebKit`, `PassKit`), or names
   `ObservableObject`, `Published`, `AnyCancellable`, `PassthroughSubject` or `CurrentValueSubject`. An
   `#if` hides no import; a dependency's UI (`GRDB`'s `UIKit`) and unlisted frameworks are not seen.
-- In every non-test module of the three packages, an `import` names one module from its row, maybe
+- In every non-test module of §2.1's packages, an `import` names one module from its row, maybe
   scoped (`import struct M.T`) or with an access level, and carries no attribute.
 - In every module the table lists by name, no attribute, directive or macro name begins `_` (`@_spi`,
   `#_hasSymbol`), and none of `#if`, `#elseif`, `#available`, `#unavailable` and `@available` appears.
@@ -259,16 +260,16 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
 
 ### §2.4 Enforcement
 
-1. **Declared edges (compile time).** Every `swift build` and `swift test` of `WindmillDomain`,
-   `WindmillKit` and `WindmillSync` runs with `--explicit-target-dependency-import-check error`, in
-   CI and in each package's README command. It checks only that an import lies in the module's
-   transitive closure; §2.3's import rule checks the edge. A domain's own UI module is a dependency
-   cycle and never compiles.
+1. **Declared edges (compile time).** Every `swift build` and `swift test` of `WindmillSync`,
+   `WindmillDomain`, `WindmillKit` and `SyncTestingSurface` runs with
+   `--explicit-target-dependency-import-check error`, in CI and in each package's README command. It
+   checks only that an import lies in the module's transitive closure; §2.3's import rule checks the
+   edge. A domain's own UI module is a dependency cycle and never compiles.
 2. **Plain JVM (compile time).** Kit, domain and engine-API Kotlin modules are `jvm` modules, so
    `android.*` does not compile in them.
-3. **Settings (compile time).** The three packages declare tools version 6.2 or later and Swift
-   language mode 6 only, so global mutable state is a compile error. Every non-test target's settings
-   are exactly these, with no condition and no plugin:
+3. **Settings (compile time).** The four packages of §2.1 declare tools version 6.2 or later and
+   Swift language mode 6 only, so global mutable state is a compile error. Every non-test target's
+   settings are exactly these, with no condition and no plugin:
    - `DomainKit`, every product domain, `SyncCore`, `SyncAPI` and `SyncSchema`:
      `[.enableUpcomingFeature("MemberImportVisibility")]`, so a Foundation member cannot be called
      from a file that does not import Foundation;
@@ -454,8 +455,9 @@ entity, fails unless:
 8. a `Draftable` whose `savesGuarded` is true has no `text` field;
 9. every registry path of the type with a `quantum` has a `NumberSpec` in `book` whose quantum is on
    it, so a checked value is the value the store holds;
-10. every registry path of a client-written field whose domain is `string`, nested ones included, has
-    a `TextSpec` or `ChoiceSpec` in `book`, so a pasted U+0000 is a `Violation` (§4.3).
+10. every string path of a field the entity writes (a key of `sample.fields`), a `text` field's and
+    each nested one included, has a `TextSpec` or `ChoiceSpec` in `book`, so a pasted U+0000 is a
+    `Violation` (§4.3). A field the entity does not write needs none.
 
 `RuleBookCheck` (§6.3) then requires an entity case in `values.json` for every LOCAL rule bound to a
 field, so the wiring from spec to check to field runs in a vector.
@@ -495,9 +497,14 @@ A value spec is data. Its `path` is the registry path of the value it constrains
 (`<type>.<field>`, then `.<property>` through nested objects, arrays passed through), and is its rule
 name (§6.3). It MUST admit no value the registry refuses at that path: a `chars` bound `m` against a
 `bytes` bound needs `4m ≤` it, a `bytes` bound `m` against a `chars` bound needs `m ≤` it, number
-bounds lie within the domain, its quantum `q` satisfies `Quantum.isOn(q, registry quantum)`, and no
-string it admits holds U+0000. A count spec's `max` is at most the array's `maxItems`, and `max`
-items at the item's largest JCS encoding fit the field's bytes bound. `RegistryCheck` computes each.
+bounds lie within the domain, its quantum `q` is on the registry's quantum `Q` (`Quantum(Q).holds(q)`),
+and no string it admits holds U+0000. A count spec's `max` is at most the array's `maxItems`, and
+`max` items at the item's largest JCS encoding fit the field's bytes bound.
+
+`RegistryCheck` computes each, with two limits. It measures a count's fit only when every part of an
+item has a largest encoding; an id, a fractional key, a stamp, raw JSON, or a string with neither a
+`max` nor an enum has none. It holds a choice spec's values to a string domain's `pattern`, but not a
+text spec. Past those limits, keeping a spec within the registry is the product's.
 
 ```swift
 public protocol ValueSpec: Sendable { var path: String { get }; var json: JSON { get } }
@@ -539,8 +546,8 @@ Each `apply` is an ordered, fail-fast pipeline; the first failing step throws.
    U+00A0, U+1680, U+2000–U+200A, U+2028, U+2029, U+202F, U+205F, U+3000 and U+FEFF: ECMAScript `\s`,
    the set the engine's text merge tokenises on (engine §6.11). No platform predicate is used.
 3. A U+0000 anywhere → `nul`: the engine refuses it in every string (engine §6.1 step 2).
-4. Measure with `TextMeasure.chars` (Unicode scalars) or `TextMeasure.bytes` (UTF-8 bytes) (ER-11).
-   Never `String.count` or Kotlin `String.length`.
+4. Measure with `MeasureUnit.chars.length(of:)` (Unicode scalars) or `MeasureUnit.bytes.length(of:)`
+   (UTF-8 bytes) (ER-11). Never `String.count` or Kotlin `String.length`.
 5. Measured 0 and `min ≥ 1` → `blank`.
 6. Measured below `min` → `tooShort`.
 7. Measured above `max` → `tooLong`, carrying the measured count.
@@ -549,11 +556,12 @@ Each `apply` is an ordered, fail-fast pipeline; the first failing step throws.
 **Number.**
 1. Not finite → `notANumber`.
 2. `integer` and not integral → `notInteger`.
-3. `quantum q` → `Quantum.round(x, to: q)` (ER-11), engine §7.1 step 4's rounding; `-0` becomes `0`.
+3. `quantum q` → `Quantum(q).rounded(x)` (ER-11), engine §7.1 step 4's rounding; `-0` becomes `0`.
 4. Below `min` → `below`; above `max` → `above`, on the rounded value.
 5. Return the rounded value.
 
-A spec with both `integer` and `quantum` traps at construction.
+A spec with both `integer` and `quantum`, or with a quantum that is neither an integer nor `1/k`, traps
+at construction.
 
 **Choice.** Not one of `values`, compared by UTF-8 bytes → `notOneOf`.
 
@@ -682,7 +690,9 @@ text: year, month and day zero-padded to 4, 2 and 2 digits
 - The zone is the app's port; production answers the device's zone at the instant asked. Tests use
   `FixedZone`.
 - A `time` field is left to the engine unless the value is a device-observed instant other than
-  `now`. An `instant` command argument is a person's choice; a rule comparing it with `now` is LOCAL.
+  `now`. A minted create leaves a nil `time` field unset, and the engine fills it with the commit's
+  `now` (engine §7.1 step 4). An `instant` command argument is a person's choice; a rule comparing it
+  with `now` is LOCAL.
 - A keyed type whose key is a local date takes `LocalDay.text` as its id (`ID(day)`).
 
 ---
@@ -707,7 +717,8 @@ tests it. The server does not apply the kit's specs.
 Exactly one of:
 1. **The engine at commit.** `cap` (engine §7.1 step 8, held deletes occupying their slots, detail
    `{type, cap}`), `scope-dead` (step 2) and `too-large` (step 8). The runner maps the engine's local
-   refusal (§9.2 step 7).
+   refusal (§9.2 step 7). A local `too-large` reaches the product once, as that refusal: the runner
+   dismisses the notice the engine wrote to hold the gesture.
 2. **The kit.** `stale`: a guarded save whose changed fields hold, in `stored`, other values than the
    draft's base (§10.2).
 3. **The product.** A pure function over the loaded `stored` view, in decide. Example: a phone logs
@@ -889,8 +900,10 @@ public struct Plan: Sendable {
 | `remove` | `.delete(t, id)` | `.put(t, id, present: false)` | — | — |
 | `move` | `.move(t, id, to: OrderAnchor(field: orderField, below:))` | same | same | — |
 
-- `f` holds the named fields' values; a text field, by the registry's field kinds, goes in `texts` as
-  a `TextEdit`, edited from its value in the update's `base` and from `""` in a create.
+- `f` holds the named fields' values, less a nil `time` field of a minted create (§5.3). A text field,
+  by the registry's field kinds, goes in `texts` as a `TextEdit`, edited from its value in the
+  operation's base: an update's `base`, or the draft's base in a present-again save's create (§10.2
+  step 4). A create with no base edits from `""`.
 - A keyed create inside that record's own delete window retires the held removal in the same
   transaction (engine §7.1 step 4). The record never died, so it keeps its untouched fields, and the
   put adds the written ones.
@@ -1019,13 +1032,19 @@ public final class ActionRunner: Sendable {
 4. **Decide.** A thrown `Violation` becomes `refuse(R(violation))`. `refuse` and `unchanged` return no
    gesture: the engine writes nothing and ticks no clock (engine §7.1).
 5. **Gone.** For every update, remove or move of a type with life, `ctx.drawn(t, id)` must hold the
-   record alive; otherwise the body returns no gesture and the outcome is
-   `refused(R(Refused(unknown-record, subject, path: .predicted)))`. The engine throws on such a
-   write (engine §7.1 step 4); the runner refuses it for every action.
+   record alive, and every insert or move that names an anchor needs that anchor visible, with its
+   order key, in `drawn` or in `stored` (engine D-25). Otherwise the body returns no gesture and the
+   outcome is `refused(R(Refused(unknown-record, subject, path: .predicted)))`, whose subject is the
+   first gone record or absent anchor in the plan's order. The engine throws on either write (engine
+   §7.1 step 4); the runner refuses it for every action.
 6. **Translate** (§8.2), which may throw `PlanError`; return the gesture.
 7. **Map.** `committed(receipt)` with no local id, no retired gesture and no device write →
-   `unchanged(result)`; otherwise `committed(result, receipt)`. `refused(code, detail)` →
-   `refused(R(Refused(code, subject, detail, path: .predicted)))`, with §12.1's subject.
+   `unchanged(result)`; otherwise `committed(result, receipt)`. `refused(code, detail, notice)` →
+   `refused(R(Refused(code, subject, detail, path: .predicted)))`, with §12.1's subject. A `notice`
+   is the one a `too-large` commit wrote to hold its gesture (engine §7.1 step 8). The runner
+   dismisses it first (`Replica.dismissNotice`, engine D-17), so the product hears of the refusal
+   once, from this outcome, and a draft saved again at every pause piles up no notices. A dismissal
+   that throws rethrows from `run`.
 
 `read` builds a reader over `Replica.read`. `undo` is `Replica.undo`: true iff every entry of the
 gesture was still held (engine §7.3). `mint` is `Replica.mintID`. `moment` is `Replica.physNow()`
@@ -1108,8 +1127,9 @@ commit (§9.2). Only `save` builds a `SaveDraft` from a `Draft`, and no action r
   needed writing.
 - `.refused` and `.failed`: the draft is as it was; a new draft stays new, and an edited one stays
   dirty. The UI says the input is not saved, and the next save retries it.
-- `.failed` is a store failure, or a replica that cannot write. Nothing was written: `commit` throws
-  only before its transaction commits (engine §7.1), so saving again is safe.
+- `.failed` is a store failure, or a replica that cannot write. No gesture was written: `commit`
+  throws only before its transaction commits (engine §7.1), and the runner's dismissal only after a
+  refusal (§9.2 step 7), so saving again is safe.
 - A programming fault traps instead: a `current` whose id is not the draft's, a `PlanError`, a
   `DecodeError`, and a `CommitFailure` of kind `malformed` (ER-14).
 - A caller reads the result with a `switch`; a `default` case can drop "not saved".
@@ -1178,12 +1198,14 @@ value, and `exists`, whether the record is in `stored` after the save:
      the record this draft opened.
 3. **Create.** A minted type with `stored = nil`: validate every field and write `create(valid)`,
    or `insert(valid, below: anchor)` for an `Ordered` type. A blank refuses on its checks, and a
-   prefill is created. Saved: every field.
+   prefill is created. Saved: every field, a nil `time` field at the moment's `now`, which the engine
+   writes (§5.3).
 4. **Present again.** A keyed or singleton type with `drawn = nil`: a new draft, or a record inside
    this device's own delete window (`stored ≠ nil`), or a keyed record without life that holds no
    visible value. Validate every field of a new draft, and the touched fields otherwise, then write
-   `create(valid, fields: touched)`. It is never compared with `stored`, so it is neither skipped nor
-   stale; the create retires the held removal, and the record keeps its untouched fields (§8.2).
+   `create(valid, fields: touched)` from the draft's base, so its text fields edit from the base's
+   text (§10.1). It is never compared with `stored`, so it is neither skipped nor stale; the create
+   retires the held removal, and the record keeps its untouched fields (§8.2).
    Saved: every field, an untouched one at its `folded` value, or the blank's when `folded = nil`.
 5. **Update.** Otherwise:
    1. Validate the touched fields.
@@ -1328,6 +1350,8 @@ public struct DomainNotice<R: ProductRefusal>: Identifiable, Sendable {
   name it. It does not decode the entity: a refused update holds only the fields it changed.
 - The UI observes the engine's `NoticesView(product)`, maps each notice, draws it from its refusal and
   dismisses it through the engine; a `.taken` notice of a Coach replay (§11) it dismisses undrawn.
+- A notice a commit wrote while refusing its own gesture (`too-large`) never reaches the product as a
+  notice: the runner dismissed it, since the run's outcome delivered the refusal (§9.2 step 7).
 
 ---
 
@@ -1358,9 +1382,9 @@ of its product.
 
 *Mechanism.* Every writing operation takes `Valid<E>` for the fields it names (§8.3 rule 6), and
 `Plan(running:)` applies a command's specs (§8.4); `RegistryCheck` binds every field-bound spec to a
-check on its field, every check to a written field, and every string to a spec (§3.4 steps 5, 6 and
-10); a text spec refuses U+0000, which the engine refuses (§4.3 text step 3); the same specs run on
-both surfaces (§6.3).
+check on its field, every check to a written field, and every written string to a spec (§3.4 steps 5,
+6 and 10); a text spec refuses U+0000, which the engine refuses (§4.3 text step 3); the same specs run
+on both surfaces (§6.3).
 
 **INV-6 Sound predictions.** A client refuses a SERVER-DECIDED rule by prediction only when the
 server, holding the client's `stored` state, would refuse the write; for `stale`, the write guarded
@@ -1409,12 +1433,13 @@ within its registry bounds. *Mechanism.* `RegistryCheck` (§3.4).
 *Mechanism.* The shared vectors in CI, and `RuleBookParity` (§6.3).
 
 **INV-14 One save at a time.** A draft's saves run one after another, no edit interleaves with one,
-and a refused or failed save changes nothing in the draft; a failed one wrote nothing.
+and a refused or failed save changes nothing in the draft; a failed one committed no gesture.
 
 *Mechanism.* `save` is synchronous, takes the draft `inout` (Kotlin: hands it to a write-back the
 caller passes) and is a draft's only door, since no action returns a `Saved`; Swift UI code is
 main-actor code in language mode 6 with warnings as errors, and a Kotlin save traps off its draft's
-thread; `commit` throws only before its transaction commits (§10.1, engine §7.1).
+thread; `commit` throws only before its transaction commits, and the runner's dismissal only after a
+refusal (§10.1, §9.2 step 7, engine §7.1).
 
 ---
 
@@ -1518,8 +1543,9 @@ and the product's corpus files. They live in `DomainKitTesting`.
 
 The format is the engine corpus's (engine §11.1): a `.json` file is an array of `{name, input,
 expect}`; runners compare by JCS; `{error: true}` expects a failure; a file with no handler fails the
-run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`). Kit vectors use the probe
-registry (`packages/api-contract/sync/probe.registry.json`) and name no product.
+run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which a runner reads as
+`Record(confirmed:registry:)` (ER-17). Kit vectors use the probe registry
+(`packages/api-contract/sync/probe.registry.json`) and name no product.
 
 ### §15.2 The kit's corpus: `packages/api-contract/domain-kit/`
 
@@ -1598,7 +1624,7 @@ makes expressible, where the product still has to use what the kit gives:
 ## §17 Requirements on the engine API
 
 The kit binds to the Swift engine's public API (Swift engine §5.2) and requires the following of it,
-and the same of the Kotlin engine. The engine API owner accepted ER-1 to ER-9 and ER-11 to ER-16 as
+and the same of the Kotlin engine. The engine API owner accepted ER-1 to ER-9 and ER-11 to ER-18 as
 stated here; ER-10 is the Kotlin engine owner's.
 
 | ER | Requirement | Engine text it relies on |
@@ -1609,16 +1635,18 @@ stated here; ER-10 is the Kotlin engine owner's.
 | ER-4 | `Change.create(…, anchor: OrderAnchor?)` and `Change.move(t, id, to: OrderAnchor)`; the anchor may be a member only `stored` holds. | engine D-25, §7.1 step 4 |
 | ER-5 | `Gesture.guards: [RegisterRef]` guards exactly the lattice registers named; a text field is never guarded. | engine §7.1 step 6, D-19 |
 | ER-6 | `Gesture.retire: [RecordRef]` undoes held, command-free gestures whose every delta removes a named record, in the commit's transaction; `CommitReceipt.retired` lists them. | engine §7.1 step 4, §8.1, INV-10 |
-| ER-7 | `CommitOutcome.refused(code, detail:)`, with `cap`'s detail `{type, cap}`. | engine §7.1 step 8, §6.1 step 12 |
+| ER-7 | `CommitOutcome.refused` carries the code and a `detail`, `cap`'s being `{type, cap}`. | engine §7.1 step 8, §6.1 step 12 |
 | ER-8 | `Replica.physNow()`; `CommitContext.now` is the commit's one `physNow()` read. | engine §7.1 step 4; Swift engine §5.2 |
 | ER-9 | `SyncTesting` publicly offers `SteppedEngine` over an in-memory store, `ModelServer` with the `ServerRules` plug-in and scripted refusals, `SimClock`, a second device on the same server and account, and a way to make the next `commit` throw at the store's before-commit point, whether or not its body returns a gesture, so its transaction rolls back. | Swift engine §1.3, §3.1, §3.6, §9.4, §9.5 |
 | ER-10 | Kotlin: `:sync-testing` runs the engine's algorithms and an in-memory store on the plain JVM, and `commit` runs on Android's main thread within a stated budget (owed). `:sync-engine` keeps its store `internal`, so no UI or platform module reaches it. | — |
-| ER-11 | `SyncCore` makes public `Quantum.round(_:to:)`, `Quantum.isOn(_:_:)`, `TextMeasure.chars(_:)`, `TextMeasure.bytes(_:)` and `Constants.holdMs`. | engine §7.1 step 4, §6.1 step 2, D-9, Appendix B |
+| ER-11 | `SyncCore` makes public `Quantum`, built from a step (`Quantum(step)`, nil for a step that is neither an integer nor `1/k`), with `rounded(_:)` and `holds(_:)`; `MeasureUnit.chars` and `MeasureUnit.bytes` with `length(of:)`; and `Constants.holdMs`. | engine §7.1 step 4, §6.1 step 2, D-9, Appendix B |
 | ER-12 | Both readers offer `drawn(type, where: field, is: id)` and `stored(…)`: the visible records of a type whose top-level `ref` field names `id`, in id-byte order, from an index, at a cost that follows the result and the scope's outbox, not the type. Any other `field` throws. | engine D-10; Swift engine §3.3 (the ref index) |
 | ER-13 | `SyncCore`, `SyncAPI` and `SyncSchema` follow §2.3's rules for the engine API: their settings, their imports, no `@_` attribute, no `#if` or availability branch. The determinism lint does not apply to them. | Swift engine §1.1 |
 | ER-14 | `SyncAPI` and `:sync-api` declare `CommitFailure`, whose `kind` is one of the three failures engine §7.1 defines: `malformed`, `notWritable` or `storeFailure`. The kit traps on `malformed` and on no other kind. | engine §7.1 |
 | ER-15 | The engine's package meets §2.1–§2.4 as the layering tests read it: its modules and their kinds, its package dependency, each module's imports, tools 6.2 and language mode 6, its targets' settings, a constant-data manifest, no symbolic link, and `GRDB` from `SyncStore` only. | Swift engine §1.1 |
 | ER-16 | `Registry` makes public what the kit reads: per type, its identity class, life, cap and each field's kind, writer, domain, quantum and `parent`; per command, its arguments with their domains, and `predicts`. | engine §2.4 |
+| ER-17 | `SyncTesting` publicly offers `Record(confirmed: Row, registry:)`: a confirmed row that no outbox entry touches, as the engine's readers hand it to a product (visible by the registry's rule, nothing pending or held, each text merged as the row says), so a product's tests build a vector's records from the modules `<P>DomainTests` may import (§2.1). | engine §7.6, §9.1 |
+| ER-18 | `CommitOutcome.refused(code, detail:, notice:)`: `notice` names the notice a commit wrote while refusing its gesture (`too-large`), and is nil for every other refusal. The `Replica` port offers `dismissNotice(_ id:)`. | engine §7.1 step 8, D-17 |
 
 ## Appendix A: Example: the gym routine editor
 

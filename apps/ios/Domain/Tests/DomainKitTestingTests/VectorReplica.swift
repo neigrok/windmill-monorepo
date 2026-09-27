@@ -3,10 +3,10 @@ import DomainKitTesting
 import Foundation
 import SyncAPI
 import SyncCore
-import SyncReplica
+import SyncTesting
 import Synchronization
 
-// The records a vector lists per view (§15.1), made `Record`s by the engine's own visibility rule (engine §7.6).
+// The records a vector lists per view (§15.1), each an engine row as the engine's readers hand it to a product.
 struct VectorRecords: Sendable {
   var drawn: [Record]
   var stored: [Record]
@@ -17,15 +17,7 @@ struct VectorRecords: Sendable {
   }
 
   static func records(_ rows: JSON?, registry: Registry) throws -> [Record] {
-    try (rows?.asArray() ?? []).map { json in
-      let row = try Row(json: json)
-      return Record(
-        type: row.key.type, id: row.key.id, life: row.lattice.life, born: row.lattice.born,
-        values: row.lattice.fields.mapValues(\.value),
-        texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) },
-        serials: row.serials, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false,
-        isHeld: false)
-    }
+    try (rows?.asArray() ?? []).map { json in Record(confirmed: try Row(json: json), registry: registry) }
   }
 }
 
@@ -118,4 +110,8 @@ final class VectorReplica: Replica {
   }
 
   func physNow() throws -> Int64 { now }
+
+  func dismissNotice(_ id: String) throws {
+    throw ContractError("a vector's commit writes no notice, and \(id) was dismissed")
+  }
 }

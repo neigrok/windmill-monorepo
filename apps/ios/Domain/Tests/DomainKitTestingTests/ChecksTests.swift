@@ -157,7 +157,9 @@ struct ChecksTests {
     }
   }
 
-  @Test func stepTenRefusesAStringWithNoSpec() {
+  @Test func stepTenRefusesAWrittenStringWithNoSpec() throws {
+    let weighing = RuleBook(registry: ChecksTests.registry, entities: [Weighing.self], rules: [.local(Item.weight)])
+    try RegistryCheck.entity(Weighing.self, sample: Weighing(id: ID("item0001"), weight: 60), book: weighing, registry: ChecksTests.registry)
     let reason = "a string with no text or choice spec, so a pasted U+0000 is no violation"
     #expect(throws: ChecksTests.failure(10, "item.tags.label", reason)) {
       try RegistryCheck.entity(Item.self, sample: ChecksTests.item, book: ChecksTests.book(ChecksTests.rules.filter { $0.name != "item.tags.label" }),
@@ -411,6 +413,24 @@ extension ChecksTests {
     init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
     var fields: [String: JSON] { ["count": 1] }
     static let checks: [Check<Counting>] = []
+  }
+
+  // An item as a scale writes it: its weight and none of its strings.
+  struct Weighing: Writable {
+    static let type = "item"
+    static let scope = ScopeRef.product("chk")
+    let id: ID<Weighing>
+    var weight: Double?
+    init(id: ID<Weighing>, weight: Double?) {
+      self.id = id
+      self.weight = weight
+    }
+    init(_ r: Fields) throws(DecodeError) {
+      id = ID(r.id)
+      weight = try r.optionalDouble("weight")
+    }
+    var fields: [String: JSON] { ["weight": .of(weight)] }
+    static let checks: [Check<Weighing>] = [Check("weight") { w, _ in w.weight = try Item.weight.apply(w.weight, at: "weight") }]
   }
 
   struct Lossy: Draftable {

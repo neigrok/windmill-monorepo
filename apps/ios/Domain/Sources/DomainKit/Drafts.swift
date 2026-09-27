@@ -75,7 +75,7 @@ public enum SaveResult<R: ProductRefusal>: Sendable {
   // nil: nothing needed writing.
   case saved(CommitReceipt?)
   case refused(R)
-  // A store failure, or a replica that cannot write: nothing was written, and saving again is safe.
+  // A store failure, or a replica that cannot write: no gesture was written, and saving again is safe.
   case failed(any Error)
 }
 

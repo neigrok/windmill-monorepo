@@ -134,6 +134,21 @@ struct HarnessTests {
     #expect(try b.drawn(Day.self).map(\.fields) == [["score": 3]])
   }
 
+  // The engine refuses at commit a gesture too large to push, and writes a notice holding it. The save's refusal is the
+  // one report: the runner dismisses that notice, so a draft saved again at every pause piles up none.
+  @Test func aGestureTooLargeToPushIsRefusedOnceAndTheDraftKeepsIt() throws {
+    let a = try HarnessTests.phone()
+    var draft = Draft(new: Scrawl(id: a.runner.mint(Scrawl.self)))
+    draft.current.label = String(repeating: "x", count: Constants.pushMaxBytes)
+    for _ in 1...2 {
+      #expect(refused(a.runner.save(&draft, SaveDraft<Scrawl, ProbeRefusal>.self))
+        == .refused(Refused(.tooLarge, subject: draft.id.ref, path: .predicted)))
+    }
+    #expect(draft.isNew && draft.touched == ["label"])
+    #expect(try a.notices(ProbeRefusal.self).isEmpty)
+    #expect(try a.stored(Scrawl.self).isEmpty)
+  }
+
   @Test func aFailedCommitWritesNothingAndTheDraftStaysAsItWas() throws {
     let a = try HarnessTests.phone()
     var draft = Draft(new: Sticky(id: a.runner.mint(Sticky.self)), placed: .bottom)
@@ -343,3 +358,26 @@ struct Sticky: Draftable, Removable, Ordered {
 }
 
 typealias SaveSticky = SaveDraft<Sticky, ProbeRefusal>
+
+// The probe run with no check on its label, so nothing keeps a save inside the registry's bound.
+struct Scrawl: Draftable {
+  static let type = "run"
+  static let scope = Probe.scope
+  static let savesGuarded = false
+
+  let id: ID<Scrawl>
+  var label: String?
+
+  init(id: ID<Scrawl>) {
+    self.id = id
+  }
+
+  init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    label = try r.optionalString("label")
+  }
+
+  var fields: [String: JSON] { ["label": .of(label)] }
+
+  static let checks: [Check<Scrawl>] = []
+}

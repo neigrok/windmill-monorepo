@@ -56,7 +56,7 @@ public enum RegistryCheck {
         throw failure(9, path, "a field with a quantum has no number spec on it")
       }
     }
-    try stringsSpecced(StringPaths(of: definition).paths, by: specs(in: book), step: 10)
+    try stringsSpecced(StringPaths(of: definition, writing: written.keys).paths, by: specs(in: book), step: 10)
   }
 
   // Steps 1–3 for a read-only entity.
@@ -324,13 +324,13 @@ struct SpecTarget {
   }
 }
 
-// §3.4 step 10: the string paths of a type's client-written fields, nested ones included, arrays passed through.
+// §3.4 step 10: the string paths of the fields an entity writes, nested ones included, arrays passed through.
 struct StringPaths {
   let paths: [String]
 
-  init(of definition: TypeDef) {
+  init(of definition: TypeDef, writing written: some Collection<String>) {
     var paths: [String] = []
-    for field in definition.fields where field.writer == .client {
+    for field in definition.fields where written.contains(field.name) {
       let path = "\(definition.name).\(field.name)"
       if field.isText {
         paths.append(path)

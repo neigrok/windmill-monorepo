@@ -263,8 +263,9 @@ public struct Gesture: Hashable, Sendable {
 
 public enum CommitOutcome: Hashable, Sendable {
   case committed(CommitReceipt)
-  // scope-dead and cap write nothing; too-large refuses the whole gesture, and notice `notice:<gestureId>/0` holds it.
-  case refused(RefusalCode, detail: JSON?)
+  // scope-dead and cap write nothing; too-large refuses the whole gesture into the notice it names,
+  // `notice:<gestureId>/0`.
+  case refused(RefusalCode, detail: JSON?, notice: String? = nil)
 }
 
 public struct CommitReceipt: Hashable, Sendable {

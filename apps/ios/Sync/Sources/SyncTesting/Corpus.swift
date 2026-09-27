@@ -1,7 +1,10 @@
 import Foundation
+import SyncAPI
 import SyncCore
+import SyncReplica
 
-// The golden corpus of engine.md §11.1: its location, the role of each file, and its vectors.
+// The golden corpus of engine.md §11.1: its location, the role of each file, and its vectors; and a vector's row as a
+// product reads it.
 
 public enum CorpusRole: String, Sendable, CaseIterable {
   case all, server, client
@@ -121,5 +124,16 @@ public enum Corpus {
       return CorpusVector(file: file.path, name: try vector.member("name").asString(), input: try vector.member("input"),
                           expect: try vector.member("expect"))
     }
+  }
+}
+
+// A confirmed row no outbox entry touches, as the engine's readers hand it to a product (§7.6): visible by the
+// registry's rule, nothing pending or held. A product's tests build a vector's records with it.
+extension Record {
+  public init(confirmed row: Row, registry: Registry) {
+    self.init(
+      type: row.key.type, id: row.key.id, life: row.lattice.life, born: row.lattice.born, values: row.lattice.fields.mapValues(\.value),
+      texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) }, serials: row.serials, rc: row.rc,
+      ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
   }
 }

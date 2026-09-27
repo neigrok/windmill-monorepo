@@ -73,6 +73,8 @@ public protocol Replica: Sendable {
   func mintID(_ type: String) throws -> RecordID
   // §10.2: the device wall clock plus the active replica's server offset.
   func physNow() throws -> Int64
+  // D-17: hides a notice of the active replica, as its product does once it has told the person.
+  func dismissNotice(_ id: String) throws
 }
 
 extension Replica {

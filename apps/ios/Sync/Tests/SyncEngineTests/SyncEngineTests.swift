@@ -81,7 +81,7 @@ struct SyncEngineTests {
     let rig = try Rig(limits: Limits(pushMaxBytes: 100))
     let hlc = try rig.meta().hlc
     let outcome = try rig.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
-    #expect(outcome == .refused(.tooLarge, detail: nil))
+    #expect(outcome == .refused(.tooLarge, detail: nil, notice: "notice:g1/0"))
     #expect(try rig.outbox() == [])
     #expect(try rig.meta().hlc == hlc)
     #expect(try rig.active().notices.map { "\($0.id) \($0.code) \($0.content.deltas.map(\.key))" } == ["notice:g1/0 too-large [card card0001]"])
