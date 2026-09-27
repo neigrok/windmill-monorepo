@@ -21,10 +21,11 @@
 #include <vector>
 
 // What the golden corpus does not pin about SyncService: the production push budget, the order a push takes
-// its intents in, the pull scope limit, a scope larger than one feed read, an intent a concurrent push of the
-// same replica answered first, step 4's last_n read under the replica row's lock rather than at the bind, a
-// transient failure of that read, step 6 answering without the lock, a binding another account holds by the time
-// its intent is admitted, and a binding a concurrent push answered under by the time a 409 would delete it.
+// its intents in, the pull scope limit, a pull body with a key beyond its shape, a scope larger than one feed read,
+// an intent a concurrent push of the same replica answered first, a transient failure of the bind, step 4's last_n
+// read under the replica row's lock rather than at the bind, a transient failure of that read, step 6 answering
+// without the lock, a binding another account holds by the time its intent is admitted, and a binding a
+// concurrent push answered under by the time a 409 would delete it.
 
 using namespace wm;
 using namespace wm::sync;
@@ -152,6 +153,26 @@ TEST(sync_service_pull_of_more_than_pull_max_scopes_is_malformed_and_runs_no_bef
   CHECK_EQ(served.status, 200);
   CHECK_EQ(served.body["pages"].size(), 64u);
   CHECK_EQ(world.feed.published.size(), 1u);
+}
+
+TEST(sync_service_pull_refuses_a_key_beyond_scopes_and_beyond_each_scope_s_scope_and_cursor) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), world.store(), admission, clock);
+  const std::string malformed = jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "malformed"})"));
+
+  const SyncReply rootKey = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}], "since": 0})");
+  const SyncReply scopeKey = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null, "since": 0}]})");
+  const SyncReply exact = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
+
+  CHECK_EQ(rootKey.status, 400);
+  CHECK_EQ(jcs(rootKey.body), malformed);
+  CHECK_EQ(scopeKey.status, 400);
+  CHECK_EQ(jcs(scopeKey.body), malformed);
+  CHECK_EQ(exact.status, 200);
 }
 
 TEST(sync_service_boot_pages_a_scope_larger_than_one_feed_read_in_seq_then_id_order) {
@@ -294,6 +315,27 @@ TEST(sync_service_push_compares_each_n_with_last_n_read_under_the_replica_lock_n
 
   CHECK_EQ(reply.status, 200);
   CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3, "results": [{"n": 3, "s": "ok", "seq": 1}]})")));
+}
+
+TEST(sync_service_push_answers_503_when_the_bind_fails_transiently_and_binds_nothing) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  const Json::Value untouched = world.dump();
+  // Read 1 is the bind's read of the replica row under its lock.
+  BeforeReplicaLock store(world.store(), 1, [](SyncTxn&) { throw sync::fake::InjectedTransient("lock_timeout on sync_replicas"); });
+  Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), store, admission, clock);
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  request["intents"].append(cardIntent(1, "card0001"));
+  TimeBudget budget(60'000);
+
+  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+
+  CHECK_EQ(reply.status, 503);
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "unavailable", "retryAfterMs": 1000})")));
+  CHECK_EQ(jcs(world.dump()), jcs(untouched));
 }
 
 TEST(sync_service_push_answers_the_results_so_far_with_a_retry_when_step_4_s_read_times_out) {

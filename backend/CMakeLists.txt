@@ -58,6 +58,7 @@ add_library(windmill_platform
   platform/domain/OAuth.cpp
   platform/domain/sync/Jcs.cpp
   platform/domain/sync/Digest.cpp
+  platform/domain/sync/Pattern.cpp
   platform/domain/sync/Registry.cpp
   platform/domain/sync/Record.cpp
   platform/domain/sync/Lattice.cpp
@@ -193,6 +194,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/IdsTest.cpp
   test/platform/domain/sync/JcsTest.cpp
   test/platform/domain/sync/DigestTest.cpp
+  test/platform/domain/sync/PatternTest.cpp
   test/platform/domain/sync/RegistryTest.cpp
   test/platform/domain/sync/ShapeTest.cpp
   test/platform/domain/sync/LatticeTest.cpp

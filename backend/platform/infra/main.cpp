@@ -943,7 +943,9 @@ int main() {
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
   LOG_INFO << "windmill-backend listening on :" << port;
-  app.setClientMaxBodySize(8 * 1024 * 1024);         // backstop cap; a full PUT document can be large
+  // Backstop cap; a full PUT document can be large. Above it Drogon answers a bare 413 before any handler runs,
+  // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
+  app.setClientMaxBodySize(8 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   const char* listenHost = std::getenv("WINDMILL_HOST");

@@ -195,8 +195,8 @@ bool admits(const Domain& domain, const Json::Value& value) {
       if (!value.isString()) return false;
       const std::string text = value.asString();
       if (!domain.oneOf.empty() && std::find(domain.oneOf.begin(), domain.oneOf.end(), text) == domain.oneOf.end()) return false;
-      if (domain.pattern && !domain.pattern->matches(text)) return false;
-      return withinBounds(domain.bounds, value);
+      if (!withinBounds(domain.bounds, value)) return false;
+      return !domain.pattern || domain.pattern->matches(text);
     }
     case Domain::Type::number: {
       if (!isNumber(value)) return false;

@@ -15,7 +15,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace wm::sync {
 
@@ -47,7 +46,8 @@ public:
   void pull(const drogon::HttpRequestPtr& req, Reply&& reply);
 
 private:
-  // Posts `work` to the pool, answering 503 when the pool refuses it. `work` answers the reply itself.
+  // Posts `work` to the pool, which answers with `work`'s reply, or 503 when `work` throws. The pool refusing `work`
+  // answers 503 as well.
   void onWorker(Reply&& reply, std::function<SyncReply()> work);
   // §9.1's first check, on the version the header Sync-Schema carries.
   std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
@@ -58,16 +58,11 @@ private:
 // Mounts /v1/sync/hello, /v1/sync/push and /v1/sync/pull.
 void registerSyncRoutes(drogon::HttpAppFramework& app, const std::shared_ptr<SyncApi>& api);
 
-// §9.1: the check every request passes first, on the registry version as its one carrier holds it (each value
-// it holds): hello, push and pull carry it in the header Sync-Schema, the live socket's upgrade in the query
-// parameter `schema`. 400 malformed unless the carrier holds exactly one decimal integer, 426 upgrade-required
-// below `minSchema`.
-std::optional<SyncReply> schemaRefusal(const std::vector<std::string>& versions, std::int64_t minSchema, Ms serverTime,
-                                       const std::string& epoch);
-
-// The live upgrade's carrier: every value of the query parameter `schema` in a query string, percent-decoded, in
-// order.
-std::vector<std::string> schemaParameters(std::string_view query);
+// §9.1: the check every request passes first, on the registry version as Drogon presents its one carrier:
+// hello, push and pull carry it in the header Sync-Schema, the live socket's upgrade in the query parameter
+// `schema`, and a carrier that is absent presents "". 400 malformed unless it is a decimal integer, 426
+// upgrade-required below `minSchema`.
+std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t minSchema, Ms serverTime, const std::string& epoch);
 
 // A reply as the wire carries it: its status, and its body as JCS.
 drogon::HttpResponsePtr responseOf(const SyncReply& reply);

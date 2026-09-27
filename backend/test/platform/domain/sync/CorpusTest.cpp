@@ -301,6 +301,7 @@ void serverConstants(const Json::Value& constants) {
   CHECK_EQ(constants["PUSH_WORK_MS"].asUInt64(), limits.pushWorkMs);
   CHECK_EQ(constants["PULL_PAGE_BYTES"].asUInt64(), limits.pullPageBytes);
   CHECK_EQ(constants["PULL_MAX_SCOPES"].asUInt64(), limits.pullMaxScopes);
+  CHECK_EQ(constants["PULL_MAX_BYTES"].asUInt64(), limits.pullMaxBytes);
   CHECK_EQ(constants["LIVE_FRAME_BYTES"].asUInt64(), limits.liveFrameBytes);
   CHECK_EQ(constants["LIVE_INLINE_BYTES"].asUInt64(), limits.liveInlineBytes);
   CHECK_EQ(constants["MERGE_WORK_CELLS"].asUInt64(), limits.mergeWorkCells);
@@ -383,7 +384,6 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"machine/replica.json", corpus::ClientRole{"§8.2 replica machine"}},
       {"view/", corpus::ClientRole{"§7.6 views"}},
       {"commit/", corpus::ClientRole{"§7.1 commit"}},
-      {"coalesce/", corpus::ClientRole{"§7.2 coalescing"}},
       {"hold/", corpus::ClientRole{"§7.3 holds"}},
       {"refusal/", corpus::ClientRole{"§7.7 refusal and recovery"}},
       {"write/", corpus::ClientRole{"§7.7 write maps"}},

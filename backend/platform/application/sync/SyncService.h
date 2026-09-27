@@ -11,6 +11,7 @@
 #include <chrono>
 #include <cstddef>
 #include <optional>
+#include <string>
 #include <string_view>
 
 namespace wm::sync {
@@ -19,6 +20,13 @@ namespace wm::sync {
 struct SyncReply {
   int status = 200;
   Json::Value body;
+
+  // §9.1: the part of every answer's body that is serverTime and epoch.
+  static Json::Value envelope(Ms serverTime, const std::string& epoch);
+  // §9.6: an answer that is its error code alone.
+  static SyncReply refused(int status, Json::Value envelope, const std::string& error);
+  // §6.6 and §9.6: 503 unavailable, to be retried after Retry::kTransientMs.
+  static SyncReply unavailable(Json::Value envelope);
 };
 
 // §6.2 step 5: how long one push may keep admitting. The first intent always runs; after `admitted`

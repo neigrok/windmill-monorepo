@@ -1,12 +1,13 @@
 #pragma once
 
+#include "platform/domain/sync/Pattern.h"
+
 #include <json/json.h>
 
 #include <cstdint>
 #include <map>
 #include <memory>
 #include <optional>
-#include <regex>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -18,25 +19,6 @@ namespace wm::sync {
 // message names the path of the offending part.
 struct RegistryError : std::runtime_error {
   using std::runtime_error::runtime_error;
-};
-
-// §2.4's portable pattern, compiled once and matched against the whole value: printable ASCII, `^`, a body of
-// literals, escaped syntax characters, bracket classes of literals and ascending ranges, groups (the only place
-// a `|` may stand) and greedy quantifiers, then `$`. Every atom matches one ASCII character, so std::regex on
-// bytes answers as every other dialect does.
-class Pattern {
-public:
-  // Throws RegistryError for a source outside the portable subset.
-  explicit Pattern(std::string source);
-
-  static bool isPortable(std::string_view source);
-
-  bool matches(std::string_view text) const;
-  const std::string& source() const { return source_; }
-
-private:
-  std::string source_;
-  std::regex regex_;
 };
 
 // A number field's step: an integer q, or 1/k for an integer k (SPEC-GAP 12). A value rounds half away
