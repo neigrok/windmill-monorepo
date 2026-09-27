@@ -31,24 +31,17 @@ public final class SyncEngine: Replica {
                   clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity)
   }
 
-  // Engine start (§7.3, §7.11, §7.4): the store first launched; every held entry released, with no Undo shown; a fresh
-  // actor; the fork guard checked against its backup-excluded copy (a copy that differs or is missing re-identifies every
-  // replica), and the copy rewritten once the store has committed; a bound replica with no token paused. `identities`
-  // mints every id and actor; the transcript runner hands the corpus's queues.
+  // Construction runs engine start's first half (`EngineCore.launch`). `identities` mints every id and actor; the
+  // transcript runner hands the corpus's queues. `tap` receives every event from the first transaction on, inside the
+  // transaction's turn that published it.
   package init(config: EngineConfig, bindings: [any ProductBinding], store: Store, transport: any SyncTransport,
                tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
-               identities: any IdentitySource & Sendable, connectivity: any Connectivity) throws {
+               identities: any IdentitySource & Sendable, connectivity: any Connectivity,
+               tap: (@Sendable (EngineEvent) -> Void)? = nil) throws {
     let core = EngineCore(config: config, bindings: bindings, store: store, tokens: tokens, clock: clock, random: random,
                           identities: identities, connectivity: connectivity)
-    _ = try core.write { store, _ in try store.firstLaunch(identities: identities) }
-    let copy = forkGuard.load()
-    _ = try core.write { store, instance in
-      try store.start(backup: copy.map(BackupCopy.held) ?? .missing, instance: &instance, identities: identities)
-    }
-    if let kept = try store.read({ try $0.deviceMeta()?.meta.forkGuard }), kept != copy { try forkGuard.save(kept) }
-    if let seat = try core.seat(), seat.state == .bound, let account = seat.account, tokens.token(for: account) == nil {
-      try core.pauseAuth(seat.replica, sentUnder: nil)
-    }
+    if let tap { core.publisher.tap(tap) }
+    try core.launch(forkGuard: forkGuard)
 
     self.core = core
     self.transport = transport
@@ -73,12 +66,17 @@ public final class SyncEngine: Replica {
   }
 
   // Engine start's network half (design §5.1): the hello, whose sample sets the offset and whose `minSchema` may require
-  // an upgrade; then every subscribed scope is wanted, and the loops start, once. In step mode (`drivesLoops` false) the
-  // loops stay for the caller to step.
+  // an upgrade; a pending sign-in resumes with it, completing when no decision is due any more, and otherwise waits for
+  // `resumeSignIn()`. Then every subscribed scope is wanted, and the loops start, once. In step mode (`drivesLoops`
+  // false) the loops stay for the caller to step.
   public func start() async {
-    let seat = try? core.seat()
-    let account = seat?.state == .bound && seat?.authPaused == false ? seat?.account : nil
-    _ = await hello(token: account.flatMap { core.tokens.token(for: $0) })
+    if let pending = try? core.store.read({ try $0.deviceMeta()?.meta.pendingSignIn }) {
+      _ = try? await continueSignIn(as: pending)
+    } else {
+      let seat = try? core.seat()
+      let account = seat?.state == .bound && seat?.authPaused == false ? seat?.account : nil
+      _ = await hello(token: account.flatMap { core.tokens.token(for: $0) })
+    }
     core.pullWants.all()
     guard core.config.drivesLoops else { return }
     let (sender, releaser, puller, live) = (sender, releaser, puller, live)
@@ -92,24 +90,23 @@ public final class SyncEngine: Replica {
   }
 
   // §9.2 under `token`, or none: the answer's offset sample is recorded for the active replica (§10.4), and a
-  // `minSchema` above the registry's version, or a 426, requires an upgrade. The answer, when there was one.
-  package func hello(token: SessionToken?) async -> HelloResponse? {
+  // `minSchema` above the registry's version, or a 426, requires an upgrade.
+  package func hello(token: SessionToken?) async -> Reply<HelloResponse> {
     let send = core.clock.wall.reading()
     let reply = await transport.hello(token: token)
     let timing = Timing(send: send, recv: core.clock.wall.reading())
-    guard case .answered(let answer) = reply else { return nil }
+    guard case .answered(let answer) = reply else { return reply }
     switch answer {
     case .ok(let hello):
       _ = try? core.write { store, _ in try store.sample(serverTime: hello.serverTime, timing: timing) }
       if hello.minSchema > core.registry.version { core.requireUpgrade() }
-      return hello
     case .failed(let failure):
       if let serverTime = failure.serverTime {
         _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) }
       }
       if failure.status == 426 { core.requireUpgrade() }
-      return nil
     }
+    return reply
   }
 
   // MARK: Replica
@@ -244,14 +241,6 @@ public final class SyncEngine: Replica {
     core.wakes.kickAll()
   }
 
-  // §8.2: the account's new token clears the pause a 401 set, and sending, pulling and following live resume.
-  public func reauthenticate(token: SessionToken) throws {
-    guard let seat = try core.seat(), seat.state == .bound, let account = seat.account else { throw EngineError.notSignedIn }
-    try core.tokens.save(token, for: account)
-    try core.write { store, _ in try store.reauthenticate() }
-    core.wakes.kickAll()
-  }
-
   // MARK: The step-mode harness
 
   // One store Action as this instance, its changes and events published as the engine's own.
@@ -260,11 +249,6 @@ public final class SyncEngine: Replica {
   }
 
   package var identities: any IdentitySource & Sendable { core.identities }
-
-  // `tap` receives every event from now on, inside the transaction's turn that published it.
-  package func tapEvents(_ tap: @escaping @Sendable (EngineEvent) -> Void) {
-    core.publisher.tap(tap)
-  }
 }
 
 // MARK: - The core

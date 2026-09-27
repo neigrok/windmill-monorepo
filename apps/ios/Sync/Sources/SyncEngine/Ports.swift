@@ -128,6 +128,8 @@ public protocol TokenStore: Sendable {
   func token(for account: String) -> SessionToken?
   func save(_ token: SessionToken, for account: String) throws
   func delete(for account: String) throws
+  // Every account a token is kept for, so engine start can delete those no sign-in needs.
+  func accounts() -> [String]
 }
 
 // The fork guard's backup-excluded copy (§7.11): nil when it is missing, as on a restored or cloned device.
@@ -186,10 +188,15 @@ public protocol ProductBinding: Sendable {
   var product: String { get }
   // Appendix A: the product's live hint, which lowers the sender's backoff ceiling to 30 s while it holds.
   func liveHint(_ reader: any ScopeReader, physNow: Int64) throws -> Bool
+  // A sign-in or sign-out transaction that may change the replica the products write to is about to run: the product
+  // ends what cannot outlive the seat, as the Coach ends a running turn (Coach D-10). One sign-in or sign-out may call it
+  // more than once.
+  func seatWillChange() async
 }
 
 extension ProductBinding {
   public func liveHint(_ reader: any ScopeReader, physNow: Int64) throws -> Bool { false }
+  public func seatWillChange() async {}
 }
 
 // MARK: - Loop primitives

@@ -1,11 +1,12 @@
 import SyncCore
 import SyncEngine
+import SyncReplica
 import SyncStore
 import Synchronization
 
 // Doubles of the engine's device ports, each deterministic and driven by the test: a clock that moves only when told,
-// a seeded random source, in-memory token and fork-guard stores, a connectivity switch, and the store's crash-point
-// hook armed to fail the next commit.
+// a seeded random source, in-memory token and fork-guard stores, a connectivity switch, a log of the events the engine
+// publishes, and the store's crash-point hook armed to fail the next commit.
 
 // MARK: - The clock
 
@@ -163,6 +164,7 @@ public final class InMemoryTokenStore: TokenStore {
   public func token(for account: String) -> SessionToken? { tokens.withLock { $0[account] } }
   public func save(_ token: SessionToken, for account: String) { tokens.withLock { $0[account] = token } }
   public func delete(for account: String) { tokens.withLock { $0[account] = nil } }
+  public func accounts() -> [String] { tokens.withLock { $0.keys.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) } } }
 }
 
 public final class InMemoryForkGuardStore: ForkGuardStore {
@@ -204,6 +206,21 @@ public final class SwitchedConnectivity: Connectivity {
     }
     for handler in handlers { handler(online) }
   }
+}
+
+// MARK: - Events
+
+// Every event an engine publishes, in order, as the engine's `tap` hands them over.
+public final class EventLog: Sendable {
+  let log = Mutex<[EngineEvent]>([])
+
+  public init() {}
+
+  public func append(_ event: EngineEvent) {
+    log.withLock { $0.append(event) }
+  }
+
+  public var events: [EngineEvent] { log.withLock { $0 } }
 }
 
 // MARK: - Store faults

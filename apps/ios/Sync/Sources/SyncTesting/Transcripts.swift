@@ -26,14 +26,14 @@ public enum Transcripts {
     guard let header = lines.first else { throw VectorError("a transcript starts with its header") }
     guard lines.count > 1, lines.last?["end"] != nil else { throw VectorError("a transcript ends with its end line") }
     let accounts = try header["server"]?["accounts"]?.asObject().members.map(\.key) ?? []
-    let tokens = InMemoryTokenStore(Dictionary(uniqueKeysWithValues: accounts.map { ($0, SessionToken("token-\($0)")) }))
     let gestures = QueuedIdentities.GestureCount()
     var devices: [String: TranscriptDevice] = [:]
     for (name, json) in try header.member("devices").asObject().members {
       let queues: JSON = ["ids": header["ids"]?[name] ?? [], "actors": header["actors"]?[name] ?? [.string(ClientSteps.actor)]]
       devices[name] = try TranscriptDevice(
         holding: try LoadedDevice(json: json, registry: registry), registry: registry,
-        identities: try QueuedIdentities(queues, gestures: gestures), tokens: tokens)
+        identities: try QueuedIdentities(queues, gestures: gestures),
+        tokens: InMemoryTokenStore(Dictionary(uniqueKeysWithValues: accounts.map { ($0, Transcripts.token(for: $0)) })))
     }
 
     var differences: [String] = []
@@ -55,6 +55,10 @@ public enum Transcripts {
     }
     return differences
   }
+
+  // The session token the server issued `account`. Each device keeps its own, and engine start deletes those no sign-in
+  // on the device needs.
+  static func token(for account: String) -> SessionToken { SessionToken("token-\(account)") }
 
   static func compare(_ answer: JSON, _ expected: JSON?, _ what: String) -> [String] {
     guard let expected, answer != expected else { return [] }
@@ -83,8 +87,7 @@ final class TranscriptDevice {
       let engine = try SyncEngine(
         config: EngineConfig(appVersion: "1", surface: .ios, drivesLoops: false), bindings: [], store: store, transport: transport,
         tokens: tokens, forkGuard: forkGuard, clock: clock.engineClock, random: NoJitter(), identities: identities,
-        connectivity: SwitchedConnectivity())
-      engine.tapEvents { [ended] in ended.append($0) }
+        connectivity: SwitchedConnectivity(), tap: { [ended] in ended.append($0) })
       return (store, engine)
     }
   }
@@ -93,14 +96,6 @@ final class TranscriptDevice {
   // any bound maps to 0 without rejecting it.
   struct NoJitter: RandomSource {
     func next() -> UInt64 { 1 }
-  }
-
-  final class EventLog: Sendable {
-    let events = Mutex<[EngineEvent]>([])
-
-    func append(_ event: EngineEvent) {
-      events.withLock { $0.append(event) }
-    }
   }
 
   let around: Surroundings
@@ -114,7 +109,7 @@ final class TranscriptDevice {
     self.around = around
   }
 
-  var ended: [EngineEvent] { around.ended.events.withLock { $0 } }
+  var ended: [EngineEvent] { around.ended.events }
 
   func clock(at deviceNow: Int64) throws {
     let now = around.clock.nowMs()
@@ -139,7 +134,8 @@ final class TranscriptDevice {
 
   // MARK: Client actions
 
-  // A reconcile unsubscribes the tree and overlay scopes its set leaves out; product scopes follow the seat.
+  // A sign-in keeps the account's token first, as the app's does. A reconcile unsubscribes the tree and overlay scopes
+  // its set leaves out; product scopes follow the seat.
   func act(_ action: String, _ args: JSON, returns: JSON?, place: String) throws -> [String] {
     switch action {
     case "commit":
@@ -155,9 +151,11 @@ final class TranscriptDevice {
         guard let answer = LineageAnswer(rawValue: try json.asString()) else { throw VectorError("not a decision") }
         return answer
       }
+      let account = try args.member("account").asString()
+      around.tokens.save(Transcripts.token(for: account), for: account)
       let signIn = try engine.write { store, _ in
-        try store.signIn(account: try args.member("account").asString(), holdsRecords: try JSON.map(args["holdsRecords"]) { try $0.asBool() },
-                         decisions: decisions, identities: engine.identities)
+        try store.signIn(account: account, holdsRecords: try JSON.map(args["holdsRecords"]) { try $0.asBool() }, decisions: decisions,
+                         identities: engine.identities)
       }
       return Transcripts.compare(ClientSteps.json(signIn), returns, "\(place): signIn returned")
     case "reconcile":
@@ -186,7 +184,7 @@ final class TranscriptDevice {
     var differences: [String] = []
     switch call {
     case "hello":
-      _ = await engine.hello(token: try line["account"]?.nullable { around.tokens.token(for: try $0.asString()) } ?? nil)
+      _ = await engine.hello(token: try line["account"]?.nullable { Transcripts.token(for: try $0.asString()) } ?? nil)
     case "push":
       guard line["returns"] == nil else { throw VectorError("\(place): a push's return is the sender's own") }
       _ = await engine.sender.step()

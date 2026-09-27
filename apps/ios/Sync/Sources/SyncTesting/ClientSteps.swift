@@ -384,14 +384,14 @@ public enum ClientSteps {
     return .object(object)
   }
 
-  static func json(_ signIn: SignIn) -> JSON {
+  public static func json(_ signIn: SignIn) -> JSON {
     [
       "complete": .bool(signIn.complete),
       "due": .array(signIn.due.map { ["kind": "signed-out", "product": .string($0.product), "count": JSON.object(from: $0.counts) { JSON($0) } ?? [:]] }),
     ]
   }
 
-  static func json(_ signOut: SignOut) -> JSON {
+  public static func json(_ signOut: SignOut) -> JSON {
     ["complete": .bool(signOut.complete), "unsent": JSON(signOut.unsent), "ready": JSON(signOut.ready), "sent": JSON(signOut.sent)]
   }
 }

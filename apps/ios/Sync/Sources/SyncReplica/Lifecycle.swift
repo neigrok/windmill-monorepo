@@ -11,9 +11,12 @@ public enum BackupCopy: Sendable, Hashable {
   case held(String)
 }
 
+// What engine start leaves: the instance's actor, whether the fork guard re-identified every replica, the guard the
+// store now keeps (its backup-excluded copy is written from it once the start has committed), and a pending sign-in.
 public struct EngineStart: Sendable, Hashable {
   public let actor: Stamp.Actor
   public let reidentified: Bool
+  public let forkGuard: String?
   public let pendingSignIn: String?
 }
 
@@ -25,11 +28,30 @@ public enum LineageAnswer: String, Sendable, Hashable {
 public struct SignedOutDecision: Sendable, Hashable {
   public let product: String
   public let counts: [String: Int]
+
+  public init(product: String, counts: [String: Int]) {
+    self.product = product
+    self.counts = counts
+  }
 }
 
+// A sign-in after its hello: complete, or waiting for an answer to each decision due. `localIds` are the anon entries the
+// due decisions cover, in commit order: exactly what the answers add or discard.
 public struct SignIn: Sendable, Hashable {
   public let complete: Bool
   public let due: [SignedOutDecision]
+  public let localIds: [String]
+
+  public init(complete: Bool, due: [SignedOutDecision], localIds: [String]) {
+    self.complete = complete
+    self.due = due
+    self.localIds = localIds
+  }
+
+  // The same question: the same decisions over the same entries, byte for byte.
+  public func asks(as other: SignIn) -> Bool {
+    due == other.due && localIds.map { Array($0.utf8) } == other.localIds.map { Array($0.utf8) }
+  }
 }
 
 public enum SignOutChoice: String, Sendable, Hashable {
@@ -37,12 +59,30 @@ public enum SignOutChoice: String, Sendable, Hashable {
 }
 
 // A sign-out: complete, or waiting for Keep or Discard of the unsent entries. A sent entry may already have landed.
+// `localIds` are the unsent entries, ready and sent, in commit order: exactly what the confirmation states.
 public struct SignOut: Sendable, Hashable {
   public let complete: Bool
   public let ready: Int
   public let sent: Int
+  public let localIds: [String]
+
+  public init(complete: Bool, ready: Int, sent: Int, localIds: [String]) {
+    self.complete = complete
+    self.ready = ready
+    self.sent = sent
+    self.localIds = localIds
+  }
 
   public var unsent: Int { ready + sent }
+}
+
+// The end of one account's sign-out: finished; the active replica is no longer bound to the account; or Discard would
+// delete an unsent entry the confirmation the person answered did not state, so nothing is signed out and the count
+// is new.
+public enum SignOutFinish: Sendable, Hashable {
+  case finished(SignOut)
+  case notSignedIn
+  case changed(SignOut)
 }
 
 public struct ReplicaLifecycle: Sendable {
@@ -128,13 +168,14 @@ public struct ReplicaLifecycle: Sendable {
         device.setMeta(meta, active: device.active)
       }
     }
-    return EngineStart(actor: instance.actor, reidentified: reidentified, pendingSignIn: device.meta.pendingSignIn)
+    return EngineStart(
+      actor: instance.actor, reidentified: reidentified, forkGuard: device.meta.forkGuard, pendingSignIn: device.meta.pendingSignIn)
   }
 
   // MARK: Sign-in
 
   // Before the hello: Undo does not survive sign-in, and the incomplete sign-in is recorded, to resume at the next
-  // engine start.
+  // engine start. A sign-in pending for another account is replaced.
   public func beginSignIn(_ device: inout LoadedDevice, account: String) throws {
     try requireSignedOut(device)
     if let anon = device.anon { try device.modify(anon.id) { try hold.releaseAll(in: &$0) } }
@@ -146,15 +187,31 @@ public struct ReplicaLifecycle: Sendable {
   // discards, the bind, the add and the lineage, in this transaction.
   public func signIn(_ device: inout LoadedDevice, account: String, holdsRecords: [String: Bool],
                      decisions: [String: LineageAnswer], identities: IdentitySource) throws -> SignIn {
+    try signIn(&device, account: account, holdsRecords: holdsRecords, decisions: decisions, asked: nil, identities: identities)
+  }
+
+  // The sign-in the device records as pending, after its hello: the lineage rule with the person's answers to the
+  // question they were `asked`, nil before any was. Nil when the device records no pending sign-in as `account`, since
+  // another sign-in replaced it or it completed.
+  public func continueSignIn(_ device: inout LoadedDevice, account: String, holdsRecords: [String: Bool],
+                             answers: [String: LineageAnswer], asked: SignIn?, identities: IdentitySource) throws -> SignIn? {
+    guard device.meta.pendingSignIn?.utf8.elementsEqual(account.utf8) == true else { return nil }
+    return try signIn(&device, account: account, holdsRecords: holdsRecords, decisions: answers, asked: asked, identities: identities)
+  }
+
+  // Answers count for the question they were given to: when what is due, or the entries it covers, differ from
+  // `asked`, the work made signed out changed since the person was asked, and the sign-in stays incomplete with the
+  // question as it stands now.
+  func signIn(_ device: inout LoadedDevice, account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
+              asked: SignIn?, identities: IdentitySource) throws -> SignIn {
     try requireSignedOut(device)
     if let anon = device.anon { try device.modify(anon.id) { try hold.releaseAll(in: &$0) } }
-    let due = registry.products.map(\.name).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.compactMap { product -> SignedOutDecision? in
-      guard holdsRecords[product] == true, let anon = device.anon, !entries(of: product, in: anon).isEmpty else { return nil }
-      return SignedOutDecision(product: product, counts: anonCount(of: product, in: anon))
-    }
-    guard due.allSatisfy({ decisions[$0.product] != nil }) else {
+    let due = self.due(in: device, holdsRecords: holdsRecords)
+    let covered = device.anon.map { anon in due.flatMap { entries(of: $0.product, in: anon) }.sorted { $0.commitOrder < $1.commitOrder } } ?? []
+    let question = SignIn(complete: false, due: due, localIds: covered.map(\.localId))
+    guard asked.map(question.asks(as:)) ?? true, due.allSatisfy({ decisions[$0.product] != nil }) else {
       device.setMeta(DeviceMeta(forkGuard: device.meta.forkGuard, pendingSignIn: account), active: device.active)
-      return SignIn(complete: false, due: due)
+      return question
     }
 
     for decision in due where decisions[decision.product] == .discard {
@@ -195,7 +252,7 @@ public struct ReplicaLifecycle: Sendable {
       }
     }
     device.setMeta(DeviceMeta(forkGuard: device.meta.forkGuard), active: target)
-    return SignIn(complete: true, due: due)
+    return SignIn(complete: true, due: due, localIds: question.localIds)
   }
 
   // Sign-in starts signed out: a bound replica, paused or not, re-authenticates or signs out first (§7.10, §8.2).
@@ -240,6 +297,16 @@ public struct ReplicaLifecycle: Sendable {
     return id
   }
 
+  // The signed-out decisions due: one for each product, in product order, in which the account holds records and the
+  // anon replica has entries.
+  func due(in device: LoadedDevice, holdsRecords: [String: Bool]) -> [SignedOutDecision] {
+    guard let anon = device.anon else { return [] }
+    return registry.products.map(\.name).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.compactMap { product in
+      guard holdsRecords[product] == true, !entries(of: product, in: anon).isEmpty else { return nil }
+      return SignedOutDecision(product: product, counts: anonCount(of: product, in: anon))
+    }
+  }
+
   // An entry's product is its scope's; a tree or overlay scope's is its governing type's.
   func entries(of product: String, in replica: LoadedReplica) -> [OutboxEntry] {
     replica.outbox.filter { registry.product(of: $0.scope)?.utf8.elementsEqual(product.utf8) == true }
@@ -259,21 +326,52 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Sign-out and discard
 
-  // §7.10 after the caller's bounded flush: holds released, acked entries resolved (the server holds them). With
-  // entries left and no choice, it answers their count; Keep purges the caches and leaves them dormant; Discard
-  // deletes the replica. The anon replica, created if absent, becomes active.
+  // §7.10 in one step, as the corpus runs it: the count, then, with nothing unsent or a choice made, the sign-out.
   public func signOut(_ device: inout LoadedDevice, choice: SignOutChoice?, identities: IdentitySource) throws -> SignOut {
-    let bound = device.active
-    let counts = try device.modify(bound) { replica -> SignOut in
+    let counted = try countUnsent(&device)
+    guard counted.unsent == 0 || choice != nil else { return counted }
+    try finishSignOut(&device, keeping: counted.unsent == 0 || choice == .keep, identities: identities)
+    return SignOut(complete: true, ready: counted.ready, sent: counted.sent, localIds: counted.localIds)
+  }
+
+  // Step 2, after the caller's bounded flush, for `account`'s sign-out: nil when the active replica is not bound to it.
+  public func countUnsent(_ device: inout LoadedDevice, signingOut account: String) throws -> SignOut? {
+    guard isSignedIn(account, device) else { return nil }
+    return try countUnsent(&device)
+  }
+
+  // Steps 3 and 4 for `account`, whose confirmation stated the unsent entries `stated`: the count again, then Keep, or
+  // Discard, which deletes none but those stated. With nothing unsent, either choice keeps the emptied replica dormant.
+  public func finishSignOut(_ device: inout LoadedDevice, account: String, choice: SignOutChoice, stated: [String],
+                            identities: IdentitySource) throws -> SignOutFinish {
+    guard isSignedIn(account, device) else { return .notSignedIn }
+    let counted = try countUnsent(&device)
+    let told = Set(stated.map { Array($0.utf8) })
+    if choice == .discard && !counted.localIds.allSatisfy({ told.contains(Array($0.utf8)) }) { return .changed(counted) }
+    try finishSignOut(&device, keeping: counted.unsent == 0 || choice == .keep, identities: identities)
+    return .finished(SignOut(complete: true, ready: counted.ready, sent: counted.sent, localIds: counted.localIds))
+  }
+
+  // The active replica, which is bound: holds released, and the ready and the sent entries counted. Acked entries stay
+  // until the sign-out finishes, since one cancelled leaves them to resolve by the pull that brings their rows.
+  func countUnsent(_ device: inout LoadedDevice) throws -> SignOut {
+    try device.modify(device.active) { replica -> SignOut in
       try hold.releaseAll(in: &replica)
-      for entry in replica.outbox where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+      let unsent = replica.outbox.filter { $0.state == .ready || $0.state == .sent }
       return SignOut(
-        complete: false, ready: replica.outbox.filter { $0.state == .ready }.count,
-        sent: replica.outbox.filter { $0.state == .sent }.count)
+        complete: false, ready: unsent.filter { $0.state == .ready }.count, sent: unsent.filter { $0.state == .sent }.count,
+        localIds: unsent.map(\.localId))
     }
-    let unsent = device.activeReplica.outbox.count
-    if unsent > 0 && choice == nil { return counts }
-    if unsent == 0 || choice == .keep {
+  }
+
+  // Acked entries resolve, since the server holds them; then Keep purges the caches and leaves the unsent entries
+  // dormant, and Discard deletes the replica. The anon replica, created if absent, becomes active.
+  func finishSignOut(_ device: inout LoadedDevice, keeping: Bool, identities: IdentitySource) throws {
+    let bound = device.active
+    try device.modify(bound) { replica in
+      for entry in replica.outbox where entry.state == .acked { try replica.move(entry.localId, .resolve) }
+    }
+    if keeping {
       try device.modify(bound) { replica in
         _ = try Machines.replica.transition(from: replica.meta.node, .signOutKeep, to: .dormant)
         replica.update { $0.state = .dormant }
@@ -294,7 +392,12 @@ public struct ReplicaLifecycle: Sendable {
       device.add(ReplicaMeta(replica: anon, state: .anon))
     }
     device.setMeta(device.meta, active: anon)
-    return SignOut(complete: true, ready: counts.ready, sent: counts.sent)
+  }
+
+  // The active replica is bound to `account`.
+  func isSignedIn(_ account: String, _ device: LoadedDevice) -> Bool {
+    let meta = device.activeReplica.meta
+    return meta.state == .bound && meta.account?.utf8.elementsEqual(account.utf8) == true
   }
 
   // An explicit discard of a dormant replica: deleted, its entries discarded.
@@ -304,6 +407,13 @@ public struct ReplicaLifecycle: Sendable {
       for entry in replica.outbox { try replica.move(entry.localId, .discard) }
     }
     device.remove(id)
+  }
+
+  // The same for `account`'s dormant replica: false when the device holds none.
+  public func discardDormant(of account: String, in device: inout LoadedDevice) throws -> Bool {
+    guard let dormant = device.dormant(of: account) else { return false }
+    try discardUnsent(dormant.id, in: &device)
+    return true
   }
 
   // MARK: Subscriptions (§7.9)

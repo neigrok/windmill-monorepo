@@ -54,9 +54,9 @@ extension Store {
     try onActive(.release, releasing: true) { replica in try planners.hold.releaseDue(at: deviceNow, in: &replica) }
   }
 
-  // Leaving the app, and sign-out's first step: every held entry released.
-  public func releaseAll() throws -> Written<Bool> {
-    try onActive(.release, releasing: true) { replica in try planners.hold.releaseAll(in: &replica) }
+  // Leaving the app, and sign-out's first step: every held entry released. True iff there was one.
+  public func releaseAll(_ tx: TxName = .release) throws -> Written<Bool> {
+    try onActive(tx, releasing: true) { replica in try planners.hold.releaseAll(in: &replica) }
   }
 
   // §7.3 and §7.11 at engine start: holds released, a new actor, and the fork guard checked.
@@ -170,7 +170,7 @@ extension Store {
     try onDevice(.signInBegin) { device in try planners.lifecycle.beginSignIn(&device, account: account) }
   }
 
-  // After the hello: complete when every due decision is answered, else incomplete with nothing more changed.
+  // The corpus's sign-in step: complete when every due decision is answered, else incomplete with nothing more changed.
   public func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
                      identities: IdentitySource) throws -> Written<SignIn> {
     try onDevice(.signInComplete) { device in
@@ -178,15 +178,43 @@ extension Store {
     }
   }
 
-  // Without a choice, the count of unsent entries; with one, or none unsent, the sign-out itself.
+  // The pending sign-in as `account`, after its hello, with the answers to the question `asked`; nil when no sign-in as
+  // `account` is pending.
+  public func continueSignIn(account: String, holdsRecords: [String: Bool], answers: [String: LineageAnswer],
+                             asked: SignIn?, identities: IdentitySource) throws -> Written<SignIn?> {
+    try onDevice(.signInComplete) { device in
+      try planners.lifecycle.continueSignIn(
+        &device, account: account, holdsRecords: holdsRecords, answers: answers, asked: asked, identities: identities)
+    }
+  }
+
+  // The corpus's sign-out step: without a choice, the count of unsent entries; with one, or none unsent, the sign-out.
   public func signOut(choice: SignOutChoice?, identities: IdentitySource) throws -> Written<SignOut> {
     try onDevice(choice == nil ? .signOutCount : .signOutFinish) { device in
       try planners.lifecycle.signOut(&device, choice: choice, identities: identities)
     }
   }
 
+  // After the bounded flush: the unsent entries counted; nil when the active replica is not bound to `account`.
+  public func countUnsent(signingOut account: String) throws -> Written<SignOut?> {
+    try onDevice(.signOutCount) { device in try planners.lifecycle.countUnsent(&device, signingOut: account) }
+  }
+
+  // Keep or Discard of `account`'s unsent entries, the confirmation having stated `stated`.
+  public func finishSignOut(account: String, choice: SignOutChoice, stated: [String], identities: IdentitySource) throws -> Written<SignOutFinish> {
+    try onDevice(.signOutFinish) { device in
+      try planners.lifecycle.finishSignOut(&device, account: account, choice: choice, stated: stated, identities: identities)
+    }
+  }
+
+  // The corpus's discard of a dormant replica by its id.
   public func discardDormant(_ replica: String) throws -> Written<Void> {
     try onDevice(.discardDormant) { device in try planners.lifecycle.discardUnsent(replica, in: &device) }
+  }
+
+  // `account`'s dormant replica discarded; false when the device holds none.
+  public func discardDormant(account: String) throws -> Written<Bool> {
+    try onDevice(.discardDormant) { device in try planners.lifecycle.discardDormant(of: account, in: &device) }
   }
 
   // MARK: Reading

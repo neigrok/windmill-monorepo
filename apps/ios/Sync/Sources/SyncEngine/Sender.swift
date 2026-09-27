@@ -12,7 +12,8 @@ import SyncStore
 package enum SenderStep: Sendable, Hashable {
   // Push again now.
   case again
-  // Nothing to send, offline, no bound replica, or the caller was cancelled before its turn: wait for a kick.
+  // Nothing to send, offline, no bound replica, a sign-out holds it, or the caller was cancelled before its turn: wait
+  // for a kick.
   case idle
   // 401, or no token for the account: wait for re-authentication's kick.
   case paused
@@ -34,6 +35,11 @@ package actor Sender {
   var batchLimit: Int?
   var kicksSeen: UInt64 = 0
   var conflicts = 0
+  // §7.10 sign-out step 1: the sign-out that holds its account's replica, from the end of the bounded flush until it
+  // finishes, is cancelled, or another sign-out takes the hold. Nothing more of the account is numbered, so the count the
+  // confirmation states stays true; a push already in flight is abandoned, and whatever answer it gets is still recorded.
+  var signingOut: (hold: Int, account: String)?
+  var holdsTaken = 0
 
   init(core: EngineCore, transport: any SyncTransport) {
     self.core = core
@@ -63,6 +69,22 @@ package actor Sender {
     while !Task.isCancelled, await step(leaving: leaving) == .again { leaving = false }
   }
 
+  // The hold of a new sign-out of `account`, which ends any earlier one's.
+  package func hold(signingOut account: String) -> Int {
+    holdsTaken += 1
+    signingOut = (holdsTaken, account)
+    return holdsTaken
+  }
+
+  package func isHolding(_ hold: Int) -> Bool {
+    signingOut?.hold == hold
+  }
+
+  // Sending resumes, unless a later sign-out has taken the hold since.
+  package func endHold(_ hold: Int) {
+    if isHolding(hold) { signingOut = nil }
+  }
+
   // One round, once the round in flight has ended.
   package func step(leaving: Bool = false) async -> SenderStep {
     guard await turns.take() else { return .idle }
@@ -85,6 +107,7 @@ package actor Sender {
     guard core.connectivity.isOnline else { return .idle }
     do {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
+      guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
       guard let token = core.tokens.token(for: account) else { return try core.pauseAuth(seat.replica, sentUnder: nil) ? .paused : .again }
       guard let request = try core.write({ store, _ in try store.number(limit: batchLimit) }) else { return .idle }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }

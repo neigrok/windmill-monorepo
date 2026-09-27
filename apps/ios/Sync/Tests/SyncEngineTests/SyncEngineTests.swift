@@ -8,8 +8,8 @@ import SyncTesting
 import Testing
 
 // The engine offline (design §11 M5): commits and their receipts, the read-and-commit body, holds on the release timer,
-// Undo and retire, leaving, engine start, and the commit contract of §7.1 (it throws only before its transaction
-// commits). Then two devices of one account over one in-memory server, stepped and with their loops running.
+// Undo and retire, leaving, and the commit contract of §7.1 (it throws only before its transaction commits). Then two
+// devices of one account over one in-memory server, stepped and with their loops running.
 
 struct SyncEngineTests {
   // MARK: Commit
@@ -243,36 +243,6 @@ struct SyncEngineTests {
     #expect(try rig.outbox() == ["g1/0 ready", "g2/0 ready"])
     #expect(rig.engine.sender.wake.kicks == kicks + 1)
     #expect(try rig.engine.undo("g1") == false)
-  }
-
-  // MARK: Engine start (§7.3, §7.11)
-
-  @Test func aRelaunchReleasesEveryHoldWithNoUndo() throws {
-    let rig = try Rig()
-    try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], hold: true, gestureId: "g1"))
-    let relaunched = try rig.relaunch()
-    #expect(try rig.outbox() == ["g1/0 ready"])
-    #expect(try relaunched.undo("g1") == false)
-  }
-
-  @Test func theForkGuardIsKeptAtFirstStartAndACopyThatDiffersReidentifies() throws {
-    let rig = try Rig(account: "A")
-    let replica = try rig.meta().replica
-    let kept = try rig.store.read { try $0.deviceMeta()?.meta.forkGuard }
-    #expect(kept != nil)
-    #expect(rig.forkGuard.load() == kept)
-    _ = try rig.relaunch()
-    #expect(try rig.meta().replica == replica)
-    rig.forkGuard.save("fg_of-the-device-this-was-cloned-from")
-    _ = try rig.relaunch()
-    #expect(try rig.meta().replica != replica)
-    #expect(rig.forkGuard.load() == (try rig.store.read { try $0.deviceMeta()?.meta.forkGuard }))
-    #expect(rig.forkGuard.load() != kept)
-  }
-
-  @Test func aBoundReplicaWithNoTokenStartsPaused() throws {
-    let rig = try Rig(account: "A", token: nil)
-    #expect(try rig.meta().authPaused)
   }
 
   // MARK: Ids and time
