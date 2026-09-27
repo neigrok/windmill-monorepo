@@ -1,0 +1,5 @@
+Domain/Package.swift: closure GymDomain reaches GRDB
+Domain/Package.swift: closure GymDomain reaches SyncEngine
+Domain/Package.swift: closure GymDomain reaches SyncReplica
+Domain/Package.swift: closure GymDomain reaches SyncStore
+Domain/Package.swift: layer GymDomain (product domain) may not depend on SyncEngine (engine runtime)

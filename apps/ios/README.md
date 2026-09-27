@@ -1,8 +1,10 @@
 # Windmill iOS
 
 `apps/ios` holds the SwiftPM package `WindmillSync` in `Sync/`, the client of the sync engine
-([engine.md](../../docs/foundation/engine.md)), and `SyncTestingSurface/`, a package of tests only, which proves
-from outside `WindmillSync` that its test harness is enough for the domain kit. There is no iOS app target.
+([engine.md](../../docs/foundation/engine.md)); `WindmillDomain` in `Domain/`, the domain kit every feature's
+logic is declared on ([domain-kit.md](../../docs/foundation/domain-kit.md)); and `SyncTestingSurface/`, a package of
+tests only, which proves from outside `WindmillSync` that its test harness is enough for the domain kit. There is no
+iOS app target and no product domain yet.
 
 ## Layout
 
@@ -23,7 +25,13 @@ from outside `WindmillSync` that its test harness is enough for the domain kit. 
 | `Sync/Tests/SyncModelServerTests/` | Model-server properties the corpus pins only by example: admission's digest, counters and rollback, paging and live frames end to end, text merge, the push and pull envelopes over the body as received, push and call bookkeeping, and the clock. |
 | `Sync/Tests/SyncConformanceTests/` | The corpus runner: one test case per vector, one handler per corpus file. Each `protocol/*.jsonl` transcript runs its client half through real engines and its server half through `SyncModelServer`. |
 | `Sync/Tests/SyncTestingTests/` | The step-mode harness's surface; the replay fuzz over many seeds, with the paths every run of 64 seeds must take, and a run's determinism by its seed; property 3; that the checks see what they check (a phone the server disagrees with, a record alive again, a notice that lost what it held, rows of a tree the phone may not read) and that a finished run frees its server; and a kill at every step of scenarios that between them reach every transaction of design §3.5 on both sides of its commit. |
-| `SyncTestingSurface/` | A package that depends only on `WindmillSync`'s `SyncTesting` product. Its tests drive two devices through `SteppedEngine`'s public surface and declare their own server-rules double, as the domain kit's `Harness` will. |
+| `SyncTestingSurface/` | A package that depends only on `WindmillSync`'s `SyncTesting` product. Its tests drive two devices through `SteppedEngine`'s public surface and declare their own server-rules double, as the domain kit's `Harness` does. |
+| `Domain/Sources/DomainKitNFC/` | One function, `nfc(_:)`, the only Foundation the kit reaches; `LayeringTests` pins its text (kit §2.3). |
+| `Domain/Sources/DomainKit/` | The kit (kit §3–§12), pure logic over `SyncCore` and `SyncAPI`: the entity protocols, typed ids and `Fields`; value objects and the text, number, choice and count specs; `Valid` and checks; local days and zones; the rule book; the reader, repositories and capacity; plans and their translation to one gesture; actions and `ActionRunner`, the only holder of the `Replica` port; drafts and their save; the standard `SaveDraft`, `Remove` and `Move`; refusals and notices. It names no product. |
+| `Domain/Sources/DomainKitTesting/` | What a product's tests use (kit §14): `Harness` over `SyncTesting`'s `SteppedEngine`; `RegistryCheck`, `RuleBookCheck` and `RuleBookParity`; and `Contract`, which reads `packages/api-contract/` and gives the kit's values their vector JSON forms. |
+| `Domain/Tests/DomainKitTests/` | The kit's traps, each in a process of its own; `Valid`'s refusal of a U+0000 no check caught; and the compile attacks: every file under `Attacks/` compiles to SIL against this build's modules, as product-domain code or as UI code (main actor by default, warnings as errors), and a `fail` attack must fail with the error its first line names. |
+| `Domain/Tests/DomainKitTestingTests/` | The runner of the kit's shared vectors, `packages/api-contract/domain-kit/`, over the probe declarations its README lists (a trap a vector expects runs in a process of its own); the harness over the real engine and model server; and the three checks against a registry built for them. |
+| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, the CI workflows, and the app project when `project.yml` exists; with one fixture per rule under `Fixtures/`. |
 
 The package is written in the Swift 6 language mode with strict concurrency, for iOS 18 and macOS 15.
 `SyncCore` and `SyncAPI`, which other packages compile against, enable `MemberImportVisibility` and
@@ -54,6 +62,15 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SYNC_SIM_SEEDS=1000 \
   swift test --explicit-target-dependency-import-check error --filter SimulatorTests/everySeed
 ```
 
+**The domain kit.** `WindmillDomain` builds `WindmillSync` as a dependency. Its compile attacks run the Xcode
+toolchain's `swiftc` against the modules the build made; its layering tests run `swift package dump-package` on every
+package, and `xcodegen` and `xcodebuild` on the app's fixtures when `xcodegen` is installed:
+
+```sh
+cd apps/ios/Domain
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+```
+
 **The harness from outside.** `SyncTestingSurface` builds `WindmillSync` as a dependency:
 
 ```sh
@@ -70,5 +87,5 @@ the SQLite store, in `SyncStoreTests`.
 **Property tests** draw a fresh seed on every run and name it in any failure. Replay one with
 `SYNC_SEED=<seed> swift test --filter <test>`.
 
-[CI](../../.github/workflows/ios.yml) runs `swift test` on macOS and builds the package for the iOS
-simulator.
+[CI](../../.github/workflows/ios.yml) runs `WindmillSync`'s `swift test` on macOS and builds that package for the
+iOS simulator. It does not run `WindmillDomain` or `SyncTestingSurface`.

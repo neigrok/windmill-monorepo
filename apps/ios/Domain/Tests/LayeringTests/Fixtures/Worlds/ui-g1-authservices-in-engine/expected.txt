@@ -1,0 +1,1 @@
+Sync/Sources/SyncEngine/AppleSignIn.swift:1: import AuthenticationServices

@@ -1,0 +1,13 @@
+name: iOS release
+
+on: workflow_dispatch
+
+jobs:
+  upload:
+    runs-on: macos-26
+    steps:
+      - name: Archive
+        run: |
+          xcodebuild archive -project Windmill.xcodeproj -scheme Windmill -configuration Release \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES \
+            IOS_SENTRY_DSN="$IOS_SENTRY_DSN" SWIFT_VERSION=5

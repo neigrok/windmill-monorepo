@@ -1,0 +1,1 @@
+WindmillKit/Package.swift: layer WindmillGymTests (test) may not depend on WindmillJournal (product UI)

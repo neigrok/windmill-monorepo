@@ -1,0 +1,34 @@
+# expect: build-settings Windmill [Debug, iphoneos]: OTHER_SWIFT_FLAGS -swift-version 5 -Xfrontend -disable-access-control
+# expect: build-settings Windmill [Debug, iphonesimulator]: OTHER_SWIFT_FLAGS -swift-version 5 -Xfrontend -disable-access-control
+# expect: build-settings Windmill [Release, iphoneos]: OTHER_SWIFT_FLAGS -swift-version 5 -Xfrontend -disable-access-control
+# expect: build-settings Windmill [Release, iphonesimulator]: OTHER_SWIFT_FLAGS -swift-version 5 -Xfrontend -disable-access-control
+# expect: project Windmill.configFiles.Debug: Swift5.xcconfig sets OTHER_SWIFT_FLAGS
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  WindmillKit:
+    path: WindmillKit
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    configFiles:
+      Debug: App/Swift5.xcconfig
+      Release: App/Swift5.xcconfig
+    sources:
+      - path: App
+    dependencies:
+      - package: WindmillKit
+        product: WindmillGym
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

@@ -1,0 +1,1 @@
+Domain/Sources/GymDomain/checkouts: symbolic-link

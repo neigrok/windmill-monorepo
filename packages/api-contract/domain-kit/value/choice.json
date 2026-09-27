@@ -1,0 +1,118 @@
+[
+  {
+    "name": "a listed value passes",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "review"
+    },
+    "expect": {"value": "review"}
+  },
+  {
+    "name": "the last listed value passes",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "dropped"
+    },
+    "expect": {"value": "dropped"}
+  },
+  {
+    "name": "a value differing in case is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "Draft"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "choice does not trim: a leading space is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": " draft"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "choice does not trim: a trailing U+00A0 is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "draft\u00a0"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "the empty string is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": ""
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "a prefix of a listed value is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "dra"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "a listed value with U+0000 appended is notOneOf",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "draft\u0000"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "tier", "reason": "notOneOf"}}
+  },
+  {
+    "name": "a precomposed value passes a precomposed list",
+    "input": {
+      "spec": {"path": "probe.accent", "kind": "choice", "values": ["caf\u00e9", "na\u00efve"]},
+      "value": "caf\u00e9"
+    },
+    "expect": {"value": "caf\u00e9"}
+  },
+  {
+    "name": "a decomposed value is notOneOf a precomposed list: bytes, not canonical equivalence",
+    "input": {
+      "spec": {"path": "probe.accent", "kind": "choice", "values": ["caf\u00e9", "na\u00efve"]},
+      "value": "cafe\u0301"
+    },
+    "expect": {"violation": {"rule": "probe.accent", "path": "accent", "reason": "notOneOf"}}
+  },
+  {
+    "name": "a precomposed value is notOneOf a decomposed list",
+    "input": {"spec": {"path": "probe.decomposed", "kind": "choice", "values": ["cafe\u0301"]}, "value": "caf\u00e9"},
+    "expect": {"violation": {"rule": "probe.decomposed", "path": "decomposed", "reason": "notOneOf"}}
+  },
+  {
+    "name": "a decomposed value passes a decomposed list and stays decomposed",
+    "input": {"spec": {"path": "probe.decomposed", "kind": "choice", "values": ["cafe\u0301"]}, "value": "cafe\u0301"},
+    "expect": {"value": "cafe\u0301"}
+  },
+  {
+    "name": "a compatibility ligature is notOneOf its expansion",
+    "input": {"spec": {"path": "probe.ligature", "kind": "choice", "values": ["fine"]}, "value": "\ufb01ne"},
+    "expect": {"violation": {"rule": "probe.ligature", "path": "ligature", "reason": "notOneOf"}}
+  },
+  {
+    "name": "an empty list admits nothing",
+    "input": {"spec": {"path": "probe.none", "kind": "choice", "values": []}, "value": "draft"},
+    "expect": {"violation": {"rule": "probe.none", "path": "none", "reason": "notOneOf"}}
+  },
+  {
+    "name": "null passes the optional overload",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": null
+    },
+    "expect": {"value": null}
+  },
+  {
+    "name": "a violation carries the path the spec was applied at",
+    "input": {
+      "spec": {"path": "card.tier", "kind": "choice", "values": ["draft", "review", "done", "dropped"]},
+      "value": "x", "at": "cards.0.tier"
+    },
+    "expect": {"violation": {"rule": "card.tier", "path": "cards.0.tier", "reason": "notOneOf"}}
+  }
+]

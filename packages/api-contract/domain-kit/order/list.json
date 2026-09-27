@@ -1,0 +1,823 @@
+[
+  {
+    "name": "an Ordered type orders by key, then id; an absent or null key sorts as the empty key; a dead record is left out",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardD001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["D", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardE001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["E", "1000:0:r_aaaaaaaaaaaa"], "ord": [null, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardF001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["F", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardD001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["D", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardE001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["E", "1000:0:r_aaaaaaaaaaaa"], "ord": [null, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardF001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["F", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["cardD001", "cardE001", "cardB001", "cardA001", "cardC001"]}
+  },
+  {
+    "name": "keys compare by bytes: Zz before a0 before a0V before a1",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardW001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["W", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardX001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["X", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardY001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Y", "1000:0:r_aaaaaaaaaaaa"], "ord": ["Zz", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardZ001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Z", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardW001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["W", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardX001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["X", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardY001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Y", "1000:0:r_aaaaaaaaaaaa"], "ord": ["Zz", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardZ001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Z", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "stored"
+    },
+    "expect": {"ids": ["cardY001", "cardZ001", "cardX001", "cardW001"]}
+  },
+  {
+    "name": "ids on a tied key compare by bytes: - before A before _ before a",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardaaaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["a", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card_aaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["_", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardAaaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card-aaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["-", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardaaaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["a", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card_aaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["_", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardAaaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card-aaa", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["-", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["card-aaa", "cardAaaa", "card_aaa", "cardaaaa"]}
+  },
+  {
+    "name": "drawn leaves out a member inside its delete window",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["cardA001", "cardB001", "cardC001"]}
+  },
+  {
+    "name": "stored keeps a member inside its delete window",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "stored"
+    },
+    "expect": {"ids": ["cardA001", "cardB001", "cardH001", "cardC001"]}
+  },
+  {
+    "name": "a type that is not Ordered orders by id; a dead record is left out",
+    "input": {
+      "t": "day",
+      "records": {
+        "drawn": [
+          {"t": "day", "id": "2027-01-12", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2026-12-31", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [2, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-02", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [3, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-01", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [4, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "day", "id": "2027-01-12", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2026-12-31", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [2, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-02", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [3, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-01", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [4, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["2026-12-31", "2027-01-02", "2027-01-12"]}
+  },
+  {
+    "name": "tuple ids order by the UTF-8 bytes of their JCS",
+    "input": {
+      "t": "link",
+      "records": {
+        "drawn": [
+          {"t": "link", "id": ["t10", "t1"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "link", "id": ["t1", "t2"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [2, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "link", "id": ["t1", "t10"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [3, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "link", "id": ["t10", "t1"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "link", "id": ["t1", "t2"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [2, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "link", "id": ["t1", "t10"], "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"strength": [3, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": [["t1", "t10"], ["t1", "t2"], ["t10", "t1"]]}
+  },
+  {
+    "name": "a type without life lists only records whose visibleWhen fields hold neither null nor the empty text",
+    "input": {
+      "t": "mark",
+      "records": {
+        "drawn": [
+          {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}},
+          {"t": "mark", "id": "fir", "seq": 1, "f": {"done": [false, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "mark", "id": "elm", "seq": 1, "x": {"memo": {"text": "note", "rev": 1, "merged": false}}},
+          {"t": "mark", "id": "yew", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "mark", "id": "ash", "seq": 1, "f": {"done": [true, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}},
+          {"t": "mark", "id": "fir", "seq": 1, "f": {"done": [false, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "mark", "id": "elm", "seq": 1, "x": {"memo": {"text": "note", "rev": 1, "merged": false}}},
+          {"t": "mark", "id": "yew", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "mark", "id": "ash", "seq": 1, "f": {"done": [true, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["ash", "elm", "fir"]}
+  },
+  {
+    "name": "a singleton is always visible",
+    "input": {
+      "t": "meta",
+      "records": {"drawn": [{"t": "meta", "id": "meta", "seq": 1}], "stored": [{"t": "meta", "id": "meta", "seq": 1}]},
+      "view": "drawn"
+    },
+    "expect": {"ids": ["meta"]}
+  },
+  {
+    "name": "children lists the visible laps whose runId names the run, by id",
+    "input": {
+      "t": "lap",
+      "records": {
+        "drawn": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "children": {"of": "run00001", "via": "runId", "view": "drawn"}
+    },
+    "expect": {"ids": ["lap00000", "lap00001", "lap00004"]}
+  },
+  {
+    "name": "children of another run",
+    "input": {
+      "t": "lap",
+      "records": {
+        "drawn": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "children": {"of": "run00002", "via": "runId", "view": "stored"}
+    },
+    "expect": {"ids": ["lap00002"]}
+  },
+  {
+    "name": "children of a run with no laps is empty",
+    "input": {
+      "t": "lap",
+      "records": {
+        "drawn": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "run", "id": "run00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "run", "id": "run00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"startedAt": [1000, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00002", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00000", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "children": {"of": "run00009", "via": "runId", "view": "drawn"}
+    },
+    "expect": {"ids": []}
+  },
+  {
+    "name": "top anchors below nothing",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "top"
+    },
+    "expect": {"anchor": null}
+  },
+  {
+    "name": "bottom anchors below the last stored member, one inside its delete window included",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": "cardH001"}
+  },
+  {
+    "name": "bottom anchors below a stored member that drawn does not hold at all",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": "cardH001"}
+  },
+  {
+    "name": "bottom anchors below the last stored member when none is held",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": "cardB001"}
+  },
+  {
+    "name": "bottom over an empty list anchors below nothing",
+    "input": {"t": "card", "records": {"drawn": [], "stored": []}, "placement": "bottom"},
+    "expect": {"anchor": null}
+  },
+  {
+    "name": "bottom over only dead members anchors below nothing",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": null}
+  },
+  {
+    "name": "bottom on a tied key anchors below the greater id",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": "cardC001"}
+  },
+  {
+    "name": "bottom passes over a member with no key, which sorts first",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardD001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["D", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardD001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["D", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": "bottom"
+    },
+    "expect": {"anchor": "cardA001"}
+  },
+  {
+    "name": "below a member anchors below it",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": {"below": "cardB001"}
+    },
+    "expect": {"anchor": "cardB001"}
+  },
+  {
+    "name": "below a member inside its delete window anchors below it",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "placement": {"below": "cardH001"}
+    },
+    "expect": {"anchor": "cardH001"}
+  },
+  {
+    "name": "a move below the member already above it is unchanged",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardB001", "below": "cardA001"}
+    },
+    "expect": {"decision": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "the member above is read in drawn order: a held member between them does not count",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardC001", "below": "cardB001"}
+    },
+    "expect": {"decision": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "a move below itself is unchanged",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardC001", "below": "cardC001"}
+    },
+    "expect": {"decision": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "a move of the first member to the top is unchanged",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardA001", "below": null}
+    },
+    "expect": {"decision": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "a move to the top writes one move below nothing",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardC001", "below": null}
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "move", "t": "card", "id": "cardC001", "anchor": {"field": "ord", "below": null}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a move below a later member writes one move",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardA001", "below": "cardC001"}
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "move", "t": "card", "id": "cardA001", "anchor": {"field": "ord", "below": "cardC001"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a move below a held member that drawn does not show writes one move",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardC001", "below": "cardH001"}
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "move", "t": "card", "id": "cardC001", "anchor": {"field": "ord", "below": "cardH001"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a move of a member inside its delete window is gone",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardH001", "below": "cardA001"}
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardH001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a move of an absent record is gone",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["A", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["B", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardH001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["H", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1V", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardC001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["C", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "move": {"id": "cardX001", "below": null}
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardX001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a removal of a member inside its delete window is unchanged: drawn no longer shows it",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["dead", "2000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "remove": {"id": "cardB001"}
+    },
+    "expect": {"decision": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "a removal of a drawn card is one held delete",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "remove": {"id": "cardA001"}
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "delete", "t": "card", "id": "cardA001"}],
+            "atomic": false,
+            "hold": true,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a removal of a drawn day puts it absent, held",
+    "input": {
+      "t": "day",
+      "records": {
+        "drawn": [
+          {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "remove": {"id": "2027-01-10"}
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": false}],
+            "atomic": false,
+            "hold": true,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": null
+        }
+      }
+    }
+  },
+  {
+    "name": "a null register reads as absent: a card whose title is null decodes at its default",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": [null, "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": [null, "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      },
+      "view": "drawn"
+    },
+    "expect": {"ids": ["cardA001"]}
+  }
+]

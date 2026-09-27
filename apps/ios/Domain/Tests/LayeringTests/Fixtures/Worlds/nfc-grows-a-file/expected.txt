@@ -1,0 +1,2 @@
+Domain/Package.swift: nfc-pin DomainKitNFC has 2 files, not 1
+Domain/Sources/DomainKitNFC/Clock.swift: nfc-pin the text is not §2.3's constant

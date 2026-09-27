@@ -1,0 +1,34 @@
+# expect: build-settings Windmill [Debug, iphoneos]: SWIFT_EXEC $(SRCROOT)/tools/swiftc
+# expect: build-settings Windmill [Debug, iphoneos]: SWIFT_USE_INTEGRATED_DRIVER NO
+# expect: build-settings Windmill [Debug, iphonesimulator]: SWIFT_EXEC $(SRCROOT)/tools/swiftc
+# expect: build-settings Windmill [Debug, iphonesimulator]: SWIFT_USE_INTEGRATED_DRIVER NO
+# expect: build-settings Windmill [Release, iphoneos]: SWIFT_EXEC $(SRCROOT)/tools/swiftc
+# expect: build-settings Windmill [Release, iphoneos]: SWIFT_USE_INTEGRATED_DRIVER NO
+# expect: build-settings Windmill [Release, iphonesimulator]: SWIFT_EXEC $(SRCROOT)/tools/swiftc
+# expect: build-settings Windmill [Release, iphonesimulator]: SWIFT_USE_INTEGRATED_DRIVER NO
+# expect: project Windmill.settings.base: SWIFT_EXEC = $(SRCROOT)/tools/swiftc is not literal
+# expect: project Windmill: sets SWIFT_EXEC
+# expect: project Windmill: sets SWIFT_USE_INTEGRATED_DRIVER
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Race
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        SWIFT_EXEC: "$(SRCROOT)/tools/swiftc"
+        SWIFT_USE_INTEGRATED_DRIVER: "NO"

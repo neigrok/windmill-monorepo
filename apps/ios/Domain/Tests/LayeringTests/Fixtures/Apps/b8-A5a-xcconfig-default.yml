@@ -1,0 +1,25 @@
+# expect: project Windmill.configFiles.Debug: Swift.xcconfig sets SWIFT_VERSION
+# expect: project Windmill: SWIFT_VERSION is not set in the target's own settings
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+      - path: Race
+    configFiles:
+      Debug: App/Swift.xcconfig
+      Release: App/Swift.xcconfig
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

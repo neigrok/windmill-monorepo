@@ -1,0 +1,2 @@
+Domain/Package.swift:5: manifest-syntax not a plain let
+Domain/Package.swift:6: manifest-syntax functionDecl

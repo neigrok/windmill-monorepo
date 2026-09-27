@@ -1,0 +1,142 @@
+[
+  {
+    "name": "an empty store uses no slot",
+    "input": {"t": "card", "records": {"drawn": [], "stored": []}},
+    "expect": {"used": 0, "cap": 3, "full": false}
+  },
+  {
+    "name": "two alive cards use two slots",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 2, "cap": 3, "full": false}
+  },
+  {
+    "name": "three alive cards fill the cap of 3",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 3, "cap": 3, "full": true}
+  },
+  {
+    "name": "held deletes still occupy their slots: stored is counted, not drawn",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 3, "cap": 3, "full": true}
+  },
+  {
+    "name": "a dead card does not occupy a slot",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0009", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a9", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0009", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a9", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 2, "cap": 3, "full": false}
+  },
+  {
+    "name": "a card row with no life register is not visible and not counted",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0009", "seq": 1, "f": {"title": ["Orphan", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0009", "seq": 1, "f": {"title": ["Orphan", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 2, "cap": 3, "full": false}
+  },
+  {
+    "name": "records of other types are not counted",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [1, "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 2, "cap": 3, "full": false}
+  },
+  {
+    "name": "more than the cap is full",
+    "input": {
+      "t": "card",
+      "records": {
+        "drawn": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a3", "1000:0:r_aaaaaaaaaaaa"]}}
+        ],
+        "stored": [
+          {"t": "card", "id": "card0001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0002", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0003", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a2", "1000:0:r_aaaaaaaaaaaa"]}},
+          {"t": "card", "id": "card0004", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["0", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a3", "1000:0:r_aaaaaaaaaaaa"]}}
+        ]
+      }
+    },
+    "expect": {"used": 4, "cap": 3, "full": true}
+  }
+]

@@ -1,0 +1,19 @@
+name: iOS release
+
+on: workflow_dispatch
+
+jobs:
+  upload:
+    runs-on: macos-26
+    steps:
+      # The settings a release may pass, on continued lines; a comment naming -xcconfig passes nothing.
+      - name: Archive
+        env:
+          IOS_SENTRY_DSN: ${{ secrets.IOS_SENTRY_DSN }}
+        run: |
+          xcodebuild archive -project Windmill.xcodeproj -scheme Windmill -configuration Release \
+            -destination 'generic/platform=iOS' -archivePath "$RUNNER_TEMP/Windmill.xcarchive" \
+            DEVELOPMENT_TEAM="$APPLE_TEAM_ID" CODE_SIGN_STYLE=Automatic CODE_SIGNING_ALLOWED=YES \
+            CURRENT_PROJECT_VERSION=${{ github.run_number }} \
+            IOS_SENTRY_DSN="$IOS_SENTRY_DSN"  # never -xcconfig, never SWIFT_VERSION=5
+          echo "SWIFT_VERSION=5 is not an invocation"

@@ -1,0 +1,2 @@
+Domain/Package.swift:4: manifest-syntax sequenceExpr
+Domain/Package.swift:30: manifest-syntax sequenceExpr

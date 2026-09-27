@@ -1,0 +1,21 @@
+# expect: project Windmill.settings.base: SWIFT_VERSION = $(WM_SWIFT_VERSION:default=6.0) is not literal
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "$(WM_SWIFT_VERSION:default=6.0)"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

@@ -1,0 +1,2 @@
+Domain/Package.swift: module-kind DomainKitNFC is system, not regular
+Domain/Package.swift: unscanned DomainKitNFC is a system target

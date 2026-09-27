@@ -140,6 +140,7 @@ reach them.
 | `WindmillSync` | `apps/ios/Sync/` | `GRDB.swift` | `SyncCore`, `SyncAPI`, `SyncSchema`, `SyncReplica`, `SyncStore`, `SyncModelServer`, `SyncEngine`, `SyncIOS`, `SyncSchemaGen`, `SyncTesting` |
 | `WindmillDomain` | `apps/ios/Domain/` | `WindmillSync`; `swift-syntax` for `LayeringTests` | `DomainKitNFC`, `DomainKit`, `DomainKitTesting`, `GymDomain`, `JournalDomain` |
 | `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
+| `SyncTestingSurface` | `apps/ios/SyncTestingSurface/` | `WindmillSync`, its `SyncTesting` product only | test targets only |
 | the app | `apps/ios/project.yml` | the three packages; remote packages of its own | the app target and its test bundles |
 
 Every module is a regular Swift target, except `SyncSchemaGen`, an executable. Remote dependencies are

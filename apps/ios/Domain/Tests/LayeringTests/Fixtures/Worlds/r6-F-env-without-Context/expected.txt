@@ -1,0 +1,3 @@
+Domain/Package.swift:5: manifest-syntax functionDecl
+Domain/Package.swift:10: manifest-name environmentHas
+Domain/Package.swift:36: manifest-syntax sequenceExpr

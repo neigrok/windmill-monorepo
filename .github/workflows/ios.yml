@@ -1,9 +1,10 @@
 name: iOS CI
 
-# Tests and builds the Swift sync engine package, apps/ios/Sync; ships nothing. Its corpus runner reads
-# packages/api-contract/sync by walking up from #filePath, and its SyncSchema target is generated from the
-# registries there, so the whole repository is checked out and a change to the sync contract runs this
-# workflow too.
+# Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
+# and the engine's public-surface test (SyncTestingSurface); ships nothing. The corpus runners read
+# packages/api-contract/sync and packages/api-contract/domain-kit by walking up from #filePath, and the
+# SyncSchema target is generated from the registries there, so the whole repository is checked out and a
+# change to either contract runs this workflow too.
 
 on:
   push:
@@ -11,12 +12,14 @@ on:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/domain-kit/**'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   pull_request:
     paths:
       - 'apps/ios/**'
       - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/domain-kit/**'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   workflow_dispatch:
@@ -51,3 +54,12 @@ jobs:
 
       - name: Build for the iOS simulator
         run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
+
+      # The domain kit's tests include the layering checks over every package under apps/ios.
+      - name: Test the domain kit
+        working-directory: apps/ios/Domain
+        run: swift test --explicit-target-dependency-import-check error
+
+      - name: Test the engine's public test surface from outside the engine package
+        working-directory: apps/ios/SyncTestingSurface
+        run: swift test --explicit-target-dependency-import-check error

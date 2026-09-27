@@ -1,0 +1,24 @@
+# expect: build-settings Windmill [Debug, iphonesimulator]: SWIFT_VERSION 5.0
+# expect: build-settings Windmill [Release, iphonesimulator]: SWIFT_VERSION 5.0
+# expect: project Windmill.settings.base: SWIFT_VERSION[sdk=iphonesimulator*] is conditional
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        "SWIFT_VERSION[sdk=iphonesimulator*]": "5.0"

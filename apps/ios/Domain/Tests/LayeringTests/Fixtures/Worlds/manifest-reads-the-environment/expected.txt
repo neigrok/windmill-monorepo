@@ -1,0 +1,2 @@
+Domain/Package.swift:2: manifest-import Foundation
+Domain/Package.swift:5: manifest-syntax sequenceExpr

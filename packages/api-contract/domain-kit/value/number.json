@@ -1,0 +1,370 @@
+[
+  {
+    "name": "1.005 rounds to 1: 1.005 times 100 is just below 100.5",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 1.005
+    },
+    "expect": {"value": 1}
+  },
+  {
+    "name": "10.235 rounds to 10.24: it is multiplied by 1/q, never divided by q",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 10.235
+    },
+    "expect": {"value": 10.24}
+  },
+  {
+    "name": "2.675 rounds half away from zero to 2.68",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 2.675
+    },
+    "expect": {"value": 2.68}
+  },
+  {
+    "name": "82.506 rounds to 82.51",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 82.506
+    },
+    "expect": {"value": 82.51}
+  },
+  {
+    "name": "-0.005 rounds half away from zero to -0.01",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -0.005
+    },
+    "expect": {"value": -0.01}
+  },
+  {
+    "name": "-7.125 rounds half away from zero to -7.13, not half up",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -7.125
+    },
+    "expect": {"value": -7.13}
+  },
+  {
+    "name": "a negative that rounds to zero is 0, never -0",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -0.004
+    },
+    "expect": {"value": 0}
+  },
+  {
+    "name": "0.1 + 0.2 rounds to 0.3",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 0.30000000000000004
+    },
+    "expect": {"value": 0.3}
+  },
+  {
+    "name": "a value on its quantum is kept",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 7
+    },
+    "expect": {"value": 7}
+  },
+  {
+    "name": "quantum 0.25 rounds 0.125 half away to 0.25",
+    "input": {
+      "spec": {"path": "probe.quarter", "kind": "number", "min": -10, "max": 10, "integer": false, "quantum": 0.25},
+      "value": 0.125
+    },
+    "expect": {"value": 0.25}
+  },
+  {
+    "name": "quantum 0.25 rounds -7.125 half away to -7.25",
+    "input": {
+      "spec": {"path": "probe.quarter", "kind": "number", "min": -10, "max": 10, "integer": false, "quantum": 0.25},
+      "value": -7.125
+    },
+    "expect": {"value": -7.25}
+  },
+  {
+    "name": "quantum 0.1 rounds 0.15 to 0.2",
+    "input": {
+      "spec": {"path": "probe.tenth", "kind": "number", "min": 0, "max": 1, "integer": false, "quantum": 0.1},
+      "value": 0.15
+    },
+    "expect": {"value": 0.2}
+  },
+  {
+    "name": "an integer quantum rounds 12.5 at 5 to 15",
+    "input": {
+      "spec": {"path": "probe.five", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 5},
+      "value": 12.5
+    },
+    "expect": {"value": 15}
+  },
+  {
+    "name": "an integer quantum rounds 12 at 5 to 10",
+    "input": {
+      "spec": {"path": "probe.five", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 5},
+      "value": 12
+    },
+    "expect": {"value": 10}
+  },
+  {
+    "name": "no quantum keeps every digit",
+    "input": {
+      "spec": {"path": "probe.plain", "kind": "number", "min": -1, "max": 1, "integer": false},
+      "value": 0.123456789
+    },
+    "expect": {"value": 0.123456789}
+  },
+  {
+    "name": "500.004 rounds to 500 and passes max 500",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 500.004
+    },
+    "expect": {"value": 500}
+  },
+  {
+    "name": "500.005 rounds to 500.01, which is above 500",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 500.005
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "size", "reason": "above", "max": 500}}
+  },
+  {
+    "name": "-500.004 rounds to -500 and passes min -500",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -500.004
+    },
+    "expect": {"value": -500}
+  },
+  {
+    "name": "-500.006 rounds to -500.01, which is below -500",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -500.006
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "size", "reason": "below", "min": -500}}
+  },
+  {
+    "name": "exactly max passes",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 500
+    },
+    "expect": {"value": 500}
+  },
+  {
+    "name": "exactly min passes",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": -500
+    },
+    "expect": {"value": -500}
+  },
+  {
+    "name": "10.6 is within max 10.7 but rounds to 11, which is above",
+    "input": {
+      "spec": {"path": "probe.whole", "kind": "number", "min": 0, "max": 10.7, "integer": false, "quantum": 1},
+      "value": 10.6
+    },
+    "expect": {"violation": {"rule": "probe.whole", "path": "whole", "reason": "above", "max": 10.7}}
+  },
+  {
+    "name": "10.4 rounds to 10 and passes max 10.7",
+    "input": {
+      "spec": {"path": "probe.whole", "kind": "number", "min": 0, "max": 10.7, "integer": false, "quantum": 1},
+      "value": 10.4
+    },
+    "expect": {"value": 10}
+  },
+  {
+    "name": "-0.4 is below min 0 but rounds to 0 and passes",
+    "input": {
+      "spec": {"path": "probe.whole", "kind": "number", "min": 0, "max": 10.7, "integer": false, "quantum": 1},
+      "value": -0.4
+    },
+    "expect": {"value": 0}
+  },
+  {
+    "name": "-0.5 rounds half away to -1, which is below min 0",
+    "input": {
+      "spec": {"path": "probe.whole", "kind": "number", "min": 0, "max": 10.7, "integer": false, "quantum": 1},
+      "value": -0.5
+    },
+    "expect": {"violation": {"rule": "probe.whole", "path": "whole", "reason": "below", "min": 0}}
+  },
+  {
+    "name": "an integral double passes an integer spec",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 3
+    },
+    "expect": {"value": 3}
+  },
+  {
+    "name": "3.5 is notInteger",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 3.5
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "notInteger"}}
+  },
+  {
+    "name": "notInteger is found before the bounds",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 10.5
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "notInteger"}}
+  },
+  {
+    "name": "an integer above max is above",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 11
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "above", "max": 10}}
+  },
+  {
+    "name": "an integer below min is below",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": -1
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "below", "min": 0}}
+  },
+  {
+    "name": "a large integral double, 1e15, passes the integer check and is above",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 1000000000000000
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "above", "max": 10}}
+  },
+  {
+    "name": "NaN is notANumber",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": "NaN"
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "size", "reason": "notANumber"}}
+  },
+  {
+    "name": "Infinity is notANumber",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": "Infinity"
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "size", "reason": "notANumber"}}
+  },
+  {
+    "name": "-Infinity is notANumber",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": "-Infinity"
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "size", "reason": "notANumber"}}
+  },
+  {
+    "name": "NaN is notANumber before notInteger",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": "NaN"
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "notANumber"}}
+  },
+  {
+    "name": "null passes the optional overload",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": null
+    },
+    "expect": {"value": null}
+  },
+  {
+    "name": "the Int overload passes an int within bounds",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 7, "as": "int"
+    },
+    "expect": {"value": 7}
+  },
+  {
+    "name": "the Int overload refuses an int above max",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": 11, "as": "int"
+    },
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "above", "max": 10}}
+  },
+  {
+    "name": "the Int overload refuses an int below min",
+    "input": {
+      "spec": {"path": "link.strength", "kind": "number", "min": 0, "max": 9, "integer": true, "quantum": null},
+      "value": -1, "as": "int"
+    },
+    "expect": {"violation": {"rule": "link.strength", "path": "strength", "reason": "below", "min": 0}}
+  },
+  {
+    "name": "the Int overload passes null",
+    "input": {
+      "spec": {"path": "day.score", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": null},
+      "value": null, "as": "int"
+    },
+    "expect": {"value": null}
+  },
+  {
+    "name": "the Int overload rounds 12 to an integer quantum of 5",
+    "input": {
+      "spec": {"path": "probe.five", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 5},
+      "value": 12, "as": "int"
+    },
+    "expect": {"value": 10}
+  },
+  {
+    "name": "the Int overload rounds 13 to an integer quantum of 5",
+    "input": {
+      "spec": {"path": "probe.five", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 5},
+      "value": 13, "as": "int"
+    },
+    "expect": {"value": 15}
+  },
+  {
+    "name": "the Int overload keeps an int on a spec that is not integer",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 7, "as": "int"
+    },
+    "expect": {"value": 7}
+  },
+  {
+    "name": "a spec with both integer and quantum traps at construction",
+    "input": {
+      "spec": {"path": "probe.both", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": 0.5},
+      "value": 1
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "a spec with both integer and quantum traps even for null",
+    "input": {
+      "spec": {"path": "probe.both", "kind": "number", "min": 0, "max": 10, "integer": true, "quantum": 0.5},
+      "value": null
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "a violation carries the path the spec was applied at",
+    "input": {
+      "spec": {"path": "card.size", "kind": "number", "min": -500, "max": 500, "integer": false, "quantum": 0.01},
+      "value": 600, "at": "laps.3.weight"
+    },
+    "expect": {"violation": {"rule": "card.size", "path": "laps.3.weight", "reason": "above", "max": 500}}
+  }
+]

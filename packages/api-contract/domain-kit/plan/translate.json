@@ -1,0 +1,1263 @@
+[
+  {
+    "name": "an insert of a minted Ordered card creates it with every field, validated, below its anchor",
+    "input": {
+      "plan": [{"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "  New  "}, "below": "cardA001"}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "create",
+            "t": "card",
+            "id": "cardN001",
+            "f": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "anchor": {"field": "ord", "below": "cardA001"}
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an insert at the top anchors below null",
+    "input": {"plan": [{"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "New"}, "below": null}]},
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "create",
+            "t": "card",
+            "id": "cardN001",
+            "f": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "anchor": {"field": "ord", "below": null}
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create of a minted type that is not Ordered writes every field with no anchor, a quantum field rounded, and leaves a nil time field to the engine",
+    "input": {"plan": [{"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001", "weight": 82.506}}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001", "weight": 82.51}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of a minted card writes the named fields",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed", "body": "kept"}, "fields": ["title"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update naming no fields writes every checked field, which is every field",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T", "body": "b", "tier": "review"}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "update",
+            "t": "card",
+            "id": "cardA001",
+            "f": {"title": "T", "body": "b", "size": null, "claim": null, "tier": "review"}
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a remove of a card, whose removal is held, is a held delete",
+    "input": {"plan": [{"op": "remove", "t": "card", "id": "cardA001"}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "delete", "t": "card", "id": "cardA001"}],
+        "atomic": false,
+        "hold": true,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a remove of a lap, whose removal is not held, is a delete",
+    "input": {"plan": [{"op": "remove", "t": "lap", "id": "lap00001"}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "delete", "t": "lap", "id": "lap00001"}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a move of a card writes one move of its order field",
+    "input": {"plan": [{"op": "move", "t": "card", "id": "cardC001", "below": "cardA001"}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "move", "t": "card", "id": "cardC001", "anchor": {"field": "ord", "below": "cardA001"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create of a keyed day puts it present and retires its held removal",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 7}}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": true, "f": {"score": 7}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "day", "id": "2027-01-10"}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create with named fields of a keyed day puts those fields",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 7}, "fields": ["score"]}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": true, "f": {"score": 7}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "day", "id": "2027-01-10"}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of a keyed day puts it with present null and retires nothing",
+    "input": {"plan": [{"op": "update", "t": "day", "id": "2027-01-10", "f": {"score": 3}, "fields": ["score"]}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": null, "f": {"score": 3}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a remove of a keyed day puts it absent and is held",
+    "input": {"plan": [{"op": "remove", "t": "day", "id": "2027-01-10"}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": false}],
+        "atomic": false,
+        "hold": true,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a keyed link carries its tuple id through put and retire",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "create", "t": "link", "id": ["ash", "oak"], "f": {"strength": 4}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "link", "id": ["ash", "oak"], "present": true, "f": {"strength": 4}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "link", "id": ["ash", "oak"]}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a remove of a keyed link puts it absent and is held",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "remove", "t": "link", "id": ["ash", "oak"]}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "link", "id": ["ash", "oak"], "present": false}],
+        "atomic": false,
+        "hold": true,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create of a keyed mark without life writes it, its text edited from the empty text",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [{"op": "create", "t": "mark", "id": "oak", "f": {"done": true, "memo": "first note"}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {
+            "op": "write",
+            "t": "mark",
+            "id": "oak",
+            "f": {"done": true},
+            "x": {"memo": {"text": "first note", "from": ""}}
+          }
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create of a mark with an empty memo still names the text",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [{"op": "create", "t": "mark", "id": "oak", "f": {"done": false}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "write", "t": "mark", "id": "oak", "f": {"done": false}, "x": {"memo": {"text": "", "from": ""}}}
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create with named fields of a mark writes only those",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [
+        {"op": "create", "t": "mark", "id": "oak", "f": {"done": true, "memo": "unwritten"}, "fields": ["done"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "write", "t": "mark", "id": "oak", "f": {"done": true}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of a mark edits its text from the base text",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [
+        {
+          "op": "update",
+          "t": "mark",
+          "id": "oak",
+          "f": {"done": true, "memo": "second"},
+          "fields": ["memo"],
+          "base": {"done": true, "memo": "first"}
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "write", "t": "mark", "id": "oak", "x": {"memo": {"text": "second", "from": "first"}}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of a mark whose base has no memo edits from the empty text",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [
+        {"op": "update", "t": "mark", "id": "oak", "f": {"done": null, "memo": "first"}, "base": {"done": true}}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "write", "t": "mark", "id": "oak", "f": {"done": null}, "x": {"memo": {"text": "first", "from": ""}}}
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a create of the singleton meta writes its singleton id",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "create", "t": "meta", "id": "meta", "f": {"title": " Plan "}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of the singleton meta writes it",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "update", "t": "meta", "id": "meta", "f": {"title": "Plan B"}, "fields": ["title"]}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan B"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a remove of the singleton meta is a missing cell",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "remove", "t": "meta", "id": "meta"}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "a move of the singleton meta is a missing cell",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "move", "t": "meta", "id": "meta", "below": null}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "a remove of a mark, which has no life, is a missing cell",
+    "input": {"scope": "self/overlay/b_00000001", "plan": [{"op": "remove", "t": "mark", "id": "oak"}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "a derived tag is not written by translation",
+    "input": {"scope": "tree/b_00000001", "plan": [{"op": "create", "t": "tag", "id": "oak", "f": {"label": "Oak"}}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "a guarded update guards every named field, sorted by field bytes",
+    "input": {
+      "plan": [
+        {
+          "op": "update",
+          "t": "card",
+          "id": "cardA001",
+          "f": {"title": "T", "body": "b", "tier": "done"},
+          "fields": ["title", "tier", "body"],
+          "guarded": true
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T", "body": "b", "tier": "done"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [
+          {"t": "card", "id": "cardA001", "field": "body"},
+          {"t": "card", "id": "cardA001", "field": "tier"},
+          {"t": "card", "id": "cardA001", "field": "title"}
+        ],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a guarded update never guards a text field",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [
+        {
+          "op": "update",
+          "t": "mark",
+          "id": "oak",
+          "f": {"done": true, "memo": "b"},
+          "fields": ["done", "memo"],
+          "base": {"done": false, "memo": "a"},
+          "guarded": true
+        }
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "write", "t": "mark", "id": "oak", "f": {"done": true}, "x": {"memo": {"text": "b", "from": "a"}}}
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [{"t": "mark", "id": "oak", "field": "done"}],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "guardRead guards registers the plan reads without writing them",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T"}, "fields": ["title"]},
+        {"op": "guardRead", "t": "card", "id": "cardB001", "fields": ["title", "tier"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [{"t": "card", "id": "cardB001", "field": "tier"}, {"t": "card", "id": "cardB001", "field": "title"}],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "guards from every operation sort by type, then id bytes, then field bytes",
+    "input": {
+      "plan": [
+        {"op": "guardRead", "t": "day", "id": "2027-01-02", "fields": ["score"]},
+        {
+          "op": "update",
+          "t": "card",
+          "id": "card_b01",
+          "f": {"title": "T", "size": 2},
+          "fields": ["title", "size"],
+          "guarded": true
+        },
+        {"op": "guardRead", "t": "card", "id": "cardB001", "fields": ["tier"]},
+        {"op": "guardRead", "t": "card", "id": "card-b01", "fields": ["body"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "card_b01", "f": {"title": "T", "size": 2}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [
+          {"t": "card", "id": "card-b01", "field": "body"},
+          {"t": "card", "id": "cardB001", "field": "tier"},
+          {"t": "card", "id": "card_b01", "field": "size"},
+          {"t": "card", "id": "card_b01", "field": "title"},
+          {"t": "day", "id": "2027-01-02", "field": "score"}
+        ],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "retire lists every keyed record the plan creates, sorted by id; changes keep plan order",
+    "input": {
+      "plan": [
+        {"op": "create", "t": "day", "id": "2027-01-12", "f": {"score": 1}},
+        {"op": "update", "t": "day", "id": "2027-01-11", "f": {"score": 2}},
+        {"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 3}}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "put", "t": "day", "id": "2027-01-12", "present": true, "f": {"score": 1}},
+          {"op": "put", "t": "day", "id": "2027-01-11", "present": null, "f": {"score": 2}},
+          {"op": "put", "t": "day", "id": "2027-01-10", "present": true, "f": {"score": 3}}
+        ],
+        "atomic": true,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "day", "id": "2027-01-10"}, {"t": "day", "id": "2027-01-12"}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a plan writing two records is atomic, its changes in plan order",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardB001", "f": {"title": "B"}, "fields": ["title"]},
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "A"}, "fields": ["title"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "update", "t": "card", "id": "cardB001", "f": {"title": "B"}},
+          {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "A"}}
+        ],
+        "atomic": true,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "device writes alone are neither atomic nor held, and keep plan order; null deletes a row",
+    "input": {
+      "plan": [
+        {"op": "device", "key": "rack", "value": {"n": 1}},
+        {"op": "device", "key": "picture:abcdefgh", "value": null}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": [{"key": "rack", "value": {"n": 1}}, {"key": "picture:abcdefgh", "value": null}]
+      }
+    }
+  },
+  {
+    "name": "one record and a device write is not atomic",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "A"}, "fields": ["title"]},
+        {"op": "device", "key": "rack", "value": {"last": "cardA001"}}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "A"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": [{"key": "rack", "value": {"last": "cardA001"}}]
+      }
+    }
+  },
+  {
+    "name": "a held plan may write device rows",
+    "input": {
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}, {"op": "device", "key": "rack", "value": null}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "delete", "t": "card", "id": "cardA001"}],
+        "atomic": false,
+        "hold": true,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": [{"key": "rack", "value": null}]
+      }
+    }
+  },
+  {
+    "name": "two held removals of different types are one held, atomic plan",
+    "input": {
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}, {"op": "remove", "t": "day", "id": "2027-01-10"}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "delete", "t": "card", "id": "cardA001"},
+          {"op": "put", "t": "day", "id": "2027-01-10", "present": false}
+        ],
+        "atomic": true,
+        "hold": true,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a named null field is written as null",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"size": null}, "fields": ["size"]}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"size": null}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a quantum field is written rounded",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"size": 1.005}, "fields": ["size"]}]},
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"size": 1}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "only the named fields are checked: a blank title that is not named passes",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "", "body": " ok "}, "fields": ["body"]}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"body": "ok"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a checked field that breaks its spec ends the plan with the violation",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "  "}, "fields": ["title"]}]},
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}
+  },
+  {
+    "name": "a field checked but not written still refuses",
+    "input": {
+      "plan": [
+        {
+          "op": "update",
+          "t": "card",
+          "id": "cardA001",
+          "f": {"title": "", "body": "b"},
+          "fields": ["body"],
+          "checked": ["body", "title"]
+        }
+      ]
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}
+  },
+  {
+    "name": "checks run in the entity order, not the order the fields are named",
+    "input": {
+      "plan": [
+        {
+          "op": "update",
+          "t": "card",
+          "id": "cardA001",
+          "f": {"title": "", "tier": "bogus"},
+          "fields": ["tier", "title"]
+        }
+      ]
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}
+  },
+  {
+    "name": "the key check refuses a keyed create of a day after today",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-16", "f": {"score": 5}}]},
+    "expect": {"violation": {"rule": "day.notFuture", "path": "id", "reason": "custom", "custom": "future"}}
+  },
+  {
+    "name": "the key check reads today in the moment zone: 22:00 UTC at +02:00 is already the next day",
+    "input": {
+      "now": 1800050400000,
+      "offsetSeconds": 7200,
+      "plan": [{"op": "create", "t": "day", "id": "2027-01-16", "f": {"score": 5}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "put", "t": "day", "id": "2027-01-16", "present": true, "f": {"score": 5}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "day", "id": "2027-01-16"}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "the key check runs before the field checks",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-16", "f": {"score": 11}}]},
+    "expect": {"violation": {"rule": "day.notFuture", "path": "id", "reason": "custom", "custom": "future"}}
+  },
+  {
+    "name": "a field check of a keyed create refuses",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 11}}]},
+    "expect": {"violation": {"rule": "day.score", "path": "score", "reason": "above", "max": 10}}
+  },
+  {
+    "name": "rule 1: an operation on a type of another scope",
+    "input": {"plan": [{"op": "create", "t": "meta", "id": "meta", "f": {"title": "Plan"}}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 1: a card written in a tree scope",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "New"}, "below": null}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 2: two updates of one record",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T"}, "fields": ["title"]},
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"body": "b"}, "fields": ["body"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 2: a remove and an update of one record",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "lap", "id": "lap00001", "f": {"weight": 5}, "fields": ["weight"]},
+        {"op": "remove", "t": "lap", "id": "lap00001"}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 2: a move and an update of one record",
+    "input": {
+      "plan": [
+        {"op": "move", "t": "card", "id": "cardA001", "below": null},
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T"}, "fields": ["title"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 3: a held plan with an update",
+    "input": {
+      "plan": [
+        {"op": "remove", "t": "card", "id": "cardA001"},
+        {"op": "update", "t": "card", "id": "cardB001", "f": {"title": "T"}, "fields": ["title"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 3: a held plan with a create",
+    "input": {
+      "plan": [
+        {"op": "remove", "t": "card", "id": "cardA001"},
+        {"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001"}}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 3: a held plan with the removal of a type whose removal is not held",
+    "input": {
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}, {"op": "remove", "t": "lap", "id": "lap00001"}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 3: a held plan with a guardRead",
+    "input": {
+      "plan": [
+        {"op": "remove", "t": "card", "id": "cardA001"},
+        {"op": "guardRead", "t": "card", "id": "cardB001", "fields": ["title"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 3: a held plan running a command",
+    "input": {
+      "cmd": {"name": "probe.end", "args": {"runId": "run00001", "endedAt": 1800000000000}},
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 4: create names an Ordered type",
+    "input": {"plan": [{"op": "create", "t": "card", "id": "cardN001", "f": {"title": "New"}}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 4: create with named fields of a minted type",
+    "input": {
+      "plan": [
+        {"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001", "weight": 5}, "fields": ["weight"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 5: a prediction of a type the command does not predict",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "Morning", "startedAt": 1800000000000, "join": false}
+      },
+      "predict": [{"op": "create", "t": "card", "id": "cardN001", "f": {"title": "New"}}],
+      "plan": []
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a named order field",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {}, "fields": ["ord"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a named server-written field",
+    "input": {"plan": [{"op": "update", "t": "run", "id": "run00001", "f": {}, "fields": ["endedAt"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a named serial field",
+    "input": {"plan": [{"op": "update", "t": "lap", "id": "lap00001", "f": {}, "fields": ["no"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a named field absent from the entity fields",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {}, "fields": ["attachment"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a named field that was not checked",
+    "input": {
+      "plan": [
+        {
+          "op": "update",
+          "t": "card",
+          "id": "cardA001",
+          "f": {"title": "T", "body": "b"},
+          "fields": ["title", "body"],
+          "checked": ["title"]
+        }
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: an insert of a value checked for some fields only",
+    "input": {
+      "plan": [
+        {"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "New"}, "below": null, "checked": ["title"]}
+      ]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 6: a keyed create naming an unknown field",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 1}, "fields": ["mood"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 7: an update naming a const field",
+    "input": {
+      "plan": [{"op": "update", "t": "lap", "id": "lap00001", "f": {"runId": "run00002"}, "fields": ["runId"]}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 7: an update naming a time field",
+    "input": {"plan": [{"op": "update", "t": "lap", "id": "lap00001", "f": {"at": 1800000000000}, "fields": ["at"]}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 7: an update naming every field names a time field",
+    "input": {"plan": [{"op": "update", "t": "run", "id": "run00001", "f": {"label": "L"}}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 7: an update naming a text field without a base",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [{"op": "update", "t": "mark", "id": "oak", "f": {"memo": "x"}, "fields": ["memo"]}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 8: an update naming no field",
+    "input": {"plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "T"}, "fields": []}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 8: a keyed create writing no field",
+    "input": {"plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 1}, "fields": []}]},
+    "expect": {"error": true}
+  },
+  {
+    "name": "a command string argument is trimmed and composed by its spec",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "  Cafe\u0301 run  ", "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.start",
+          "args": {"id": "run00001", "label": "Caf\u00e9 run", "startedAt": 1800000000000, "join": false}
+        },
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a command string argument holding U+0000 is a violation",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "ru\u0000n", "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {"violation": {"rule": "probe.start.label", "path": "label", "reason": "nul"}}
+  },
+  {
+    "name": "a command string argument over its bound is tooLong",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "a morning run!", "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {
+      "violation": {
+        "rule": "probe.start.label",
+        "path": "label",
+        "reason": "tooLong",
+        "max": 12,
+        "unit": "chars",
+        "measured": 14
+      }
+    }
+  },
+  {
+    "name": "a null command string argument passes",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": null, "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.start",
+          "args": {"id": "run00001", "label": null, "startedAt": 1800000000000, "join": false}
+        },
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an absent optional argument applies no spec",
+    "input": {
+      "cmd": {"name": "probe.start", "args": {"id": "run00001", "startedAt": 1800000000000, "join": false}},
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {"name": "probe.start", "args": {"id": "run00001", "startedAt": 1800000000000, "join": false}},
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "strings nested in an array argument are normalised: arrays pass through",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": ["  a  ", "e\u0301"], "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.start",
+          "args": {"id": "run00001", "label": ["a", "\u00e9"], "startedAt": 1800000000000, "join": false}
+        },
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a nested string violation carries its index",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": ["ok", "x\u0000"], "startedAt": 1800000000000, "join": false}
+      },
+      "plan": []
+    },
+    "expect": {"violation": {"rule": "probe.start.label", "path": "label.1", "reason": "nul"}}
+  },
+  {
+    "name": "a command without specs sends its arguments as given",
+    "input": {"cmd": {"name": "probe.end", "args": {"runId": "run00001", "endedAt": 1800000000000}}, "plan": []},
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {"name": "probe.end", "args": {"runId": "run00001", "endedAt": 1800000000000}},
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "predictions are carried unvalidated while the command is normalised",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "  Morning  ", "startedAt": 1800000000000, "join": false}
+      },
+      "predict": [
+        {"op": "create", "t": "run", "id": "run00001", "f": {"startedAt": 1800000000000, "label": "  Morning  "}}
+      ],
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.start",
+          "args": {"id": "run00001", "label": "Morning", "startedAt": 1800000000000, "join": false}
+        },
+        "predict": [
+          {"op": "create", "t": "run", "id": "run00001", "f": {"startedAt": 1800000000000, "label": "  Morning  "}}
+        ],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update prediction may write a server-written field",
+    "input": {
+      "cmd": {"name": "probe.end", "args": {"runId": "run00001", "endedAt": 1800000000000}},
+      "predict": [{"op": "update", "t": "run", "id": "run00001", "f": {"endedAt": 1800000000000}}],
+      "plan": []
+    },
+    "expect": {
+      "gesture": {
+        "changes": [],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {"name": "probe.end", "args": {"runId": "run00001", "endedAt": 1800000000000}},
+        "predict": [{"op": "update", "t": "run", "id": "run00001", "f": {"endedAt": 1800000000000}}],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a command beside one write is not atomic",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "Morning", "startedAt": 1800000000000, "join": false}
+      },
+      "plan": [{"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001", "weight": 40}}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run00001", "weight": 40}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": {
+          "name": "probe.start",
+          "args": {"id": "run00001", "label": "Morning", "startedAt": 1800000000000, "join": false}
+        },
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update with no field list names the fields it checked, normalised",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "  New  "}, "checked": ["title"]}]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "New"}}],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "a U+0000 in a written field no check covers is a violation of that field",
+    "input": {"plan": [{"op": "create", "t": "lap", "id": "lap00001", "f": {"runId": "run\u00000001", "weight": 1}}]},
+    "expect": {"violation": {"rule": "lap.runId", "path": "runId", "reason": "nul"}}
+  },
+  {
+    "name": "a U+0000 in a command argument no spec covers is a violation of that argument",
+    "input": {"cmd": {"name": "probe.copy", "args": {"src": "b_0000\u00001", "dst": "b_00000002"}}, "plan": []},
+    "expect": {"violation": {"rule": "probe.copy.src", "path": "src", "reason": "nul"}}
+  }
+]

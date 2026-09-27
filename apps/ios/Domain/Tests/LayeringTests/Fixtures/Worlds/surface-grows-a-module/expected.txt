@@ -1,0 +1,2 @@
+SyncTestingSurface/Package.swift: layer SurfaceHelpers is in no row
+SyncTestingSurface/Package.swift: module SurfaceHelpers is not §2.1's for SyncTestingSurface
