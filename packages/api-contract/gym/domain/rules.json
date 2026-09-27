@@ -1,0 +1,19 @@
+{
+  "entities": [
+    {"type": "note", "removable": true, "held": true, "ordered": true, "guarded": true}
+  ],
+  "rules": [
+    {
+      "name": "note.body", "subject": "note", "kind": "local",
+      "spec": {"path": "note.body", "kind": "text", "unit": "bytes", "min": 0, "max": 500, "trim": true, "nfc": true}
+    },
+    {"name": "note.cap", "subject": "note", "kind": "server", "codes": ["cap"]},
+    {"name": "note.gone", "subject": "note", "kind": "server", "codes": ["unknown-record", "record-dead"]},
+    {"name": "note.stale", "subject": "note", "kind": "server", "codes": ["stale"]},
+    {"name": "note.taken", "subject": "note", "kind": "server", "codes": ["id-taken", "id-spent"]},
+    {
+      "name": "note.title", "subject": "note", "kind": "local",
+      "spec": {"path": "note.title", "kind": "text", "unit": "chars", "min": 1, "max": 60, "trim": true, "nfc": true}
+    }
+  ]
+}
