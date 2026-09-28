@@ -4,6 +4,7 @@
 
 #include <json/json.h>
 
+#include <cstddef>
 #include <cstdint>
 #include <map>
 #include <memory>
@@ -21,9 +22,34 @@ struct RegistryError : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-// A number field's step: an integer q, or 1/k for an integer k (SPEC-GAP 12). A value rounds half away
-// from zero in doubles, as round(x / q) × q or round(x × k) ÷ k, and the server admits only a value the
-// rounding leaves unchanged.
+// §9.6: the engine's refusal codes. Each product's registry declares its own (ProductDef::codes), and the
+// two together are the closed list.
+namespace code {
+inline const std::string notFound = "not-found";
+inline const std::string scopeDead = "scope-dead";
+inline const std::string forbidden = "forbidden";
+inline const std::string invalid = "invalid";
+inline const std::string tooLarge = "too-large";
+inline const std::string clockSkew = "clock-skew";
+inline const std::string idTaken = "id-taken";
+inline const std::string idSpent = "id-spent";
+inline const std::string unknownRecord = "unknown-record";
+inline const std::string recordDead = "record-dead";
+inline const std::string parentDead = "parent-dead";
+inline const std::string stale = "stale";
+inline const std::string cap = "cap";
+inline const std::string baseUnknown = "base-unknown";
+inline const std::string requestConflict = "request-conflict";
+inline const std::string requestRunning = "request-running";
+inline const std::string internal = "internal";
+inline const std::string targetMerged = "target-merged";  // a client's own, from its write map (§7.7)
+
+bool isEngine(std::string_view name);
+}
+
+// A number domain's step, at any depth: an integer q, or 1/k for an integer k (SPEC-GAP 12). A value rounds
+// half away from zero in doubles, as round(x / q) × q or round(x × k) ÷ k, and the server admits only a value
+// the rounding leaves unchanged.
 class Quantum {
 public:
   explicit Quantum(double step);
@@ -38,6 +64,9 @@ private:
 };
 
 enum class Unit { chars, bytes };
+
+// A text's length in a registry unit: Unicode code points, or UTF-8 bytes.
+std::size_t lengthIn(Unit unit, std::string_view text);
 
 // D-9: the length bounds of a field or a string domain, in the unit they state. The registry states a unit
 // whenever it states a bound, so a bound never falls back to a unit of its own choosing.
@@ -63,12 +92,16 @@ struct Domain {
   bool integer = false;
   std::optional<double> min;
   std::optional<double> max;
+  std::optional<Quantum> quantum;
 
   std::shared_ptr<const Domain> items;
   std::optional<std::int64_t> maxItems;
 
   std::vector<Property> properties;
   std::vector<std::string> required;
+
+  // §6.1 step 2: the value has this shape, nested bounds and quanta included, at any depth.
+  bool admits(const Json::Value& value) const;
 };
 
 struct Domain::Property {
@@ -105,7 +138,6 @@ struct FieldDef {
   bool parent = false;             // the one ref whose target must be alive (§6.1 step 9)
   std::optional<Bounds> bounds;    // present iff the field states its unit
   std::optional<Domain> domain;
-  std::optional<Quantum> quantum;
   std::vector<std::string> serialNext;
   std::map<std::string, std::int64_t> rank;  // a ranked field's values and their ranks
   std::vector<std::string> opens;            // D-4: values of a tree singleton's server field that open the tree to every reader
@@ -193,11 +225,13 @@ struct ProductDef {
   std::string name;
   std::vector<std::string> surfaces;
   std::map<std::string, DeviceRowDef> device;
+  std::vector<std::string> codes;  // §9.6: the refusal codes its check and commands answer beyond the engine's
 };
 
 // §2.4 and D-7: every synced type, field and command, read from a document in registry.schema.json's
-// format. Construction validates the whole document and throws RegistryError, so a process never runs
-// on a registry it could misread. Types and commands keep the document's order.
+// format, and the values each admits. Construction validates the whole document and throws RegistryError,
+// so a process never runs on a registry it could misread. Types and commands keep the document's order. A
+// field's `default` is checked against its field and then dropped: the engine never stores or sends it.
 class Registry {
 public:
   explicit Registry(const Json::Value& document);
@@ -214,6 +248,13 @@ public:
   // D-5: the type whose records govern tree scopes, whose idPattern every tree id matches; nullptr when the
   // registry declares no tree.
   const TypeDef* governingType() const;
+
+  // A type's id: its singleton id, its tuple of ref ids, the id of the type its key names, or its pattern.
+  bool isIdOf(const TypeDef& type, const Json::Value& id) const;
+  // A register's value for its field: kind, ref, domain, and bounds in the field's unit.
+  bool admitsValue(const FieldDef& field, const Json::Value& value) const;
+  // A command argument: an epoch ms for `time` and `instant`, an id for `ref<t>`, else its domain.
+  bool admitsArgument(const ArgDef& arg, const Json::Value& value) const;
 
 private:
   std::string name_;

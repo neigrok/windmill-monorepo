@@ -4,7 +4,6 @@
 
 #include <algorithm>
 #include <array>
-#include <cmath>
 
 namespace wm::sync {
 
@@ -47,8 +46,6 @@ std::optional<std::string> fromBase64Url(std::string_view text) {
   }
   return bytes;
 }
-
-constexpr double kMaxSafeInteger = 9007199254740991.0;  // 2^53 − 1
 
 bool isSeq(const Json::Value& value) {
   return isSafeInteger(value) && value.asDouble() >= 0;
@@ -163,12 +160,6 @@ Json::Value changeFrame(const std::string& epoch, const ScopeKey& scope, Seq seq
 
 Digest256 intentDigest(const Json::Value& intent) {
   return sha256(jcs(intent));
-}
-
-bool isSafeInteger(const Json::Value& value) {
-  if (!value.isNumeric() || value.isBool()) return false;
-  const double number = value.asDouble();
-  return std::isfinite(number) && std::floor(number) == number && std::fabs(number) <= kMaxSafeInteger;
 }
 
 }

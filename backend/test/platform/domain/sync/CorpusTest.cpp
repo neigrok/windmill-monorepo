@@ -343,7 +343,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
 }
 
 [[maybe_unused]] const bool registered = [] {
-  corpus::registerCorpus(WM_SYNC_CORPUS_DIR, corpus::Claims{
+  corpus::registerCorpus(WM_SYNC_CONTRACT_DIR "/corpus", corpus::Claims{
       {"stamp/order.json", stampOrder},
       {"stamp/codec.json", stampCodec},
       {"hlc/tick.json", hlcTick},

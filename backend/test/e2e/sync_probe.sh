@@ -104,6 +104,14 @@ check "$(sync -o "$BODY" -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-b
   "a body over the transport's 8 MiB is answered 413 before §9.1's checks"
 check "$(grep -c serverTime "$BODY")" "0" "and that 413 is the transport's own, bare of serverTime and epoch"
 
+echo "quanta at any depth"
+attach(){ # n scale
+  printf '{"n":%s,"scope":"self/probe","d":[{"t":"card","id":"cardE2E0001","born":"%s:0:r_e2eaaaaaaaa","f":{"attachment":[{"id":"pic00001","scale":%s},"%s:1:r_e2eaaaaaaaa"]}}]}' \
+    "$1" "$NOW" "$2" "$NOW"
+}
+check "$(push_all 5 "[$(attach 6 1.2),$(attach 7 1.5)]")" '[{"code":"invalid","n":6,"s":"refused"},{"n":7,"s":"ok","seq":5}]' \
+  "a nested number off its domain's quantum is refused invalid, and one on it is admitted"
+
 echo "pull"
 python3 -c "import json; print(json.dumps({'scopes': [{'scope': 'self/probe', 'cursor': None}], 'pad': 'x' * 70_000}))" > "$BODY.pull"
 check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 1' -X POST "$BASE/v1/sync/pull" --data-binary "@$BODY.pull")" "413" \
@@ -167,7 +175,7 @@ async def main():
         print((await frame(ws))["op"])
         await ws.send(json.dumps({"op": "sub", "scopes": ["self/probe", "tree/b_ffffffff"]}))
         print(json.dumps(await frame(ws), sort_keys=True))
-        seq = push_day(6, "2026-09-02", 5)["results"][0]["seq"]
+        seq = push_day(8, "2026-09-02", 5)["results"][0]["seq"]
         change = await frame(ws)
         print(change["op"], change["scope"], change["seq"] == seq, [row["id"] for row in change.get("rows", [])])
     async with websockets.connect(live) as guest:

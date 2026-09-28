@@ -26,6 +26,9 @@ std::string jcs(const Json::Value& value);
 // literal is, and an integer literal that Int64 or UInt64 holds stays that integer. Throws JsonError.
 Json::Value parseJson(std::string_view text);
 
+// §9.1 Integers: every integer on the wire is a JSON safe integer, at most 2^53 − 1 in magnitude.
+bool isSafeInteger(const Json::Value& value);
+
 // The "bytewise" order of §3.2: the UTF-8 bytes of the two encodings, which differs from UTF-16 order
 // above U+FFFF.
 std::strong_ordering compareJcs(const Json::Value& a, const Json::Value& b);

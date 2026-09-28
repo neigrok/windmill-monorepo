@@ -63,7 +63,8 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `WM_API_CONTRACT_DIR` and the image build receives as the named context `contract` (`Dockerfile`,
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
-skipped case, and a file nobody claims fails. `windmill_sync_tests` replays the server's files again
+skipped case, and a file nobody claims fails. They also load every product registry the contract ships
+(`RegistryTest.cpp`), though no product but the probe is bound to the engine. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
