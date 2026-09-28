@@ -274,8 +274,9 @@ add_executable(windmill_domain_tests
   test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/application/BodyweightServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe)
-# The corpus is read from the contract at run time, so the runner sees every file the contract holds.
-target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CORPUS_DIR="${WM_API_CONTRACT_DIR}/sync/corpus")
+# The corpus and the product registries are read from the contract at run time, so the tests see every file the
+# contract holds.
+target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
 
 enable_testing()
 add_test(NAME domain COMMAND windmill_domain_tests)
@@ -482,7 +483,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/postgres/PgPullSnapshotTest.cpp
     test/products/probe/adapters/postgres/PgProbeTest.cpp)
   target_link_libraries(windmill_sync_tests PRIVATE windmill_probe)
-  target_compile_definitions(windmill_sync_tests PRIVATE WM_SYNC_CORPUS_DIR="${WM_API_CONTRACT_DIR}/sync/corpus")
+  target_compile_definitions(windmill_sync_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
   add_test(NAME sync COMMAND windmill_sync_tests)
 
   add_executable(windmill_adapters_tests

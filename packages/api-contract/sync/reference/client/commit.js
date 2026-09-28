@@ -9,7 +9,7 @@ import { jcs, sameJson } from '../core/jcs.js';
 import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
 import { isVisible, recordKey } from '../core/rows.js';
-import { roundToQuantum } from '../core/values.js';
+import { roundToDomain } from '../core/values.js';
 import { bodyBytes, holdsNul } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
@@ -171,6 +171,7 @@ class DeltaBuilder {
     const current = this.drawnView.get(recordKey(type.type, change.id));
     const presentBefore = current?.life?.[0] === 'alive';
     const present = change.present ?? true;
+    if (present && type.wholePut) return this.wholePut(type, change);
     let life = current?.life;
     if (present && !presentBefore) life = ['alive', this.stamp];
     if (!present && presentBefore) life = ['dead', this.stamp];
@@ -178,6 +179,14 @@ class DeltaBuilder {
     const delta = { t: type.type, id: change.id, life };
     const changed = this.withChanges(type, delta, change, current);
     return changed || !sameJson(life, current?.life ?? null) ? delta : null;
+  }
+
+  // §7.1 step 4: a put that leaves a `wholePut` record present writes every client-written lattice field,
+  // changed or not, and asserts presence with a fresh life, all at the gesture's stamp.
+  wholePut(type, change) {
+    const missing = type.clientLatticeFieldNames.filter((name) => change.f?.[name] === undefined);
+    if (missing.length) throw new CommitError(`a whole put of ${type.type} leaves out ${missing.join(', ')}`);
+    return { t: type.type, id: change.id, life: ['alive', this.stamp], f: this.fields(type, change.f, undefined) };
   }
 
   write(type, change) {
@@ -201,7 +210,7 @@ class DeltaBuilder {
       const field = type.field(name);
       if (!field || !Registry.isLattice(field.kind)) throw new CommitError(`${type.type}.${name} is not a lattice field`);
       if (field.writer === 'server' && !server) throw new CommitError(`${type.type}.${name} is written by the server`);
-      const value = field.quantum !== undefined && typeof raw === 'number' ? roundToQuantum(raw, field.quantum) : raw;
+      const value = roundToDomain(field.domain, raw);
       if (current?.f?.[name] && sameJson(current.f[name][0], value)) continue;
       out[name] = [value, this.stamp];
     }
@@ -279,6 +288,14 @@ function guardsOf(registry, scope, listed, storedView) {
   return [...guards.values()];
 }
 
+// §7.1 step 4: a command's arguments, every number rounded to its argument domain's quantum at any depth.
+// An unknown command or argument is left as it is, for admission to refuse.
+function roundedCommand(registry, cmd) {
+  const def = registry.command(cmd.name);
+  if (!def || cmd.args === null || typeof cmd.args !== 'object' || Array.isArray(cmd.args)) return cmd;
+  return { ...cmd, args: Object.fromEntries(Object.entries(cmd.args).map(([name, value]) => [name, roundToDomain(def.args[name]?.domain, value)])) };
+}
+
 function intentOf(scope, deltas, guards, cmd, gestureId) {
   const intent = { scope };
   if (deltas.length) intent.d = deltas;
@@ -288,9 +305,9 @@ function intentOf(scope, deltas, guards, cmd, gestureId) {
   return intent;
 }
 
-function groupIntents(scope, deltas, guards, opts, gestureId) {
-  if (opts.atomic || opts.hold || opts.cmd) {
-    return deltas.length || opts.cmd ? [intentOf(scope, deltas, guards, opts.cmd, gestureId)] : [];
+function groupIntents(scope, deltas, guards, opts, cmd, gestureId) {
+  if (opts.atomic || opts.hold || cmd) {
+    return deltas.length || cmd ? [intentOf(scope, deltas, guards, cmd, gestureId)] : [];
   }
   const intents = deltas.map((delta) => intentOf(scope, [delta], guards.filter((g) => g.t === delta.t && sameJson(g.id, delta.id)), undefined, gestureId));
   const unplaced = guards.filter((g) => !deltas.some((delta) => g.t === delta.t && sameJson(g.id, delta.id)));
@@ -368,11 +385,12 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const deltas = oneDeltaPerRecord(changes.map((change) => ({ change, delta: builder.delta(change) })).filter(({ delta }) => delta !== null));
   const predict = (opts.predict ?? []).map((change) => builder.predicted(change));
   const guards = guardsOf(registry, scope, opts.guard ?? [], storedView);
-  if (holdsNul({ scope, d: deltas, guard: guards, cmd: opts.cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
+  const cmd = opts.cmd === undefined ? undefined : roundedCommand(registry, opts.cmd);
+  if (holdsNul({ scope, d: deltas, guard: guards, cmd, gestureId: opts.gestureId })) throw new CommitError('a string of the intents holds U+0000');
   const capped = cappedType(registry, storedView, deltas);
   if (capped !== undefined) return { refused: 'cap', detail: { type: capped, cap: registry.type(capped).cap } };
   const gestureId = opts.gestureId ?? ctx.nextGestureId();
-  const intents = groupIntents(scope, deltas, guards, opts, gestureId);
+  const intents = groupIntents(scope, deltas, guards, opts, cmd, gestureId);
 
   const widest = Number.MAX_SAFE_INTEGER;
   const aloneBytes = (intent) => bodyBytes({ replica: replica.meta.replica, ackThrough: widest, intents: [{ ...intent, n: widest }] });
@@ -380,7 +398,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   if (oversize) {
     const content = {};
     if (deltas.length) content.d = deltas;
-    if (opts.cmd) content.cmd = opts.cmd;
+    if (cmd) content.cmd = cmd;
     replica.notices.push({ id: `notice:${gestureId}/0`, scope, code: 'too-large', content, at: ctx.deviceNow });
     return { refused: 'too-large' };
   }
@@ -402,7 +420,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
       stamp,
       intent,
     };
-    if (opts.cmd && predict.length) entry.predict = predict;
+    if (cmd && predict.length) entry.predict = predict;
     const texts = {};
     for (const delta of intent.d ?? []) {
       for (const name of Object.keys(delta.x ?? {})) {

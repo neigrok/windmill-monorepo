@@ -30,6 +30,16 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
+// §6.1 step 2: a delta of a `wholePut` type carries a life, and an alive one carries every client-written
+// lattice field, every register at the life's stamp (null alike from a server origin).
+function isWholeDelta(type, delta) {
+  if (delta.life === undefined) return false;
+  if (delta.life[0] !== 'alive') return true;
+  const registers = delta.f ?? {};
+  return type.clientLatticeFieldNames.every((name) => Object.hasOwn(registers, name))
+    && Object.values(registers).every((register) => register[1] === delta.life[1]);
+}
+
 // Answers {result, state, writes, killed}: `writes` lists each changed scope's applied rows, the
 // intent's scope first, then scopes it created (§6.1 step 14); `killed` the scopes a death killed.
 export function admit({ state, registry, product, origin, intent, serverNow, limits = CONSTANTS }) {
@@ -137,6 +147,7 @@ class Admission {
       const byText = Object.keys(write.base).length === 1 && typeof write.base.text === 'string';
       if (!byRev && !byText) throw new Refusal('invalid');
     }
+    if (type.wholePut && !isWholeDelta(type, delta)) throw new Refusal('invalid');
     if (opOf(type, delta) === 'invalid') throw new Refusal('invalid');
   }
 

@@ -116,9 +116,9 @@ length (§2.4). A client draws a minted id again while it is taken (§4.4).
 
 Every field also has:
 - a **writer**: `client`, or `server` (only the server writes it);
-- bounds, with a stated **unit**: `chars` (Unicode code points) or `bytes` (UTF-8), plus
-  `domain` and `quantum` where the field has them. A bound on a value that is not a string measures
-  the value's `jcs` encoding.
+- bounds, with a stated **unit**: `chars` (Unicode code points) or `bytes` (UTF-8), plus a
+  `domain` (which carries any `quantum`) where the field has one. A bound on a value that is not a
+  string measures the value's `jcs` encoding.
 
 `lww`, `ranked`, `fww`, `const` and `time` fields, life and born are **lattice fields**. `text` and
 `serial` are **server-sequenced**.
@@ -304,20 +304,22 @@ adapter never reads a `sync_*` table. `maxSerial` serves §6.1 step 11.
 
 The registry's format is `packages/api-contract/sync/registry.schema.json`, and that schema is
 authoritative. A registry declares its `version` and `minVersion` (§9.2), its `products` (each with
-its `surfaces` and its device rows), its `types` and its `commands`. Every product-specific
-behaviour the engine applies is registry data or a product binding (Appendix A); the engine body
-names no product.
+its `surfaces`, its device rows and its refusal `codes`), its `types` and its `commands`. Every
+product-specific behaviour the engine applies is registry data or a product binding (Appendix A); the
+engine body names no product. Each product ships a registry of its own
+(`packages/api-contract/sync/<product>.registry.json`), and a deployment composes them into one: they
+declare one `version` and one `minVersion`, and no product, type or command name twice.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids), `singletonId`,
-  `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `revivable`, `deadRows`, `governs`,
-  `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
-- **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `quantum`,
+  `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
+  `governs`, `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
+- **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
   `serialNext`, `rank` and `opens`.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
-  (`integer`, `min`, `max`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array` (`items`,
-  `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds are
-  domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
+  (`integer`, `min`, `max`, `quantum`), `boolean`, `fracKey` (D-25), `stamp`, `id`, `json`, `array`
+  (`items`, `maxItems`) and `object` (`properties`, `required`), each `nullable` or not. Nested bounds
+  are domain bounds, checked at §6.1 step 2. A string domain's `min` or `max` states its `unit`, as a
   field's bound does (D-9).
 - **Patterns** (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) are printable
   ASCII, in a portable subset of ECMAScript regular expressions. A value matches a pattern iff the
@@ -354,6 +356,20 @@ The engine applies:
   is absent, in its own admission with the scope owner's server origin (§6.7).
 - A `time` argument is device-produced, like a `time` field. An `instant` argument is chosen by the
   user.
+- `quantum`, on a number domain at any depth (a field's, an item's, a property's, an argument's): the
+  server admits only numbers on it (§6.1 step 2), and a client rounds every number of a change's
+  field values and of a command's arguments to it (§7.1 step 4).
+- `wholePut`, on a keyed type with life, no text field and only `lww` client-written fields: each
+  record is one fact, whose newest save wins whole. Every put that leaves the record present writes
+  every client-written lattice field and asserts presence with a fresh life, all at one stamp (§7.1
+  step 4). So the newest save wins every field, and a save newer than a delete, held or not, makes the
+  record alive again (INV-2). Admission refuses any other delta of the type (§6.1 step 2). Such a
+  record is written only by deltas: no command writes one and no product check appends one, and the
+  registry refuses a command whose `predicts` names the type.
+- `default`, on a lattice field: the value a reader takes while the register is unset. It is on the
+  field's domain, and the engine never stores or sends it.
+- `codes`: the refusal codes a product's `check` and commands answer beyond the engine's (§9.6). No
+  code is an engine code, and no two products declare one.
 
 ### §2.5 Client: the local store
 
@@ -528,7 +544,11 @@ through:
 - **Keyed.** A replayed put carries its original life stamp. The deleting replica had observed the
   record it deleted, so by INV-1 the delete out-stamps that put. A put that does not change presence
   carries the drawn life register unchanged (§7.1 step 4), and a restamp moves such a carried
-  register only with its source (§7.7).
+  register only with its source (§7.7). A put of a `wholePut` type asserts presence at its own
+  stamp: it makes the record alive again only when its stamp follows the delete's, the newer save the
+  statement admits; a replay keeps its stamp, and a delete that out-stamps it stands. Stamp order, not
+  wall-clock order, decides: a clock-skew recovery restamps a whole put to the recovery moment
+  (§7.7), so a skewed save made before a delete in real time recovers after it and keeps the record.
 - **Dead state is retained.** Dead rows and `sync_spent` rows are kept for the scope's lifetime
   (§6.10). The `born` and `life_stamp` columns (§2.2) make every comparison exact.
 - **Clients** push only intents (§7.4), replace rather than join confirmed rows (§3.4), and never
@@ -728,6 +748,8 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      every integer a safe integer (§9.1), a text base's `rev` included. A text field's `max`
      applies to its merge result (§6.11 step 3).
    - §4.1, and §4.4's serial and server-field rules.
+   - A delta of a `wholePut` type carries a life, and an alive one carries every client-written
+     lattice field of its type, every register at the life's stamp (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
    - No string of the intent, a key or a value at any depth, holds U+0000.
@@ -1149,9 +1171,12 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      `life = [alive, s]`.
    - A create of an id already in `drawn` is dropped, after its anchor, if any, is checked.
    - A keyed-with-life put's life:
-     - `[alive, s]` when the gesture makes the record present;
+     - `[alive, s]` when the gesture makes the record present, and for a `wholePut` type whenever
+       the put leaves it present;
      - `[dead, s]` when it removes it;
      - otherwise the drawn life register, unchanged.
+   - A put that leaves a `wholePut` record present writes every client-written lattice field of its
+     type, changed or not, stamped `s`; a change that leaves one out throws.
    - A revive takes `born` from `drawn` or from `SpentId`.
    - An update or delete of a record absent from `drawn` throws.
    - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
@@ -1162,8 +1187,11 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      for `field` beside an anchor.
    - A created record's client-written `time` fields that the change leaves unset take `physNow()`.
      A commit reads `physNow()` once: the read-and-commit function, step 3's `tick` and these fields
-     all take that one reading.
-   - A number is rounded to its field's `quantum` `q`, in IEEE-754 doubles, with
+     all take that one reading. A field that records each save's own moment is an `lww` field, not
+     a `time` one (which joins as `const` and keeps its first value): the product writes it from the
+     `now` the read-and-commit function receives.
+   - A number, at any depth of a field value or of a command argument, is rounded to its domain's
+     `quantum` `q`, in IEEE-754 doubles, with
      `roundHalfAway(y) = sign(y) × round(|y|)`: `roundHalfAway(x / q) × q` for an integer `q`, and
      otherwise `roundHalfAway(x × k) / k` with `k = round(1 / q)`. A number is on its quantum iff
      this rounding leaves it unchanged; the server admits only such numbers (§6.1 step 2).
@@ -1302,18 +1330,21 @@ past held and held-back entries.
 
 ### §7.5 Puller, reset and epoch change
 
-The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), and every
-`PULL_FALLBACK_MS`. Each run pulls the scopes of its trigger, each until `more = false`: a live gap
-its scope, a subscribe the scope subscribed, and every other trigger every subscribed scope. A
-request names at most `PULL_MAX_SCOPES` scopes; a run over more sends several.
+The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), a
+re-authentication that clears `authPaused` (§8.2), and every `PULL_FALLBACK_MS`. Each run pulls the
+scopes of its trigger, each until `more = false`: a live gap its scope, a subscribe the scope
+subscribed, and every other trigger every subscribed scope. A request names at most
+`PULL_MAX_SCOPES` scopes; a run over more sends several, and a run left with no scope to pull
+(every one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9).
 
 **Live socket.** A replica that pulls keeps one live socket, subscribed (`sub`) to the scopes it
 pulls. An open that fails, and a socket that ends or fails (the server or the network closes it, or a
 `ping` goes unanswered), count as a reconnect: the puller runs at once. A close the client makes
 (leaving the foreground, going offline, a replica change) pulls nothing. Opening again backs off as
 the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or
-ended socket, and resets once a socket has stayed open 30 s. A `426` from any request stops
-sync until the app is upgraded (§9.6), on every tab (§7.8).
+ended socket, and resets once a socket has stayed open 30 s. A re-authentication that clears
+`authPaused` opens the socket again at once, with `k := 0`. A `426` from any request stops sync until
+the app is upgraded (§9.6), on every tab (§7.8).
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
    epoch. A response epoch ≠ a non-null `serverEpoch` triggers an **epoch change** first. In one
@@ -1339,7 +1370,8 @@ sync until the app is upgraded (§9.6), on every tab (§7.8).
    - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
      adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
      `self/overlay/<id>` as known `gone` (`KnownScope`).
-   - **`gone` or `not-found`:**
+   - **`gone` or `not-found`** (a `not-found` for a scope waiting for its governing record's create
+     is ignored, §7.9):
      - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
@@ -1357,7 +1389,8 @@ sync until the app is upgraded (§9.6), on every tab (§7.8).
    entry in the result's own transaction (§7.4).
 3. **Live frames.** A `change` frame is applied as a live page iff the cursor is live without a key,
    `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or
-   `not-found` frame is applied as that page kind.
+   `not-found` frame is applied as that page kind, except a `not-found` for a scope waiting for its
+   governing record's create, which is ignored (§7.9).
 4. **Digest check.** When, after a page or frame is applied, the cursor is live, carries no key and
    its seq equals the page's or frame's `seq`, and no staging is pending, the client compares its
    digest with the received one, in that transaction. This covers a live page that reaches the head,
@@ -1459,9 +1492,8 @@ registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A
 carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source. The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
-the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's
-`stamp`; a write-map restamp leaves the entry's `stamp` unchanged. For each register that moves from
-`o` to `n`:
+the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
+restamp leaves the entry's `stamp` unchanged. For each register that moves from `o` to `n`:
 1. the register takes `n`;
 2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
    sent delta on the same `(t, id)` carrying `born = o` takes `n`;
@@ -1496,11 +1528,21 @@ product binding lists (A.1), and any `tree/<T>` while it is open: the engine exp
 `subscribe(scope)` and `unsubscribe(scope)`, which a product calls when it opens and closes a tree.
 A subscribe deletes a `not-found` `KnownScope` record; the scope has no cursor, so its first pull
 boots it. A `gone` record stays, since a scope's death is final (INV-13): a subscribe to it answers
-`gone`, and nothing is pulled. An `anon` replica pulls only readable trees it opens. Every scope a replica pulls is held
-in full: a boot sends every alive row (§6.7). When a scope leaves the subscription set, its acked
-entries resolve. The engine exposes
-`firstPullComplete(scope)`: `CursorRec.booted` for a scope the replica pulls, and true for a scope
-it does not pull (an `anon` replica pulls no product scope).
+`gone`, and nothing is pulled. An `anon` replica pulls only readable trees it opens. Every scope a
+replica pulls is held in full: a boot sends every alive row (§6.7).
+
+A tree or overlay scope whose governing record's create is still in the outbox, held, ready or
+sent (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
+(`sub`) on the live socket: the server holds no such scope yet. Both start once that entry has its
+result. A `not-found` page or frame for such a scope is ignored and writes no `KnownScope`: the
+server answered for a scope it does not hold yet. A `gone` needs no exception, since a tree that
+exists only in the outbox cannot have died.
+
+Reconciling the subscription set unsubscribes each scope that left it, and resolves the acked
+entries of every scope outside it. It runs at the start of every puller run (§7.5); a push result
+resolves no entry of a scope outside the set. The engine exposes `firstPullComplete(scope)`:
+`CursorRec.booted` for a scope the replica pulls, and true for a scope it does not pull (an `anon`
+replica pulls no product scope).
 
 ### §7.10 Replica lifecycle
 
@@ -1726,10 +1768,10 @@ type PushResponse = { serverTime, epoch, lastN: number, results: Result[], retry
 
 ```ts
 type PullRequest = { scopes: {scope: ScopeRef, cursor: string | null}[] }
-type Page = { scope, kind: 'rows', rows: Row[], cursor: string, more: boolean, seq: number, digest: string,
-              total?: number, header?: {owner: {name: string}} }
-          | { scope, kind: 'reset' | 'gone' | 'not-found' }
-type PullResponse = { serverTime, epoch, pages: Page[] }
+type PullPage = { scope, kind: 'rows', rows: Row[], cursor: string, more: boolean, seq: number, digest: string,
+                  total?: number, header?: {owner: {name: string}} }
+              | { scope, kind: 'reset' | 'gone' | 'not-found' }
+type PullResponse = { serverTime, epoch, pages: PullPage[] }
 ```
 
 `seq` is the scope's seq and `digest` its scope digest, both in the page's snapshot (§6.7, §6.12).
@@ -1791,7 +1833,10 @@ Frames are at most `LIVE_FRAME_BYTES`.
 | `internal` | §6.6 |
 | `target-merged` | §7.7 write map (local) |
 
-The closed list of refusal codes is this table and the codes Appendix A lists for its products.
+The closed list of refusal codes is this table and the `codes` each product's registry declares
+(§2.4), which Appendix A lists. A client that meets a code its registry does not declare (a product
+code newer than its version) treats it as any refusal: its notice holds the code and the content, and
+product copy shows its generic refusal line.
 
 ### §9.7 Limits
 
@@ -1876,7 +1921,7 @@ its `README.md` states its conventions. `constants.json` holds the constants its
 
 | Role | Files |
 |---|---|
-| all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew transcripts) |
+| all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
 | server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope` |
 | client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
 
@@ -1992,27 +2037,30 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.2 Gym
 
-**Scope:** `self/gym`. **Device scope** `device/gym`: live movement order, chosen movement,
-pre-minted offer ids, rack state, pictures marked `localOnly` ([gym Coach](mobile/gym_coach.md)
-§9.3). **Surfaces:** web, iOS, Android.
+**Scope:** `self/gym`. **Device scope** `device/gym`, keyed per session
+([gym Coach](mobile/gym_coach.md) §9.3): `movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the
+chosen movement), `offer:<session>` (a pre-minted offer id), `rack:<session>` (rack state), and
+`picture:<id>`, marked `localOnly`. **Surfaces:** web, iOS, Android.
 
-Minted ids match `^[A-Za-z0-9_-]{8,64}$`. A seeded type's seed (D-8) is at most 58 characters, and
-`n ≤ 99 999`. Seed exercise ids are `foreign` to every account. **Primary types** (§9.2):
-`routine`, `session`, `set`, `note`, `weighin`, `exercise`.
+Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
+and `n ≤ 99 999`. Minted ids match `^[A-Za-z0-9_-]{8,64}$`, except `exercise` ids, which match
+`^[A-Za-z0-9_-]{1,64}$`: seed exercise slugs such as `dip` are shorter. Seed exercise ids are
+`foreign` to every account. **Primary types** (§9.2): `routine`, `session`, `set`, `note`,
+`weighin`, `exercise`.
 
 | Type | Identity | Life | Fields | Rules |
 |---|---|---|---|---|
-| `routine` | minted g | terminal, spent | lww: `name` ≤240 bytes, `ord` (D-25), `entries` (`maxItems` 50 of {`exerciseId`, `restSeconds` 15–900 or null, `sets` (`maxItems` 20 of {`reps` 1–100 or null, `weightKg` ±500 or null, quantum 0.01})}) | Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals. Delete kills its proposals and writes `routineId = null` on its sessions. Projections: `revision`; `position` = dense rank of `(ord, id)` among alive routines. |
-| `exercise` | minted g | terminal, spent | `name` lww ≤240 bytes; `pattern`, `equipment` const | Never deleted (a delete is `invalid`). |
-| `exerciseName` | keyed (`ref<exercise>`) | yes, spent | `name` lww ≤240 bytes; `aliases` lww server (`maxItems` 5) | A rename appends the old name to `aliases`. |
-| `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>`; `plan` const server; `startedAt` time; `finishedAt` lww server; `closedBy` lww server ∈ {finish, stale}; `displayName` lww server ≤240 bytes | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
-| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes; `completedAt` time | Set rules below. |
+| `routine` | minted g | terminal, spent | lww: `name` ≤240 bytes, `ord` (D-25), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900 or null, `sets` (`maxItems` 20 of {`reps` 1–100 or null, `weightKg` ±500 or null, quantum 0.01})}) | Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals. Delete kills its proposals and writes `routineId = null` on its sessions. Projections: `revision`; `position` = dense rank of `(ord, id)` among alive routines. |
+| `exercise` | minted g | terminal, spent | `name` lww ≤240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell} | Never deleted (a delete is `invalid`). |
+| `exerciseName` | keyed (`ref<exercise>`) | yes, spent | `name` lww ≤240 bytes; `aliases` lww server (`maxItems` 5 of ≤240 bytes) | A rename appends the old name to `aliases`. |
+| `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>` or null; `plan` const server, JSON or null; `startedAt` time; `finishedAt` lww server, an epoch ms, never null; `closedBy` lww server ∈ {finish, stale}, never null; `displayName` lww server ≤240 bytes or null | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
+| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null; `completedAt` time | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
-| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent | lww: `kg` 20–400 quantum 0.01, `recordedAt` | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. `kg` and `recordedAt` join by stamp (§3.2): the newest save wins, whatever `recordedAt` holds. |
-| `prefs` | singleton | — | lww, with defaults: `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
-| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, `intent`, `proposedName`, `summary`, `changes`, `door`, `connection`; `threadId` lww `ref<thread>`; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
-| `thread` | minted g | terminal, spent | `title` const | Fields and rules: gym Coach §9.1. Delete kills its messages and writes `threadId = null` on its proposals. |
-| `message` | minted g | terminal, spent | `threadId` const `ref<thread>` parent; `role`, `replica`, `pictures` const; lww: `text`, `truncated`, `receipt`, `calls`; `state` ranked (running 0; interrupted 1; completed, declined, failed, stopped 2); `at` time | Fields and rules: gym Coach §9.1 and §4.5, which `check` enforces (`invalid`). |
+| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms, which each save writes from the read-and-commit function's `now` | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each save writes `kg`, `recordedAt` and presence at one stamp, so the newest save wins whole, whatever `recordedAt` holds, and a save newer than a delete, held or not, keeps the weigh-in. |
+| `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
+| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `threadId` lww `ref<thread>` or null; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server ∈ {proposal, routine} | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
+| `thread` | minted g | terminal, spent | `title` const ≤8000 bytes | Fields and rules: gym Coach §9.1. Delete kills its messages and writes `threadId = null` on its proposals. |
+| `message` | minted g | terminal, spent | `threadId` const `ref<thread>` parent; const: `role` ∈ {lifter, coach}, `replica` (`rp_` and 32 lowercase hex, or `srv`), `pictures` (`maxItems` 1 of {`id`, `mediaType` `image/…`, `localOnly`?}); lww: `text` ≤131 072 bytes, `truncated`, `receipt` ≤16 384 bytes, `calls` ≤32 768 bytes; `state` ranked (running 0; interrupted 1; completed, declined, failed, stopped 2); `at` time | Fields and rules: gym Coach §9.1 and §4.5, which `check` enforces (`invalid`). |
 
 **Set rules** (`check`):
 - An open session admits every set.
@@ -2040,7 +2088,10 @@ writer of `closedBy = stale`.
   routine. A replay whose receipt names a dead session writes nothing; the predicted session stays
   drawn until the cursor covers it.
 - **`gym.importSession {id: ref<session>, routineId?, startedAt: instant, finishedAt: instant, sets}`.**
-  Creates a finished session (`closedBy = finish`) and its sets, with no join.
+  Creates a finished session (`closedBy = finish`) and its sets, with no join. `sets` holds at most
+  200 sets, each `{id, exerciseId, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
+  bounds and quanta. A set's `completedAt` is an integer epoch ms inside a `json` argument, not an
+  `instant`, so §6.1 step 2 does not bound it: the command's check does (`bad-instant`).
   - Own `id`: alive with equal raw arguments (its receipt) → ok; with different arguments →
     `payload-conflict`. Dead → ok.
   - `foreign` → `id-taken`.
@@ -2051,8 +2102,9 @@ writer of `closedBy = stale`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
 - **`gym.correctSession {sessionId: ref<session>, requestId, startedAt: instant, finishedAt: instant, routineName, sets}`.**
-  Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt: instant}`. It
-  replaces a finished workout:
+  Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt}`, with a set's
+  bounds and quanta, its `completedAt` bounded by the command's check as `gym.importSession`'s is. `requestId` matches the gym id pattern, and `routineName` is ≤240 bytes or
+  null. It replaces a finished workout:
   - The session is alive, the owner's and finished; otherwise `unknown-record`, `record-dead` or
     `invalid`.
   - The `requestId` was applied with equal arguments → ok; with different arguments →
@@ -2101,10 +2153,10 @@ stale. Logging after a stale close issues a new `gym.start`.
 change), proposal `baseRevision` and `baseName`, set revisions (what a correction or a delete
 replaced).
 
-**Codes** (§9.6): `payload-conflict` (`gym.importSession`, `gym.correctSession`), `session-finished`
-(the set rules), `session-open` (`gym.start`; a delete of an open session), `session-overlap`
-(`gym.importSession`, `gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the
-commands; a weigh-in's future day).
+**Codes** (§9.6), the registry's `codes`: `payload-conflict` (`gym.importSession`,
+`gym.correctSession`), `session-finished` (the set rules), `session-open` (`gym.start`; a delete of
+an open session), `session-overlap` (`gym.importSession`, `gym.correctSession`), `unknown-exercise`
+(the set rules), `bad-instant` (the commands; a weigh-in's future day).
 
 ### A.3 Journal
 
@@ -2112,7 +2164,7 @@ commands; a weigh-in's future day).
 
 | Type | Identity | Life | Fields |
 |---|---|---|---|
-| `page` | keyed (local date `YYYY-MM-DD`) | none; `visibleWhen: [body, mood, energy]` | `body` text ≤131 072 bytes; lww: `mood` 0–10 or null, `energy` 0–10 or null, `source` ∈ {typed, spoken} |
+| `page` | keyed (local date `YYYY-MM-DD`) | none; `visibleWhen: [body, mood, energy]` | `body` text ≤131 072 bytes; lww: `mood` an integer 0–10 or null, `energy` an integer 0–10 or null, `source` ∈ {typed, spoken} |
 
 **Revisions.** Superseded heads are pruned in the admitting transaction to:
 - at most 10 per `(account, day)`;

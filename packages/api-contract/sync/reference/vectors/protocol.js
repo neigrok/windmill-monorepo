@@ -149,7 +149,7 @@ class Stage {
   // One pull: the server runs the scopes' beforePull commands, then answers the pages.
   pull(name, scopes, { serverNow, deviceNow = serverNow, frames = [] }) {
     const replica = this.devices[name].activeReplica;
-    const request = pullRequest(replica, scopes);
+    const request = pullRequest(replica, registry, scopes);
     const account = this.account(name);
     const out = pull({ state: this.server, registry, product, account, request, serverNow });
     this.server = out.state;
@@ -340,6 +340,38 @@ function helloTranscript() {
   return stage.finish();
 }
 
+// A keyed record that is one fact (`wholePut`, §2.4): the newest save wins every field, and a newer save
+// beats an older delete, held or not.
+function wholeTranscript() {
+  const stage = new Stage('whole', 'a fact saved whole: two phones that did not pull each other keep the later save\'s every field, and a held delete released after a newer save reached its phone kills nothing', {
+    server: EMPTY,
+    devices: { d1: boundDevice(replicaId(1), 'A'), d2: boundDevice(replicaId(2), 'A') },
+    actors: { d1: ACTOR, d2: 'r_cccccccccccc' },
+  });
+  const save = (day, value, at) => ({ scope: 'self/probe', changes: [{ op: 'put', t: 'fact', id: day, f: { value, at } }] });
+  stage.do('d1', 'commit', save('2027-01-15', 80, T), T);
+  stage.push('d1', { serverNow: T + 10 });
+  stage.pull('d2', ['self/probe'], { serverNow: T + 20 });
+  stage.do('d1', 'commit', save('2027-01-15', 82, T + 60_000), T + 60_000);
+  stage.do('d2', 'commit', save('2027-01-15', 80, T + 120_000), T + 120_000);
+  stage.push('d1', { serverNow: T + 120_010 });
+  stage.push('d2', { serverNow: T + 120_020 });
+  stage.pull('d1', ['self/probe'], { serverNow: T + 120_030 });
+  stage.pull('d2', ['self/probe'], { serverNow: T + 120_040 });
+  stage.do('d1', 'commit', save('2027-01-16', 82.4, T + 200_000), T + 200_000);
+  stage.push('d1', { serverNow: T + 200_010 });
+  stage.pull('d2', ['self/probe'], { serverNow: T + 200_020 });
+  stage.do('d1', 'commit', { scope: 'self/probe', changes: [{ op: 'delete', t: 'fact', id: '2027-01-16' }], opts: { hold: true, gestureId: 'forget' } }, T + 200_030);
+  stage.do('d2', 'commit', save('2027-01-16', 81, T + 201_030), T + 201_030);
+  stage.push('d2', { serverNow: T + 201_040 });
+  stage.pull('d1', ['self/probe'], { serverNow: T + 201_050 });
+  stage.do('d1', 'release', { localId: 'forget/0' }, T + 209_030);
+  stage.push('d1', { serverNow: T + 209_040 });
+  stage.pull('d1', ['self/probe'], { serverNow: T + 209_050 });
+  stage.pull('d2', ['self/probe'], { serverNow: T + 209_060 });
+  return stage.finish();
+}
+
 export function files() {
   return {
     'protocol/push.jsonl': pushTranscript(),
@@ -348,5 +380,6 @@ export function files() {
     'protocol/join.jsonl': joinTranscript(),
     'protocol/skew.jsonl': skewTranscript(),
     'protocol/hello.jsonl': helloTranscript(),
+    'protocol/whole.jsonl': wholeTranscript(),
   };
 }

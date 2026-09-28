@@ -5,10 +5,27 @@ import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { moveEntry } from '../core/machines.js';
 import { compactRow, isAlive, recordKey, stampsOf } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
+import { deltasOf } from './dependents.js';
 import { epochChange } from './lifecycle.js';
 
-export function pullRequest(replica, scopes) {
-  return { scopes: scopes.map((scope) => ({ scope, cursor: replica.cursorOf(scope).cursor })) };
+// §7.9: a tree or overlay scope whose governing record's create is still in the outbox, held, ready or
+// sent, by a delta or a prediction, is neither pulled nor subscribed live, and a `not-found` for it is
+// ignored: the server holds no such scope yet.
+function awaitsGoverningCreate(replica, registry, scope) {
+  const kind = registry.scopeKindOf(scope);
+  if (kind !== 'tree' && kind !== 'overlay') return false;
+  const governing = registry.governingType;
+  const tree = scope.split('/').pop();
+  const creates = (delta) => delta.t === governing.type && delta.id === tree && delta.life?.[0] === 'alive' && delta.born === delta.life[1];
+  return replica.entries().some((entry) => ['held', 'ready', 'sent'].includes(entry.state) && deltasOf(entry).some(creates));
+}
+
+// A pull of `scopes` under their stored cursors, leaving out the scopes that wait for their governing
+// record's create; null when none is left, and nothing is sent.
+export function pullRequest(replica, registry, scopes) {
+  const pulled = scopes.filter((scope) => !awaitsGoverningCreate(replica, registry, scope));
+  if (pulled.length === 0) return null;
+  return { scopes: pulled.map((scope) => ({ scope, cursor: replica.cursorOf(scope).cursor })) };
 }
 
 function resolveAcked(replica, ctx, scope, cleanSeq) {
@@ -101,6 +118,7 @@ export function applyPage(replica, ctx, requested, page) {
     delete replica.staging[scope];
     return 'reset';
   }
+  if (page.kind === 'not-found' && awaitsGoverningCreate(replica, ctx.registry, scope)) return 'ignored';
   if (page.kind === 'gone' || page.kind === 'not-found') {
     forget(replica, ctx, scope, page.kind);
     return page.kind;
@@ -150,8 +168,10 @@ export function onPullResponse(replica, ctx, request, response, timing) {
 }
 
 // §7.5 step 3: a change frame applies inline iff the cursor is live without a key, the epoch matches,
-// the frame is the next seq and carries its rows. Answers 'applied', 'pull', or the kind forgotten.
+// the frame is the next seq and carries its rows. Answers 'applied', 'pull', the kind forgotten, or
+// 'ignored' (an unknown op, or a not-found for a scope that waits for its governing record's create).
 export function onFrame(replica, ctx, frame) {
+  if (frame.op === 'not-found' && awaitsGoverningCreate(replica, ctx.registry, frame.scope)) return 'ignored';
   if (frame.op === 'gone' || frame.op === 'not-found') {
     forget(replica, ctx, frame.scope, frame.op);
     return frame.op;

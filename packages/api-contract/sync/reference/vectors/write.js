@@ -6,7 +6,7 @@ import { freshMeta } from '../client/replica.js';
 import { bodyBytes } from '../core/wire.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
-import { product, productScope, registry, row, serverState, st } from './fixtures.js';
+import { OTHER, product, productScope, registry, row, serverState, st } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
 const REPLICA = 'rp_00000000000000000000000000000001';
@@ -27,12 +27,13 @@ class ServerScript {
     return this.add({ op: 'push', deviceNow });
   }
 
-  respond({ serverNow, tRecv = serverNow }) {
+  // Answers the last push; `actor` names the engine instance that receives the response.
+  respond({ serverNow, tRecv = serverNow, actor }) {
     const out = runSteps(this.input);
     const index = this.input.steps.map((step) => step.op).lastIndexOf('push');
     const pushed = push({ state: this.server, registry, product, account: 'A', request: out.returns[index], serverNow });
     this.server = pushed.state;
-    return this.add({ op: 'pushResponse', response: pushed.response, deviceNow: tRecv, tSend: this.input.steps[index].deviceNow, tRecv });
+    return this.add({ op: 'pushResponse', response: pushed.response, deviceNow: tRecv, tSend: this.input.steps[index].deviceNow, tRecv, ...(actor ? { actor } : {}) });
   }
 
   limit(limits) {
@@ -118,6 +119,13 @@ export function files() {
     .add(commitStep([{ op: 'update', t: 'run', id: 'run00001', f: { label: 'Renamed' } }], undefined, 5001))
     .respond({ serverNow: 5010, tRecv: 5011 });
 
+  const restamped = new ServerScript({ device: device([]), server: server([]) })
+    .add(commitStep([], start('run00009', 'Go'), 5000))
+    .push(5000)
+    .add(commitStep([{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Mine' } }], undefined, 5001))
+    .respond({ serverNow: 5010, tRecv: 5011, actor: OTHER })
+    .push(5012);
+
   const guarded = new ServerScript({ device: device([]), server: server([]) })
     .add(commitStep([], start('run00009', 'Go'), 5000))
     .push(5000)
@@ -131,6 +139,7 @@ export function files() {
       replayed.vector('a replayed start maps to its run without from; only the life and born move'),
       ended.vector('an end map restamps the predicted endedAt and leaves other registers alone'),
       guarded.vector('a later guard naming the predicted stamp follows the map to the server stamp, and its write ticks after it'),
+      restamped.vector('a map restamps a queued write of a register it names with a fresh tick of the instance that receives the result, in its actor, though another instance committed the write'),
       outgrown().vector('an entry a join map lengthens past a request alone is refused too-large at numbering, with its notice, and never sent'),
     ],
   };

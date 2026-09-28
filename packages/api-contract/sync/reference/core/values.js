@@ -1,5 +1,5 @@
-// Field values against the registry (§2.4, §6.1 step 2): ids, domains, bounds in their unit, and quanta,
-// with the client's rounding to a quantum (§7.1 step 4).
+// Field values against the registry (§2.4, §6.1 step 2): ids, domains, bounds in their unit, and quanta
+// at any depth, with the client's rounding to a domain's quantum (§7.1 step 4).
 
 import { MS_LIMIT } from './constants.js';
 import { isOrderKey } from './fracindex.js';
@@ -26,6 +26,22 @@ export function roundToQuantum(value, quantum) {
 
 export function isOnQuantum(value, quantum) {
   return roundToQuantum(value, quantum) === value;
+}
+
+// §7.1 step 4: every number of a value rounded to its domain's quantum, at any depth. A value off its
+// domain's shape is left as it is, for admission to refuse.
+export function roundToDomain(domain, value) {
+  if (domain === undefined || value === null) return value;
+  switch (domain.type) {
+    case 'number':
+      return typeof value === 'number' && domain.quantum !== undefined ? roundToQuantum(value, domain.quantum) : value;
+    case 'array':
+      return Array.isArray(value) ? value.map((item) => roundToDomain(domain.items, item)) : value;
+    case 'object':
+      return isPlainObject(value) ? Object.fromEntries(Object.entries(value).map(([key, inner]) => [key, roundToDomain(domain.properties[key], inner)])) : value;
+    default:
+      return value;
+  }
 }
 
 function isPlainObject(value) {
@@ -58,6 +74,7 @@ export function checkDomain(domain, value) {
       if (domain.integer && !Number.isSafeInteger(value)) return 'not a safe integer';
       if (domain.min !== undefined && value < domain.min) return `below ${domain.min}`;
       if (domain.max !== undefined && value > domain.max) return `above ${domain.max}`;
+      if (domain.quantum !== undefined && !isOnQuantum(value, domain.quantum)) return `off the quantum ${domain.quantum}`;
       return null;
     case 'boolean':
       return typeof value === 'boolean' ? null : 'not a boolean';
@@ -132,9 +149,6 @@ export function checkFieldValue(registry, field, value) {
   if (value !== null) {
     const reason = checkBounds(field, value);
     if (reason) return reason;
-  }
-  if (field.quantum !== undefined && typeof value === 'number' && !isOnQuantum(value, field.quantum)) {
-    return `off the quantum ${field.quantum}`;
   }
   return null;
 }

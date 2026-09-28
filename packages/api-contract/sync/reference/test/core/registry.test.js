@@ -92,7 +92,13 @@ test('registry.schema.json refuses broken registries', () => {
     'a parent without a ref': broken((r) => { delete r.types.find((t) => t.type === 'lap').fields.runId.ref; }),
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
     'an unanchored id pattern': broken((r) => { card(r).idPattern = '[a-z]+'; }),
-    'a quantum of zero': broken((r) => { card(r).fields.size.quantum = 0; }),
+    'a quantum of zero': broken((r) => { card(r).fields.size.domain.quantum = 0; }),
+    'a quantum on the field rather than its number domain': broken((r) => { card(r).fields.size.quantum = 0.01; }),
+    'a quantum on a string domain': broken((r) => { card(r).fields.title.domain.quantum = 1; }),
+    'a product code that is not kebab-case': broken((r) => { r.products.probe.codes = ['Bad_Code']; }),
+    'a whole put on a minted type': broken((r) => { card(r).wholePut = true; }),
+    'a whole put on a keyed type without life': broken((r) => { r.types.find((t) => t.type === 'mark').wholePut = true; }),
+    'a whole put type with a client field that is not lww': broken((r) => { r.types.find((t) => t.type === 'fact').fields.at.kind = 'fww'; }),
     'a minted type without its mint': broken((r) => { delete card(r).mint; }),
     'a mint alphabet of one character': broken((r) => { card(r).mint.alphabet = 'a'; }),
     'an opens field a client writes': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.writer = 'client'; }),
@@ -118,6 +124,12 @@ test('the Registry refuses what the schema cannot express', () => {
     'a mint alphabet outside idPattern': broken((r) => { card(r).mint.alphabet = 'ab!'; }),
     'opens on a field of a product-scope type': broken((r) => { card(r).fields.claim.opens = ['x']; card(r).fields.claim.writer = 'server'; }),
     'opens values outside the domain': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.opens = ['secret']; }),
+    'a default off the field\'s domain': broken((r) => { card(r).fields.size.default = 1.005; }),
+    'a default on a serial field': broken((r) => { r.types.find((t) => t.type === 'lap').fields.no.default = 1; }),
+    'a product code that is an engine code': broken((r) => { r.products.probe.codes = ['stale']; }),
+    'a whole put on a type with a text field': broken((r) => { Object.assign(r.types.find((t) => t.type === 'fact').fields, { note: { kind: 'text', writer: 'client', unit: 'bytes', max: 40 } }); }),
+    'a whole put type with a client field that is not lww': broken((r) => { r.types.find((t) => t.type === 'fact').fields.at.kind = 'const'; }),
+    'a command that predicts a whole put type': broken((r) => { command(r, 'probe.start').predicts.push('fact'); }),
     'a string domain bound without its unit': broken((r) => { delete command(r, 'probe.start').args.label.domain.unit; }),
     'an idPattern with a dot': broken((r) => { r.types.find((t) => t.type === 'run').idPattern = '^.{8,64}$'; }),
     'a domain pattern with a class escape': broken((r) => { card(r).fields.attachment.domain.properties.id.pattern = '^\\S{8,64}$'; }),
@@ -179,11 +191,12 @@ test('the product registries are gym and journal, each valid against registry.sc
 });
 
 // The product registries ship together as one registry: one version, the version every request carries (§9.1), and no
-// product, type or command a second registry declares again.
+// product, type, command or refusal code a second registry declares again.
 test('the product registries compose into one registry: one version and no name declared twice', () => {
   assert.deepEqual(new Set(PRODUCTS.map((registry) => `${registry.version}/${registry.minVersion}`)).size, 1);
   const names = (pick) => PRODUCTS.flatMap(pick);
-  for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name))]) {
+  const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
+  for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {
     assert.deepEqual(declared.filter((name, index) => declared.indexOf(name) !== index), []);
   }
 });

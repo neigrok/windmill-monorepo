@@ -51,10 +51,25 @@ const LISTED = { 'self/probe': [CARD, CARD2_ORD, RUN, BOARD_ROW] };
 const DAY = '2026-09-01';
 const DAY_ROW = row({ t: 'day', id: DAY, life: ['alive', st(1000)], f: { score: [7, st(1000)] }, seq: 6 });
 const DAYS = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW, DAY_ROW] };
+const FACT_ROW = row({ t: 'fact', id: DAY, life: ['alive', st(1000)], f: { at: [1000, st(1000)], value: [80, st(1000)] }, seq: 7 });
+const FACTS = { 'self/probe': [CARD, CARD2, RUN, BOARD_ROW, FACT_ROW] };
+const saveFact = (value, at, opts, deviceNow) => commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value, at } }], opts, deviceNow);
 const below = (id) => ({ field: 'ord', below: id });
 
 function deltas() {
   return [
+    stepsVector('a whole put writes every field, changed or not, and asserts presence with a fresh life, all at the gesture\'s stamp', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [saveFact(80, 5000)],
+    }),
+    stepsVector('a whole put of a fact absent from drawn creates it alike', {
+      device: device(bound()),
+      steps: [saveFact(80.04, 5000)],
+    }),
+    stepsVector('a delete of a whole fact writes only its life', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [commitStep('self/probe', [{ op: 'delete', t: 'fact', id: DAY }])],
+    }),
     stepsVector('a create carries born = its life stamp and only the fields given, stamped once', {
       device: device(bound()),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'New', tier: 'draft' } }])],
@@ -78,6 +93,10 @@ function deltas() {
     stepsVector('a create of an id already in drawn is dropped', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'Again' } }])],
+    }),
+    stepsVector('a nested number rounds to its domain\'s quantum half away from zero', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { attachment: { id: 'pic00001', scale: 1.25 } } }])],
     }),
     stepsVector('values round to the quantum half away from zero in IEEE doubles', {
       device: device(bound()),
@@ -589,6 +608,10 @@ function throws() {
       device: device(bound({ confirmed: FULL })),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fo\u0000r' } }])],
     }),
+    stepsVector('a whole put that leaves out a client-written field throws', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value: 81 } }])],
+    }),
     stepsVector('a device row whose key matches none of its product\'s rows throws', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [], { local: { plates: [10] } })],
@@ -607,6 +630,7 @@ function throws() {
 }
 
 function retire() {
+  const deleteFact = commitStep('self/probe', [{ op: 'delete', t: 'fact', id: DAY }], { hold: true, gestureId: 'forget' }, 5000);
   const deleteDay = (deviceNow = 5000) => commitStep('self/probe', [{ op: 'delete', t: 'day', id: DAY }], { hold: true }, deviceNow);
   const putDay = (retired, deviceNow = 5001) => commitStep('self/probe', [{ op: 'put', t: 'day', id: DAY, f: { score: 9 } }], { retire: retired }, deviceNow);
   const theDay = [{ t: 'day', id: DAY }];
@@ -614,6 +638,14 @@ function retire() {
     stepsVector('a put with retire ends the held delete of its keyed record undone, writes only the touched field onto the record, and returns the gesture as retired', {
       device: device(bound({ confirmed: DAYS })),
       steps: [deleteDay(), putDay(theDay)],
+    }),
+    stepsVector('writing a fact again inside its delete window is the Undo: the retire ends the held delete, and the whole put writes every field with a fresh life', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [deleteFact, saveFact(81, 5001, { retire: [{ t: 'fact', id: DAY }] }, 5001), { op: 'view', scope: 'self/probe', withHeld: true, deviceNow: 5002 }],
+    }),
+    stepsVector('a whole put after a held delete of its fact, without a retire, out-stamps it: the fact is drawn alive, and both are sent', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [deleteFact, saveFact(81, 5001, undefined, 5001), { op: 'view', scope: 'self/probe', withHeld: true, deviceNow: 5002 }, { op: 'releaseAll', deviceNow: 5003 }, { op: 'push', deviceNow: 5004 }],
     }),
     stepsVector('a retire whose diff is empty still retires the held delete, and the clock ticks', {
       device: device(bound({ confirmed: DAYS })),

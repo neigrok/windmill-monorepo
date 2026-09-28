@@ -1,8 +1,13 @@
 #include "platform/domain/sync/Registry.h"
 
+#include "platform/domain/Ids.h"
+#include "platform/domain/sync/FractionalIndex.h"
+#include "platform/domain/sync/Jcs.h"
+
 #include <algorithm>
 #include <cmath>
 #include <initializer_list>
+#include <iterator>
 #include <set>
 #include <utility>
 
@@ -18,6 +23,22 @@ const Pattern& productNames() {
 const Pattern& memberNames() {
   static const Pattern pattern{"^[a-z][A-Za-z0-9]*$"};
   return pattern;
+}
+
+bool isNumber(const Json::Value& value) {
+  return value.isNumeric() && !value.isBool() && std::isfinite(value.asDouble());
+}
+
+bool isEpochMs(const Json::Value& value) {
+  return isSafeInteger(value) && value.asDouble() >= 0;
+}
+
+// D-9: a string measured as itself, any other value as its JCS, in the unit its bounds state.
+bool withinBounds(const std::optional<Bounds>& bounds, const Json::Value& value) {
+  if (!bounds || (!bounds->min && !bounds->max)) return true;
+  const std::string measured = value.isString() ? value.asString() : jcs(value);
+  const auto length = static_cast<std::int64_t>(lengthIn(bounds->unit, measured));
+  return (!bounds->min || length >= *bounds->min) && (!bounds->max || length <= *bounds->max);
 }
 
 // One object of the document, read key by key under its path: a key the schema does not allow, a
@@ -163,12 +184,20 @@ Domain domainOf(const Json::Value& json, const std::string& path) {
     return domain;
   }
   if (type == "number") {
-    const Reader reader(json, path, {"type", "nullable", "integer", "min", "max"});
-    return Domain{.type = Domain::Type::number,
+    const Reader reader(json, path, {"type", "nullable", "integer", "min", "max", "quantum"});
+    Domain domain{.type = Domain::Type::number,
                   .nullable = reader.optionalBoolean("nullable"),
                   .integer = reader.optionalBoolean("integer"),
                   .min = reader.optionalNumber("min"),
                   .max = reader.optionalNumber("max")};
+    if (const std::optional<double> step = reader.optionalNumber("quantum")) {
+      try {
+        domain.quantum = Quantum{*step};
+      } catch (const RegistryError& error) {
+        throw RegistryError(reader.at("quantum") + ": " + error.what());
+      }
+    }
+    return domain;
   }
   if (type == "array") {
     const Reader reader(json, path, {"type", "nullable", "items", "maxItems"});
@@ -225,7 +254,7 @@ Origins originsOf(const Reader& reader) {
 }
 
 FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::string& path) {
-  const Reader reader(json, path, {"kind", "writer", "ref", "parent", "unit", "min", "max", "domain", "quantum", "serialNext", "rank", "opens"});
+  const Reader reader(json, path, {"kind", "writer", "ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"});
   FieldDef field{
       .name = name,
       .kind = reader.oneOf<FieldKind>("kind", {{"lww", FieldKind::lww},
@@ -243,14 +272,6 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
   if (reader.has("domain")) field.domain = domainOf(reader.value("domain"), reader.at("domain"));
   if (reader.has("serialNext")) field.serialNext = reader.names("serialNext", &memberNames(), false);
   if (reader.has("opens")) field.opens = reader.names("opens", nullptr, true);
-  if (reader.has("quantum")) {
-    try {
-      field.quantum = Quantum{*reader.optionalNumber("quantum")};
-    } catch (const RegistryError& error) {
-      throw RegistryError(reader.at("quantum") + ": " + error.what());
-    }
-    if (!field.domain || field.domain->type != Domain::Type::number) reader.fail("has a quantum without a number domain");
-  }
   if (reader.has("rank")) {
     const Json::Value& rank = reader.value("rank");
     if (!rank.isObject() || rank.empty()) reader.fail("has a \"rank\" that is not a non-empty object");
@@ -272,6 +293,7 @@ FieldDef fieldOf(const std::string& name, const Json::Value& json, const std::st
     reader.fail("is serial without \"serialNext\" and the server as its writer");
   if (field.kind == FieldKind::text && !(field.bounds && field.bounds->max)) reader.fail("is text without a \"unit\" and a \"max\"");
   if (field.parent && !field.ref) reader.fail("is a parent without a \"ref\"");
+  if (reader.has("default") && !field.isLattice()) reader.fail("has a default without being a lattice field");
   if (!field.opens.empty() && field.writer != Writer::server) reader.fail("opens a tree without the server as its writer");
   for (const std::string& value : field.opens) {
     const bool inDomain = !field.domain || field.domain->oneOf.empty() ||
@@ -299,6 +321,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
   if (type.singletonId && type.idPattern && !type.idPattern->matches(*type.singletonId))
     reader.fail("has a singletonId its idPattern refuses");
   if (type.identity == Identity::keyed && type.life && !type.deadRows) reader.fail("is keyed with life without \"deadRows\"");
+  if (type.wholePut && (type.identity != Identity::keyed || !type.life)) reader.fail("is wholePut without being keyed with life");
   if (!reader.has("key") && !type.idPattern) reader.fail("has neither a \"key\" nor an \"idPattern\"");
   if (type.seeded && type.identity != Identity::minted) reader.fail("seeds ids without being minted");
   if (type.revivable && type.deadRows != DeadRows::keep) reader.fail("is revivable without keeping its dead rows");
@@ -313,6 +336,9 @@ void checkType(const Reader& reader, const TypeDef& type) {
   const auto parents = std::count_if(type.fields.begin(), type.fields.end(), [](const auto& entry) { return entry.second.parent; });
   if (parents > 1) reader.fail("has more than one parent field");
   for (const auto& [fieldName, field] : type.fields) {
+    if (type.wholePut && field.kind == FieldKind::text) reader.fail("is wholePut with the text field \"" + fieldName + "\"");
+    if (type.wholePut && field.writer == Writer::client && field.kind != FieldKind::lww)
+      reader.fail("is wholePut with the client field \"" + fieldName + "\", which is not lww");
     if (!field.opens.empty() && (type.scope.kind != ScopeKind::tree || type.identity != Identity::singleton))
       reader.fail("opens a tree from \"" + fieldName + "\", which is not a field of a tree singleton");
     for (const std::string& next : field.serialNext) {
@@ -324,7 +350,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
 TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
   const Reader element(json, elementPath,
                        {"type", "scope", "identity", "idSpace", "idPattern", "key", "singletonId", "derive", "mint", "seeded",
-                        "life", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary"});
+                        "life", "wholePut", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary"});
   const std::string name = element.name("type", memberNames());
   const Reader reader = element.under("registry.types." + name);
   TypeDef type{
@@ -336,6 +362,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
                                                       {"singleton", Identity::singleton}}),
       .singletonId = reader.optionalString("singletonId"),
       .life = reader.boolean("life"),
+      .wholePut = reader.trueOrAbsent("wholePut"),
       .revivable = reader.optionalBoolean("revivable"),
       .origins = originsOf(reader),
       .cap = reader.optionalInteger("cap", 1),
@@ -420,7 +447,7 @@ CommandDef commandOf(const Json::Value& json, const std::string& elementPath) {
 }
 
 ProductDef productOf(const std::string& name, const Json::Value& json, const std::string& path) {
-  const Reader reader(json, path, {"surfaces", "device"});
+  const Reader reader(json, path, {"surfaces", "device", "codes"});
   ProductDef product{.name = name};
   if (reader.has("surfaces")) {
     product.surfaces = reader.names("surfaces", nullptr, false);
@@ -439,9 +466,28 @@ ProductDef productOf(const std::string& name, const Json::Value& json, const std
       product.device.emplace(rowName, std::move(def));
     }
   }
+  if (reader.has("codes")) {
+    static const Pattern codeNames{"^[a-z][a-z0-9]*(-[a-z0-9]+)*$"};
+    product.codes = reader.names("codes", &codeNames, false);
+    for (const std::string& declared : product.codes) {
+      if (code::isEngine(declared)) reader.fail("declares the engine code \"" + declared + "\"");
+    }
+  }
   return product;
 }
 
+}
+
+bool code::isEngine(std::string_view name) {
+  static const std::string* const engine[] = {&notFound, &scopeDead, &forbidden, &invalid, &tooLarge, &clockSkew, &idTaken, &idSpent,
+                                              &unknownRecord, &recordDead, &parentDead, &stale, &cap, &baseUnknown, &requestConflict,
+                                              &requestRunning, &internal, &targetMerged};
+  return std::any_of(std::begin(engine), std::end(engine), [name](const std::string* known) { return *known == name; });
+}
+
+std::size_t lengthIn(Unit unit, std::string_view text) {
+  if (unit == Unit::bytes) return text.size();
+  return static_cast<std::size_t>(std::count_if(text.begin(), text.end(), [](char c) { return (static_cast<unsigned char>(c) & 0xC0) != 0x80; }));
 }
 
 Quantum::Quantum(double step) : step_(step), stepsPerUnit_(0) {
@@ -455,6 +501,55 @@ Quantum::Quantum(double step) : step_(step), stepsPerUnit_(0) {
 double Quantum::round(double value) const {
   const double rounded = stepsPerUnit_ > 0 ? std::round(value * stepsPerUnit_) / stepsPerUnit_ : std::round(value / step_) * step_;
   return rounded == 0 ? 0.0 : rounded;
+}
+
+bool Domain::admits(const Json::Value& value) const {
+  if (value.isNull()) return nullable;
+  switch (type) {
+    case Type::string: {
+      if (!value.isString()) return false;
+      const std::string text = value.asString();
+      if (!oneOf.empty() && std::find(oneOf.begin(), oneOf.end(), text) == oneOf.end()) return false;
+      if (!withinBounds(bounds, value)) return false;
+      return !pattern || pattern->matches(text);
+    }
+    case Type::number: {
+      if (!isNumber(value)) return false;
+      if (integer && !isSafeInteger(value)) return false;
+      const double number = value.asDouble();
+      return (!min || number >= *min) && (!max || number <= *max) && (!quantum || quantum->holds(number));
+    }
+    case Type::boolean: return value.isBool();
+    case Type::fracKey: return value.isString() && isOrderKey(value.asString());
+    case Type::stamp: return value.isString() && parseHlc(value.asString()).has_value();
+    case Type::id: return value.isString();
+    case Type::json: return true;
+    case Type::array: {
+      if (!value.isArray()) return false;
+      if (maxItems && static_cast<std::int64_t>(value.size()) > *maxItems) return false;
+      return std::all_of(value.begin(), value.end(), [this](const Json::Value& item) { return items->admits(item); });
+    }
+    case Type::object: {
+      if (!value.isObject()) return false;
+      auto declared = [this](const std::string& key) -> const Domain* {
+        for (const Property& property : properties) {
+          if (property.name == key) return &property.domain;
+        }
+        return nullptr;
+      };
+      for (const std::string& key : value.getMemberNames()) {
+        if (!declared(key)) return false;
+      }
+      for (const std::string& key : required) {
+        if (!value.isMember(key)) return false;
+      }
+      for (const std::string& key : value.getMemberNames()) {
+        if (!declared(key)->admits(value[key])) return false;
+      }
+      return true;
+    }
+  }
+  return false;
 }
 
 bool FieldDef::isLattice() const {
@@ -515,7 +610,44 @@ Registry::Registry(const Json::Value& document) {
     const std::string where = "registry.commands." + command.name;
     requireProduct(command.scope, where);
     for (const auto& [argName, arg] : command.args) requireType(arg.ref, where + ".args." + argName);
-    for (const std::string& predicted : command.predicts) requireType(predicted, where + ".predicts");
+    for (const std::string& predicted : command.predicts) {
+      requireType(predicted, where + ".predicts");
+      if (type(predicted)->wholePut) throw RegistryError(where + " predicts the wholePut type \"" + predicted + "\", which only deltas write");
+    }
+  }
+
+  auto keyTypesOf = [](const TypeDef& keyed) {
+    std::vector<std::string> named;
+    if (keyed.keyRef) named.push_back(*keyed.keyRef);
+    for (const KeyPart& part : keyed.keyTuple) named.push_back(part.ref);
+    return named;
+  };
+  for (const TypeDef& start : types_) {
+    std::vector<std::string> pending = keyTypesOf(start);
+    std::set<std::string> reached;
+    while (!pending.empty()) {
+      const std::string next = pending.back();
+      pending.pop_back();
+      if (next == start.name) throw RegistryError("registry.types." + start.name + " has a key that leads back to its own type");
+      if (!reached.insert(next).second) continue;
+      for (const std::string& further : keyTypesOf(*type(next))) pending.push_back(further);
+    }
+  }
+
+  std::map<std::string, std::string> declarers;
+  for (const auto& [productName, product] : products_) {
+    for (const std::string& declared : product.codes) {
+      const auto [first, fresh] = declarers.emplace(declared, productName);
+      if (!fresh) root.fail("declares the code \"" + declared + "\" in both " + first->second + " and " + productName);
+    }
+  }
+
+  for (Json::ArrayIndex i = 0; i < types.size(); ++i) {
+    for (const auto& [fieldName, field] : types_[i].fields) {
+      const Json::Value& declared = types[i]["fields"][fieldName];
+      if (declared.isMember("default") && !admitsValue(field, declared["default"]))
+        throw RegistryError("registry.types." + types_[i].name + ".fields." + fieldName + " has a default off its field's domain");
+    }
   }
 }
 
@@ -533,6 +665,39 @@ const CommandDef* Registry::command(std::string_view commandName) const {
   const auto found =
       std::find_if(commands_.begin(), commands_.end(), [commandName](const CommandDef& command) { return command.name == commandName; });
   return found == commands_.end() ? nullptr : &*found;
+}
+
+bool Registry::isIdOf(const TypeDef& type, const Json::Value& id) const {
+  if (type.identity == Identity::singleton) return id.isString() && id.asString() == *type.singletonId;
+  if (!type.keyTuple.empty()) {
+    if (!id.isArray() || id.size() != type.keyTuple.size()) return false;
+    for (Json::ArrayIndex i = 0; i < id.size(); ++i) {
+      if (!isIdOf(*this->type(type.keyTuple[i].ref), id[i])) return false;
+    }
+    return true;
+  }
+  if (type.keyRef) return isIdOf(*this->type(*type.keyRef), id);
+  return id.isString() && type.idPattern && type.idPattern->matches(id.asString());
+}
+
+bool Registry::admitsValue(const FieldDef& field, const Json::Value& value) const {
+  switch (field.kind) {
+    case FieldKind::ranked: return value.isString() && field.rank.contains(value.asString());
+    case FieldKind::time: return isEpochMs(value);
+    case FieldKind::serial: return isSafeInteger(value) && value.asDouble() >= 1;
+    case FieldKind::text: return value.isString();
+    default: break;
+  }
+  if (field.ref && !value.isNull() && !isIdOf(*type(*field.ref), value)) return false;
+  if (field.ref && value.isNull() && !(field.domain && field.domain->nullable)) return false;
+  if (field.domain && !field.domain->admits(value)) return false;
+  return value.isNull() || withinBounds(field.bounds, value);
+}
+
+bool Registry::admitsArgument(const ArgDef& arg, const Json::Value& value) const {
+  if (arg.type == ArgType::time || arg.type == ArgType::instant) return isEpochMs(value);
+  if (arg.type == ArgType::ref) return isIdOf(*type(*arg.ref), value);
+  return !arg.domain || arg.domain->admits(value);
 }
 
 }

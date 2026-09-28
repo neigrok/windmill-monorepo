@@ -1,9 +1,11 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
+import { fileURLToPath } from 'node:url';
 import { CommitError, commit } from '../../client/commit.js';
 import { Device, Replica } from '../../client/replica.js';
 import { mintId } from '../../core/derive.js';
+import { Registry } from '../../core/registry.js';
 import { ACTOR, registry, row, st } from '../../vectors/fixtures.js';
 import { runSteps } from '../../vectors/steps.js';
 
@@ -85,6 +87,15 @@ test('§7.1: a replica that is not writable and a malformed commit are distinct 
     kindOf(() => commit(dormant, ctx(), 'self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'One' } }])),
     kindOf(() => commit(bound(), ctx(), 'self/probe', [{ op: 'update', t: 'card', id: 'card0404', f: { title: 'Absent' } }])),
   ], ['not-writable', 'malformed']);
+});
+
+test('§7.1 step 4: a command\'s arguments round to their domain\'s quantum at any depth', () => {
+  const gym = Registry.fromFile(fileURLToPath(new URL('../../../gym.registry.json', import.meta.url)));
+  const replica = new Replica({ meta: Replica.fresh({ replica: 'rp_1', state: 'bound', account: 'A' }).meta });
+  const set = (weightKg, rpe) => ({ id: 'set0000000000001', exerciseId: 'dip', weightKg, reps: 5, rpe, completedAt: 1500 });
+  const context = { ...ctx(), registry: gym, device: new Device({ active: 'rp_1', replicas: [replica.toJSON()] }) };
+  commit(replica, context, 'self/gym', [], { cmd: { name: 'gym.importSession', args: { id: 'sess000000000001', startedAt: 1000, finishedAt: 2000, sets: [set(60.004, 7.25)] } } });
+  assert.deepEqual(replica.entry('g1/0').intent.cmd.args.sets, [set(60, 7.3)]);
 });
 
 test('D-8: a minted id is the prefix and one alphabet character per draw', () => {

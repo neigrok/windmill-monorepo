@@ -43,7 +43,7 @@ card(){ # n id title
 }
 
 # ── a clean engine and a session ───────────────────────────────────────────────────────────────
-for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_marks probe_links probe_tags probe_metas probe_days \
+for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_marks probe_links probe_tags probe_metas probe_facts probe_days \
              probe_laps probe_runs probe_cards probe_boards sync_spent sync_requests sync_replicas sync_scopes; do
   psql "$DB" -q -c "delete from $table"
 done
@@ -104,6 +104,14 @@ python3 -c "print('x' * 9_000_000)" > "$BODY.transport"
 check "$(sync -o "$BODY" -w '%{http_code}' -X POST "$BASE/v1/sync/push" --data-binary "@$BODY.transport")" "413" \
   "a body over the transport's 8 MiB is answered 413 before §9.1's checks"
 check "$(grep -c serverTime "$BODY")" "0" "and that 413 is the transport's own, bare of serverTime and epoch"
+
+echo "quanta at any depth"
+attach(){ # n scale
+  printf '{"n":%s,"scope":"self/probe","d":[{"t":"card","id":"cardE2E0001","born":"%s:0:r_e2eaaaaaaaa","f":{"attachment":[{"id":"pic00001","scale":%s},"%s:1:r_e2eaaaaaaaa"]}}]}' \
+    "$1" "$NOW" "$2" "$NOW"
+}
+check "$(push_all 5 "[$(attach 6 1.2),$(attach 7 1.5)]")" '[{"code":"invalid","n":6,"s":"refused"},{"n":7,"s":"ok","seq":5}]' \
+  "a nested number off its domain's quantum is refused invalid, and one on it is admitted"
 
 echo "pull"
 python3 -c "import json; print(json.dumps({'scopes': [{'scope': 'self/probe', 'cursor': None}], 'pad': 'x' * 70_000}))" > "$BODY.pull"
@@ -168,7 +176,7 @@ async def main():
         print((await frame(ws))["op"])
         await ws.send(json.dumps({"op": "sub", "scopes": ["self/probe", "tree/b_ffffffff"]}))
         print(json.dumps(await frame(ws), sort_keys=True))
-        seq = push_day(6, "2026-09-02", 5)["results"][0]["seq"]
+        seq = push_day(8, "2026-09-02", 5)["results"][0]["seq"]
         change = await frame(ws)
         print(change["op"], change["scope"], change["seq"] == seq, [row["id"] for row in change.get("rows", [])])
     async with websockets.connect(live) as guest:
@@ -257,6 +265,39 @@ check "$(bearer "$DEV_TOKEN" -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sy
 bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
 check "$(field "['pages']" < "$BODY")" '[{"kind":"not-found","scope":"self/probe"}]' "a pull with it reads as signed out: self/probe is not-found"
 check "$(bearer "$SECOND_TOKEN" "$BASE/v1/sync/hello" | field "['holdsRecords']")" '{"probe":true}' "the account's other session still holds"
+
+echo "a fact saved whole"
+FACTS="$(python3 - "$NOW" <<'PY'
+import json, sys
+def stamp(counter):
+    return f"{sys.argv[1]}:{counter}:r_e2eaaaaaaaa"
+def fact(n, life, f=None):
+    delta = {"t": "fact", "id": "2027-01-15", "life": life}
+    if f:
+        delta["f"] = f
+    return {"n": n, "scope": "self/probe", "d": [delta]}
+print(json.dumps([
+    fact(9, ["alive", stamp(9)], {"value": [80, stamp(9)]}),
+    fact(10, ["alive", stamp(9)], {"value": [80, stamp(9)], "at": [1, stamp(8)]}),
+    fact(11, ["alive", stamp(9)], {"value": [80, stamp(9)], "at": [1, stamp(9)]}),
+    fact(12, ["dead", stamp(10)]),
+    fact(13, ["alive", stamp(11)], {"value": [82.4, stamp(11)], "at": [3, stamp(11)]}),
+]))
+PY
+)"
+check "$(push_all 8 "$FACTS")" \
+  '[{"code":"invalid","n":9,"s":"refused"},{"code":"invalid","n":10,"s":"refused"},{"n":11,"s":"ok","seq":7},{"n":12,"s":"ok","seq":8},{"n":13,"s":"ok","seq":9}]' \
+  "a put that leaves out a field or splits its stamp is refused invalid; a whole put, its delete and a newer whole put are admitted"
+sync -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
+SAVED="$(python3 - "$BODY" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))["pages"][0]["rows"]
+print(json.dumps([{key: row[key] for key in ("life", "f", "seq")} for row in rows if row["t"] == "fact"], separators=(",", ":"), sort_keys=True))
+PY
+)"
+STAMP="$NOW:11:r_e2eaaaaaaaa"
+check "$SAVED" "[{\"f\":{\"at\":[3,\"$STAMP\"],\"value\":[82.4,\"$STAMP\"]},\"life\":[\"alive\",\"$STAMP\"],\"seq\":9}]" \
+  "the save newer than the delete keeps the fact, every field at its stamp"
 
 rm -f "$JAR" "$BODY" "$BODY.big" "$BODY.huge" "$BODY.transport" "$BODY.pull"
 echo
