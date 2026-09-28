@@ -65,6 +65,21 @@ TextBase textBaseOf(const Json::Value& base) {
   return TextBase{static_cast<Seq>(base["rev"].asUInt64()), ""};
 }
 
+// §2.4's whole put: a delta of a wholePut type carries a life, and an alive one carries every client-written
+// lattice field, every register at the life's stamp (a server origin's null alike).
+bool isWhole(const TypeDef& type, const Delta& delta) {
+  const std::optional<Life>& life = delta.lattice.life;
+  if (!life) return false;
+  if (!life->alive()) return true;
+  const bool everyClientField = std::all_of(type.fields.begin(), type.fields.end(), [&delta](const auto& entry) {
+    const FieldDef& field = entry.second;
+    return field.writer != Writer::client || !field.isLattice() || delta.lattice.f.contains(field.name);
+  });
+  const bool oneStamp =
+      std::all_of(delta.lattice.f.begin(), delta.lattice.f.end(), [&life](const auto& entry) { return entry.second.stamp == life->stamp; });
+  return everyClientField && oneStamp;
+}
+
 Delta deltaOf(const Registry& registry, const ScopeKey& scope, const Json::Value& wire, const Sender& sender) {
   if (!wire.isObject()) invalid();
   requireKeys(wire, {"t", "id", "life", "born", "f", "x", "v"});
@@ -103,6 +118,7 @@ Delta deltaOf(const Registry& registry, const ScopeKey& scope, const Json::Value
     delta.x.emplace(name, TextWrite{write["text"].asString(), textBaseOf(write["base"])});
   }
 
+  if (type.wholePut && !isWhole(type, delta)) invalid();
   if (opOf(type, delta) == Op::invalid) invalid();
   return delta;
 }

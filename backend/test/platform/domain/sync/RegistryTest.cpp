@@ -85,7 +85,7 @@ TEST(the_probe_registry_loads_its_types_and_commands_in_order) {
   CHECK_EQ(probe.name(), std::string("probe"));
   CHECK_EQ(probe.version(), 1);
   CHECK_EQ(probe.minVersion(), 1);
-  CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "meta", "tag", "link", "mark"}));
+  CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "fact", "meta", "tag", "link", "mark"}));
   CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.start", "probe.end", "probe.copy", "probe.tick"}));
   REQUIRE(probe.products().contains("probe"));
   CHECK_EQ(probe.products().at("probe").surfaces, (std::vector<std::string>{"web", "ios", "android"}));
@@ -152,6 +152,14 @@ TEST(the_probe_types_carry_every_identity_class) {
   CHECK(day.identity == Identity::keyed && day.life && day.deadRows == DeadRows::spent);
   CHECK(day.idPattern->matches("2026-09-27"));
   CHECK_FALSE(day.mint.has_value());
+  CHECK_FALSE(day.wholePut);
+
+  const TypeDef& fact = *probe.type("fact");
+  CHECK(fact.identity == Identity::keyed && fact.life && fact.wholePut && fact.deadRows == DeadRows::spent);
+  CHECK(fact.origins.replica && fact.origins.server);
+  CHECK(fact.fields.at("value").kind == FieldKind::lww && fact.fields.at("value").writer == Writer::client);
+  CHECK_EQ(fact.fields.at("value").domain->quantum->step(), 0.1);
+  CHECK(fact.fields.at("at").kind == FieldKind::lww && fact.fields.at("at").domain->integer);
 
   const TypeDef& lap = *probe.type("lap");
   CHECK_EQ(lap.seeded->seedMax, 58);
@@ -262,6 +270,35 @@ TEST(a_registry_refuses_what_section_2_4_forbids) {
            std::string("registry.types.item mints ids its idPattern refuses"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["seen"] = parseJson(R"({"kind":"lww","writer":"server","opens":["yes"]})"); }),
            std::string("registry.types.item opens a tree from \"seen\", which is not a field of a tree singleton"));
+}
+
+TEST(a_whole_put_is_a_keyed_type_with_life_whose_client_fields_are_lww_and_that_no_command_predicts) {
+  auto withFact = [](Json::Value& r) -> Json::Value& {
+    r["types"].append(parseJson(R"({"type": "fact", "scope": "product:p", "identity": "keyed", "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+        "life": true, "wholePut": true, "deadRows": "spent", "origins": ["replica"],
+        "fields": {"value": {"kind": "lww", "writer": "client"}, "seenBy": {"kind": "const", "writer": "server"}}})"));
+    return r["types"][1];
+  };
+  CHECK_EQ(refusalOf([&](Json::Value& r) { withFact(r); }), std::string("(admitted)"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["wholePut"] = true; }),
+           std::string("registry.types.item is wholePut without being keyed with life"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) { withFact(r)["life"] = false; }),
+           std::string("registry.types.fact is wholePut without being keyed with life"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) { withFact(r)["wholePut"] = false; }),
+           std::string("registry.types.fact has a \"wholePut\" that is not true"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             withFact(r)["fields"]["memo"] = parseJson(R"({"kind": "text", "writer": "server", "unit": "bytes", "max": 40})");
+           }),
+           std::string("registry.types.fact is wholePut with the text field \"memo\""));
+  CHECK_EQ(refusalOf([&](Json::Value& r) { withFact(r)["fields"]["value"]["kind"] = "const"; }),
+           std::string("registry.types.fact is wholePut with the client field \"value\", which is not lww"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) { withFact(r)["fields"]["value"]["kind"] = "fww"; }),
+           std::string("registry.types.fact is wholePut with the client field \"value\", which is not lww"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             withFact(r);
+             r["commands"][0]["predicts"] = parseJson(R"(["item", "fact"])");
+           }),
+           std::string("registry.commands.p.sweep predicts the wholePut type \"fact\", which only deltas write"));
 }
 
 TEST(a_key_names_ids_of_other_types_and_never_leads_back_to_its_own) {
@@ -477,6 +514,8 @@ TEST(the_gym_registry_reads_as_declared) {
   CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);
   CHECK_EQ(gym.type("set")->fields.at("rpe").domain->quantum->step(), 0.1);
   CHECK_EQ(gym.type("weighin")->fields.at("kg").domain->quantum->step(), 0.01);
+  CHECK(gym.type("weighin")->wholePut);
+  CHECK_FALSE(gym.type("prefs")->wholePut);
   const Domain& entries = *gym.type("routine")->fields.at("entries").domain;
   CHECK_EQ(propertyOf(*propertyOf(*entries.items, "sets").items, "weightKg").quantum->step(), 0.01);
   for (const char* command : {"gym.importSession", "gym.correctSession"}) {

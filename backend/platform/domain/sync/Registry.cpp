@@ -321,6 +321,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
   if (type.singletonId && type.idPattern && !type.idPattern->matches(*type.singletonId))
     reader.fail("has a singletonId its idPattern refuses");
   if (type.identity == Identity::keyed && type.life && !type.deadRows) reader.fail("is keyed with life without \"deadRows\"");
+  if (type.wholePut && (type.identity != Identity::keyed || !type.life)) reader.fail("is wholePut without being keyed with life");
   if (!reader.has("key") && !type.idPattern) reader.fail("has neither a \"key\" nor an \"idPattern\"");
   if (type.seeded && type.identity != Identity::minted) reader.fail("seeds ids without being minted");
   if (type.revivable && type.deadRows != DeadRows::keep) reader.fail("is revivable without keeping its dead rows");
@@ -335,6 +336,9 @@ void checkType(const Reader& reader, const TypeDef& type) {
   const auto parents = std::count_if(type.fields.begin(), type.fields.end(), [](const auto& entry) { return entry.second.parent; });
   if (parents > 1) reader.fail("has more than one parent field");
   for (const auto& [fieldName, field] : type.fields) {
+    if (type.wholePut && field.kind == FieldKind::text) reader.fail("is wholePut with the text field \"" + fieldName + "\"");
+    if (type.wholePut && field.writer == Writer::client && field.kind != FieldKind::lww)
+      reader.fail("is wholePut with the client field \"" + fieldName + "\", which is not lww");
     if (!field.opens.empty() && (type.scope.kind != ScopeKind::tree || type.identity != Identity::singleton))
       reader.fail("opens a tree from \"" + fieldName + "\", which is not a field of a tree singleton");
     for (const std::string& next : field.serialNext) {
@@ -346,7 +350,7 @@ void checkType(const Reader& reader, const TypeDef& type) {
 TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
   const Reader element(json, elementPath,
                        {"type", "scope", "identity", "idSpace", "idPattern", "key", "singletonId", "derive", "mint", "seeded",
-                        "life", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary"});
+                        "life", "wholePut", "revivable", "deadRows", "governs", "origins", "fields", "cap", "visibleWhen", "primary"});
   const std::string name = element.name("type", memberNames());
   const Reader reader = element.under("registry.types." + name);
   TypeDef type{
@@ -358,6 +362,7 @@ TypeDef typeOf(const Json::Value& json, const std::string& elementPath) {
                                                       {"singleton", Identity::singleton}}),
       .singletonId = reader.optionalString("singletonId"),
       .life = reader.boolean("life"),
+      .wholePut = reader.trueOrAbsent("wholePut"),
       .revivable = reader.optionalBoolean("revivable"),
       .origins = originsOf(reader),
       .cap = reader.optionalInteger("cap", 1),
@@ -605,7 +610,10 @@ Registry::Registry(const Json::Value& document) {
     const std::string where = "registry.commands." + command.name;
     requireProduct(command.scope, where);
     for (const auto& [argName, arg] : command.args) requireType(arg.ref, where + ".args." + argName);
-    for (const std::string& predicted : command.predicts) requireType(predicted, where + ".predicts");
+    for (const std::string& predicted : command.predicts) {
+      requireType(predicted, where + ".predicts");
+      if (type(predicted)->wholePut) throw RegistryError(where + " predicts the wholePut type \"" + predicted + "\", which only deltas write");
+    }
   }
 
   auto keyTypesOf = [](const TypeDef& keyed) {

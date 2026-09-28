@@ -27,6 +27,7 @@ TableMap tableOf(const std::string& type) {
       {"run", {"probe_runs", {{"startedAt", SqlType::bigint}, {"label", SqlType::text}, {"endedAt", SqlType::bigint}}}},
       {"lap", {"probe_laps", {{"runId", SqlType::text}, {"no", SqlType::bigint}, {"at", SqlType::bigint}, {"weight", SqlType::float8}}}},
       {"day", {"probe_days", {{"score", SqlType::bigint}}}},
+      {"fact", {"probe_facts", {{"value", SqlType::float8}, {"at", SqlType::bigint}}}},
       {"meta", {"probe_metas", {{"title", SqlType::text}, {"visibility", SqlType::text}}}},
       {"tag", {"probe_tags", {{"label", SqlType::text}}}},
       {"link", {"probe_links", {{"strength", SqlType::bigint}}}},

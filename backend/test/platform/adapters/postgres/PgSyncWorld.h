@@ -62,8 +62,8 @@ public:
     std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
     pqxx::transaction_base& sql = sqlOf(*txn);
     for (const char* table : {"probe_marks_revisions", "probe_start_receipts", "probe_copy_receipts", "probe_marks", "probe_links", "probe_tags",
-                              "probe_metas", "probe_days", "probe_laps", "probe_runs", "probe_cards", "probe_boards", "sync_spent", "sync_requests",
-                              "sync_replicas", "sync_scopes"}) {
+                              "probe_metas", "probe_facts", "probe_days", "probe_laps", "probe_runs", "probe_cards", "probe_boards", "sync_spent",
+                              "sync_requests", "sync_replicas", "sync_scopes"}) {
       sql.exec(std::string("delete from ") + table);
     }
     for (const std::string& alias : aliasesIn(state)) {

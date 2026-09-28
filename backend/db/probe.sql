@@ -95,6 +95,21 @@ create table if not exists probe_days (
 );
 create index if not exists probe_days_feed on probe_days (scope_key, seq);
 
+create table if not exists probe_facts (
+  scope_key   text not null references sync_scopes(key),
+  id          text not null,
+  seq         bigint not null,
+  rc          bigint not null,
+  ru          bigint not null,
+  life_stamp  text not null,
+  value       float8,
+  value_stamp text,
+  at          bigint,
+  at_stamp    text,
+  primary key (scope_key, id)
+);
+create index if not exists probe_facts_feed on probe_facts (scope_key, seq);
+
 create table if not exists probe_metas (
   scope_key        text not null references sync_scopes(key),
   id               text not null,
