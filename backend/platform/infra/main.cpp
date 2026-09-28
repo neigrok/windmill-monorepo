@@ -108,6 +108,7 @@
 #include "platform/application/sync/SyncLive.h"
 #include "platform/application/sync/SyncService.h"
 #include "products/probe/ProbeRegistry.h"
+#include "products/probe/adapters/http/DevApi.h"
 #include "products/probe/adapters/postgres/PgProbe.h"
 #endif
 
@@ -924,6 +925,7 @@ int main() {
                                                .minSchema = syncRegistry.minVersion(),
                                                .epoch = syncEpoch});
   sync::linkSyncSocket();
+  probe::registerDevRoutes(app, std::make_shared<probe::DevApi>(*authService, *authRepo, *tokens, *systemClock, syncStore));
 #endif
 
   // EVERY product that sends mail must appear in this list, or it keeps mailing an address the

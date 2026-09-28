@@ -231,10 +231,11 @@ public final class SyncEngine: Replica {
     if try core.write({ store, _ in try store.releaseAll() }) { core.wakes.sender.kick() }
   }
 
-  // The leave flush: one drain, joined with the sender's loop; then the live socket is closed.
+  // The leave flush: one drain, joined with the sender's loop; then the live socket is closed, unless the app came back
+  // to the foreground while the flush ran and the socket it wants again is open.
   public func flushOnLeave() async {
     await sender.flushOnce()
-    await live.close()
+    await live.closeInBackground()
   }
 
   // Back in the foreground: the sender goes again, every subscribed scope is pulled, and the live socket reopens.

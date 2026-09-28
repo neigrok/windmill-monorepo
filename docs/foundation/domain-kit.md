@@ -145,6 +145,7 @@ reach them.
 | `WindmillKit` | `apps/ios/WindmillKit/` | `WindmillDomain`, `WindmillSync` | `WindmillPlatform`, `WindmillGym`, `WindmillJournal` |
 | `SyncTestingSurface` | `apps/ios/SyncTestingSurface/` | `WindmillSync`, its `SyncTesting` product only | test targets only |
 | the app | `apps/ios/project.yml` | the three packages; remote packages of its own | the app target and its test bundles |
+| the probe app | `apps/ios/SyncProbe/project.yml` | `WindmillSync` | the engine's dev and test host over the probe product; never shipped |
 
 Every module is a regular Swift target, except `SyncSchemaGen`, an executable. Remote dependencies are
 closed by package identity; the checked-in `Package.resolved` pins their revisions.

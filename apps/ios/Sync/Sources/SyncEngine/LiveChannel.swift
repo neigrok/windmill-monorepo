@@ -113,8 +113,8 @@ package actor LiveChannel {
     return await open(meta, account: account)
   }
 
-  // The leave flush's end, and every state that wants no socket: the socket closes, pulling nothing, and the next one
-  // opens at once. A socket that stayed open `settledMs` resets the reopen backoff's `k`.
+  // Every state that wants no socket: the socket closes, pulling nothing, and the next one opens at once. A socket that
+  // stayed open `settledMs` resets the reopen backoff's `k`.
   package func close() {
     if let socket, now() - socket.openedAt >= Self.settledMs { backoff.reset() }
     socket?.connection.close()
@@ -122,6 +122,13 @@ package actor LiveChannel {
     reader?.cancel()
     reader = nil
     reopenAt = nil
+  }
+
+  // The leave flush's end: the socket closes while the app is away. The check and the close are one turn of the actor, so
+  // a foreground that lands after the check kicks a step that opens the socket again.
+  package func closeInBackground() {
+    guard !core.isForeground else { return }
+    close()
   }
 
   // Step mode: receives the socket's next frame, as the reader task does when the loops run; false once there is none.

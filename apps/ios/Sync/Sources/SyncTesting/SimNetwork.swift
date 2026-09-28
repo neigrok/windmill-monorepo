@@ -101,7 +101,7 @@ public final class ModelServerHandle: Sendable {
 
   // MARK: Serving, at the clock's time
 
-  // A token presented and not recognised is unauthenticated, as the server answers it; no token is the anonymous caller.
+  // A token presented and not recognised is refused 401 on every call; no token is the anonymous caller.
   func hello(as token: SessionToken?) -> (status: Int, body: JSON) {
     let at = clock.nowMs()
     return process.withLock { process in

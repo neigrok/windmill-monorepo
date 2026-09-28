@@ -115,7 +115,16 @@ WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ctest --test-di
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
-that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https.
+that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It also mounts the
+dev stack's endpoints (`products/probe/adapters/http/DevApi.h`), which native end-to-end runs drive:
+
+- `POST /v1/dev/sign-in` `{"email"}` → `{"account", "token"}`: finds or creates the account and mints a
+  new session with no mail. The token works as `Authorization: Bearer` wherever the `wm_session` cookie
+  does, the `/v1/sync/live` upgrade included, and `POST /v1/auth/logout` with it revokes it.
+- `POST /v1/dev/sync/epoch` → `{"epoch"}`: regenerates `sync_meta.epoch` as a restore would. Hello, push,
+  pull and live frames carry the new one at once; the schema refusals (400, 426) and every 503
+  keep the epoch read at boot until the process restarts.
+
 `test/e2e/sync_probe.sh` drives it over HTTP:
 
 ```sh

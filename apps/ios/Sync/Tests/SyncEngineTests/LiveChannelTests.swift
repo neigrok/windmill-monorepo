@@ -96,9 +96,14 @@ struct LiveChannelTests {
     #expect(next.sent == [.sub([Rig.scope])])
   }
 
-  // The leave flush ends by closing the socket.
-  @Test func theLeaveFlushClosesTheSocket() async throws {
+  // The leave flush ends by closing the socket while the app is away; in the foreground again by then, it keeps it.
+  @Test func theLeaveFlushClosesTheSocketUnlessTheAppCameBack() async throws {
     let (rig, socket) = try await Self.open()
+    try rig.engine.leave()
+    rig.engine.foreground()
+    await rig.engine.flushOnLeave()
+    #expect(!socket.isClosed)
+    try rig.engine.leave()
     await rig.engine.flushOnLeave()
     #expect(socket.isClosed)
     #expect(await rig.engine.live.isOpen == false)

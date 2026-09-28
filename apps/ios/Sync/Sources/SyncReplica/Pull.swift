@@ -7,6 +7,9 @@ import SyncCore
 public enum PageOutcome: String, Sendable, Hashable {
   case applied, stale, reset, gone
   case notFound = "not-found"
+  // The replica's own product scope answered gone or not-found: the request was not taken as its account, since an
+  // account always reads its own products. Nothing is forgotten, and the pull pauses as a 401 does.
+  case unauthenticated
 }
 
 public enum FrameOutcome: String, Sendable, Hashable {
@@ -45,7 +48,7 @@ public struct PageApplier: Sendable {
   // its cursor to boot it.
   public func pullsAgain(after page: Page, _ outcome: PageOutcome, in replica: LoadedReplica) -> Bool {
     switch outcome {
-    case .stale, .reset: return true
+    case .stale, .reset, .unauthenticated: return true
     case .gone, .notFound: return false
     case .applied:
       if case .rows(let rows) = page.body, rows.more { return true }
@@ -129,6 +132,8 @@ public struct PageApplier: Sendable {
       replica.apply(.putCursor(scope, record))
       if replica.staging[scope] != nil { replica.apply(.dropStaging(scope)) }
       return .reset
+    case .gone where scope.tree == nil, .notFound where scope.tree == nil:
+      return .unauthenticated
     case .gone:
       try forget(scope, as: .gone, in: &replica)
       return .gone
@@ -241,6 +246,7 @@ public struct PageApplier: Sendable {
   }
 
   // Gone or not found: the scope's rows, spent ids, cursor and staging go, it is known, and its acked entries resolve.
+  // Only a tree's scopes are ever known so (§2.5); the replica's own product scope never is.
   func forget(_ scope: ScopeRef, as kind: KnownKind, in replica: inout LoadedReplica) throws {
     replica.apply(.forgetScope(scope))
     replica.apply(.putKnown(scope, kind))
@@ -253,6 +259,8 @@ public struct PageApplier: Sendable {
   // matches, the frame is the next seq and carries its rows; otherwise the scope is pulled.
   public func apply(_ frame: LiveFrame, to replica: inout LoadedReplica, instance: Instance) throws -> FrameOutcome {
     switch frame {
+    case .gone(let scope) where scope.tree == nil, .notFound(let scope) where scope.tree == nil:
+      return .pull
     case .gone(let scope):
       try forget(scope, as: .gone, in: &replica)
       return .gone

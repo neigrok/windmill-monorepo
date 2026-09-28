@@ -208,7 +208,9 @@ package actor Puller {
   }
 
   // The answer's transactions in order (§7.5 steps 1–2): the offset sample, the epoch, then one per page; or a failure's
-  // sample, and for a 401 a pause while `token` is still the account's. A page that leaves its scope short of the head
+  // sample, and for a 401 a pause while `token` is still the account's. A page of the account's own product answered as
+  // no one's pauses the same way, since the server did not take the token, and the rest of that answer, which says
+  // nothing of the account's scopes, is dropped and asked again. A page that leaves its scope short of the head
   // wants it again; an epoch change re-identified the replica and nulled every cursor, so every scope is wanted; a
   // replica no longer active drops the rest, which says nothing of the replica now active. The live channel then looks
   // again at what it follows.
@@ -241,6 +243,11 @@ package actor Puller {
       guard case .page(let page, _) = step, let outcome = applied.outcome else { continue }
       reports.append(PageReport(scope: page.scope, outcome: outcome))
       if applied.pullsAgain { wants.add([page.scope]) }
+      if outcome == .unauthenticated, token != nil {
+        paused = try core.pauseAuth(replica, sentUnder: token)
+        wants.add(scopes)
+        break
+      }
     }
     switch answer {
     case .ok:

@@ -270,6 +270,15 @@ struct LifecycleTests {
     #expect(try rig.replicas() == ["bound(B) active entries: 1 new id"])
   }
 
+  // A hello under the sign-in's token that names no `holdsRecords` did not take the token: the server reads a revoked or
+  // unknown session as no one. The sign-in is refused as unauthenticated, as a 401 refuses it, so the app signs in again
+  // rather than waiting for a server it has reached.
+  @Test func aHelloThatReadsTheTokenAsNoOnesRefusesTheSignIn() async throws {
+    let rig = try Rig()
+    rig.transport.willAnswerHello(200, Self.hello(holds: nil))
+    await #expect(throws: EngineError.unauthenticated) { try await rig.engine.signIn(account: "A", token: SessionToken("revoked")) }
+  }
+
   // §7.10 account change: another account signs in only once the one signed in has signed out. The same account signing
   // in again is re-authentication, with no hello and no question.
   @Test func anotherAccountSignsInOnlyAfterTheFirstSignsOut() async throws {

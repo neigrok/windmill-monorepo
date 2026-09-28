@@ -158,8 +158,8 @@ target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
 # --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
 # worked example of a product on the engine. Only the test binaries and windmill_server_probe link it;
-# windmill_server never does, and the Dockerfile proves it. Its Postgres adapter folds in under the
-# Drogon guard below.
+# windmill_server never does, and the Dockerfile proves it. Its Postgres adapter and the dev stack's endpoints
+# fold in under the Drogon guard below.
 add_library(windmill_probe
   products/probe/domain/ProbeRules.cpp
   products/probe/application/ProbeProduct.cpp)
@@ -466,8 +466,10 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     WM_WIRE_CORPUS_PATH="${CMAKE_SOURCE_DIR}/products/roadmap/adapters/mcp/golden/wire_corpus.json")
   add_test(NAME mcp COMMAND windmill_mcp_tests)
 
-  # The probe's Postgres adapter, on the probe library (never linked into windmill_server).
-  target_sources(windmill_probe PRIVATE products/probe/adapters/postgres/PgProbe.cpp)
+  # The probe's Postgres adapter and the dev stack's endpoints, on the probe library (never linked into windmill_server).
+  target_sources(windmill_probe PRIVATE
+    products/probe/adapters/postgres/PgProbe.cpp
+    products/probe/adapters/http/DevApi.cpp)
 
   # The sync engine over Postgres alone, so `ctest -R sync` runs it without every product's Pg suite. Its
   # cases skip unless WM_PG_TEST is set against a database holding db/schema.sql and db/probe.sql.

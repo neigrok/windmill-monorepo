@@ -80,13 +80,14 @@ extension SyncEngine {
     for binding in core.bindings { await binding.seatWillChange() }
   }
 
-  // §9.2 a hello as `account`: the products in which it holds records.
+  // §9.2 a hello as `account`: the products in which it holds records. A hello that names none did not take the token,
+  // since the server reads a revoked or unknown session as no one, and refuses the sign-in as a 401 does.
   func holdsRecords(of account: String) async throws -> [String: Bool] {
     guard let token = core.tokens.token(for: account) else { throw EngineError.unauthenticated }
     switch await hello(token: token) {
     case .answered(.ok(let hello)):
       guard !core.upgradeRequired else { throw EngineError.upgradeRequired }
-      guard let holdsRecords = hello.holdsRecords else { throw EngineError.unreachable }
+      guard let holdsRecords = hello.holdsRecords else { throw EngineError.unauthenticated }
       return holdsRecords
     case .answered(.failed(let failure)) where failure.status == 401: throw EngineError.unauthenticated
     case .answered(.failed(let failure)) where failure.status == 426: throw EngineError.upgradeRequired

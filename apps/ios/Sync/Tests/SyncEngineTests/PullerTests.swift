@@ -189,6 +189,53 @@ struct PullerTests {
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.overlay, nil)]))
   }
 
+  // An account always reads its own products, so a product scope answered not-found or gone was not asked as the account:
+  // a session revoked on the server reads as no one. The phone forgets none of the account's rows, pauses as a 401 does,
+  // and pulls the scope again from where it stood once the account re-authenticates. Found end to end, where a pull after
+  // a revocation erased the account's rows from the phone for good.
+  @Test(arguments: ["not-found", "gone"])
+  func aProductScopeAnsweredAsNoOnesForgetsNothingAndPauses(_ kind: String) async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, kind)]))
+    rig.engine.foreground()
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .unauthenticated)]))
+    #expect(try Self.rows(rig) == [card.json])
+    #expect(try rig.active().known == [:])
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
+    #expect(try rig.meta().authPaused)
+    #expect(await rig.engine.puller.step() == .paused)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, digestOf: [card])]))
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(1))]))
+  }
+
+  // An answer given as no one's says nothing of the account's other scopes: the tree it asked beside is not forgotten, and
+  // is pulled again with the product once the account re-authenticates.
+  @Test func anAnswerGivenAsNoOnesForgetsNoScopeAfterIt() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found"), Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .unauthenticated)]))
+    #expect(try rig.active().known == [:])
+    #expect(try rig.meta().authPaused)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: Self.tree, seq: 0)]))
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, nil)]))
+  }
+
+  // The same answer on the live socket is not applied: the scope is pulled, and the pull tells.
+  @Test func aProductScopeFrameAnsweredAsNoOnesForgetsNothingAndIsPulled() async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    await rig.engine.puller.enqueue(.notFound(Rig.scope), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .pull))
+    #expect(try Self.rows(rig) == [card.json])
+    #expect(try rig.active().known == [:])
+  }
+
   // §7.9: a signed-out replica pulls only the trees it opens, and without a token.
   @Test func aSignedOutReplicaPullsOnlyTheTreesItOpensWithoutAToken() async throws {
     let rig = try Rig()

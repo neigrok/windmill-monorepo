@@ -2,8 +2,8 @@ import Foundation
 import Testing
 
 // The package's layers, read from its sources: each target imports only what the table allows, so SyncCore, SyncAPI,
-// SyncSchema and SyncReplica stay pure (no UI, networking or storage) and GRDB appears only in SyncStore. The engine-API
-// targets follow the domain kit's source rules (ER-13).
+// SyncSchema and SyncReplica stay pure (no UI, networking or storage), GRDB appears only in SyncStore, and UIKit only in
+// SyncIOS. The engine-API targets follow the domain kit's source rules (ER-13).
 
 struct LayeringTests {
   static let allowed: [String: Set<String>] = [
@@ -14,6 +14,7 @@ struct LayeringTests {
     "SyncReplica": ["SyncCore", "SyncAPI"],
     "SyncStore": ["SyncCore", "SyncAPI", "SyncReplica", "GRDB", "Foundation"],
     "SyncEngine": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "Foundation", "Network", "Observation", "Synchronization"],
+    "SyncIOS": ["SyncEngine", "Foundation", "Security", "Synchronization", "UIKit"],
     "SyncModelServer": ["SyncCore"],
     "SyncTesting": ["SyncCore", "SyncAPI", "SyncReplica", "SyncStore", "SyncEngine", "SyncModelServer", "Foundation", "Synchronization"],
   ]
