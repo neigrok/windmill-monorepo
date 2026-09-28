@@ -55,6 +55,7 @@ journal.
 |---|---|---|---|---|
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
+| `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete |
 | `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
@@ -392,7 +393,7 @@ admission mints one stamp per intent by §10.3 and puts it there and in the writ
 
 | File | Covers |
 |---|---|
-| `shape.json` | §6.1 step 2: registration, ids, keys, stamps, §4.1 shapes, writer rules, domains, units, quanta, commands and arguments, guards; `clock-skew` beyond `serverNow + MAX_SKEW_MS` and admission at the bound; time fields and time arguments clamped; instants beyond the bound `invalid` |
+| `shape.json` | §6.1 step 2: registration, ids, keys, stamps, §4.1 shapes, writer rules, domains, units, quanta, commands and arguments, guards, whole puts (a life, every client field, one stamp); `clock-skew` beyond `serverNow + MAX_SKEW_MS` and admission at the bound; time fields and time arguments clamped; instants beyond the bound `invalid` |
 | `access.json` | step 3 and D-4: scope insertion, `not-found` / `scope-dead` / `forbidden`, overlays of public and unlisted trees, origin rules |
 | `identity.json` | every §4.3 cell through admission, keyed puts and singleton writes, §4.4's const and time rule |
 | `guards.json` | step 7, the replay rule, a command replay skipping guards |
@@ -591,6 +592,7 @@ boot: 'boot-1'}`; it feeds frames, asserts
 | `join.jsonl` | `probe.start` joining another device's run: the write map rewrites a later lap and rename, and a held delete of the called id ends `target-merged` |
 | `skew.jsonl` | a device ten minutes fast: `clock-skew`, the offset from the response, the restamp in commit order, the resend |
 | `hello.jsonl` | hello signed out and signed in, an incomplete sign-in, then the signed-out decision `add` |
+| `whole.jsonl` | a `fact` saved whole on two devices: the later of two unpulled saves keeps every field, a value equal to the earlier one's included, and a held delete released after a newer save reached its device kills nothing |
 
 ## Client vectors
 
@@ -696,7 +698,7 @@ is answered for the caller to resume.
 | `{op: 'update', t, id, f?, x?}` | minted and derived types |
 | `{op: 'delete', t, id}` | minted and derived types; for a keyed type, a put that removes |
 | `{op: 'revive', t, id, f?}` | minted and derived types |
-| `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true |
+| `{op: 'put', t, id, present?, f?, x?}` | keyed types with life; `present` defaults to true. A put that leaves a `wholePut` record present names every client-written field (else it throws) and writes each, changed or not, with a life `[alive, stamp]` |
 | `{op: 'write', t, id, f?, x?}` | keyed types without life, and singletons |
 | `{op: 'move', t, id, anchor}` | minted and derived types, the only ones with an order field; an update of only `anchor.field` |
 

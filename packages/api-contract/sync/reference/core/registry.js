@@ -137,6 +137,11 @@ export class TypeDef {
     return this.fieldNames((field) => LATTICE_KINDS.has(field.kind));
   }
 
+  // The fields a whole put writes (§7.1 step 4): every lattice field a client writes.
+  get clientLatticeFieldNames() {
+    return this.fieldNames((field) => LATTICE_KINDS.has(field.kind) && field.writer === 'client');
+  }
+
   get textFieldNames() {
     return this.fieldNames((field) => field.kind === 'text');
   }
@@ -260,6 +265,9 @@ export class Registry {
       if (type.idPattern !== undefined && !isPortablePattern(type.idPattern)) fail(`${type.type}: idPattern ${type.idPattern} is outside §2.4's patterns`);
       if (!type.origins.includes('replica')) fail(`${type.type}: origins always include replica`);
       if (type.visibleWhen && type.life) fail(`${type.type}: visibleWhen is for types without life`);
+      if (type.wholePut && (type.identity !== 'keyed' || !type.life)) fail(`${type.type}: wholePut is for keyed types with life`);
+      if (type.wholePut && type.textFieldNames.length) fail(`${type.type}: a wholePut type has no text field`);
+      if (type.wholePut && type.clientLatticeFieldNames.some((name) => type.field(name).kind !== 'lww')) fail(`${type.type}: a wholePut type's client fields are lww`);
       for (const part of type.key?.tuple ?? []) if (!this.types.has(part.ref)) fail(`${type.type}: key refers to unknown ${part.ref}`);
       if (type.key?.ref && !this.types.has(type.key.ref)) fail(`${type.type}: key refers to unknown ${type.key.ref}`);
       if (type.fieldNames((field) => field.parent === true).length > 1) fail(`${type.type}: at most one parent field`);
@@ -286,6 +294,7 @@ export class Registry {
     for (const command of this.commands.values()) {
       if (command.serverInternal && command.origins.includes('replica')) fail(`${command.name}: server-internal commands have server origin only`);
       if (command.beforePull && !command.serverInternal) fail(`${command.name}: a beforePull command is server-internal`);
+      for (const t of command.predicts ?? []) if (this.types.get(t)?.wholePut) fail(`${command.name}: no command writes the wholePut type ${t}`);
       for (const [name, arg] of Object.entries(command.args)) {
         const ref = /^ref<(.+)>$/.exec(arg.type)?.[1];
         if (ref && !this.types.has(ref)) fail(`${command.name}.${name}: ref to unknown ${ref}`);

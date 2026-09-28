@@ -119,6 +119,20 @@
       }
     },
     {
+      "type": "fact",
+      "scope": "product:probe",
+      "identity": "keyed",
+      "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "life": true,
+      "wholePut": true,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "value": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 0, "max": 500, "quantum": 0.1 } },
+        "at": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
+      }
+    },
+    {
       "type": "meta",
       "scope": "tree",
       "identity": "singleton",

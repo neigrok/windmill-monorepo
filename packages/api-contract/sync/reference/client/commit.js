@@ -171,6 +171,7 @@ class DeltaBuilder {
     const current = this.drawnView.get(recordKey(type.type, change.id));
     const presentBefore = current?.life?.[0] === 'alive';
     const present = change.present ?? true;
+    if (present && type.wholePut) return this.wholePut(type, change);
     let life = current?.life;
     if (present && !presentBefore) life = ['alive', this.stamp];
     if (!present && presentBefore) life = ['dead', this.stamp];
@@ -178,6 +179,14 @@ class DeltaBuilder {
     const delta = { t: type.type, id: change.id, life };
     const changed = this.withChanges(type, delta, change, current);
     return changed || !sameJson(life, current?.life ?? null) ? delta : null;
+  }
+
+  // §7.1 step 4: a put that leaves a `wholePut` record present writes every client-written lattice field,
+  // changed or not, and asserts presence with a fresh life, all at the gesture's stamp.
+  wholePut(type, change) {
+    const missing = type.clientLatticeFieldNames.filter((name) => change.f?.[name] === undefined);
+    if (missing.length) throw new CommitError(`a whole put of ${type.type} leaves out ${missing.join(', ')}`);
+    return { t: type.type, id: change.id, life: ['alive', this.stamp], f: this.fields(type, change.f, undefined) };
   }
 
   write(type, change) {

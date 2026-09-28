@@ -364,6 +364,1025 @@
     }
   },
   {
+    "name": "writing a fact again inside its delete window is the Undo: the retire ends the held delete, and the whole put writes every field with a fresh life",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "size": [
+                      2.5,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "tier": [
+                      "review",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      1000,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "value": [
+                      80,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 7,
+                  "rc": 7000,
+                  "ru": 7000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                "digest": "48662b0580b9a3b4ca3c41d7ef689e6eae834e5d23a4e56764267e8dbcca9696",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "fact",
+              "id": "2026-09-01"
+            }
+          ],
+          "deviceNow": 5000,
+          "opts": {
+            "hold": true,
+            "gestureId": "forget"
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "put",
+              "t": "fact",
+              "id": "2026-09-01",
+              "f": {
+                "value": 81,
+                "at": 5001
+              }
+            }
+          ],
+          "deviceNow": 5001,
+          "opts": {
+            "retire": [
+              {
+                "t": "fact",
+                "id": "2026-09-01"
+              }
+            ]
+          }
+        },
+        {
+          "op": "view",
+          "scope": "self/probe",
+          "withHeld": true,
+          "deviceNow": 5002
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "forget/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [
+            "forget"
+          ],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "records": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "900:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "900:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "size": [
+                  2.5,
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "fact",
+              "id": "2026-09-01",
+              "life": [
+                "alive",
+                "5001:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "at": [
+                  5001,
+                  "5001:0:r_aaaaaaaaaaaa"
+                ],
+                "value": [
+                  81,
+                  "5001:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "card": 2
+          }
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "size": [
+                      2.5,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "tier": [
+                      "review",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      1000,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "value": [
+                      80,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 7,
+                  "rc": 7000,
+                  "ru": 7000
+                },
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                "digest": "48662b0580b9a3b4ca3c41d7ef689e6eae834e5d23a4e56764267e8dbcca9696",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "fact",
+                      "id": "2026-09-01",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "at": [
+                          5001,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "value": [
+                          81,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "forget/0",
+          "outcome": "undone",
+          "event": "retire"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a whole put after a held delete of its fact, without a retire, out-stamps it: the fact is drawn alive, and both are sent",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "size": [
+                      2.5,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "tier": [
+                      "review",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                },
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      1000,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "value": [
+                      80,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 7,
+                  "rc": 7000,
+                  "ru": 7000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                "digest": "48662b0580b9a3b4ca3c41d7ef689e6eae834e5d23a4e56764267e8dbcca9696",
+                "booted": true
+              }
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "delete",
+              "t": "fact",
+              "id": "2026-09-01"
+            }
+          ],
+          "deviceNow": 5000,
+          "opts": {
+            "hold": true,
+            "gestureId": "forget"
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "put",
+              "t": "fact",
+              "id": "2026-09-01",
+              "f": {
+                "value": 81,
+                "at": 5001
+              }
+            }
+          ],
+          "deviceNow": 5001
+        },
+        {
+          "op": "view",
+          "scope": "self/probe",
+          "withHeld": true,
+          "deviceNow": 5002
+        },
+        {
+          "op": "releaseAll",
+          "deviceNow": 5003
+        },
+        {
+          "op": "push",
+          "deviceNow": 5004
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "forget/0"
+          ],
+          "retired": [],
+          "stamp": "5000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "5001:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "records": [
+            {
+              "t": "board",
+              "id": "b_00000001",
+              "life": [
+                "alive",
+                "900:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "900:0:r_aaaaaaaaaaaa"
+            },
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "size": [
+                  2.5,
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "fact",
+              "id": "2026-09-01",
+              "life": [
+                "alive",
+                "5001:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "at": [
+                  5001,
+                  "5001:0:r_aaaaaaaaaaaa"
+                ],
+                "value": [
+                  81,
+                  "5001:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              }
+            }
+          ],
+          "capCount": {
+            "card": 2
+          }
+        },
+        null,
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "forget",
+              "n": 1
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      5001,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "value": [
+                      81,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 2
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 5001,
+                "counter": 0
+              },
+              "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": "ep-1",
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "confirmed": {
+              "self/probe": [
+                {
+                  "t": "board",
+                  "id": "b_00000001",
+                  "life": [
+                    "alive",
+                    "900:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "900:0:r_aaaaaaaaaaaa",
+                  "seq": 4,
+                  "rc": 4000,
+                  "ru": 4000
+                },
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "ord": [
+                      "a0",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "size": [
+                      2.5,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "tier": [
+                      "review",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "title": [
+                      "One",
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 1,
+                  "rc": 1000,
+                  "ru": 1000
+                },
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "life": [
+                    "alive",
+                    "1100:0:r_aaaaaaaaaaaa"
+                  ],
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Two",
+                      "1100:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 2,
+                  "rc": 2000,
+                  "ru": 2000
+                },
+                {
+                  "t": "fact",
+                  "id": "2026-09-01",
+                  "life": [
+                    "alive",
+                    "1000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      1000,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "value": [
+                      80,
+                      "1000:0:r_aaaaaaaaaaaa"
+                    ]
+                  },
+                  "seq": 7,
+                  "rc": 7000,
+                  "ru": 7000
+                },
+                {
+                  "t": "run",
+                  "id": "run00001",
+                  "life": [
+                    "alive",
+                    "1300:0:srv"
+                  ],
+                  "born": "1300:0:srv",
+                  "f": {
+                    "startedAt": [
+                      1300,
+                      "1300:0:srv"
+                    ]
+                  },
+                  "seq": 3,
+                  "rc": 3000,
+                  "ru": 3000
+                }
+              ]
+            },
+            "cursors": {
+              "self/probe": {
+                "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6N30",
+                "digest": "48662b0580b9a3b4ca3c41d7ef689e6eae834e5d23a4e56764267e8dbcca9696",
+                "booted": true
+              }
+            },
+            "outbox": [
+              {
+                "localId": "forget/0",
+                "gestureId": "forget",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 14000,
+                "stamp": "5000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "fact",
+                      "id": "2026-09-01",
+                      "life": [
+                        "dead",
+                        "5000:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "forget",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f3bc090f42900c696f7752ab9150a49ade52a165a51c6bfaa9f64fbd10a889a9"
+              },
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "5001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "fact",
+                      "id": "2026-09-01",
+                      "life": [
+                        "alive",
+                        "5001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "at": [
+                          5001,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "value": [
+                          81,
+                          "5001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "49a7c1c5bcd9baf2ec9d4647df85730c83859eab1cb89bf0b90ce806656a674c"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
     "name": "a retire whose diff is empty still retires the held delete, and the clock ticks",
     "input": {
       "device": {

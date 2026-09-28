@@ -312,8 +312,8 @@ declare one `version` and one `minVersion`, and no product, type or command name
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids), `singletonId`,
-  `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `revivable`, `deadRows`, `governs`,
-  `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
+  `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
+  `governs`, `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
 - **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
   `serialNext`, `rank` and `opens`.
 - **Domains** are structured: `string` (`enum`, `pattern`, `unit`, `min`, `max`), `number`
@@ -359,6 +359,13 @@ The engine applies:
 - `quantum`, on a number domain at any depth (a field's, an item's, a property's, an argument's): the
   server admits only numbers on it (§6.1 step 2), and a client rounds every number of a change's
   field values and of a command's arguments to it (§7.1 step 4).
+- `wholePut`, on a keyed type with life, no text field and only `lww` client-written fields: each
+  record is one fact, whose newest save wins whole. Every put that leaves the record present writes
+  every client-written lattice field and asserts presence with a fresh life, all at one stamp (§7.1
+  step 4). So the newest save wins every field, and a save newer than a delete, held or not, makes the
+  record alive again (INV-2). Admission refuses any other delta of the type (§6.1 step 2). Such a
+  record is written only by deltas: no command writes one and no product check appends one, and the
+  registry refuses a command whose `predicts` names the type.
 - `default`, on a lattice field: the value a reader takes while the register is unset. It is on the
   field's domain, and the engine never stores or sends it.
 - `codes`: the refusal codes a product's `check` and commands answer beyond the engine's (§9.6). No
@@ -537,7 +544,11 @@ through:
 - **Keyed.** A replayed put carries its original life stamp. The deleting replica had observed the
   record it deleted, so by INV-1 the delete out-stamps that put. A put that does not change presence
   carries the drawn life register unchanged (§7.1 step 4), and a restamp moves such a carried
-  register only with its source (§7.7).
+  register only with its source (§7.7). A put of a `wholePut` type asserts presence at its own
+  stamp: it makes the record alive again only when its stamp follows the delete's, the newer save the
+  statement admits; a replay keeps its stamp, and a delete that out-stamps it stands. Stamp order, not
+  wall-clock order, decides: a clock-skew recovery restamps a whole put to the recovery moment
+  (§7.7), so a skewed save made before a delete in real time recovers after it and keeps the record.
 - **Dead state is retained.** Dead rows and `sync_spent` rows are kept for the scope's lifetime
   (§6.10). The `born` and `life_stamp` columns (§2.2) make every comparison exact.
 - **Clients** push only intents (§7.4), replace rather than join confirmed rows (§3.4), and never
@@ -737,6 +748,8 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      every integer a safe integer (§9.1), a text base's `rev` included. A text field's `max`
      applies to its merge result (§6.11 step 3).
    - §4.1, and §4.4's serial and server-field rules.
+   - A delta of a `wholePut` type carries a life, and an alive one carries every client-written
+     lattice field of its type, every register at the life's stamp (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
    - No string of the intent, a key or a value at any depth, holds U+0000.
@@ -1158,9 +1171,12 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      `life = [alive, s]`.
    - A create of an id already in `drawn` is dropped, after its anchor, if any, is checked.
    - A keyed-with-life put's life:
-     - `[alive, s]` when the gesture makes the record present;
+     - `[alive, s]` when the gesture makes the record present, and for a `wholePut` type whenever
+       the put leaves it present;
      - `[dead, s]` when it removes it;
      - otherwise the drawn life register, unchanged.
+   - A put that leaves a `wholePut` record present writes every client-written lattice field of its
+     type, changed or not, stamped `s`; a change that leaves one out throws.
    - A revive takes `born` from `drawn` or from `SpentId`.
    - An update or delete of a record absent from `drawn` throws.
    - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
@@ -1171,7 +1187,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      for `field` beside an anchor.
    - A created record's client-written `time` fields that the change leaves unset take `physNow()`.
      A commit reads `physNow()` once: the read-and-commit function, step 3's `tick` and these fields
-     all take that one reading.
+     all take that one reading. A field that records each save's own moment is an `lww` field, not
+     a `time` one (which joins as `const` and keeps its first value): the product writes it from the
+     `now` the read-and-commit function receives.
    - A number, at any depth of a field value or of a command argument, is rounded to its domain's
      `quantum` `q`, in IEEE-754 doubles, with
      `roundHalfAway(y) = sign(y) × round(|y|)`: `roundHalfAway(x / q) × q` for an integer `q`, and
@@ -1474,9 +1492,8 @@ registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A
 carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source. The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
-the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's
-`stamp`; a write-map restamp leaves the entry's `stamp` unchanged. For each register that moves from
-`o` to `n`:
+the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
+restamp leaves the entry's `stamp` unchanged. For each register that moves from `o` to `n`:
 1. the register takes `n`;
 2. if it is a create's life, the entry's `born` also becomes `n`, and every later held, ready or
    sent delta on the same `(t, id)` carrying `born = o` takes `n`;
@@ -1904,7 +1921,7 @@ its `README.md` states its conventions. `constants.json` holds the constants its
 
 | Role | Files |
 |---|---|
-| all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew transcripts) |
+| all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
 | server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope` |
 | client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
 
@@ -2039,7 +2056,7 @@ and `n ≤ 99 999`. Minted ids match `^[A-Za-z0-9_-]{8,64}$`, except `exercise` 
 | `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>` or null; `plan` const server, JSON or null; `startedAt` time; `finishedAt` lww server, an epoch ms, never null; `closedBy` lww server ∈ {finish, stale}, never null; `displayName` lww server ≤240 bytes or null | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null; `completedAt` time | Set rules below. |
 | `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
-| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. `kg` and `recordedAt` join by stamp (§3.2): the newest save wins, whatever `recordedAt` holds. |
+| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms, which each save writes from the read-and-commit function's `now` | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each save writes `kg`, `recordedAt` and presence at one stamp, so the newest save wins whole, whatever `recordedAt` holds, and a save newer than a delete, held or not, keeps the weigh-in. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
 | `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `threadId` lww `ref<thread>` or null; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server ∈ {proposal, routine} | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
 | `thread` | minted g | terminal, spent | `title` const ≤8000 bytes | Fields and rules: gym Coach §9.1. Delete kills its messages and writes `threadId = null` on its proposals. |

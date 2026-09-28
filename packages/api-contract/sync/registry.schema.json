@@ -274,6 +274,10 @@
           "description": "Whether records carry a life register (D-6). Minted and derived types always do; singletons never do.",
           "type": "boolean"
         },
+        "wholePut": {
+          "description": "On a keyed type with life: each record is one fact, whose newest save wins whole. Every put that leaves it present writes every client-written lattice field and a fresh life at one stamp, so a newer save beats an older delete (engine.md §2.4, §7.1 step 4, INV-2).",
+          "const": true
+        },
         "revivable": {
           "description": "Minted and derived types: death is terminal unless revivable (D-8, §4.3).",
           "type": "boolean"
@@ -486,6 +490,45 @@
                 }
               }
             }
+          }
+        },
+        {
+          "description": "A whole put is for keyed types with life, whose every client-written field is lww (§2.4).",
+          "if": {
+            "required": [
+              "wholePut"
+            ]
+          },
+          "then": {
+            "properties": {
+              "identity": {
+                "const": "keyed"
+              },
+              "life": {
+                "const": true
+              },
+              "fields": {
+                "additionalProperties": {
+                  "if": {
+                    "properties": {
+                      "writer": {
+                        "const": "client"
+                      }
+                    }
+                  },
+                  "then": {
+                    "properties": {
+                      "kind": {
+                        "const": "lww"
+                      }
+                    }
+                  }
+                }
+              }
+            },
+            "required": [
+              "life"
+            ]
           }
         }
       ]

@@ -112,10 +112,16 @@ apps store carries across.
   signed-out Coach turn could write one. Rule which holds.
 - **7h · Weigh-in conflicts.** `gym/briefs/11-bodyweight.md` ("The wire", and the paragraph on a
   weigh-in written again inside its delete window) says the write with the later `recordedAt` wins.
-  Under the engine (A.2 `weighin`; owner ruling 2026-09-26, newest wins per field by stamp), the
-  newest save wins by its stamp, whatever `recordedAt` holds: a save made later on a device whose
-  clock runs behind beats an earlier save that carries a later `recordedAt`. The engine rule stands;
-  restate the brief's two sentences by it.
+  Under the engine (A.2 `weighin`, a `wholePut` type; owner ruling 2026-09-26, newest wins per field
+  by stamp), each save writes every field and presence at one stamp, so the newest save wins whole by
+  its stamp, whatever `recordedAt` holds: a save made later on a device whose clock runs behind beats
+  an earlier save that carries a later `recordedAt`, and a save newer than a delete, held or not,
+  keeps the weigh-in. The engine rule stands; restate the brief's two sentences by it.
+- **7i · A weight at the bound.** 19.996 kg rounds to 20 on iOS, which applies the quantum (0.01)
+  first, while web and Android refuse it against the 20 kg minimum. Under the engine a commit rounds
+  to the quantum and admission checks the rounded value (A.2 `weighin` `kg` 20–400; engine §7.1 step
+  4), so 19.996 is saved as 20.00. Rule whether the sheet accepts such an entry as 20 or refuses it
+  before rounding, and align the clients.
 
 ## iOS first run
 

@@ -118,6 +118,26 @@ function lookalikeState() {
   });
 }
 
+// §6.1 step 2 for a `wholePut` type (the probe's `fact`): a delta carries a life, and an alive one every
+// client-written field, every register at the life's stamp; a newer whole put beats an older delete.
+function wholePuts() {
+  const day = '2027-01-15';
+  const fact = (life, f) => ({ t: 'fact', id: day, life, ...(f ? { f } : {}) });
+  const both = (stamp) => ({ at: [5000, stamp], value: [80, stamp] });
+  const empty = serverState({ scopes: { [PROBE_A]: productScope('A') } });
+  const deleted = serverState({ scopes: { [PROBE_A]: productScope('A') }, spent: { [PROBE_A]: [{ t: 'fact', id: day, lifeStamp: s(3000), seq: 1 }] } });
+  return [
+    admitted('a whole-put delta without a life is invalid', { state: empty, intent: probe([{ t: 'fact', id: day, f: both(s(5000)) }]) }),
+    admitted('an alive whole-put delta that leaves out a client-written field is invalid', { state: empty, intent: probe([fact(['alive', s(5000)], { value: [80, s(5000)] })]) }),
+    admitted('an alive whole-put delta whose registers carry another stamp than its life is invalid', { state: empty, intent: probe([fact(['alive', s(5000)], { at: [5000, s(5000)], value: [80, s(4000)] })]) }),
+    admitted('a whole put writes every field and its life at one stamp', { state: empty, intent: probe([fact(['alive', s(5000)], both(s(5000)))]) }),
+    admitted('a delete of a whole fact carries its life alone', { state: empty, intent: probe([fact(['dead', s(5000)])]) }),
+    admitted('a whole put newer than the fact\'s delete makes it alive again (INV-2)', { state: deleted, intent: probe([fact(['alive', s(5000)], both(s(5000)))]) }),
+    admitted('a whole put older than the fact\'s delete leaves it dead', { state: deleted, intent: probe([fact(['alive', s(2000)], both(s(2000)))]) }),
+    admitted('a server-origin whole put carries a null stamp in every register', { state: empty, origin: SERVER_A, intent: probe([fact(['alive', null], both(null))]) }),
+  ];
+}
+
 function shape() {
   const base = baseState();
   const cardUpdate = (f) => probe([update('card', 'card0001', s(1000), s(5000), f)]);
@@ -273,6 +293,7 @@ function shape() {
       state: base,
       intent: { scope: 'self/probe', cmd: { name: 'probe.end', args: { runId: 'run00001', endedAt: BOUND } } },
     }),
+    ...wholePuts(),
     admitted('an integer-domain value beyond the safe integers is invalid', {
       state: base,
       origin: SERVER_A,
