@@ -42,7 +42,7 @@ written from this README alone needs no other file than `../probe.registry.json`
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
-| server | `identity/table.json`, `admit/`, `text/`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json` |
+| server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json` |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json` |
 
 ## The probe product
@@ -486,6 +486,23 @@ None of these changes the state. Then an absent binding is inserted, bound to th
 - A subscriber receives a change frame with its socket's `as` added (§9.5), and a death event as
   `live/death.json` gives it.
 
+### envelope/credentials.json (server)
+
+`input: {headers: [[name, value], …], sessions: {token: account}}` · `expect: {principal}`: the
+principal a request is served as (§9.1), from its headers as received, every occurrence kept and in
+order; `sessions` maps each live session's token to its account. `principal` is the `account` and
+`credential?` that pull, push and hello take: `{account}` when the credentials resolve, `{account:
+null}` when the request sends none, and `{account: null, credential: 'unresolved'}` otherwise.
+- Header names compare case-insensitively. Every `Authorization` header is a credential, whatever its
+  shape; so is every `Cookie` piece (split on `;`, trimmed) whose name is `wm_session`, a bare
+  `wm_session` with no `=` or an empty value included. A cookie's token is its value verbatim: no
+  quote is stripped and nothing is unescaped.
+- They resolve only as one `Authorization: Bearer <token>` (the scheme in any case) and at most one
+  `wm_session=<token>`, each token a key of `sessions`, and a cookie and header together naming one
+  account.
+- A runner feeds its adapter's header reading the raw headers, so a framework that keeps one of two
+  headers fails these vectors.
+
 ### live/death.json (server)
 
 `input: {state, account, scope}` · `expect: {frame}`: the frame a live socket served as `account`,
@@ -684,8 +701,8 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
-| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a scope waiting for its governing record's create, §7.5); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1) |
-| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `ignored` (an unknown op, any end of a product scope, or a `not-found` for a scope waiting for its governing record's create), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
+| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1) |
+| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `ignored` (an unknown op, any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
 | `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
 | `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
 | `signOut` | `choice?` (`keep` or `discard`), `counted?` | §7.10 | `{complete, unsent, ready, sent, counted}` |
@@ -829,7 +846,9 @@ write-map stamps.
   removing an unlisted record; a ready delete; a held removal in another scope; and any held gesture
   under a refused commit are not retired.
 - `throws.json`: commits that throw. The step answers `{throws: true}` and writes nothing, the clock
-  included: a commit is one local transaction.
+  included: a commit is one local transaction. A text edit of a field that is not a text field of its
+  type throws, a whole put's included, since a `wholePut` type has no text field. A change that removes
+  a `wholePut` record carries its life alone: one that names a field value throws.
 
 ### hold/*.json
 

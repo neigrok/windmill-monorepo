@@ -67,6 +67,7 @@ add_library(windmill_platform
   platform/domain/sync/TextMerge.cpp
   platform/domain/sync/Scope.cpp
   platform/domain/sync/Wire.cpp
+  platform/domain/sync/Credentials.cpp
   platform/domain/sync/Shape.cpp
   platform/domain/sync/Admit.cpp
   platform/application/AuthService.cpp
@@ -80,7 +81,9 @@ add_library(windmill_platform
   platform/application/sync/ServerCall.cpp
   platform/application/sync/SyncService.cpp
   platform/application/sync/SyncLive.cpp
-  platform/ports/ToolHost.cpp)
+  platform/ports/ToolHost.cpp
+  # Drogon-free, so the domain tests replay envelope/credentials.json through the tap the server reads requests with.
+  platform/adapters/http/CredentialTap.cpp)
 target_include_directories(windmill_platform PUBLIC ${CMAKE_SOURCE_DIR})
 
 add_library(windmill_roadmap
@@ -199,11 +202,13 @@ add_executable(windmill_domain_tests
   test/platform/domain/sync/RegistryTest.cpp
   test/platform/domain/sync/ShapeTest.cpp
   test/platform/domain/sync/WireTest.cpp
+  test/platform/domain/sync/CredentialsTest.cpp
   test/platform/domain/sync/LatticeTest.cpp
   test/platform/domain/sync/FractionalIndexTest.cpp
   test/platform/domain/sync/TextMergeTest.cpp
   test/platform/domain/sync/AdmitTest.cpp
   test/platform/domain/sync/CorpusTest.cpp
+  test/platform/adapters/http/CredentialTapTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
   test/platform/domain/MailTest.cpp
@@ -341,6 +346,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     platform/adapters/postgres/PgSyncStore.cpp
     platform/adapters/postgres/PgTableType.cpp
     platform/adapters/http/SyncApi.cpp
+    platform/adapters/http/TappedListener.cpp
     platform/adapters/ws/SyncSocket.cpp)
   target_link_libraries(windmill_platform PUBLIC Drogon::Drogon libpqxx::pqxx OpenSSL::Crypto CURL::libcurl)
 

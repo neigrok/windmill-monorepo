@@ -58,7 +58,9 @@ shape, identity, the join, text merge), `ports/SyncStore.h` (the engine's own ta
 `ports/SyncType.h` (what a product binds per type and command), `application/sync/` (the catalog,
 admission, push, pull, hello and the live channel, all run on `application/WorkerPool`), and the
 adapters `postgres/PgSyncStore`, `postgres/PgTableType` (the common one-table product store),
-`http/SyncApi` (`/v1/sync/hello`, `push`, `pull`) and `ws/SyncSocket` (`/v1/sync/live`). It is built
+`http/SyncApi` (`/v1/sync/hello`, `push`, `pull`), `ws/SyncSocket` (`/v1/sync/live`), and
+`http/CredentialTap` with `http/TappedListener`, which read every request's credentials from its bytes
+before Drogon's parser folds duplicate headers (§9.1). It is built
 against the sync contract in `../packages/api-contract/sync`, which CMake finds through
 `WM_API_CONTRACT_DIR` and the image build receives as the named context `contract` (`Dockerfile`,
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one

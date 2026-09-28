@@ -5,7 +5,8 @@ import { ZERO_DIGEST } from '../core/digest.js';
 import { jcs } from '../core/jcs.js';
 import { compareFeed, compareRecords, isAlive, isVisible, thinRow } from '../core/rows.js';
 import { Cursor, bodyBytes } from '../core/wire.js';
-import { accessOf, credentialFails, scopeKeyOf } from './access.js';
+import { accessOf, scopeKeyOf } from './access.js';
+import { credentialFails } from './credentials.js';
 import { admit } from './admit.js';
 
 export function refOfKey(key) {

@@ -338,6 +338,11 @@ Json::Value helloOverFakes(const Json::Value& input) {
   return test::helloVector(world, input);
 }
 
+Json::Value credentialsOverFakes(const Json::Value& input) {
+  wm::fake::FakeAuthRepository repo;
+  return test::credentialsVector(repo, input);
+}
+
 Json::Value liveDeathOverFakes(const Json::Value& input) {
   test::FakeWorld world;
   return test::liveDeathVector(world, input);
@@ -376,6 +381,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"pull/serve.json", pullOverFakes},
       {"pull/hello.json", helloOverFakes},
       {"live/death.json", liveDeathOverFakes},
+      {"envelope/credentials.json", credentialsOverFakes},
       {"protocol/", corpus::Transcript{transcriptOverFakes}},
 
       {"hlc/offset.json", corpus::ClientRole{"§10.4 offset samples"}},

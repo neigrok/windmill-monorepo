@@ -11,6 +11,21 @@ namespace {
 
 constexpr char kBase64Url[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 
+bool isSeq(const Json::Value& value) {
+  return isSafeInteger(value) && value.asDouble() >= 0;
+}
+
+bool isIdOfKey(const Json::Value& id) {
+  if (id.isString()) return true;
+  if (!id.isArray() || id.empty()) return false;
+  for (const Json::Value& part : id) {
+    if (!part.isString()) return false;
+  }
+  return true;
+}
+
+}
+
 std::string base64Url(std::string_view bytes) {
   std::string text;
   std::uint32_t buffer = 0;
@@ -45,21 +60,6 @@ std::optional<std::string> fromBase64Url(std::string_view text) {
     }
   }
   return bytes;
-}
-
-bool isSeq(const Json::Value& value) {
-  return isSafeInteger(value) && value.asDouble() >= 0;
-}
-
-bool isIdOfKey(const Json::Value& id) {
-  if (id.isString()) return true;
-  if (!id.isArray() || id.empty()) return false;
-  for (const Json::Value& part : id) {
-    if (!part.isString()) return false;
-  }
-  return true;
-}
-
 }
 
 Json::Value WriteEntry::toJson() const {
@@ -102,20 +102,6 @@ bool isAccountId(std::string_view id) {
   } catch (const JsonError&) {
     return false;
   }
-}
-
-Credential::Credential(bool sent, std::optional<UserId> account) : sent_(sent), account_(std::move(account)) {}
-
-Credential Credential::none() {
-  return Credential(false, std::nullopt);
-}
-
-Credential Credential::sent(std::optional<UserId> account) {
-  return Credential(true, std::move(account));
-}
-
-bool Credential::fails() const {
-  return sent_ && (!account_ || !isAccountId(account_->str()));
 }
 
 Json::Value servedAsJson(const std::optional<UserId>& principal) {

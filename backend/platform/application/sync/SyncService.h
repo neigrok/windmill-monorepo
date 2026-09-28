@@ -3,6 +3,7 @@
 #include "platform/application/sync/Admission.h"
 #include "platform/application/sync/SyncCatalog.h"
 #include "platform/domain/Ids.h"
+#include "platform/domain/sync/Credentials.h"
 #include "platform/domain/sync/Wire.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/SyncStore.h"

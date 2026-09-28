@@ -1,5 +1,7 @@
 #include "platform/adapters/http/OAuthApi.h"
 
+#include "platform/adapters/http/Caller.h"
+
 #include <drogon/utils/Utilities.h>
 #include <trantor/utils/Logger.h>
 
@@ -61,17 +63,6 @@ OAuthApi::OAuthApi(std::shared_ptr<OAuthService> oauth, std::shared_ptr<AuthServ
     : oauth_(std::move(oauth)), auth_(std::move(auth)), issuerUrl_(std::move(issuerUrl)),
       appBaseUrl_(std::move(appBaseUrl)), consentPath_(std::move(consentPath)),
       scopesSupported_(std::move(scopesSupported)) {}
-
-std::optional<UserId> OAuthApi::callerOf(const drogon::HttpRequestPtr& req) const {
-  std::string secret = req->getCookie("wm_session");
-  if (secret.empty()) {
-    std::string authorization = req->getHeader("authorization");
-    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
-  }
-  std::optional<User> user = auth_->authenticate(secret);
-  if (!user) return std::nullopt;
-  return user->id;
-}
 
 void OAuthApi::metadata(const drogon::HttpRequestPtr&, HttpCallback&& cb) {
   Json::Value m(Json::objectValue);
@@ -184,7 +175,7 @@ void OAuthApi::authorize(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void OAuthApi::decision(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req);
+  std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(oauthError("login_required", "sign in to authorize", drogon::k401Unauthorized));
     return;
@@ -251,7 +242,7 @@ void OAuthApi::token(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
-  std::optional<UserId> caller = callerOf(req);
+  std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(oauthError("login_required", "sign in to see your connected tools", drogon::k401Unauthorized));
     return;
@@ -274,7 +265,7 @@ void OAuthApi::listGrants(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
 
 void OAuthApi::disconnectGrant(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                                const std::string& clientId) {
-  std::optional<UserId> caller = callerOf(req);
+  std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(oauthError("login_required", "sign in to disconnect a tool", drogon::k401Unauthorized));
     return;

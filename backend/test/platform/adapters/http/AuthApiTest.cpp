@@ -87,14 +87,34 @@ bool hasCookie(const drogon::HttpResponsePtr& response, const std::string& name)
   return response->cookies().find(name) != response->cookies().end();
 }
 
-void checkSessionCookie(const drogon::Cookie& cookie, bool secure, const std::string& domain,
-                        int maxAge) {
-  CHECK(cookie.isHttpOnly());
-  CHECK_EQ(cookie.getPath(), std::string("/"));
-  CHECK(cookie.getSameSite() == drogon::Cookie::SameSite::kLax);
-  CHECK_EQ(cookie.isSecure(), secure);
-  CHECK_EQ(cookie.getDomain(), domain);
-  CHECK_EQ(cookie.getMaxAge(), std::optional<int>(maxAge));
+// Every Set-Cookie line a response writes for wm_session, in wire order: Drogon writes its raw Set-Cookie header ahead of
+// its cookies.
+std::vector<std::string> sessionCookieLines(const drogon::HttpResponsePtr& response) {
+  std::vector<std::string> lines;
+  if (const std::string& header = response->getHeader("set-cookie"); header.starts_with("wm_session=")) lines.push_back(header);
+  if (hasCookie(response, "wm_session")) {
+    const std::string line = response->getCookie("wm_session").cookieString();
+    lines.push_back(line.substr(std::string("Set-Cookie: ").size(), line.size() - std::string("Set-Cookie: \r\n").size()));
+  }
+  return lines;
+}
+
+// The session cookie's lines when a response sets it for `maxAge` seconds (0 clears it) in `domain`'s scope ("" is
+// host-only): that cookie first, then, with a Domain configured, the host-only one expired. Answers the token it set.
+std::string checkSessionCookies(const drogon::HttpResponsePtr& response, bool secure, const std::string& domain, int maxAge) {
+  const std::vector<std::string> lines = sessionCookieLines(response);
+  if (lines.empty()) {
+    CHECK(!lines.empty());
+    return "";
+  }
+  const std::string token = lines[0].substr(11, lines[0].find(';') - 11);
+  const std::string flags = std::string("Path=/; SameSite=Lax; ") + (secure ? "Secure; " : "") + "HttpOnly";
+  std::vector<std::string> expected{"wm_session=" + token + "; Max-Age=" + std::to_string(maxAge) + "; " +
+                                    (domain.empty() ? "" : "Domain=" + domain + "; ") + flags};
+  if (!domain.empty()) expected.push_back("wm_session=; Max-Age=0; " + flags);
+  CHECK_EQ(lines, expected);
+  CHECK_EQ(token.empty(), maxAge == 0);
+  return token;
 }
 
 drogon::HttpResponsePtr call(Harness& h, void (AuthApi::*route)(const drogon::HttpRequestPtr&, HttpCallback&&),
@@ -199,7 +219,7 @@ TEST(auth_a_spent_link_is_gone_and_a_non_empty_account_is_a_conflict) {
   CHECK_EQ(gone["error"].asString(), std::string("That link has expired"));
   CHECK_EQ(gone["detail"].asString(), std::string("Links work once and last 15 minutes."));
   CHECK_EQ(gone["code"].asString(), std::string("expired"));
-  CHECK_FALSE(hasCookie(replay, "wm_session"));
+  CHECK(sessionCookieLines(replay).empty());
 
   CHECK_EQ(call(h, &AuthApi::verify,
                 request(drogon::Post, "/v1/auth/verify", R"({"token":"never-minted"})"))
@@ -237,14 +257,10 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   const drogon::HttpResponsePtr response =
       call(h, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + token + "\"}"));
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  REQUIRE(hasCookie(response, "wm_session"));
 
-  const drogon::Cookie& cookie = response->getCookie("wm_session");
-  CHECK(!cookie.getValue().empty());
-  checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days
+  const std::string session = checkSessionCookies(response, true, kDomain, 7776000);  // 90 days
 
-  const drogon::HttpResponsePtr me =
-      call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", cookie.getValue()));
+  const drogon::HttpResponsePtr me = call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", session));
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 
@@ -252,9 +268,12 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   const std::string localToken = local.linkFor("sam@example.com");
   const drogon::HttpResponsePtr insecure = call(
       local, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + localToken + "\"}"));
-  REQUIRE(hasCookie(insecure, "wm_session"));
-  CHECK(!insecure->getCookie("wm_session").getValue().empty());
-  checkSessionCookie(insecure->getCookie("wm_session"), false, "", 7776000);
+  checkSessionCookies(insecure, false, "", 7776000);
+
+  Harness insecureDomain(false, kDomain);
+  const std::string insecureToken = insecureDomain.linkFor("sam@example.com");
+  checkSessionCookies(call(insecureDomain, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + insecureToken + "\"}")), false,
+                      kDomain, 7776000);
 }
 
 TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
@@ -264,9 +283,7 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   const drogon::HttpResponsePtr response =
       call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout", "", "s-live"));
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
-  REQUIRE(hasCookie(response, "wm_session"));
-  CHECK_EQ(response->getCookie("wm_session").getValue(), std::string(""));
-  checkSessionCookie(response->getCookie("wm_session"), true, kDomain, 0);
+  checkSessionCookies(response, true, kDomain, 0);
 
   CHECK(h.authRepo.sessions.empty());
   CHECK_EQ(call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", "s-live"))->getStatusCode(),
@@ -275,9 +292,22 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   const drogon::HttpResponsePtr anonymous =
       call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout"));
   CHECK_EQ(anonymous->getStatusCode(), drogon::k204NoContent);
-  REQUIRE(hasCookie(anonymous, "wm_session"));
-  CHECK_EQ(anonymous->getCookie("wm_session").getValue(), std::string(""));
-  checkSessionCookie(anonymous->getCookie("wm_session"), true, kDomain, 0);
+  checkSessionCookies(anonymous, true, kDomain, 0);
+
+  Harness local(false, "");
+  local.signIn("s-live");
+  checkSessionCookies(call(local, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout", "", "s-live")), false, "", 0);
+}
+
+TEST(auth_the_link_door_signs_the_surviving_account_in_across_both_cookie_scopes) {
+  Harness h;
+  h.signIn("s-live", "ada@example.com");
+  const std::string token = h.linkFor("sam@example.com");
+  const drogon::HttpResponsePtr linked =
+      call(h, &AuthApi::link, request(drogon::Post, "/v1/auth/link", kVerified + token + "\"}", "s-live"));
+  CHECK_EQ(linked->getStatusCode(), drogon::k200OK);
+  CHECK((*linked->getJsonObject())["linked"].asBool());
+  checkSessionCookies(linked, true, kDomain, 7776000);
 }
 
 TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_ends) {
@@ -287,9 +317,7 @@ TEST(auth_closing_an_account_clears_this_device_s_cookie_and_names_the_day_it_en
   const drogon::HttpResponsePtr response =
       call(h, &AuthApi::deleteMe, request(drogon::Delete, "/v1/me", "", "s-live"));
   CHECK_EQ(response->getStatusCode(), drogon::k200OK);
-  REQUIRE(hasCookie(response, "wm_session"));
-  CHECK_EQ(response->getCookie("wm_session").getValue(), std::string(""));
-  checkSessionCookie(response->getCookie("wm_session"), true, kDomain, 0);
+  checkSessionCookies(response, true, kDomain, 0);
 
   const Json::Value body = *response->getJsonObject();
   const UnixMs closesMs = static_cast<UnixMs>(body["closesMs"].asInt64());
@@ -309,15 +337,13 @@ TEST(auth_only_revoking_your_own_session_clears_your_own_cookie) {
 
   const drogon::HttpResponsePtr other = revoke(h, "s-mine", phoneId);
   CHECK_EQ(other->getStatusCode(), drogon::k204NoContent);
-  CHECK_FALSE(hasCookie(other, "wm_session"));
+  CHECK(sessionCookieLines(other).empty());
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-phone")), std::size_t{0});
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-mine")), std::size_t{1});
 
   const drogon::HttpResponsePtr own = revoke(h, "s-mine", ownId);
   CHECK_EQ(own->getStatusCode(), drogon::k204NoContent);
-  REQUIRE(hasCookie(own, "wm_session"));
-  CHECK_EQ(own->getCookie("wm_session").getValue(), std::string(""));
-  checkSessionCookie(own->getCookie("wm_session"), true, kDomain, 0);
+  checkSessionCookies(own, true, kDomain, 0);
   CHECK(h.authRepo.sessions.empty());
 }
 
@@ -330,7 +356,7 @@ TEST(auth_signing_out_everywhere_leaves_this_device_s_cookie_standing) {
   const drogon::HttpResponsePtr response = call(
       h, &AuthApi::signOutEverywhere, request(drogon::Delete, "/v1/sessions", "", "s-mine"));
   CHECK_EQ(response->getStatusCode(), drogon::k204NoContent);
-  CHECK_FALSE(hasCookie(response, "wm_session"));
+  CHECK(sessionCookieLines(response).empty());
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-mine")), std::size_t{1});
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-phone")), std::size_t{0});
 }
@@ -471,7 +497,7 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
       h, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + second + "\"}"));
   CHECK_EQ(plain->getStatusCode(), drogon::k200OK);
   CHECK_FALSE((*plain->getJsonObject()).isMember("forkedTree"));
-  REQUIRE(hasCookie(plain, "wm_session"));
+  checkSessionCookies(plain, true, kDomain, 7776000);
 
   Harness bare;
   bare.api = std::make_shared<AuthApi>(bare.auth, nullptr, true, kDomain);
@@ -496,13 +522,9 @@ TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
   CHECK_EQ(body["user"]["email"].asString(), std::string("sam@example.com"));
   CHECK_FALSE(body.isMember("session"));
 
-  REQUIRE(hasCookie(response, "wm_session"));
-  const drogon::Cookie& cookie = response->getCookie("wm_session");
-  CHECK(!cookie.getValue().empty());
-  checkSessionCookie(cookie, true, kDomain, 7776000);  // 90 days
+  const std::string session = checkSessionCookies(response, true, kDomain, 7776000);  // 90 days
 
-  const drogon::HttpResponsePtr me =
-      call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", cookie.getValue()));
+  const drogon::HttpResponsePtr me = call(h, &AuthApi::me, request(drogon::Get, "/v1/me", "", session));
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 }
@@ -520,7 +542,7 @@ TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   CHECK_EQ(gone["error"].asString(), std::string("That code has expired"));
   CHECK_EQ(gone["detail"].asString(), std::string("Codes work once and last 15 minutes."));
   CHECK_EQ(gone["code"].asString(), std::string("expired"));
-  CHECK_FALSE(hasCookie(wrong, "wm_session"));
+  CHECK(sessionCookieLines(wrong).empty());
 
   const drogon::HttpResponsePtr unknown =
       call(h, &AuthApi::verifyCode,
@@ -606,13 +628,13 @@ TEST(auth_the_google_door_bounces_into_the_app_until_it_is_configured) {
   CHECK_EQ(start->getStatusCode(), drogon::k302Found);
   CHECK_EQ(start->getHeader("location"), kApp + "/#/");
   CHECK_FALSE(hasCookie(start, "wm_oauth_state"));
-  CHECK_FALSE(hasCookie(start, "wm_session"));
+  CHECK(sessionCookieLines(start).empty());
 
   const drogon::HttpResponsePtr callback =
       call(h, &AuthApi::googleCallback, request(drogon::Get, "/v1/auth/google/callback"));
   CHECK_EQ(callback->getStatusCode(), drogon::k302Found);
   CHECK_EQ(callback->getHeader("location"), kApp + "/#/");
-  CHECK_FALSE(hasCookie(callback, "wm_session"));
+  CHECK(sessionCookieLines(callback).empty());
 }
 
 TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
@@ -633,7 +655,7 @@ TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
   CHECK_EQ(state.getDomain(), kDomain);
   CHECK_EQ(state.getMaxAge(), std::optional<int>(600));  // ten minutes
   CHECK(start->getHeader("location").find("state=" + state.getValue()) != std::string::npos);
-  CHECK_FALSE(hasCookie(start, "wm_session"));
+  CHECK(sessionCookieLines(start).empty());
 
   const drogon::HttpResponsePtr again =
       call(h, &AuthApi::googleStart, request(drogon::Get, "/v1/auth/google/start"));
@@ -663,7 +685,7 @@ TEST(auth_a_failed_google_callback_expires_only_the_state_and_never_the_session)
     CHECK_EQ(bounced->getHeader("location"), kApp + "/#/?signin=google_failed");
     REQUIRE(hasCookie(bounced, "wm_oauth_state"));
     CHECK_EQ(bounced->getCookie("wm_oauth_state").getMaxAge(), std::optional<int>(0));
-    CHECK_FALSE(hasCookie(bounced, "wm_session"));
+    CHECK(sessionCookieLines(bounced).empty());
   }
   CHECK_EQ(h.authRepo.sessions.count(h.tokens.digestOf("s-live")), std::size_t{1});
 }

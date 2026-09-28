@@ -89,7 +89,7 @@ single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (1
 
 ### `POST /v1/auth/logout`
 
-Drops the session, clears the cookie, `204`.
+Drops the session, clears the cookie in both of its scopes (Frontend integration), `204`.
 
 ### `POST /v1/auth/apple` — the native door
 
@@ -217,11 +217,18 @@ fourth product adds one line to it.
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
   absent, and `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the
   Keychain.
-- The sync endpoints and the live upgrade (`SyncApi.cpp`, `SyncSocket.cpp`) count the cookie and the
-  `Authorization` header, whatever its shape, each as a credential sent: one that does not resolve,
-  or two that name different accounts, answer `401` and are never served as anonymous
-  (`docs/foundation/engine.md` §9.1). A session `AuthService` revokes closes its live sync sockets at
-  once (`LiveSessions`).
+- The sync endpoints and the live upgrade (`SyncApi.cpp`, `SyncSocket.cpp`) read credentials as sent
+  (`docs/foundation/engine.md` §9.1). Drogon keeps one of two headers and drops a cookie it cannot
+  parse, so a server that mounts them listens through `TappedListener`: a `CredentialTap` frames every
+  connection's requests before Drogon does, and hands each on with a `wm-sent-credentials` field
+  naming every `Authorization` header and every `wm_session` cookie piece, a bare one included. They
+  resolve only as at most one `Authorization: Bearer <token>` (the scheme in any case) and at most one
+  `wm_session=<token>` (the token verbatim), each held by a live session, naming one account; anything
+  else answers `401` and is never served as anonymous. The REST surfaces read through `Caller.cpp`.
+- Every session deletion runs through `AuthService` and is told to `LiveSessions`, which closes the
+  sync sockets the session opened before they send another frame: a sign-out, a revoked session,
+  sign-out everywhere, a closed account, and a folded account with every session its deleted row took
+  along. The sockets' re-proof, once a minute, is a backstop.
 - The apps sign in by code: mint with `door: "app"`, post the typed digits to `/v1/auth/verify-code`,
   capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
   (sign-in) or `/v1/auth/link` (the merge above).
@@ -244,6 +251,15 @@ fourth product adds one line to it.
   a credentialed `/v1/auth/verify`.
 - In production the cookie's `Domain` is the registrable domain (`WINDMILL_COOKIE_DOMAIN`), so `app`
   and `api.app` share it. On `https` origins the cookie is `Secure`.
+- The cookie has two scopes: host-only, and the configured `Domain`. A response that sets `wm_session`
+  sets it in the configured scope and then expires the host-only one; a response that clears it
+  expires both. A host-only variant left from before a `Domain` was configured would ride beside the
+  live cookie, and two session cookies answer every sync request `401`; this way it never outlives
+  the next sign-in or sign-out. The live cookie is written first because both apps lift the first
+  `wm_session` a response sets; a browser files a host-only and a `Domain` cookie apart, so the
+  expiry after it reaches only the stray. With no `Domain` configured only the host-only cookie is
+  written, so a variant in a `Domain` no longer configured, or in the one before a change of `Domain`,
+  is never expired.
 
 ## Operator env
 
@@ -252,7 +268,7 @@ fourth product adds one line to it.
 | `RESEND_API_KEY` | Resend key; without it, sends throw → `502` | — |
 | `RESEND_FROM` | Verified sender, on a domain verified in Resend. Never Resend's shared `onboarding@resend.dev` outside a scratch box: Resend accepts it only for the account owner and rejects every other recipient `422`, so sign-up breaks for everyone except the person testing it. The deploy guards it | — |
 | `WINDMILL_APP_URL` | Base for the magic-link URL; always a trusted CORS origin | `http://localhost:5183` (compose: `https://${DOMAIN_APP}`) |
-| `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only | compose: `${DOMAIN_APP}` |
+| `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only. When set, every sign-in and sign-out also expires the host-only cookie | compose: `${DOMAIN_APP}` |
 | `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in; unset → the routes bounce to the app | — |
 | `APPLE_CLIENT_ID` | The iOS app's bundle identifier | — |

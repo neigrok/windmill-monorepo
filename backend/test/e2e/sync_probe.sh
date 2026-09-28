@@ -2,8 +2,9 @@
 # The sync engine end to end against windmill_server_probe on :$PORT and a THROWAWAY Postgres: this script
 # wipes every sync_* and probe_* row of $WM_E2E_DB.
 #
-# Prereqs: psql "$WM_E2E_DB" -f db/schema.sql -f db/probe.sql, and the probe server running on it:
-#   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=8089 ./build/windmill_server_probe
+# Prereqs: psql "$WM_E2E_DB" -f db/schema.sql -f db/probe.sql, and the probe server running on it with the session
+# cookie scoped to Domain=localhost, so a sign-in shows both of the cookie's scopes:
+#   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=localhost ./build/windmill_server_probe
 # Run:  WM_E2E_DB=<db> PORT=8089 bash test/e2e/sync_probe.sh
 set -uo pipefail
 
@@ -97,14 +98,36 @@ an unknown cookie|Cookie: wm_session=nope
 an empty cookie|Cookie: wm_session=
 a signed-out session's Bearer|Authorization: Bearer $REVOKED
 a Basic header|Authorization: Basic $SESSION
-a lowercase bearer|Authorization: bearer $SESSION
 a bare token|Authorization: $SESSION
+a bare session cookie|Cookie: theme=dark; wm_session
+a quoted session cookie|Cookie: wm_session="$SESSION"
+two session cookies in one header|Cookie: wm_session=$SESSION; wm_session=$SESSION
 CREDENTIALS
+check "$(bare -H "Cookie: wm_session=$SESSION" -H "Cookie: wm_session=$SESSION" -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello")" "401" \
+  "two session cookies in two Cookie headers resolve to none, though both name the account"
+check "$(bare -H "Authorization: Bearer $SESSION" -H "Authorization: Bearer $SESSION" -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello")" "401" \
+  "two Authorization headers resolve to none, though both name the account"
 check "$(bare -H "Authorization: Bearer $SESSION" "$BASE/v1/sync/hello" | field "['as']")" "$ACCOUNT" "a Bearer session is served as its account"
+check "$(bare -H "Authorization: bEaReR $SESSION" "$BASE/v1/sync/hello" | field "['as']")" "$ACCOUNT" "and the Bearer scheme reads in any case"
 check "$(bare -H "Cookie: wm_session=$(mint_session "$OTHER")" -H "Authorization: Bearer $SESSION" -o /dev/null -w '%{http_code}' "$BASE/v1/sync/hello")" "401" \
   "a cookie and a Bearer of two accounts resolve to none"
 bare -X POST "$BASE/v1/sync/pull" -d "$PULL_SELF" > "$BODY"
 check "$(field "['as']" < "$BODY") $(field "['pages']" < "$BODY")" 'null [{"kind":"not-found","scope":"self/probe"}]' "a pull with no credential is anonymous: self/probe is not-found"
+
+echo "the session cookie's two scopes"
+cookies(){ tr -d '\r' | grep -i '^set-cookie: wm_session=' | tr 'A-Z' 'a-z' | sed -E 's/^set-cookie: wm_session=[^;]+/set-cookie: wm_session=<token>/'; }
+SCOPED_SECRET="$(openssl rand -hex 24)"
+psql "$DB" -q -c "insert into magic_links (token_hash,email,created_ms,expires_ms) values ('$(printf '%s' "$SCOPED_SECRET" | shasum -a 256 | awk '{print $1}')','$EMAIL',$NOW,$((NOW+900000)))"
+SIGNED_IN="$(curl -s -D - -o /dev/null -X POST "$BASE/v1/auth/verify" -H 'content-type: application/json' -d "{\"token\":\"$SCOPED_SECRET\"}")"
+check "$(cookies <<<"$SIGNED_IN")" "$(printf '%s\n' 'set-cookie: wm_session=<token>; max-age=7776000; domain=localhost; path=/; samesite=lax; httponly' \
+  'set-cookie: wm_session=; max-age=0; path=/; samesite=lax; httponly')" \
+  "a sign-in sets the session cookie in the configured Domain, first, and then expires the host-only one"
+SCOPED="$(tr -d '\r' <<<"$SIGNED_IN" | grep -i '^set-cookie: wm_session=[^;]' | sed -E 's/^[^=]*=([^;]*);.*/\1/')"
+check "$(bare -H "Cookie: wm_session=$SCOPED" "$BASE/v1/sync/hello" | field "['as']")" "$ACCOUNT" "the cookie it set resolves"
+check "$(curl -s -D - -o /dev/null -X POST "$BASE/v1/auth/logout" -H "Cookie: wm_session=$SCOPED" | cookies)" \
+  "$(printf '%s\n' 'set-cookie: wm_session=; max-age=0; domain=localhost; path=/; samesite=lax; httponly' \
+  'set-cookie: wm_session=; max-age=0; path=/; samesite=lax; httponly')" \
+  "a sign-out expires the session cookie in both scopes"
 
 echo "push"
 FOREIGN="{\"replica\":\"$REPLICA\",\"account\":\"$OTHER_ACCOUNT\",\"ackThrough\":0,\"intents\":[$(card 1 cardE2E0001 One)]}"
@@ -238,7 +261,9 @@ async def main():
           await refused("?schema=2", {**cookie, "Sync-Schema": "1"}))
     print(await refused("?schema=2", {"Cookie": f"wm_session={revoked}"}), await refused("?schema=2", {"Cookie": "wm_session=nope"}),
           await refused("?schema=2", {"Authorization": f"Basic {secret}"}), await refused("?schema=2", {"Authorization": f"Bearer {revoked}"}),
-          await refused("?schema=2", {"Authorization": f"Bearer {secret}"}))
+          await refused("?schema=2", {"Cookie": f"wm_session={secret}; wm_session={secret}"}),
+          await refused("?schema=2", [("Cookie", f"wm_session={secret}"), ("Cookie", f"wm_session={secret}")]),
+          await refused("?schema=2", {"Cookie": "wm_session"}), await refused("?schema=2", {"Authorization": f"Bearer {secret}"}))
     async with websockets.connect(live, additional_headers=cookie) as ws, \
                websockets.connect(live, additional_headers={"Authorization": f"Bearer {doomed}"}) as condemned:
         await ws.send(json.dumps({"op": "ping"}))
@@ -266,8 +291,8 @@ PY
 )"
 check "$(sed -n 1p <<<"$LIVE")" "400 426 400 upgraded upgraded 426 upgraded" \
   "the upgrade reads ?schema= alone, as Drogon presents it: missing, below minSchema, only a header, repeated (the last value decides), and a header beside it ignored"
-check "$(sed -n 2p <<<"$LIVE")" "401 401 401 401 upgraded" \
-  "an upgrade whose credential does not resolve is 401: a revoked cookie, an unknown one, a Basic header, a revoked Bearer; a live Bearer upgrades"
+check "$(sed -n 2p <<<"$LIVE")" "401 401 401 401 401 401 401 upgraded" \
+  "an upgrade whose credentials do not resolve is 401: a revoked cookie, an unknown one, a Basic header, a revoked Bearer, two session cookies in one header or in two, a bare one; a live Bearer upgrades"
 check "$(sed -n 3p <<<"$LIVE")" "pong" "ping answers pong"
 check "$(sed -n 4p <<<"$LIVE")" '{"as": "ME", "op": "not-found", "scope": "tree/b_ffffffff"}' "a sub to an absent tree answers not-found, as the socket's account"
 check "$(sed -n 5p <<<"$LIVE")" "pong" "a second socket, on a session about to be revoked, subscribes"

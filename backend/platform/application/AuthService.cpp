@@ -158,7 +158,7 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
   const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
   repo_.moveIdentities(caller, surviving.id);
   revocations_.revoked(repo_.revokeAllSessions(caller));  // the caller's own current one too, told before anything can throw
-  repo_.deleteUser(caller);                                // empty by proof
+  revocations_.revoked(repo_.deleteUser(caller));          // empty by proof; a session minted since goes with the row
   LOG_INFO << "auth: empty account folded into another folded=" << caller.str()
            << " surviving=" << surviving.id.str();
   return {LinkOutcome::linked, mintSession(surviving, ctx, now)};

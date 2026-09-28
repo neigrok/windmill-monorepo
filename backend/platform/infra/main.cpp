@@ -101,6 +101,7 @@
 
 #ifdef WM_SYNC_PROBE
 #include "platform/adapters/http/SyncApi.h"
+#include "platform/adapters/http/TappedListener.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/adapters/ws/SyncSocket.h"
 #include "platform/application/WorkerPool.h"
@@ -957,7 +958,14 @@ int main() {
   app.setClientMaxBodySize(8 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
-  const char* listenHost = std::getenv("WINDMILL_HOST");
-  app.addListener(listenHost && *listenHost ? listenHost : "0.0.0.0", port).setThreadNum(ioThreads).run();
+  const char* listenHostEnv = std::getenv("WINDMILL_HOST");
+  const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
+#ifdef WM_SYNC_PROBE
+  // The sync endpoints read §9.1's credentials as sent: every connection is tapped before Drogon parses it.
+  listenTapped(app, listenHost, static_cast<std::uint16_t>(port), ioThreads);
+#else
+  app.addListener(listenHost, port);
+#endif
+  app.setThreadNum(ioThreads).run();
   return 0;
 }

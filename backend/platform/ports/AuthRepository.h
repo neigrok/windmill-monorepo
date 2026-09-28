@@ -50,8 +50,9 @@ struct AuthRepository {
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
   virtual void markUserDeleted(const UserId& userId, UnixMs now) = 0;
   virtual void reviveUser(const UserId& userId) = 0;
-  // Hard delete; only for the link merge, whose precondition is an account proven empty.
-  virtual void deleteUser(const UserId& userId) = 0;
+  // Hard delete; only for the link merge, whose precondition is an account proven empty. Returns the digests of the
+  // sessions the account still held, which go with it.
+  virtual std::vector<std::string> deleteUser(const UserId& userId) = 0;
 
   // Keyed by the provider's subject, never by an address.
   virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;

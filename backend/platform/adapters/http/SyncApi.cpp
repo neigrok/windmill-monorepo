@@ -1,6 +1,7 @@
 #include "platform/adapters/http/SyncApi.h"
 
 #include "platform/adapters/http/Caller.h"
+#include "platform/adapters/http/CredentialTap.h"
 #include "platform/domain/sync/Jcs.h"
 
 #include <trantor/utils/Logger.h>
@@ -54,8 +55,13 @@ std::optional<SyncReply> SyncApi::versionRefusal(const drogon::HttpRequestPtr& r
 }
 
 Credential SyncApi::credentialOf(const drogon::HttpRequestPtr& req) const {
-  const Credential credential = sync::credentialOf(sentSecretsOf(req), [this](const std::string& secret) -> std::optional<UserId> {
-    const std::optional<User> user = deps_.auth->authenticate(secret);
+  const std::optional<std::vector<SentCredential>> sent = tappedCredentialsOf(req);
+  if (!sent) {
+    LOG_ERROR << "sync request read by no credential tap; answered as credentials that do not resolve";
+    return Credential::sent(std::nullopt);
+  }
+  const Credential credential = sync::credentialOf(*sent, [this](const std::string& token) -> std::optional<UserId> {
+    const std::optional<User> user = deps_.auth->authenticate(token);
     return user ? std::optional(user->id) : std::nullopt;
   });
   if (!credential.fails() && credential.servedAs()) req->attributes()->insert(kCallerAttribute, credential.servedAs()->str());
@@ -74,25 +80,10 @@ std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t mi
   return std::nullopt;
 }
 
-std::vector<std::string> sentSecretsOf(const drogon::HttpRequestPtr& req) {
-  std::vector<std::string> secrets;
-  if (const auto cookie = req->cookies().find("wm_session"); cookie != req->cookies().end()) secrets.push_back(cookie->second);
-  if (const auto header = req->headers().find("authorization"); header != req->headers().end()) {
-    const std::string_view authorization = header->second;
-    secrets.emplace_back(authorization.starts_with("Bearer ") ? authorization.substr(7) : std::string_view());
-  }
-  return secrets;
-}
-
-Credential credentialOf(const std::vector<std::string>& secrets, const std::function<std::optional<UserId>(const std::string&)>& resolve) {
-  if (secrets.empty()) return Credential::none();
-  std::optional<UserId> account;
-  for (const std::string& secret : secrets) {
-    const std::optional<UserId> resolved = secret.empty() ? std::nullopt : resolve(secret);
-    if (!resolved || (account && *account != *resolved)) return Credential::sent(std::nullopt);
-    account = resolved;
-  }
-  return Credential::sent(account);
+std::optional<std::vector<SentCredential>> tappedCredentialsOf(const drogon::HttpRequestPtr& req) {
+  const auto field = req->headers().find(kSentCredentialsField);
+  if (field == req->headers().end()) return std::nullopt;
+  return parseSentCredentialsField(field->second);
 }
 
 drogon::HttpResponsePtr responseOf(const SyncReply& reply) {

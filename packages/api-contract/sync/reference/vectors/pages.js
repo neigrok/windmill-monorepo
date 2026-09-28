@@ -124,6 +124,18 @@ class PullScript {
 
 const bootedOnProbe = () => new PullScript({ device: device(), server: server() }).pullRound(['self/probe'], { serverNow: 5000 });
 
+// A pull of a new board's tree leaves before the board is committed, and the server answers it
+// not-found; the board's create is pushed and acked, and only then does that answer land.
+function lateNotFound() {
+  const script = bootedOnProbe().pull(['tree/b_00000002'], 5001);
+  const early = pull({ state: script.server, registry, product, account: 'A', request: script.lastRequest('pull').request, serverNow: 5001 }).response;
+  return script
+    .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }], deviceNow: 5002 })
+    .pushRound(5003)
+    .add({ op: 'pullResponse', response: early, tSend: 5001, tRecv: 5004, deviceNow: 5004 })
+    .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5005 });
+}
+
 // An acked entry as a sender leaves it: numbered, digested, with its result's seq and epoch.
 function acked(n, id, resultSeq) {
   const intent = { scope: 'self/probe', d: [{ t: 'card', id, born: CARDS.find((card) => card.id === id).born, f: { title: ['Acked', st(4000 + n)] } }], gestureId: `sent${n}`, n };
@@ -241,6 +253,22 @@ function lives() {
       .pullRound(['tree/b_00000002'], { serverNow: 5006 })
       .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan B' } }], deviceNow: 5007 })
       .vector('a not-found frame for a tree whose board create is still in the outbox is ignored: commits into it are accepted, a pull of it alone sends nothing, and it boots once the create has its result'),
+    lateNotFound().vector('a not-found the server wrote before the board\'s create, landing after the create is acked, is ignored: commits into the tree are accepted'),
+    bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }], deviceNow: 5001 })
+      .pushRound(5002)
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: 'tree/b_00000002' }, deviceNow: 5003 })
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: 'self/overlay/b_00000002' }, deviceNow: 5003 })
+      .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5004 })
+      .vector('not-found frames for a tree and its overlay whose board create is acked are ignored: commits into the tree are accepted'),
+    bootedOnProbe()
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: TREE }, deviceNow: 5001 })
+      .add({ op: 'commit', scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5002 })
+      .vector('a not-found frame for a tree whose board is confirmed alive is ignored: the replica holds the board, so the answer is stale'),
+    bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'delete', t: 'board', id: BOARD }], opts: { hold: true }, deviceNow: 5001 })
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: TREE }, deviceNow: 5002 })
+      .vector('a not-found frame for a tree whose board has a held delete waiting is ignored: the board is dead in drawn but alive in stored'),
     bootedOnProbe()
       .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0003', f: { title: 'Mine' } }], deviceNow: 5001 })
       .pushFrameFirst(5001)

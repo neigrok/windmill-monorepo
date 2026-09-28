@@ -612,6 +612,18 @@ function throws() {
       device: device(bound({ confirmed: FACTS })),
       steps: [commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value: 81 } }])],
     }),
+    stepsVector('a removing put of a whole fact that names a field value throws: a removal carries its life alone', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, present: false, f: { value: 81 } }])],
+    }),
+    stepsVector('a delete of a whole fact that names a field value throws', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [commitStep('self/probe', [{ op: 'delete', t: 'fact', id: DAY, f: { value: 81 } }])],
+    }),
+    stepsVector('a whole put carrying a text edit throws: a wholePut type has no text field', {
+      device: device(bound({ confirmed: FACTS })),
+      steps: [commitStep('self/probe', [{ op: 'put', t: 'fact', id: DAY, f: { value: 81, at: 5000 }, x: { note: 'kept?' } }])],
+    }),
     stepsVector('a device row whose key matches none of its product\'s rows throws', {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [], { local: { plates: [10] } })],
