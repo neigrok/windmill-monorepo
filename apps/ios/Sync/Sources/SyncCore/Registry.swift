@@ -1,4 +1,5 @@
-// §2.4 the registry in registry.schema.json's format; `json` writes it without `$schema` or default-valued keys.
+// §2.4 the registry in registry.schema.json's format; `json` writes it without `$schema` or a key holding what its absence
+// means (a `false` flag, an empty list).
 
 public struct Registry: Sendable {
   public let name: String
@@ -70,10 +71,15 @@ public struct Registry: Sendable {
     ]
   }
 
-  // Rules that need the whole registry: unique names, and every referenced type and product declared.
+  // Rules that need the whole registry: unique names and refusal codes, every referenced type and product declared,
+  // every default a value its field admits, and no command predicting a type only deltas write.
   func checkReferences() throws(RegistryError) {
     for (index, product) in products.enumerated() where products[..<index].contains(where: { $0.name == product.name }) {
       throw RegistryError("product \(product.name) is declared twice")
+    }
+    let codes = products.flatMap(\.codes)
+    for (index, code) in codes.enumerated() where codes[..<index].contains(code) {
+      throw RegistryError("refusal code \(code) is declared twice")
     }
     for (index, type) in types.enumerated() where types[..<index].contains(where: { $0.name == type.name }) {
       throw RegistryError("type \(type.name) is declared twice")
@@ -89,6 +95,10 @@ public struct Registry: Sendable {
       if case .product(let product) = type.scope, self.product(product) == nil {
         throw RegistryError("type \(type.name) lives in the undeclared product \(product)")
       }
+      for field in type.fields {
+        guard let value = field.defaultValue, !admits(value, for: field) else { continue }
+        throw RegistryError("type \(type.name) field \(field.name): the default \(value.jcsText) is no value of the field")
+      }
     }
     for command in commands {
       let referenced = command.args.compactMap(\.type.ref) + command.predicts
@@ -98,25 +108,34 @@ public struct Registry: Sendable {
       if case .product(let product) = command.scope, self.product(product) == nil {
         throw RegistryError("command \(command.name) lives in the undeclared product \(product)")
       }
+      for predicted in command.predicts where type(predicted)?.wholePut == true {
+        throw RegistryError("command \(command.name) predicts \(predicted), a wholePut type only deltas write")
+      }
     }
   }
 }
 
 // MARK: - Products
 
+// A product: the surfaces that carry it, its device rows, and the refusal codes its check and commands answer beyond
+// §9.6's, none of them an engine code.
 public struct ProductDef: Sendable {
   public let name: String
   public let surfaces: [Surface]
   public let device: [DeviceRowDef]
+  public let codes: [RefusalCode]
 
   init(name: String, json: JSON) throws(RegistryError) {
     do {
       guard RegistryName.isProduct(name) else { throw RegistryError("not a product name") }
       let object = try json.asObject()
-      try object.expectKeys(required: [], optional: ["surfaces", "device"])
+      try object.expectKeys(required: [], optional: ["surfaces", "device", "codes"])
       self.name = name
       surfaces = try object["surfaces"]?.asDistinctStrings().map { try Surface(decoding: $0) } ?? []
       device = try object["device"]?.asObject().members.map { try DeviceRowDef(name: $0.key, json: $0.value) } ?? []
+      codes = try object["codes"]?.asDistinctStrings().map { RefusalCode($0) } ?? []
+      for code in codes where !RegistryName.isRefusalCode(code.text) { throw RegistryError("\(code) is not a refusal code") }
+      for code in codes where RefusalCode.engine.contains(code) { throw RegistryError("\(code) is an engine code") }
     } catch {
       throw RegistryError(context: "product \(name)", underlying: error)
     }
@@ -126,6 +145,7 @@ public struct ProductDef: Sendable {
     var object = JSON.Object()
     if !surfaces.isEmpty { object["surfaces"] = .array(surfaces.map { .string($0.rawValue) }) }
     if !device.isEmpty { object["device"] = .object(JSON.Object(uniqueKeysWithValues: device.map { ($0.name, $0.json) })) }
+    if !codes.isEmpty { object["codes"] = .array(codes.map(\.json)) }
     return .object(object)
   }
 }
@@ -176,6 +196,9 @@ public struct TypeDef: Sendable {
   public let seeded: Seeded?
   public let mint: Mint?
   public let life: Bool
+  // §2.4: each record is one fact, whose newest save wins whole: every put that leaves it present writes every
+  // client-written lattice field and a fresh life at one stamp.
+  public let wholePut: Bool
   public let revivable: Bool?
   public let deadRows: DeadRows?
   public let governsTree: Bool
@@ -187,6 +210,9 @@ public struct TypeDef: Sendable {
 
   public var hasBorn: Bool { identity == .minted || identity == .derived }
 
+  // The fields a whole put writes (§7.1 step 4): every lattice field a client writes.
+  public var clientLatticeFields: [FieldDef] { fields.filter { $0.kind.isLattice && $0.writer == .client } }
+
   public func field(_ name: String) -> FieldDef? {
     fields.first { $0.name.utf8.elementsEqual(name.utf8) }
   }
@@ -196,7 +222,7 @@ public struct TypeDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["type", "scope", "identity", "life", "origins", "fields"],
-        optional: ["idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "revivable", "deadRows",
+        optional: ["idSpace", "idPattern", "key", "singletonId", "derive", "seeded", "mint", "wholePut", "revivable", "deadRows",
                    "governs", "cap", "visibleWhen", "primary"])
       name = try object.member("type").asString()
       guard RegistryName.isTypeOrField(name) else { throw RegistryError("\(name) is not a type name") }
@@ -216,6 +242,10 @@ public struct TypeDef: Sendable {
       seeded = try object["seeded"].map { try Seeded(json: $0) }
       mint = try object["mint"].map { try Mint(json: $0) }
       life = try object.member("life").asBool()
+      wholePut = try object["wholePut"].map { wholePut in
+        guard try wholePut.asBool() else { throw RegistryError("wholePut is true or absent") }
+        return true
+      } ?? false
       revivable = try object["revivable"]?.asBool()
       deadRows = try object["deadRows"].map { try DeadRows(decoding: $0.asString()) }
       governsTree = try object["governs"].map { governs in
@@ -263,6 +293,11 @@ public struct TypeDef: Sendable {
     guard !governsTree || idSpace == .global else { throw RegistryError("a governing type's ids are global") }
     guard revivable != true || deadRows == .keep else { throw RegistryError("a revivable type keeps its dead rows") }
     guard origins.contains(.replica) else { throw RegistryError("origins always include replica") }
+    guard !wholePut || (identity == .keyed && life) else { throw RegistryError("a wholePut type is keyed with life") }
+    guard !wholePut || !fields.contains(where: { $0.kind.isText }) else { throw RegistryError("a wholePut type has no text field") }
+    for field in clientLatticeFields where wholePut {
+      guard case .lww = field.kind else { throw RegistryError("field \(field.name): a wholePut type's client-written fields are lww") }
+    }
     guard visibleWhen == nil || !life else { throw RegistryError("visibleWhen is for types without life") }
     guard visibleWhen?.isEmpty != true else { throw RegistryError("visibleWhen names at least one field") }
     guard fields.filter(\.parent).count <= 1 else { throw RegistryError("at most one field is the parent") }
@@ -312,6 +347,7 @@ public struct TypeDef: Sendable {
     object["derive"] = deriveFallback.map { ["fallback": .string($0)] }
     object["seeded"] = seeded.map { ["seedMax": JSON($0.seedMax), "ordinalMax": JSON($0.ordinalMax)] }
     object["mint"] = mint.map { ["prefix": .string($0.prefix), "alphabet": .string($0.alphabet), "length": JSON($0.length)] }
+    object["wholePut"] = wholePut ? true : nil
     object["revivable"] = revivable.map { .bool($0) }
     object["deadRows"] = deadRows.map { .string($0.rawValue) }
     object["governs"] = governsTree ? "tree" : nil
@@ -457,7 +493,9 @@ public struct FieldDef: Sendable {
   public let parent: Bool
   public let bounds: Bounds?
   public let domain: Domain?
-  public let quantum: Quantum?
+  // §2.4 a lattice field's `default`: the value a reader takes while the register is unset, never stored or sent. Nil
+  // when the field declares none; JSON null when it declares null.
+  public let defaultValue: JSON?
   public let opens: [String]?
 
   init(name: String, json: JSON) throws(RegistryError) {
@@ -466,7 +504,7 @@ public struct FieldDef: Sendable {
       let object = try json.asObject()
       try object.expectKeys(
         required: ["kind", "writer"],
-        optional: ["ref", "parent", "unit", "min", "max", "domain", "quantum", "serialNext", "rank", "opens"])
+        optional: ["ref", "parent", "unit", "min", "max", "domain", "default", "serialNext", "rank", "opens"])
       self.name = name
       kind = try FieldKind(name: object.member("kind").asString(), rank: object["rank"], serialNext: object["serialNext"])
       writer = try Writer(decoding: object.member("writer").asString())
@@ -477,15 +515,12 @@ public struct FieldDef: Sendable {
       } ?? false
       bounds = try Bounds(in: object)
       domain = try object["domain"].map { try Domain(json: $0) }
-      quantum = try object["quantum"].map { step in
-        guard let quantum = Quantum(try step.asDouble()) else { throw RegistryError("a quantum is an integer or 1/k") }
-        return quantum
-      }
+      defaultValue = object["default"]
       opens = try object["opens"]?.asDistinctStrings()
       guard !parent || ref != nil else { throw RegistryError("the parent field is a ref") }
       guard !kind.isText || bounds?.max != nil else { throw RegistryError("a text field has unit and max") }
       guard !kind.isSerial || writer == .server else { throw RegistryError("a serial field is server-written") }
-      guard quantum == nil || domain?.isNumber == true else { throw RegistryError("a quantum needs a number domain") }
+      guard defaultValue == nil || kind.isLattice else { throw RegistryError("a default is for a lattice field") }
       guard opens == nil || (writer == .server && opens?.isEmpty == false) else {
         throw RegistryError("opens lists values of a server-written field")
       }
@@ -500,7 +535,7 @@ public struct FieldDef: Sendable {
     object["parent"] = parent ? true : nil
     bounds?.write(into: &object)
     object["domain"] = domain?.json
-    object["quantum"] = quantum.map { .number(JSON.Number($0.step)!) }
+    object["default"] = defaultValue
     object["opens"] = opens.map { .array($0.map { .string($0) }) }
     switch kind {
     case .ranked(let rank):
@@ -632,7 +667,8 @@ public struct Bounds: Sendable, Hashable {
   }
 }
 
-// A number field's step, rounded half away from zero in doubles (SPEC-GAP 12); the server accepts only fixed points.
+// A number domain's step at any depth, rounded half away from zero in doubles (§7.1 step 4); the server accepts only
+// numbers on it.
 public struct Quantum: Sendable, Hashable {
   public let step: Double
 
@@ -666,7 +702,7 @@ public struct Domain: Sendable {
 
   public indirect enum Shape: Sendable {
     case string(allowed: [String]?, pattern: Pattern?, bounds: Bounds?)
-    case number(integer: Bool, min: Double?, max: Double?)
+    case number(integer: Bool, min: Double?, max: Double?, quantum: Quantum?)
     case boolean
     case fracKey
     case stamp
@@ -676,9 +712,10 @@ public struct Domain: Sendable {
     case object(properties: [(name: String, domain: Domain)], required: [String])
   }
 
-  public var isNumber: Bool {
-    if case .number = shape { return true }
-    return false
+  // A number domain's quantum; nil for any other domain.
+  public var quantum: Quantum? {
+    guard case .number(_, _, _, let quantum) = shape else { return nil }
+    return quantum
   }
 
   init(json: JSON) throws {
@@ -694,11 +731,15 @@ public struct Domain: Sendable {
         pattern: try object["pattern"].map { try Pattern($0.asString()) },
         bounds: try Bounds(in: object))
     case "number":
-      try object.expectKeys(required: ["type"], optional: ["nullable", "integer", "min", "max"])
+      try object.expectKeys(required: ["type"], optional: ["nullable", "integer", "min", "max", "quantum"])
       shape = .number(
         integer: try object["integer"]?.asBool() ?? false,
         min: try object["min"]?.asDouble(),
-        max: try object["max"]?.asDouble())
+        max: try object["max"]?.asDouble(),
+        quantum: try object["quantum"].map { step in
+          guard let quantum = Quantum(try step.asDouble()) else { throw RegistryError("a quantum is an integer or 1/k") }
+          return quantum
+        })
     case "boolean", "fracKey", "stamp", "id", "json":
       try object.expectKeys(required: ["type"], optional: ["nullable"])
       shape = switch type {
@@ -732,11 +773,12 @@ public struct Domain: Sendable {
       object["enum"] = allowed.map { .array($0.map { .string($0) }) }
       object["pattern"] = pattern.map { .string($0.source) }
       bounds?.write(into: &object)
-    case .number(let integer, let min, let max):
+    case .number(let integer, let min, let max, let quantum):
       object["type"] = "number"
       object["integer"] = integer ? true : nil
       object["min"] = min.map { .number(JSON.Number($0)!) }
       object["max"] = max.map { .number(JSON.Number($0)!) }
+      object["quantum"] = quantum.map { .number(JSON.Number($0.step)!) }
     case .boolean: object["type"] = "boolean"
     case .fracKey: object["type"] = "fracKey"
     case .stamp: object["type"] = "stamp"
@@ -1026,6 +1068,10 @@ enum RegistryName {
 
   static func isDeriveFallback(_ name: String) -> Bool {
     name.isPrintableASCII && name.wholeMatch(of: #/[a-z0-9]+(?:-[a-z0-9]+)*/#) != nil
+  }
+
+  static func isRefusalCode(_ name: String) -> Bool {
+    name.isPrintableASCII && name.wholeMatch(of: #/[a-z][a-z0-9]*(?:-[a-z0-9]+)*/#) != nil
   }
 }
 

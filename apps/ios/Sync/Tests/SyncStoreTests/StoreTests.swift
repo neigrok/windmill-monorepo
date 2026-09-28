@@ -86,9 +86,9 @@ struct StoreTests {
     }
     let rows = [try row("card0002", 1), try row("card0003", 3)]
     let digest = ScopeDigest(rows: rows)
-    let first = try Page(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[0]], "cursor": .string(bootCursor), "more": true,
+    let first = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[0]], "cursor": .string(bootCursor), "more": true,
                                 "seq": 3, "digest": .string(digest.hex)])
-    let last = try Page(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[1]],
+    let last = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[1]],
                                "cursor": .string(Cursor(epoch: "ep-2", mode: .live, seq: 3).text), "more": false, "seq": 3,
                                "digest": .string(digest.hex)])
     let pull = { (step: PullStep, replica: String) in

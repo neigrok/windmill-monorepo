@@ -89,8 +89,9 @@ public struct SeededRandom: RandomNumberGenerator, Sendable {
 // MARK: - Simulation gestures
 
 // What a person sees of the probe product on one device before a gesture (corpus README "The probe product"): the
-// visible records of its views, the held gestures that only remove one record, which a later gesture may retire, and
-// the trees of its boards, read when a gesture goes into one.
+// visible records of its views, the held gestures that only remove one record, which a later gesture may retire, the
+// trees of its boards, read when a gesture goes into one, and the trees still open on a screen though the phone knows
+// them gone or not found.
 struct ProbeView {
   // One board's tree and overlay: its visible tags, tags seen before that are dead now, and each tag's memo.
   struct Tree {
@@ -105,7 +106,9 @@ struct ProbeView {
   var storedCards: [Record]
   var runs: [Record]
   var boards: [Record]
+  var facts: [Record]
   var heldRemovals: [RecordKey]
+  var deadTrees: [RecordID]
 }
 
 // One gesture a person makes: its scope, what it commits, the tree and overlay scopes the product holds open for it,
@@ -140,14 +143,14 @@ extension SeededRandom {
   mutating func recordID() -> RecordID { id("", 16, from: "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz") }
 
   // A gesture over every kind the probe registry has (design §9.3): creates anchored in order, edits with exact guards
-  // and retire, reorders, held deletes, keyed puts, atomic gestures across types, commands with their predictions, text
-  // edits, device rows, and gestures in a board's tree and overlay. `tree` reads a board's tree when one is needed. Nil
-  // when the draw finds nothing to act on.
+  // and retire, reorders, held deletes, keyed puts, whole saves, atomic gestures across types, commands with their
+  // predictions, text edits, device rows, and gestures in a board's tree and overlay. `tree` reads a board's tree when
+  // one is needed. Nil when the draw finds nothing to act on.
   mutating func probeGesture(on view: ProbeView, tree: (RecordID) -> ProbeView.Tree) -> PlannedGesture? {
     let product = ScopeRef.product("probe")
     let ordered = (view.cards + view.storedCards).filter { $0.values["ord"] != nil }.map(\.id)
     let retirable = { (type: String) in view.heldRemovals.filter { $0.type == type }.map(\.id) }
-    switch below(18) {
+    switch below(19) {
     case 0:
       let below = !ordered.isEmpty && chance(0.8) ? pick(ordered) : nil
       let id: NewID = chance(0.5) ? .given(recordID()) : .minted
@@ -229,7 +232,21 @@ extension SeededRandom {
         predict: [.create("board", id: .given(dst))]))
     case 16:
       return PlannedGesture("device row", in: product, Gesture(changes: [], local: [DeviceWrite(key: "rack", value: chance(0.8) ? word() : nil)]))
+    case 18:
+      let retiring = retirable("fact")
+      if !view.facts.isEmpty && retiring.isEmpty && chance(0.3) {
+        return PlannedGesture("fact delete", in: product, Gesture(changes: [.delete("fact", pick(view.facts).id)], hold: chance(0.8)))
+      }
+      let day = !retiring.isEmpty && chance(0.7) ? pick(retiring) : RecordID("2026-09-0\(1 + below(5))")
+      let value = JSON.number(JSON.Number(Double(below(5_000)) / 10.3)!)
+      var gesture = Gesture(changes: [.put("fact", day, present: true, ["value": value, "at": JSON(view.now)])])
+      if retiring.contains(day), chance(0.8) { gesture.retire = [RecordRef(type: "fact", id: day)] }
+      return PlannedGesture(gesture.retire.isEmpty ? "fact save" : "fact save retiring its delete", in: product, gesture)
     case 9, 10, 11, 13, 17:
+      if !view.deadTrees.isEmpty && chance(0.15) {
+        let board = pick(view.deadTrees)
+        return treeGesture(in: board, tree(board), bound: view.bound)
+      }
       guard !view.boards.isEmpty else { return nil }
       let board = pick(view.boards).id
       return treeGesture(in: board, tree(board), bound: view.bound)

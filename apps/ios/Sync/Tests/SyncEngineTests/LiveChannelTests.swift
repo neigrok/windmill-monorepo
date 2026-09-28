@@ -83,6 +83,29 @@ struct LiveChannelTests {
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .unsub([Self.tree])])
   }
 
+  // §7.9: a tree whose board's create is in the outbox is not followed, and a not-found frame for it is ignored, so
+  // nothing is known of it; the create's result wakes the channel, which then follows the tree.
+  @Test func aTreeWaitingForItsBoardsCreateIsFollowedOnceTheCreateHasItsResult() async throws {
+    let (rig, socket) = try await Self.open()
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))]))
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [PullRequest.Pulled(scope: Rig.scope, cursor: nil)])])
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    await rig.engine.puller.enqueue(.notFound(Self.tree), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    #expect(try rig.active().known == [:])
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope])])
+    let kicks = rig.engine.live.wake.kicks
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(rig.engine.live.wake.kicks > kicks)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])])
+  }
+
   // Leaving closes the socket; back in the foreground another opens.
   @Test func leavingClosesTheSocketAndTheForegroundOpensAnother() async throws {
     let (rig, socket) = try await Self.open()
@@ -268,6 +291,26 @@ struct LiveChannelTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     #expect(await rig.engine.puller.step() == pulled)
     #expect(rig.transport.pulls.count == 2)
+  }
+
+  // §7.5: a re-authentication that clears the pause opens the socket at once with `k` reset, so the socket's next reopen
+  // waits from 1 s, whatever the reopens before the pause had raised `k` to.
+  @Test func aReauthenticationReopensTheSocketAtOnceWithItsBackoffReset() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 3)
+    #expect(await rig.engine.live.step() == .backoff(ms: 1_000))
+    rig.clock.advance(ms: 1_000)
+    #expect(await rig.engine.live.step() == .backoff(ms: 2_000))
+    rig.clock.advance(ms: 2_000)
+    rig.transport.willRefuseLive(401)
+    #expect(await rig.engine.live.step() == .paused)
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    let socket = FakeLiveConnection()
+    rig.transport.willOpenLive(socket)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    socket.end()
+    #expect(await rig.engine.live.receiveNext() == false)
+    #expect(await rig.engine.live.step() == .backoff(ms: 1_000))
   }
 
   // A handshake 401 to a token the account replaced meanwhile pauses nothing, and the next step opens under the new one.

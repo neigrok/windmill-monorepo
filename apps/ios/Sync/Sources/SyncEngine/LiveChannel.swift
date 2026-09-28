@@ -4,15 +4,15 @@ import SyncReplica
 import SyncStore
 
 // §7.5 and §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device
-// online and the app in the foreground. On open it follows every subscribed scope the replica does not know gone or not
-// found; while open it keeps what it follows in step with the subscriptions, and pings every PING_MS, a pong missing
-// PONG_MS after a ping failing the socket. Change, gone and not-found frames go to the puller's queue, a pong keeps the
-// heartbeat, and any other op is ignored. An open that fails, and a socket that ends or fails, count as a reconnect, so
-// the puller pulls every scope at once; a close the client makes (leaving, going offline, a replica change) pulls
-// nothing. The next socket after a reconnect opens after the channel's own backoff, with its own `k` and a 30 s
-// ceiling, `k` reset once a socket has stayed open 30 s. A 401 at the handshake pauses the replica, and a 426 stops the
-// channel for the process. When the loops run, a reader task per socket receives its frames; in step mode the caller
-// receives them.
+// online and the app in the foreground. On open it follows every subscribed scope the replica pulls (§7.9); while open it
+// keeps what it follows in step with the subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping
+// failing the socket. Change, gone and not-found frames go to the puller's queue, a pong keeps the heartbeat, and any
+// other op is ignored. An open that fails, and a socket that ends or fails, count as a reconnect, so the puller pulls
+// every scope at once; a close the client makes (leaving, going offline, a replica change) pulls nothing. The next
+// socket after a reconnect opens after the channel's own backoff, with its own `k` and a 30 s ceiling, `k` reset once a
+// socket has stayed open 30 s; a re-authentication that clears the pause opens the next one at once, with `k` reset. A
+// 401 at the handshake pauses the replica, and a 426 stops the channel for the process. When the loops run, a reader
+// task per socket receives its frames; in step mode the caller receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -88,6 +88,10 @@ package actor LiveChannel {
   package func step() async -> LiveStep {
     guard await turns.take() else { return .idle }
     defer { turns.pass() }
+    if core.liveReopensAtOnce.exchange(false, ordering: .acquiringAndReleasing) {
+      backoff.reset()
+      reopenAt = nil
+    }
     guard !core.upgradeRequired else {
       close()
       return .stopped
@@ -196,17 +200,15 @@ package actor LiveChannel {
 
   // MARK: An open socket
 
-  // Follows the subscribed scopes the replica does not know gone or not found and no others, then keeps the heartbeat:
-  // a ping PING_MS after the last, its pong due before it goes, since the reader may take the pong while the ping is
-  // being sent, and a reconnect when the pong is PONG_MS late. Each send revalidates the socket, which may have ended
-  // while it waited.
+  // Follows the subscribed scopes the replica pulls and no others, then keeps the heartbeat: a ping PING_MS after the
+  // last, its pong due before it goes, since the reader may take the pong while the ping is being sent, and a reconnect
+  // when the pong is PONG_MS late. Each send revalidates the socket, which may have ended while it waited.
   func keep(_ meta: ReplicaMeta) async -> LiveStep {
     guard let current = socket else { return .idle }
     let mono = now()
     if let pongDue = current.pongDue, pongDue <= mono { return reopenLater() }
     do {
-      let known = try core.store.knownScopes(of: meta.replica)
-      let wanted = core.subscriptions(of: meta).filter { known[$0] == nil }
+      let wanted = try core.store.pulledScopes(of: meta.replica, among: core.subscriptions(of: meta))
       let dropped = current.following.filter { !wanted.contains($0) }
       let added = wanted.filter { !current.following.contains($0) }
       if !dropped.isEmpty { try await send(.unsub(dropped), on: current) }

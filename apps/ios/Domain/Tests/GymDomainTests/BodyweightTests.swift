@@ -71,10 +71,8 @@ import Testing
     let later = WeighIn(day: today, kg: 80.0, recordedAt: Instant(ms: 1_800_000_120_000))
     #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
     let (onA, onB) = (try a.drawn(WeighIn.self), try b.drawn(WeighIn.self))
-    withKnownIssue("engine: a commit drops a named field equal to what its phone draws; the older weight joins the newer stamp") {
-      #expect(onA == [later])
-      #expect(onB == [later])
-    }
+    #expect(onA == [later])
+    #expect(onB == [later])
   }
 
   @Test func aDayAfterTheDevicesTodayIsRefusedAndNothingIsWritten() throws {
@@ -245,10 +243,8 @@ import Testing
 
     #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
     let (onA, onB) = (try a.drawn(WeighIn.self), try b.drawn(WeighIn.self))
-    withKnownIssue("engine: a delete wins over a later save of its day from a phone that had not pulled it, with no notice") {
-      #expect(onA == [newest])
-      #expect(onB == [newest])
-    }
+    #expect(onA == [newest])
+    #expect(onB == [newest])
   }
 
   @Test func aHeldDeleteDoesNotLandOverANewerWeighInItsPhoneAlreadyHolds() throws {
@@ -268,16 +264,14 @@ import Testing
 
     #expect(try a.notices(GymRefusal.self).isEmpty && b.notices(GymRefusal.self).isEmpty)
     let (onA, onB) = (try a.drawn(WeighIn.self), try b.drawn(WeighIn.self))
-    withKnownIssue("engine: a held delete releases over a newer write of its record that its phone already pulled") {
-      #expect(onA == [newer])
-      #expect(onB == [newer])
-    }
+    #expect(onA == [newer])
+    #expect(onB == [newer])
   }
 
   @Test func aDayPastTheServersTomorrowReturnsAsAFutureNoticeHoldingItsWeight() throws {
     let a = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))
     let today = try #require(LocalDay("2027-01-15"))
-    a.server.refuse(next: 1, code: WeighInRules.badInstant, detail: nil)
+    a.server.refuse(next: 1, code: Gym.Codes.badInstant, detail: nil)
     #expect(committed(try a.runner.run(SaveWeighIn(day: today, kg: 82.4))) != nil)
     a.sync()
 
@@ -293,8 +287,9 @@ import Testing
     let otherClient = a.device()
     let today = try #require(LocalDay("2027-01-15"))
     #expect(committed(try a.runner.run(SaveWeighIn(day: today, kg: 82.4))) != nil)
-    var odd = Draft(new: AnotherClientsWeighIn(id: "2027-02-30", kg: 81.0))
+    var odd = Draft(new: AnotherClientsWeighIn(id: "2027-02-30", kg: 81.0, recordedAt: nil))
     odd.current.kg = 81.5
+    odd.current.recordedAt = Instant(ms: 1_800_000_000_000)
     #expect(saved(otherClient.runner.save(&odd, SaveDraft<AnotherClientsWeighIn, GymRefusal>.self)))
     a.sync()
     #expect(a.server.rows(WeighIn.scope, of: "acct-1").map(\.key.id.description).sorted() == ["2027-01-15", "2027-02-30"])
@@ -380,7 +375,8 @@ import Testing
   }
 }
 
-// Another client of the registry's weighin type, writing any id its pattern admits.
+// Another client of the registry's weighin type, writing any id its pattern admits, and every field, as a save of a record
+// saved whole must.
 struct AnotherClientsWeighIn: Draftable {
   static let type = Gym.Types.weighin
   static let scope = Gym.scope
@@ -389,16 +385,19 @@ struct AnotherClientsWeighIn: Draftable {
 
   let id: ID<AnotherClientsWeighIn>
   var kg: Double?
+  var recordedAt: Instant?
 
-  init(id: String, kg: Double?) {
+  init(id: String, kg: Double?, recordedAt: Instant?) {
     self.id = ID(RecordID(id))
     self.kg = kg
+    self.recordedAt = recordedAt
   }
 
   init(_ r: Fields) throws(DecodeError) {
     id = ID(r.id)
     kg = try r.optionalDouble("kg")
+    recordedAt = try r.optionalInstant("recordedAt")
   }
 
-  var fields: [String: JSON] { ["kg": .of(kg)] }
+  var fields: [String: JSON] { ["kg": .of(kg), "recordedAt": .of(recordedAt)] }
 }

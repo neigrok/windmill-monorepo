@@ -773,8 +773,8 @@ package final class Simulator {
 
   // MARK: - What a person sees
 
-  // The product's views, and the held gestures of its scope that only remove one record, carrying no command: what a
-  // retire names.
+  // The product's views; the held gestures of its scope that only remove one record, carrying no command: what a retire
+  // names; and the trees open on the phone that it knows gone or not found, whose screen a person may still act on.
   func probeView(of phone: Phone) -> ProbeView? {
     let engine = phone.engine
     guard let active = try? phone.active(), let now = try? engine.physNow() else { return nil }
@@ -783,10 +783,15 @@ package final class Simulator {
             entry.intent.deltas[0].removes else { return nil }
       return entry.intent.deltas[0].key
     }
+    let deadTrees = phone.opened.compactMap { scope -> RecordID? in
+      guard case .tree(let tree) = scope.kind, active.known[scope] != nil else { return nil }
+      return RecordID(tree)
+    }
     return try? engine.read(.product("probe")) { reader in
       ProbeView(
         now: now, bound: active.meta.state == .bound, cards: try reader.drawn("card"), storedCards: try reader.stored("card"),
-        runs: try reader.drawn("run"), boards: try reader.drawn("board"), heldRemovals: heldRemovals)
+        runs: try reader.drawn("run"), boards: try reader.drawn("board"), facts: try reader.drawn("fact"), heldRemovals: heldRemovals,
+        deadTrees: deadTrees)
     }
   }
 

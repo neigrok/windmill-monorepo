@@ -15,7 +15,7 @@ struct PullTests {
       meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), cursors: [.product("probe"): CursorRecord(cursor: "c\u{E9}")],
       wholeScopes: true)
     let outcome = try PageApplier(registry: Self.probe).apply(
-      Page(scope: .product("probe"), body: .reset), requestedUnder: "ce\u{301}", to: &replica, instance: Self.instance)
+      PullPage(scope: .product("probe"), body: .reset), requestedUnder: "ce\u{301}", to: &replica, instance: Self.instance)
     #expect(outcome == .stale)
     #expect(replica.writes == [])
   }

@@ -3,7 +3,8 @@
 
 // MARK: - Refusal codes
 
-// §9.6 the closed list, and the codes a registry's products add (Appendix A); compared by bytes.
+// §9.6 the engine's closed list, and the `codes` each product's registry declares (§2.4); compared by bytes. A code no
+// registry declares, a product's newer than this version, is a refusal like any other.
 public struct RefusalCode: Sendable, Hashable, CustomStringConvertible, ExpressibleByStringLiteral {
   public let text: String
 
@@ -39,6 +40,12 @@ public struct RefusalCode: Sendable, Hashable, CustomStringConvertible, Expressi
   public static let requestRunning: RefusalCode = "request-running"
   public static let `internal`: RefusalCode = "internal"
   public static let targetMerged: RefusalCode = "target-merged"
+
+  // §9.6's table, which no product's `codes` declares again.
+  public static let engine: [RefusalCode] = [
+    .notFound, .scopeDead, .forbidden, .invalid, .tooLarge, .clockSkew, .idTaken, .idSpent, .unknownRecord, .recordDead,
+    .parentDead, .stale, .cap, .baseUnknown, .requestConflict, .requestRunning, .internal, .targetMerged,
+  ]
 }
 
 // MARK: - HTTP failures
@@ -274,7 +281,7 @@ public struct PullRequest: Sendable, Hashable, RequestBody {
 }
 
 // §9.4 one scope's page: rows under a cursor, or a reset, gone or not-found answer.
-public struct Page: Sendable, Hashable {
+public struct PullPage: Sendable, Hashable {
   public enum Body: Sendable, Hashable {
     case rows(RowsPage)
     case reset
@@ -343,12 +350,12 @@ public struct RowsPage: Sendable, Hashable {
 public struct PullResponse: Sendable, Hashable {
   public let serverTime: Int64
   public let epoch: String
-  public let pages: [Page]
+  public let pages: [PullPage]
 
   public init(json: JSON) throws {
     serverTime = try json.member("serverTime").asInteger()
     epoch = try json.member("epoch").asString()
-    pages = try json.member("pages").asArray().map { try Page(json: $0) }
+    pages = try json.member("pages").asArray().map { try PullPage(json: $0) }
   }
 
   public static func == (lhs: PullResponse, rhs: PullResponse) -> Bool {

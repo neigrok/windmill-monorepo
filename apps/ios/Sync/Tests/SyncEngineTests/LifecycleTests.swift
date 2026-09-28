@@ -304,11 +304,11 @@ struct LifecycleTests {
     #expect(rig.transport.calls.filter { if case .hello = $0 { true } else { false } }.count == 1)
   }
 
-  // §7.10 bind, §6.7: signed out, the person creates a board, opens its tree and titles it; the anonymous pull of the
-  // tree, before the board is sent, answers not-found. The sign-in rebinds the anon replica, which forgets what was not
-  // found to the signed-out principal: signed in as the owner, the open tree is pulled, draws the title the server now
-  // holds, and takes the next write.
-  @Test func aSignInForgetsTheTreesNotFoundToTheSignedOutPerson() async throws {
+  // §7.9, §7.10: signed out, the person creates a board, opens its tree and titles it. The tree waits for its board's
+  // create, which a signed-out replica never sends, so nothing is pulled and nothing is known of it. The sign-in binds the
+  // anon replica to the owner, whose push sends the board and the title; then the open tree is pulled, draws the title,
+  // and takes the next write.
+  @Test func aTreeOpenedSignedOutWaitsForItsBoardUntilTheSignIn() async throws {
     let phone = SteppedEngine(registry: Rig.probe, startMs: Rig.startMs, account: nil, rules: ProbeServerRules())
     let tree = ScopeRef.tree("b_0000000a")
     let engine = phone.engine
@@ -316,11 +316,13 @@ struct LifecycleTests {
     #expect(try engine.subscribe(tree) == .subscribed)
     _ = try engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan"])]))
     phone.sync()
-    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.known } == [tree: .notFound])
+    let signedOut = try phone.store.read { tx in try tx.replica(tx.activeReplica())! }
+    #expect(signedOut.known == [:])
+    #expect(signedOut.cursors[tree] == nil)
 
     #expect(try await engine.signIn(account: "A", token: phone.server.token(for: "A")).isComplete)
     phone.sync()
-    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.known } == [:])
+    #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.cursors[tree]?.booted } == true)
     #expect(try phone.drawn(tree, "meta").map { $0.values["title"] } == ["Plan"])
     guard case .committed = try engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan B"])])) else {
       throw RigError("the owner's next write into the open tree was refused")
@@ -328,6 +330,35 @@ struct LifecycleTests {
     phone.sync()
     #expect(phone.server.rows(tree, of: "A").map { $0.lattice.fields["title"]?.value } == ["Plan B"])
     #expect(try phone.store.read { tx in try tx.replica(tx.activeReplica())!.outbox } == [])
+  }
+
+  // §7.10 bind, §6.7: signed out, the person opens the tree of a board their other device has not sent yet; the anonymous
+  // pull answers not-found. The sign-in rebinds the anon replica, which forgets what was not found to the signed-out
+  // principal: signed in as the owner, the open tree is pulled again, draws the title the other device sent, and takes
+  // the next write.
+  @Test func aSignInForgetsTheTreesNotFoundToTheSignedOutPerson() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = SyncEngineTests.network(clock)
+    let other = try SyncEngineTests.device(on: network, clock: clock, seed: 2)
+    let phone = try Phone(on: network, clock: clock, account: nil)
+    let tree = ScopeRef.tree("b_0000000a")
+    #expect(try phone.engine.subscribe(tree) == .subscribed)
+    await LifecycleTests.settle([phone.engine])
+    #expect(try phone.active().known == [tree: .notFound])
+
+    _ = try other.engine.commit(Rig.scope, Gesture(changes: [.create("board", id: .given("b_0000000a"))], atomic: true))
+    _ = try other.engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan"])]))
+    await LifecycleTests.settle([other.engine])
+    try await phone.signIn(.add)
+    await LifecycleTests.settle([phone.engine])
+    #expect(try phone.active().known == [:])
+    #expect(try phone.engine.read(tree) { try $0.drawn("meta") }.map { $0.values["title"] } == ["Plan"])
+    guard case .committed = try phone.engine.commit(tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan B"])])) else {
+      throw RigError("the owner's next write into the open tree was refused")
+    }
+    await LifecycleTests.settle([phone.engine])
+    #expect(network.server.rows(tree, of: "A").map { $0.lattice.fields["title"]?.value } == ["Plan B"])
+    #expect(try phone.active().outbox == [])
   }
 
   // MARK: Sign-out (§7.10)

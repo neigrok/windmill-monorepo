@@ -29,6 +29,25 @@ public enum Gym {
     public static let closeStale = "gym.closeStale"
   }
 
+  public enum Codes {
+    public static let payloadConflict: RefusalCode = "payload-conflict"
+    public static let sessionFinished: RefusalCode = "session-finished"
+    public static let sessionOpen: RefusalCode = "session-open"
+    public static let sessionOverlap: RefusalCode = "session-overlap"
+    public static let unknownExercise: RefusalCode = "unknown-exercise"
+    public static let badInstant: RefusalCode = "bad-instant"
+  }
+
+  public enum Defaults {
+    public enum Prefs {
+      public static let confirmHaptic: Bool = true
+      public static let confirmSound: Bool = false
+      public static let restSeconds: Int? = nil
+      public static let restSound: Bool = true
+      public static let units: String = "kg"
+    }
+  }
+
   static let registryFile: JSON = [
     "commands": [
       [
@@ -59,8 +78,8 @@ public enum Gym {
                   "kind": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
-                  "rpe": ["max": 10, "min": 1, "nullable": true, "type": "number"],
-                  "weightKg": ["max": 500, "min": -500, "type": "number"],
+                  "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
+                  "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
                 ],
                 "required": ["id", "exerciseId", "weightKg", "reps", "completedAt"],
                 "type": "object",
@@ -93,9 +112,9 @@ public enum Gym {
                   "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
-                  "rpe": ["max": 10, "min": 1, "nullable": true, "type": "number"],
+                  "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
                   "setNumber": ["integer": true, "min": 1, "type": "number"],
-                  "weightKg": ["max": 500, "min": -500, "type": "number"],
+                  "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
                 ],
                 "required": ["id", "exerciseId", "setNumber", "weightKg", "reps", "completedAt"],
                 "type": "object",
@@ -149,6 +168,14 @@ public enum Gym {
     "minVersion": 1,
     "products": [
       "gym": [
+        "codes": [
+          "payload-conflict",
+          "session-finished",
+          "session-open",
+          "session-overlap",
+          "unknown-exercise",
+          "bad-instant",
+        ],
         "device": [
           "movement": [
             "keyPattern": "^movement:[A-Za-z0-9_-]{8,64}$",
@@ -183,7 +210,7 @@ public enum Gym {
                     "items": [
                       "properties": [
                         "reps": ["integer": true, "max": 100, "min": 1, "nullable": true, "type": "number"],
-                        "weightKg": ["max": 500, "min": -500, "nullable": true, "type": "number"],
+                        "weightKg": ["max": 500, "min": -500, "nullable": true, "quantum": 0.01, "type": "number"],
                       ],
                       "type": "object",
                     ],
@@ -324,17 +351,15 @@ public enum Gym {
             "writer": "client",
           ],
           "rpe": [
-            "domain": ["max": 10, "min": 1, "nullable": true, "type": "number"],
+            "domain": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
             "kind": "lww",
-            "quantum": 0.1,
             "writer": "client",
           ],
           "sessionId": ["kind": "const", "parent": true, "ref": "session", "writer": "client"],
           "setNumber": ["kind": "serial", "serialNext": ["sessionId", "exerciseId"], "writer": "server"],
           "weightKg": [
-            "domain": ["max": 500, "min": -500, "type": "number"],
+            "domain": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
             "kind": "lww",
-            "quantum": 0.01,
             "writer": "client",
           ],
         ],
@@ -389,9 +414,8 @@ public enum Gym {
         "deadRows": "spent",
         "fields": [
           "kg": [
-            "domain": ["max": 400, "min": 20, "type": "number"],
+            "domain": ["max": 400, "min": 20, "quantum": 0.01, "type": "number"],
             "kind": "lww",
-            "quantum": 0.01,
             "writer": "client",
           ],
           "recordedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "client"],
@@ -403,18 +427,25 @@ public enum Gym {
         "primary": true,
         "scope": "product:gym",
         "type": "weighin",
+        "wholePut": true,
       ],
       [
         "fields": [
-          "confirmHaptic": ["domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
-          "confirmSound": ["domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
+          "confirmHaptic": ["default": true, "domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
+          "confirmSound": ["default": false, "domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
           "restSeconds": [
+            "default": .null,
             "domain": ["integer": true, "max": 900, "min": 15, "nullable": true, "type": "number"],
             "kind": "lww",
             "writer": "client",
           ],
-          "restSound": ["domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
-          "units": ["domain": ["enum": ["kg", "lb"], "type": "string"], "kind": "lww", "writer": "client"],
+          "restSound": ["default": true, "domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
+          "units": [
+            "default": "kg",
+            "domain": ["enum": ["kg", "lb"], "type": "string"],
+            "kind": "lww",
+            "writer": "client",
+          ],
         ],
         "idPattern": "^prefs$",
         "identity": "singleton",

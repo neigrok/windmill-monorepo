@@ -43,11 +43,15 @@ package struct PageReport: Sendable, Hashable {
   }
 }
 
-// The scopes the puller is asked to pull next, which any thread adds to: every subscribed scope, or some.
+// The scopes the puller is asked to pull next, which any thread adds to: every subscribed scope, or some. Beside them, the
+// tree and overlay scopes that wait for their governing record's create (§7.9), or that a round is reading and may find
+// waiting: while any is marked, an outbox change wakes the puller, which pulls each once it waits no more. A round marks
+// its scopes before it reads the outbox, so a create's result landing while it reads is never missed.
 package final class PullWants: Sendable {
   struct State {
     var all = false
     var scopes: Set<ScopeRef> = []
+    var waiting: Set<ScopeRef> = []
   }
 
   let state = Mutex(State())
@@ -60,11 +64,30 @@ package final class PullWants: Sendable {
     state.withLock { $0.scopes.formUnion(scopes) }
   }
 
-  // Takes every want: whether every subscribed scope is wanted, and the scopes wanted.
-  func take() -> (all: Bool, scopes: Set<ScopeRef>) {
+  package var isWaiting: Bool { state.withLock { !$0.waiting.isEmpty } }
+
+  // Takes every want: whether every subscribed scope is wanted, and the scopes wanted, the waiting ones among them. The
+  // waiting stay marked until the round has read them.
+  package func take() -> (all: Bool, scopes: Set<ScopeRef>) {
     state.withLock { state in
-      defer { state = State() }
-      return (state.all, state.scopes)
+      defer {
+        state.all = false
+        state.scopes = []
+      }
+      return (state.all, state.scopes.union(state.waiting))
+    }
+  }
+
+  // A round's tree and overlay scopes, marked before it reads whether they wait.
+  package func reading(_ scopes: some Sequence<ScopeRef>) {
+    state.withLock { $0.waiting.formUnion(scopes.filter { $0.tree != nil }) }
+  }
+
+  // The round has read `scopes`: those in `waiting` stay marked, the rest are marked no more.
+  package func read(_ scopes: some Sequence<ScopeRef>, waiting: some Sequence<ScopeRef>) {
+    state.withLock { state in
+      state.waiting.subtract(scopes)
+      state.waiting.formUnion(waiting)
     }
   }
 }
@@ -136,7 +159,8 @@ package actor Puller {
   // MARK: Frames
 
   // §7.5 step 3 in one transaction; a frame that is not admitted, or whose digest check reset the cursor, wants its scope
-  // pulled, and one that forgot its scope has the live channel stop following it.
+  // pulled. One that forgot its scope, or a not-found ignored while its scope waits (§7.9), has the live channel look
+  // again at what it follows, so it stops following the scope, and follows a waiting one anew once it is pulled.
   func apply(_ queued: (frame: LiveFrame, replica: String)) -> PullerStep {
     guard let scope = queued.frame.scope else { return .again }
     do {
@@ -146,7 +170,7 @@ package actor Puller {
       }
       guard let applied else { return .frame(scope, nil) }
       if applied.pullsAgain { wants.add([scope]) }
-      if applied.outcome == .gone || applied.outcome == .notFound { core.wakes.live.kick() }
+      if [.gone, .notFound, .ignored].contains(applied.outcome) { core.wakes.live.kick() }
       return .frame(scope, applied.outcome)
     } catch {
       wants.add([scope])
@@ -156,10 +180,11 @@ package actor Puller {
 
   // MARK: One request
 
-  // One request: its scopes, the wanted subscribed ones in subscription order. The subscriptions are reconciled first, so
-  // an entry acked in a scope no longer followed resolves (§7.9). The wants are taken before the subscriptions are read,
-  // since a subscribe opens its scope before it wants it: a scope wanted is subscribed, and a subscribe that lands later
-  // leaves its want for the next round.
+  // One request: its scopes, the wanted subscribed ones in subscription order, less those that wait for their governing
+  // record's create, which stay wanted and marked; a round left with none sends nothing. The subscriptions are reconciled
+  // first, so an entry acked in a scope no longer followed resolves (§7.9). The wants are taken before the subscriptions
+  // are read, since a subscribe opens its scope before it wants it: a scope wanted is subscribed, and a subscribe that
+  // lands later leaves its want for the next round.
   func round() async -> PullerStep {
     let mono = core.clock.wall.reading().mono
     if wake.kicks != kicksSeen {
@@ -191,16 +216,17 @@ package actor Puller {
       let subscribed = core.subscriptions(of: meta)
       taken = wanted.all ? subscribed : subscribed.filter(wanted.scopes.contains)
       if wanted.all { fallbackDue = subscribed.isEmpty ? nil : mono + Constants.pullFallbackMs }
-      guard !taken.isEmpty else { return .idle }
-      guard let planned = try core.store.pullRequest(taken, replica: meta.replica) else {
+      wants.reading(taken)
+      guard let planned = try core.store.pullPlan(taken, replica: meta.replica) else {
         wants.add(taken)
         return .again
       }
       wants.add(planned.later)
-      guard !planned.request.scopes.isEmpty else { return .idle }
+      wants.read(wanted.scopes.union(taken), waiting: planned.waiting)
+      guard let request = planned.request else { return .idle }
       let send = core.clock.wall.reading()
-      let reply = await transport.pull(planned.request, token: token)
-      return try record(reply, to: planned.request, for: meta, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      let reply = await transport.pull(request, token: token)
+      return try record(reply, to: request, for: meta, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
     } catch {
       wants.add(taken)
       return .backoff(ms: nextBackoff(floorMs: 0))

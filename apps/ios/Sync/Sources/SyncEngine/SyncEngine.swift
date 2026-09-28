@@ -286,6 +286,8 @@ final class EngineCore: Sendable {
   let publisher = Publisher()
   let wakes = Wakes()
   let pullWants = PullWants()
+  // A re-authentication cleared the pause: the live channel's next step opens its socket at once, with `k` reset.
+  let liveReopensAtOnce = Atomic(false)
   let actor = Mutex(EngineCore.provisionalActor)
   let upgrade = Atomic(false)
   let foreground = Atomic(true)
@@ -311,7 +313,9 @@ final class EngineCore: Sendable {
   // One of the store's Actions, as this instance: its actor and the device clock now. The actor is held for the whole
   // transaction, so an actor a re-identify mints serves every later write, and changes and events go out in commit order.
   // A write that renames or swaps the replicas (a re-identify, an epoch change, a sign-in or out) wakes the puller, which
-  // then pulls every scope, and the live channel, which then reconnects for the replica now active.
+  // then pulls every scope, and the live channel, which then reconnects for the replica now active. A write that changes
+  // the outbox while a scope waits for its governing record's create wakes both, which pull and follow the scope once its
+  // create has its result (§7.9).
   func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
@@ -326,7 +330,7 @@ final class EngineCore: Sendable {
       publisher.publish(written.change, written.events)
       return (written.value, written.change)
     }
-    if change.replicas {
+    if change.replicas || change.outbox && pullWants.isWaiting {
       wakes.puller.kick()
       wakes.live.kick()
     }

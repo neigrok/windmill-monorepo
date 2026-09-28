@@ -70,10 +70,39 @@ struct RegistryTests {
      #"type "note": field no: a serial field is server-written"#),
     (registry(note(field: "memo", ["kind": "text", "writer": "client", "unit": "bytes"])),
      #"type "note": field memo: a text field has unit and max"#),
-    (registry(note(field: "size", ["kind": "lww", "writer": "client", "quantum": 0.01])),
-     #"type "note": field size: a quantum needs a number domain"#),
-    (registry(note(field: "size", ["kind": "lww", "writer": "client", "quantum": 0.3, "domain": ["type": "number"]])),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "quantum": 0.01, "domain": ["type": "number"]])),
+     #"type "note": field size: JSON shape: unexpected key "quantum""#),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "domain": ["type": "string", "quantum": 0.01]])),
+     #"type "note": field size: JSON shape: unexpected key "quantum""#),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "domain": ["type": "number", "quantum": 0.3]])),
      #"type "note": field size: a quantum is an integer or 1/k"#),
+    (registry(note(field: "sets", [
+      "kind": "lww", "writer": "client",
+      "domain": ["type": "array", "items": ["type": "object", "properties": ["kg": ["type": "number", "quantum": 0.3]]]],
+    ])),
+     #"type "note": field sets: a quantum is an integer or 1/k"#),
+    (registry(note(field: "no", ["kind": "serial", "writer": "server", "serialNext": [], "default": 1])),
+     #"type "note": field no: a default is for a lattice field"#),
+    (registry(note(field: "memo", ["kind": "text", "writer": "client", "unit": "bytes", "max": 8, "default": ""])),
+     #"type "note": field memo: a default is for a lattice field"#),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "domain": ["type": "number", "max": 10], "default": 11])),
+     "type note field size: the default 11 is no value of the field"),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "domain": ["type": "number", "quantum": 0.5], "default": 0.25])),
+     "type note field size: the default 0.25 is no value of the field"),
+    (registry(note(field: "size", ["kind": "lww", "writer": "client", "domain": ["type": "number"], "default": .null])),
+     "type note field size: the default null is no value of the field"),
+    (registry(fact { $0["wholePut"] = false }), #"type "fact": wholePut is true or absent"#),
+    (registry(note { $0["wholePut"] = true }), #"type "note": a wholePut type is keyed with life"#),
+    (registry(fact { $0["life"] = false; $0["deadRows"] = nil }), #"type "fact": a wholePut type is keyed with life"#),
+    (registry(fact { $0["fields"] = ["memo": ["kind": "text", "writer": "client", "unit": "bytes", "max": 8]] }),
+     #"type "fact": a wholePut type has no text field"#),
+    (registry(fact { $0["fields"] = ["value": ["kind": "fww", "writer": "client"]] }),
+     #"type "fact": field value: a wholePut type's client-written fields are lww"#),
+    (registry(note { _ in }, fact { _ in }, commands: [command { $0["predicts"] = ["fact"] }]),
+     "command p.go predicts fact, a wholePut type only deltas write"),
+    (registry(note { _ in }, products: ["p": ["codes": ["not-found"]]]), "product p: not-found is an engine code"),
+    (registry(note { _ in }, products: ["p": ["codes": ["Late"]]]), "product p: Late is not a refusal code"),
+    (registry(note { _ in }, products: ["p": ["codes": ["late", "late"]]]), #"product p: JSON shape: "late" appears twice"#),
     (registry(note(field: "runId", ["kind": "const", "writer": "client", "parent": true])),
      #"type "note": field runId: the parent field is a ref"#),
     (registry(note(field: "claim", ["kind": "lww", "writer": "client", "opens": ["x"]])),
@@ -223,6 +252,9 @@ struct RegistryTests {
      "type note is declared twice"),
     ("both", [part("first", product: "p", type: "note", command: "p.go"), part("second", product: "q", type: "page", command: "p.go")],
      "command p.go is declared twice"),
+    ("both", [part("first", product: "p", type: "note", command: "p.go", codes: ["late"]),
+              part("second", product: "q", type: "page", command: "q.go", codes: ["early", "late"])],
+     "refusal code late is declared twice"),
   ])
   func aCompositionIsRefusedNamingWhy(_ name: String, _ parts: [JSON], _ message: String) throws {
     let registries = try parts.map { try Registry(json: $0) }
@@ -235,6 +267,17 @@ struct RegistryTests {
       "type": "note", "scope": "product:p", "identity": "minted", "idSpace": "global", "idPattern": "^[a-z]{8}$",
       "mint": ["prefix": "", "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 8], "life": true, "revivable": false,
       "deadRows": "spent", "origins": ["replica"], "fields": [:],
+    ]
+    edit(&type)
+    return .object(type)
+  }
+
+  // A keyed type saved whole, as the probe's `fact`.
+  static func fact(_ edit: (inout JSON.Object) -> Void) -> JSON {
+    var type: JSON.Object = [
+      "type": "fact", "scope": "product:p", "identity": "keyed", "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "life": true,
+      "wholePut": true, "deadRows": "spent", "origins": ["replica"],
+      "fields": ["value": ["kind": "lww", "writer": "client", "domain": ["type": "number", "quantum": 0.1]]],
     ]
     edit(&type)
     return .object(type)
@@ -264,9 +307,11 @@ struct RegistryTests {
   }
 
   // A whole registry of one product, with one type and one command.
-  static func part(_ name: String, product: String, type: String, command: String, version: Int = 1, minVersion: Int = 1) -> JSON {
+  static func part(_ name: String, product: String, type: String, command: String, version: Int = 1, minVersion: Int = 1,
+                   codes: [String] = []) -> JSON {
     [
-      "registry": .string(name), "version": JSON(version), "minVersion": JSON(minVersion), "products": .object([product: [:]]),
+      "registry": .string(name), "version": JSON(version), "minVersion": JSON(minVersion),
+      "products": .object([product: codes.isEmpty ? [:] : ["codes": .array(codes.map(JSON.string))]]),
       "types": [note { $0["type"] = .string(type); $0["scope"] = .string("product:\(product)") }],
       "commands": [Self.command { $0["name"] = .string(command); $0["scope"] = .string("product:\(product)") }],
     ]

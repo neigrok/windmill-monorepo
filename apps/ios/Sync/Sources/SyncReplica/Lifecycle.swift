@@ -262,10 +262,12 @@ public struct ReplicaLifecycle: Sendable {
     }
   }
 
-  // §8.2: a bound replica a 401 paused resumes when its account re-authenticates.
-  public func reauthenticate(_ replica: inout LoadedReplica) throws {
+  // §8.2: a bound replica a 401 paused resumes when its account re-authenticates. True iff it was paused.
+  public func reauthenticate(_ replica: inout LoadedReplica) throws -> Bool {
     guard replica.meta.state == .bound else { throw TransitionError(description: "only a bound replica re-authenticates") }
+    let paused = replica.meta.authPaused
     replica.update { $0.authPaused = false }
+    return paused
   }
 
   // Step 2: a dormant replica of the account is rebound with every cursor null; otherwise the anon replica, when

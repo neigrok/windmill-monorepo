@@ -25,7 +25,7 @@ struct SimulatorTests {
     "sign-out keep", "sign-out discard", "sign-out cancelled", "dormant discarded", "server restored", "epoch change", "store cloned",
     "store restored from a backup", "store rolled back in place", "reboot", "clock jumped", "poisoned", "visibility set",
     "read-and-commit decided nothing", "gesture tag revive", "gesture probe.copy", "notice dismissed", "scope closed",
-    "foreign tree opened",
+    "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete",
   ]
 
   @Test func everySeedHoldsEveryInvariantAfterQuiescence() async throws {

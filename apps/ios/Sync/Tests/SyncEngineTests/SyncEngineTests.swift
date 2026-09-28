@@ -55,6 +55,29 @@ struct SyncEngineTests {
     #expect(try rig.engine.read(Rig.scope) { try $0.drawn("run", run)?.values } == ["startedAt": JSON(Rig.startMs)])
   }
 
+  // §7.1 step 4, §2.4: a field recording each save's moment is an lww field the body writes from the commit's own `now`,
+  // the reading the gesture's stamp takes; a record saved whole carries every field and a fresh life at that stamp, so a
+  // later save of an equal value writes it again.
+  @Test func aSaveWholeStampsItsMomentFromTheCommitsOwnNow() throws {
+    let rig = try Rig()
+    let save = { (value: JSON) throws -> CommitReceipt in
+      let (outcome, _) = try rig.engine.commit(Rig.scope) { context -> (Gesture?, Void) in
+        (Gesture(changes: [.put("fact", "2027-01-15", present: true, ["value": value, "at": JSON(context.now)])]), ())
+      }
+      guard case .committed(let receipt)? = outcome else { throw RigError("the save was refused") }
+      return receipt
+    }
+    let first = try save(80.04)
+    rig.clock.advance(ms: 60_000)
+    let second = try save(80)
+    #expect(try rig.active().outbox.map(\.intent.deltas) == [first, second].map { receipt in
+      [Delta(key: RecordKey("fact", "2027-01-15"), lattice: Lattice(
+        life: Life(.alive, receipt.stamp),
+        fields: ["value": Register(80, receipt.stamp), "at": Register(JSON(receipt.stamp.ms), receipt.stamp)]))]
+    })
+    #expect(second.stamp.ms == Rig.startMs + 60_000)
+  }
+
   @Test func aMultiChangeGestureIsAnIntentPerRecordOrOneWhenAtomic() throws {
     let rig = try Rig()
     let each = try rig.commit(Gesture(changes: [Rig.card("card0001", "One"), Rig.card("card0002", "Two")], gestureId: "g1"))

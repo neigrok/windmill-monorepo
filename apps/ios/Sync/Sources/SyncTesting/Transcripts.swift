@@ -134,8 +134,9 @@ final class TranscriptDevice {
 
   // MARK: Client actions
 
-  // A sign-in keeps the account's token first, as the app's does. A reconcile unsubscribes the tree and overlay scopes
-  // its set leaves out; product scopes follow the seat.
+  // A sign-in keeps the account's token first, as the app's does. A release lets one held entry go before its time, as the
+  // release timer lets it go at its time. A reconcile unsubscribes the tree and overlay scopes its set leaves out; product
+  // scopes follow the seat.
   func act(_ action: String, _ args: JSON, returns: JSON?, place: String) throws -> [String] {
     switch action {
     case "commit":
@@ -158,6 +159,9 @@ final class TranscriptDevice {
                          counted: try JSON.map(args["counted"]) { try $0.asArray().map { try $0.asString() } }, identities: engine.identities)
       }
       return Transcripts.compare(ClientSteps.json(signIn), returns, "\(place): signIn returned")
+    case "release":
+      let released = try engine.write { store, _ in try store.release(try args.member("localId").asString()) }
+      return Transcripts.compare(.bool(released), returns, "\(place): release returned")
     case "reconcile":
       let scopes = try args.member("scopes").asArray().map { try ScopeRef(json: $0) }
       for scope in subscribed where !scopes.contains(scope) { try engine.unsubscribe(scope) }

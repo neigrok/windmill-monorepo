@@ -95,11 +95,15 @@ extension SyncEngine {
     }
   }
 
-  // §8.2: the account's new token clears the pause a 401 set, and sending, pulling and following live resume.
+  // §8.2: the account's new token clears the pause a 401 set, and sending, pulling and following live resume. A clearing
+  // pulls every subscribed scope and opens the live socket at once, its backoff's `k` reset (§7.5).
   public func reauthenticate(token: SessionToken) throws {
     guard let seat = try core.seat(), seat.state == .bound, let account = seat.account else { throw EngineError.notSignedIn }
     try core.tokens.save(token, for: account)
-    try core.write { store, _ in try store.reauthenticate() }
+    if try core.write({ store, _ in try store.reauthenticate() }) {
+      core.pullWants.all()
+      core.liveReopensAtOnce.store(true, ordering: .releasing)
+    }
     core.wakes.kickAll()
   }
 

@@ -224,7 +224,7 @@ struct StoredDevice: ClientDevice {
     take(try store.start(backup: backup, instance: &instance, identities: identities))
   }
 
-  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest { try store.pullRequest(scopes, replica: active())!.request }
+  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest? { try store.pullPlan(scopes, replica: active())!.request }
 
   // Each step of the answer in its own transaction, following the replica through an epoch change's re-identify.
   mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,

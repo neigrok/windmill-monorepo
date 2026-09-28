@@ -2,11 +2,14 @@ import SyncAPI
 import SyncCore
 
 // §7.5 the puller's local side: a pull answer as its ordered steps, each page one local transaction; boots into
-// staging, replace-by-seq, resolution, the digest check, and live frames.
+// staging, replace-by-seq, resolution, the digest check, and live frames. §7.9: which subscribed scopes are pulled.
 
 public enum PageOutcome: String, Sendable, Hashable {
   case applied, stale, reset, gone
   case notFound = "not-found"
+  // A not-found for a scope that waits for its governing record's create: the server holds no such scope yet, so
+  // nothing is forgotten.
+  case ignored
   // The replica's own product scope answered gone or not-found: the request was not taken as its account, since an
   // account always reads its own products. Nothing is forgotten, and the pull pauses as a 401 does.
   case unauthenticated
@@ -24,7 +27,16 @@ public enum PullStep: Sendable, Hashable {
   // A null serverEpoch takes it; another one is an epoch change, before any page.
   case epoch(String)
   // `requested`: the cursor the page was asked under.
-  case page(Page, requested: String?)
+  case page(PullPage, requested: String?)
+}
+
+// What the scopes asked for make of the next request: the scopes pulled, at most PULL_MAX_SCOPES in the order asked, each
+// with its stored cursor (a scope with none boots), and nil when none is, so nothing is sent (§7.5); `later`, the rest of
+// them for the next request; and `waiting`, the scopes that wait for their governing record's create (§7.9).
+public struct PullPlan: Sendable, Hashable {
+  public let request: PullRequest?
+  public let later: [ScopeRef]
+  public let waiting: [ScopeRef]
 }
 
 public struct PageApplier: Sendable {
@@ -36,19 +48,38 @@ public struct PageApplier: Sendable {
     lifecycle = ReplicaLifecycle(registry: registry)
   }
 
-  // One request: the scopes asked for, less those the replica knows gone or not found, at most PULL_MAX_SCOPES of them in
-  // the order asked, each with its stored cursor (a scope with none boots); `later` holds the rest, for the next request.
-  public func request(_ scopes: [ScopeRef], in replica: LoadedReplica) -> (request: PullRequest, later: [ScopeRef]) {
-    let pulled = scopes.filter { replica.known[$0] == nil }
-    let request = PullRequest(scopes: pulled.prefix(Constants.pullMaxScopes).map { PullRequest.Pulled(scope: $0, cursor: replica.cursors[$0]?.cursor) })
-    return (request, Array(pulled.dropFirst(Constants.pullMaxScopes)))
+  // The scopes asked for, less those the replica knows gone or not found, and those that wait.
+  public func plan(_ scopes: [ScopeRef], in replica: LoadedReplica) -> PullPlan {
+    let unknown = scopes.filter { replica.known[$0] == nil }
+    let waiting = unknown.filter { awaitsGoverningCreate($0, in: replica) }
+    let pulled = unknown.filter { !waiting.contains($0) }
+    let asked = pulled.prefix(Constants.pullMaxScopes).map { PullRequest.Pulled(scope: $0, cursor: replica.cursors[$0]?.cursor) }
+    return PullPlan(
+      request: asked.isEmpty ? nil : PullRequest(scopes: Array(asked)), later: Array(pulled.dropFirst(Constants.pullMaxScopes)),
+      waiting: waiting)
   }
 
-  // §7.5: a page's scope is pulled again after a stale or reset page, a page with more rows, or a digest check that reset
-  // its cursor to boot it.
-  public func pullsAgain(after page: Page, _ outcome: PageOutcome, in replica: LoadedReplica) -> Bool {
+  // §7.9: a subscribed scope is pulled, and followed live, unless the replica knows it gone or not found, or it waits
+  // for its governing record's create.
+  public func pulls(_ scope: ScopeRef, in replica: LoadedReplica) -> Bool {
+    replica.known[scope] == nil && !awaitsGoverningCreate(scope, in: replica)
+  }
+
+  // §7.9: a tree or overlay scope waits while its governing record's create is still in the outbox, held, ready or sent,
+  // by a delta or a prediction, since the server holds no such scope yet. It is pulled once that entry has its result.
+  public func awaitsGoverningCreate(_ scope: ScopeRef, in replica: LoadedReplica) -> Bool {
+    guard let tree = scope.tree, let governing = registry.governingType else { return false }
+    let key = RecordKey(governing.name, RecordID(tree))
+    return replica.outbox.contains { entry in
+      entry.state != .acked && entry.drawnDeltas.contains { $0.key == key && $0.creates }
+    }
+  }
+
+  // §7.5: a page's scope is pulled again after a stale or reset page, a page with more rows, a digest check that reset
+  // its cursor to boot it, or a not-found ignored while the scope waits, so it is pulled once it waits no more.
+  public func pullsAgain(after page: PullPage, _ outcome: PageOutcome, in replica: LoadedReplica) -> Bool {
     switch outcome {
-    case .stale, .reset, .unauthenticated: return true
+    case .stale, .reset, .unauthenticated, .ignored: return true
     case .gone, .notFound: return false
     case .applied:
       if case .rows(let rows) = page.body, rows.more { return true }
@@ -56,14 +87,14 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // A frame's scope is pulled again when the frame was not admitted, or its digest check reset the cursor.
+  // A frame's scope is pulled again when the frame was not admitted, its digest check reset the cursor, or it was a
+  // not-found ignored while the scope waits.
   public func pullsAgain(after frame: LiveFrame, _ outcome: FrameOutcome, in replica: LoadedReplica) -> Bool {
-    switch outcome {
-    case .pull: return true
-    case .gone, .notFound, .ignored: return false
-    case .applied:
-      guard case .change(let change) = frame else { return false }
-      return replica.cursors[change.scope]?.cursor == nil
+    switch (outcome, frame) {
+    case (.pull, _), (.ignored, .notFound): return true
+    case (.gone, _), (.notFound, _), (.ignored, _): return false
+    case (.applied, .change(let change)): return replica.cursors[change.scope]?.cursor == nil
+    case (.applied, _): return false
     }
   }
 
@@ -121,7 +152,7 @@ public struct PageApplier: Sendable {
   // MARK: Pages
 
   // A page asked under a cursor the scope no longer holds is stale, so a cursor never moves backwards.
-  public func apply(_ page: Page, requestedUnder requested: String?, to replica: inout LoadedReplica,
+  public func apply(_ page: PullPage, requestedUnder requested: String?, to replica: inout LoadedReplica,
                     instance: Instance) throws -> PageOutcome {
     let scope = page.scope
     var record = replica.cursors[scope] ?? CursorRecord()
@@ -137,6 +168,8 @@ public struct PageApplier: Sendable {
     case .gone:
       try forget(scope, as: .gone, in: &replica)
       return .gone
+    case .notFound where awaitsGoverningCreate(scope, in: replica):
+      return .ignored
     case .notFound:
       try forget(scope, as: .notFound, in: &replica)
       return .notFound
@@ -256,7 +289,8 @@ public struct PageApplier: Sendable {
   // MARK: Frames
 
   // §7.5 step 3: a change frame applies as a one-page live pull iff the cursor is live at a whole seq, the epoch
-  // matches, the frame is the next seq and carries its rows; otherwise the scope is pulled.
+  // matches, the frame is the next seq and carries its rows; otherwise the scope is pulled. A not-found for a scope that
+  // waits for its governing record's create is ignored.
   public func apply(_ frame: LiveFrame, to replica: inout LoadedReplica, instance: Instance) throws -> FrameOutcome {
     switch frame {
     case .gone(let scope) where scope.tree == nil, .notFound(let scope) where scope.tree == nil:
@@ -264,6 +298,8 @@ public struct PageApplier: Sendable {
     case .gone(let scope):
       try forget(scope, as: .gone, in: &replica)
       return .gone
+    case .notFound(let scope) where awaitsGoverningCreate(scope, in: replica):
+      return .ignored
     case .notFound(let scope):
       try forget(scope, as: .notFound, in: &replica)
       return .notFound
@@ -277,7 +313,7 @@ public struct PageApplier: Sendable {
       let page = RowsPage(
         rows: rows, cursor: Cursor(epoch: change.epoch, mode: .live, seq: change.seq).text, more: false, seq: change.seq,
         digest: change.digest)
-      _ = try apply(Page(scope: change.scope, body: .rows(page)), requestedUnder: stored, to: &replica, instance: instance)
+      _ = try apply(PullPage(scope: change.scope, body: .rows(page)), requestedUnder: stored, to: &replica, instance: instance)
       return .applied
     }
   }

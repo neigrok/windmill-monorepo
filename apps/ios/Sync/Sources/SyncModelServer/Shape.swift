@@ -170,12 +170,12 @@ public enum IntentShape {
     guard case .object(let object) = json, !json.holdsNul,
           (try? object.expectKeys(required: ["scope"], optional: ["n", "d", "guard", "cmd", "gestureId"])) != nil,
           case .string(let scopeText)? = object["scope"], let scope = try? ScopeRef(scopeText),
-          let kind = registry.scopeKind(of: scope), Values.isScopeID(scope, registry: registry),
+          let kind = registry.scopeKind(of: scope), registry.isScopeID(scope),
           object["gestureId"].map({ if case .string = $0 { true } else { false } }) ?? true
     else { throw Refusal(.invalid) }
-    let deltas = try (object["d"].map { json throws(Refusal) in try Values.array(json) } ?? [])
+    let deltas = try (object["d"].map { json throws(Refusal) in try array(json) } ?? [])
       .map { json throws(Refusal) in try delta(json, kind: kind, isReplica: isReplica, registry: registry) }
-    let guards = try (object["guard"].map { json throws(Refusal) in try Values.array(json) } ?? [])
+    let guards = try (object["guard"].map { json throws(Refusal) in try array(json) } ?? [])
       .map { json throws(Refusal) in try guardOf(json, kind: kind, registry: registry) }
     let command = try object["cmd"].map { json throws(Refusal) in try commandOf(json, kind: kind, registry: registry) }
     guard !deltas.isEmpty || command != nil, Set(deltas.map(\.key)).count == deltas.count else { throw Refusal(.invalid) }
@@ -185,27 +185,46 @@ public enum IntentShape {
   static func delta(_ json: JSON, kind: ScopeKind, isReplica: Bool, registry: Registry) throws(Refusal) -> PlannedDelta {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["t", "id"], optional: ["life", "born", "f", "x"])) != nil,
           case .string(let typeName)? = object["t"], let type = registry.type(typeName), type.scope == kind,
-          let idJSON = object["id"], Values.isID(idJSON, of: type, registry: registry), let id = try? RecordID(json: idJSON)
+          let idJSON = object["id"], registry.isID(idJSON, of: type), let id = try? RecordID(json: idJSON)
     else { throw Refusal(.invalid) }
     let life = try object["life"].map { json throws(Refusal) in try lifeOf(json, isReplica: isReplica) }
     let born = try object["born"].map { json throws(Refusal) in try slot(json, isReplica: isReplica) }
     guard let op = IdentityRules.op(of: type, life: life, born: born) else { throw Refusal(.invalid) }
     var fields: [String: PlannedRegister] = [:]
-    for (name, register) in try Values.object(object["f"] ?? [:]) {
+    for (name, register) in try members(object["f"] ?? [:]) {
       guard let field = type.field(name), field.kind.isLattice, !isReplica || field.writer == .client,
-            case .array(let pair) = register, pair.count == 2, Values.accepts(pair[0], for: field, registry: registry)
+            case .array(let pair) = register, pair.count == 2, registry.admits(pair[0], for: field)
       else { throw Refusal(.invalid) }
       fields[name] = PlannedRegister(pair[0], try slot(pair[1], isReplica: isReplica))
     }
     var texts: [String: TextWrite] = [:]
-    for (name, write) in try Values.object(object["x"] ?? [:]) {
+    for (name, write) in try members(object["x"] ?? [:]) {
       guard let field = type.field(name), case .text = field.kind, !isReplica || field.writer == .client,
             case .object(let parts) = write, (try? parts.expectKeys(required: ["base", "text"])) != nil,
             case .string(let text)? = parts["text"], let base = parts["base"].flatMap(textBase)
       else { throw Refusal(.invalid) }
       texts[name] = TextWrite(text: text, base: base)
     }
+    guard !type.wholePut || isWhole(life: life, fields: fields, of: type) else { throw Refusal(.invalid) }
     return PlannedDelta(key: RecordKey(typeName, id), op: op, life: life, born: born, fields: fields, texts: texts)
+  }
+
+  // §2.4 a delta of a `wholePut` type carries a life, and an alive one every client-written lattice field of its type,
+  // every register at the life's stamp: null alike from a server origin.
+  static func isWhole(life: PlannedLife?, fields: [String: PlannedRegister], of type: TypeDef) -> Bool {
+    guard let life else { return false }
+    guard life.state == .alive else { return true }
+    return type.clientLatticeFields.allSatisfy { fields[$0.name] != nil } && fields.values.allSatisfy { $0.slot == life.slot }
+  }
+
+  static func array(_ json: JSON) throws(Refusal) -> [JSON] {
+    guard case .array(let items) = json else { throw Refusal(.invalid) }
+    return items
+  }
+
+  static func members(_ json: JSON) throws(Refusal) -> [(key: String, value: JSON)] {
+    guard case .object(let object) = json else { throw Refusal(.invalid) }
+    return object.members
   }
 
   static func textBase(_ json: JSON) -> TextBase? {
@@ -231,7 +250,7 @@ public enum IntentShape {
   static func guardOf(_ json: JSON, kind: ScopeKind, registry: Registry) throws(Refusal) -> Guard {
     guard case .object(let object) = json, (try? object.expectKeys(required: ["field", "id", "stamp", "t"])) != nil,
           case .string(let typeName)? = object["t"], let type = registry.type(typeName), type.scope == kind,
-          let idJSON = object["id"], Values.isID(idJSON, of: type, registry: registry), let id = try? RecordID(json: idJSON),
+          let idJSON = object["id"], registry.isID(idJSON, of: type), let id = try? RecordID(json: idJSON),
           case .string(let fieldName)? = object["field"], let field = type.field(fieldName), field.kind.isLattice,
           let stamp = object["stamp"]
     else { throw Refusal(.invalid) }
@@ -251,7 +270,7 @@ public enum IntentShape {
         if argument.optional { continue }
         throw Refusal(.invalid)
       }
-      guard Values.accepts(value, for: argument, registry: registry) else { throw Refusal(.invalid) }
+      guard registry.admits(value, for: argument) else { throw Refusal(.invalid) }
     }
     return CheckedCommand(definition: definition, args: args)
   }
@@ -345,111 +364,3 @@ public enum IdentityRules {
   }
 }
 
-// Registry value checks: ids, field values and command arguments, in their units, domains and quanta. Every integer is
-// a safe integer (§9.1), as `asInteger` reads one.
-enum Values {
-  static func array(_ json: JSON) throws(Refusal) -> [JSON] {
-    guard case .array(let items) = json else { throw Refusal(.invalid) }
-    return items
-  }
-
-  static func object(_ json: JSON) throws(Refusal) -> [(key: String, value: JSON)] {
-    guard case .object(let object) = json else { throw Refusal(.invalid) }
-    return object.members
-  }
-
-  // A tree or overlay reference names an id of the governing type.
-  static func isScopeID(_ scope: ScopeRef, registry: Registry) -> Bool {
-    guard let tree = scope.tree else { return true }
-    guard let governing = registry.governingType else { return false }
-    return isID(.string(tree), of: governing, registry: registry)
-  }
-
-  static func isID(_ id: JSON, of type: TypeDef, registry: Registry) -> Bool {
-    if case .keyed = type.identity, let key = type.key {
-      switch key {
-      case .ref(let target):
-        guard let target = registry.type(target) else { return false }
-        return isID(id, of: target, registry: registry) && (type.idPattern.map { matches(id, $0) } ?? true)
-      case .tuple(let parts):
-        guard case .array(let items) = id, items.count == parts.count else { return false }
-        return zip(items, parts).allSatisfy { item, part in registry.type(part.ref).map { isID(item, of: $0, registry: registry) } ?? false }
-      }
-    }
-    guard let pattern = type.idPattern, matches(id, pattern) else { return false }
-    guard type.identity == .singleton, let singleton = type.singletonId else { return true }
-    return id == .string(singleton)
-  }
-
-  static func matches(_ id: JSON, _ pattern: Pattern) -> Bool {
-    guard case .string(let text) = id else { return false }
-    return pattern.matches(text)
-  }
-
-  static func isEpochMs(_ value: JSON) -> Bool {
-    (try? value.asInteger(atLeast: 0)) != nil
-  }
-
-  static func accepts(_ value: JSON, for field: FieldDef, registry: Registry) -> Bool {
-    switch field.kind {
-    case .ranked(let rank): guard rank.of(value) != nil else { return false }
-    case .time: guard isEpochMs(value) else { return false }
-    default: break
-    }
-    if let domain = field.domain, !accepts(value, in: domain) { return false }
-    if value.isNull { return field.domain?.nullable ?? (field.ref == nil) }
-    if let target = field.ref, !(registry.type(target).map { isID(value, of: $0, registry: registry) } ?? false) { return false }
-    if let quantum = field.quantum, case .number(let number) = value, !quantum.holds(number.value) { return false }
-    return field.bounds?.admits(value) ?? true
-  }
-
-  static func accepts(_ value: JSON, for argument: ArgumentDef, registry: Registry) -> Bool {
-    if let domain = argument.domain, !accepts(value, in: domain) { return false }
-    switch argument.type {
-    case .json: return true
-    case .time, .instant: return isEpochMs(value)
-    case .ref(let target):
-      if value.isNull { return argument.domain?.nullable ?? false }
-      return registry.type(target).map { isID(value, of: $0, registry: registry) } ?? false
-    }
-  }
-
-  static func accepts(_ value: JSON, in domain: Domain) -> Bool {
-    if value.isNull { return domain.nullable }
-    switch domain.shape {
-    case .string(let allowed, let pattern, let bounds):
-      guard case .string(let text) = value else { return false }
-      if let allowed, !allowed.contains(where: { $0.utf8.elementsEqual(text.utf8) }) { return false }
-      if let pattern, !pattern.matches(text) { return false }
-      return bounds?.admits(value) ?? true
-    case .number(let integer, let min, let max):
-      guard case .number(let number) = value else { return false }
-      if integer && (try? value.asInteger()) == nil { return false }
-      return number.value >= (min ?? -.infinity) && number.value <= (max ?? .infinity)
-    case .boolean:
-      if case .bool = value { return true }
-      return false
-    case .fracKey:
-      guard case .string(let text) = value else { return false }
-      return (try? FractionalKey(text)) != nil
-    case .stamp:
-      guard case .string(let text) = value else { return false }
-      return (try? Stamp(text)) != nil
-    case .id:
-      if case .string = value { return true }
-      return false
-    case .json:
-      return true
-    case .array(let items, let maxItems):
-      guard case .array(let elements) = value, elements.count <= (maxItems ?? Int.max) else { return false }
-      return elements.allSatisfy { accepts($0, in: items) }
-    case .object(let properties, let required):
-      guard case .object(let object) = value else { return false }
-      for (name, member) in object.members {
-        guard let property = properties.first(where: { $0.name.utf8.elementsEqual(name.utf8) }),
-              accepts(member, in: property.domain) else { return false }
-      }
-      return required.allSatisfy { object[$0] != nil }
-    }
-  }
-}

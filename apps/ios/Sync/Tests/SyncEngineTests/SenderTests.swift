@@ -381,6 +381,20 @@ struct SenderTests {
     ])
   }
 
+  // §9.6: a code the registry does not declare, a product's newer than this version, is a refusal like any other: its
+  // notice holds the code and the entry's content, for product copy's generic refusal line.
+  @Test func aRefusalCodeNoRegistryDeclaresIsARefusalLikeAnyOther() async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "newer-than-this-version")]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == [])
+    let entry = try #require(rig.transport.pushes.first?.intents.first)
+    #expect(try rig.active().notices == [Notice(
+      id: "notice:g1/0", product: "probe", scope: Rig.scope, code: "newer-than-this-version", detail: nil,
+      content: NoticeContent(deltas: entry.deltas, command: nil), at: Rig.startMs)])
+  }
+
   // A 413 halves a batch down to one intent, which is refused too-large; the later sent entry is rewound and goes
   // again under the refused one's number.
   @Test func a413OnTheLastIntentLeftRefusesItAndRewindsTheRest() async throws {

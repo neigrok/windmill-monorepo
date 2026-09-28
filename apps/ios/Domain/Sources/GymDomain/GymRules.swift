@@ -30,7 +30,7 @@ public enum GymRefusal: ProductRefusal, Equatable {
     case (.unknownRecord, let s?, _), (.recordDead, let s?, _): self = .gone(s, r.path)
     case (.idTaken, let s?, _), (.idSpent, let s?, _): self = .taken(s, r.path)
     case (.cap, _, let c?): self = .full(type: c.type, cap: c.cap, r.path)
-    case (WeighInRules.badInstant, let s?, _) where s.type == WeighIn.type: self = .future(s, r.path)
+    case (Gym.Codes.badInstant, let s?, _) where s.type == WeighIn.type: self = .future(s, r.path)
     default: self = .other(r)
     }
   }

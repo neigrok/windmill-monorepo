@@ -22,7 +22,8 @@ public protocol ClientDevice {
                         identities: IdentitySource) throws -> Int?
   mutating func hello(serverTime: Int64?, timing: Timing) throws
   mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart
-  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest
+  // Nil when no scope asked is pulled, so nothing is sent.
+  mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest?
   mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)]
   mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome
@@ -115,8 +116,8 @@ public struct PlannedDevice: ClientDevice {
     try lifecycle.start(&device, backup: backup, instance: &instance, identities: identities)
   }
 
-  public mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest {
-    pages.request(scopes, in: device.activeReplica).request
+  public mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest? {
+    pages.plan(scopes, in: device.activeReplica).request
   }
 
   public mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
@@ -260,7 +261,7 @@ public enum ClientSteps {
     case "pull":
       let request = try device.pullRequest(try step.member("scopes").asArray().map { try ScopeRef(json: $0) })
       context.lastPull = request
-      return request.json
+      return request?.json ?? .null
     case "pullResponse":
       guard let request = context.lastPull else { throw VectorError("pullResponse without a pull") }
       let outcomes = try device.receive(try answer(step, PullResponse.init(json:)), to: request, instance: &instance, timing: timing, identities: identities)

@@ -41,4 +41,19 @@ struct SyncSchemaTests {
     #expect(types == SyncSchema.registry.types.map(\.name))
     #expect(commands == SyncSchema.registry.commands.map(\.name))
   }
+
+  @Test func everyRefusalCodeAndDefaultIsTheRegistrys() throws {
+    let codes = [
+      Gym.Codes.payloadConflict, Gym.Codes.sessionFinished, Gym.Codes.sessionOpen, Gym.Codes.sessionOverlap,
+      Gym.Codes.unknownExercise, Gym.Codes.badInstant,
+    ]
+    #expect(codes == SyncSchema.registry.products.flatMap(\.codes))
+    let prefs = try #require(SyncSchema.registry.type(Gym.Types.prefs))
+    let defaults: [String: JSON] = [
+      "units": .string(Gym.Defaults.Prefs.units), "restSeconds": Gym.Defaults.Prefs.restSeconds.map { JSON($0) } ?? .null,
+      "restSound": .bool(Gym.Defaults.Prefs.restSound), "confirmHaptic": .bool(Gym.Defaults.Prefs.confirmHaptic),
+      "confirmSound": .bool(Gym.Defaults.Prefs.confirmSound),
+    ]
+    #expect(defaults == Dictionary(uniqueKeysWithValues: prefs.fields.compactMap { field in field.defaultValue.map { (field.name, $0) } }))
+  }
 }

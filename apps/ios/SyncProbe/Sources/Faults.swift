@@ -273,7 +273,7 @@ extension PushResult {
   }
 }
 
-extension Page {
+extension PullPage {
   nonisolated var logged: JSON {
     switch body {
     case .rows(let page): ["scope": scope.json, "kind": "rows", "rows": JSON(Int64(page.rows.count)), "more": .bool(page.more)]

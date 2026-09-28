@@ -79,9 +79,10 @@ public struct CommitPlanner: Sendable {
     let deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
     let predict = try gesture.predict.map { try builder.predicted($0) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
+    let command = gesture.command.map(registry.rounded)
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
     // throws, before step 8's caps; predictions and device rows are never sent.
-    let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: gesture.command, gestureId: gesture.gestureId)
+    let sent = Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gesture.gestureId)
     guard !sent.json.holdsNul else { throw CommitFailure.malformed("a string of the intents holds U+0000") }
     if let capped = try cappedType(deltas, stored: builder.stored), let cap = registry.type(capped)?.cap {
       return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
@@ -90,7 +91,7 @@ public struct CommitPlanner: Sendable {
     guard gesture.gestureId != nil || !replica.outbox.contains(where: { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }) else {
       throw CommitFailure.malformed("the minted gesture id \(gestureId) is taken")
     }
-    let intents = group(deltas, guards: guards, gesture: gesture, scope: scope, gestureId: gestureId)
+    let intents = group(deltas, guards: guards, command: command, gesture: gesture, scope: scope, gestureId: gestureId)
 
     // Step 8: an intent the widest request cannot carry alone refuses the gesture, so an entry as committed always fits
     // a request alone.
@@ -98,7 +99,7 @@ public struct CommitPlanner: Sendable {
       let notice = "notice:\(gestureId)/0"
       replica.apply(.putNotice(Notice(
         id: notice, product: product, scope: scope, code: .tooLarge, detail: nil,
-        content: NoticeContent(deltas: deltas, command: gesture.command), at: instance.deviceNow)))
+        content: NoticeContent(deltas: deltas, command: command), at: instance.deviceNow)))
       return .refused(.tooLarge, detail: nil, notice: notice)
     }
 
@@ -113,7 +114,7 @@ public struct CommitPlanner: Sendable {
       return OutboxEntry(
         localId: "\(gestureId)/\(k)", gestureId: gestureId, lineage: replica.meta.lineage, scope: scope, state: state,
         commitOrder: firstOrder + Int64(k), releaseAt: releaseAt, stamp: stamp, intent: intent,
-        predict: gesture.command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
+        predict: command == nil ? [] : predict, baseTexts: builder.baseTexts.filter { texts.contains($0.key) })
     }
     for entry in entries { replica.apply(.putEntry(entry)) }
 
@@ -215,10 +216,10 @@ public struct CommitPlanner: Sendable {
 
   // Step 7: atomic, held or command gestures are one intent; otherwise one intent per record, each with its guards, and a
   // guard on a record no delta writes rides the first. `oneDeltaPerRecord` has left each record one delta.
-  func group(_ deltas: [Delta], guards: [Guard], gesture: Gesture, scope: ScopeRef, gestureId: String) -> [Intent] {
-    if gesture.atomic || gesture.hold || gesture.command != nil {
-      guard !deltas.isEmpty || gesture.command != nil else { return [] }
-      return [Intent(scope: scope, deltas: deltas, guards: guards, command: gesture.command, gestureId: gestureId)]
+  func group(_ deltas: [Delta], guards: [Guard], command: Command?, gesture: Gesture, scope: ScopeRef, gestureId: String) -> [Intent] {
+    if gesture.atomic || gesture.hold || command != nil {
+      guard !deltas.isEmpty || command != nil else { return [] }
+      return [Intent(scope: scope, deltas: deltas, guards: guards, command: command, gestureId: gestureId)]
     }
     var intents = deltas.map { delta in
       Intent(scope: scope, deltas: [delta], guards: guards.filter { $0.key == delta.key }, gestureId: gestureId)
@@ -423,7 +424,8 @@ struct DeltaBuilder {
     return delta
   }
 
-  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged.
+  // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged. A
+  // put that leaves a `wholePut` record present is a whole put.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
     guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }
     let key = RecordKey(type.name, id)
@@ -431,6 +433,7 @@ struct DeltaBuilder {
     guard present != nil || current != nil else { throw CommitFailure.malformed("a put keeping the presence of \(key) finds it absent from drawn") }
     let presentBefore = current?.lattice.life?.isAlive == true
     let present = present ?? presentBefore
+    if present && type.wholePut { return try wholePut(type, key, values: values, texts: edits) }
     var life = current?.lattice.life
     if present && !presentBefore { life = Life(.alive, stamp) }
     if !present && presentBefore { life = Life(.dead, stamp) }
@@ -438,6 +441,15 @@ struct DeltaBuilder {
     var delta = Delta(key: key, lattice: Lattice(life: life))
     let changed = try withChanges(&delta, type, values, edits, current: current)
     return changed || life != current?.lattice.life ? delta : nil
+  }
+
+  // §7.1 step 4: every client-written lattice field of the type, changed or not, and a fresh life, all stamped `s`, so the
+  // newest save wins whole. A change that leaves such a field out throws, as does a text edit, since the type has none.
+  func wholePut(_ type: TypeDef, _ key: RecordKey, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta {
+    let missing = type.clientLatticeFields.map(\.name).filter { values[$0] == nil }
+    guard missing.isEmpty else { throw CommitFailure.malformed("a whole put of \(key) leaves out \(missing.joined(separator: ", "))") }
+    guard edits.isEmpty else { throw CommitFailure.malformed("\(type.name) has no text field") }
+    return Delta(key: key, lattice: Lattice(life: Life(.alive, stamp), fields: try fields(type, values, current: nil)))
   }
 
   mutating func write(_ type: TypeDef, _ id: RecordID, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
@@ -454,18 +466,15 @@ struct DeltaBuilder {
     return !delta.lattice.fields.isEmpty || !delta.texts.isEmpty
   }
 
-  // Only the fields whose value differs from drawn, each rounded to its quantum; a create's unset client time fields
-  // take physNow. A client write of a server field throws; a prediction may write one.
+  // Only the fields whose value differs from drawn, every number rounded to its domain's quantum at any depth; a create's
+  // unset client time fields take physNow. A client write of a server field throws; a prediction may write one.
   func fields(_ type: TypeDef, _ values: [String: JSON], current: ViewRecord?, create: Bool = false,
               server: Bool = false) throws -> [String: Register] {
     var out: [String: Register] = [:]
     for (name, raw) in values {
       guard let field = type.field(name), field.kind.isLattice else { throw CommitFailure.malformed("\(type.name).\(name) is not a lattice field") }
       guard field.writer == .client || server else { throw CommitFailure.malformed("\(type.name).\(name) is written by the server") }
-      var value = raw
-      if let quantum = field.quantum, case .number(let number) = raw, let rounded = JSON.Number(quantum.rounded(number.value)) {
-        value = .number(rounded)
-      }
+      let value = field.domain?.rounded(raw) ?? raw
       if let register = current?.lattice.fields[name], register.value == value { continue }
       out[name] = Register(value, stamp)
     }

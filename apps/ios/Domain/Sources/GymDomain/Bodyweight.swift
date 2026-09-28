@@ -52,7 +52,6 @@ public enum WeighInRules {
   public static let kg = NumberSpec("weighin.kg", min: 20, max: 400, quantum: 0.01)
   // A real day, the device's local today or earlier; the server backstops it past its own UTC tomorrow.
   public static let dayRule = "weighin.day"
-  public static let badInstant = RefusalCode("bad-instant")
 
   // The last day the picker offers and the key rule admits.
   public static func latestDay(at moment: Moment) -> LocalDay {
@@ -61,7 +60,7 @@ public enum WeighInRules {
 
   static let rules: [Rule] = [
     .local(kg),
-    .local(dayRule, subject: WeighIn.type, backstop: [badInstant]),
+    .local(dayRule, subject: WeighIn.type, backstop: [Gym.Codes.badInstant]),
   ]
 }
 

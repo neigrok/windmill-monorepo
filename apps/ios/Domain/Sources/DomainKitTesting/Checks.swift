@@ -50,7 +50,7 @@ public enum RegistryCheck {
       }
     }
     for field in definition.fields {
-      guard let quantum = field.quantum else { continue }
+      guard let quantum = field.domain?.quantum else { continue }
       let path = "\(E.type).\(field.name)"
       guard specs(in: book).contains(where: { $0.path == path && $0.quantum.map(quantum.holds) == true }) else {
         throw failure(9, path, "a field with a quantum has no number spec on it")
@@ -152,7 +152,6 @@ struct SpecTarget {
   let item: Domain?
   let bounds: Bounds?
   let fieldBounds: Bounds?
-  let quantum: Quantum?
   let isText: Bool
   let rank: [String]?
 
@@ -164,8 +163,8 @@ struct SpecTarget {
     }
     let domain = try SpecTarget.walk(field.domain, along: names.dropFirst(2), path: path)
     let isField = names.count == 2
-    self.init(domain: domain, fieldBounds: field.bounds, isField: isField, quantum: isField ? field.quantum : nil,
-              isText: isField && field.isText, rank: isField ? field.rank : nil)
+    self.init(domain: domain, fieldBounds: field.bounds, isField: isField, isText: isField && field.isText,
+              rank: isField ? field.rank : nil)
   }
 
   // `<command>.<argument>`, then `.<property>` the same way.
@@ -175,17 +174,16 @@ struct SpecTarget {
       throw RegistryCheck.failure(6, path, "the spec names no argument of \(command.name)")
     }
     let domain = try SpecTarget.walk(argument.domain, along: names.dropFirst(), path: path)
-    self.init(domain: domain, fieldBounds: nil, isField: false, quantum: nil, isText: false, rank: nil)
+    self.init(domain: domain, fieldBounds: nil, isField: false, isText: false, rank: nil)
   }
 
-  init(domain: Domain?, fieldBounds: Bounds?, isField: Bool, quantum: Quantum?, isText: Bool, rank: [String]?) {
+  init(domain: Domain?, fieldBounds: Bounds?, isField: Bool, isText: Bool, rank: [String]?) {
     var item = domain
     while case .array(let items, _)? = item?.shape { item = items }
     self.domain = domain
     self.item = item
     bounds = isField && !SpecTarget.isArray(domain) && fieldBounds != nil ? fieldBounds : SpecTarget.stringBounds(item)
     self.fieldBounds = fieldBounds
-    self.quantum = quantum
     self.isText = isText
     self.rank = rank
   }
@@ -257,7 +255,9 @@ struct SpecTarget {
   }
 
   func numberRefusal(_ spec: Spec) -> String? {
-    guard case .number(let integer, let min, let max)? = item?.shape else { return "a number spec on a value that is no number" }
+    guard case .number(let integer, let min, let max, let quantum)? = item?.shape else {
+      return "a number spec on a value that is no number"
+    }
     if let min, let specMin = spec.number("min"), specMin < min { return "admits \(specMin), below the registry's \(min)" }
     if let max, let specMax = spec.number("max"), specMax > max { return "admits \(specMax), above the registry's \(max)" }
     let specIntegral = spec.json["integer"] == .bool(true) || spec.quantum.map { $0.rounded() == $0 } == true
@@ -304,7 +304,7 @@ struct SpecTarget {
     switch domain.shape {
     case .string(let allowed, _, let bounds):
       if let allowed { value = allowed.map { JSON.string($0).jcs.count }.max() } else { value = bounds?.max.map { 2 + 6 * $0 } }
-    case .number(let integer, let min, let max):
+    case .number(let integer, let min, let max, _):
       guard integer, let min, let max else { value = 24; break }
       value = Swift.max(JSON.of(min).jcs.count, JSON.of(max).jcs.count)
     case .boolean: value = 5

@@ -18,7 +18,7 @@ struct ChecksTests {
         "fields": {
           "name": {"kind": "lww", "writer": "client", "unit": "chars", "min": 1, "max": 20, "domain": {"type": "string"}},
           "ord": {"kind": "lww", "writer": "client", "domain": {"type": "fracKey"}},
-          "weight": {"kind": "lww", "writer": "client", "domain": {"type": "number", "min": -100, "max": 100, "nullable": true}, "quantum": 0.5},
+          "weight": {"kind": "lww", "writer": "client", "domain": {"type": "number", "min": -100, "max": 100, "nullable": true, "quantum": 0.5}},
           "tags": {"kind": "lww", "writer": "client", "unit": "bytes", "max": 400,
                    "domain": {"type": "array", "maxItems": 4, "items": {"type": "object", "required": ["label"],
                               "properties": {"label": {"type": "string", "unit": "chars", "max": 10}}}}},

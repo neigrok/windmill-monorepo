@@ -104,12 +104,11 @@ extension Store {
 
   // MARK: Pulling (§7.5, §7.9)
 
-  // The next request of `replica` for the scopes asked, and the scopes left for a later one; nil when the replica is no
-  // longer active.
-  public func pullRequest(_ scopes: [ScopeRef], replica id: String) throws -> (request: PullRequest, later: [ScopeRef])? {
+  // What the scopes asked make of `replica`'s next request; nil when the replica is no longer active.
+  public func pullPlan(_ scopes: [ScopeRef], replica id: String) throws -> PullPlan? {
     try read { tx in
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let replica = try tx.replica(id) else { return nil }
-      return planners.pages.request(scopes, in: replica)
+      return planners.pages.plan(scopes, in: replica)
     }
   }
 
@@ -162,8 +161,8 @@ extension Store {
     }
   }
 
-  // A 401 paused the bound replica; its account signed in again.
-  public func reauthenticate() throws -> Written<Void> {
+  // The bound replica's account signed in again: true iff that cleared the pause a 401 set.
+  public func reauthenticate() throws -> Written<Bool> {
     try onActive(.authResume) { replica in try planners.lifecycle.reauthenticate(&replica) }
   }
 
@@ -222,9 +221,13 @@ extension Store {
 
   // MARK: Reading
 
-  // The scopes `replica` knows gone or not found (§7.5), which it neither pulls nor follows live.
-  public func knownScopes(of replica: String) throws -> [ScopeRef: KnownKind] {
-    try read { tx in try tx.known(of: replica) }
+  // The scopes of `subscribed` that `replica` pulls and follows live (§7.9), in their order: none it knows gone or not
+  // found, and none that waits for its governing record's create.
+  public func pulledScopes(of replica: String, among subscribed: [ScopeRef]) throws -> [ScopeRef] {
+    try read { tx in
+      guard let loaded = try tx.replica(replica) else { return [] }
+      return subscribed.filter { planners.pages.pulls($0, in: loaded) }
+    }
   }
 
   public func anonCount(of product: String, in replica: String) throws -> [String: Int] {
