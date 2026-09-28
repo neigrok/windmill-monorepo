@@ -30,21 +30,20 @@ public:
 };
 
 // §6.8 and §9.5: the scopes each socket subscribes, the in-memory access cache every fan-out decides by, and the
-// frames. Every method may run on any thread at the same time as the others; a socket unknown to it is ignored.
+// frames, each carrying the principal its socket's upgrade was served as (`as`). Every method may run on any thread
+// at the same time as the others; a socket unknown to it is ignored. A socket whose credential stops resolving is
+// closed, never served on as anonymous, so a socket keeps its principal for life.
 class SyncLive final : public ChangeFeed {
 public:
   SyncLive(const SyncCatalog& catalog, SyncStore& store, Limits limits);
 
-  // `principal` is nullopt for a guest.
+  // `principal` is the account the upgrade was served as; nullopt for a guest.
   void open(std::shared_ptr<LiveSocket> socket, std::optional<UserId> principal);
   void close(const LiveSocket& socket);
   // {op: sub}: each readable scope is subscribed, each other one answers gone or not-found, and the client pulls.
   // It reads the store, so it runs on a blocking thread.
   void subscribe(const LiveSocket& socket, const Json::Value& scopeRefs);
   void unsubscribe(const LiveSocket& socket, const Json::Value& scopeRefs);
-  // The socket's session no longer re-proves: it reads as signed out from now on, and every subscription it
-  // can no longer read gets not-found and ends.
-  void signOut(const LiveSocket& socket);
   // On the admitting worker, inside the scope's mutex, so it only queues frames.
   void publish(const CommittedChange& change) override;
 
@@ -84,6 +83,8 @@ private:
   // answer the deaths.
   std::vector<ScopeKey> learn(const CommittedChange& change);
   void sendChange(const std::string& epoch, const ScopeChange& changed);
+  // §9.5 {op: 'gone' | 'not-found', as, scope}, sent to one subscriber.
+  static void answer(const Subscriber& subscriber, const std::string& op, const std::string& scope);
   void answerDeath(const ScopeKey& killed);
 
   // D-4 over the cache, for a subscription: read, and gone for the owner of a dead one.

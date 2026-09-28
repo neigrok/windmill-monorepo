@@ -217,6 +217,11 @@ fourth product adds one line to it.
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
   absent, and `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the
   Keychain.
+- The sync endpoints and the live upgrade (`SyncApi.cpp`, `SyncSocket.cpp`) count the cookie and the
+  `Authorization` header, whatever its shape, each as a credential sent: one that does not resolve,
+  or two that name different accounts, answer `401` and are never served as anonymous
+  (`docs/foundation/engine.md` §9.1). A session `AuthService` revokes closes its live sync sockets at
+  once (`LiveSessions`).
 - The apps sign in by code: mint with `door: "app"`, post the typed digits to `/v1/auth/verify-code`,
   capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
   (sign-in) or `/v1/auth/link` (the merge above).

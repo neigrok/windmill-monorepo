@@ -305,6 +305,7 @@ void serverConstants(const Json::Value& constants) {
   CHECK_EQ(constants["LIVE_FRAME_BYTES"].asUInt64(), limits.liveFrameBytes);
   CHECK_EQ(constants["LIVE_INLINE_BYTES"].asUInt64(), limits.liveInlineBytes);
   CHECK_EQ(constants["MERGE_WORK_CELLS"].asUInt64(), limits.mergeWorkCells);
+  CHECK_EQ(constants["ACCOUNT_ID_BYTES"].asUInt64(), kAccountIdBytes);
 }
 
 Json::Value admitOverFakes(const Json::Value& input) {

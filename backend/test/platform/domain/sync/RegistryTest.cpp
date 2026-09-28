@@ -83,8 +83,8 @@ const Domain& propertyOf(const Domain& object, const std::string& name) {
 TEST(the_probe_registry_loads_its_types_and_commands_in_order) {
   const Registry& probe = probe::registry();
   CHECK_EQ(probe.name(), std::string("probe"));
-  CHECK_EQ(probe.version(), 1);
-  CHECK_EQ(probe.minVersion(), 1);
+  CHECK_EQ(probe.version(), 2);
+  CHECK_EQ(probe.minVersion(), 2);
   CHECK_EQ(namesOf(probe.types()), (std::vector<std::string>{"board", "card", "run", "lap", "day", "fact", "meta", "tag", "link", "mark"}));
   CHECK_EQ(namesOf(probe.commands()), (std::vector<std::string>{"probe.start", "probe.end", "probe.copy", "probe.tick"}));
   REQUIRE(probe.products().contains("probe"));

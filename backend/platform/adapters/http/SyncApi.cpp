@@ -29,7 +29,7 @@ void SyncApi::onWorker(Reply&& reply, std::function<SyncReply()> work) {
 void SyncApi::hello(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
     if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
-    return deps_.service->hello(callerOf(req, *deps_.auth));
+    return deps_.service->hello(credentialOf(req));
   });
 }
 
@@ -37,20 +37,29 @@ void SyncApi::push(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
     TimeBudget budget(deps_.limits.pushWorkMs);
     if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
-    return deps_.service->push(callerOf(req, *deps_.auth), req->body(), budget);
+    return deps_.service->push(credentialOf(req), req->body(), budget);
   });
 }
 
 void SyncApi::pull(const drogon::HttpRequestPtr& req, Reply&& reply) {
   onWorker(std::move(reply), [this, req] {
     if (std::optional<SyncReply> refused = versionRefusal(req)) return *refused;
-    return deps_.service->pull(callerOf(req, *deps_.auth), req->body());
+    return deps_.service->pull(credentialOf(req), req->body());
   });
 }
 
 std::optional<SyncReply> SyncApi::versionRefusal(const drogon::HttpRequestPtr& req) const {
   // Drogon presents a repeated header as its first value.
   return schemaRefusal(req->getHeader("sync-schema"), deps_.minSchema, deps_.clock->nowMs(), deps_.epoch);
+}
+
+Credential SyncApi::credentialOf(const drogon::HttpRequestPtr& req) const {
+  const Credential credential = sync::credentialOf(sentSecretsOf(req), [this](const std::string& secret) -> std::optional<UserId> {
+    const std::optional<User> user = deps_.auth->authenticate(secret);
+    return user ? std::optional(user->id) : std::nullopt;
+  });
+  if (!credential.fails() && credential.servedAs()) req->attributes()->insert(kCallerAttribute, credential.servedAs()->str());
+  return credential;
 }
 
 std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t minSchema, Ms serverTime, const std::string& epoch) {
@@ -63,6 +72,27 @@ std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t mi
   const bool below = error == std::errc::result_out_of_range ? version.front() == '-' : schema < minSchema;
   if (below) return SyncReply::refused(426, envelope, "upgrade-required");
   return std::nullopt;
+}
+
+std::vector<std::string> sentSecretsOf(const drogon::HttpRequestPtr& req) {
+  std::vector<std::string> secrets;
+  if (const auto cookie = req->cookies().find("wm_session"); cookie != req->cookies().end()) secrets.push_back(cookie->second);
+  if (const auto header = req->headers().find("authorization"); header != req->headers().end()) {
+    const std::string_view authorization = header->second;
+    secrets.emplace_back(authorization.starts_with("Bearer ") ? authorization.substr(7) : std::string_view());
+  }
+  return secrets;
+}
+
+Credential credentialOf(const std::vector<std::string>& secrets, const std::function<std::optional<UserId>(const std::string&)>& resolve) {
+  if (secrets.empty()) return Credential::none();
+  std::optional<UserId> account;
+  for (const std::string& secret : secrets) {
+    const std::optional<UserId> resolved = secret.empty() ? std::nullopt : resolve(secret);
+    if (!resolved || (account && *account != *resolved)) return Credential::sent(std::nullopt);
+    account = resolved;
+  }
+  return Credential::sent(account);
 }
 
 drogon::HttpResponsePtr responseOf(const SyncReply& reply) {

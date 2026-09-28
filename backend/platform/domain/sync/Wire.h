@@ -74,6 +74,39 @@ struct WriteEntry {
 Json::Value okResult(Seq seq, const std::optional<std::vector<WriteEntry>>& write, const Json::Value& detail);
 Json::Value refusedResult(const Refused&);
 
+// §9.7 ACCOUNT_ID_BYTES: the most UTF-8 bytes an account id holds.
+inline constexpr std::size_t kAccountIdBytes = 64;
+
+// §9.1: an account id is at most ACCOUNT_ID_BYTES bytes of UTF-8 and holds no character jcs escapes (a control
+// character, '"' or '\').
+bool isAccountId(std::string_view id);
+
+// §9.1 Credentials: a request carries one credential or none, and a sent one resolves to an account or to none
+// (revoked, expired, unknown, or failing to parse).
+class Credential {
+public:
+  // A request that carries none: it is anonymous.
+  static Credential none();
+  // A request that sends one, which resolves to `account`, or to none.
+  static Credential sent(std::optional<UserId> account);
+
+  // A sent credential that resolves to no account, or to an id outside §9.1's form. Every endpoint answers it 401
+  // unauthenticated, and none serves it as anonymous.
+  bool fails() const;
+  // §9.1 Principal: the account a request that does not fail is served as; nullopt when it carries no credential.
+  const std::optional<UserId>& servedAs() const { return account_; }
+
+private:
+  Credential(bool sent, std::optional<UserId> account);
+
+  bool sent_ = false;
+  std::optional<UserId> account_;
+};
+
+// §9.1 Principal as every answer from authentication on, and every change, gone and not-found frame, carries it:
+// `as`, the account served as, or null.
+Json::Value servedAsJson(const std::optional<UserId>& principal);
+
 // D-18 and §9.4: where a pull resumes. Wire: unpadded base64url of jcs({e, m, s, k?, a?}).
 struct Cursor {
   std::string epoch;

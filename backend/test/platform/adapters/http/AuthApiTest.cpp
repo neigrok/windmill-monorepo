@@ -38,8 +38,9 @@ struct Harness {
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, *clock};
   FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(
-      authRepo, email, tokens, *clock, oauth, footprint, kApp);
+      authRepo, email, tokens, *clock, oauth, footprint, revocations, kApp);
   std::shared_ptr<FakeSignupFork> fork = std::make_shared<FakeSignupFork>();
   std::shared_ptr<GoogleOAuthClient> google;
   std::shared_ptr<AuthApi> api;

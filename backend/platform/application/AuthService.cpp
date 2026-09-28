@@ -5,9 +5,10 @@
 namespace wm {
 
 AuthService::AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
-                         OAuthService& oauth, AccountFootprint& footprint, std::string appBaseUrl)
+                         OAuthService& oauth, AccountFootprint& footprint, SessionRevocations& revocations,
+                         std::string appBaseUrl)
     : repo_(repo), email_(email), tokens_(tokens), clock_(clock), oauth_(oauth), footprint_(footprint),
-      appBaseUrl_(std::move(appBaseUrl)) {}
+      revocations_(revocations), appBaseUrl_(std::move(appBaseUrl)) {}
 
 void AuthService::requestLink(const std::string& rawEmail, const std::string& forkSource,
                               const std::optional<ForkDescription>& forkDescription,
@@ -156,7 +157,8 @@ AuthService::LinkResult AuthService::linkAccount(const UserId& caller, const std
 
   const User surviving = target ? revived(*target) : repo_.createUser(link->email, nameFromEmail(link->email));
   repo_.moveIdentities(caller, surviving.id);
-  repo_.deleteUser(caller);  // empty by proof; the cascade takes the caller's own session with it
+  revocations_.revoked(repo_.revokeAllSessions(caller));  // the caller's own current one too, told before anything can throw
+  repo_.deleteUser(caller);                                // empty by proof
   LOG_INFO << "auth: empty account folded into another folded=" << caller.str()
            << " surviving=" << surviving.id.str();
   return {LinkOutcome::linked, mintSession(surviving, ctx, now)};
@@ -208,7 +210,9 @@ std::optional<User> AuthService::revalidate(const std::string& digest, const Ses
 
 void AuthService::signOut(const std::string& sessionSecret) {
   if (sessionSecret.empty()) return;
-  repo_.deleteSession(tokens_.digestOf(sessionSecret));
+  const std::string digest = tokens_.digestOf(sessionSecret);
+  repo_.deleteSession(digest);
+  revocations_.revoked({digest});
 }
 
 std::optional<User> AuthService::updateName(const UserId& userId, const std::string& rawName) {
@@ -231,12 +235,13 @@ AuthService::RevokeOutcome AuthService::revokeSession(const UserId& userId, cons
                                                       const std::string& currentSecret) {
   const std::optional<std::string> revokedDigest = repo_.revokeSession(userId, sessionId);
   if (!revokedDigest) return RevokeOutcome::notFound;
+  revocations_.revoked({*revokedDigest});
   if (*revokedDigest == tokens_.digestOf(currentSecret)) return RevokeOutcome::revokedCurrent;
   return RevokeOutcome::revoked;
 }
 
 void AuthService::signOutEverywhere(const UserId& userId, const std::string& currentSecret) {
-  repo_.revokeSessionsExcept(userId, tokens_.digestOf(currentSecret));
+  revocations_.revoked(repo_.revokeSessionsExcept(userId, tokens_.digestOf(currentSecret)));
   LOG_INFO << "auth: signed out everywhere user=" << userId.str();
 }
 
@@ -245,9 +250,9 @@ UnixMs AuthService::closeAccount(const UserId& userId) {
   LOG_INFO << "auth: account closed user=" << userId.str();
   // Tear down every credential BEFORE stamping the close: the MCP token path has no deletedAt
   // guard, so stamping first leaves a window where a token resolves for a closed account.
-  repo_.revokeAllSessions(userId);     // every device signed out
-  oauth_.disconnectAll(userId);        // every connected tool disconnected (drops its tokens)
-  repo_.markUserDeleted(userId, now);  // the grace starts now; the trees are left untouched
+  revocations_.revoked(repo_.revokeAllSessions(userId));  // every device signed out
+  oauth_.disconnectAll(userId);                           // every connected tool disconnected (drops its tokens)
+  repo_.markUserDeleted(userId, now);                     // the grace starts now; the trees are left untouched
   return closesAt(now);
 }
 

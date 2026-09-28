@@ -36,8 +36,11 @@ public:
   SyncStore& store() override { return store_; }
   const SyncCatalog& catalog() const override { return catalog_; }
 
-  // "A" is 00000000-0000-4000-8000-000000000041: the alias's bytes as the uuid's last twelve hex digits.
+  // "A" is 00000000-0000-4000-8000-000000000041: the alias's bytes as the uuid's last twelve hex digits. An alias
+  // over six bytes stays itself: only a credential outside §9.1's account id form carries one, answered 401 before
+  // the store is read.
   UserId account(const std::string& alias) const override {
+    if (alias.size() > 6) return UserId{alias};
     std::string hex;
     for (const char c : alias) {
       char byte[3];
@@ -47,6 +50,7 @@ public:
     return UserId{"00000000-0000-4000-8000-" + std::string(12 - hex.size(), '0') + hex};
   }
   std::string alias(const UserId& account) const override {
+    if (!account.str().starts_with("00000000-0000-4000-8000-")) return account.str();
     const std::string hex = account.str().substr(24);
     std::string alias;
     for (std::size_t i = 0; i < hex.size(); i += 2) {

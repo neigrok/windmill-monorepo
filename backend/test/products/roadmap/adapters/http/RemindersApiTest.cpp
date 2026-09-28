@@ -28,8 +28,9 @@ struct Harness {
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, *tokens, *clock};
   FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, *tokens, *clock, oauth, footprint, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, *tokens, *clock, oauth, footprint, revocations, "https://windmill.works");
   std::shared_ptr<FakeReminders> reminders = std::make_shared<FakeReminders>();
   std::shared_ptr<ReminderSweep> sweep;
   std::shared_ptr<RemindersApi> api;

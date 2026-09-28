@@ -3,6 +3,7 @@
 #include "platform/application/sync/Admission.h"
 #include "platform/application/sync/SyncCatalog.h"
 #include "platform/domain/Ids.h"
+#include "platform/domain/sync/Wire.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/SyncStore.h"
 
@@ -16,7 +17,8 @@
 
 namespace wm::sync {
 
-// One answer of the sync endpoints (§9): an HTTP status and a body that always carries serverTime and epoch.
+// One answer of the sync endpoints (§9): an HTTP status and a body that always carries serverTime and epoch, and
+// from authentication on `as` (§9.1 Principal).
 struct SyncReply {
   int status = 200;
   Json::Value body;
@@ -25,6 +27,8 @@ struct SyncReply {
   static Json::Value envelope(Ms serverTime, const std::string& epoch);
   // §9.6: an answer that is its error code alone.
   static SyncReply refused(int status, Json::Value envelope, const std::string& error);
+  // §9.1 step 2: 401 unauthenticated, served as nobody (`as: null`).
+  static SyncReply unauthenticated(Json::Value envelope);
   // §6.6 and §9.6: 503 unavailable, to be retried after Retry::kTransientMs.
   static SyncReply unavailable(Json::Value envelope);
 };
@@ -49,16 +53,17 @@ private:
   std::chrono::steady_clock::time_point deadline_;
 };
 
-// §9.2 hello, §6.2 push and §6.7 pull over the engine's ports, each from its caller and its body as received.
-// A request's registry version is checked before it reaches the service (§9.1); push and pull check the rest
-// of §9.1's envelope here, in its order. Every method runs on a blocking thread (§6).
+// §9.2 hello, §6.2 push and §6.7 pull over the engine's ports, each from its credential and its body as received.
+// A request's registry version is checked before it reaches the service (§9.1); the rest of §9.1's envelope is
+// checked here, in its order, authentication first: a credential that fails is answered 401 by every endpoint.
+// Every method runs on a blocking thread (§6).
 class SyncService {
 public:
   SyncService(const SyncCatalog& catalog, SyncStore& store, Admission& admission, Clock& clock);
 
-  SyncReply hello(const std::optional<UserId>& caller);
-  SyncReply push(const std::optional<UserId>& caller, std::string_view body, PushBudget& budget);
-  SyncReply pull(const std::optional<UserId>& caller, std::string_view body);
+  SyncReply hello(const Credential& credential);
+  SyncReply push(const Credential& credential, std::string_view body, PushBudget& budget);
+  SyncReply pull(const Credential& credential, std::string_view body);
 
 private:
   const SyncCatalog& catalog_;

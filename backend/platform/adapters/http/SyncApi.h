@@ -15,6 +15,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace wm::sync {
 
@@ -32,9 +33,9 @@ struct SyncDeps {
 
 // §9.2–§9.4 over HTTP. A handler runs on the IO thread only long enough to post its work to the pool; at
 // the pool's ceiling it answers 503 {error: "unavailable", retryAfterMs} without touching the database.
-// On the worker, in §9.1's order: the Sync-Schema header, then the caller (the session cookie or a Bearer
-// token) and the body as received, which the service checks. Bodies are written as JCS, so every number
-// crosses the wire exactly as the digest hashed it (§6.12).
+// On the worker, in §9.1's order: the Sync-Schema header, then the credential (sentSecretsOf) and the body as
+// received, which the service checks. Bodies are written as JCS, so every number crosses the wire exactly as the
+// digest hashed it (§6.12).
 class SyncApi {
 public:
   using Reply = std::function<void(const drogon::HttpResponsePtr&)>;
@@ -51,6 +52,8 @@ private:
   void onWorker(Reply&& reply, std::function<SyncReply()> work);
   // §9.1's first check, on the version the header Sync-Schema carries.
   std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
+  // The request's credential, each sent session secret resolved; the access log learns the account it resolves to.
+  Credential credentialOf(const drogon::HttpRequestPtr& req) const;
 
   SyncDeps deps_;
 };
@@ -66,5 +69,16 @@ std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t mi
 
 // A reply as the wire carries it: its status, and its body as JCS.
 drogon::HttpResponsePtr responseOf(const SyncReply& reply);
+
+// §9.1 Credentials over HTTP, and the live socket's upgrade alike: the session secret of every credential a request
+// sends, whatever its shape, as Drogon presents them (a repeated cookie as its last value, a repeated header as its
+// first). The wm_session cookie is one whenever it is present, its value the secret; so is the Authorization header,
+// whose secret is the token of `Bearer <token>` and "" for any other shape, which resolves to no account. Empty when
+// the request sends neither: it is anonymous.
+std::vector<std::string> sentSecretsOf(const drogon::HttpRequestPtr& req);
+
+// The credential that sent `secrets` make, each resolved by `resolve` ("" resolving to none): none when there are
+// none, and one that resolves only when every secret resolves, all to one account.
+Credential credentialOf(const std::vector<std::string>& secrets, const std::function<std::optional<UserId>(const std::string&)>& resolve);
 
 }

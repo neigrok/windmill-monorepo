@@ -22,8 +22,8 @@
 #include <vector>
 
 // The server's readings of push/serve.json, pull/serve.json and pull/hello.json (corpus/README.md) through
-// SyncService, and of live/death.json through SyncLive, over any SyncWorld. Accounts in an input are the corpus's
-// aliases.
+// SyncService, and of live/death.json through SyncLive, over any SyncWorld. Accounts in an input, a push body's
+// `account` and every answer's `as` are the corpus's aliases, which a world maps to the ids its store keeps.
 
 namespace wm::sync::test {
 
@@ -37,13 +37,38 @@ private:
   std::optional<std::size_t> admissions_;
 };
 
-inline std::optional<UserId> callerOf(const SyncWorld& world, const Json::Value& alias) {
-  if (alias.isNull()) return std::nullopt;
-  return world.account(alias.asString());
+// An input's credential: `credential: 'unresolved'` is one sent that resolves to no account; otherwise `account` is
+// the account a sent one resolves to, or null for none sent.
+inline Credential credentialOf(const SyncWorld& world, const Json::Value& input) {
+  if (input["credential"] == Json::Value("unresolved")) return Credential::sent(std::nullopt);
+  if (input["account"].isNull()) return Credential::none();
+  return Credential::sent(world.account(input["account"].asString()));
 }
 
-inline Json::Value responseOf(const SyncReply& reply) {
-  return object({{"status", reply.status}, {"body", reply.body}});
+// A body or frame with its `as` named by the account's alias.
+inline Json::Value aliasedAs(const SyncWorld& world, Json::Value answer) {
+  if (answer.isObject() && answer.isMember("as") && answer["as"].isString()) answer["as"] = world.alias(UserId{answer["as"].asString()});
+  return answer;
+}
+
+inline Json::Value responseOf(const SyncWorld& world, const SyncReply& reply) {
+  return object({{"status", reply.status}, {"body", aliasedAs(world, reply.body)}});
+}
+
+// A request body as the world's store names accounts: a push's string `account` by the id its alias maps to. The
+// limits move PUSH_MAX_BYTES by as many bytes as that grew the body, so a vector's size boundary stays where the
+// corpus drew it. Over the fakes an account is its alias, and nothing moves.
+struct StoredRequest {
+  std::string body;
+  Limits limits;
+};
+
+inline StoredRequest storedRequest(const SyncWorld& world, const Json::Value& request, Limits limits) {
+  Json::Value stored = request;
+  if (stored.isObject() && stored.isMember("account") && stored["account"].isString()) stored["account"] = world.account(stored["account"].asString()).str();
+  const std::string body = jcs(stored);
+  limits.pushMaxBytes += body.size() - jcs(request).size();
+  return StoredRequest{body, limits};
 }
 
 // §6.8's live events of every change the world's feed received: a change frame per scope an admission wrote,
@@ -64,7 +89,8 @@ inline Json::Value liveEventsOf(SyncWorld& world, const Limits& limits) {
 inline Json::Value pushVector(SyncWorld& world, const Json::Value& input) {
   BlockingThread::Mark blocking;
   world.seed(input["state"]);
-  const Limits limits = limitsOf(input);
+  const StoredRequest push = storedRequest(world, input["request"], limitsOf(input));
+  const Limits& limits = push.limits;
   fake::FaultingStore::Faults faults;
   for (const Json::Value& fault : input["faults"]) {
     faults.intents.emplace(fault["n"].asUInt64(), fault["kind"].asString() == "transient" ? FaultClass::transient : FaultClass::fault);
@@ -77,8 +103,8 @@ inline Json::Value pushVector(SyncWorld& world, const Json::Value& input) {
   CountBudget budget(input.isMember("budget") ? std::optional<std::size_t>(input["budget"].asUInt64()) : std::nullopt);
 
   world.feed.published.clear();
-  const SyncReply reply = service.push(callerOf(world, input["account"]), jcs(input["request"]), budget);
-  return object({{"response", responseOf(reply)}, {"state", world.dump()}, {"frames", liveEventsOf(world, limits)}});
+  const SyncReply reply = service.push(credentialOf(world, input), push.body, budget);
+  return object({{"response", responseOf(world, reply)}, {"state", world.dump()}, {"frames", liveEventsOf(world, limits)}});
 }
 
 // pull/serve.json: §6.7 once. The state joins the answer when the beforePull admissions changed it, and their
@@ -94,8 +120,8 @@ inline Json::Value pullVector(SyncWorld& world, const Json::Value& input) {
   SyncService service(world.catalog(), world.store(), admission, clock);
 
   world.feed.published.clear();
-  const SyncReply reply = service.pull(callerOf(world, input["account"]), jcs(input["request"]));
-  Json::Value answer = object({{"response", responseOf(reply)}});
+  const SyncReply reply = service.pull(credentialOf(world, input), jcs(input["request"]));
+  Json::Value answer = object({{"response", responseOf(world, reply)}});
   const Json::Value after = world.dump();
   if (jcs(after) != jcs(before)) answer["state"] = after;
   const Json::Value live = liveEventsOf(world, limits);
@@ -112,20 +138,21 @@ inline void protocolTranscript(SyncWorld& world, const std::vector<Json::Value>&
   for (std::size_t i = 1; i < lines.size(); ++i) {
     const Json::Value& line = lines[i];
     if (line.isMember("http")) {
+      const StoredRequest request = storedRequest(world, line["request"], Limits{});
       fake::FaultingStore::Faults faults;
       for (const Json::Value& n : line["inject"]["fault"]) faults.intents.emplace(n.asUInt64(), FaultClass::fault);
       fake::FaultingStore store(world.store(), faults);
-      Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures);
+      Admission admission(world.catalog(), store, world.feed, world.clock(), world.failures, request.limits);
       wm::fake::FakeClock clock;
       clock.now = line["serverNow"].asUInt64();
       SyncService service(world.catalog(), store, admission, clock);
-      const std::optional<UserId> caller = callerOf(world, line["account"]);
+      const Credential credential = credentialOf(world, line);
       const std::string http = line["http"].asString();
       CountBudget budget(line["inject"].isMember("budget") ? std::optional<std::size_t>(line["inject"]["budget"].asUInt64()) : std::nullopt);
-      const SyncReply reply = http == "push" ? service.push(caller, jcs(line["request"]), budget)
-                              : http == "pull" ? service.pull(caller, jcs(line["request"]))
-                                               : service.hello(caller);
-      corpus::checkSame(responseOf(reply), line["response"], __FILE__, __LINE__);
+      const SyncReply reply = http == "push" ? service.push(credential, request.body, budget)
+                              : http == "pull" ? service.pull(credential, request.body)
+                                               : service.hello(credential);
+      corpus::checkSame(responseOf(world, reply), line["response"], __FILE__, __LINE__);
       continue;
     }
     if (line["server"].isString() && line["server"].asString() == "load") world.seed(line["state"]);
@@ -141,7 +168,7 @@ inline Json::Value helloVector(SyncWorld& world, const Json::Value& input) {
   wm::fake::FakeClock clock;
   clock.now = input["serverTime"].asUInt64();
   SyncService service(world.catalog(), world.store(), admission, clock);
-  return object({{"response", responseOf(service.hello(callerOf(world, input["account"])))}});
+  return object({{"response", responseOf(world, service.hello(credentialOf(world, input)))}});
 }
 
 // live/death.json: the frame a live socket of `account`, subscribed to `scope`, receives when the scope dies
@@ -172,7 +199,7 @@ inline Json::Value liveDeathVector(SyncWorld& world, const Json::Value& input) {
   live.publish(CommittedChange{beforeDeath.isMember("epoch") ? beforeDeath["epoch"].asString() : "ep-1", {}, killed});
 
   CHECK(socket->frames.size() <= 1);
-  return object({{"frame", socket->frames.empty() ? Json::Value(Json::nullValue) : socket->frames[0]}});
+  return object({{"frame", socket->frames.empty() ? Json::Value(Json::nullValue) : aliasedAs(world, socket->frames[0])}});
 }
 
 }
