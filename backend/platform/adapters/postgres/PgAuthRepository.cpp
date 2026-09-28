@@ -80,11 +80,16 @@ void PgAuthRepository::reviveUser(const UserId& userId) {
   txn.commit();
 }
 
-void PgAuthRepository::deleteUser(const UserId& userId) {
+std::vector<std::string> PgAuthRepository::deleteUser(const UserId& userId) {
+  // The row is locked first, so no session is inserted for it between the two deletes: every session the account held
+  // is one this answers.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  txn.exec_params("SELECT 1 FROM users WHERE id = $1::uuid FOR UPDATE", userId.str());
+  const pqxx::result sessions = txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid RETURNING token_hash", userId.str());
   txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
   txn.commit();
+  return digestsOf(sessions);
 }
 
 std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const std::string& subject) {

@@ -115,11 +115,14 @@ WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ctest --test-di
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
-that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https.
-`test/e2e/sync_probe.sh` drives it over HTTP:
+that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It listens through
+`TappedListener`, so every request's credentials are read as sent (`AUTH.md`). Off Linux, where Drogon
+applies no connection callback, it logs `credential tap: relaying …`: a relay holds the port and Drogon
+listens behind it on a free loopback port. `test/e2e/sync_probe.sh` drives it over HTTP, with the
+session cookie scoped to `Domain=localhost` so a sign-in shows both of the cookie's scopes:
 
 ```sh
-DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 ./build/windmill_server_probe &
+DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=localhost ./build/windmill_server_probe &
 WM_E2E_DB=wm_sync_test PORT=8089 bash test/e2e/sync_probe.sh
 ```
 

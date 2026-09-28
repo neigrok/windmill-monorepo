@@ -1,9 +1,13 @@
 #pragma once
 
+#include "platform/adapters/http/CredentialTap.h"
+#include "platform/application/AuthService.h"
+#include "platform/application/OAuthService.h"
 #include "platform/application/WorkerPool.h"
 #include "platform/application/sync/Admission.h"
 #include "platform/application/sync/SyncLive.h"
 #include "platform/application/sync/SyncService.h"
+#include "platform/domain/sync/Credentials.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Wire.h"
 #include "test/SyncCorpus.h"
@@ -19,11 +23,13 @@
 #include <map>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 // The server's readings of push/serve.json, pull/serve.json and pull/hello.json (corpus/README.md) through
 // SyncService, and of live/death.json through SyncLive, over any SyncWorld. Accounts in an input, a push body's
 // `account` and every answer's `as` are the corpus's aliases, which a world maps to the ids its store keeps.
+// envelope/credentials.json is read through the CredentialTap and AuthService, over any AuthRepository.
 
 namespace wm::sync::test {
 
@@ -200,6 +206,47 @@ inline Json::Value liveDeathVector(SyncWorld& world, const Json::Value& input) {
 
   CHECK(socket->frames.size() <= 1);
   return object({{"frame", socket->frames.empty() ? Json::Value(Json::nullValue) : aliasedAs(world, socket->frames[0])}});
+}
+
+// envelope/credentials.json: the principal a request is served as (§9.1). Its header fields go out as the bytes of one
+// request through a CredentialTap, and its credentials are read back from what the tap hands on. Each of `sessions` is
+// minted into `repo` for the account its alias signs up as, and AuthService resolves every token.
+inline Json::Value credentialsVector(AuthRepository& repo, const Json::Value& input) {
+  wm::fake::FakeTokens tokens;
+  wm::fake::FakeClock clock;
+  wm::fake::FakeEmail email;
+  wm::fake::FakeOAuthRepository oauthRepo;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  wm::fake::FakeAccountFootprint footprint;
+  wm::fake::FakeSessionRevocations revocations;
+  AuthService auth(repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
+  std::map<std::string, std::string> aliases;
+  for (const std::string& token : input["sessions"].getMemberNames()) {
+    const std::string alias = input["sessions"][token].asString();
+    const Email address{"credentials-" + alias + "@corpus.test"};
+    const std::optional<User> existing = repo.findUserByEmail(address);
+    const User user = existing ? *existing : repo.createUser(address, alias);
+    repo.deleteSession(tokens.digestOf(token));
+    repo.insertSession(tokens.digestOf(token), user.id, clock.now + 1'000'000, "", "", clock.now);
+    aliases[user.id.str()] = alias;
+  }
+
+  std::string request = "GET /v1/sync/hello HTTP/1.1\r\n";
+  for (const Json::Value& header : input["headers"]) request += header[0].asString() + ": " + header[1].asString() + "\r\n";
+  CredentialTap tap;
+  const CredentialTap::Fed fed = tap.feed(request + "\r\n");
+  CHECK_FALSE(fed.refuses);
+  const std::string field = "\r\n" + std::string(kSentCredentialsField) + ": ";
+  const std::size_t value = fed.forward.find(field) + field.size();
+  const std::vector<SentCredential> sent = parseSentCredentialsField(fed.forward.substr(value, fed.forward.find("\r\n", value) - value)).value();
+
+  const Credential credential = credentialOf(sent, [&auth](const std::string& token) -> std::optional<UserId> {
+    const std::optional<User> user = auth.authenticate(token);
+    return user ? std::optional(user->id) : std::nullopt;
+  });
+  Json::Value principal = object({{"account", credential.servedAs() ? Json::Value(aliases.at(credential.servedAs()->str())) : Json::Value()}});
+  if (credential.fails()) principal["credential"] = "unresolved";
+  return object({{"principal", principal}});
 }
 
 }

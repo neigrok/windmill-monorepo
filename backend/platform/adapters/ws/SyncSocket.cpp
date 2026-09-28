@@ -27,15 +27,15 @@ constexpr auto kSessionEnded = static_cast<drogon::CloseCode>(1008);
 // Where the gate leaves what it served an upgrade as, for handleNewConnection.
 constexpr char kUpgradeAttribute[] = "wm.sync.upgrade";
 
-// What the gate served an upgrade as: its principal, and the digest of every session secret it sent.
+// What the gate served an upgrade as: its principal, and every credential it sent, each token's digest in its place.
 struct Upgrade {
   std::optional<UserId> principal;
-  std::vector<std::string> digests;
+  std::vector<SentCredential> sent;
 };
 
-// The credential the upgrade's session digests make, each proven against its session now ("" proving nothing).
-Credential provenCredential(AuthService& auth, const std::vector<std::string>& digests) {
-  return credentialOf(digests, [&auth](const std::string& digest) -> std::optional<UserId> {
+// The credential the upgrade's sent credentials make, each digest proven against its session now.
+Credential provenCredential(AuthService& auth, const std::vector<SentCredential>& sent) {
+  return credentialOf(sent, [&auth](const std::string& digest) -> std::optional<UserId> {
     const std::optional<User> user = auth.revalidate(digest);
     return user ? std::optional(user->id) : std::nullopt;
   });
@@ -127,14 +127,20 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
   if (const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
     return refuse(responseOf(*refused));
 
-  std::vector<std::string> digests;
-  for (const std::string& secret : sentSecretsOf(req)) digests.push_back(secret.empty() ? "" : deps.auth->digestOf(secret));
+  std::optional<std::vector<SentCredential>> sent = tappedCredentialsOf(req);
+  if (!sent) {
+    LOG_ERROR << "sync live upgrade read by no credential tap; refused as credentials that do not resolve";
+    return refuse(responseOf(SyncReply::unauthenticated(envelope)));
+  }
+  for (SentCredential& credential : *sent) {
+    if (credential.token) credential.token = deps.auth->digestOf(*credential.token);
+  }
   trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-  const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, digests] {
-    Upgrade upgrade{std::nullopt, digests};
+  const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent = *sent] {
+    Upgrade upgrade{std::nullopt, sent};
     std::optional<SyncReply> refusal;
     try {
-      const Credential credential = provenCredential(*auth, digests);
+      const Credential credential = provenCredential(*auth, sent);
       if (credential.fails()) refusal = SyncReply::unauthenticated(envelope);
       else upgrade.principal = credential.servedAs();
     } catch (const std::exception& error) {
@@ -162,14 +168,18 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
   // closes the socket whether it lands before the proof or after it.
   const bool posted = connection->strand.post([live = deps.live, auth = deps.auth, sessions = deps.sessions, clock = deps.clock, connection, upgrade] {
     const std::shared_ptr<ConnectionSocket> socket = connection->socket;
-    if (!upgrade.digests.empty()) {
-      connection->session = sessions->enter(upgrade.digests, clock->nowMs(), [live, socket] {
+    std::vector<std::string> digests;
+    for (const SentCredential& credential : upgrade.sent) {
+      if (credential.token) digests.push_back(*credential.token);
+    }
+    if (!digests.empty()) {
+      connection->session = sessions->enter(digests, clock->nowMs(), [live, socket] {
         socket->close(kSessionEnded);
         live->close(*socket);
       });
     }
     try {
-      const Credential again = provenCredential(*auth, upgrade.digests);
+      const Credential again = provenCredential(*auth, upgrade.sent);
       if (again.fails() || again.servedAs() != upgrade.principal) return socket->close(kSessionEnded);
     } catch (...) {
       socket->close(kTryAgainLater);

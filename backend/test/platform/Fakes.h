@@ -134,16 +134,16 @@ struct FakeAuthRepository : AuthRepository {
   }
   void markUserDeleted(const UserId& userId, UnixMs now) override { setDeleted(userId, now); }
   void reviveUser(const UserId& userId) override { setDeleted(userId, std::nullopt); }
-  void deleteUser(const UserId& userId) override {
+  std::vector<std::string> deleteUser(const UserId& userId) override {
     auto it = usersById.find(userId.str());
-    if (it == usersById.end()) return;
+    if (it == usersById.end()) return {};
     usersByEmail.erase(it->second.email.value);
     usersById.erase(it);
-    revokeAllSessions(userId);
     for (auto row = identities.begin(); row != identities.end();) {
       if (row->second == userId) row = identities.erase(row);
       else ++row;
     }
+    return revokeSessionsWhere([&](const auto& session) { return session.second.user == userId; });
   }
 
   std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override {

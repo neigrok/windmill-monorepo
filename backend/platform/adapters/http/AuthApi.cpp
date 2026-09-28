@@ -1,5 +1,6 @@
 #include "platform/adapters/http/AuthApi.h"
 
+#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/RateLimiter.h"  // clientIp
 
@@ -8,20 +9,12 @@
 #include <openssl/rand.h>
 
 #include <ctime>
+#include <optional>
+#include <string_view>
 
 namespace wm {
 
 namespace {
-// The session secret behind a request: the HttpOnly cookie, or a Bearer token.
-std::string sessionSecret(const drogon::HttpRequestPtr& req) {
-  std::string secret = req->getCookie("wm_session");
-  if (secret.empty()) {
-    const std::string authorization = req->getHeader("authorization");
-    if (authorization.rfind("Bearer ", 0) == 0) secret = authorization.substr(7);
-  }
-  return secret;
-}
-
 SessionContext contextOf(const drogon::HttpRequestPtr& req) {
   return SessionContext{req->getHeader("user-agent"), clientIp(req)};
 }
@@ -34,27 +27,43 @@ Json::Value userJson(const User& user) {
   return out;
 }
 
-void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure,
-                      const std::string& domain) {
+// wm_session holding `secret` for `maxAge` seconds (0 expires it), in `domain`'s scope: "" is host-only.
+drogon::Cookie sessionCookie(const std::string& secret, int maxAge, bool secure, const std::string& domain) {
   drogon::Cookie cookie("wm_session", secret);
   cookie.setHttpOnly(true);
   cookie.setPath("/");
   cookie.setSameSite(drogon::Cookie::SameSite::kLax);
   if (secure) cookie.setSecure(true);
   if (!domain.empty()) cookie.setDomain(domain);
-  cookie.setMaxAge(7776000);  // 90 days
-  response->addCookie(std::move(cookie));
+  cookie.setMaxAge(maxAge);
+  return cookie;
+}
+
+// Writes wm_session's Set-Cookie lines in order: `first`, then `second` when there is one. Drogon keeps one cookie of a
+// name and writes a raw Set-Cookie header ahead of its cookies, so the first rides as that header.
+void writeSessionCookies(const drogon::HttpResponsePtr& response, const drogon::Cookie& first, const std::optional<drogon::Cookie>& second) {
+  constexpr std::string_view header = "Set-Cookie: ";
+  const std::string line = first.cookieString();
+  response->addHeader("Set-Cookie", line.substr(header.size(), line.size() - header.size() - 2));
+  if (second) response->addCookie(*second);
+}
+
+// §9.1: a response that sets the session cookie sets it in the configured scope (`domain`, or host-only when none is
+// configured) and expires it in the other, and one that clears it expires both, so a host-only variant left from before
+// a Domain was configured never outlives the next sign-in or sign-out. The live cookie is written first: each app lifts
+// the first wm_session a response sets, and a browser files a host-only and a Domain cookie apart, so the expiry after
+// it reaches only the stray.
+void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure,
+                      const std::string& domain) {
+  const drogon::Cookie live = sessionCookie(secret, 7776000, secure, domain);  // 90 days
+  if (domain.empty()) return writeSessionCookies(response, live, std::nullopt);
+  writeSessionCookies(response, live, sessionCookie("", 0, secure, ""));
 }
 
 void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, const std::string& domain) {
-  drogon::Cookie cookie("wm_session", "");
-  cookie.setHttpOnly(true);
-  cookie.setPath("/");
-  cookie.setSameSite(drogon::Cookie::SameSite::kLax);
-  if (secure) cookie.setSecure(true);
-  if (!domain.empty()) cookie.setDomain(domain);
-  cookie.setMaxAge(0);
-  response->addCookie(std::move(cookie));
+  const drogon::Cookie expired = sessionCookie("", 0, secure, domain);
+  if (domain.empty()) return writeSessionCookies(response, expired, std::nullopt);
+  writeSessionCookies(response, expired, sessionCookie("", 0, secure, ""));
 }
 
 // Expires ONLY wm_oauth_state — never wm_session, so a bounced callback can't log a signed-in user out.
@@ -296,7 +305,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
   if (name.size() > 200) name.clear();
 
   const SessionContext ctx = contextOf(req);
-  const std::optional<User> caller = auth_->authenticate(sessionSecret(req), ctx);
+  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
 
   apple_->exchangeCode(
       code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, name, caller, ctx,
@@ -346,7 +355,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
 // provider doors with it. Refused unless the caller's account is empty.
 void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   const SessionContext ctx = contextOf(req);
-  const std::optional<User> caller = auth_->authenticate(sessionSecret(req), ctx);
+  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to link this account"));
     return;
@@ -391,7 +400,7 @@ void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  std::optional<User> user = auth_->authenticate(sessionSecret(req), contextOf(req));
+  std::optional<User> user = auth_->authenticate(sessionSecretOf(req), contextOf(req));
   if (!user) {
     callback(jsonResponse(Json::Value(Json::objectValue), drogon::k401Unauthorized));
     return;
@@ -402,7 +411,7 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
 }
 
 void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  auth_->signOut(sessionSecret(req));
+  auth_->signOut(sessionSecretOf(req));
 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
@@ -411,7 +420,7 @@ void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 }
 
 void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  const std::string secret = sessionSecret(req);
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to edit your profile"));
@@ -432,7 +441,7 @@ void AuthApi::patchMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback
 
 void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // Soft-close with a 30-day grace; every session and grant is signed out.
-  const std::string secret = sessionSecret(req);
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to close your account"));
@@ -449,7 +458,7 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
 }
 
 void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
-  const std::string secret = sessionSecret(req);
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to see your devices"));
@@ -474,7 +483,7 @@ void AuthApi::listSessions(const drogon::HttpRequestPtr& req, HttpCallback&& cal
 void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& callback,
                             const std::string& sessionId) {
   // Revoking the current session also clears this cookie.
-  const std::string secret = sessionSecret(req);
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to revoke a device"));
@@ -494,7 +503,7 @@ void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& ca
 
 void AuthApi::signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   // Every other device; the caller's own session is left alive.
-  const std::string secret = sessionSecret(req);
+  const std::string secret = sessionSecretOf(req);
   std::optional<User> caller = auth_->authenticate(secret, contextOf(req));
   if (!caller) {
     callback(error(drogon::k401Unauthorized, "sign in to sign out your other devices"));

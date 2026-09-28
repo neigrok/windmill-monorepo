@@ -5,8 +5,8 @@
 #include <optional>
 #include <string>
 
-// What the golden corpus does not pin about §9.1's account id form and credentials: the byte bound counted in UTF-8
-// rather than in characters, each character jcs escapes, a text that is not UTF-8, and which credentials fail.
+// What the golden corpus does not pin about §9.1's account id form: the byte bound counted in UTF-8 rather than in
+// characters, each character jcs escapes, and a text that is not UTF-8.
 
 using namespace wm;
 using namespace wm::sync;
@@ -28,12 +28,3 @@ TEST(an_account_id_is_at_most_account_id_bytes_of_utf8_holding_no_character_jcs_
   CHECK_FALSE(isAccountId("\xED\xA0\x80"));
 }
 
-TEST(a_credential_fails_only_when_sent_and_resolving_to_no_account_or_to_one_outside_the_form) {
-  CHECK_FALSE(Credential::none().fails());
-  CHECK(Credential::none().servedAs() == std::nullopt);
-  CHECK_FALSE(Credential::sent(UserId{"A"}).fails());
-  CHECK(Credential::sent(UserId{"A"}).servedAs() == UserId{"A"});
-  CHECK(Credential::sent(std::nullopt).fails());
-  CHECK(Credential::sent(UserId{std::string(kAccountIdBytes + 1, 'a')}).fails());
-  CHECK(Credential::sent(UserId{"A\"B"}).fails());
-}
