@@ -40,6 +40,12 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # The repository pins one toolchain: the domain kit's layering tests read sources with swift-syntax
+      # 602, which must match the compiler's major (Swift 6.2), and its compile attacks assert what that
+      # compiler refuses. Moving to a newer Xcode means bumping swift-syntax and re-checking the attacks.
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
+
       - run: |
           xcodebuild -version
           swift --version
