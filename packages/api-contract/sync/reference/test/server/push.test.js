@@ -12,7 +12,7 @@ import { onFrame, onPullResponse, pullRequest } from '../../client/puller.js';
 import { Device } from '../../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../../client/sender.js';
 import { reconcile } from '../../client/subscriptions.js';
-import { deathFrameFor, hello, pull } from '../../server/pull.js';
+import { deathFrameFor, frameFor, hello, pull } from '../../server/pull.js';
 import { push } from '../../server/push.js';
 import { ServerState } from '../../server/state.js';
 import { ACTOR, product, productScope, registry, serverState } from '../../vectors/fixtures.js';
@@ -126,8 +126,8 @@ const empty = () => new ServerState(serverState({ scopes: { 'acct:A/probe': prod
 const pushed = (state, request, extra = {}) => push({ state, registry, product, account: 'A', request, serverNow: 10_000, ...extra });
 
 test('a push binds the replica, admits in n order and stores one result per n', () => {
-  const out = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(2, 'card0002', 200), createCard(1, 'card0001', 100)] });
-  assert.deepEqual(out.response, { status: 200, body: { serverTime: 10_000, epoch: 'ep-1', lastN: 2, results: [{ n: 1, s: 'ok', seq: 1 }, { n: 2, s: 'ok', seq: 2 }] } });
+  const out = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(2, 'card0002', 200), createCard(1, 'card0001', 100)] });
+  assert.deepEqual(out.response, { status: 200, body: { serverTime: 10_000, epoch: 'ep-1', as: 'A', lastN: 2, results: [{ n: 1, s: 'ok', seq: 1 }, { n: 2, s: 'ok', seq: 2 }] } });
   assert.deepEqual(out.state.replicas, { [REPLICA]: { account: 'A', lastN: 2 } });
   assert.deepEqual(Object.values(out.state.results[REPLICA]), [
     { n: 1, digest: intentDigest(createCard(1, 'card0001', 100)), result: { s: 'ok', seq: 1 }, faults: 0 },
@@ -136,37 +136,40 @@ test('a push binds the replica, admits in n order and stores one result per n', 
 });
 
 test('a resend answers the stored result; a pruned or different one is replica-forked', () => {
-  const first = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
-  const again = pushed(first.state, { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
+  const first = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
+  const again = pushed(first.state, { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
   assert.deepEqual(again.response.body.results, [{ n: 1, s: 'ok', seq: 1 }]);
   assert.equal(jcs(again.state.toJSON()), jcs(first.state.toJSON()));
-  const other = pushed(first.state, { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0009', 100)] });
-  assert.deepEqual(other.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', error: 'replica-forked' } });
-  const pruned = pushed(first.state, { replica: REPLICA, ackThrough: 1, intents: [createCard(2, 'card0002', 200)] });
+  const other = pushed(first.state, { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0009', 100)] });
+  assert.deepEqual(other.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', as: 'A', error: 'replica-forked' } });
+  const pruned = pushed(first.state, { replica: REPLICA, account: 'A', ackThrough: 1, intents: [createCard(2, 'card0002', 200)] });
   assert.deepEqual(Object.keys(pruned.state.results[REPLICA]), ['2']);
-  const resend = pushed(pruned.state, { replica: REPLICA, ackThrough: 1, intents: [createCard(1, 'card0001', 100)] });
-  assert.deepEqual(resend.response.body, { serverTime: 10_000, epoch: 'ep-1', error: 'replica-forked' });
+  const resend = pushed(pruned.state, { replica: REPLICA, account: 'A', ackThrough: 1, intents: [createCard(1, 'card0001', 100)] });
+  assert.deepEqual(resend.response.body, { serverTime: 10_000, epoch: 'ep-1', as: 'A', error: 'replica-forked' });
 });
 
-test('a gap, another account and a missing principal are refused before any admission', () => {
-  const gap = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(2, 'card0002', 200)] });
-  assert.deepEqual(gap.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', error: 'gap' } });
-  const first = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
-  const foreign = push({ state: first.state, registry, product, account: 'B', request: { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] }, serverNow: 10_000 });
-  assert.deepEqual(foreign.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', error: 'replica-foreign' } });
+test('a gap, another account, a push naming another account and a missing principal are refused before any admission', () => {
+  const gap = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(2, 'card0002', 200)] });
+  assert.deepEqual(gap.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', as: 'A', error: 'gap' } });
+  const first = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
+  const foreign = push({ state: first.state, registry, product, account: 'B', request: { replica: REPLICA, account: 'B', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] }, serverNow: 10_000 });
+  assert.deepEqual(foreign.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', as: 'B', error: 'replica-foreign' } });
   assert.equal(foreign.state, first.state);
-  const anonymous = push({ state: first.state, registry, product, account: null, request: { replica: REPLICA, ackThrough: 0, intents: [] }, serverNow: 10_000 });
-  assert.deepEqual(anonymous.response, { status: 401, body: { serverTime: 10_000, epoch: 'ep-1', error: 'unauthenticated' } });
+  const mismatch = push({ state: empty(), registry, product, account: 'B', request: { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] }, serverNow: 10_000 });
+  assert.deepEqual(mismatch.response, { status: 409, body: { serverTime: 10_000, epoch: 'ep-1', as: 'B', error: 'account-mismatch' } });
+  assert.deepEqual(mismatch.state.toJSON(), empty().toJSON());
+  const anonymous = push({ state: first.state, registry, product, account: null, request: { replica: REPLICA, account: 'A', ackThrough: 0, intents: [] }, serverNow: 10_000 });
+  assert.deepEqual(anonymous.response, { status: 401, body: { serverTime: 10_000, epoch: 'ep-1', as: null, error: 'unauthenticated' } });
 });
 
 test('a spent budget answers retry naming the first unprocessed intent', () => {
-  const out = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] }, { budget: 1 });
-  assert.deepEqual(out.response.body, { serverTime: 10_000, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }], retry: { n: 2, retryAfterMs: 0 } });
+  const out = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] }, { budget: 1 });
+  assert.deepEqual(out.response.body, { serverTime: 10_000, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'ok', seq: 1 }], retry: { n: 2, retryAfterMs: 0 } });
 });
 
 test('a deterministic fault is counted per attempt and becomes internal at K_POISON', () => {
   const faultOf = (_, n) => (n === 1 ? 'fault' : null);
-  const request = { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] };
+  const request = { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] };
   let state = empty();
   const bodies = [];
   for (let attempt = 1; attempt <= CONSTANTS.K_POISON; attempt += 1) {
@@ -183,8 +186,8 @@ test('a deterministic fault is counted per attempt and becomes internal at K_POI
 });
 
 test('a transient fault stores nothing and answers retry', () => {
-  const out = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] }, { faultOf: () => 'transient' });
-  assert.deepEqual(out.response.body, { serverTime: 10_000, epoch: 'ep-1', lastN: 0, results: [], retry: { n: 1, retryAfterMs: 1000 } });
+  const out = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] }, { faultOf: () => 'transient' });
+  assert.deepEqual(out.response.body, { serverTime: 10_000, epoch: 'ep-1', as: 'A', lastN: 0, results: [], retry: { n: 1, retryAfterMs: 1000 } });
   assert.deepEqual(out.state.results, {});
 });
 
@@ -193,7 +196,7 @@ test('push/serve.json replays through push, frames and death events included', (
   for (const { name, input, expect } of vectors) {
     const faultOf = (replica, n) => input.faults?.find((fault) => fault.n === n)?.kind ?? null;
     const out = push({
-      state: new ServerState(input.state), registry, product, account: input.account, request: input.request, serverNow: input.serverNow,
+      state: new ServerState(input.state), registry, product, account: input.account, credential: input.credential, request: input.request, serverNow: input.serverNow,
       budget: input.budget ?? Infinity, faultOf, limits: { ...CONSTANTS, ...(input.limits ?? {}) },
     });
     assert.equal(jcs(out.response), jcs(expect.response), name);
@@ -213,27 +216,26 @@ test('a dying tree answers each subscriber as a pull would: gone to the tree own
     deathFrameFor(after, 'tree:b_00000001', 'A'),
     deathFrameFor(after, 'tree:b_00000001', 'B'),
   ], [
-    { op: 'gone', scope: 'self/overlay/b_00000001' },
-    { op: 'not-found', scope: 'self/overlay/b_00000001' },
-    { op: 'gone', scope: 'tree/b_00000001' },
-    { op: 'not-found', scope: 'tree/b_00000001' },
+    { op: 'gone', as: 'A', scope: 'self/overlay/b_00000001' },
+    { op: 'not-found', as: 'B', scope: 'self/overlay/b_00000001' },
+    { op: 'gone', as: 'A', scope: 'tree/b_00000001' },
+    { op: 'not-found', as: 'B', scope: 'tree/b_00000001' },
   ]);
 });
 
 test('a 409 before any admission leaves no binding; 400 and 413 leave the state untouched', () => {
   const state = empty();
-  const gap = pushed(state, { replica: REPLICA, ackThrough: 0, intents: [createCard(2, 'card0002', 200)] });
+  const gap = pushed(state, { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(2, 'card0002', 200)] });
   assert.deepEqual(gap.state.replicas, {});
   const malformed = pushed(state, { replica: REPLICA, intents: [] });
   assert.deepEqual([malformed.response.status, malformed.response.body.error, malformed.state], [400, 'malformed', state]);
-  const tooMany = pushed(state, { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] }, { limits: { ...CONSTANTS, PUSH_MAX_INTENTS: 1 } });
+  const tooMany = pushed(state, { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100), createCard(2, 'card0002', 200)] }, { limits: { ...CONSTANTS, PUSH_MAX_INTENTS: 1 } });
   assert.deepEqual([tooMany.response.status, tooMany.response.body.error, tooMany.state], [413, 'request-too-large', state]);
 });
 
-test('a committed change sends one frame with the scope digest and the changed rows', () => {
-  const out = pushed(empty(), { replica: REPLICA, ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
-  assert.deepEqual(out.frames, [{
-    key: 'acct:A/probe',
-    frame: { op: 'change', scope: 'self/probe', epoch: 'ep-1', seq: 1, digest: out.state.scope('acct:A/probe').digest, rows: [out.state.row('acct:A/probe', 'card', 'card0001')] },
-  }]);
+test('a committed change sends one frame with the scope digest and the changed rows, carrying each socket\'s principal', () => {
+  const out = pushed(empty(), { replica: REPLICA, account: 'A', ackThrough: 0, intents: [createCard(1, 'card0001', 100)] });
+  const frame = { op: 'change', scope: 'self/probe', epoch: 'ep-1', seq: 1, digest: out.state.scope('acct:A/probe').digest, rows: [out.state.row('acct:A/probe', 'card', 'card0001')] };
+  assert.deepEqual(out.frames, [{ key: 'acct:A/probe', frame }]);
+  assert.deepEqual(frameFor(out.state, out.frames[0], 'A'), { ...frame, as: 'A' });
 });

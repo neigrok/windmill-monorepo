@@ -7,7 +7,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { scopeDigest } from '../core/digest.js';
 import { Cursor, intentDigest } from '../core/wire.js';
 import { freshMeta } from '../client/replica.js';
-import { pull } from '../server/pull.js';
+import { frameFor, pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
 import { overlayScope, product, productScope, registry, row, serverState, st, treeScope } from './fixtures.js';
@@ -73,16 +73,18 @@ class PullScript {
     return this.add({ op: 'pull', scopes, deviceNow });
   }
 
-  respond({ serverNow, limits = CONSTANTS, edit = (response) => response }) {
+  // Answers the last pull, served as `account` (§9.1): null for a request that arrives with no credential,
+  // or, with `credential: 'unresolved'`, one whose credential resolves to no account.
+  respond({ serverNow, limits = CONSTANTS, edit = (response) => response, account = 'A', credential }) {
     const { index, request } = this.lastRequest('pull');
-    const pulled = pull({ state: this.server, registry, product, account: 'A', request, serverNow, limits });
+    const pulled = pull({ state: this.server, registry, product, account, credential, request, serverNow, limits });
     this.server = pulled.state;
     const response = edit(pulled.response);
     return this.add({ op: 'pullResponse', response, tSend: this.input.steps[index].deviceNow, tRecv: serverNow, deviceNow: serverNow });
   }
 
-  pullRound(scopes, { serverNow, limits, edit }) {
-    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit });
+  pullRound(scopes, { serverNow, limits, edit, account, credential }) {
+    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit, account, credential });
   }
 
   // A push whose own change frame reaches the device before the response does.
@@ -92,7 +94,7 @@ class PullScript {
     const out = push({ state: this.server, registry, product, account: 'A', request, serverNow: deviceNow });
     this.server = out.state;
     return this.add(
-      ...out.frames.map((event) => ({ op: 'frame', frame: event.frame, deviceNow })),
+      ...out.frames.map((event) => ({ op: 'frame', frame: frameFor(this.server, event, 'A'), deviceNow })),
       { op: 'pushResponse', response: out.response, deviceNow, tSend: deviceNow, tRecv: deviceNow },
     );
   }
@@ -107,11 +109,11 @@ class PullScript {
 
   // A write by another replica of A; its live frames are kept for `frame` steps.
   elsewhere(intents, serverNow) {
-    const request = { replica: OTHER_REPLICA, ackThrough: 0, intents: intents.map((intent, k) => ({ ...intent, n: (this.otherN ?? 0) + k + 1 })) };
+    const request = { replica: OTHER_REPLICA, account: 'A', ackThrough: 0, intents: intents.map((intent, k) => ({ ...intent, n: (this.otherN ?? 0) + k + 1 })) };
     this.otherN = (this.otherN ?? 0) + intents.length;
     const out = push({ state: this.server, registry, product, account: 'A', request, serverNow });
     this.server = out.state;
-    this.frames.push(...out.frames.map((entry) => entry.frame));
+    this.frames.push(...out.frames.map((event) => frameFor(this.server, event, 'A')));
     return this;
   }
 
@@ -202,7 +204,7 @@ function lives() {
       tSend: 6000,
       tRecv: 6000,
       deviceNow: 6000,
-      response: { status: 200, body: { serverTime: 6000, epoch: 'ep-1', pages: [{ scope: 'self/probe', kind: 'rows', rows: [older, card2], cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 8 }), more: false, seq: 8, digest: scopeDigest([newer, card2]) }] } },
+      response: { status: 200, body: { serverTime: 6000, epoch: 'ep-1', as: 'A', pages: [{ scope: 'self/probe', kind: 'rows', rows: [older, card2], cursor: Cursor.encode({ e: 'ep-1', m: 'live', s: 8 }), more: false, seq: 8, digest: scopeDigest([newer, card2]) }] } },
     });
 
   const clean = () => bootedOnProbe()
@@ -232,7 +234,7 @@ function lives() {
       .vector('a tree whose board create is still in the outbox is not pulled; once the create has its result, the tree boots'),
     bootedOnProbe()
       .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }], deviceNow: 5001 })
-      .add({ op: 'frame', frame: { op: 'not-found', scope: 'tree/b_00000002' }, deviceNow: 5002 })
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: 'tree/b_00000002' }, deviceNow: 5002 })
       .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5003 })
       .pull(['tree/b_00000002'], 5004)
       .pushRound(5005)
@@ -270,7 +272,7 @@ function digests() {
         tSend: 5003,
         tRecv: 5003,
         deviceNow: 5003,
-        response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', pages: [{ scope: 'self/probe', kind: 'rows', rows: [], cursor: atHead, more: false, seq: 4, digest: 'f'.repeat(64) }] } },
+        response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', as: 'A', pages: [{ scope: 'self/probe', kind: 'rows', rows: [], cursor: atHead, more: false, seq: 4, digest: 'f'.repeat(64) }] } },
       })
       .vector('stopped checks skip at the same app version and resume at a new one'),
   ];
@@ -290,16 +292,86 @@ function frames() {
   const goneTree = new PullScript({ device: device({ meta: { serverEpoch: 'ep-1' }, known: { [TREE]: 'gone' } }), server: server({ treeState: 'dead' }) })
     .add({ op: 'subscribe', scope: TREE })
     .add({ op: 'commit', scope: TREE, changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Reopened' } }], deviceNow: 5001 });
+  const productEnd = (kind) => (response) => ({ ...response, body: { ...response.body, pages: response.body.pages.map((page) => ({ scope: page.scope, kind })) } });
   return [
+    bootedOnProbe().pullRound([TREE], { serverNow: 5001 }).pullRound([TREE], { serverNow: 5002, account: null, credential: 'unresolved' })
+      .vector('a tree pulled alone under a credential that resolves to no account is answered 401: the replica pauses and forgets nothing'),
+    bootedOnProbe().pullRound(['self/probe'], { serverNow: 5001, edit: productEnd('not-found') })
+      .vector('a not-found page for a product scope is ignored: its rows and cursor stay, and nothing is recorded known'),
+    bootedOnProbe().add({ op: 'frame', frame: { op: 'gone', as: 'A', scope: 'self/probe' }, deviceNow: 5001 })
+      .vector('a gone frame for a product scope is ignored'),
     knownTree.vector('a subscribe clears a known scope: a commit to it is accepted, and its first pull boots it'),
     goneTree.vector('a subscribe to a scope known gone answers gone and keeps the record: its death is final, so a commit to it refuses scope-dead'),
     build((frame) => frame, 'the next frame with rows applies inline and checks the digest'),
     build((frame) => ({ ...frame, seq: frame.seq + 1 }), 'a frame past the next seq asks for a pull'),
     build(({ rows, ...frame }) => frame, 'a frame without rows asks for a pull'),
     build((frame) => ({ ...frame, epoch: 'ep-2' }), 'a frame of another epoch asks for a pull'),
+    build((frame) => ({ ...frame, as: null }), 'a change frame served as anonymous is a 401: sync pauses and the frame applies nothing'),
+    build((frame) => ({ ...frame, as: 'B' }), 'a change frame served as another account is a 401: sync pauses and the frame applies nothing'),
     bootedOnProbe().pullRound([TREE], { serverNow: 5000 })
-      .add({ op: 'frame', frame: { op: 'gone', scope: TREE }, deviceNow: 5002 })
+      .add({ op: 'frame', frame: { op: 'gone', as: 'A', scope: TREE }, deviceNow: 5002 })
       .vector('a gone frame forgets the scope'),
+  ];
+}
+
+// §9.1 the principal an answer is served as. A bound replica of A holds its product scope, its own
+// private board's tree, B's public board, and its marks on that board. A request that arrives with no
+// credential (a cleared cookie, a stripping proxy) is served as anonymous, and one carrying another
+// account's credential (another tab signed in as B) is served as B: either answer is a 401 to the
+// replica, so sync pauses, and nothing is applied or forgotten.
+function principals() {
+  const PUBLIC = 'b_0000000b';
+  const MARKED = `self/overlay/${PUBLIC}`;
+  const B_ACTOR = 'r_cccccccccccc';
+  const shared = serverState({
+    scopes: {
+      'acct:A/probe': productScope('A'),
+      'acct:B/probe': productScope('B'),
+      [`tree:${BOARD}`]: treeScope('A', BOARD),
+      [`tree:${PUBLIC}`]: treeScope('B', PUBLIC),
+      [`acct:A/overlay/${PUBLIC}`]: overlayScope('A', PUBLIC),
+    },
+    rows: {
+      'acct:A/probe': [...CARDS, BOARD_ROW],
+      'acct:B/probe': [row({ t: 'board', id: PUBLIC, life: ['alive', st(900, 0, B_ACTOR)], born: st(900, 0, B_ACTOR), seq: 1 })],
+      [`tree:${BOARD}`]: TREE_ROWS,
+      [`tree:${PUBLIC}`]: [
+        row({ t: 'meta', id: 'meta', f: { visibility: ['public', st(950, 0, 'srv')] }, seq: 1 }),
+        row({ t: 'tag', id: 'ash', life: ['alive', st(960, 0, B_ACTOR)], born: st(960, 0, B_ACTOR), f: { label: ['Ash', st(960, 0, B_ACTOR)] }, seq: 2 }),
+      ],
+      [`acct:A/overlay/${PUBLIC}`]: [row({ t: 'mark', id: 'ash', f: { done: [true, st(1200)] }, seq: 1 })],
+    },
+  });
+  const held = [['self/probe', 'its product scope'], [TREE, 'its own private tree'], [MARKED, 'its overlay of a public tree'], [`tree/${PUBLIC}`, 'a public tree']];
+  const booted = () => held.reduce((script, [scope], k) => script.pullRound([scope], { serverNow: 5000 + k }), new PullScript({ device: device(), server: shared }));
+  return [
+    ...held.map(([scope, what]) => booted().pullRound([scope], { serverNow: 5010, account: null })
+      .vector(`${what}, pulled alone and served as anonymous, is a 401: sync pauses, and its rows, cursor and known record stay`)),
+    booted().pullRound(['self/probe'], { serverNow: 5010, account: 'B' })
+      .vector('a pull served as another account is a 401: its page, a reset against that account\'s scope, applies nothing'),
+    booted().add(
+      { op: 'frame', frame: { op: 'not-found', as: null, scope: TREE }, deviceNow: 5010 },
+      { op: 'frame', frame: { op: 'not-found', as: null, scope: MARKED }, deviceNow: 5011 },
+    ).vector('not-found frames served as anonymous, as a socket without a credential answers a sub, pause sync and forget nothing'),
+  ];
+}
+
+// §7.9 an alive governing row arriving clears a not-found record of its tree and overlay: after a
+// restore, a replica can learn not-found for a tree whose board another replica's re-sent create
+// brings back, and the board row's arrival puts the tree back in the subscription set.
+function revivals() {
+  const stale = (board) => ({ [`tree/${board}`]: 'not-found', [`self/overlay/${board}`]: 'not-found' });
+  const reborn = { scope: 'self/probe', d: [{ t: 'board', id: 'b_00000002', born: st(5001, 0, 'r_cccccccccccc'), life: ['alive', st(5001, 0, 'r_cccccccccccc')] }] };
+  const framed = new PullScript({ device: device({ known: stale('b_00000002') }), server: server() })
+    .pullRound(['self/probe'], { serverNow: 5000 })
+    .elsewhere([reborn], 5001);
+  return [
+    new PullScript({ device: device({ known: stale(BOARD) }), server: server() })
+      .pullRound(['self/probe'], { serverNow: 5000 })
+      .pullRound([TREE], { serverNow: 5001 })
+      .vector('an alive governing row in a page clears its tree\'s and overlay\'s not-found records, so the tree is subscribed and pulled again'),
+    framed.add({ op: 'frame', frame: framed.frames[0], deviceNow: 5002 })
+      .vector('an alive governing row in a frame, a create another replica re-sent, clears its tree\'s and overlay\'s not-found records'),
   ];
 }
 
@@ -318,5 +390,5 @@ function epochs() {
 }
 
 export function files() {
-  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...epochs()] };
+  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs()] };
 }

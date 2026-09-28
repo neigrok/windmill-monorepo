@@ -134,7 +134,7 @@ function signOuts() {
   const acked = [
     ...pending,
     { op: 'push', deviceNow: 5001 },
-    { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { serverTime: 5002, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 2 }] } } },
+    { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { serverTime: 5002, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'ok', seq: 2 }] } } },
   ];
   return [
     stepsVector('sign-out with an empty outbox still waits for a finish; its confirm, Keep, purges the account\'s rows, cursors and device rows, leaves the replica dormant and starts an anon replica', {

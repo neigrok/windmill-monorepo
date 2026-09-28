@@ -1,8 +1,9 @@
 // §11.3 the deterministic replay simulator: devices running the reference client against the reference
 // server over a network that drops, duplicates, delays and reorders, with process death and reboots,
-// clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, 401, 400
-// and 413 envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()`
-// states the invariants after quiescence.
+// clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, credentials
+// that expire (401), are dropped on the way (served as anonymous) or are another account's (served as
+// it), 400 and 413 envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()` states the invariants after
+// quiescence.
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../../core/constants.js';
@@ -18,7 +19,7 @@ import { Device, Replica } from '../../client/replica.js';
 import { reconcile, subscriptionsOf } from '../../client/subscriptions.js';
 import { nextPush, onPushResponse } from '../../client/sender.js';
 import { capCount, drawn, stored } from '../../client/views.js';
-import { deathFrameFor, hello, pull, refOfKey } from '../../server/pull.js';
+import { frameFor, hello, pull, refOfKey } from '../../server/pull.js';
 import { push } from '../../server/push.js';
 import { serverCall } from '../../server/requests.js';
 import { ServerState } from '../../server/state.js';
@@ -27,6 +28,11 @@ import { Rng } from '../../vectors/fixtures.js';
 export const PROBE_REGISTRY = Registry.fromFile(fileURLToPath(new URL('../../../probe.registry.json', import.meta.url)));
 
 const WORDS = ['oak', 'ash', 'elm', 'fir', 'yew', 'bay', 'box', 'ivy'];
+
+// What a replica holds from pulls and frames: its confirmed rows, cursors and known scopes.
+function pulledState(replica) {
+  return jcs({ confirmed: replica.confirmed, cursors: replica.cursors, known: replica.known });
+}
 
 // A device: a web browser with two tabs (no fork guard), or a phone with one app process whose fork
 // guard's backup-excluded copy is `backupGuard`. `pushLimit` is the last push answer's halving limit.
@@ -44,7 +50,10 @@ class SimDevice {
     const first = signedIn ? Replica.fresh({ replica: world.replicaId(), state: 'bound', account }) : Replica.fresh({ replica: world.replicaId(), state: 'anon' });
     this.store = new Device({ active: first.id, replicas: [first.toJSON()] });
     this.backupGuard = null;
-    this.tokenValid = true;
+    // 'valid'; 'expired', sent but resolving to no account; 'dropped', lost on the way (a cleared
+    // cookie, a stripping proxy), so a request carries none; or 'foreign', another account's (a tab
+    // signed in as someone else), so a request is served as that account (§9.1).
+    this.credential = 'valid';
     this.ended = [];
     this.telemetry = [];
     this.committed = [];
@@ -104,8 +113,11 @@ class SimDevice {
     this.bootAt = this.world.now;
   }
 
-  signedAccount() {
-    return this.replica.meta.state === 'bound' && this.tokenValid ? this.replica.meta.account : null;
+  // The account a request of `replica` is served as, and the credential it carries (§9.1).
+  servedAs(replica) {
+    if (this.credential === 'valid') return { account: replica.meta.account ?? null };
+    if (this.credential === 'foreign') return { account: replica.meta.account === 'A' ? 'B' : 'A' };
+    return { account: null, credential: this.credential === 'expired' ? 'unresolved' : undefined };
   }
 
   subscriptions() {
@@ -200,7 +212,7 @@ export class World {
     if (!this.faults) return undefined;
     if (roll < 0.83) return this.processDeath(device);
     if (roll < 0.85) return this.signOutOrIn(device);
-    if (roll < 0.86) return this.expireToken(device);
+    if (roll < 0.86) return this.lapseCredential(device);
     if (roll < 0.87) return this.poisonNext(device);
     if (roll < 0.885) return this.serverRestore();
     if (roll < 0.9) return this.deviceRestore(device);
@@ -409,7 +421,7 @@ export class World {
 
   serve(message) {
     const { device } = message;
-    const account = device.tokenValid ? message.replica.meta.account ?? null : null;
+    const { account, credential } = device.servedAs(message.replica);
     if (message.kind === 'push') {
       const faultOf = (replica, n) => {
         if (this.poison.has(`${replica}#${n}`)) return 'fault';
@@ -418,8 +430,8 @@ export class World {
       const budget = this.faults && this.rng.chance(0.2) ? 1 + this.rng.int(2) : Infinity;
       const malformed = account !== null && message.request.intents.some((intent) => this.rejects(intent));
       const out = malformed
-        ? { state: this.server, response: { status: 400, body: { serverTime: this.now, epoch: this.server.epoch, error: 'malformed' } }, live: [] }
-        : push({ state: this.server, registry: this.registry, product: this.product, account, request: message.request, serverNow: this.now, budget, faultOf, limits: this.serverLimits });
+        ? { state: this.server, response: { status: 400, body: { serverTime: this.now, epoch: this.server.epoch, as: account, error: 'malformed' } }, live: [] }
+        : push({ state: this.server, registry: this.registry, product: this.product, account, credential, request: message.request, serverNow: this.now, budget, faultOf, limits: this.serverLimits });
       this.server = out.state;
       this.count(`http ${out.response.status}${out.response.body.error ? ` ${out.response.body.error}` : ''}`);
       for (const result of out.response.body.results ?? []) this.count(result.s === 'ok' ? (result.write?.some((w) => w.from) ? 'ok with a joining write map' : 'ok') : `refused ${result.code}`);
@@ -430,12 +442,10 @@ export class World {
       this.network.push({ ...message, phase: 'reply', response: out.response, tRecvServer: this.now });
       return;
     }
-    if (account === null) {
-      this.network.push({ ...message, phase: 'reply', response: { status: 401, body: { serverTime: this.now, epoch: this.server.epoch, error: 'unauthenticated' } } });
-      return;
-    }
-    const pulled = pull({ state: this.server, registry: this.registry, product: this.product, account, request: message.request, serverNow: this.now });
+    const pulled = pull({ state: this.server, registry: this.registry, product: this.product, account, credential, request: message.request, serverNow: this.now });
     this.server = pulled.state;
+    if (pulled.response.status === 200 && account === null) this.count('pull served as anonymous');
+    if (pulled.response.status === 200 && account !== null && account !== message.replica.meta.account) this.count('pull served as another account');
     this.watchDeaths();
     for (const event of pulled.live) this.broadcast(event);
     this.network.push({ ...message, phase: 'reply', response: pulled.response });
@@ -458,23 +468,24 @@ export class World {
     if (device.pulling?.id !== message.id) return;
     device.pulling = null;
     if (replica !== message.replica) return;
-    if (message.response.status === 401) {
-      replica.meta.authPaused = true;
-      return;
-    }
+    const before = pulledState(replica);
     const outcomes = onPullResponse(replica, device.ctx(), message.request, message.response, timing);
+    this.checkServedAs(device, message.response.body?.as, before);
+    if (outcomes.length === 0) return;
     if (outcomes.some((page) => page.outcome !== 'applied') || message.response.body.pages.some((page) => page.more)) device.wantsPull = true;
   }
 
-  // A change frame, or a scope's death (gone to its owner, not-found to other subscribers, §6.8).
-  broadcast({ key, frame, dead }) {
-    const owner = key.startsWith('acct:') ? key.slice('acct:'.length).split('/')[0] : null;
-    const ref = refOfKey(key);
+  // A change frame, or a scope's death (gone to its owner, not-found to other subscribers, §6.8), as each
+  // subscribed socket is served: a socket whose credential expired is closed, and one whose credential
+  // was dropped is served as anonymous (§9.5).
+  broadcast(event) {
+    const owner = event.key.startsWith('acct:') ? event.key.slice('acct:'.length).split('/')[0] : null;
+    const ref = refOfKey(event.key);
     for (const device of this.devices) {
-      if (device.replica.meta.state !== 'bound') continue;
+      if (device.replica.meta.state !== 'bound' || device.credential === 'expired') continue;
       if (owner !== null && owner !== device.replica.meta.account) continue;
       if (!device.subscriptions().includes(ref)) continue;
-      const sent = dead ? deathFrameFor(this.server, key, device.replica.meta.account) : frame;
+      const sent = frameFor(this.server, event, device.servedAs(device.replica).account);
       this.network.push({ kind: 'frame', phase: 'frame', device, replica: device.replica, frame: sent, id: this.id('m') });
     }
   }
@@ -482,8 +493,11 @@ export class World {
   frame(message) {
     const { device, frame } = message;
     if (device.replica !== message.replica || device.replica.meta.state !== 'bound') return;
+    const before = pulledState(device.replica);
     const outcome = onFrame(device.replica, device.ctx(), frame);
+    this.checkServedAs(device, frame.as, before);
     if (outcome === 'pull') device.wantsPull = true;
+    if (outcome === 'paused') this.count(frame.as === null ? 'frame served as anonymous' : 'frame served as another account');
   }
 
   processDeath(device) {
@@ -521,12 +535,14 @@ export class World {
     device.wantsPull = true;
   }
 
-  expireToken(device) {
-    if (device.tokenValid) {
-      device.tokenValid = false;
+  // A credential expires, is dropped or is another account's; the next lapse re-authenticates,
+  // clearing authPaused.
+  lapseCredential(device) {
+    if (device.credential === 'valid') {
+      device.credential = this.rng.pick(['expired', 'dropped', 'foreign']);
       return;
     }
-    device.tokenValid = true;
+    device.credential = 'valid';
     device.replica.meta.authPaused = false;
   }
 
@@ -617,6 +633,13 @@ export class World {
     }
   }
 
+  // §9.1: an answer or frame served as anyone but the replica's account changes nothing it pulled.
+  checkServedAs(device, as, before) {
+    const replica = device.replica;
+    if (as === replica.meta.account || pulledState(replica) === before) return;
+    this.violations.push(`${device.name}: an answer served as ${as} changed what ${replica.meta.account}'s replica pulled`);
+  }
+
   count(key) {
     this.tally[key] = (this.tally[key] ?? 0) + 1;
   }
@@ -649,7 +672,7 @@ export class World {
     this.faults = false;
     this.poison.clear();
     for (const device of this.devices) {
-      device.tokenValid = true;
+      device.credential = 'valid';
       device.replica.meta.authPaused = false;
       device.start();
       if (device.replica.meta.state === 'anon') {
@@ -719,6 +742,10 @@ export class World {
         if (!notices.has(`notice:${holder}`)) this.violations.push(`INV-3 ${tag}: ${end.localId} refused (${end.event}) with no notice holding it`);
       }
       if (replica.meta.state !== 'bound') continue;
+      for (const [scope, kind] of Object.entries(replica.known)) {
+        const tree = this.server.scope(`tree:${scope.split('/').at(-1)}`);
+        if (kind === 'not-found' && tree?.state === 'alive' && tree.owner === replica.meta.account) this.violations.push(`§7.9 ${tag} ${scope}: known not-found, yet its tree is the account's own and alive`);
+      }
       for (const scope of device.subscriptions()) {
         const mine = replica.confirmedRows(scope).sort(compareRecords);
         const truth = this.serverRows(scope, replica.meta.account);

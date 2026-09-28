@@ -1,8 +1,9 @@
-// §9 encodings both roles compute: the §6.2 intent digest, a request body's size (§9.1), the §9.4
-// cursor as unpadded base64url of jcs({e, m, s, k?, a?}), and the string rule both check an intent by
-// (§6.1 step 2, §7.1 step 7).
+// §9 encodings both roles compute: the §6.2 intent digest, a request body's size (§9.1), the account id
+// form (§9.1), the widest body of an intent pushed alone (§7.1 step 8), the §9.4 cursor as unpadded base64url of
+// jcs({e, m, s, k?, a?}), and the string rule both check an intent by (§6.1 step 2, §7.1 step 7).
 
 import { createHash } from 'node:crypto';
+import { CONSTANTS } from './constants.js';
 import { jcs } from './jcs.js';
 
 export function intentDigest(intent) {
@@ -12,6 +13,19 @@ export function intentDigest(intent) {
 // A request body's bytes as the server measures them: a client sends the request's jcs (§7.4).
 export function bodyBytes(request) {
   return Buffer.byteLength(jcs(request), 'utf8');
+}
+
+// §9.1: an account id is at most ACCOUNT_ID_BYTES bytes of UTF-8, holding no character jcs escapes.
+export function isAccountId(id) {
+  return typeof id === 'string' && Buffer.byteLength(id, 'utf8') <= CONSTANTS.ACCOUNT_ID_BYTES && jcs(id) === `"${id}"`;
+}
+
+// §7.1 step 8: the body of `intent` pushed alone by a replica at its widest: `n` and `ackThrough` at
+// 2^53 − 1, and the replica's account, or, for an anon replica (no account yet), an account of
+// ACCOUNT_ID_BYTES. An entry that fits it fits any request alone.
+export function widestAloneBytes({ replica, account }, intent) {
+  const widest = Number.MAX_SAFE_INTEGER;
+  return bodyBytes({ replica, account: account ?? 'a'.repeat(CONSTANTS.ACCOUNT_ID_BYTES), ackThrough: widest, intents: [{ ...intent, n: widest }] });
 }
 
 // Any string of the value, a key or a value at any depth, holding U+0000.

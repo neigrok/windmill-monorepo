@@ -12,14 +12,15 @@ const REPLICA = 'rp_0000000000000000000000000000000a';
 const PROBE_A = 'acct:A/probe';
 const BOARD = 'b_00000001';
 
-function pushed(name, { state, account = 'A', request, serverNow = NOW, budget, faults, limits }) {
+function pushed(name, { state, account = 'A', credential, request, serverNow = NOW, budget, faults, limits }) {
   const input = { state, account, request, serverNow };
+  if (credential) input.credential = credential;
   if (budget !== undefined) input.budget = budget;
   if (faults) input.faults = faults;
   if (limits) input.limits = limits;
   const faultOf = (replica, n) => faults?.find((fault) => fault.n === n)?.kind ?? null;
   const out = push({
-    state: new ServerState(state), registry, product, account, request, serverNow,
+    state: new ServerState(state), registry, product, account, credential, request, serverNow,
     budget: budget ?? Infinity, faultOf, limits: { ...CONSTANTS, ...(limits ?? {}) },
   });
   return vector(name, input, { response: out.response, state: out.state.toJSON(), frames: out.live });
@@ -32,7 +33,7 @@ const cardCreate = (n, id, ms) => ({
   gestureId: `g${n}`,
 });
 
-const request = (intents, ackThrough = 0, replica = REPLICA) => ({ replica, ackThrough, intents });
+const request = (intents, ackThrough = 0, replica = REPLICA, account = 'A') => ({ replica, account, ackThrough, intents });
 
 function base() {
   return serverState({
@@ -91,7 +92,27 @@ function serve() {
     pushed('a replica bound to another account answers replica-foreign', {
       state: withReplica(base(), { account: 'B', lastN: 3 }), request: request([cardCreate(4, 'card0002', 2000)]),
     }),
+    pushed('a fresh replica\'s push naming A under B\'s credential answers account-mismatch: nothing lands in B, and the replica stays unbound', {
+      state: base(), account: 'B', request: request([cardCreate(1, 'card0002', 2000)]),
+    }),
+    pushed('a bound replica\'s push naming A under B\'s credential answers account-mismatch before its binding is read', {
+      state: withReplica(base(), { account: 'A', lastN: 0 }), account: 'B', request: request([cardCreate(1, 'card0002', 2000)]),
+    }),
     pushed('no principal answers 401', { state: base(), account: null, request: request([cardCreate(1, 'card0002', 2000)]) }),
+    pushed('a losing delete that carries a field register is refused invalid, so the newer whole save after it keeps every value', {
+      state: serverState({
+        scopes: { [PROBE_A]: productScope('A') },
+        rows: { [PROBE_A]: [row({ t: 'fact', id: '2027-01-15', life: ['alive', st(5000)], f: { at: [5000, st(5000)], value: [80, st(5000)] }, seq: 1 })] },
+      }),
+      request: request([
+        { n: 1, scope: 'self/probe', d: [{ t: 'fact', id: '2027-01-15', life: ['dead', st(4000)], f: { value: [99, st(6000)] } }], gestureId: 'g1' },
+        { n: 2, scope: 'self/probe', d: [{ t: 'fact', id: '2027-01-15', life: ['alive', st(5500)], f: { at: [5500, st(5500)], value: [81, st(5500)] } }], gestureId: 'g2' },
+      ]),
+    }),
+    pushed('a credential that resolves to an account id over ACCOUNT_ID_BYTES answers 401, so every account a push names fits the widest body', {
+      state: base(), account: 'a'.repeat(65), request: request([cardCreate(1, 'card0002', 2000)], 0, REPLICA, 'a'.repeat(65)),
+    }),
+    pushed('a sent credential that resolves to no account answers 401', { state: base(), account: null, credential: 'unresolved', request: request([cardCreate(1, 'card0002', 2000)]) }),
     pushed('the admission budget answers retry naming the first unprocessed n', {
       state: base(), budget: 1, request: request([cardCreate(1, 'card0002', 2000), cardCreate(2, 'card0003', 2001)]),
     }),
@@ -104,7 +125,9 @@ function serve() {
     pushed('the K_POISON-th fault stores internal, advances lastN, and the next intent proceeds', {
       state: poisonedTwice, faults: [{ n: 1, kind: 'fault' }], request: request([first, cardCreate(2, 'card0003', 2001)]),
     }),
-    pushed('a body without ackThrough is 400 malformed', { state: base(), request: { replica: REPLICA, intents: [first] } }),
+    pushed('a body without ackThrough is 400 malformed', { state: base(), request: { replica: REPLICA, account: 'A', intents: [first] } }),
+    pushed('a body without account is 400 malformed', { state: base(), request: { replica: REPLICA, ackThrough: 0, intents: [first] } }),
+    pushed('an account that is not a string is 400 malformed', { state: base(), request: request([first], 0, REPLICA, null) }),
     pushed('an intent without an integer n is 400 malformed', { state: base(), request: request([{ ...first, n: '1' }]) }),
     pushed('more intents than PUSH_MAX_INTENTS is 413', {
       state: base(), limits: { PUSH_MAX_INTENTS: 1 }, request: request([cardCreate(1, 'card0002', 2000), cardCreate(2, 'card0003', 2001)]),
@@ -112,7 +135,7 @@ function serve() {
     pushed('a request over PUSH_MAX_BYTES is 413', { state: base(), limits: { PUSH_MAX_BYTES: 64 }, request: request([first]) }),
     pushed('a board delete emits its change frame, then a death event per killed scope', { state: boardState(), request: request([boardDelete]) }),
     pushed('a replica id other than rp_ and 32 lowercase hex is 400 malformed', { state: base(), request: request([first], 0, 'rp_0000000000000000000000000000000A') }),
-    pushed('a body with a key beyond replica, ackThrough and intents is 400 malformed', { state: base(), request: { ...request([first]), device: 'phone' } }),
+    pushed('a body with a key beyond replica, account, ackThrough and intents is 400 malformed', { state: base(), request: { ...request([first]), device: 'phone' } }),
     pushed('a 409 prunes nothing: results at or below ackThrough stay', { state: two, request: request([cardCreate(4, 'card0005', 2003)], 2) }),
     pushed('an answer replayed from sync_results spends no admission budget', {
       state: two, budget: 1, request: request([cardCreate(1, 'card0002', 2000), cardCreate(2, 'card0003', 2001), cardCreate(3, 'card0004', 2002), cardCreate(4, 'card0005', 2003)]),

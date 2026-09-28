@@ -178,6 +178,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -223,6 +224,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -633,6 +635,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -660,6 +663,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -942,6 +946,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -981,6 +986,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -1292,6 +1298,7 @@
             "body": {
               "serverTime": 5005,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -1332,6 +1339,7 @@
             "body": {
               "serverTime": 6000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -1359,6 +1367,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -1391,6 +1400,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 1,
           "intents": [
             {
@@ -1710,6 +1720,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -1740,6 +1751,7 @@
             "body": {
               "serverTime": 5010,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 4,
               "results": [
                 {
@@ -1772,6 +1784,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -1801,6 +1814,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -1840,6 +1854,7 @@
         null,
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 2,
           "intents": [
             {
@@ -2153,6 +2168,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "error": "gap"
             }
           },
@@ -2183,6 +2199,7 @@
             "body": {
               "serverTime": 5010,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -2213,6 +2230,7 @@
             "body": {
               "serverTime": 5020,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 4,
               "results": [
                 {
@@ -2248,6 +2266,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -2278,6 +2297,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -2317,6 +2337,7 @@
         null,
         {
           "replica": "rp_00000000000000000000000000000002",
+          "account": "A",
           "ackThrough": 2,
           "intents": [
             {
@@ -2672,6 +2693,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -2697,6 +2719,7 @@
             "body": {
               "serverTime": 5010,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -2739,6 +2762,7 @@
         true,
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -2764,6 +2788,7 @@
         null,
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 1,
           "intents": [
             {
@@ -3087,6 +3112,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 3,
               "results": [
                 {
@@ -3138,6 +3164,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -3530,6 +3557,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -3572,6 +3600,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -3993,6 +4022,7 @@
             "body": {
               "serverTime": 5005,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -4014,6 +4044,7 @@
       "returns": [
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -4397,6 +4428,7 @@
             "body": {
               "serverTime": 5000,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 1,
               "results": [
                 {
@@ -4422,6 +4454,7 @@
             "body": {
               "serverTime": 5010,
               "epoch": "ep-1",
+              "as": "A",
               "lastN": 2,
               "results": [
                 {
@@ -4450,6 +4483,7 @@
             "body": {
               "serverTime": 5020,
               "epoch": "ep-1",
+              "as": "A",
               "pages": [
                 {
                   "scope": "tree/b_00000001",
@@ -4498,6 +4532,7 @@
         },
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {
@@ -4529,6 +4564,7 @@
         null,
         {
           "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
           "ackThrough": 1,
           "intents": [
             {

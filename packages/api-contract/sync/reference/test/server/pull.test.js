@@ -15,7 +15,7 @@ const read = (path) => JSON.parse(readFileSync(new URL(`../../../corpus/${path}`
 
 test('pull/serve.json replays through pull', () => {
   for (const { name, input, expect } of read('pull/serve.json')) {
-    const out = pull({ state: new ServerState(input.state), registry, product, account: input.account, request: input.request, serverNow: input.serverNow, limits: { ...CONSTANTS, ...(input.limits ?? {}) } });
+    const out = pull({ state: new ServerState(input.state), registry, product, account: input.account, credential: input.credential, request: input.request, serverNow: input.serverNow, limits: { ...CONSTANTS, ...(input.limits ?? {}) } });
     assert.equal(jcs(out.response), jcs(expect.response), name);
     assert.equal(jcs(out.state.toJSON()), jcs(expect.state ?? input.state), name);
     assert.equal(jcs(out.live), jcs(expect.live ?? []), name);
@@ -31,7 +31,7 @@ test('live/death.json replays through deathFrameFor', () => {
 
 test('pull/hello.json replays through hello', () => {
   for (const { name, input, expect } of read('pull/hello.json')) {
-    assert.equal(jcs(hello({ state: new ServerState(input.state), registry, account: input.account, serverTime: input.serverTime })), jcs(expect.response), name);
+    assert.equal(jcs(hello({ state: new ServerState(input.state), registry, account: input.account, credential: input.credential, serverTime: input.serverTime })), jcs(expect.response), name);
   }
 });
 

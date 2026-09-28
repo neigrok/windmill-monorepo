@@ -307,11 +307,14 @@ authoritative. A registry declares its `version` and `minVersion` (§9.2), its `
 its `surfaces`, its device rows and its refusal `codes`), its `types` and its `commands`. Every
 product-specific behaviour the engine applies is registry data or a product binding (Appendix A); the
 engine body names no product. Each product ships a registry of its own
-(`packages/api-contract/sync/<product>.registry.json`), and a deployment composes them into one: they
-declare one `version` and one `minVersion`, and no product, type or command name twice.
+(`packages/api-contract/sync/<product>.registry.json`), and a deployment composes them into one:
+they declare one `version` and one `minVersion`, and no product, type or command name twice. A
+registry that drops a product raises `minVersion` above every version that declares it, so a client
+that still carries the product is answered `426` (§9.1).
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
-  `key` (a keyed type's natural key: an id of another type, or a tuple of such ids), `singletonId`,
+  `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
+  the types their own keys name in turn, never lead back to the keyed type), `singletonId`,
   `derive.fallback` (D-26), `seeded` and `mint` (D-8), `life`, `wholePut`, `revivable`, `deadRows`,
   `governs`, `origins`, `fields`, `cap`, `visibleWhen` and `primary`.
 - **Fields:** `kind` (D-9), `writer`, `ref`, `parent`, `unit`, `min`, `max`, `domain`, `default`,
@@ -356,9 +359,11 @@ The engine applies:
   is absent, in its own admission with the scope owner's server origin (§6.7).
 - A `time` argument is device-produced, like a `time` field. An `instant` argument is chosen by the
   user.
-- `quantum`, on a number domain at any depth (a field's, an item's, a property's, an argument's): the
-  server admits only numbers on it (§6.1 step 2), and a client rounds every number of a change's
-  field values and of a command's arguments to it (§7.1 step 4).
+- `quantum`, on a number domain at any depth (a field's, an item's, a property's, an argument's): a
+  positive integer, or `1/k` for an integer `k` (so `1 / quantum`, in IEEE-754 doubles, is an
+  integer: 0.5 and 0.01, never 0.3 or 2.5). The server admits only numbers on it (§6.1 step 2), and
+  a client rounds every number of a change's field values and of a command's arguments to it (§7.1
+  step 4).
 - `wholePut`, on a keyed type with life, no text field and only `lww` client-written fields: each
   record is one fact, whose newest save wins whole. Every put that leaves the record present writes
   every client-written lattice field and asserts presence with a fresh life, all at one stamp (§7.1
@@ -611,8 +616,9 @@ every lattice field, and its text and serial values equal the server's.
 **INV-7 No cross-account leakage.**
 - (a) Rows reach only principals holding read access when each page or frame is sent (§6.7, §6.8).
 - (b) Every write requires write access (§6.1 step 3).
-- (c) A replica pushes only under its bound account, and a replica id bound elsewhere is refused
-  (§6.2).
+- (c) A replica pushes only under its bound account: a push names its account and is refused
+  `account-mismatch` unless served as it, before anything is bound or admitted, and a replica id
+  bound elsewhere is refused `replica-foreign` (§6.2).
 - (d) An entry of another account's lineage is never adopted, and sign-out purges the confirmed
   cache (§7.10).
 - (e) Existence: for a principal without read access, an absent, private or dead scope answers
@@ -748,8 +754,9 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      every integer a safe integer (§9.1), a text base's `rev` included. A text field's `max`
      applies to its merge result (§6.11 step 3).
    - §4.1, and §4.4's serial and server-field rules.
-   - A delta of a `wholePut` type carries a life, and an alive one carries every client-written
-     lattice field of its type, every register at the life's stamp (§2.4).
+   - A delta of a `wholePut` type carries a life. An alive one carries every client-written lattice
+     field of its type, every register at the life's stamp; a dead one carries no field register, so
+     a losing delete plants nothing (§2.4).
    - The `<T>` of a `tree/<T>` or `self/overlay/<T>` reference matches the governing type's
      `idPattern`.
    - No string of the intent, a key or a value at any depth, holds U+0000.
@@ -862,16 +869,19 @@ The scope mutex is held until step R's transaction, or a fault path's (§6.6), e
 
 `POST /v1/sync/push` (§9.3):
 
-1. **Envelope,** in §9.1's order: no principal → `401`; a body over `PUSH_MAX_BYTES` → `413`; a body
-   other than exactly `{replica, ackThrough, intents}`, a `replica` not of D-3's form, an
-   `ackThrough` that is not a safe integer ≥ 0, or an intent without a safe integer `n ≥ 1` → `400
-   malformed`; more than `PUSH_MAX_INTENTS` intents → `413`.
+1. **Envelope,** in §9.1's order: no credential, or one that does not resolve → `401`; a body over
+   `PUSH_MAX_BYTES` → `413`; a body other than exactly `{replica, account, ackThrough, intents}`, a
+   `replica` not of D-3's form, an `account` that is not a string, an `ackThrough` that is not a
+   safe integer ≥ 0, or an intent without a safe integer `n ≥ 1` → `400 malformed`; more than
+   `PUSH_MAX_INTENTS` intents → `413`.
 2. **Epoch.** The response carries the current epoch.
-3. **Bind.** A replica bound to another account → `409 replica-foreign`. An absent
-   `sync_replicas[replica]` is inserted with `last_n = 0`. A push that inserted the binding and
-   answers `409` deletes it, under the replica row lock, while its `last_n` is still 0 and the
-   replica holds no `sync_results` row; an admission that finds its binding gone inserts it again
-   (§6.1 step 3.3).
+3. **Bind.** A push names the account its replica is bound to, or is binding to. One whose `account`
+   is not the account it is served as → `409 account-mismatch`, before the binding is read: nothing
+   is bound or admitted. Otherwise a replica bound to another account → `409 replica-foreign`. An
+   absent `sync_replicas[replica]` is inserted, bound to the account the push names, with
+   `last_n = 0`. A push that inserted the binding and answers `409` deletes it, under the replica
+   row lock, while its `last_n` is still 0 and the replica holds no `sync_results` row; an admission
+   that finds its binding gone inserts it again (§6.1 step 3.3).
 4. **Take intents in ascending `n`,** each compared with `last_n` as read under the replica row lock
    (§6.1 step 3.3), never with a value read earlier in the request, so an intent that an overlapping
    push of the same replica admitted meanwhile is answered from its stored result, never as a gap:
@@ -960,7 +970,8 @@ counter: it is an existence query over visible rows of primary types.
 
 ### §6.7 Pull
 
-`POST /v1/sync/pull` (§9.4). A request names at most `PULL_MAX_SCOPES` scopes; more → `400
+`POST /v1/sync/pull` (§9.4). A pull whose credential does not resolve answers `401` before anything
+else, and runs no `beforePull` (§9.1). A request names at most `PULL_MAX_SCOPES` scopes; more → `400
 malformed`, and a body over `PULL_MAX_BYTES` → `413` (§9.1). Each requested scope is served from one
 read-only `REPEATABLE READ` transaction, so its access check, its rows (`feed` and `sync_spent`
 alike), its `seq` and its scope digest all come from one snapshot:
@@ -1009,12 +1020,16 @@ subscribed to the scope that still holds read access. Frames of one scope so lea
   `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to
   everyone else. An overlay never written was never created (§6.1 step 3.5), so a tree's death
   sends no frame for it.
+- An upgrade whose credential does not resolve answers `401` (§9.1). A socket keeps the principal
+  its upgrade was served as, and every frame it sends carries it as `as` (§9.5).
 - A `sub` to a scope its principal cannot read is answered at once with the `gone` or `not-found`
   a pull would give, and is not kept.
 - A visibility change that removes a subscriber's access sends `not-found` and ends that
   subscription.
 - The per-socket access check MUST use in-memory state, invalidated by every write to an `opens`
-  field and by scope death.
+  field, by scope death, and by the revocation of the socket's credential. A socket whose credential
+  is revoked or expires is closed before it sends another frame or answers another `sub`: it never
+  goes on as anonymous.
 - A deployment with several server processes MUST relay committed changes to every process holding
   subscribers.
 
@@ -1220,12 +1235,13 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      by the growth rule (§6.1 step 12) returns `Refused(cap)` with detail `{type, cap}`, as §6.1
      step 12 gives it, and writes nothing. The gesture's command prediction is not counted. Held
      deletes still occupy their slots (§7.6).
-   - If any intent, pushed alone, would make a request body over `PUSH_MAX_BYTES`, the whole
-     gesture is refused: nothing is enqueued and no clock is written, a notice
-     `notice:<gestureId>/0` holds the gesture's content, and `commit` returns `Refused(too-large)`.
-     The body is measured as the sender encodes it (§7.4), with `n` and `ackThrough` at their widest,
-     2^53 − 1: `jcs({replica, ackThrough, intents: [intent]})`. An entry as committed so always fits a
-     request alone; §7.4 refuses one that grew past it.
+   - If any intent, pushed alone, would make a request body over `PUSH_MAX_BYTES`, the whole gesture
+     is refused: nothing is enqueued and no clock is written, a notice `notice:<gestureId>/0` holds
+     the gesture's content, and `commit` returns `Refused(too-large)`. The body is measured as the
+     sender encodes it (§7.4), `jcs({replica, account, ackThrough, intents: [intent]})`, with `n`
+     and `ackThrough` at their widest, 2^53 − 1, and `account` the replica's, or, in the `anon`
+     replica, a string of `ACCOUNT_ID_BYTES` bytes that `jcs` prints unescaped. An entry as
+     committed so always fits a request alone; §7.4 refuses one that grew past it.
 9. **Enqueue.** Each entry takes lineage A in a `bound(A)` replica, and `anon` in the `anon` replica
    (D-27).
    - `hold` → `held` with `releaseAt = deviceNow + HOLD_MS`.
@@ -1293,12 +1309,14 @@ loop while state = bound ∧ ¬authPaused ∧ online:
           is not numbered: it grew after commit (a restamp adds digits, a write map lengthens an
           id), so it ends `refused` `too-large` by §7.7, with its notice (an orphan with none of
           its own), and its dependents fold
-  POST push jcs({ replica, ackThrough, intents: sent entries by n })   // the body is its jcs
+  POST push jcs({ replica, account, ackThrough, intents: sent entries by n })
+      // the body is its jcs
   network error                 → backoff
   503 {retryAfterMs}            → sleep max(retryAfterMs, the backoff draw)
   retry {n, retryAfterMs}       → entries from n stay sent (unless §7.7 step 1.3 returned them to
                                   ready: it takes precedence); wait, then continue
-  401                           → authPaused := true (no retry consumed)
+  401, account-mismatch, or a 200 or 409 served as another principal (§9.1)
+                                → authPaused := true (no retry consumed), nothing applied
   426                           → stop until upgraded
   400 or 413, several intents   → halve the batch: resend its first ⌈count/2⌉ entries by n
   400 or 413, one intent        → nextN := its n, every later sent entry returns to ready, and the
@@ -1335,16 +1353,19 @@ re-authentication that clears `authPaused` (§8.2), and every `PULL_FALLBACK_MS`
 scopes of its trigger, each until `more = false`: a live gap its scope, a subscribe the scope
 subscribed, and every other trigger every subscribed scope. A request names at most
 `PULL_MAX_SCOPES` scopes; a run over more sends several, and a run left with no scope to pull
-(every one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9).
+(every one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9). A pull
+answered `401`, or served as another principal (§9.1), sets `authPaused` and applies nothing (§9.6).
 
 **Live socket.** A replica that pulls keeps one live socket, subscribed (`sub`) to the scopes it
-pulls. An open that fails, and a socket that ends or fails (the server or the network closes it, or a
-`ping` goes unanswered), count as a reconnect: the puller runs at once. A close the client makes
+pulls. An open that fails, and a socket that ends or fails (the server or the network closes it, or
+a `ping` goes unanswered), count as a reconnect: the puller runs at once. A close the client makes
 (leaving the foreground, going offline, a replica change) pulls nothing. Opening again backs off as
 the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or
-ended socket, and resets once a socket has stayed open 30 s. A re-authentication that clears
-`authPaused` opens the socket again at once, with `k := 0`. A `426` from any request stops sync until
-the app is upgraded (§9.6), on every tab (§7.8).
+ended socket, and resets once a socket has stayed open 30 s. A `401` at the upgrade, where the
+client can read it, sets `authPaused` too; a browser, which cannot, learns it from its next pull or
+push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
+closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
+`k := 0`. A `426` from any request stops sync until the app is upgraded (§9.6), on every tab (§7.8).
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
    epoch. A response epoch ≠ a non-null `serverEpoch` triggers an **epoch change** first. In one
@@ -1370,14 +1391,23 @@ the app is upgraded (§9.6), on every tab (§7.8).
    - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
      adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
      `self/overlay/<id>` as known `gone` (`KnownScope`).
-   - **`gone` or `not-found`** (a `not-found` for a scope waiting for its governing record's create
-     is ignored, §7.9):
+   - **`gone` or `not-found`**, except two the client ignores, forgetting and recording nothing:
+     - Any for a product scope. The server answers one only to a request served as anonymous, which
+       the client has already handled as a `401` (§9.1), so no described path reaches this ignore
+       for a bound replica: it is defence in depth, and stays. It hides no genuine end, since a
+       product scope never dies: a deleted account's credential stops resolving (`401`); a product
+       scope the server does not hold answers `reset` to a cursor past seq 0 and then an empty live
+       page, so the client boots it empty (§6.7 step 2); and a product the registry drops is a
+       version change (`426`, §2.4).
+     - A `not-found` for a scope waiting for its governing record's create (§7.9).
+
+     Otherwise:
      - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
      - pending entries stay, and the server refuses them.
-   - A rows page clears the scope's `KnownScope` record. Only it and a subscribe (§7.9) clear one, a
-     subscribe only a `not-found` one.
+   - A rows page clears the scope's `KnownScope` record. Only it, a subscribe and an alive governing
+     row (§7.9) clear one, the last two only a `not-found` one.
    - Every change to the scope's confirmed rows changes `CursorRec.digest`, and every change to its
      staging changes the staging digest (§6.12).
    - Store the cursor, observe every stamp, update `admittedHigh`.
@@ -1389,8 +1419,8 @@ the app is upgraded (§9.6), on every tab (§7.8).
    entry in the result's own transaction (§7.4).
 3. **Live frames.** A `change` frame is applied as a live page iff the cursor is live without a key,
    `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or
-   `not-found` frame is applied as that page kind, except a `not-found` for a scope waiting for its
-   governing record's create, which is ignored (§7.9).
+   `not-found` frame is applied as that page kind, and the two a page ignores (step 2) are ignored
+   alike.
 4. **Digest check.** When, after a page or frame is applied, the cursor is live, carries no key and
    its seq equals the page's or frame's `seq`, and no staging is pending, the client compares its
    digest with the received one, in that transaction. This covers a live page that reaches the head,
@@ -1528,8 +1558,12 @@ product binding lists (A.1), and any `tree/<T>` while it is open: the engine exp
 `subscribe(scope)` and `unsubscribe(scope)`, which a product calls when it opens and closes a tree.
 A subscribe deletes a `not-found` `KnownScope` record; the scope has no cursor, so its first pull
 boots it. A `gone` record stays, since a scope's death is final (INV-13): a subscribe to it answers
-`gone`, and nothing is pulled. An `anon` replica pulls only readable trees it opens. Every scope a
-replica pulls is held in full: a boot sends every alive row (§6.7).
+`gone`, and nothing is pulled. An alive row of the governing type, arriving in any page or frame,
+deletes a `not-found` record of its `tree/<id>` and `self/overlay/<id>` alike: the tree the record
+denies exists, so the answer that wrote it is stale (a restore, then a create re-sent after it). The
+scopes rejoin the subscription set, so the next puller run pulls them (§7.5). An `anon` replica
+pulls only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every
+alive row (§6.7).
 
 A tree or overlay scope whose governing record's create is still in the outbox, held, ready or
 sent (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
@@ -1546,11 +1580,11 @@ replica pulls no product scope).
 
 ### §7.10 Replica lifecycle
 
-**Sign-in as A** follows the lineage rule (D-27), per product. It runs after a successful hello as
-A, which states the products in which A holds records (§9.2). An entry's product is its scope's; a
-tree or overlay scope's product is its governing type's. It first releases every held entry into the
-durable queue (Undo does not survive sign-in), before the decisions. While it is incomplete,
-`DeviceMeta.pendingSignIn` holds A.
+**Sign-in as A** follows the lineage rule (D-27), per product. It runs after a hello served as A
+(`as`, §9.1), which states the products in which A holds records (§9.2). An entry's product is its
+scope's; a tree or overlay scope's product is its governing type's. It first releases every held
+entry into the durable queue (Undo does not survive sign-in), before the decisions. While it is
+incomplete, `DeviceMeta.pendingSignIn` holds A.
 - Entries of lineage A, a `dormant(A)` replica's included, are sent without asking.
 - Entries of the `anon` replica are added to A without asking for each product in which A holds no
   records.
@@ -1667,7 +1701,7 @@ both places, without re-identifying. Re-identify, in one local transaction per r
 | `anon` | sign-in as A with a decision still due, or cancelled | unchanged; nothing sent (§7.10) |
 | `bound(A)` | sign-out, empty outbox or Keep | `dormant(A)` |
 | `bound(A)` | sign-out, Discard | deleted |
-| `bound(A)` | 401 / re-authentication as A | `authPaused` set / cleared |
+| `bound(A)` | 401, `account-mismatch`, or an answer served as another principal (§9.1) / re-authentication as A | `authPaused` set / cleared |
 | `dormant` | explicit discard | deleted |
 | any | fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change | same state, new replica id |
 
@@ -1693,15 +1727,35 @@ JSON over HTTPS and WebSocket. Every response carries `serverTime` and `epoch`, 
 own `413` (below). Every request carries the registry version, on every surface: hello, push and
 pull in the header `Sync-Schema`, and the live socket's upgrade request, to which a browser
 `WebSocket` cannot add headers, in the query parameter `schema` (`/v1/sync/live?schema=<version>`).
-The server reads each request's version from that carrier only, as its HTTP framework presents it.
-A missing value, or one that is not a decimal integer, → `400 malformed`; a version below the
-server's `minSchema` → `426 upgrade-required`. A browser cannot read the status of a refused
-upgrade, so a web client learns a `426` from its hello, push or pull (§7.5). Keyed ids declared as
-arrays (`edge: [from, to]`) have their `jcs` as identity.
+The server reads each request's version from that carrier only, as its HTTP framework presents it. A
+missing value, or one that is not a decimal integer, → `400 malformed`; a version below the server's
+`minSchema` → `426 upgrade-required`. A change to the shape of any request or response raises the
+registry `version`, and `minVersion` with it, so a client that speaks the older shape is answered
+`426` at the version check, never `400` at the shape check. A browser cannot read the status of a
+refused upgrade, so a web client learns a `426` from its hello, push or pull (§7.5). Keyed ids
+declared as arrays (`edge: [from, to]`) have their `jcs` as identity.
+
+**Credentials.** A request carries one credential or none. Any `Authorization` header or session
+cookie, whatever its shape, is a credential sent. One that resolves makes the request its account's.
+One that does not resolve (revoked, expired, unknown, or failing to parse) answers `401
+unauthenticated` on hello, push, pull and the live upgrade alike: a request that sends a credential
+is never served as anonymous. Only a request that carries none is anonymous: its push answers `401`,
+its hello carries no `holdsRecords` (§9.2), its pull answers `not-found` for every `self/…` scope
+(§6.7), and its live socket serves only the trees it can read (§6.8).
+
+**Principal.** Every response from authentication (step 2 below) on carries `as`, the account it was
+served as: the id its credential resolves to, or `null` for a request that carries none and for
+every `401`. Every `change`, `gone` and `not-found` frame carries its socket's `as` (§9.5). A
+`self/…` reference names the served principal's own scopes, so an answer served as anyone else
+describes what that principal sees, not the replica's account. A replica of account A handles a
+`200` or `409`, and a frame, whose `as` is not A (`null`, another account, or absent) as a `401`
+(§9.6): `authPaused`, nothing applied and nothing forgotten. These are the answers whose handling
+depends on the principal; a `400`, `413`, `426` or `503` is handled by its status alone.
 
 An HTTP request is checked in this order, and the first failing check answers:
 1. the registry version (above);
-2. authentication: a push without a principal → `401 unauthenticated`;
+2. authentication: a credential that does not resolve → `401 unauthenticated`, on every endpoint,
+   and a push without one → `401 unauthenticated`;
 3. a push body over `PUSH_MAX_BYTES`, or a pull body over `PULL_MAX_BYTES`, measured as received,
    before it is parsed → `413 request-too-large`;
 4. a body that is not JSON, or not of the endpoint's shape (§6.2 step 1, §9.4) → `400 malformed`;
@@ -1721,9 +1775,13 @@ literal that rounds to zero (such as `1e-400`), makes a body malformed. A client
 `ackThrough` makes the body malformed (§6.2 step 1), a value in an intent is `invalid` (§6.1 step 2),
 and a cursor is undecodable (§9.4).
 
-Record ids and their key parts, account ids, scope keys and references, replica ids, gesture ids,
-`requestId`s, and type, field and command names compare byte for byte, in UTF-8. Every
-implementation MUST compare them so: no canonical equivalence, case folding or other normalization.
+An account id is a string of at most `ACCOUNT_ID_BYTES` bytes of UTF-8 holding no character `jcs`
+escapes (a control character, `"` or `\`). The account service issues only such ids, and a
+credential whose account id is any other does not resolve (`401`), so every account a push names
+fits §7.1 step 8's widest body. Record ids and their key parts, account ids, scope keys and
+references, replica ids, gesture ids, `requestId`s, and type, field and command names compare byte
+for byte, in UTF-8. Every implementation MUST compare them so: no canonical equivalence, case
+folding or other normalization.
 
 ```ts
 type Life = ['alive'|'dead', Stamp]
@@ -1744,11 +1802,12 @@ A thin dead row is `{t, id, life, born?, seq}`.
 ### §9.2 Hello: `GET /v1/sync/hello`
 
 ```ts
-→ { serverTime, epoch, schema: number, minSchema: number,
+→ { serverTime, epoch, as: string | null, schema: number, minSchema: number,
     holdsRecords?: Record<product, boolean> }   // authenticated callers; every product the registry declares
 ```
 
-`holdsRecords` is present iff the caller is authenticated as an account A. `holdsRecords[p]` is true
+`holdsRecords` is present iff `as` is an account A; a hello whose credential does not resolve
+answers `401` (§9.1). `holdsRecords[p]` is true
 iff `acct:A/<p>` holds a row that `visible` (§7.6) accepts, of a `primary` type (§2.4): an existence
 query over visible rows (§6.5). A row of a `visibleWhen` type counts only while one of its fields
 holds a value, so an account whose rows are all empty holds none. A sign-in's lineage rule uses the
@@ -1757,11 +1816,13 @@ hello that precedes it (§7.10).
 ### §9.3 Push: `POST /v1/sync/push`
 
 ```ts
-type PushRequest = { replica: string, ackThrough: number, intents: Intent[] }
+type PushRequest = { replica: string, account: string, ackThrough: number, intents: Intent[] }
+                                                  // account: the replica's (§6.2 step 3)
 type Result = { n, s: 'ok', seq: number, write?: {t, id: Id, from?: Id, born?: Stamp, f?: Record<string, Stamp>}[],
                 detail?: Json }                                   // write: present, possibly [], iff a command
             | { n, s: 'refused', code: RefusalCode, detail?: Json }
-type PushResponse = { serverTime, epoch, lastN: number, results: Result[], retry?: {n: number, retryAfterMs: number} }
+type PushResponse = { serverTime, epoch, as: string, lastN: number, results: Result[],
+                      retry?: {n: number, retryAfterMs: number} }
 ```
 
 ### §9.4 Pull: `POST /v1/sync/pull`
@@ -1771,7 +1832,7 @@ type PullRequest = { scopes: {scope: ScopeRef, cursor: string | null}[] }
 type PullPage = { scope, kind: 'rows', rows: Row[], cursor: string, more: boolean, seq: number, digest: string,
                   total?: number, header?: {owner: {name: string}} }
               | { scope, kind: 'reset' | 'gone' | 'not-found' }
-type PullResponse = { serverTime, epoch, pages: PullPage[] }
+type PullResponse = { serverTime, epoch, as: string | null, pages: PullPage[] }
 ```
 
 `seq` is the scope's seq and `digest` its scope digest, both in the page's snapshot (§6.7, §6.12).
@@ -1795,8 +1856,13 @@ The upgrade request is `GET /v1/sync/live?schema=<version>`; §9.1 checks the ve
 
 ```ts
 C→S: { op: 'sub' | 'unsub', scopes: ScopeRef[] } | { op: 'ping' }
-S→C: { op: 'change', scope, epoch, seq, digest: string, rows?: Row[] } | { op: 'gone' | 'not-found', scope } | { op: 'pong' }
+S→C: { op: 'change', as, scope, epoch, seq, digest: string, rows?: Row[] }
+   | { op: 'gone' | 'not-found', as, scope }
+   | { op: 'pong' }
 ```
+
+`as` is the principal the socket's upgrade was served as (§9.1), the same on every frame of the
+socket.
 
 Other `op` values carry ephemeral product messages, such as presence, and the engine ignores them.
 Frames are at most `LIVE_FRAME_BYTES`.
@@ -1808,6 +1874,7 @@ Frames are at most `LIVE_FRAME_BYTES`.
 | 400 | `malformed` | §7.4 |
 | 401 | `unauthenticated` | pause (§7.4) |
 | 409 | `replica-foreign`, `replica-forked`, `gap` | re-identify |
+| 409 | `account-mismatch` | pause (§7.4) |
 | 413 | `request-too-large` | §7.4 |
 | 426 | `upgrade-required` | stop until upgraded |
 | 503 | `unavailable` (`retryAfterMs`) | back off |
@@ -1849,6 +1916,7 @@ product copy shows its generic refusal line.
 | `PULL_MAX_SCOPES` / `PULL_MAX_BYTES` | 64 / 65 536 (admits `PULL_MAX_SCOPES` scopes with their cursors) |
 | `LIVE_FRAME_BYTES` / `LIVE_INLINE_BYTES` | 131 072 / 65 536 |
 | `KEEPALIVE_BYTES` | 65 536 |
+| `ACCOUNT_ID_BYTES` | 64, an account id's UTF-8 bytes (§9.1) |
 | `MERGE_WORK_CELLS` | 4 194 304 (a `diff3` edit script; above it, one whole-text conflict, §6.11 step 2) |
 
 ---
@@ -1960,10 +2028,15 @@ run, and against the real server and Postgres nightly.
 - multiple tabs;
 - sign-in under each lineage outcome (silent add; signed-out decision, add or discard), an
   incomplete sign-in, and sign-out;
-- 401;
+- a credential that expires (`401`); one lost on the way, so a request is served as anonymous;
+  and another account's, so a request is served as it and a push answers `account-mismatch`
+  (§9.1, §6.2);
 - poison;
 - epoch change;
 - a store restored from a snapshot, or cloned.
+
+**It checks at every answer and frame** that one served as anyone but the replica's account changes
+nothing the replica pulled (§9.1).
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
@@ -1973,6 +2046,7 @@ run, and against the real server and Postgres nightly.
   identical.
 - INV-10.
 - INV-15: every digest check matches.
+- No bound replica holds a `not-found` record for a scope of an alive tree its account owns (§7.9).
 - Every outbox is empty.
 
 ---

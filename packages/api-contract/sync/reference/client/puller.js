@@ -20,6 +20,15 @@ function awaitsGoverningCreate(replica, registry, scope) {
   return replica.entries().some((entry) => ['held', 'ready', 'sent'].includes(entry.state) && deltasOf(entry).some(creates));
 }
 
+// §7.5: the end of a scope a client does not apply: any `gone` or `not-found` for a product scope, and a
+// `not-found` for a scope that waits for its governing record's create (§7.9). The product-scope ignore
+// is defence in depth: the server answers one only to a request served as anonymous, which a bound
+// replica has already handled as a 401 (§9.1), so no described path reaches it. It stays.
+function ignoresEnd(replica, registry, scope, kind) {
+  if (registry.scopeKindOf(scope)?.startsWith('product:')) return true;
+  return kind === 'not-found' && awaitsGoverningCreate(replica, registry, scope);
+}
+
 // A pull of `scopes` under their stored cursors, leaving out the scopes that wait for their governing
 // record's create; null when none is left, and nothing is sent.
 export function pullRequest(replica, registry, scopes) {
@@ -86,23 +95,23 @@ function forget(replica, ctx, scope, kind) {
 }
 
 // A row into a set of rows (confirmed, or a boot's staging) with its digest: replace by seq (§3.4),
-// a dead row deletes, a dead derived row adds a spent id, and a dead governing record makes its tree
-// and overlay known gone, which §7.1 step 2 refuses.
+// a dead row deletes, a dead derived row adds a spent id. A dead governing record makes its tree and
+// overlay known gone, which §7.1 step 2 refuses; an alive one clears a `not-found` record of either,
+// so the scope is subscribed and pulled again (§7.9).
 function receiveRow(replica, ctx, scope, target, row) {
   const key = recordKey(row.t, row.id);
   const previous = target.rows[key];
   if (previous && row.seq < previous.seq) return;
+  const type = ctx.registry.type(row.t);
+  const governed = type?.governs === 'tree' ? [`tree/${row.id}`, `self/overlay/${row.id}`] : [];
   if (row.life && !isAlive(row)) {
-    const type = ctx.registry.type(row.t);
     if (type?.identity === 'derived') replica.addSpent(scope, row.t, row.id, row.born);
-    if (type?.governs === 'tree') {
-      replica.known[`tree/${row.id}`] = 'gone';
-      replica.known[`self/overlay/${row.id}`] = 'gone';
-    }
+    for (const ref of governed) replica.known[ref] = 'gone';
     delete target.rows[key];
     target.digest = replaceRow(target.digest, previous, undefined);
     return;
   }
+  for (const ref of governed) if (replica.known[ref] === 'not-found') delete replica.known[ref];
   target.rows[key] = compactRow(row);
   target.digest = replaceRow(target.digest, previous, target.rows[key]);
 }
@@ -118,8 +127,8 @@ export function applyPage(replica, ctx, requested, page) {
     delete replica.staging[scope];
     return 'reset';
   }
-  if (page.kind === 'not-found' && awaitsGoverningCreate(replica, ctx.registry, scope)) return 'ignored';
   if (page.kind === 'gone' || page.kind === 'not-found') {
+    if (ignoresEnd(replica, ctx.registry, scope, page.kind)) return 'ignored';
     forget(replica, ctx, scope, page.kind);
     return page.kind;
   }
@@ -154,10 +163,14 @@ export function applyPage(replica, ctx, requested, page) {
   return 'applied';
 }
 
+// A 401, or a 200 served as anyone but the replica's account, pauses sync and applies nothing (§9.1).
 export function onPullResponse(replica, ctx, request, response, timing) {
   const { body } = response;
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
-  if (response.status === 401) replica.meta.authPaused = true;
+  if (replica.isUnauthenticated(response)) {
+    replica.meta.authPaused = true;
+    return [];
+  }
   if (response.status !== 200) return [];
   if (replica.meta.serverEpoch === null) replica.meta.serverEpoch = body.epoch;
   else if (body.epoch !== replica.meta.serverEpoch) epochChange(replica, ctx, body.epoch);
@@ -168,15 +181,20 @@ export function onPullResponse(replica, ctx, request, response, timing) {
 }
 
 // §7.5 step 3: a change frame applies inline iff the cursor is live without a key, the epoch matches,
-// the frame is the next seq and carries its rows. Answers 'applied', 'pull', the kind forgotten, or
-// 'ignored' (an unknown op, or a not-found for a scope that waits for its governing record's create).
+// the frame is the next seq and carries its rows. Answers 'applied', 'pull', the kind forgotten,
+// 'ignored' (an unknown op, or an end the client does not apply), or 'paused' (a frame served as anyone
+// but the replica's account, handled as a 401, §9.1).
 export function onFrame(replica, ctx, frame) {
-  if (frame.op === 'not-found' && awaitsGoverningCreate(replica, ctx.registry, frame.scope)) return 'ignored';
+  if (!['change', 'gone', 'not-found'].includes(frame.op)) return 'ignored';
+  if (replica.servedAsOther(frame.as)) {
+    replica.meta.authPaused = true;
+    return 'paused';
+  }
   if (frame.op === 'gone' || frame.op === 'not-found') {
+    if (ignoresEnd(replica, ctx.registry, frame.scope, frame.op)) return 'ignored';
     forget(replica, ctx, frame.scope, frame.op);
     return frame.op;
   }
-  if (frame.op !== 'change') return 'ignored';
   const record = replica.cursorOf(frame.scope);
   const cursor = Cursor.decode(record.cursor);
   const inline = cursor !== null && cursor.m === 'live' && cursor.k === undefined && frame.epoch === replica.meta.serverEpoch

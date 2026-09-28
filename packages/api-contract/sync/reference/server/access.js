@@ -1,6 +1,15 @@
 // D-4 scopes and access: a wire reference maps to a server key for the principal, and read and write
 // access follow the key's kind; a tree opens through the registry's `opens` field (§2.4).
 
+import { isAccountId } from '../core/wire.js';
+
+// §9.1: a sent credential fails, answered 401, when it resolves to no account (`credential:
+// 'unresolved'`) or to an account id outside §9.1's form. A null account with no credential is
+// anonymous.
+export function credentialFails(account, credential) {
+  return credential === 'unresolved' || (account !== null && !isAccountId(account));
+}
+
 export function scopeKeyOf(registry, ref, account) {
   const kind = registry.scopeKindOf(ref);
   if (kind === null || kind === 'device') return null;

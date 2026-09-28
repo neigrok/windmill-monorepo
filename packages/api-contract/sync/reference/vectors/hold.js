@@ -3,7 +3,7 @@
 // holds back what depends on them.
 
 import { freshMeta } from '../client/replica.js';
-import { bodyBytes } from '../core/wire.js';
+import { bodyBytes, widestAloneBytes } from '../core/wire.js';
 import { row, st } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
@@ -39,10 +39,9 @@ const holdCreate = (id, deviceNow) => probe([{ op: 'create', t: 'card', id, f: {
 // each rename's widest one-intent body at commit.
 function twoRenamesOverLimit(steps) {
   const [entry1, entry2] = runSteps({ device: device(), steps }).device.replicas[0].outbox;
-  const limit = bodyBytes({ replica: REPLICA, ackThrough: 0, intents: [{ ...entry1.intent, n: 1 }, { ...entry2.intent, n: 2 }] }) - 1;
-  const widest = Number.MAX_SAFE_INTEGER;
+  const limit = bodyBytes({ replica: REPLICA, account: 'A', ackThrough: 0, intents: [{ ...entry1.intent, n: 1 }, { ...entry2.intent, n: 2 }] }) - 1;
   for (const entry of [entry1, entry2]) {
-    if (bodyBytes({ replica: REPLICA, ackThrough: widest, intents: [{ ...entry.intent, n: widest }] }) > limit) throw new Error('the limit refuses a rename at commit');
+    if (widestAloneBytes({ replica: REPLICA, account: 'A' }, entry.intent) > limit) throw new Error('the limit refuses a rename at commit');
   }
   return limit;
 }
@@ -76,7 +75,7 @@ function releases() {
       steps: [
         ...renames,
         { op: 'push', deviceNow: 5002 },
-        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 3 }] } } },
+        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'ok', seq: 3 }] } } },
         { op: 'push', deviceNow: 5004 },
       ],
     }),

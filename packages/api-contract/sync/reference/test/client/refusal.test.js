@@ -91,7 +91,7 @@ test('clock-skew recovery terminates when 409s, epoch changes, holds, undo, reti
         const request = nextPush(replica, ctx);
         if (request === null) continue;
         const fault = rng.int(4);
-        if (fault === 0) answer(request, { status: 409, body: { serverTime: SERVER_NOW, epoch: server.epoch, error: 'gap' } });
+        if (fault === 0) answer(request, { status: 409, body: { serverTime: SERVER_NOW, epoch: server.epoch, as: 'A', error: 'gap' } });
         else if (fault === 1) serve(request);
         else {
           if (fault === 2) server = new ServerState({ ...server.toJSON(), epoch: `ep-${(epochs += 1)}` });

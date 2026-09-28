@@ -55,7 +55,7 @@ journal.
 |---|---|---|---|---|
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
-| `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete |
+| `fact` | `self/probe` | keyed, a date | yes, spent; `wholePut` | a record that is one fact: every put that leaves it present writes `value` (lww 0–500, quantum 0.1) and `at` (lww integer ≥ 0) and a fresh life at one stamp, so the newest save wins whole and beats an older delete; a delete carries its life alone |
 | `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
@@ -444,23 +444,28 @@ fault: the call ends `refused internal`, stored as part k and as the row's resul
 ### push/serve.json (server)
 
 ```ts
-{name, input: {state: ServerStateJson, account: string|null, request: PushRequest, serverNow,
+{name, input: {state: ServerStateJson, account: string|null, credential?: 'unresolved', request: PushRequest, serverNow,
                budget?: number, faults?: {n, kind: 'transient'|'fault'}[], limits?: {PUSH_MAX_INTENTS?, PUSH_MAX_BYTES?}},
        expect: {response: {status, body}, state: ServerStateJson, frames: LiveEvent[]}}
 LiveEvent = {key, frame: ChangeFrame} | {key, dead: true}
 ```
 
-Run §6.2 once against `state`. The body as received is `jcs(request)`. Checks run in this order (§9.1):
-1. no principal → 401 `unauthenticated`;
+Run §6.2 once against `state`. The body as received is `jcs(request)`. Every response body carries
+`serverTime`, `epoch` and `as`, the account the push was served as: `account`, or `null` on a 401
+(§9.1). Checks run in this order (§9.1):
+1. no credential (`account: null`), `credential: 'unresolved'`, or an `account` outside §9.1's form →
+   401 `unauthenticated`;
 2. `jcs(request)` over `PUSH_MAX_BYTES`, measured before the shape → 413 `request-too-large`;
-3. a body that is not exactly `{replica, ackThrough, intents}`, with `replica` of D-3's form (`rp_`
-   and 32 lowercase hex), `ackThrough` a safe integer ≥ 0 and `intents` `[{n: safe integer ≥ 1, …}]`
-   → 400 `malformed`;
+3. a body that is not exactly `{replica, account, ackThrough, intents}`, with `replica` of D-3's form
+   (`rp_` and 32 lowercase hex), `account` a string, `ackThrough` a safe integer ≥ 0 and `intents`
+   `[{n: safe integer ≥ 1, …}]` → 400 `malformed`;
 4. more intents than `PUSH_MAX_INTENTS` → 413 `request-too-large`;
-5. a replica bound to another account → 409 `replica-foreign`.
+5. a request whose `account` is not the one it is served as (`input.account`) → 409
+   `account-mismatch`, before the binding is read;
+6. a replica bound to another account → 409 `replica-foreign`.
 
-None of these changes the state. Then an absent binding is inserted, and intents are taken in
-ascending `n` (§6.2 step 4).
+None of these changes the state. Then an absent binding is inserted, bound to the request's
+`account`, and intents are taken in ascending `n` (§6.2 step 4).
 
 - A 409 `gap` or `replica-forked` answers no results. When the request inserted the binding and nothing
   was admitted under it, the binding is not kept; admissions an earlier intent of the request committed
@@ -478,15 +483,16 @@ ascending `n` (§6.2 step 4).
   there is the change frame `{op: 'change', scope, epoch, seq, digest, rows?}` of its scope. It is
   followed by one `{key, dead: true}` per scope the admission killed (a governing delete: the tree and
   every overlay of it), in ascending key order.
-- A subscriber receives a death event as `live/death.json` gives it.
+- A subscriber receives a change frame with its socket's `as` added (§9.5), and a death event as
+  `live/death.json` gives it.
 
 ### live/death.json (server)
 
-`input: {state, account, scope}` · `expect: {frame}`: the frame a live socket of `account`, subscribed
-to `scope` (a wire reference), receives when that scope dies (§6.8). It answers as a pull of the scope
-would (§6.7 step 1): `{op: 'gone', scope}` to the tree's owner, for the tree and for that owner's
-overlay, and `{op: 'not-found', scope}` to everyone else; `null`, no frame, for an overlay never
-written, which has no scope to die.
+`input: {state, account, scope}` · `expect: {frame}`: the frame a live socket served as `account`,
+subscribed to `scope` (a wire reference), receives when that scope dies (§6.8). It answers as a pull of
+the scope would (§6.7 step 1): `{op: 'gone', as, scope}` to the tree's owner, for the tree and for
+that owner's overlay, and `{op: 'not-found', as, scope}` to everyone else, `as` being `account`;
+`null`, no frame, for an overlay never written, which has no scope to die.
 
 ### Limits knobs
 
@@ -499,9 +505,9 @@ configure a limit skips those vectors.
 ### pull/serve.json and pull/hello.json (server)
 
 ```ts
-{name, input: {state, account: string|null, request: PullRequest, serverNow, limits?: {PULL_PAGE_BYTES?, PULL_MAX_BYTES?}},
+{name, input: {state, account: string|null, credential?: 'unresolved', request: PullRequest, serverNow, limits?: {PULL_PAGE_BYTES?, PULL_MAX_BYTES?}},
        expect: {response: {status, body}, state?, live?}}
-{name, input: {state, account: string|null, serverTime}, expect: {response: {status: 200, body: Hello}}}
+{name, input: {state, account: string|null, credential?: 'unresolved', serverTime}, expect: {response: {status, body}}}
 ```
 
 - Before each requested scope's page, pull runs every `beforePull` command of the scope's kind in its own
@@ -521,8 +527,15 @@ configure a limit skips those vectors.
 - Dead rows travel thin, `{t, id, life, born?, seq}`: every one in a live page, only derived ones in a
   boot.
 - An undecodable cursor, one of another epoch, or one ahead of the seq (0 for an absent product scope
-  or overlay) answers `reset`. `self/…` for a signed-out principal answers `not-found`.
-- `hello` carries `serverTime`, `epoch`, `schema` and `minSchema` (the registry's `version` and
+  or overlay) answers `reset`. `self/…` for a request served as anonymous answers `not-found`.
+- `account` is the account the request is served as: the one a sent credential resolves to, or `null`
+  when the request carries none. `credential: 'unresolved'` (with `account: null`) is a credential sent
+  that resolves to no account, and an `account` outside §9.1's form (over `ACCOUNT_ID_BYTES` bytes, or
+  holding a character `jcs` escapes) is one whose account id does not resolve: pull, hello and push
+  answer either `401 unauthenticated` before anything else, and a pull runs no `beforePull` (engine.md
+  §9.1). Only a request with no credential is anonymous.
+- Every response body carries `serverTime`, `epoch` and `as`: `account`, or `null` on a 401.
+- `hello` carries `serverTime`, `epoch`, `as`, `schema` and `minSchema` (the registry's `version` and
   `minVersion`), and, for an account, `holdsRecords[product]`: a visible row of a primary type in
   `acct:<A>/<product>`. A kept dead row of a primary type (a dead board) is not visible.
 
@@ -562,15 +575,15 @@ has `step`, counting the lines after the header from 1, and is one of:
   running engine instance and its actor. `returns` is the step's return value. The header's devices,
   and a `load`'s, carry no `forkGuard`: no transcript runs an engine start.
 - **HTTP exchange** `{device, http: 'push'|'pull'|'hello', account, serverNow, deviceNow, request,
-  response, inject?, lost?, returns?}`: `account` is the authenticated principal (`null` answers 401
-  to a push). `inject.budget` is the number of admissions the push may run before it answers `retry`
+  response, inject?, lost?, returns?}`: `account` is the principal the request is served as, which
+  every response carries as `as` (`null`: served as anonymous, and a push answers 401). `inject.budget` is the number of admissions the push may run before it answers `retry`
   (PUSH_WORK_MS as a count); `inject.fault` lists the `n`s whose admission faults deterministically
   (§6.6). `lost: true` means the client never received the response. `hello`'s `request` is `{}`.
   A pull line's `returns` is the client's per-page outcome (`applied`, `stale`, `reset`, `gone`,
   `not-found`).
 - **live frame** `{device, frame, deviceNow, returns}`: `returns` is `applied`, `pull`, `gone` or
   `not-found`. A push line's live events go to the subscribers the scenario lists, change and death
-  frames alike; an overlay's death goes only to its owner.
+  frames alike, each carrying the subscriber's `as`; an overlay's death goes only to its owner.
 - **server load** `{server: 'load', state}`: the server's store is replaced (a restore; the new epoch is
   in `state`).
 - **end** `{end: true, server, devices, ended}`: the final server state, every device's store, and
@@ -586,7 +599,7 @@ boot: 'boot-1'}`; it feeds frames, asserts
 
 | File | Covers |
 |---|---|
-| `push.jsonl` | numbering, a lost reply resent and answered from `sync_results`, retry by budget, poison → `internal` at K_POISON, 401, 409 `gap`, `replica-foreign` and `replica-forked` (a restored store resending a pruned `n`), each followed by re-identify |
+| `push.jsonl` | numbering, a lost reply resent and answered from `sync_results`, retry by budget, poison → `internal` at K_POISON, 401, 409 `gap`, `replica-foreign` and `replica-forked` (a restored store resending a pruned `n`), each followed by re-identify, and a fresh replica of A pushing under B's credential, answered `account-mismatch`: nothing lands in B, the replica stays unbound, and the sender pauses |
 | `pull.jsonl` | a boot straight into confirmed rows, a live page, `gone` for a deleted board's tree and overlay, and after a server restore an epoch change that drops the stale page and boots into staging |
 | `live.jsonl` | a frame applied inline at the next seq; a frame past a gap answered by a pull; a board created, its tree booted by another device, the board deleted: the change frame, then `{op: 'gone', scope: 'tree/<T>'}`, which forgets the scope |
 | `join.jsonl` | `probe.start` joining another device's run: the write map rewrites a later lap and rename, and a held delete of the called id ends `target-merged` |
@@ -667,12 +680,12 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `subscribe` | `scope` | §7.9: deletes a `not-found` `KnownScope` record; a `gone` one stays | `'gone'` for a scope known gone, else `null` |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
-| `pushResponse` | `response` | §7.4, for the last `push` | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
-| `hello` | `response` | §10.4 offset sample | `null` |
+| `pushResponse` | `response` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1) | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
+| `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
-| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (a `not-found` for a scope waiting for its governing record's create, §7.9) |
-| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found` or `ignored` (an unknown op, or a `not-found` for a scope waiting for its governing record's create) |
+| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a scope waiting for its governing record's create, §7.5); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1) |
+| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `ignored` (an unknown op, any end of a product scope, or a `not-found` for a scope waiting for its governing record's create), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
 | `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
 | `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
 | `signOut` | `choice?` (`keep` or `discard`), `counted?` | §7.10 | `{complete, unsent, ready, sent, counted}` |
@@ -759,9 +772,10 @@ pull response, and hello. After a one-intent 400 or 413 the entry ends `refused`
 `too-large`) with its notice, `nextN` rewinds to that entry's `n`, which the server never processed,
 and every later sent entry returns to ready (event `rewind`); an orphan ends without its own notice,
 and dependents fold. A 400 or 413 on several intents is one answer for the request, `{limit}`, and no
-notice. Every 400 emits `sync-push-malformed`. A pull answered 401 sets `authPaused`, as a
-push does. `push` numbers ready entries while the request body, `jcs({replica, ackThrough,
-intents})`, stays within `PUSH_MAX_BYTES`; the first entry of a request always goes. An entry whose
+notice. Every 400 emits `sync-push-malformed`. A 401, a 409 `account-mismatch`, and a 200 or 409
+whose `as` is not the replica's account (§9.1), sets `authPaused` and applies nothing, on push, pull
+and hello alike. `push` numbers ready entries while the request body, `jcs({replica, account,
+ackThrough, intents})`, the replica's account named, stays within `PUSH_MAX_BYTES`; the first entry of a request always goes. An entry whose
 one-intent body, at the `n` it would take and the current `ackThrough`, exceeds `PUSH_MAX_BYTES` (it
 grew after commit) is not numbered: it ends `refused` `too-large` (event `outgrown`) with its notice,
 an orphan with none of its own, its dependents fold, and numbering goes on with the next entry, what
@@ -806,8 +820,10 @@ write-map stamps.
   (§7.1 step 8): a gesture that, applied to `stored`, raises a capped type's visible count above its
   cap and above the count before answers `{refused: 'cap', detail: {type, cap}}` and writes nothing
   (no entry, notice, clock write or gesture id); a held delete still occupies its slot. A gesture is
-  too-large when an intent's one-intent push body, `jcs({replica, ackThrough, intents: [intent]})` with
-  `n` and `ackThrough` at 2^53 − 1, exceeds `PUSH_MAX_BYTES`; it writes only its notice, no clock.
+  too-large when an intent's one-intent push body, `jcs({replica, account, ackThrough, intents:
+  [intent]})` with `n` and `ackThrough` at 2^53 − 1 and the replica's account (an `anon` replica's
+  entries measured with one of `ACCOUNT_ID_BYTES` bytes), exceeds `PUSH_MAX_BYTES`; it writes only its
+  notice, no clock.
 - `retire.json`: `opts.retire` (§7.1 step 4). A retired gesture ends `undone` by `retire`; the record
   keeps its untouched fields. A held gesture with a command, with a delta that does not remove, or
   removing an unlisted record; a ready delete; a held removal in another scope; and any held gesture
@@ -831,8 +847,9 @@ write-map stamps.
 
 `fold.json`, `restamp.json` (clock-skew) and `base-unknown.json` use responses from the reference
 server.
-`transport.json` covers one-intent 400 and 413, a halving 413, the 401 and 409 offset samples, hello,
-re-identify and an epoch change.
+`transport.json` covers one-intent 400 and 413, a halving 413, the 401 and 409 offset samples, a 409
+`account-mismatch`, a 200, 409 or hello served as another principal, hello, re-identify and an epoch
+change.
 - A record is `(scope, t, id)`. A ref names a record in the scope its type lives in, relative to the
   referencing scope's tree: a tree type → `tree/<T>`, an overlay type → `self/overlay/<T>`, a product
   type → `self/<product>`. Dependents and `anonCount` key records this way.
@@ -909,4 +926,9 @@ part through a write map. The reference does rewrite them.
 - The client reads its cursors, base64url of `jcs({e, m, s, k?, a?})`, to tell a boot page from a live
   one, to find where a boot ends, and to decide the digest check.
 - A dead row of the governing type (`board`) arriving in a live page or frame makes `known['tree/<id>']`
-  and `known['self/overlay/<id>']` `gone`, so §7.1 step 2 refuses commits to them.
+  and `known['self/overlay/<id>']` `gone`, so §7.1 step 2 refuses commits to them. An alive one,
+  arriving in any page or frame, deletes a `not-found` record of either, so the scopes rejoin the
+  subscription set (§7.9).
+- A pull or frame served as anyone but the replica's account (`as` null: a request that arrived with no
+  credential; `as` another account) is a 401: each scope kind pulled alone, and `not-found` frames,
+  leave its rows, cursors and known records as they were (§9.1).

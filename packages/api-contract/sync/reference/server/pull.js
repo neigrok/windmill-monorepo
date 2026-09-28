@@ -5,7 +5,7 @@ import { ZERO_DIGEST } from '../core/digest.js';
 import { jcs } from '../core/jcs.js';
 import { compareFeed, compareRecords, isAlive, isVisible, thinRow } from '../core/rows.js';
 import { Cursor, bodyBytes } from '../core/wire.js';
-import { accessOf, scopeKeyOf } from './access.js';
+import { accessOf, credentialFails, scopeKeyOf } from './access.js';
 import { admit } from './admit.js';
 
 export function refOfKey(key) {
@@ -112,21 +112,24 @@ function isWellFormedPull(request) {
       && typeof entry.scope === 'string' && (entry.cursor === null || typeof entry.cursor === 'string'));
 }
 
-// The envelope is checked in §9.1's order, the body received being `jcs(request)`.
-export function pull({ state, registry, product, account, request, serverNow, limits = CONSTANTS }) {
-  const head = { serverTime: serverNow, epoch: state.epoch };
-  const answer = (status, error) => ({ state, response: { status, body: { ...head, error } }, live: [] });
+// The envelope is checked in §9.1's order, the body received being `jcs(request)`. `account` is the
+// account the request is served as: the one its credential resolves to, or null when it carries none or
+// one that resolves to no account (`credential: 'unresolved'`). A credential that fails (credentialFails)
+// is answered 401, never served as anonymous. Every answer carries `account` as `as`, and a 401 null.
+export function pull({ state, registry, product, account = null, credential, request, serverNow, limits = CONSTANTS }) {
+  const answer = (status, error, as = account) => ({ state, response: { status, body: { serverTime: serverNow, epoch: state.epoch, as, error } }, live: [] });
+  if (credentialFails(account, credential)) return answer(401, 'unauthenticated', null);
   if (bodyBytes(request) > limits.PULL_MAX_BYTES) return answer(413, 'request-too-large');
   if (!isWellFormedPull(request) || request.scopes.length > limits.PULL_MAX_SCOPES) return answer(400, 'malformed');
   let current = state;
   const live = [];
   const pages = request.scopes.map(({ scope, cursor }) => {
-    const ran = beforePull(current, registry, product, account ?? null, scope, serverNow, limits);
+    const ran = beforePull(current, registry, product, account, scope, serverNow, limits);
     current = ran.state;
     live.push(...ran.live);
-    return pullOne(current, registry, account ?? null, scope, cursor, limits);
+    return pullOne(current, registry, account, scope, cursor, limits);
   });
-  return { state: current, response: { status: 200, body: { serverTime: serverNow, epoch: current.epoch, pages } }, live };
+  return { state: current, response: { status: 200, body: { serverTime: serverNow, epoch: current.epoch, as: account, pages } }, live };
 }
 
 // §6.8 the frame a committed change sends to every subscriber still holding read access.
@@ -147,20 +150,29 @@ export function liveEventsOf(state, outcome, limits = CONSTANTS) {
   return events;
 }
 
-// §6.8 the death frame a subscriber of `key` receives answers as a pull of the scope would (§6.7
-// step 1): `gone` to the tree's owner, for the tree and for that owner's overlay, and `not-found` to
-// everyone else. A scope that never existed sends none.
-export function deathFrameFor(state, key, account) {
+// §6.8 the death frame a subscriber of `key`, its socket served as `account`, receives answers as a pull
+// of the scope would (§6.7 step 1): `gone` to the tree's owner, for the tree and for that owner's
+// overlay, and `not-found` to everyone else. A scope that never existed sends none.
+export function deathFrameFor(state, key, account = null) {
   const scope = state.scope(key);
   if (scope === undefined) return null;
   const tree = scope.kind === 'overlay' ? state.scope(scope.governedBy) : scope;
-  return { op: tree.owner === account ? 'gone' : 'not-found', scope: refOfKey(key) };
+  return { op: tree.owner === account ? 'gone' : 'not-found', as: account, scope: refOfKey(key) };
 }
 
-// §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type.
-export function hello({ state, registry, account, serverTime }) {
-  const body = { serverTime, epoch: state.epoch, schema: registry.version, minSchema: registry.minVersion };
-  if (account === null || account === undefined) return { status: 200, body };
+// §9.5 the frame a subscriber whose socket is served as `account` receives for one live event: the
+// change frame, or the scope's death as deathFrameFor answers it, each carrying the socket's `as`.
+export function frameFor(state, event, account = null) {
+  if (event.dead) return deathFrameFor(state, event.key, account);
+  return { ...event.frame, as: account };
+}
+
+// §9.2: holdsRecords[p] iff the account's product scope holds a visible row of a primary type. A sent
+// credential that fails answers 401 (§9.1); only a hello with none is anonymous.
+export function hello({ state, registry, account = null, credential, serverTime }) {
+  if (credentialFails(account, credential)) return { status: 401, body: { serverTime, epoch: state.epoch, as: null, error: 'unauthenticated' } };
+  const body = { serverTime, epoch: state.epoch, as: account, schema: registry.version, minSchema: registry.minVersion };
+  if (account === null) return { status: 200, body };
   body.holdsRecords = {};
   for (const product of Object.keys(registry.products).sort()) {
     const primary = new Set(registry.primaryTypes(product).map((type) => type.type));

@@ -20,7 +20,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   const add = (message) => errors.push(`${path}: ${message}`);
   const typeOf = (v) => (v === null ? 'null' : Array.isArray(v) ? 'array' : Number.isInteger(v) ? 'integer' : typeof v);
   const known = new Set(['$schema', '$id', 'title', 'description', '$defs', '$ref', 'type', 'properties', 'required', 'additionalProperties',
-    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'minItems', 'minLength', 'minProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
+    'propertyNames', 'enum', 'const', 'pattern', 'minimum', 'exclusiveMinimum', 'exclusiveMaximum', 'minItems', 'minLength', 'minProperties', 'uniqueItems', 'items', 'oneOf', 'allOf', 'if', 'then', 'not']);
   for (const keyword of Object.keys(schema)) if (!known.has(keyword)) throw new Error(`the test validator lacks ${keyword}`);
   if (schema.$ref) {
     const target = schema.$ref.replace('#/', '').split('/').reduce((node, key) => node[key], root);
@@ -38,6 +38,7 @@ function errorsOf(schema, value, path = '$', root = schema) {
   if (typeof value === 'number') {
     if (schema.minimum !== undefined && value < schema.minimum) add(`below ${schema.minimum}`);
     if (schema.exclusiveMinimum !== undefined && value <= schema.exclusiveMinimum) add(`not above ${schema.exclusiveMinimum}`);
+    if (schema.exclusiveMaximum !== undefined && value >= schema.exclusiveMaximum) add(`not below ${schema.exclusiveMaximum}`);
   }
   if (Array.isArray(value)) {
     if (schema.minItems !== undefined && value.length < schema.minItems) add(`fewer than ${schema.minItems} items`);
@@ -93,12 +94,14 @@ test('registry.schema.json refuses broken registries', () => {
     'a derived type without its rule': broken((r) => { delete r.types.find((t) => t.type === 'tag').derive; }),
     'an unanchored id pattern': broken((r) => { card(r).idPattern = '[a-z]+'; }),
     'a quantum of zero': broken((r) => { card(r).fields.size.domain.quantum = 0; }),
+    'a quantum above 1 that is not an integer': broken((r) => { card(r).fields.size.domain.quantum = 2.5; }),
     'a quantum on the field rather than its number domain': broken((r) => { card(r).fields.size.quantum = 0.01; }),
     'a quantum on a string domain': broken((r) => { card(r).fields.title.domain.quantum = 1; }),
     'a product code that is not kebab-case': broken((r) => { r.products.probe.codes = ['Bad_Code']; }),
     'a whole put on a minted type': broken((r) => { card(r).wholePut = true; }),
     'a whole put on a keyed type without life': broken((r) => { r.types.find((t) => t.type === 'mark').wholePut = true; }),
     'a whole put type with a client field that is not lww': broken((r) => { r.types.find((t) => t.type === 'fact').fields.at.kind = 'fww'; }),
+    'a whole put type with a server-written text field': broken((r) => { Object.assign(r.types.find((t) => t.type === 'fact').fields, { note: { kind: 'text', writer: 'server', unit: 'bytes', max: 40 } }); }),
     'a minted type without its mint': broken((r) => { delete card(r).mint; }),
     'a mint alphabet of one character': broken((r) => { card(r).mint.alphabet = 'a'; }),
     'an opens field a client writes': broken((r) => { r.types.find((t) => t.type === 'meta').fields.visibility.writer = 'client'; }),
@@ -130,6 +133,13 @@ test('the Registry refuses what the schema cannot express', () => {
     'a whole put on a type with a text field': broken((r) => { Object.assign(r.types.find((t) => t.type === 'fact').fields, { note: { kind: 'text', writer: 'client', unit: 'bytes', max: 40 } }); }),
     'a whole put type with a client field that is not lww': broken((r) => { r.types.find((t) => t.type === 'fact').fields.at.kind = 'const'; }),
     'a command that predicts a whole put type': broken((r) => { command(r, 'probe.start').predicts.push('fact'); }),
+    'a quantum that is neither an integer nor 1/k': broken((r) => { card(r).fields.size.domain.quantum = 0.3; }),
+    'a key that names its own type': broken((r) => { r.types.find((t) => t.type === 'mark').key.ref = 'mark'; }),
+    'two keys that name each other': broken((r) => {
+      r.types.find((t) => t.type === 'mark').key.ref = 'link';
+      r.types.find((t) => t.type === 'link').key.tuple[0].ref = 'mark';
+    }),
+    'a tuple key part that leads back to its own type': broken((r) => { r.types.find((t) => t.type === 'link').key.tuple[1].ref = 'link'; }),
     'a string domain bound without its unit': broken((r) => { delete command(r, 'probe.start').args.label.domain.unit; }),
     'an idPattern with a dot': broken((r) => { r.types.find((t) => t.type === 'run').idPattern = '^.{8,64}$'; }),
     'a domain pattern with a class escape': broken((r) => { card(r).fields.attachment.domain.properties.id.pattern = '^\\S{8,64}$'; }),

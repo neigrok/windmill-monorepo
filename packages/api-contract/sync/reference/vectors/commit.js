@@ -2,7 +2,7 @@
 
 import { freshMeta } from '../client/replica.js';
 import { ZERO_DIGEST } from '../core/digest.js';
-import { Cursor, bodyBytes } from '../core/wire.js';
+import { Cursor, widestAloneBytes } from '../core/wire.js';
 import { OTHER, row, st } from './fixtures.js';
 import { runSteps, settle, stepsVector } from './steps.js';
 
@@ -337,16 +337,15 @@ function guards() {
 }
 
 // The widest one-intent push body of an update of card0001: its request at n = ackThrough = 2^53 − 1.
-function widestAloneBytes() {
+function widestUpdate() {
   const step = commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Uno', body: 'a body of some length' } }]);
   const out = runSteps({ device: device(bound({ confirmed: PROBE })), steps: [step] });
   const [entry] = out.device.replicas.find((replica) => replica.meta.replica === REPLICA).outbox;
-  const widest = Number.MAX_SAFE_INTEGER;
-  return { step, bytes: bodyBytes({ replica: REPLICA, ackThrough: widest, intents: [{ ...entry.intent, n: widest }] }) };
+  return { step, bytes: widestAloneBytes({ replica: REPLICA, account: 'A' }, entry.intent) };
 }
 
 function grouping() {
-  const alone = widestAloneBytes();
+  const alone = widestUpdate();
   const start = {
     cmd: { name: 'probe.start', args: { id: 'run00009', label: 'Go', startedAt: 5000, join: true } },
     predict: [{ op: 'create', t: 'run', id: 'run00009', f: { label: 'Go', startedAt: 5000 } }],
@@ -387,7 +386,7 @@ function grouping() {
         commitStep('self/probe', [{ op: 'delete', t: 'card', id: 'card0001' }], { hold: true }, 5000),
         { op: 'releaseAll', deviceNow: 5001 },
         { op: 'push', deviceNow: 5002 },
-        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'ok', seq: 6 }] } } },
+        { op: 'pushResponse', deviceNow: 5003, response: { status: 200, body: { serverTime: 5003, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'ok', seq: 6 }] } } },
         commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0009', f: { title: 'Fourth' } }], undefined, 5004),
       ],
     }),
@@ -465,6 +464,7 @@ function grouping() {
             body: {
               serverTime: 4990,
               epoch: 'ep-1',
+              as: 'A',
               pages: [{
                 scope: 'self/probe',
                 kind: 'rows',

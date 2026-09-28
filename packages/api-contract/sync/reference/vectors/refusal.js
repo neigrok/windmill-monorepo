@@ -126,7 +126,7 @@ function outgrownOrphan(name, later) {
   ], { orphanOf: 'g1/0' });
   const notice = { id: 'notice:g1/0', scope: 'self/probe', code: 'invalid', content: { d: [created], dependents: [{ d: orphan.intent.d }] }, at: 5003 };
   const outbox = [orphan, ...later.map((d, index) => entry(3 + index, d))];
-  const limit = bodyBytes({ replica: REPLICA, ackThrough: 0, intents: [{ ...orphan.intent, n: 1 }] }) - 1;
+  const limit = bodyBytes({ replica: REPLICA, account: 'A', ackThrough: 0, intents: [{ ...orphan.intent, n: 1 }] }) - 1;
   const base = device({ 'self/probe': rows }, { nextN: 1 });
   Object.assign(base.replicas[0], { outbox, notices: [notice] });
   return stepsVector(name, { device: base, limits: { PUSH_MAX_BYTES: limit }, steps: [{ op: 'push', deviceNow: 5004 }] });
@@ -367,7 +367,7 @@ function returnedCommand() {
         deviceNow: skewed(5005),
         tSend: skewed(5004),
         tRecv: skewed(5005),
-        response: { status: 200, body: { serverTime: 5005, epoch: 'ep-1', lastN: 1, results: [{ n: 1, s: 'refused', code: 'clock-skew' }], retry: { n: 2, retryAfterMs: 0 } } },
+        response: { status: 200, body: { serverTime: 5005, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'refused', code: 'clock-skew' }], retry: { n: 2, retryAfterMs: 0 } } },
       },
     ],
   });
@@ -426,12 +426,12 @@ function baseUnknowns() {
 // Transport outcomes of §7.4 and §7.5: status codes on push, offsets from every response, re-identify
 // and an epoch change.
 function transports() {
-  const at = (serverTime) => ({ serverTime, epoch: 'ep-1' });
+  const at = (serverTime) => ({ serverTime, epoch: 'ep-1', as: 'A' });
   const rename = (id, title, deviceNow) => commitStep('self/probe', [{ op: 'update', t: 'card', id, f: { title } }], undefined, deviceNow);
   const answer = (status, body, deviceNow) => ({ op: 'pushResponse', deviceNow, tSend: deviceNow - 10, tRecv: deviceNow, response: { status, body } });
   const base = () => device(CLIENT_PROBE);
   const reading = (wall, mono, boot = 'boot-1') => ({ wall, mono, boot });
-  const hello = (deviceNow, send, recv, serverTime) => ({ op: 'hello', deviceNow, send, recv, response: { status: 200, body: { ...at(serverTime), schema: 1, minSchema: 1 } } });
+  const hello = (deviceNow, send, recv, serverTime) => ({ op: 'hello', deviceNow, send, recv, response: { status: 200, body: { ...at(serverTime), schema: 2, minSchema: 2 } } });
   return [
     stepsVector('a one-intent 400 refuses the entry invalid with a notice, rewinds nextN to its n and emits sync-push-malformed', {
       device: base(),
@@ -459,7 +459,23 @@ function transports() {
     }),
     stepsVector('a 401 pauses the sender and still takes an offset sample', {
       device: base(),
-      steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(401, { ...at(8020), error: 'unauthenticated' }, 5030), { op: 'push', deviceNow: 5040 }],
+      steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(401, { ...at(8020), as: null, error: 'unauthenticated' }, 5030), { op: 'push', deviceNow: 5040 }],
+    }),
+    stepsVector('a 409 served as another account is a 401: the sender pauses and keeps its replica id', {
+      device: base(),
+      steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(409, { ...at(8020), as: 'B', error: 'replica-foreign' }, 5030), { op: 'push', deviceNow: 5040 }],
+    }),
+    stepsVector('a 409 account-mismatch pauses the sender and changes nothing: the push named the replica\'s account under another\'s credential', {
+      device: base(),
+      steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(409, { ...at(8020), as: 'B', error: 'account-mismatch' }, 5030), { op: 'push', deviceNow: 5040 }],
+    }),
+    stepsVector('a 200 served as another account is a 401: the sender pauses and records none of its results', {
+      device: base(),
+      steps: [rename('card0001', 'One', 5000), { op: 'push', deviceNow: 5000 }, answer(200, { ...at(5010), as: 'B', lastN: 1, results: [{ n: 1, s: 'ok', seq: 5 }] }, 5030), { op: 'push', deviceNow: 5040 }],
+    }),
+    stepsVector('a hello served as anonymous pauses a bound replica and still takes an offset sample', {
+      device: base(),
+      steps: [{ op: 'hello', deviceNow: 5030, tSend: 5010, tRecv: 5030, response: { status: 200, body: { ...at(9020), as: null, schema: 2, minSchema: 2 } } }],
     }),
     stepsVector('a 409 re-identifies after taking an offset sample, and the instance takes a new actor', {
       device: base(),
@@ -508,7 +524,7 @@ function transports() {
     }),
     stepsVector('hello takes an offset sample', {
       device: base(),
-      steps: [{ op: 'hello', deviceNow: 5030, tSend: 5010, tRecv: 5030, response: { status: 200, body: { ...at(9020), schema: 1, minSchema: 1 } } }],
+      steps: [{ op: 'hello', deviceNow: 5030, tSend: 5010, tRecv: 5030, response: { status: 200, body: { ...at(9020), schema: 2, minSchema: 2 } } }],
     }),
     stepsVector('re-identify mints a replica id, restarts n at 1 and returns sent entries to ready, and the instance takes a new actor', {
       device: base(),

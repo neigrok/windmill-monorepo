@@ -903,6 +903,7 @@
         },
         {
           "replica": "rp_000000000000000000000000000000c1",
+          "account": "A",
           "ackThrough": 0,
           "intents": [
             {

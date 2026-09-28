@@ -4,6 +4,7 @@
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
+import { credentialFails } from './access.js';
 import { admit } from './admit.js';
 import { liveEventsOf } from './pull.js';
 
@@ -11,15 +12,16 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-const PUSH_KEYS = ['ackThrough', 'intents', 'replica'];
+const PUSH_KEYS = ['account', 'ackThrough', 'intents', 'replica'];
 const REPLICA_ID = /^rp_[0-9a-f]{32}$/;
 
-// §9.3: exactly {replica, ackThrough, intents}, with a replica id of D-3's pattern and safe integers
-// (§9.1).
+// §9.3: exactly {replica, account, ackThrough, intents}, with a replica id of D-3's pattern, a string
+// account and safe integers (§9.1).
 function isWellFormed(request) {
   return isObject(request)
     && Object.keys(request).sort().join() === PUSH_KEYS.join()
     && typeof request.replica === 'string' && REPLICA_ID.test(request.replica)
+    && typeof request.account === 'string'
     && Number.isSafeInteger(request.ackThrough) && request.ackThrough >= 0
     && Array.isArray(request.intents)
     && request.intents.every((intent) => isObject(intent) && Number.isSafeInteger(intent.n) && intent.n >= 1);
@@ -27,20 +29,22 @@ function isWellFormed(request) {
 
 // Answers {state, response, live, frames}: `live` is every admission's change frame and death events in
 // order (§6.8), `frames` its change frames alone. The envelope is checked in §9.1's order; the body as
-// received is `jcs(request)`, measured before its shape.
-export function push({ state, registry, product, account, request, serverNow, budget = Infinity, faultOf = () => null, limits = CONSTANTS }) {
-  const head = { serverTime: serverNow, epoch: state.epoch };
-  const answer = (status, error) => ({ state, response: { status, body: { ...head, error } }, live: [], frames: [] });
-  if (account === null || account === undefined) return answer(401, 'unauthenticated');
+// received is `jcs(request)`, measured before its shape. `account` is the account the request is served
+// as, as pull takes it, and every answer carries it as `as`; a 401 carries null.
+export function push({ state, registry, product, account = null, credential, request, serverNow, budget = Infinity, faultOf = () => null, limits = CONSTANTS }) {
+  const head = { serverTime: serverNow, epoch: state.epoch, as: account };
+  const answer = (status, error, as = account) => ({ state, response: { status, body: { ...head, as, error } }, live: [], frames: [] });
+  if (credentialFails(account, credential) || account === null) return answer(401, 'unauthenticated', null);
   if (bodyBytes(request) > limits.PUSH_MAX_BYTES) return answer(413, 'request-too-large');
   if (!isWellFormed(request)) return answer(400, 'malformed');
   if (request.intents.length > limits.PUSH_MAX_INTENTS) return answer(413, 'request-too-large');
   const { replica } = request;
+  if (request.account !== account) return answer(409, 'account-mismatch');
   const bound = state.replicas[replica];
-  if (bound && bound.account !== account) return answer(409, 'replica-foreign');
+  if (bound && bound.account !== request.account) return answer(409, 'replica-foreign');
 
   let work = state.clone();
-  work.replicas[replica] ??= { account, lastN: 0 };
+  work.replicas[replica] ??= { account: request.account, lastN: 0 };
   const results = [];
   const live = [];
   const conflict = (error) => {
