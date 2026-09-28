@@ -110,6 +110,25 @@ struct SyncEngineTests {
     #expect(try rig.active().notices.map { "\($0.id) \($0.code) \($0.content.deltas.map(\.key))" } == ["notice:g1/0 too-large [card card0001]"])
   }
 
+  // §7.1 step 8: the `anon` replica, with no account yet, measures each intent with the widest account a push can name,
+  // ACCOUNT_ID_BYTES long, so an entry it commits still fits a request alone once a sign-in names the account; a replica
+  // bound to A measures with A. A gesture whose widest body fits only with the shorter account is refused signed out and
+  // committed signed in.
+  @Test func anAnonReplicaMeasuresItsIntentsWithTheWidestAccount() throws {
+    let gesture = Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1")
+    let measured = try Rig()
+    try measured.commit(gesture)
+    var intent = try #require(try measured.active().outbox.first?.intent)
+    intent.n = JSON.maxSafeInteger
+    let widest = PushRequest(
+      replica: try measured.meta().replica, account: String(repeating: "a", count: Constants.accountIdBytes),
+      ackThrough: JSON.maxSafeInteger, intents: [intent]).body.count
+    let anon = try Rig(limits: Limits(pushMaxBytes: widest - 1))
+    #expect(try anon.engine.commit(Rig.scope, gesture) == .refused(.tooLarge, detail: nil, notice: "notice:g1/0"))
+    let bound = try Rig(account: "A", limits: Limits(pushMaxBytes: widest - 1))
+    guard case .committed = try bound.engine.commit(Rig.scope, gesture) else { throw RigError("the bound replica refused the gesture") }
+  }
+
   // MARK: The commit contract (§7.1)
 
   @Test func aCommitThatFailsBeforeItsTransactionCommitsLeavesNothing() throws {
@@ -302,17 +321,18 @@ struct SyncEngineTests {
     let connectivity: SwitchedConnectivity
   }
 
-  // A device of account A on `network`, its replica bound before the engine starts.
-  static func device(on network: SimNetwork, clock: SimClock, seed: UInt64, drivesLoops: Bool = false) throws -> Device {
+  // A device of `account` (A unless said) on `network`, its replica bound before the engine starts.
+  static func device(of account: String = "A", on network: SimNetwork, clock: SimClock, seed: UInt64,
+                     drivesLoops: Bool = false) throws -> Device {
     let store = try Store.inMemory(registry: Rig.probe)
     let identities = Identities(random: SeededRandomSource(seed: seed))
     _ = try store.firstLaunch(identities: identities)
-    _ = try store.signIn(account: "A", holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
+    _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     let connectivity = SwitchedConnectivity()
     let engine = try SyncEngine(
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), store: store, transport: network,
-      tokens: InMemoryTokenStore(["A": network.server.token(for: "A")]), forkGuard: InMemoryForkGuardStore(), clock: clock.engineClock,
-      random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
+      tokens: InMemoryTokenStore([account: network.server.token(for: account)]), forkGuard: InMemoryForkGuardStore(),
+      clock: clock.engineClock, random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
     return Device(store: store, engine: engine, connectivity: connectivity)
   }
 
@@ -380,6 +400,77 @@ struct SyncEngineTests {
       #expect(replica.outbox.isEmpty)
     }
     #expect(try Self.cards(a) == Self.cards(b))
+  }
+
+  // §6.8: revoking a session closes the socket opened under it before it sends another frame. B follows A's cards under a
+  // session of its own; once it is revoked, A's next card reaches B as no frame but the socket's end, and B's reconnect
+  // pulls under the revoked session, is answered 401 and pauses, holding the card it had and forgetting nothing.
+  @Test func aRevokedSessionsSocketEndsBeforeAnotherFrame() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = Self.network(clock)
+    let (a, b) = (try Self.device(on: network, clock: clock, seed: 1), try Self.device(on: network, clock: clock, seed: 2))
+    let session = network.server.issueToken(for: "A")
+    try b.engine.reauthenticate(token: session)
+    #expect(await b.engine.live.step() == .open(ms: 25_000))
+    #expect(await b.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "One")]))
+    #expect(await a.engine.sender.step() == .again)
+    #expect(await b.engine.live.receiveNext())
+    #expect(await b.engine.puller.step() == .frame(Rig.scope, .applied))
+    let held = try Self.cards(b)
+
+    network.server.revoke(session)
+    _ = try a.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0002", "Two")]))
+    #expect(await a.engine.sender.step() == .again)
+    let socket = try #require(network.connections.last)
+    #expect(socket.waitingFrames == 0)
+    #expect(await b.engine.live.receiveNext() == false)
+    #expect(await b.engine.puller.step() == .paused)
+    let replica = try b.store.read { try $0.device(rows: true).activeReplica }
+    #expect(replica.meta.authPaused)
+    #expect(replica.known == [:])
+    #expect(try Self.cards(b) == held)
+    #expect(held.map(\.id.string) == ["card0001"])
+  }
+
+  // §6.2 step 3, §9.1: a phone of A whose stored session is B's pushes naming A. The server answers `account-mismatch`
+  // as B before it reads the binding, so nothing lands in B and the fresh replica stays unbound; the phone pauses and
+  // pulls nothing, and once A re-authenticates the entry lands in A, its replica bound to A.
+  @Test func aPhoneHoldingAnotherAccountsSessionPushesNothingIntoIt() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = Self.network(clock)
+    let phone = try Self.device(on: network, clock: clock, seed: 1)
+    try phone.engine.reauthenticate(token: network.server.issueToken(for: "B"))
+    _ = try phone.engine.commit(Rig.scope, Gesture(changes: [Rig.card("card0001", "Mine")]))
+    let replica = try phone.store.read { try $0.activeReplica() }
+    #expect(await phone.engine.sender.step() == .paused)
+    #expect(network.server.state.replicas[replica] == nil)
+    #expect(network.server.rows(Rig.scope, of: "B") == [])
+    #expect(await phone.engine.puller.step() == .paused)
+    try phone.engine.reauthenticate(token: network.server.issueToken(for: "A"))
+    #expect(await phone.engine.sender.step() == .again)
+    #expect(network.server.state.replicas[replica]?.account == "A")
+    #expect(network.server.rows(Rig.scope, of: "A").map(\.key) == [RecordKey("card", "card0001")])
+    #expect(network.server.rows(Rig.scope, of: "B") == [])
+  }
+
+  // §9.1, §7.5: a socket opened under a session of B's is served as B. Its first frame, B's own card, closes it and pauses
+  // the phone of A, and nothing of B's reaches A's replica.
+  @Test func aSocketServedAsAnotherAccountAppliesNothingOfIt() async throws {
+    let clock = SimClock(wallMs: Rig.startMs)
+    let network = Self.network(clock)
+    let phone = try Self.device(on: network, clock: clock, seed: 1)
+    #expect(await phone.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    try phone.engine.reauthenticate(token: network.server.issueToken(for: "B"))
+    #expect(await phone.engine.live.step() == .open(ms: 25_000))
+    let other = try Self.device(of: "B", on: network, clock: clock, seed: 2)
+    _ = try other.engine.commit(Rig.scope, Gesture(changes: [Rig.card("cardB001", "Theirs")]))
+    #expect(await other.engine.sender.step() == .again)
+    #expect(await phone.engine.live.receiveNext())
+    #expect(network.connections.map(\.isClosed) == [true])
+    #expect(try phone.store.read { try $0.replica($0.activeReplica())!.meta.authPaused })
+    #expect(await phone.engine.puller.step() == .paused)
+    #expect(try Self.cards(phone) == [])
   }
 
   // The same with every loop running: sockets open and scopes boot from `start()`, and A's commit reaches B, and

@@ -28,7 +28,7 @@ enum Handlers {
         "PUSH_MAX_BYTES": JSON(Constants.pushMaxBytes), "PUSH_WORK_MS": JSON(Constants.pushWorkMs),
         "PULL_PAGE_BYTES": JSON(Constants.pullPageBytes), "LIVE_FRAME_BYTES": JSON(Constants.liveFrameBytes),
         "LIVE_INLINE_BYTES": JSON(Constants.liveInlineBytes), "KEEPALIVE_BYTES": JSON(Constants.keepaliveBytes),
-        "MERGE_WORK_CELLS": JSON(Constants.mergeWorkCells),
+        "MERGE_WORK_CELLS": JSON(Constants.mergeWorkCells), "ACCOUNT_ID_BYTES": JSON(Constants.accountIdBytes),
       ]
     },
 

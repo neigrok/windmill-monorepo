@@ -132,11 +132,15 @@ final class ScenarioRun {
     return receipt
   }
 
-  // A phone signed in with the launch credentials, its engine started and its first pull complete.
-  func signInAndSync() async throws {
+  // A phone signed in with the launch credentials, its engine started and its first pull complete; with `card`, that card
+  // then committed, sent and confirmed.
+  func signInAndSync(card: String? = nil) async throws {
     try await signIn()
     await start()
     try await waitForFirstPull()
+    guard let card else { return }
+    try commitCard(card)
+    try await waitUntilSettled()
   }
 
   func waitForFirstPull() async throws {
@@ -158,6 +162,11 @@ final class ScenarioRun {
   // The active replica's outbox, one state per entry.
   func entryStates() throws -> [String] {
     try probe.active().outbox.map(\.state.rawValue)
+  }
+
+  // The active replica's cursor record of the probe's scope, null before its first pull.
+  func cursor() throws -> JSON {
+    try probe.active().cursor(Self.scope)?.json ?? .null
   }
 
   func undoOffers() -> [String] {

@@ -27,7 +27,7 @@ struct PullTests {
     let cursor = Cursor(epoch: "ep-\u{E9}", mode: .live, seq: 1).text
     var replica = LoadedReplica(meta: meta, cursors: [.product("probe"): CursorRecord(cursor: cursor, booted: true)], wholeScopes: true)
     let frame = try LiveFrame(json: [
-      "op": "change", "scope": "self/probe", "epoch": "ep-e\u{301}", "seq": 2,
+      "op": "change", "as": "A", "scope": "self/probe", "epoch": "ep-e\u{301}", "seq": 2,
       "digest": .string(String(repeating: "0", count: 64)), "rows": [],
     ])
     #expect(try PageApplier(registry: Self.probe).apply(frame, to: &replica, instance: Self.instance) == .pull)

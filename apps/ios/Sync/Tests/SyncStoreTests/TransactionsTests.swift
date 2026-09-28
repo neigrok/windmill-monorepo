@@ -28,7 +28,7 @@ struct TransactionsTests {
     ("after a re-identify, numbering starts at 1 beside an acked entry that keeps its number", """
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0001", "f": {"title": "a"}}], "deviceNow": 1000},
       {"op": "push", "deviceNow": 1000},
-      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 1000, "epoch": "ep-1", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]}}, "deviceNow": 1001},
+      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 1000, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]}}, "deviceNow": 1001},
       {"op": "reidentify", "deviceNow": 1002},
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0002", "f": {"title": "b"}}], "deviceNow": 1003},
       {"op": "push", "deviceNow": 1004}
@@ -36,7 +36,7 @@ struct TransactionsTests {
     ("an epoch change in a push answer re-identifies, and numbering starts again at 1", """
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0001", "f": {"title": "a"}}], "deviceNow": 1000},
       {"op": "push", "deviceNow": 1000},
-      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 1000, "epoch": "ep-2", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]}}, "deviceNow": 1001},
+      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 1000, "epoch": "ep-2", "as": "A", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]}}, "deviceNow": 1001},
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "create", "t": "card", "id": "card0002", "f": {"title": "b"}}], "deviceNow": 1003},
       {"op": "push", "deviceNow": 1004}
       """, ["intents.0.n=1"]),
@@ -61,7 +61,7 @@ struct TransactionsTests {
         {"op": "create", "t": "card", "id": "card0010", "f": {"title": "Fourth"}}], "opts": {"atomic": true}, "deviceNow": 5001},
       {"op": "push", "deviceNow": 5002},
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0010", "f": {"title": "Edited"}}], "deviceNow": 5003},
-      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "lastN": 3, "results": [
+      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "as": "A", "lastN": 3, "results": [
         {"n": 1, "s": "refused", "code": "invalid"}, {"n": 2, "s": "refused", "code": "invalid"}, {"n": 3, "s": "refused", "code": "unknown-record"}]}},
        "deviceNow": 5004}
       """, []),
@@ -215,9 +215,12 @@ struct StoredDevice: ClientDevice {
     return limit
   }
 
-  mutating func hello(serverTime: Int64?, timing: Timing) throws {
-    guard let serverTime else { return }
-    take(try store.sample(serverTime: serverTime, timing: timing))
+  mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws {
+    take(try store.write(.offset) { tx in
+      guard var replica = try tx.replica(try tx.activeReplica()) else { return Planned((), ReplicaBatch()) }
+      ReplicaLifecycle(registry: store.registry).receive(answer, in: &replica, timing: timing)
+      return Planned((), replica.batch)
+    })
   }
 
   mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart {
@@ -232,10 +235,11 @@ struct StoredDevice: ClientDevice {
     var replica: String? = try active()
     var outcomes: [(scope: ScopeRef, outcome: PageOutcome)] = []
     let subscribed = Set(request.scopes.map(\.scope))
-    for step in PageApplier(registry: store.registry).steps(for: answer, to: request) {
+    let account = try activeReplica().meta.account
+    for step in PageApplier(registry: store.registry).steps(for: answer, to: request, account: account) {
       guard let current = replica else { break }
-      let applied = take(try store.apply(step, replica: current, subscribed: subscribed, instance: &instance, timing: timing,
-                                         identities: identities))
+      let applied = take(try store.apply(step, replica: current, account: account, subscribed: subscribed, instance: &instance,
+                                         timing: timing, identities: identities))
       replica = applied?.replica
       if case .page(let page, _) = step, let outcome = applied?.outcome { outcomes.append((page.scope, outcome)) }
     }

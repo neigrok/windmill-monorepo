@@ -15,7 +15,7 @@ package enum SenderStep: Sendable, Hashable {
   // Nothing to send, offline, no bound replica, a sign-out holds it, or the caller was cancelled before its turn: wait
   // for a kick.
   case idle
-  // 401, or no token for the account: wait for re-authentication's kick.
+  // An answer handled as a 401 (§9.1), or no token for the account: wait for re-authentication's kick.
   case paused
   // 426: nothing more is sent by this process.
   case stopped
@@ -122,7 +122,9 @@ package actor Sender {
   }
 
   // The answer's transactions in order: the offset sample first, then the results, the ack and the epoch, or the
-  // failure's own move; a 401 pauses only while `token` is still the account's. A replica gone since the request
+  // failure's own move. An answer handled as a 401 (§9.1: a 401, an `account-mismatch`, or a 200 or 409 served as anyone
+  // but the account the push named) applies nothing past its sample: it pauses while `token` is still the account's,
+  // and otherwise the push goes again under the new one, no retry consumed. A replica gone since the request
   // (re-identified, signed out) drops the rest of the answer, which then says nothing about the replica now active: the
   // next round looks again.
   func record(_ reply: Reply<PushResponse>, to request: PushRequest, under token: SessionToken, timing: Timing) throws -> SenderStep {
@@ -131,13 +133,12 @@ package actor Sender {
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
     var replica: String? = request.replica
-    var paused = false
     for step in answers.steps(for: answer, to: request) {
       guard let id = replica else { break }
       if case .halve(let limit, _) = step { batchLimit = limit }
       if step == .pauseAuth {
-        paused = try core.pauseAuth(id, sentUnder: token)
-        continue
+        conflicts = 0
+        return try core.pauseAuth(id, sentUnder: token) ? .paused : .again
       }
       replica = try core.write { store, instance in
         try store.apply(step, replica: id, instance: &instance, timing: timing, identities: core.identities)
@@ -148,7 +149,7 @@ package actor Sender {
     case .ok(let response):
       return next(after: response, to: request)
     case .failed(let failure):
-      return next(after: failure, paused: paused)
+      return next(after: failure)
     }
   }
 
@@ -176,14 +177,12 @@ package actor Sender {
     return answered.isEmpty ? .backoff(ms: nextBackoff(floorMs: 0)) : .again
   }
 
-  // Design §6.3's rows: a 401 paused, unless the token changed while the push was in flight, and the push goes again
-  // under the new one; a 400 or 413 was halved or refused, so the next push differs; a conflict re-identified, and a
-  // second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a pause no kick cuts
-  // short, and a backoff.
-  func next(after failure: HTTPFailure, paused: Bool) -> SenderStep {
+  // Design §6.3's rows for the other failures: a 400 or 413 was halved or refused, so the next push differs; a conflict
+  // re-identified, and a second one in a row backs off; a 426 stops; a 503 sleeps the longer of its `retryAfterMs`, a
+  // pause no kick cuts short, and a backoff.
+  func next(after failure: HTTPFailure) -> SenderStep {
     conflicts = failure.status == 409 ? conflicts + 1 : 0
     switch failure.status {
-    case 401: return paused ? .paused : .again
     case 400, 413: return .again
     case 409: return conflicts == 1 ? .again : .backoff(ms: nextBackoff(floorMs: 0))
     case 426:

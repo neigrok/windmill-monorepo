@@ -10,7 +10,8 @@ import Synchronization
 // MARK: - The network
 
 // In front of the real transport. Offline answers no call and tells the engine's connectivity; a refusal queued answers
-// the next call with its status (a forced 401 or 503) and sends nothing. Every call and its answer lands in the log.
+// the next call with its status (a forced 401 or 503) and sends nothing. Every call and its answer lands in the log, the
+// answer with its `as`: whom the server served it as, null for no one or when the answer does not say.
 nonisolated final class FaultInjectingTransport: SyncTransport {
   struct Switches {
     var offline = false
@@ -58,7 +59,10 @@ nonisolated final class FaultInjectingTransport: SyncTransport {
   }
 
   func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    let sent: JSON.Object = ["kind": "push", "replica": .string(request.replica), "n": .array(request.intents.map { JSON($0.n ?? 0) })]
+    let sent: JSON.Object = [
+      "kind": "push", "replica": .string(request.replica), "account": .string(request.account),
+      "n": .array(request.intents.map { JSON($0.n ?? 0) }),
+    ]
     return await exchange(sent, { await inner.push(request, token: token) }) { response in
       ["epoch": .string(response.epoch), "results": .array(response.results.map(\.logged))]
     }
@@ -91,8 +95,8 @@ nonisolated final class FaultInjectingTransport: SyncTransport {
 
   // One call through the faults: the fault it meets answers it, or the server does; either way the log records it, with
   // what `answered` tells of a 200.
-  func exchange<Body: ResponseBody>(_ sent: JSON.Object, _ send: () async -> Reply<Body>,
-                                    answered: (Body) -> JSON.Object) async -> Reply<Body> {
+  func exchange<Body: ResponseBody & Served>(_ sent: JSON.Object, _ send: () async -> Reply<Body>,
+                                             answered: (Body) -> JSON.Object) async -> Reply<Body> {
     var entry = sent
     if let fault = takeFault() {
       entry["fault"] = fault.logged
@@ -103,10 +107,12 @@ nonisolated final class FaultInjectingTransport: SyncTransport {
     switch reply {
     case .answered(.ok(let body)):
       entry["status"] = 200
+      entry["as"] = body.servedAsLogged
       for (key, value) in answered(body).members { entry[key] = value }
     case .answered(.failed(let failure)):
       entry["status"] = JSON(failure.status)
       entry["error"] = failure.error.map { .string($0) }
+      entry["as"] = failure.servedAsLogged
     case .unreachable:
       entry["status"] = "unreachable"
     }
@@ -148,10 +154,16 @@ nonisolated final class LoggedLiveConnection: LiveConnection {
     try await inner.send(request)
   }
 
+  // A frame, the server's close (`live-closed`), or a socket that failed (`live-failed`).
   func receive() async throws -> LiveFrame? {
-    let frame = try await inner.receive()
-    log.record(frame.map(\.logged) ?? ["kind": "live-closed"])
-    return frame
+    do {
+      let frame = try await inner.receive()
+      log.record(frame.map(\.logged) ?? ["kind": "live-closed"])
+      return frame
+    } catch {
+      log.record(["kind": "live-failed", "error": .string(String(describing: error))])
+      throw error
+    }
   }
 
   func close() {
@@ -264,6 +276,12 @@ nonisolated final class ProbeLog: Sendable {
 
 // MARK: - How the log describes what the server said
 
+extension Served {
+  nonisolated var servedAsLogged: JSON {
+    servedAs.map(JSON.string) ?? .null
+  }
+}
+
 extension PushResult {
   nonisolated var logged: JSON {
     switch verdict {
@@ -289,11 +307,11 @@ extension LiveFrame {
     switch self {
     case .change(let change):
       [
-        "kind": "live-frame", "op": "change", "scope": change.scope.json, "epoch": .string(change.epoch), "seq": JSON(change.seq),
-        "ids": change.rows.map { .array($0.map(\.key.id.json)) } ?? .null,
+        "kind": "live-frame", "op": "change", "as": servedAsLogged, "scope": change.scope.json, "epoch": .string(change.epoch),
+        "seq": JSON(change.seq), "ids": change.rows.map { .array($0.map(\.key.id.json)) } ?? .null,
       ]
-    case .gone(let scope): ["kind": "live-frame", "op": "gone", "scope": scope.json]
-    case .notFound(let scope): ["kind": "live-frame", "op": "not-found", "scope": scope.json]
+    case .gone(let scope, _): ["kind": "live-frame", "op": "gone", "as": servedAsLogged, "scope": scope.json]
+    case .notFound(let scope, _): ["kind": "live-frame", "op": "not-found", "as": servedAsLogged, "scope": scope.json]
     case .pong: ["kind": "live-frame", "op": "pong"]
     case .other(let op): ["kind": "live-frame", "op": .string(op)]
     }

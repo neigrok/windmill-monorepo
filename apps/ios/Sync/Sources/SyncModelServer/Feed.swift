@@ -152,20 +152,29 @@ struct Feed {
 }
 
 // §6.8 the sockets the model serves: each subscribed scope gets its frames while its principal may read it, a death as
-// a pull of the scope would answer it, and a lost read access as `not-found`.
+// a pull of the scope would answer it, and a lost read access as `not-found`. Every change, gone and not-found frame
+// carries the socket's `as` (§9.5).
 struct LiveChannel: Sendable {
   struct Subscriber: Sendable {
+    // The principal the socket's upgrade was served as, nil for anonymous.
     let account: String?
     var scopes: Set<ScopeKey> = []
     var frames: [JSON] = []
   }
 
   var subscribers: [Int: Subscriber] = [:]
+  var opened = 0
 
+  // A socket's id is never taken again, once it is closed.
   mutating func connect(account: String?) -> Int {
-    let socket = (subscribers.keys.max() ?? 0) + 1
-    subscribers[socket] = Subscriber(account: account)
-    return socket
+    opened += 1
+    subscribers[opened] = Subscriber(account: account)
+    return opened
+  }
+
+  // The server closes the socket: it sends it no other frame and answers no other `sub`.
+  mutating func close(_ socket: Int) {
+    subscribers[socket] = nil
   }
 
   // An unreadable scope answers at once, as a pull would, and is not subscribed.
@@ -173,12 +182,12 @@ struct LiveChannel: Sendable {
     guard var subscriber = subscribers[socket] else { return }
     for ref in refs {
       guard registry.scopeKind(of: ref) != nil, let key = ScopeKey(ref, account: subscriber.account) else {
-        subscriber.frames.append(["op": "not-found", "scope": ref.json])
+        subscriber.frames.append(Self.end("not-found", of: ref, to: subscriber.account))
         continue
       }
       switch state.access(key, as: subscriber.account, registry: registry) {
-      case .notFound: subscriber.frames.append(["op": "not-found", "scope": ref.json])
-      case .gone: subscriber.frames.append(["op": "gone", "scope": ref.json])
+      case .notFound: subscriber.frames.append(Self.end("not-found", of: ref, to: subscriber.account))
+      case .gone: subscriber.frames.append(Self.end("gone", of: ref, to: subscriber.account))
       case .absent, .readable, .writable: subscriber.scopes.insert(key)
       }
     }
@@ -202,7 +211,19 @@ struct LiveChannel: Sendable {
   // overlay, and `not-found` to everyone else. An overlay never written never was a scope, and sends nothing.
   static func deathFrame(of key: ScopeKey, to account: String?, in state: ServerState, registry: Registry) -> JSON? {
     guard state.scopes[key] != nil else { return nil }
-    return ["op": state.access(key, as: account, registry: registry) == .gone ? "gone" : "not-found", "scope": key.ref.json]
+    return end(state.access(key, as: account, registry: registry) == .gone ? "gone" : "not-found", of: key.ref, to: account)
+  }
+
+  // A `gone` or `not-found` frame to a socket served as `account`.
+  static func end(_ op: String, of ref: ScopeRef, to account: String?) -> JSON {
+    ["op": .string(op), "as": account.map { .string($0) } ?? .null, "scope": ref.json]
+  }
+
+  // A change frame as a socket served as `account` receives it.
+  static func served(_ frame: JSON, to account: String?) -> JSON {
+    var object = (try? frame.asObject()) ?? JSON.Object()
+    object["as"] = account.map { .string($0) } ?? .null
+    return .object(object)
   }
 
   mutating func publish(_ events: [LiveEvent], in state: ServerState, registry: Registry) {
@@ -211,7 +232,9 @@ struct LiveChannel: Sendable {
       for event in events where subscriber.scopes.contains(event.key) {
         switch event {
         case .change(let key, let frame):
-          if state.canRead(key, as: subscriber.account, registry: registry) { subscriber.frames.append(frame) }
+          if state.canRead(key, as: subscriber.account, registry: registry) {
+            subscriber.frames.append(Self.served(frame, to: subscriber.account))
+          }
         case .death(let key):
           if let frame = Self.deathFrame(of: key, to: subscriber.account, in: state, registry: registry) {
             subscriber.frames.append(frame)
@@ -222,7 +245,7 @@ struct LiveChannel: Sendable {
       for key in subscriber.scopes.sorted() where !state.canRead(key, as: subscriber.account, registry: registry) {
         subscriber.scopes.remove(key)
         if key.tree.map({ state.scopes[ScopeKey(.tree($0))]?.isAlive != true }) == true { continue }
-        subscriber.frames.append(["op": "not-found", "scope": key.ref.json])
+        subscriber.frames.append(Self.end("not-found", of: key.ref, to: subscriber.account))
       }
       subscribers[socket] = subscriber
     }

@@ -144,6 +144,11 @@ struct RegistryTests {
      #"command "p.go": argument label: the pattern ^a|b$ is outside §2.4's patterns"#),
     (registry(note { _ in }, products: ["p": ["device": ["picture": ["keyPattern": "^picture:[^/]{8,64}$"]]]]),
      #"product p: device row picture: the pattern ^picture:[^/]{8,64}$ is outside §2.4's patterns"#),
+    (registry(keyed("link", ["ref": "link"])), "type link: its key leads back to its own type"),
+    (registry(keyed("link", ["ref": "mark"]), keyed("mark", ["ref": "link"])), "type link: its key leads back to its own type"),
+    (registry(note { _ in }, keyed("link", ["tuple": [["name": "from", "ref": "note"], ["name": "to", "ref": "mark"]]]),
+              keyed("mark", ["ref": "tag"]), keyed("tag", ["ref": "link"])),
+     "type link: its key leads back to its own type"),
   ])
   func aBrokenRegistryIsRefusedNamingWhereAndWhy(_ registry: JSON, _ message: String) {
     let error = #expect(throws: RegistryError.self) { try Registry(json: registry) }
@@ -205,9 +210,23 @@ struct RegistryTests {
     #expect(cents.rounded(-0.001).sign == .plus)
   }
 
-  @Test(arguments: [0, -1, 0.3, 0.7, Double.infinity, Double.nan])
+  @Test(arguments: [0, -1, 0.3, 0.7, 2.5, 1.5, Double.infinity, Double.nan])
   func aQuantumIsAnIntegerOrOneOverK(_ step: Double) {
     #expect(Quantum(step) == nil)
+  }
+
+  // §2.4: a positive integer, or 1/k for an integer k, so that 1 / step is an integer in doubles.
+  @Test(arguments: [1, 5, 0.5, 0.25, 0.1, 0.01, 0.001])
+  func aQuantumOfAnIntegerOrOneOverKIsTaken(_ step: Double) {
+    #expect(Quantum(step)?.step == step)
+  }
+
+  // §2.4: a key names other types, as a chain of keys may, that never lead back to the keyed type; a key that names
+  // another keyed type, whose own key leads elsewhere, is taken.
+  @Test func aKeyChainThatDoesNotLeadBackIsTaken() throws {
+    let registry = try Registry(json: Self.registry(Self.note { _ in }, Self.keyed("mark", ["ref": "note"]), Self.keyed(
+      "link", ["tuple": [["name": "from", "ref": "mark"], ["name": "to", "ref": "note"]]])))
+    #expect(registry.types.map(\.name) == ["note", "mark", "link"])
   }
 
   // Scope kinds and argument types are the same only byte for byte, never by canonical equivalence.
@@ -281,6 +300,11 @@ struct RegistryTests {
     ]
     edit(&type)
     return .object(type)
+  }
+
+  // A lifeless keyed type of product p whose natural key is `key`.
+  static func keyed(_ name: String, _ key: JSON) -> JSON {
+    ["type": .string(name), "scope": "product:p", "identity": "keyed", "key": key, "life": false, "origins": ["replica"], "fields": [:]]
   }
 
   static func meta(opens: [JSON]) -> JSON {

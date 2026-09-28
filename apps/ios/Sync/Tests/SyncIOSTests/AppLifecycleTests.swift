@@ -108,7 +108,7 @@ struct AppLifecycleTests {
   }
 
   static let admitted: JSON = [
-    "serverTime": 1_700_000_000_000, "epoch": "ep-1", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 1]],
+    "serverTime": 1_700_000_000_000, "epoch": "ep-1", "as": "acct-1", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 1]],
   ]
 
   func holdCard() throws {

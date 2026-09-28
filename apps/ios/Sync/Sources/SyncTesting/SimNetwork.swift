@@ -1,5 +1,6 @@
 import SyncCore
 import SyncEngine
+import enum SyncModelServer.Credential
 import struct SyncModelServer.LiveSocket
 import struct SyncModelServer.ModelServer
 import struct SyncModelServer.PushFaults
@@ -15,14 +16,16 @@ import Synchronization
 
 // MARK: - The server process
 
-// Every call runs as its token's account at the clock's time; a token the process did not issue, or revoked, is
-// unauthenticated. Two ledgers serve a simulation's checks: the version of the server's rows, which moves whenever a
-// scope's rows change or the epoch does, and every intent admitted fresh, by epoch, replica and `n`, so one admitted
-// twice (INV-4) is caught.
+// Every call runs as its token's account at the clock's time; a token the process did not issue, or revoked, resolves to
+// no account and is answered 401, and revoking a session closes every socket opened under it (§6.8). Two ledgers serve a
+// simulation's checks: the version of the server's rows, which moves whenever a scope's rows change or the epoch does,
+// and every intent admitted fresh, by epoch, replica and `n`, so one admitted twice (INV-4) is caught.
 public final class ModelServerHandle: Sendable {
   struct Process {
     var server: ModelServer
     var sessions: [String: String] = [:]
+    // The session token each open socket's upgrade was served under.
+    var sockets: [LiveSocket: String] = [:]
     var issued: [String: Int] = [:]
     var admitted: Set<AdmittedIntent> = []
     var admittedTwice: [String] = []
@@ -90,33 +93,40 @@ public final class ModelServerHandle: Sendable {
   }
 
   // A session of its own for one device of `account`, as each sign-in on a device gets (§8.2).
-  func issueToken(for account: String) -> SessionToken {
+  package func issueToken(for account: String) -> SessionToken {
     process.withLock { $0.issue(for: account) }
   }
 
-  // The session ends: every call under it is unauthenticated.
-  func revoke(_ token: SessionToken) {
-    process.withLock { _ = $0.sessions.removeValue(forKey: token.value) }
+  // The session ends: every call under it is unauthenticated, and every socket opened under it is closed before it sends
+  // another frame.
+  package func revoke(_ token: SessionToken) {
+    process.withLock { process in
+      process.sessions[token.value] = nil
+      for (socket, opener) in process.sockets where opener.utf8.elementsEqual(token.value.utf8) {
+        process.server.close(socket)
+        process.sockets[socket] = nil
+      }
+    }
   }
 
   // MARK: Serving, at the clock's time
 
-  // A token presented and not recognised is refused 401 on every call; no token is the anonymous caller.
+  // Every call is served with what its token resolves to (§9.1): no token is the anonymous caller, and a token the
+  // process did not issue, or revoked, resolves to no account, which the server answers 401.
   func hello(as token: SessionToken?) -> (status: Int, body: JSON) {
     let at = clock.nowMs()
     return process.withLock { process in
-      guard token == nil || process.account(of: token) != nil else { return process.unauthenticated(at: at) }
-      let reply = process.server.hello(account: process.account(of: token), at: at)
+      let reply = process.server.hello(credential: process.credential(of: token), at: at)
       return (reply.status, reply.body)
     }
   }
 
   // A push as received; an intent whose result is stored by this push, having had none, was admitted fresh.
-  func push(_ request: PushRequest, as token: SessionToken, faults: PushFaults) -> (status: Int, body: JSON) {
+  func push(_ request: PushRequest, as token: SessionToken?, faults: PushFaults) -> (status: Int, body: JSON) {
     let at = clock.nowMs()
     return process.withLock { process in
       let before = process.server.state.results[request.replica] ?? [:]
-      let reply = process.server.push(received: request.body, account: process.account(of: token), at: at, faults: faults)
+      let reply = process.server.push(received: request.body, credential: process.credential(of: token), at: at, faults: faults)
       let after = process.server.state.results[request.replica] ?? [:]
       let epoch = Array(process.server.state.epoch.utf8)
       for n in request.intents.compactMap(\.n) where before[n]?.result == nil && after[n]?.result != nil {
@@ -132,8 +142,7 @@ public final class ModelServerHandle: Sendable {
   func pull(_ request: PullRequest, as token: SessionToken?) -> (status: Int, body: JSON) {
     let at = clock.nowMs()
     return process.withLock { process in
-      guard token == nil || process.account(of: token) != nil else { return process.unauthenticated(at: at) }
-      let reply = process.server.pull(received: request.body, account: process.account(of: token), at: at)
+      let reply = process.server.pull(received: request.body, credential: process.credential(of: token), at: at)
       return (reply.status, reply.body)
     }
   }
@@ -141,7 +150,8 @@ public final class ModelServerHandle: Sendable {
   // The same pull as `account`, whatever its sessions: what that account would be answered.
   func pull(_ request: PullRequest, asAccount account: String?) -> JSON {
     let at = clock.nowMs()
-    return process.withLock { $0.server.pull(received: request.body, account: account, at: at).body }
+    let credential = account.map(Credential.account) ?? .absent
+    return process.withLock { $0.server.pull(received: request.body, credential: credential, at: at).body }
   }
 
   // A failure answered for this process, as a proxy or a failing server answers it: the server's time and epoch, and
@@ -166,8 +176,17 @@ public final class ModelServerHandle: Sendable {
     return process.withLock { $0.server.call(call, at: at) }
   }
 
-  func connect(as token: SessionToken) -> LiveSocket? {
-    process.withLock { process in process.account(of: token).map { process.server.connect(account: $0) } }
+  // The upgrade under `token`, or none; nil when the server answers it 401.
+  func connect(as token: SessionToken?) -> LiveSocket? {
+    process.withLock { process in
+      let socket = process.server.connect(process.credential(of: token))
+      if let socket, let token { process.sockets[socket] = token.value }
+      return socket
+    }
+  }
+
+  func isOpen(_ socket: LiveSocket) -> Bool {
+    process.withLock { $0.server.isOpen(socket) }
   }
 
   func subscribe(_ socket: LiveSocket, to scopes: [ScopeRef]) {
@@ -194,12 +213,10 @@ public final class ModelServerHandle: Sendable {
 }
 
 extension ModelServerHandle.Process {
-  func account(of token: SessionToken?) -> String? {
-    token.flatMap { sessions[$0.value] }
-  }
-
-  func unauthenticated(at serverTime: Int64) -> (status: Int, body: JSON) {
-    (401, ["serverTime": JSON(serverTime), "epoch": .string(server.state.epoch), "error": "unauthenticated"])
+  // No token is no credential; a token of a live session resolves to its account, and any other to none.
+  func credential(of token: SessionToken?) -> Credential {
+    guard let token else { return .absent }
+    return sessions[token.value].map(Credential.account) ?? .unresolved
   }
 
   mutating func issue(for account: String) -> SessionToken {
@@ -213,19 +230,28 @@ extension ModelServerHandle.Process {
 
 // MARK: - The network
 
-// A `sub` is answered at once for scopes its principal may not read, and a ping with a pong. What the wire does to a
-// call is armed before it (design §9.3), and taken by the next call of its kind: a request dropped on the way, a reply
-// lost after the server acted, a request served twice whose caller gets the second reply, a push queued at the server
-// and served when a later action says (the caller finding no network now), or an answer the server never made. A push
-// may also meet the server's own faults (§6.6), and every push of a poisoned intent faults until it is poisoned.
+// A `sub` is answered at once for scopes its principal may not read, and a ping with a pong; a socket the server closed
+// ends. What the wire does to a call is armed before it (design §9.3), and taken by the next call of its kind: a request
+// dropped on the way, a reply lost after the server acted, a request served twice whose caller gets the second reply, a
+// push queued at the server and served when a later action says (the caller finding no network now), a credential lost
+// on the way, so the server serves the request as anonymous (§9.1), or an answer the server never made. A push may also
+// meet the server's own faults (§6.6), and every push of a poisoned intent faults until it is poisoned. The network keeps
+// whom the server served the last answer of each kind as, for a simulation's checks.
 public final class SimNetwork: SyncTransport {
   package enum Call: Hashable, Sendable {
     case hello, push, pull, live
   }
 
   package enum Fate: Hashable, Sendable {
-    case deliver, drop, loseReply, duplicate, delay
+    case deliver, drop, loseReply, duplicate, delay, loseCredential
     case answer(status: Int)
+  }
+
+  // The last answer the server made to a call of one kind: whom it was served as, an account or null, and the scopes a
+  // pull asked; nil for any other call, whose answer may touch every scope.
+  struct Answered: Sendable {
+    let servedAs: JSON
+    let scopes: Set<ScopeRef>?
   }
 
   // One push served: the request, and the server's answer, which its sender may never see.
@@ -243,6 +269,7 @@ public final class SimNetwork: SyncTransport {
   struct Wire {
     var sockets: [(socket: LiveSocket, connection: FakeLiveConnection)] = []
     var fates: [Call: Fate] = [:]
+    var answered: [Call: Answered] = [:]
     var pushFaults = PushFaults()
     var poisoned: Set<Poisoned> = []
     var delayed: [(request: PushRequest, token: SessionToken)] = []
@@ -266,8 +293,9 @@ public final class SimNetwork: SyncTransport {
   // MARK: SyncTransport
 
   public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    guard take(.hello) != .drop else { return .unreachable }
-    let answered = server.hello(as: token)
+    let fate = take(.hello)
+    guard fate != .drop else { return .unreachable }
+    let answered = served(.hello, server.hello(as: fate == .loseCredential ? nil : token))
     return Reply(status: answered.status, body: answered.body)
   }
 
@@ -282,10 +310,11 @@ public final class SimNetwork: SyncTransport {
     case .answer(let status):
       let answered = server.failure(status)
       return Reply(status: answered.status, body: answered.body)
-    case .deliver, .loseReply, .duplicate:
-      var answered = serve(request, as: token)
-      if fate == .duplicate { answered = serve(request, as: token) }
-      return fate == .loseReply ? .unreachable : Reply(status: answered.status, body: answered.body)
+    case .deliver, .loseReply, .duplicate, .loseCredential:
+      let sentUnder = fate == .loseCredential ? nil : token
+      var answered = serve(request, as: sentUnder)
+      if fate == .duplicate { answered = serve(request, as: sentUnder) }
+      return fate == .loseReply ? .unreachable : Reply(status: answered.status, body: served(.push, answered).body)
     }
   }
 
@@ -297,17 +326,22 @@ public final class SimNetwork: SyncTransport {
     case .answer(let status):
       let answered = server.failure(status)
       return Reply(status: answered.status, body: answered.body)
-    case .deliver, .loseReply, .duplicate:
-      var answered = server.pull(request, as: token)
-      if fate == .duplicate { answered = server.pull(request, as: token) }
+    case .deliver, .loseReply, .duplicate, .loseCredential:
+      let sentUnder = fate == .loseCredential ? nil : token
+      var answered = server.pull(request, as: sentUnder)
+      if fate == .duplicate { answered = server.pull(request, as: sentUnder) }
       deliverFrames()
-      return fate == .loseReply ? .unreachable : Reply(status: answered.status, body: answered.body)
+      let body = served(.pull, answered, scopes: Set(request.scopes.map(\.scope))).body
+      return fate == .loseReply ? .unreachable : Reply(status: answered.status, body: body)
     }
   }
 
   public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
-    guard take(.live) != .drop else { return .unreachable }
-    guard let opened = server.connect(as: token) else { return .answered(.failed(HTTPFailure(status: 401))) }
+    let fate = take(.live)
+    guard fate != .drop else { return .unreachable }
+    guard let opened = server.connect(as: fate == .loseCredential ? nil : token) else {
+      return .answered(.failed(HTTPFailure(status: 401)))
+    }
     let connection = FakeLiveConnection { [weak self] request in self?.take(request, on: opened) }
     wire.withLock { $0.sockets.append((opened, connection)) }
     return .answered(.ok(connection))
@@ -325,16 +359,24 @@ public final class SimNetwork: SyncTransport {
     wire.withLock { $0.pushFaults = faults }
   }
 
-  // The fates and faults armed and not taken, which the call they were armed for never came to; true when any was.
+  // The fates and faults armed and not taken, which the call they were armed for never came to; true when any was. What
+  // the last answers were served as is forgotten with them.
   @discardableResult
   func disarm() -> Bool {
     wire.withLock { wire in
       defer {
         wire.fates = [:]
         wire.pushFaults = PushFaults()
+        wire.answered = [:]
       }
       return !wire.fates.isEmpty || wire.pushFaults != PushFaults()
     }
+  }
+
+  // The last answer the server made to a call of `call`'s kind since the network was last disarmed: nil when it made
+  // none, or when a proxy's answer stood in for it.
+  func lastAnswer(to call: Call) -> Answered? {
+    wire.withLock { $0.answered[call] }
   }
 
   // Every admission of intent `n` of `replica` faults (§6.6).
@@ -378,9 +420,15 @@ public final class SimNetwork: SyncTransport {
     wire.withLock { $0.fates.removeValue(forKey: call) } ?? .deliver
   }
 
+  // An answer the server made to a call of `call`'s kind, kept as whom it was served as and the scopes it answers.
+  func served(_ call: Call, _ answered: (status: Int, body: JSON), scopes: Set<ScopeRef>? = nil) -> (status: Int, body: JSON) {
+    wire.withLock { $0.answered[call] = Answered(servedAs: answered.body["as"] ?? .null, scopes: scopes) }
+    return answered
+  }
+
   // One push served, with the server's faults armed for it and those of its poisoned intents; then every socket gets
   // what it published.
-  func serve(_ request: PushRequest, as token: SessionToken) -> (status: Int, body: JSON) {
+  func serve(_ request: PushRequest, as token: SessionToken?) -> (status: Int, body: JSON) {
     let (faults, watcher) = wire.withLock { wire in
       var faults = wire.pushFaults
       wire.pushFaults = PushFaults()
@@ -399,18 +447,20 @@ public final class SimNetwork: SyncTransport {
     switch request {
     case .sub(let scopes): server.subscribe(socket, to: scopes)
     case .unsub(let scopes): server.unsubscribe(socket, from: scopes)
-    case .ping: wire.withLock { $0.sockets.first { $0.socket == socket } }?.connection.deliver(.pong)
+    case .ping where server.isOpen(socket): wire.withLock { $0.sockets.first { $0.socket == socket } }?.connection.deliver(.pong)
+    case .ping: break
     }
     deliverFrames()
   }
 
   // Each socket's frames, delivered under the network's lock, so two calls answered at once keep every socket's frames
-  // in the order the server published them.
+  // in the order the server published them; a socket the server closed ends, once the frames it sent are received.
   func deliverFrames() {
     wire.withLock { wire in
       for (socket, connection) in wire.sockets {
         for frame in server.frames(for: socket) { try? connection.deliver(frame) }
       }
+      for (socket, connection) in wire.sockets where !server.isOpen(socket) { connection.end() }
     }
   }
 }

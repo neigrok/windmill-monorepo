@@ -76,7 +76,7 @@ struct BatchWriterTests {
     #expect(try before.read { try $0.referencing(replica, in: Self.scope, type: "lap", field: "runId", target: "run00001") } == [])
 
     var file = try Corpus.registryFile("probe").asObject()
-    file["version"] = 2
+    file["version"] = JSON(Self.probe.version + 1)
     var types = try file.member("types").asArray()
     let index = try #require(types.firstIndex { $0["type"] == "card" })
     var cardType = try types[index].asObject()

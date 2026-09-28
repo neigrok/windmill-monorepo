@@ -535,13 +535,6 @@ public struct RequestKey: Sendable, Hashable, Comparable {
   }
 }
 
-extension String {
-  // Accounts and ids are the same only byte for byte, never by Unicode canonical equivalence (§9.1, INV-7).
-  public func isSameID(as other: String?) -> Bool {
-    other.map { utf8.elementsEqual($0.utf8) } ?? false
-  }
-}
-
 // A `sync_results` row: the intent's digest, its final result once there is one, and the faults counted so far.
 public struct StoredResult: Sendable, Hashable {
   public var digest: String

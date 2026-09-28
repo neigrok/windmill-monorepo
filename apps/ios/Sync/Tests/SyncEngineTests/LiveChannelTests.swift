@@ -77,7 +77,7 @@ struct LiveChannelTests {
     let (rig, socket) = try await Self.open()
     try rig.engine.subscribe(Self.tree)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    await rig.engine.puller.enqueue(.gone(Self.tree), for: try rig.meta().replica)
+    await rig.engine.puller.enqueue(.gone(Self.tree, servedAs: "A"), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .gone))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .unsub([Self.tree])])
@@ -93,7 +93,7 @@ struct LiveChannelTests {
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
     #expect(rig.transport.pulls == [PullRequest(scopes: [PullRequest.Pulled(scope: Rig.scope, cursor: nil)])])
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    await rig.engine.puller.enqueue(.notFound(Self.tree), for: try rig.meta().replica)
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
     #expect(try rig.active().known == [:])
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
@@ -157,11 +157,43 @@ struct LiveChannelTests {
     let (rig, socket) = try await Self.open()
     try socket.deliver(["op": "presence", "scope": "self/probe", "who": "B"])
     socket.deliver(.pong)
-    socket.deliver(.notFound(Self.tree))
+    socket.deliver(.notFound(Self.tree, servedAs: "A"))
     for _ in 0..<3 { #expect(await rig.engine.live.receiveNext()) }
     #expect(await rig.engine.puller.step() == .frame(Self.tree, nil))
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+  }
+
+  // §9.1, §7.5: a change, gone or not-found frame served as anyone but the socket's account (anonymous, or another
+  // account) closes the socket at once and pauses the replica: nothing it sent is handed to the puller, and no socket
+  // opens again until the account re-authenticates.
+  @Test(arguments: [nil, "B"] as [String?])
+  func aFrameServedAsAnotherPrincipalClosesTheSocketAndPauses(_ served: String?) async throws {
+    let (rig, socket) = try await Self.open()
+    socket.deliver(.notFound(Rig.scope, servedAs: served))
+    socket.deliver(.notFound(Self.tree, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(socket.isClosed)
+    #expect(await rig.engine.live.receiveNext() == false)
+    #expect(try rig.meta().authPaused)
+    #expect(await rig.engine.puller.step() == .paused)
+    #expect(try rig.active().known == [:])
+    #expect(await rig.engine.live.step() == .paused)
+    #expect(rig.transport.calls.filter { if case .openLive = $0 { true } else { false } }.count == 1)
+  }
+
+  // A frame served as another to a socket opened under a token the account has replaced since pauses nothing: the socket
+  // closes, and the next opens under the new token.
+  @Test func aFrameServedAsAnotherToAReplacedTokenReopensUnderTheNewOne() async throws {
+    let (rig, socket) = try await Self.open()
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    socket.deliver(.gone(Rig.scope, servedAs: "B"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(socket.isClosed)
+    #expect(try !rig.meta().authPaused)
+    rig.transport.willOpenLive(FakeLiveConnection())
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(rig.transport.calls.last == .openLive(token: SessionToken("token-2")))
   }
 
   // MARK: The heartbeat

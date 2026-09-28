@@ -82,16 +82,15 @@ check "$(curl -s -o /dev/null -w '%{http_code}' -H 'Sync-Schema: 2' -H 'Sync-Sch
 
 echo "a credential sent that does not resolve is 401, never anonymous"
 UNAUTH='{"as":null,"error":"unauthenticated"}'
-answered(){ python3 -c "import sys,json;d=json.load(sys.stdin);print(json.dumps({k: d.get(k) for k in ('as','error')}, separators=(',',':')))" 2>/dev/null; }
+answered(){ # a curl call → its status, then the as and error of its body
+  "$@" -w '\n%{http_code}' | python3 -c 'import sys,json;body,code=sys.stdin.read().rsplit("\n",1);d=json.loads(body);print(code, json.dumps({k: d.get(k) for k in ("as","error")}, separators=(",",":")))' 2>/dev/null
+}
 PULL_SELF='{"scopes":[{"scope":"self/probe","cursor":null}]}'
 EMPTY_PUSH="{\"replica\":\"$REPLICA\",\"account\":\"$ACCOUNT\",\"ackThrough\":0,\"intents\":[]}"
 while IFS='|' read -r label sent; do
-  check "$(curl -s -H 'Sync-Schema: 2' -H "$sent" -w ' %{http_code}' "$BASE/v1/sync/hello" | { read -r body code; echo "$code $(answered <<<"$body")"; })" "401 $UNAUTH" \
-    "hello, $label"
-  check "$(bare -H "$sent" -w ' %{http_code}' -X POST "$BASE/v1/sync/pull" -d "$PULL_SELF" | { read -r body code; echo "$code $(answered <<<"$body")"; })" "401 $UNAUTH" \
-    "pull, $label"
-  check "$(bare -H "$sent" -w ' %{http_code}' -X POST "$BASE/v1/sync/push" -d "$EMPTY_PUSH" | { read -r body code; echo "$code $(answered <<<"$body")"; })" "401 $UNAUTH" \
-    "push, $label"
+  check "$(answered curl -s -H 'Sync-Schema: 2' -H "$sent" "$BASE/v1/sync/hello")" "401 $UNAUTH" "hello, $label"
+  check "$(answered bare -H "$sent" -X POST "$BASE/v1/sync/pull" -d "$PULL_SELF")" "401 $UNAUTH" "pull, $label"
+  check "$(answered bare -H "$sent" -X POST "$BASE/v1/sync/push" -d "$EMPTY_PUSH")" "401 $UNAUTH" "push, $label"
 done <<CREDENTIALS
 a signed-out session's cookie|Cookie: wm_session=$REVOKED
 an unknown cookie|Cookie: wm_session=nope
@@ -293,12 +292,20 @@ check "$(field "['account']" < "$BODY") $([ "$SECOND_TOKEN" != "$DEV_TOKEN" ] &&
 check "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/dev/sign-in" -d '{"email":"not an address"}') $(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/dev/sign-in")" \
   "400 400" "a body without a valid email is 400"
 bearer "$DEV_TOKEN" "$BASE/v1/sync/hello" > "$BODY"
-check "$(field "['holdsRecords']" < "$BODY")" '{"probe":false}' "a Bearer hello is signed in, and a fresh account holds no probe records"
+check "$(field "['as']" < "$BODY") $(field "['holdsRecords']" < "$BODY")" "$DEV_ACCOUNT {\"probe\":false}" \
+  "a Bearer hello is served as its account, and a fresh account holds no probe records"
 OLD_EPOCH="$(field "['epoch']" < "$BODY")"
-bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/push" -d "{\"replica\":\"$DEV_REPLICA\",\"ackThrough\":0,\"intents\":[$(card 1 cardDev00001 Bearer)]}" > "$BODY"
-check "$(field "['results']" < "$BODY")" '[{"n":1,"s":"ok","seq":1}]' "a Bearer push of a card is admitted"
-bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
-check "$(field "['pages'][0]['total']" < "$BODY")" "1" "a Bearer pull boots the account's one card"
+bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/push" -d "{\"replica\":\"$DEV_REPLICA\",\"account\":\"$DEV_ACCOUNT\",\"ackThrough\":0,\"intents\":[$(card 1 cardDev00001 Bearer)]}" > "$BODY"
+check "$(field "['as']" < "$BODY") $(field "['results']" < "$BODY")" "$DEV_ACCOUNT [{\"n\":1,\"s\":\"ok\",\"seq\":1}]" \
+  "a Bearer push of a card, naming its account, is admitted as it"
+BOUND="$(psql "$DB" -Atc "select account, last_n from sync_replicas where replica = '$REPLICA'")"
+STRANGER="{\"replica\":\"$REPLICA\",\"account\":\"$ACCOUNT\",\"ackThrough\":0,\"intents\":[$(card 9 cardDev00009 Stranger)]}"
+check "$(answered bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/push" -d "$STRANGER")" "409 {\"as\":\"$DEV_ACCOUNT\",\"error\":\"account-mismatch\"}" \
+  "a replica of another account pushing under this token, naming its own account, is account-mismatch as the token's"
+check "$(psql "$DB" -Atc "select account, last_n from sync_replicas where replica = '$REPLICA'")" "$BOUND" "and its binding and last n stand"
+bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d "$PULL_SELF" > "$BODY"
+check "$(field "['as']" < "$BODY") $(field "['pages'][0]['total']" < "$BODY")" "$DEV_ACCOUNT 1" \
+  "a Bearer pull boots the account's one card, as it: the stranger's card landed nowhere"
 OLD_CURSOR="$(field "['pages'][0]['cursor']" < "$BODY")"
 
 curl -s -X POST "$BASE/v1/dev/sync/epoch" > "$BODY"
@@ -307,42 +314,45 @@ check "$([ -n "$NEW_EPOCH" ] && [ "$NEW_EPOCH" != "$OLD_EPOCH" ] && echo regener
 check "$NEW_EPOCH" "$(psql "$DB" -Atc "select epoch from sync_meta")" "and it is sync_meta's"
 check "$(bearer "$DEV_TOKEN" "$BASE/v1/sync/hello" | field "['epoch']")" "$NEW_EPOCH" "the next hello carries the new epoch"
 bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d "{\"scopes\":[{\"scope\":\"self/probe\",\"cursor\":\"$OLD_CURSOR\"}]}" > "$BODY"
-check "$(field "['epoch']" < "$BODY") $(field "['pages']" < "$BODY")" "$NEW_EPOCH [{\"kind\":\"reset\",\"scope\":\"self/probe\"}]" \
-  "the next pull carries it, and a cursor of the old epoch answers a reset page"
+check "$(field "['epoch']" < "$BODY") $(field "['as']" < "$BODY") $(field "['pages']" < "$BODY")" \
+  "$NEW_EPOCH $DEV_ACCOUNT [{\"kind\":\"reset\",\"scope\":\"self/probe\"}]" "the next pull carries it, and a cursor of the old epoch answers a reset page"
 
-DEV_LIVE="$(python3 - "$PORT" "$DEV_TOKEN" "$DEV_REPLICA" "$(card 2 cardDev00002 Live)" <<'PY'
+DEV_LIVE="$(python3 - "$PORT" "$DEV_TOKEN" "$DEV_REPLICA" "$DEV_ACCOUNT" "$(card 2 cardDev00002 Live)" <<'PY'
 import asyncio, json, sys, urllib.request
 import websockets
-port, token, replica, intent = sys.argv[1:]
+port, token, replica, account, intent = sys.argv[1:]
 bearer = {"Authorization": f"Bearer {token}"}
 
 def push():
-    body = {"replica": replica, "ackThrough": 1, "intents": [json.loads(intent)]}
+    body = {"replica": replica, "account": account, "ackThrough": 1, "intents": [json.loads(intent)]}
     request = urllib.request.Request(f"http://localhost:{port}/v1/sync/push", data=json.dumps(body).encode(), method="POST",
-                                     headers={**bearer, "Sync-Schema": "1", "content-type": "application/json"})
+                                     headers={**bearer, "Sync-Schema": "2", "content-type": "application/json"})
     return json.load(urllib.request.urlopen(request))
 
 async def main():
-    async with websockets.connect(f"ws://localhost:{port}/v1/sync/live?schema=1", additional_headers=bearer) as ws:
+    async with websockets.connect(f"ws://localhost:{port}/v1/sync/live?schema=2", additional_headers=bearer) as ws:
         # A readable sub answers nothing: the not-found for the absent tree after it proves the strand ran both.
         await ws.send(json.dumps({"op": "sub", "scopes": ["self/probe", "tree/b_ffffffff"]}))
-        print(json.loads(await asyncio.wait_for(ws.recv(), 5))["op"])
+        found = json.loads(await asyncio.wait_for(ws.recv(), 5))
+        print(found["op"], found["as"] == account)
         seq = push()["results"][0]["seq"]
         change = json.loads(await asyncio.wait_for(ws.recv(), 5))
-        print(change["op"], change["scope"], change["seq"] == seq, change["epoch"], [row["id"] for row in change.get("rows", [])])
+        print(change["op"], change["scope"], change["seq"] == seq, change["as"] == account, change["epoch"], [row["id"] for row in change.get("rows", [])])
 
 asyncio.run(main())
 PY
 )"
-check "$DEV_LIVE" "not-found
-change self/probe True $NEW_EPOCH ['cardDev00002']" "a Bearer upgrade subscribes self/probe and a push reaches it as a change frame, at the new epoch"
+check "$DEV_LIVE" "not-found True
+change self/probe True True $NEW_EPOCH ['cardDev00002']" \
+  "a Bearer upgrade subscribes self/probe, and a push reaches it as a change frame at the new epoch, each frame as the token's account"
 
 check "$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $DEV_TOKEN" "$BASE/v1/auth/logout")" "204" "logout takes the Bearer token"
-EMPTY_PUSH="{\"replica\":\"$DEV_REPLICA\",\"ackThrough\":2,\"intents\":[]}"
-check "$(bearer "$DEV_TOKEN" -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/sync/push" -d "$EMPTY_PUSH")" "401" "and the next push with it is 401"
-bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
-check "$(field "['pages']" < "$BODY")" '[{"kind":"not-found","scope":"self/probe"}]' "a pull with it reads as signed out: self/probe is not-found"
-check "$(bearer "$SECOND_TOKEN" "$BASE/v1/sync/hello" | field "['holdsRecords']")" '{"probe":true}' "the account's other session still holds"
+EMPTY_PUSH="{\"replica\":\"$DEV_REPLICA\",\"account\":\"$DEV_ACCOUNT\",\"ackThrough\":2,\"intents\":[]}"
+check "$(answered bearer "$DEV_TOKEN" "$BASE/v1/sync/hello")" "401 $UNAUTH" "and a hello with it is 401, as null"
+check "$(answered bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/push" -d "$EMPTY_PUSH")" "401 $UNAUTH" "a push with it is 401, as null"
+check "$(answered bearer "$DEV_TOKEN" -X POST "$BASE/v1/sync/pull" -d "$PULL_SELF")" "401 $UNAUTH" "a pull with it is 401, as null, never an anonymous not-found page"
+bearer "$SECOND_TOKEN" "$BASE/v1/sync/hello" > "$BODY"
+check "$(field "['as']" < "$BODY") $(field "['holdsRecords']" < "$BODY")" "$DEV_ACCOUNT {\"probe\":true}" "the account's other session still holds"
 
 echo "a fact saved whole"
 FACTS="$(python3 - "$NOW" <<'PY'

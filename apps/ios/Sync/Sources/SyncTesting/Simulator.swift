@@ -12,12 +12,14 @@ import SyncStore
 import Synchronization
 
 // §11.3 the replay simulator (design §9.3): phones, each a `SteppedEngine` on a clock of its own, against one
-// `ModelServer` over a network that drops, loses, duplicates, delays and reorders, driven by a seeded schedule of what
-// people, phones and servers do: gestures of every kind, holds, Undo and retire, leaving the app, process death and
-// reboots, sign-in and sign-out under each lineage outcome, revoked sessions, going offline, clock skew and jumps,
-// poison, scripted refusals, epoch changes and restores, restored and cloned stores. Then every fault heals, every phone
-// signs in and drains, and the checks run. The server's clock is true time; each phone's is its own. A run is a pure
-// function of its seed, and every violation names what it saw.
+// `ModelServer` over a network that drops, loses, duplicates, delays and reorders, and loses a request's credential on
+// the way, driven by a seeded schedule of what people, phones and servers do: gestures of every kind, holds, Undo and
+// retire, leaving the app, process death and reboots, sign-in and sign-out under each lineage outcome, revoked sessions
+// and sessions of another account held as the phone's own, going offline, clock skew and jumps, poison, scripted
+// refusals, epoch changes and restores, restored and cloned stores. At every answer and frame served as anyone but the
+// replica's account, nothing the replica pulled may change. Then every fault heals, every phone signs in and drains, and
+// the checks run. The server's clock is true time; each phone's is its own. A run is a pure function of its seed, and
+// every violation names what it saw.
 package final class Simulator {
   package struct Report: Sendable {
     package let seed: UInt64
@@ -60,7 +62,7 @@ package final class Simulator {
     case corruptDigest
     case signIn(LineageAnswer?)
     case signOut(SignOutChoice?)
-    case discardDormant, revokeSession, reauthenticate
+    case discardDormant, revokeSession, foreignSession, reauthenticate
     case online(Bool)
     case poison
     case refuse(RefusalCode)
@@ -82,6 +84,7 @@ package final class Simulator {
       let ended: [EngineEvent]
       let endedUnseen: Set<String>
       let discardedNotices: Set<String>
+      let skewed: [String: Set<String>]
     }
 
     let name: String
@@ -243,7 +246,8 @@ package final class Simulator {
     case ..<752: .signIn(rng.chance(0.2) ? nil : rng.chance(0.8) ? .add : .discard)
     case ..<762: .signOut(rng.chance(0.2) ? nil : rng.chance(0.8) ? .keep : .discard)
     case ..<767: .discardDormant
-    case ..<774: .revokeSession
+    case ..<771: .revokeSession
+    case ..<775: .foreignSession
     case ..<780: .reauthenticate
     case ..<795: .online(rng.chance(0.5))
     case ..<802: .poison
@@ -265,7 +269,8 @@ package final class Simulator {
   // What the wire does to a push: mostly it arrives.
   func pushFate() -> SimNetwork.Fate {
     switch rng.below(100) {
-    case ..<72: .deliver
+    case ..<70: .deliver
+    case ..<72: .loseCredential
     case ..<78: .drop
     case ..<84: .loseReply
     case ..<88: .duplicate
@@ -276,9 +281,27 @@ package final class Simulator {
     }
   }
 
+  // What the wire does to a socket's upgrade, and to the hello a launch sends.
+  func liveFate() -> SimNetwork.Fate {
+    switch rng.below(100) {
+    case ..<10: .drop
+    case ..<20: .loseCredential
+    default: .deliver
+    }
+  }
+
+  func helloFate() -> SimNetwork.Fate {
+    switch rng.below(100) {
+    case ..<10: .drop
+    case ..<14: .loseCredential
+    default: .deliver
+    }
+  }
+
   func pullFate() -> SimNetwork.Fate {
     switch rng.below(100) {
-    case ..<80: .deliver
+    case ..<77: .deliver
+    case ..<80: .loseCredential
     case ..<87: .drop
     case ..<94: .loseReply
     case ..<97: .duplicate
@@ -402,6 +425,7 @@ package final class Simulator {
         server.revoke(token)
         count("session revoked")
       }
+    case .foreignSession: holdForeignSession(on: phone)
     case .reauthenticate: reauthenticate(phone)
     case .online(let online):
       phone.device.connectivity.set(online: online)
@@ -491,7 +515,9 @@ package final class Simulator {
   func send(on phone: Phone, _ fate: SimNetwork.Fate, _ faults: PushFaults) async {
     network.arm(fate, for: .push)
     network.arm(faults)
+    let before = activeReplica(on: phone)
     let step = await phone.engine.sender.step()
+    checkServed(network.lastAnswer(to: .push), "push", on: phone, from: before, to: activeReplica(on: phone))
     if !network.disarm(), fate != .deliver { count("wire push \(fate)") }
     count("sender \(Self.caseName(step))")
   }
@@ -499,24 +525,74 @@ package final class Simulator {
   func pull(on phone: Phone, _ fate: SimNetwork.Fate) async {
     network.arm(fate, for: .pull)
     if rng.chance(0.7) { phone.engine.puller.wants.all() }
+    let before = activeReplica(on: phone)
     let step = await phone.engine.puller.step()
+    checkServed(network.lastAnswer(to: .pull), "pull", on: phone, from: before, to: activeReplica(on: phone))
     if !network.disarm(), fate != .deliver { count("wire pull \(fate)") }
     count("puller \(Self.caseName(step))")
   }
 
+  // The socket opens or keeps up; one opened with its credential lost is served as anonymous.
   func follow(on phone: Phone) async {
-    if faults, rng.chance(0.1) { network.arm(.drop, for: .live) }
+    let fate = faults ? liveFate() : .deliver
+    network.arm(fate, for: .live)
     let step = await phone.engine.live.step()
-    network.disarm()
+    if !network.disarm(), fate != .deliver { count("wire live \(fate)") }
     count("live \(Self.caseName(step))")
   }
 
-  // The socket's next frame reaches the engine, and the puller applies it.
+  // The socket's next frame reaches the engine, and the puller applies it. A frame the socket does not hand on leaves the
+  // puller's step to pull, which the check of the frame leaves out.
   func receiveFrame(on phone: Phone) async {
     let live = phone.engine.live
     guard let connection = await live.connection as? FakeLiveConnection, connection.canReceive else { return }
+    let frame = connection.nextFrame
+    let before = activeReplica(on: phone)
     guard await live.receiveNext() else { return }
-    count("frame \(Self.caseName(await phone.engine.puller.step()))")
+    let received = activeReplica(on: phone)
+    let step = await phone.engine.puller.step()
+    if let frame, frame.scope != nil {
+      let after = if case .frame = step { activeReplica(on: phone) } else { received }
+      let answered = SimNetwork.Answered(servedAs: frame.servedAs.map(JSON.string) ?? .null, scopes: nil)
+      checkServed(answered, "frame", on: phone, from: before, to: after)
+    }
+    count("frame \(Self.caseName(step))")
+  }
+
+  func activeReplica(on phone: Phone) -> LoadedReplica? {
+    try? phone.device.store.read { try $0.device(rows: true).activeReplica }
+  }
+
+  // What a replica pulled: its id, and the confirmed and staged rows, spent ids, cursors and known ends of `scopes`, or of
+  // every scope.
+  struct Pulled: Equatable {
+    let replica: [UInt8]
+    let confirmed: [ScopeRef: Rows]
+    let staging: [ScopeRef: Staging]
+    let spent: [ScopeRef: [RecordKey: SpentID]]
+    let cursors: [ScopeRef: CursorRecord]
+    let known: [ScopeRef: KnownKind]
+
+    init(_ replica: LoadedReplica, of scopes: Set<ScopeRef>?) {
+      let kept = { (scope: ScopeRef) in scopes?.contains(scope) ?? true }
+      self.replica = Array(replica.id.utf8)
+      confirmed = replica.confirmed.filter { kept($0.key) }
+      staging = replica.staging.filter { kept($0.key) }
+      spent = replica.spent.filter { kept($0.key) }
+      cursors = replica.cursors.filter { kept($0.key) }
+      known = replica.known.filter { kept($0.key) }
+    }
+  }
+
+  // §11.3 at every answer and frame: one served as anyone but the replica's account changes nothing the replica pulled
+  // (§9.1), of the scopes a pull asked, or of every scope; the `anon` replica takes whatever it is served. A pull's round
+  // forgets the scopes it no longer follows before it asks, which the check leaves out.
+  func checkServed(_ answered: SimNetwork.Answered?, _ what: String, on phone: Phone, from before: LoadedReplica?, to after: LoadedReplica?) {
+    guard let answered, let before, let account = before.meta.account else { return }
+    guard (try? answered.servedAs.asString()).map({ account.isSameID(as: $0) }) != true else { return }
+    count("\(what) served as \(answered.servedAs.isNull ? "anonymous" : "another account")")
+    guard after.map({ Pulled($0, of: answered.scopes) }) != Pulled(before, of: answered.scopes) else { return }
+    violations.append("\(phone.name): a \(what) served as \(answered.servedAs.jcsText) changed what \(account)'s replica pulled")
   }
 
   func frameFault(on phone: Phone) async {
@@ -572,7 +648,8 @@ package final class Simulator {
   // visits them.
   func relaunch(_ phone: Phone, rebooting reboot: Bool) async {
     if reboot { phone.device.clock.reboot() }
-    if faults, rng.chance(0.1) { network.arm(.drop, for: .hello) }
+    let fate = faults ? helloFate() : .deliver
+    network.arm(fate, for: .hello)
     do {
       try await phone.device.relaunch()
       phone.opened = []
@@ -580,7 +657,7 @@ package final class Simulator {
     } catch {
       count("relaunch killed")
     }
-    network.disarm()
+    if !network.disarm(), fate != .deliver { count("wire hello \(fate)") }
   }
 
   // A sign-in as the phone's account with a session of its own: complete at once, or the person answers the signed-out
@@ -640,6 +717,16 @@ package final class Simulator {
     for notice in gone.sorted() { violations.append("INV-3 \(phone.name): \(keeping) lost \(notice)") }
   }
 
+  // Another account's session held as the phone's own (a cookie of another account, §9.1): each request is served as that
+  // account, so a push is refused `account-mismatch` and every other answer and frame is served as another principal,
+  // which pauses the phone and changes nothing it pulled. Re-authentication brings its own session back.
+  func holdForeignSession(on phone: Phone) {
+    guard let meta = try? phone.active().meta, meta.state == .bound,
+          let other = phones.first(where: { !$0.account.isSameID(as: phone.account) }) else { return }
+    phone.device.tokens.save(server.issueToken(for: other.account), for: phone.account)
+    count("session of another account")
+  }
+
   // A new session for a bound phone, which clears a pause a 401 set (§8.2).
   func reauthenticate(_ phone: Phone) {
     guard let meta = try? phone.active().meta, meta.state == .bound else { return }
@@ -673,7 +760,8 @@ package final class Simulator {
   func backUp(_ phone: Phone) {
     guard let store = try? phone.device.store.read({ try $0.device(rows: true) }) else { return }
     phone.backup = Phone.Backup(store: store, committed: phone.committed, contents: phone.contents.all, ended: phone.ended,
-                                endedUnseen: phone.endedUnseen, discardedNotices: phone.discardedNotices)
+                                endedUnseen: phone.endedUnseen, discardedNotices: phone.discardedNotices,
+                                skewed: pushes.skewed(of: phone.name))
   }
 
   // The phone restored from its backup: what the person did since is gone from it, and from what it is held to.
@@ -689,6 +777,7 @@ package final class Simulator {
     phone.ended = backup.ended
     phone.endedUnseen = backup.endedUnseen
     phone.discardedNotices = backup.discardedNotices
+    pushes.restoreSkewed(backup.skewed, of: phone.name)
     phone.opened = []
     count(kept ? "store rolled back in place" : "store restored from a backup")
   }
@@ -814,9 +903,10 @@ package final class Simulator {
   // MARK: - Quiescence
 
   // Every fault heals: the wire, the network path, sessions, pending sign-ins; every phone launches anew, which releases
-  // its holds, and signs in as its account, adding what it did signed out. Then, round after round, time passes beyond
-  // any pause a server asked for, every phone opens the trees of its boards, and every phone sends and pulls, until
-  // every outbox of every phone is empty and nothing moves.
+  // its holds, and signs in as its account, adding what it did signed out. Once the phones have drained, before any tree
+  // is opened again, no phone may know an alive tree of its account not found (§7.9). Then, round after round, time
+  // passes beyond any pause a server asked for, every phone opens the trees of its boards, and every phone sends and
+  // pulls, until every outbox of every phone is empty and nothing moves.
   package func quiesce() async {
     faults = false
     network.heal()
@@ -831,6 +921,10 @@ package final class Simulator {
       await signIn(phone, answering: .add)
       reauthenticate(phone)
       settleAccounts()
+    }
+    if await fleet.settle() {
+      settleAccounts()
+      for phone in phones { violations += staleNotFound(on: phone) }
     }
     for round in 0..<40 {
       advance(ms: Constants.backoffCeilingMs + 1_000)
@@ -859,6 +953,18 @@ package final class Simulator {
     let own = boards.compactMap(\.id.string).flatMap { [ScopeRef.tree($0), .overlay($0)] }
     for scope in own + phone.foreignTrees.map(ScopeRef.tree) where (try? phone.engine.subscribe(scope)) == .subscribed {
       if !phone.opened.contains(scope) { phone.opened.append(scope) }
+    }
+  }
+
+  // §7.9 once the healed phones have drained, before the person opens any tree again, since a subscribe clears a
+  // not-found record itself: no bound replica knows not found a scope of an alive tree its account owns, the board's
+  // alive row having cleared any such record as it arrived.
+  func staleNotFound(on phone: Phone) -> [String] {
+    guard let active = try? phone.active(), active.meta.state == .bound, let account = active.meta.account else { return [] }
+    return active.known.filter { $0.value == .notFound }.keys.sorted().compactMap { scope in
+      guard let tree = scope.tree, let governing = server.state.scopes[ScopeKey(.tree(tree))], governing.state == .alive,
+            governing.owner.isSameID(as: account) else { return nil }
+      return "\(phone.name) knows \(scope) not found, a scope of \(account)'s alive tree"
     }
   }
 
@@ -924,9 +1030,9 @@ package final class Simulator {
   }
 
   // A phone after quiescence: no entry left in any replica; no dormant replica of its account; every entry it committed
-  // ended once, a refused one in a notice unless its person discarded it (INV-3); no digest mismatch (INV-15); no rows of
-  // a scope its account may not read (INV-7); and each scope it follows holds the server's rows, with the server's
-  // digest (INV-6).
+  // ended once, a refused one in a notice unless its person discarded it (INV-3); no digest mismatch (INV-15); every
+  // replica it holds bound on the server to its own account, and no rows of a scope its account may not read (INV-7);
+  // and each scope it follows holds the server's rows, with the server's digest (INV-6).
   func check(_ phone: Phone) -> [String] {
     var found: [String] = []
     guard let device = try? phone.device.store.read({ try $0.device(rows: true) }) else { return ["\(phone.name): its store cannot be read"] }
@@ -942,6 +1048,12 @@ package final class Simulator {
       found.append("\(phone.name): a dormant replica of \(phone.account) outlived its sign-in")
     }
     found += checkLedger(phone, notices: Dictionary(device.replicas.flatMap { $0.notices.map { ($0.id, $0) } }) { first, _ in first })
+    for replica in device.replicas {
+      guard let binding = server.state.replicas[replica.id], let account = replica.meta.account else { continue }
+      if !binding.account.isSameID(as: account) {
+        found.append("INV-7 \(phone.name): its replica \(replica.id) of \(account) is bound to \(binding.account) on the server")
+      }
+    }
     guard active.meta.state == .bound, let account = active.meta.account else { return found }
     for scope in active.confirmed.keys.sorted() where active.confirmed[scope]?.all.isEmpty == false {
       guard let key = ScopeKey(scope, account: account), server.state.canRead(key, as: account, registry: registry) else {
@@ -1085,7 +1197,8 @@ final class ContentLedger: Sendable {
 
 // What the server answered each push, as a simulation checks it: the results by code, the HTTP failures, the retries, and
 // every entry refused `clock-skew`, by each (replica, n) it was refused under, which INV-14 allows once. An entry is found
-// by its `n` in the store of the device whose replica sent it, which holds it `sent` while its push is served.
+// by its `n` among the `sent` entries of the device whose replica sent it, which holds it `sent` while its push is served;
+// an acked entry keeps the `n` it had before its replica was renamed, which a later entry may take again.
 final class PushLedger: Sendable {
   struct State {
     var tally: [String: Int] = [:]
@@ -1099,6 +1212,19 @@ final class PushLedger: Sendable {
 
   // Every record a joining write map gave another id (§7.7): the id a client wrote, and the id the server joined it to.
   var joins: [RecordKey: RecordKey] { state.withLock(\.joins) }
+
+  // The clock-skew refusals of `device`'s entries: what a backup of its store knows.
+  func skewed(of device: String) -> [String: Set<String>] {
+    state.withLock { $0.skewed.filter { $0.key.hasPrefix("\(device) ") } }
+  }
+
+  // A store restored from a backup knows only the refusals its backup did, so each entry it holds may be refused once
+  // more: the ledger keeps those of `device`'s entries alone.
+  func restoreSkewed(_ skewed: [String: Set<String>], of device: String) {
+    state.withLock { state in
+      state.skewed = state.skewed.filter { !$0.key.hasPrefix("\(device) ") }.merging(skewed) { _, restored in restored }
+    }
+  }
 
   var refusedSkewTwice: [String] {
     state.withLock { $0.skewed.filter { $0.value.count > 1 }.keys.sorted() }
@@ -1124,7 +1250,7 @@ final class PushLedger: Sendable {
       counts.append(result["s"] == "ok" ? (joining ? "ok with a joining write map" : "ok") : "refused \(code)")
       guard code == "clock-skew", let n = try? result["n"]?.asInteger() else { continue }
       for device in devices {
-        let sent = try? device.store.read { try $0.replica(served.request.replica)?.outbox.first { $0.n == n } }
+        let sent = try? device.store.read { try $0.replica(served.request.replica)?.outbox.first { $0.n == n && $0.state == .sent } }
         if let entry = sent { skewed.append(("\(device.name) \(entry.localId)", "\(served.request.replica) \(n)")) }
       }
     }

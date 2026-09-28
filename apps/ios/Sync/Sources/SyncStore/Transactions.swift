@@ -112,30 +112,36 @@ extension Store {
     }
   }
 
-  // One step of a pull answer, for the replica the request was built in: a page's outcome, whether its scope is pulled
-  // again, and the replica's id after the step, which an epoch change re-identifies. A replica no longer active drops
-  // the step and answers nil; a page of a scope that left `subscribed` while the answer was on its way is stale.
-  public func apply(_ step: PullStep, replica id: String, subscribed: Set<ScopeRef>, instance: inout Instance, timing: Timing,
-                    identities: IdentitySource) throws -> Written<(outcome: PageOutcome?, pullsAgain: Bool, replica: String)?> {
+  // One step of a pull answer, for the replica the request was built in and the account it was built as: a page's
+  // outcome, the scopes it wants pulled next, and the replica's id after the step, which an epoch change re-identifies. A
+  // replica no longer active, or no longer of that account (a sign-in binds the `anon` replica in place), drops the step
+  // and answers nil, since the answer says nothing of the replica as it now stands; a page of a scope that left
+  // `subscribed` while the answer was on its way is stale.
+  public func apply(_ step: PullStep, replica id: String, account: String?, subscribed: Set<ScopeRef>, instance: inout Instance,
+                    timing: Timing, identities: IdentitySource) throws -> Written<(outcome: PageOutcome?, wants: [ScopeRef], replica: String)?> {
     try write(step.transaction) { tx in
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8),
-            var replica = try tx.replica(id, reads: planners.pages.reads(of: step)) else { return Planned(nil, ReplicaBatch()) }
-      if case .page(let page, _) = step, !subscribed.contains(page.scope) { return Planned((.stale, false, id), ReplicaBatch()) }
+            var replica = try tx.replica(id, reads: planners.pages.reads(of: step)),
+            replica.meta.account.map({ Array($0.utf8) }) == account.map({ Array($0.utf8) })
+      else { return Planned(nil, ReplicaBatch()) }
+      if case .page(let page, _) = step, !subscribed.contains(page.scope) { return Planned((.stale, [], id), ReplicaBatch()) }
+      let before = replica
       let outcome = try planners.pages.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
-      guard case .page(let page, _) = step, let outcome else { return Planned((outcome, false, replica.id), replica.batch) }
-      return Planned((outcome, planners.pages.pullsAgain(after: page, outcome, in: replica), replica.id), replica.batch)
+      guard case .page(let page, _) = step, let outcome else { return Planned((outcome, [], replica.id), replica.batch) }
+      return Planned((outcome, planners.pages.wants(after: page, outcome, from: before, in: replica), replica.id), replica.batch)
     }
   }
 
-  // A live frame received for `replica`: its outcome, and whether its scope is pulled again. A replica no longer active,
-  // or a scope that left `subscribed`, drops the frame and answers nil.
+  // A live frame received for `replica`: its outcome, and the scopes it wants pulled next. A replica no longer active, or
+  // a scope that left `subscribed`, drops the frame and answers nil.
   public func apply(_ frame: LiveFrame, replica id: String, subscribed: Set<ScopeRef>,
-                    instance: Instance) throws -> Written<(outcome: FrameOutcome, pullsAgain: Bool)?> {
+                    instance: Instance) throws -> Written<(outcome: FrameOutcome, wants: [ScopeRef])?> {
     try write(.liveFrame) { tx in
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let scope = frame.scope, subscribed.contains(scope),
             var replica = try tx.replica(id, reads: planners.pages.reads(of: frame)) else { return Planned(nil, ReplicaBatch()) }
+      let before = replica
       let outcome = try planners.pages.apply(frame, to: &replica, instance: instance)
-      return Planned((outcome, planners.pages.pullsAgain(after: frame, outcome, in: replica)), replica.batch)
+      return Planned((outcome, planners.pages.wants(after: frame, outcome, from: before, in: replica)), replica.batch)
     }
   }
 

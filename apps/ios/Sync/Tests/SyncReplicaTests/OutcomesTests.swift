@@ -30,7 +30,7 @@ struct OutcomesTests {
     let planner = PushPlanner(registry: Self.probe, rewriteDeviceValue: rewrite)
     let request = try #require(try planner.number(&replica, at: 5000))
     let joined = try PushResponse(json: [
-      "serverTime": 5010, "epoch": "ep-1", "lastN": 1,
+      "serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1,
       "results": [["n": 1, "s": "ok", "seq": 3, "write": [["t": "run", "id": "runtheir", "from": "runmine1", "born": "4000:0:srv"]]]],
     ])
     var receiving = instance
@@ -53,7 +53,7 @@ struct OutcomesTests {
          {"op": "push", "deviceNow": 5000},
          {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "run", "id": "run00009", "f": {"label": "Mine"}}],
             "opts": {"gestureId": "label"}, "deviceNow": 5001},
-         {"op": "pushResponse", "actor": "r_bbbbbbbbbbbb", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "lastN": 1,
+         {"op": "pushResponse", "actor": "r_bbbbbbbbbbbb", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1,
             "results": [{"n": 1, "s": "ok", "seq": 1, "write": [{"t": "run", "id": "run00009", "born": "5008:0:srv", "f": {"label": "5008:0:srv"}}]}]}},
           "deviceNow": 5010},
          {"op": "push", "deviceNow": 5011}
@@ -61,7 +61,7 @@ struct OutcomesTests {
       """)
     let returns = try ClientSteps.run(input, registry: Self.probe) { PlannedDevice($0, registry: Self.probe, limits: $1) }
       .member("returns").asArray()
-    #expect(returns[4] == ["replica": "rp_1", "ackThrough": 1, "intents": [[
+    #expect(returns[4] == ["replica": "rp_1", "account": "A", "ackThrough": 1, "intents": [[
       "n": 2, "scope": "self/probe", "gestureId": "label",
       "d": [["t": "run", "id": "run00009", "born": "5008:0:srv", "f": ["label": ["Mine", "5010:0:r_bbbbbbbbbbbb"]]]],
     ]]])
@@ -86,10 +86,10 @@ struct OutcomesTests {
          {"op": "commit", "scope": "tree/b_00000001", "changes": [{"op": "put", "t": "link", "id": ["tagA", "tagX"], "f": {"strength": 2}}],
             "opts": {"guard": [{"t": "link", "id": ["tagA", "tagX"], "field": "strength"}]}, "deviceNow": 5001},
          {"op": "commit", "scope": "self/overlay/b_00000001", "changes": [{"op": "write", "t": "mark", "id": "tagA", "x": {"memo": "old!"}}], "deviceNow": 5002},
-         {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "lastN": 1,
+         {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1,
             "results": [{"n": 1, "s": "ok", "seq": 1, "write": [{"t": "tag", "id": "tagB", "from": "tagA"}]}]}}, "deviceNow": 5010},
          {"op": "push", "deviceNow": 5011},
-         {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5012, "epoch": "ep-1", "lastN": 3,
+         {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5012, "epoch": "ep-1", "as": "A", "lastN": 3,
             "results": [{"n": 2, "s": "ok", "seq": 2}, {"n": 3, "s": "refused", "code": "base-unknown"}]}}, "deviceNow": 5012},
          {"op": "push", "deviceNow": 5013}
        ]}
@@ -119,7 +119,7 @@ struct OutcomesTests {
         {"op": "create", "t": "card", "id": "card0010", "f": {"title": "Fourth"}}], "opts": {"atomic": true}, "deviceNow": 5001},
       {"op": "push", "deviceNow": 5002},
       {"op": "commit", "scope": "self/probe", "changes": [{"op": "update", "t": "card", "id": "card0010", "f": {"title": "Edited"}}], "deviceNow": 5003},
-      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "lastN": 3, "results": [
+      {"op": "pushResponse", "response": {"status": 200, "body": {"serverTime": 5004, "epoch": "ep-1", "as": "A", "lastN": 3, "results": [
         {"n": 1, "s": "refused", "code": "invalid"}, {"n": 2, "s": "refused", "code": "invalid"}, {"n": 3, "s": "refused", "code": "unknown-record"}]}},
        "deviceNow": 5004}
        ]}
@@ -199,7 +199,7 @@ struct OutcomesTests {
     var after = try meta.asObject()
     after["nextN"] = 4
     #expect(answer == [
-      "returns": [["replica": "rp_1", "ackThrough": 0, "intents": [intent]]],
+      "returns": [["replica": "rp_1", "account": "A", "ackThrough": 0, "intents": [intent]]],
       "device": ["active": "rp_1", "replicas": [[
         "meta": .object(after), "outbox": [.object(numbered)],
         "notices": [[
@@ -239,7 +239,7 @@ struct OutcomesTests {
       var epochs = 0
       var skews: [String: Int] = [:]
       let serve = { (server: inout ModelServer, request: PushRequest) throws -> Answer<PushResponse> in
-        let reply = server.push(request.json, account: "A", at: serverNow)
+        let reply = server.push(request.json, credential: .account("A"), at: serverNow)
         return reply.status == 200 ? .ok(try PushResponse(json: reply.body)) : .failed(try HTTPFailure(status: reply.status, body: reply.body))
       }
       let answer = { (replica: inout LoadedReplica, instance: inout Instance, request: PushRequest, answer: Answer<PushResponse>) throws in
@@ -300,7 +300,7 @@ struct OutcomesTests {
           guard let request = try pushes.number(&replica, at: deviceNow) else { continue }
           switch Int.random(in: 0..<4, using: &random) {
           case 0:
-            try answer(&replica, &instance, request, .failed(HTTPFailure(status: 409, error: "gap", serverTime: serverNow, epoch: server.state.epoch)))
+            try answer(&replica, &instance, request, .failed(HTTPFailure(status: 409, error: "gap", serverTime: serverNow, epoch: server.state.epoch, servedAs: "A")))
           case 1:
             _ = try serve(&server, request)
           case 2:

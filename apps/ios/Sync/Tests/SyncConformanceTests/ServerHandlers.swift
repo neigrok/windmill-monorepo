@@ -36,7 +36,7 @@ enum ServerHandlers {
     },
     "pull/hello.json": { input in
       var server = try makeServer(input)
-      return ["response": server.hello(account: try account(input), at: try input.member("serverTime").asInteger()).json]
+      return ["response": server.hello(credential: try credential(input), at: try input.member("serverTime").asInteger()).json]
     },
   ]
 
@@ -56,6 +56,13 @@ enum ServerHandlers {
   static func account(_ input: JSON) throws -> String? {
     let account = try input.member("account")
     return account.isNull ? nil : try account.asString()
+  }
+
+  // `account`, the principal a request is served as (null: it carries no credential), or `credential: 'unresolved'`, one
+  // sent that resolves to no account.
+  static func credential(_ input: JSON) throws -> Credential {
+    if try input["credential"]?.asString() == "unresolved" { return .unresolved }
+    return try account(input).map(Credential.account) ?? .absent
   }
 
   // `{type, delta: {life?, born?}, idState: {state, born?}}` answers the §4.1 op and the §4.3 verdict.
@@ -144,7 +151,7 @@ enum ServerHandlers {
       return (try fault.member("n").asInteger(), kind)
     } ?? []
     let reply = server.push(
-      try input.member("request"), account: try account(input), at: try input.member("serverNow").asInteger(),
+      try input.member("request"), credential: try credential(input), at: try input.member("serverNow").asInteger(),
       faults: PushFaults(budget: try input["budget"].map { Int(try $0.asInteger()) }, byN: Dictionary(uniqueKeysWithValues: faults)))
     return ["response": reply.json, "state": server.state.json, "frames": .array(reply.events.map(\.json))]
   }
@@ -153,7 +160,7 @@ enum ServerHandlers {
   static func pull(_ input: JSON) throws -> JSON {
     var server = try makeServer(input)
     let before = server.state
-    let reply = server.pull(try input.member("request"), account: try account(input), at: try input.member("serverNow").asInteger())
+    let reply = server.pull(try input.member("request"), credential: try credential(input), at: try input.member("serverNow").asInteger())
     var answer: JSON.Object = ["response": reply.json]
     if server.state != before {
       answer["state"] = server.state.json
@@ -178,7 +185,7 @@ enum ServerHandlers {
       } else if line["server"] == "load" {
         server.restore(try ServerState(json: line.member("state")))
       } else if let http = try line["http"]?.asString() {
-        let account = try self.account(line)
+        let credential = try self.credential(line)
         let serverNow = try line.member("serverNow").asInteger()
         let inject = line["inject"]
         let reply: Reply
@@ -186,15 +193,15 @@ enum ServerHandlers {
         case "push":
           let faults = try inject?["fault"]?.asArray().map { (try $0.asInteger(), PushFaults.Kind.fault) } ?? []
           reply = server.push(
-            try line.member("request"), account: account, at: serverNow,
+            try line.member("request"), credential: credential, at: serverNow,
             faults: PushFaults(budget: try inject?["budget"].map { Int(try $0.asInteger()) }, byN: Dictionary(uniqueKeysWithValues: faults)))
-        case "pull": reply = server.pull(try line.member("request"), account: account, at: serverNow)
-        case "hello": reply = server.hello(account: account, at: serverNow)
+        case "pull": reply = server.pull(try line.member("request"), credential: credential, at: serverNow)
+        case "hello": reply = server.hello(credential: credential, at: serverNow)
         case let other: throw ServerVectorError("unknown exchange \(other)")
         }
         if reply.json != line["response"] { differences.append("\(place): \(http) answered \(reply.json.jcsText)") }
         published += reply.events
-        if let device = try line["device"]?.asString(), let account { accounts[device] = account }
+        if let device = try line["device"]?.asString(), let account = credential.account { accounts[device] = account }
       } else if let frame = line["frame"] {
         let device = try line.member("device").asString()
         if !isPublished(frame, to: accounts[device], among: published, by: server) {
@@ -205,12 +212,12 @@ enum ServerHandlers {
     return differences
   }
 
+  // A frame a socket served as `account` received is one of the events, as the server frames it for that socket; a
+  // death reaches only a socket whose reference names the dying scope.
   static func isPublished(_ frame: JSON, to account: String?, among events: [LiveEvent], by server: ModelServer) -> Bool {
     events.contains { event in
-      switch event {
-      case .change(_, let sent): sent == frame
-      case .death(let key): ScopeKey(key.ref, account: account) == key && server.deathFrame(of: key.ref, for: account) == frame
-      }
+      if case .death(let key) = event, ScopeKey(key.ref, account: account) != key { return false }
+      return server.frame(for: event, to: account) == frame
     }
   }
 }

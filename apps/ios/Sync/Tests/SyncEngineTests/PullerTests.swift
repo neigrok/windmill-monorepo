@@ -189,17 +189,16 @@ struct PullerTests {
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.overlay, nil)]))
   }
 
-  // An account always reads its own products, so a product scope answered not-found or gone was not asked as the account:
-  // a session revoked on the server reads as no one. The phone forgets none of the account's rows, pauses as a 401 does,
-  // and pulls the scope again from where it stood once the account re-authenticates. Found end to end, where a pull after
-  // a revocation erased the account's rows from the phone for good.
-  @Test(arguments: ["not-found", "gone"])
-  func aProductScopeAnsweredAsNoOnesForgetsNothingAndPauses(_ kind: String) async throws {
+  // §9.1: a pull served as anyone but the replica's account (anonymous, `as` null, or another account) is handled as a
+  // 401, whatever its pages say: nothing past its offset sample is applied or forgotten, sync pauses, and the scope is
+  // pulled again from where it stood once the account re-authenticates.
+  @Test(arguments: [nil, "B"] as [String?])
+  func aPullServedAsAnotherPrincipalForgetsNothingAndPauses(_ served: String?) async throws {
     let (rig, card) = try Self.booted()
     _ = await rig.engine.puller.step()
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, kind)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")], as: served))
     rig.engine.foreground()
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .unauthenticated)]))
+    #expect(await rig.engine.puller.step() == .paused)
     #expect(try Self.rows(rig) == [card.json])
     #expect(try rig.active().known == [:])
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
@@ -211,29 +210,159 @@ struct PullerTests {
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(1))]))
   }
 
-  // An answer given as no one's says nothing of the account's other scopes: the tree it asked beside is not forgotten, and
-  // is pulled again with the product once the account re-authenticates.
-  @Test func anAnswerGivenAsNoOnesForgetsNoScopeAfterIt() async throws {
+  // An answer served as anonymous says nothing of the account's scopes: a tree asked alone is not forgotten, though its
+  // page says not-found, and it is pulled again once the account re-authenticates.
+  @Test func aTreePulledAloneAndServedAsAnonymousIsNotForgotten() async throws {
     let rig = try Rig(account: "A")
     try rig.engine.subscribe(Self.tree)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found"), Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .unauthenticated)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]))
+    _ = await rig.engine.puller.step()
+    rig.engine.puller.wants.add([Self.tree])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")], as: nil))
+    #expect(await rig.engine.puller.step() == .paused)
     #expect(try rig.active().known == [:])
+    #expect(try Self.rows(rig, Self.tree) == [try Rig.metaRow(seq: 1).json])
     #expect(try rig.meta().authPaused)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: Self.tree, seq: 0)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: Self.tree, seq: 1, digestOf: [try Rig.metaRow(seq: 1)])]))
     try rig.engine.reauthenticate(token: SessionToken("token-2"))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, nil)]))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, Self.live(0)), Self.pulled(Self.tree, Self.live(1))]))
   }
 
-  // The same answer on the live socket is not applied: the scope is pulled, and the pull tells.
-  @Test func aProductScopeFrameAnsweredAsNoOnesForgetsNothingAndIsPulled() async throws {
+  // A pull the `anon` replica sent, answered as anonymous after a sign-in bound that replica to A in place, says nothing
+  // of A's replica: none of it is applied, A is not paused (its own token was never refused), and the round looks again,
+  // pulling the tree as A from where it stood.
+  @Test func anAnonymousAnswerLandingAfterASignInIsDropped() async throws {
+    let rig = try Rig()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
+    try rig.engine.subscribe(Self.tree)
+    let meta = try Rig.metaRow(seq: 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1)], as: nil))
+    _ = await rig.engine.puller.step()
+    let replica = try rig.meta().replica
+    let gate = Gate()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")], as: nil), after: gate)
+    rig.engine.foreground()
+    async let asked = rig.engine.puller.step()
+    await gate.arrival()
+    #expect(try await rig.signIn("A", holds: ["probe": false]).isComplete)
+    #expect(try rig.meta().replica == replica && rig.meta().account == "A")
+    gate.open()
+    #expect(await asked == .again)
+    #expect(try rig.active().known == [:])
+    #expect(try Self.rows(rig, Self.tree) == [meta.json])
+    #expect(try Self.cursor(rig, Self.tree) == CursorRecord(cursor: Self.live(1), digest: meta.digest, booted: true))
+    #expect(try !rig.meta().authPaused)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows(in: Self.tree, seq: 1, digestOf: [meta])]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, Self.live(1))]))
+  }
+
+  // §9.1: an `as` that is not a string is still not the account's, so the answer pauses sync as a 401 does, rather than
+  // reading as no answer and backing off for ever.
+  @Test func aPullServedAsANonStringPauses() async throws {
     let (rig, card) = try Self.booted()
     _ = await rig.engine.puller.step()
-    await rig.engine.puller.enqueue(.notFound(Rig.scope), for: try rig.meta().replica)
-    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .pull))
+    rig.transport.willAnswerPull(200, ["serverTime": JSON(Rig.startMs), "epoch": "ep-1", "as": 42, "pages": [Rig.page(Rig.scope, "not-found")]])
+    rig.engine.foreground()
+    #expect(await rig.engine.puller.step() == .paused)
     #expect(try Self.rows(rig) == [card.json])
     #expect(try rig.active().known == [:])
+    #expect(try rig.meta().authPaused)
+  }
+
+  // §7.5 step 2: a product scope never dies, so its gone or not-found, served as the account, is ignored: nothing is
+  // forgotten or recorded, sync goes on, and the scope is not pulled again for it.
+  @Test(arguments: ["not-found", "gone"])
+  func aProductScopesEndIsIgnored(_ kind: String) async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, kind)]))
+    rig.engine.foreground()
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    #expect(try Self.rows(rig) == [card.json])
+    #expect(try rig.active().known == [:])
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
+    #expect(try !rig.meta().authPaused)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    let frame: LiveFrame = kind == "gone" ? .gone(Rig.scope, servedAs: "A") : .notFound(Rig.scope, servedAs: "A")
+    await rig.engine.puller.enqueue(frame, for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
+    #expect(try Self.rows(rig) == [card.json])
+    #expect(try rig.active().known == [:])
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(rig.transport.pulls.count == 2)
+  }
+
+  // A frame served as anyone but the replica's account is handled as a 401: nothing is applied or forgotten, and sync
+  // pauses.
+  @Test(arguments: [nil, "B"] as [String?])
+  func aFrameServedAsAnotherPrincipalPausesAndAppliesNothing(_ served: String?) async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    let next = try Rig.cardRow("card0002", "Two", seq: 2)
+    await rig.engine.puller.enqueue(try Rig.change(rows: [next], seq: 2, digestOf: [card, next], as: served), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .paused))
+    await rig.engine.puller.enqueue(.gone(Rig.scope, servedAs: served), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .paused))
+    #expect(try Self.rows(rig) == [card.json])
+    #expect(try rig.active().known == [:])
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
+    #expect(try rig.meta().authPaused)
+  }
+
+  // §7.9: a board arriving alive clears a stale not-found of its tree and overlay (a restore, then a create re-sent after
+  // it), so the tree, subscribed, is pulled again at once, booting from nothing.
+  @Test func anAliveBoardInAFrameBringsItsTreeBack() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(Self.tree, "not-found")]))
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [Self.tree: .notFound])
+    let board = try Self.board(seq: 1)
+    await rig.engine.puller.enqueue(try Rig.change(rows: [board], seq: 1, digestOf: [board]), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
+    #expect(try rig.active().known == [:])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+  }
+
+  // §7.9: the rule holds for a pull page as for a frame: an alive board in a rows page clears its tree's not-found, and
+  // the tree, subscribed, is pulled by the next run.
+  @Test func anAliveBoardInAPageBringsItsTreeBack() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.page(Self.tree, "not-found")]))
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [Self.tree: .notFound])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    rig.engine.puller.wants.add([Rig.scope])
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try rig.active().known == [:])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+  }
+
+  // §7.9: an alive board clears only a not-found record; a gone one stays, since a scope's death is final (INV-13).
+  @Test func anAliveBoardLeavesItsGoneTreeGone() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 2, life: "dead", ms: 2_000)], seq: 2, digestOf: [])]))
+    _ = await rig.engine.puller.step()
+    #expect(try rig.active().known == [Self.tree: .gone, Self.overlay: .gone])
+    let alive = try Self.board(seq: 3, ms: 3_000)
+    await rig.engine.puller.enqueue(try Rig.change(rows: [alive], seq: 3, digestOf: [alive]), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
+    #expect(try rig.active().known == [Self.tree: .gone, Self.overlay: .gone])
+  }
+
+  // A board row of the server's, alive or dead at `ms`.
+  static func board(seq: Int64, life: String = "alive", ms: Int64 = 1_000) throws -> Row {
+    try Row(json: [
+      "t": "board", "id": "b_00000001", "life": [.string(life), .string("\(ms):0:r_server00001")], "born": "1000:0:r_server00001",
+      "seq": JSON(seq), "rc": 1_000, "ru": JSON(ms),
+    ])
   }
 
   // §7.9: a signed-out replica pulls only the trees it opens, and without a token.
@@ -601,7 +730,7 @@ struct PullerTests {
     try rig.engine.subscribe(Self.tree)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]))
     _ = await rig.engine.puller.step()
-    let frame: LiveFrame = kind == .gone ? .gone(Self.tree) : .notFound(Self.tree)
+    let frame: LiveFrame = kind == .gone ? .gone(Self.tree, servedAs: "A") : .notFound(Self.tree, servedAs: "A")
     await rig.engine.puller.enqueue(frame, for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, kind == .gone ? .gone : .notFound))
     #expect(try rig.active().known == [Self.tree: kind])
@@ -622,7 +751,7 @@ struct PullerTests {
     let next = try Rig.cardRow("card0002", "Two", seq: 2)
     await rig.engine.puller.enqueue(try Rig.change(rows: [next], seq: 2, digestOf: [card, next]), for: "rp_" + String(repeating: "f", count: 32))
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, nil))
-    await rig.engine.puller.enqueue(.gone(Self.tree), for: try rig.meta().replica)
+    await rig.engine.puller.enqueue(.gone(Self.tree, servedAs: "A"), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, nil))
     #expect(try rig.active().known == [:])
     #expect(try Self.rows(rig) == [card.json])

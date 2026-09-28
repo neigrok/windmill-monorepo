@@ -134,7 +134,7 @@ struct LifecycleTests {
         let account = try step.member("account").asString()
         let holds = try JSON.map(step["holdsRecords"]) { try $0.asBool() }
         let ask = { () async throws -> SignInSession in
-          transport.willAnswerHello(200, Self.hello(holds: holds, serverTime: clock.nowMs()))
+          transport.willAnswerHello(200, Self.hello(holds: holds, as: account, serverTime: clock.nowMs()))
           let pending = try store.read { try $0.deviceMeta()?.meta.pendingSignIn }
           return try await pending == account ? engine.resumeSignIn()! : engine.signIn(account: account, token: SessionToken("t"))
         }
@@ -222,10 +222,10 @@ struct LifecycleTests {
     #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
 
     let relaunched = try rig.relaunch()
-    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true]))
+    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true], as: "A"))
     await relaunched.start()
     #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
-    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": false]))
+    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": false], as: "A"))
     let resumed = try #require(try await relaunched.resumeSignIn())
     #expect(resumed.isComplete)
     #expect(resumed.decisions == [])
@@ -250,7 +250,7 @@ struct LifecycleTests {
     #expect(try rig.replicas() == ["anon active entries: 3 new id"])
     #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
 
-    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true]))
+    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true], as: "A"))
     let asked = try #require(try await rig.engine.resumeSignIn())
     #expect(asked.decisions == [SignedOutDecision(product: "probe", counts: ["card": 2], counted: ["g1/0", "g2/0", "g3/0"])])
     try await asked.complete(["probe": .discard])
@@ -270,13 +270,34 @@ struct LifecycleTests {
     #expect(try rig.replicas() == ["bound(B) active entries: 1 new id"])
   }
 
-  // A hello under the sign-in's token that names no `holdsRecords` did not take the token: the server reads a revoked or
-  // unknown session as no one. The sign-in is refused as unauthenticated, as a 401 refuses it, so the app signs in again
-  // rather than waiting for a server it has reached.
-  @Test func aHelloThatReadsTheTokenAsNoOnesRefusesTheSignIn() async throws {
+  // §7.10: sign-in runs only after a hello served as the account, stating in which products it holds records. One served
+  // as anonymous carries no `holdsRecords`, which would read as "holds nothing" and add the signed-out work silently; one
+  // served as another account says nothing of this one; one served as the account with no `holdsRecords` states nothing;
+  // a 401 did not take the token. Each refuses the sign-in as unauthenticated, adds nothing and binds nothing, so the app
+  // signs in again rather than waiting for a server it has reached.
+  @Test(arguments: [
+    (200, LifecycleTests.hello(holds: nil, as: nil)), (200, LifecycleTests.hello(holds: ["probe": false], as: "B")),
+    (200, LifecycleTests.hello(holds: nil, as: "A")), (401, Rig.failure("unauthenticated", as: nil)),
+  ])
+  func aHelloNotStatingTheAccountsRecordsRefusesTheSignIn(_ status: Int, _ body: JSON) async throws {
     let rig = try Rig()
-    rig.transport.willAnswerHello(200, Self.hello(holds: nil))
-    await #expect(throws: EngineError.unauthenticated) { try await rig.engine.signIn(account: "A", token: SessionToken("revoked")) }
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
+    rig.transport.willAnswerHello(status, body)
+    await #expect(throws: EngineError.unauthenticated) { try await rig.engine.signIn(account: "A", token: SessionToken("token-A")) }
+    #expect(try rig.replicas() == ["anon active entries: 1 new id"])
+    #expect(try rig.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == "A")
+  }
+
+  // §9.1, §9.2: engine start's hello of a bound replica, served as anyone but its account, is handled as a 401: the replica
+  // pauses, and nothing is pulled until the account re-authenticates.
+  @Test(arguments: [nil, "B"] as [String?])
+  func theStartHelloServedAsAnotherPausesTheBoundReplica(_ served: String?) async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerHello(200, LifecycleTests.hello(holds: served == nil ? nil : ["probe": false], as: served))
+    await rig.engine.start()
+    #expect(try rig.meta().authPaused)
+    #expect(await rig.engine.puller.step() == .paused)
+    #expect(rig.transport.pulls.isEmpty)
   }
 
   // §7.10 account change: another account signs in only once the one signed in has signed out. The same account signing
@@ -469,7 +490,7 @@ struct LifecycleTests {
     let session = try await rig.signIn("A", holds: ["probe": true])
     #expect(seats.count == 1)
     session.cancel()
-    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true]))
+    rig.transport.willAnswerHello(200, Self.hello(holds: ["probe": true], as: "A"))
     let resumed = try #require(try await rig.engine.resumeSignIn())
     #expect(seats.count == 2)
     try await resumed.complete(["probe": .add])
@@ -561,8 +582,11 @@ struct LifecycleTests {
 
   // MARK: Helpers
 
-  static func hello(holds: [String: Bool]?, serverTime: Int64 = Rig.startMs) -> JSON {
-    var body: JSON.Object = ["serverTime": JSON(serverTime), "epoch": "ep-1", "schema": 1, "minSchema": 1]
+  // A hello served as `served`, nil for anonymous, and holding records as `holds` says.
+  static func hello(holds: [String: Bool]?, as served: String?, serverTime: Int64 = Rig.startMs) -> JSON {
+    var body: JSON.Object = [
+      "serverTime": JSON(serverTime), "epoch": "ep-1", "as": served.map(JSON.string) ?? .null, "schema": 2, "minSchema": 2,
+    ]
     body["holdsRecords"] = holds.map { .object(JSON.Object(uniqueKeysWithValues: $0.map { ($0.key, .bool($0.value)) })) }
     return .object(body)
   }
@@ -605,7 +629,7 @@ final class SeatChanges: ProductBinding {
 extension Rig {
   // A sign-in as `account` over a hello saying in which products it holds records.
   func signIn(_ account: String, holds: [String: Bool]) async throws -> SignInSession {
-    transport.willAnswerHello(200, LifecycleTests.hello(holds: holds))
+    transport.willAnswerHello(200, LifecycleTests.hello(holds: holds, as: account))
     return try await engine.signIn(account: account, token: SessionToken("token-\(account)"))
   }
 

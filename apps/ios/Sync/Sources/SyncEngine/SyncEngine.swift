@@ -89,22 +89,21 @@ public final class SyncEngine: Replica {
     }
   }
 
-  // §9.2 under `token`, or none: the answer's offset sample is recorded for the active replica (§10.4), and a
-  // `minSchema` above the registry's version, or a 426, requires an upgrade.
+  // §9.2 under `token`, or none: the answer's offset sample is recorded for the active replica (§10.4); an answer handled
+  // as a 401 (§9.1: a 401, or a hello served as anyone but the active replica's account) pauses it while `token` is
+  // still the account's; and a `minSchema` above the registry's version, or a 426, requires an upgrade.
   package func hello(token: SessionToken?) async -> Reply<HelloResponse> {
     let send = core.clock.wall.reading()
     let reply = await transport.hello(token: token)
     let timing = Timing(send: send, recv: core.clock.wall.reading())
     guard case .answered(let answer) = reply else { return reply }
+    if let serverTime = answer.serverTime { _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) } }
+    if let seat = try? core.seat(), answer.isUnauthenticated(for: seat.account) {
+      _ = try? core.pauseAuth(seat.replica, sentUnder: token)
+    }
     switch answer {
-    case .ok(let hello):
-      _ = try? core.write { store, _ in try store.sample(serverTime: hello.serverTime, timing: timing) }
-      if hello.minSchema > core.registry.version { core.requireUpgrade() }
-    case .failed(let failure):
-      if let serverTime = failure.serverTime {
-        _ = try? core.write { store, _ in try store.sample(serverTime: serverTime, timing: timing) }
-      }
-      if failure.status == 426 { core.requireUpgrade() }
+    case .ok(let hello): if hello.minSchema > core.registry.version { core.requireUpgrade() }
+    case .failed(let failure): if failure.status == 426 { core.requireUpgrade() }
     }
     return reply
   }

@@ -235,6 +235,9 @@ public final class FakeLiveConnection: LiveConnection {
   // The frames delivered and not yet received, in the order the engine will receive them.
   public var waitingFrames: Int { state.withLock(\.frames.count) }
 
+  // The frame the engine receives next, if one waits.
+  public var nextFrame: LiveFrame? { state.withLock(\.frames.first) }
+
   public func dropFrame(at index: Int) {
     state.withLock { _ = $0.frames.remove(at: index) }
   }

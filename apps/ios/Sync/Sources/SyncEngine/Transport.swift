@@ -13,15 +13,6 @@ public enum Reply<Body: Sendable>: Sendable {
   case unreachable
 }
 
-// A §9 response a reply decodes.
-public protocol ResponseBody: Sendable {
-  init(json: JSON) throws
-}
-
-extension HelloResponse: ResponseBody {}
-extension PushResponse: ResponseBody {}
-extension PullResponse: ResponseBody {}
-
 extension Reply where Body: ResponseBody {
   // A status and its JSON body, as every transport classifies them. A failure keeps what its body carries (`serverTime`
   // and `epoch` for the offset sample, `retryAfterMs`), or only its status when the body is not JSON of that shape.

@@ -17,15 +17,15 @@ package enum PullerStep: Sendable, Hashable {
   case frame(ScopeRef, FrameOutcome?)
   // One request answered: each page's scope and outcome, in the answer's order.
   case pulled([PageReport])
-  // Look again now: the replica changed while the request was being built or answered, or a 401 answered a token the
-  // account has replaced since.
+  // Look again now: the replica changed while the request was being built or answered, or an answer handled as a 401
+  // answered a token the account has replaced since.
   case again
   // Nothing to pull (nothing wanted, no replica that pulls, offline) and no fallback pull ahead, or the caller was
   // cancelled before its turn: wait for a trigger.
   case idle
   // Nothing to pull now, in the foreground: wait for a trigger, or `ms` until the fallback pull.
   case fallback(ms: Int64)
-  // 401, or no token for the account: wait for re-authentication's kick.
+  // An answer handled as a 401 (§9.1), or no token for the account: wait for re-authentication's kick.
   case paused
   // 426: nothing more is pulled by this process.
   case stopped
@@ -159,8 +159,9 @@ package actor Puller {
   // MARK: Frames
 
   // §7.5 step 3 in one transaction; a frame that is not admitted, or whose digest check reset the cursor, wants its scope
-  // pulled. One that forgot its scope, or a not-found ignored while its scope waits (§7.9), has the live channel look
-  // again at what it follows, so it stops following the scope, and follows a waiting one anew once it is pulled.
+  // pulled, and one whose alive governing row brought a tree back wants the tree's scopes (§7.9). One that forgot its
+  // scope, ended one it ignores, paused the replica, or brought scopes back has the live channel look again at what it
+  // follows, so it stops following an ended scope, and follows a waiting or returning one once it is pulled.
   func apply(_ queued: (frame: LiveFrame, replica: String)) -> PullerStep {
     guard let scope = queued.frame.scope else { return .again }
     do {
@@ -169,8 +170,9 @@ package actor Puller {
         return try store.apply(queued.frame, replica: queued.replica, subscribed: Set(subscribed), instance: instance)
       }
       guard let applied else { return .frame(scope, nil) }
-      if applied.pullsAgain { wants.add([scope]) }
-      if [.gone, .notFound, .ignored].contains(applied.outcome) { core.wakes.live.kick() }
+      wants.add(applied.wants)
+      let brought = applied.wants.contains { $0 != scope }
+      if brought || [.gone, .notFound, .ignored, .paused].contains(applied.outcome) { core.wakes.live.kick() }
       return .frame(scope, applied.outcome)
     } catch {
       wants.add([scope])
@@ -234,12 +236,12 @@ package actor Puller {
   }
 
   // The answer's transactions in order (§7.5 steps 1–2): the offset sample, the epoch, then one per page; or a failure's
-  // sample, and for a 401 a pause while `token` is still the account's. A page of the account's own product answered as
-  // no one's pauses the same way, since the server did not take the token, and the rest of that answer, which says
-  // nothing of the account's scopes, is dropped and asked again. A page that leaves its scope short of the head
-  // wants it again; an epoch change re-identified the replica and nulled every cursor, so every scope is wanted; a
-  // replica no longer active drops the rest, which says nothing of the replica now active. The live channel then looks
-  // again at what it follows.
+  // sample. An answer handled as a 401 (§9.1: a 401, or a 200 served as anyone but the replica's account) applies
+  // nothing past its sample: it pauses while `token` is still the account's, and its scopes are asked again once the
+  // account re-authenticates. A page wants the scopes it leaves short of the head or brings back; an epoch change
+  // re-identified the replica and nulled every cursor, so every scope is wanted; a replica no longer active, or no longer
+  // of the account the request was built as, drops the rest, which says nothing of the replica as it now stands. The live
+  // channel then looks again at what it follows.
   func record(_ reply: Reply<PullResponse>, to request: PullRequest, for meta: ReplicaMeta, under token: SessionToken?,
               timing: Timing) throws -> PullerStep {
     let scopes = request.scopes.map(\.scope)
@@ -250,16 +252,15 @@ package actor Puller {
     defer { core.wakes.live.kick() }
     var replica = meta.replica
     var reports: [PageReport] = []
-    var paused = false
-    for step in pages.steps(for: answer, to: request) {
+    for step in pages.steps(for: answer, to: request, account: meta.account) {
       if step == .pauseAuth {
-        paused = try core.pauseAuth(replica, sentUnder: token)
-        continue
+        wants.add(scopes)
+        return try unauthenticated(replica, under: token)
       }
       let asked = replica
       let applied = try core.write { store, instance in
-        try store.apply(step, replica: asked, subscribed: Set(core.subscriptions(of: meta)), instance: &instance, timing: timing,
-                        identities: core.identities)
+        try store.apply(step, replica: asked, account: meta.account, subscribed: Set(core.subscriptions(of: meta)),
+                        instance: &instance, timing: timing, identities: core.identities)
       }
       guard let applied else { return .again }
       if !applied.replica.utf8.elementsEqual(asked.utf8) {
@@ -268,12 +269,7 @@ package actor Puller {
       }
       guard case .page(let page, _) = step, let outcome = applied.outcome else { continue }
       reports.append(PageReport(scope: page.scope, outcome: outcome))
-      if applied.pullsAgain { wants.add([page.scope]) }
-      if outcome == .unauthenticated, token != nil {
-        paused = try core.pauseAuth(replica, sentUnder: token)
-        wants.add(scopes)
-        break
-      }
+      wants.add(applied.wants)
     }
     switch answer {
     case .ok:
@@ -281,19 +277,22 @@ package actor Puller {
       return .pulled(reports)
     case .failed(let failure):
       wants.add(scopes)
-      return next(after: failure, paused: paused, signedOut: token == nil)
+      return next(after: failure)
     }
   }
 
-  // Design §6.3's puller column: a 401 paused the replica, unless the token changed while the pull was in flight, and
-  // the pull goes again under the new one; one to a signed-out pull, which pauses nothing, backs off; a 426 stops; a 503
-  // pauses every pull for its `retryAfterMs`, a pause no kick cuts short, and backs off no less; anything else backs off.
-  func next(after failure: HTTPFailure, paused: Bool, signedOut: Bool) -> PullerStep {
+  // Design §6.3's puller column for an answer handled as a 401: it paused the replica, unless the token changed while the
+  // pull was in flight, and the pull goes again under the new one. One to a signed-out pull, which pauses nothing, backs
+  // off.
+  func unauthenticated(_ replica: String, under token: SessionToken?) throws -> PullerStep {
+    guard token != nil else { return .backoff(ms: nextBackoff(floorMs: 0)) }
+    return try core.pauseAuth(replica, sentUnder: token) ? .paused : .again
+  }
+
+  // The puller column's other failures: a 426 stops; a 503 pauses every pull for its `retryAfterMs`, a pause no kick cuts
+  // short, and backs off no less; anything else backs off.
+  func next(after failure: HTTPFailure) -> PullerStep {
     switch failure.status {
-    case 401 where signedOut:
-      return .backoff(ms: nextBackoff(floorMs: 0))
-    case 401:
-      return paused ? .paused : .again
     case 426:
       core.requireUpgrade()
       return .stopped

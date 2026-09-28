@@ -26,7 +26,9 @@ struct SenderTests {
     #expect(await rig.engine.sender.step() == .again)
     let replica = try rig.active()
     #expect(rig.transport.calls == [
-      .push(PushRequest(replica: replica.meta.replica, ackThrough: 0, intents: replica.outbox.map(\.intent)), token: SessionToken("token-1")),
+      .push(
+        PushRequest(replica: replica.meta.replica, account: "A", ackThrough: 0, intents: replica.outbox.map(\.intent)),
+        token: SessionToken("token-1")),
     ])
     #expect(try rig.outbox() == ["g1/0 acked 1"])
     #expect(replica.outbox.map { "\($0.resultSeq!) \($0.resultEpoch!)" } == ["7 ep-1"])
@@ -305,6 +307,40 @@ struct SenderTests {
     #expect(try rig.meta().authPaused == false)
     rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
     #expect(await rig.engine.sender.step() == .again)
+    #expect(rig.transport.calls.last == .push(rig.transport.pushes[0], token: SessionToken("token-2")))
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+  }
+
+  // §9.1, §9.6: an answer handled as a 401 pauses the sender and changes nothing: a 200 served as anyone but the
+  // account, a 409 served as another or saying nothing of whom (each would otherwise re-identify), and an
+  // `account-mismatch` whomever it names. The entry stays sent under the same replica, no retry is consumed, and it goes again once the
+  // account re-authenticates.
+  @Test(arguments: [
+    (200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], as: "B")),
+    (200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], as: nil)),
+    (409, Rig.failure("replica-foreign", as: "B")),
+    (409, Rig.failure("replica-foreign", as: nil)),
+    (409, ["error": "replica-foreign", "serverTime": JSON(Rig.startMs), "epoch": "ep-1"] as JSON),
+    (409, Rig.failure("gap", as: "B")),
+    (409, Rig.failure("replica-forked", as: "B")),
+    (409, Rig.failure("account-mismatch", as: "B")),
+    (409, Rig.failure("account-mismatch", as: "A")),
+  ])
+  func anAnswerServedAsAnotherPausesAndChangesNothing(_ status: Int, _ body: JSON) async throws {
+    let rig = try Rig(account: "A")
+    try rig.commit(Self.card1)
+    let before = try rig.active()
+    rig.transport.willAnswerPush(status, body)
+    #expect(await rig.engine.sender.step() == .paused)
+    let after = try rig.active()
+    #expect(after.meta.authPaused)
+    #expect(after.meta.replica == before.meta.replica)
+    #expect(try rig.outbox() == ["g1/0 sent 1"])
+    #expect((after.meta.ackThrough, after.meta.nextN) == (before.meta.ackThrough, before.meta.nextN + 1))
+    try rig.engine.reauthenticate(token: SessionToken("token-2"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(rig.transport.pushes.map(\.replica) == [before.meta.replica, before.meta.replica])
     #expect(rig.transport.calls.last == .push(rig.transport.pushes[0], token: SessionToken("token-2")))
     #expect(try rig.outbox() == ["g1/0 acked 1"])
   }

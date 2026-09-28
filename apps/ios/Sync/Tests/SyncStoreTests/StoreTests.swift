@@ -94,7 +94,8 @@ struct StoreTests {
     let pull = { (step: PullStep, replica: String) in
       Step(name: "\(step)") { store in
         var instance = at(20_000)
-        _ = try store.apply(step, replica: replica, subscribed: [scope], instance: &instance, timing: .steady(send: 20_000, recv: 20_000),
+        _ = try store.apply(step, replica: replica, account: "A", subscribed: [scope], instance: &instance,
+                            timing: .steady(send: 20_000, recv: 20_000),
                             identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
       }
     }

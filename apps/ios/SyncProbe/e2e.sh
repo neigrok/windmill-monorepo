@@ -3,11 +3,11 @@
 # scenario against windmill_server_probe, asserting the server's side through the backend's reads: a pull under the
 # scenario account's token (REST), and psql for the replica table REST does not expose.
 #
-# Prereqs: the probe server on a THROWAWAY database (backend/RUNNING.md, "the probe server"):
-#   cd backend && DATABASE_URL="postgresql:///wm_sync_m10?host=/tmp" PORT=8089 ./build/windmill_server_probe
-# Run:  WM_E2E_DB=wm_sync_m10 bash apps/ios/SyncProbe/e2e.sh [scenario ...]
-#   scenarios: launch-arguments leave-flush relaunch-release live fork-guard reauth revoked-pull clock-skew clock-jump
-#   epoch-change lineage (default: all)
+# Prereqs: the probe server on a THROWAWAY database (backend/RUNNING.md §7, windmill_server_probe):
+#   cd backend && DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 ./build/windmill_server_probe
+# Run:  WM_E2E_DB=wm_sync_test bash apps/ios/SyncProbe/e2e.sh [scenario ...]
+#   scenarios: launch-arguments leave-flush relaunch-release live fork-guard reauth revoked-pull revoked-live
+#   foreign-credential clock-skew clock-jump epoch-change lineage (default: all)
 # Env: PORT (8089); SIM_A / SIM_B reuse booted simulators instead of making two; KEEP_SIMULATORS=1 keeps the ones made;
 #   PROBE_APP=<path to SyncProbe.app> installs that build instead of building one.
 set -uo pipefail
@@ -110,7 +110,7 @@ cursor, cards = None, []
 while True:
     request = urllib.request.Request(f"{base}/v1/sync/pull", method="POST",
         data=json.dumps({"scopes": [{"scope": "self/probe", "cursor": cursor}]}).encode(),
-        headers={"Authorization": f"Bearer {token}", "Sync-Schema": "1", "content-type": "application/json"})
+        headers={"Authorization": f"Bearer {token}", "Sync-Schema": "2", "content-type": "application/json"})
     try:
         page = json.load(urllib.request.urlopen(request))["pages"][0]
     except Exception as error:
@@ -182,7 +182,7 @@ scenario_fork_guard(){
   sign_in "fork-$RUN@example.com"; local first="$TOKEN"; fresh "$A"; fresh "$B"
   launch "$A" fork-origin fork-guard/origin -account "$ACCOUNT" -token "$first"
   check "$(await_report "$A" fork-origin 30)" true "phone A synced a card"
-  xcrun simctl terminate "$A" "$BUNDLE"
+  xcrun simctl terminate "$A" "$BUNDLE" >/dev/null 2>&1
   local from to; from="$(container "$A")/Library/Application Support/WindmillSync"; to="$(container "$B")/Library/Application Support/WindmillSync"
   mkdir -p "$to"
   for file in "$from"/*; do case "$(basename "$file")" in fork-guard|*-shm) ;; *) cp "$file" "$to/";; esac; done
@@ -208,7 +208,8 @@ scenario_reauth(){
   check "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/auth/logout" -H "Authorization: Bearer $first")" 204 \
     "the session is revoked on the backend"
   signal "$A" revoked
-  check "$(await_report "$A" reauth-pause 30)" true "the next push answered 401, the replica paused and the status asks to re-authenticate"
+  check "$(await_report "$A" reauth-pause 30)" true \
+    "away from the app, the next push answered 401, the replica paused and the status asks to re-authenticate"
   sign_in "reauth-$RUN@example.com"
   launch "$A" reauth-resume reauth/resume -account "$ACCOUNT" -token "$TOKEN"
   check "$(await_report "$A" reauth-resume 30)" true "the launch token cleared the pause and the card waiting went"
@@ -223,11 +224,54 @@ scenario_revoked_pull(){
   check "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/auth/logout" -H "Authorization: Bearer $first")" 204 \
     "the session is revoked on the backend"
   signal "$A" revoked
-  check "$(await_report "$A" revoked-pause 30)" true "coming back pulled under it, answered as no one's: the phone kept the card and paused"
+  check "$(await_report "$A" revoked-pause 30)" true "the pull under it answered 401: the phone kept the card and paused, applying nothing"
   sign_in "revoked-$RUN@example.com"
   launch "$A" revoked-resume revoked-pull/resume -account "$ACCOUNT" -token "$TOKEN"
   check "$(await_report "$A" revoked-resume 30)" true "the launch token cleared the pause, and the card is still drawn"
   check "$(server_cards "$TOKEN")" "Before" "the server has the card"
+}
+
+scenario_revoked_live(){
+  echo "a live socket under a revoked session"
+  sign_in "revoked-live-$RUN@example.com"; local watcher="$TOKEN"
+  sign_in "revoked-live-$RUN@example.com"; local committer="$TOKEN"
+  fresh "$A"; fresh "$B"
+  launch "$B" revoked-live-watch revoked-live/watch -account "$ACCOUNT" -token "$watcher"
+  check "$(await_signal "$B" synced 30)" yes "phone B follows self/probe live"
+  check "$(curl -s -o /dev/null -w '%{http_code}' -X POST "$BASE/v1/auth/logout" -H "Authorization: Bearer $watcher")" 204 \
+    "phone B's session is revoked on the backend"
+  signal "$B" revoked
+  check "$(await_signal "$B" paused 20)" yes "the server closed B's socket at once, and B's reconnect was answered 401: B paused"
+  launch "$A" live-commit live/commit -account "$ACCOUNT" -token "$committer"
+  check "$(await_report "$A" live-commit 30)" true "phone A, under a session of its own, committed a card and it was confirmed"
+  signal "$B" committed
+  check "$(await_report "$B" revoked-live-watch 40)" true "no frame reached B after the revocation, and A's card never did"
+  check "$(server_cards "$committer")" "Live" "the server has the card"
+}
+
+scenario_foreign_credential(){
+  echo "another account's credential"
+  sign_in "stranger-$RUN@example.com"; local stranger="$ACCOUNT" foreign="$TOKEN"
+  sign_in "foreign-$RUN@example.com"; fresh "$A"
+  launch "$A" foreign-swap foreign-credential/swap -account "$ACCOUNT" -token "$TOKEN" -foreignToken "$foreign"
+  check "$(await_report "$A" foreign-swap 30)" true \
+    "a stranger's token held for the account: the push naming the account answered 409 account-mismatch, and the phone paused, forgetting nothing"
+  check "$(step "$(report "$A" foreign-swap)" "served as")" "$stranger" "the push was served as the stranger"
+  check "$(server_cards "$foreign")" "" "the stranger's account holds nothing"
+  check "$(psql -h /tmp -d "$DB" -Atc "select count(*) from sync_replicas where account = '$stranger'")" 0 "and no replica is bound to it"
+  check "$(server_cards "$TOKEN")" "Mine" "the account holds its card alone"
+  launch "$A" foreign-relaunch foreign-credential/relaunch -account "$ACCOUNT" -token "$foreign"
+  check "$(await_report "$A" foreign-relaunch 30)" true \
+    "relaunched with the stranger's token: the hello at start was served as another account, and the phone paused before pulling or pushing"
+  check "$(step "$(report "$A" foreign-relaunch)" "served as")" "$stranger" "the hello was served as the stranger"
+  check "$(step "$(report "$A" foreign-relaunch)" "the cursor")" "$(step "$(report "$A" foreign-swap)" "the cursor")" \
+    "the cursor stood across the relaunch"
+  check "$(server_cards "$foreign")" "" "the stranger's account still holds nothing"
+  sign_in "foreign-$RUN@example.com"
+  launch "$A" foreign-resume foreign-credential/resume -account "$ACCOUNT" -token "$TOKEN"
+  check "$(await_report "$A" foreign-resume 30)" true "the account's own token cleared the pause, and the stray card went"
+  check "$(server_cards "$TOKEN")" "Mine,Stray" "the account holds both cards"
+  check "$(server_cards "$foreign")" "" "and the stranger's none"
 }
 
 scenario_clock_skew(){
@@ -286,12 +330,12 @@ scenario_launch_arguments(){
 }
 
 # ── the run ───────────────────────────────────────────────────────────────────────────────────────────
-curl -s -o /dev/null -H 'Sync-Schema: 1' "$BASE/v1/sync/hello" || { echo "no probe server on $BASE"; exit 1; }
+curl -s -o /dev/null -H 'Sync-Schema: 2' "$BASE/v1/sync/hello" || { echo "no probe server on $BASE"; exit 1; }
 build
 A="${SIM_A:-}"; B="${SIM_B:-}"
 [ -n "$A" ] || phone A
 [ -n "$B" ] || phone B
-for scenario in "${@:-launch-arguments leave-flush relaunch-release live fork-guard reauth revoked-pull clock-skew clock-jump epoch-change lineage}"; do
+for scenario in "${@:-launch-arguments leave-flush relaunch-release live fork-guard reauth revoked-pull revoked-live foreign-credential clock-skew clock-jump epoch-change lineage}"; do
   for name in $scenario; do
     if declare -F "scenario_${name//-/_}" >/dev/null; then "scenario_${name//-/_}"; else check "$name" "a scenario" "a scenario is named $name"; fi
   done

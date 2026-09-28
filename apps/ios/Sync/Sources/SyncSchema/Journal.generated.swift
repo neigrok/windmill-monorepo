@@ -11,7 +11,7 @@ public enum Journal {
 
   static let registryFile: JSON = [
     "commands": [],
-    "minVersion": 1,
+    "minVersion": 2,
     "products": ["journal": ["surfaces": ["web", "ios"]]],
     "registry": "journal",
     "types": [
@@ -40,6 +40,6 @@ public enum Journal {
         "visibleWhen": ["body", "mood", "energy"],
       ],
     ],
-    "version": 1,
+    "version": 2,
   ]
 }

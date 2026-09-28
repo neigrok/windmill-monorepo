@@ -20,7 +20,7 @@ public protocol ClientDevice {
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest?
   mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
                         identities: IdentitySource) throws -> Int?
-  mutating func hello(serverTime: Int64?, timing: Timing) throws
+  mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws
   mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart
   // Nil when no scope asked is pulled, so nothing is sent.
   mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest?
@@ -107,9 +107,8 @@ public struct PlannedDevice: ClientDevice {
     }
   }
 
-  public mutating func hello(serverTime: Int64?, timing: Timing) throws {
-    guard let serverTime else { return }
-    device.modify(device.active) { $0.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) } }
+  public mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws {
+    device.modify(device.active) { lifecycle.receive(answer, in: &$0, timing: timing) }
   }
 
   public mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart {
@@ -253,7 +252,7 @@ public enum ClientSteps {
       let limit = try device.receive(try answer(step, PushResponse.init(json:)), to: request, instance: &instance, timing: timing, identities: identities)
       return limit.map { ["limit": JSON($0)] } ?? .null
     case "hello":
-      try device.hello(serverTime: try step.member("response")["body"]?["serverTime"]?.asInteger(), timing: timing)
+      try device.hello(try answer(step, HelloResponse.init(json:)), timing: timing)
       return .null
     case "engineStart":
       let backup: BackupCopy = try step["backupGuard"].map { $0.isNull ? .missing : .held(try $0.asString()) } ?? .notKept

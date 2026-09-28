@@ -92,6 +92,7 @@ public struct Registry: Sendable {
       for target in referenced where self.type(target) == nil {
         throw RegistryError("type \(type.name) refers to the unknown type \(target)")
       }
+      if keyLeadsBack(to: type) { throw RegistryError("type \(type.name): its key leads back to its own type") }
       if case .product(let product) = type.scope, self.product(product) == nil {
         throw RegistryError("type \(type.name) lives in the undeclared product \(product)")
       }
@@ -112,6 +113,18 @@ public struct Registry: Sendable {
         throw RegistryError("command \(command.name) predicts \(predicted), a wholePut type only deltas write")
       }
     }
+  }
+
+  // §2.4: whether a keyed type's key names, directly or through the keys of the types it names in turn, the type itself.
+  func keyLeadsBack(to keyed: TypeDef) -> Bool {
+    var seen: Set<[UInt8]> = []
+    var pending = keyed.key?.refs ?? []
+    while let name = pending.popLast() {
+      if name.isSameID(as: keyed.name) { return true }
+      guard seen.insert(Array(name.utf8)).inserted else { continue }
+      pending += type(name)?.key?.refs ?? []
+    }
+    return false
   }
 }
 
@@ -667,14 +680,15 @@ public struct Bounds: Sendable, Hashable {
   }
 }
 
-// A number domain's step at any depth, rounded half away from zero in doubles (§7.1 step 4); the server accepts only
-// numbers on it.
+// A number domain's step at any depth: a positive integer, or `1/k` for an integer `k`, so that `1 / step` is an integer
+// in doubles (§2.4). Values round to it half away from zero in doubles (§7.1 step 4); the server accepts only numbers on
+// it.
 public struct Quantum: Sendable, Hashable {
   public let step: Double
 
   public init?(_ step: Double) {
     guard step.isFinite, step > 0 else { return nil }
-    guard step.rounded() == step || 1 / (1 / step).rounded() == step else { return nil }
+    guard step.rounded() == step || (1 / step).rounded() == 1 / step else { return nil }
     self.step = step
   }
 

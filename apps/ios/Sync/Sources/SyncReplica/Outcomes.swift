@@ -76,11 +76,11 @@ public struct PushPlanner: Sendable {
   // sends at most that many sent entries and numbers none beyond them. The request, or nil when there is nothing to
   // send.
   public func number(_ replica: inout LoadedReplica, limit: Int? = nil, at deviceNow: Int64) throws -> PushRequest? {
-    guard replica.meta.state == .bound, !replica.meta.authPaused else { return nil }
+    guard replica.meta.state == .bound, !replica.meta.authPaused, let account = replica.meta.account else { return nil }
     let maxIntents = min(limits.pushMaxIntents, limit ?? .max)
     let sent = { (replica: LoadedReplica) in replica.outbox.filter { $0.state == .sent }.sorted { $0.n! < $1.n! } }
     let request = { (replica: LoadedReplica, intents: [Intent]) in
-      PushRequest(replica: replica.meta.replica, ackThrough: replica.meta.ackThrough, intents: intents)
+      PushRequest(replica: replica.meta.replica, account: account, ackThrough: replica.meta.ackThrough, intents: intents)
     }
     if !sent(replica).contains(where: { $0.intent.command != nil }) {
       var intents = sent(replica).map(\.intent)
@@ -139,17 +139,18 @@ public struct PushPlanner: Sendable {
 
   // MARK: A push answer, step by step
 
-  // Every answer carrying `serverTime` yields its sample first; then a 200's results, ack and epoch, or a failure's move.
+  // Every answer carrying `serverTime` yields its sample first. Then an answer handled as a 401 (§9.1: a 401, an
+  // `account-mismatch`, or a 200 or 409 served as anyone but the account the push named) only pauses; a 200 gives its
+  // results, ack and epoch, and any other failure its own move.
   public func steps(for answer: Answer<PushResponse>, to request: PushRequest) -> [PushStep] {
+    let sample = answer.serverTime.map { [PushStep.sample(serverTime: $0)] } ?? []
+    guard !answer.isUnauthenticated(for: request.account) else { return sample + [.pauseAuth] }
     switch answer {
     case .ok(let response):
-      return [.sample(serverTime: response.serverTime)]
-        + response.results.map { .result($0, lastN: response.lastN, epoch: response.epoch) }
+      return sample + response.results.map { .result($0, lastN: response.lastN, epoch: response.epoch) }
         + [.ack(lastN: response.lastN), .epoch(response.epoch)]
     case .failed(let failure):
-      let sample = failure.serverTime.map { [PushStep.sample(serverTime: $0)] } ?? []
       switch failure.status {
-      case 401: return sample + [.pauseAuth]
       case 409: return sample + [.reidentify]
       case 400, 413:
         let malformed = failure.status == 400

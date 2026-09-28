@@ -3,7 +3,8 @@ import SyncCore
 // The server half of the sync engine over in-memory tables: hello (§9.2), push (§6.2) with faults and poison (§6.6),
 // server-origin calls (§6.3), pull (§6.7) with `beforePull`, the live channel (§6.8), and epoch and restore. A value:
 // a copy is a snapshot, and whoever shares one guards it. One value is one server process: every entry point takes the
-// wall clock and reads its `physNow()` once (§10.2).
+// wall clock and reads its `physNow()` once (§10.2). Each request comes with what its credential resolved to (§9.1): one
+// that fails is answered 401 before anything else, and every answer says whom it was served as, its `as`.
 
 public struct ModelServer: Sendable {
   public static let transientRetryAfterMs: Int64 = 1_000
@@ -44,10 +45,13 @@ public struct ModelServer: Sendable {
 
   // MARK: - Hello
 
-  public mutating func hello(account: String?, at wall: Int64) -> Reply {
+  // §9.2: `holdsRecords` is present iff the hello is served as an account.
+  public mutating func hello(credential: Credential, at wall: Int64) -> Reply {
     let serverNow = physNow(wall: wall)
+    guard !credential.fails else { return failure(401, "unauthenticated", as: nil, at: serverNow) }
+    let account = credential.account
     var body: JSON.Object = [
-      "serverTime": JSON(serverNow), "epoch": .string(state.epoch),
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "as": Self.served(account),
       "schema": JSON(registry.version), "minSchema": JSON(registry.minVersion),
     ]
     body["holdsRecords"] = account.map { feed.holdsRecords($0, in: state) }
@@ -56,20 +60,24 @@ public struct ModelServer: Sendable {
 
   // MARK: - Push
 
-  // §6.2 over the body as received: the envelope in §9.1's order, the binding, then the intents in ascending `n`. A
-  // transient failure in the binding, before any intent is taken, answers 503 (§6.6).
-  public mutating func push(received body: [UInt8], account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
+  // §6.2 over the body as received: the envelope in §9.1's order, the binding, then the intents in ascending `n`. A push
+  // naming an account other than the one it is served as is refused before the binding is read, and a fresh replica is
+  // bound to the account it names. A transient failure in the binding, before any intent is taken, answers 503 (§6.6).
+  public mutating func push(received body: [UInt8], credential: Credential, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
     let serverNow = physNow(wall: wall)
-    guard let account else { return failure(401, "unauthenticated", at: serverNow) }
-    guard body.count <= limits.pushMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
-    guard let request = (try? JSON(parsing: body)).flatMap(PushBody.init) else { return failure(400, "malformed", at: serverNow) }
-    guard request.intents.count <= limits.pushMaxIntents else { return failure(413, "request-too-large", at: serverNow) }
-    guard !faults.transientAtBind else { return unavailable(at: serverNow) }
-    if let binding = state.replicas[request.replica], !binding.account.isSameID(as: account) {
-      return failure(409, "replica-foreign", at: serverNow)
+    guard !credential.fails, let account = credential.account else { return failure(401, "unauthenticated", as: nil, at: serverNow) }
+    guard body.count <= limits.pushMaxBytes else { return failure(413, "request-too-large", as: account, at: serverNow) }
+    guard let request = (try? JSON(parsing: body)).flatMap(PushBody.init) else {
+      return failure(400, "malformed", as: account, at: serverNow)
+    }
+    guard request.intents.count <= limits.pushMaxIntents else { return failure(413, "request-too-large", as: account, at: serverNow) }
+    guard request.account.isSameID(as: account) else { return failure(409, "account-mismatch", as: account, at: serverNow) }
+    guard !faults.transientAtBind else { return unavailable(as: account, at: serverNow) }
+    if let binding = state.replicas[request.replica], !binding.account.isSameID(as: request.account) {
+      return failure(409, "replica-foreign", as: account, at: serverNow)
     }
     let bound = state.replicas[request.replica] == nil
-    if bound { state.replicas[request.replica] = ReplicaBinding(account: account, lastN: 0) }
+    if bound { state.replicas[request.replica] = ReplicaBinding(account: request.account, lastN: 0) }
     var answer = PushAnswer()
     for (n, intent) in request.intents {
       guard take(n, intent, of: request.replica, account: account, at: serverNow, faults: faults, into: &answer) else { break }
@@ -77,20 +85,21 @@ public struct ModelServer: Sendable {
     let lastN = state.replicas[request.replica]!.lastN
     if let conflict = answer.conflict {
       if bound && lastN == 0 && state.results[request.replica] == nil { state.replicas[request.replica] = nil }
-      return Reply(status: 409, body: failure(409, conflict, at: serverNow).body, events: answer.events)
+      return Reply(status: 409, body: failure(409, conflict, as: account, at: serverNow).body, events: answer.events)
     }
     let pruned = state.results[request.replica]?.filter { $0.key > min(request.ackThrough, lastN) }
     state.results[request.replica] = pruned?.isEmpty == false ? pruned : nil
     var reply: JSON.Object = [
-      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "lastN": JSON(lastN), "results": .array(answer.results),
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "as": .string(account), "lastN": JSON(lastN),
+      "results": .array(answer.results),
     ]
     reply["retry"] = answer.retry
     return Reply(status: 200, body: .object(reply), events: answer.events)
   }
 
   // A push a client sends: its body, as received, is the request's JCS.
-  public mutating func push(_ request: JSON, account: String?, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
-    push(received: request.jcs, account: account, at: wall, faults: faults)
+  public mutating func push(_ request: JSON, credential: Credential, at wall: Int64, faults: PushFaults = PushFaults()) -> Reply {
+    push(received: request.jcs, credential: credential, at: wall, faults: faults)
   }
 
   // §6.2 step 4 for one intent: answered from `sync_results`, admitted, or the request stops (false) at a 409 or a
@@ -151,16 +160,24 @@ public struct ModelServer: Sendable {
     return poisoned
   }
 
-  func failure(_ status: Int, _ error: String, at serverNow: Int64) -> Reply {
-    Reply(status: status, body: ["serverTime": JSON(serverNow), "epoch": .string(state.epoch), "error": .string(error)])
+  // A failure served as `account`; a 401 is served as no one.
+  func failure(_ status: Int, _ error: String, as account: String?, at serverNow: Int64) -> Reply {
+    Reply(status: status, body: [
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "as": Self.served(account), "error": .string(error),
+    ])
   }
 
   // §6.6: a transient failure before a push takes its first intent.
-  func unavailable(at serverNow: Int64) -> Reply {
+  func unavailable(as account: String, at serverNow: Int64) -> Reply {
     Reply(status: 503, body: [
-      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "error": "unavailable",
+      "serverTime": JSON(serverNow), "epoch": .string(state.epoch), "as": .string(account), "error": "unavailable",
       "retryAfterMs": JSON(Self.transientRetryAfterMs),
     ])
+  }
+
+  // `as` on the wire: the account, or null for anonymous.
+  static func served(_ account: String?) -> JSON {
+    account.map { .string($0) } ?? .null
   }
 
   // MARK: - Server-origin calls
@@ -243,13 +260,16 @@ public struct ModelServer: Sendable {
 
   // MARK: - Pull
 
-  // §6.7 over the body as received: the envelope in §9.1's order, then each requested scope runs its `beforePull`
-  // commands and answers one page from the tables as they stand.
-  public mutating func pull(received body: [UInt8], account: String?, at wall: Int64) -> Reply {
+  // §6.7 over the body as received: a credential that fails answers 401 before anything else and runs no `beforePull`;
+  // then the envelope in §9.1's order, and each requested scope runs its `beforePull` commands and answers one page from
+  // the tables as they stand.
+  public mutating func pull(received body: [UInt8], credential: Credential, at wall: Int64) -> Reply {
     let serverNow = physNow(wall: wall)
-    guard body.count <= limits.pullMaxBytes else { return failure(413, "request-too-large", at: serverNow) }
+    guard !credential.fails else { return failure(401, "unauthenticated", as: nil, at: serverNow) }
+    let account = credential.account
+    guard body.count <= limits.pullMaxBytes else { return failure(413, "request-too-large", as: account, at: serverNow) }
     guard let scopes = (try? JSON(parsing: body)).flatMap(PullBody.init)?.scopes, scopes.count <= limits.pullMaxScopes else {
-      return failure(400, "malformed", at: serverNow)
+      return failure(400, "malformed", as: account, at: serverNow)
     }
     var events: [LiveEvent] = []
     var pages: [JSON] = []
@@ -258,12 +278,14 @@ public struct ModelServer: Sendable {
       pages.append(feed.page(scope, cursor: cursor, account: account, in: state))
     }
     return Reply(
-      status: 200, body: ["serverTime": JSON(serverNow), "epoch": .string(state.epoch), "pages": .array(pages)], events: events)
+      status: 200,
+      body: ["serverTime": JSON(serverNow), "epoch": .string(state.epoch), "as": Self.served(account), "pages": .array(pages)],
+      events: events)
   }
 
   // A pull a client sends: its body, as received, is the request's JCS.
-  public mutating func pull(_ request: JSON, account: String?, at wall: Int64) -> Reply {
-    pull(received: request.jcs, account: account, at: wall)
+  public mutating func pull(_ request: JSON, credential: Credential, at wall: Int64) -> Reply {
+    pull(received: request.jcs, credential: credential, at: wall)
   }
 
   // Each `beforePull` command of the scope's kind, in its own admission as the scope owner's server origin, when
@@ -285,8 +307,21 @@ public struct ModelServer: Sendable {
 
   // MARK: - Live
 
-  public mutating func connect(account: String?) -> LiveSocket {
-    LiveSocket(id: live.connect(account: account))
+  // §6.8 the upgrade: a socket served as the credential's account, or anonymous, for its whole life; nil for a
+  // credential that fails, which the upgrade answers 401.
+  public mutating func connect(_ credential: Credential) -> LiveSocket? {
+    guard !credential.fails else { return nil }
+    return LiveSocket(id: live.connect(account: credential.account))
+  }
+
+  // §6.8: a socket whose credential is revoked or expires is closed before it sends another frame or answers another
+  // `sub`; it never goes on as anonymous.
+  public mutating func close(_ socket: LiveSocket) {
+    live.close(socket.id)
+  }
+
+  public func isOpen(_ socket: LiveSocket) -> Bool {
+    live.subscribers[socket.id] != nil
   }
 
   public mutating func subscribe(_ socket: LiveSocket, to scopes: [ScopeRef]) {
@@ -297,10 +332,20 @@ public struct ModelServer: Sendable {
     live.unsubscribe(socket.id, from: scopes)
   }
 
-  // The frame a socket of `account` subscribed to `scope` receives when the scope dies; nil when it receives none.
+  // The frame a socket served as `account` and subscribed to `scope` receives when the scope dies; nil when it receives
+  // none.
   public func deathFrame(of scope: ScopeRef, for account: String?) -> JSON? {
     guard let key = ScopeKey(scope, account: account) else { return nil }
     return LiveChannel.deathFrame(of: key, to: account, in: state, registry: registry)
+  }
+
+  // The frame a socket served as `account` receives for one live event it follows: the change frame with the socket's
+  // `as`, or the scope's death as `deathFrame` answers it.
+  public func frame(for event: LiveEvent, to account: String?) -> JSON? {
+    switch event {
+    case .change(_, let frame): LiveChannel.served(frame, to: account)
+    case .death(let key): LiveChannel.deathFrame(of: key, to: account, in: state, registry: registry)
+    }
   }
 
   // The frames a socket has been sent since it last took them, in the order they left.
@@ -331,6 +376,29 @@ public struct Reply: Sendable, Hashable {
 
 public struct LiveSocket: Sendable, Hashable {
   public let id: Int
+}
+
+// §9.1 what a request's credential resolved to: none was sent, so the request is anonymous; it resolved to an account;
+// or it was sent and resolved to none (revoked, expired, unknown or malformed). One that does not resolve, or resolves
+// to an account id outside §9.1's form, fails: every endpoint answers it 401, never as anonymous.
+public enum Credential: Sendable, Hashable {
+  case absent
+  case account(String)
+  case unresolved
+
+  public var fails: Bool {
+    switch self {
+    case .absent: false
+    case .account(let account): !AccountID.isWellFormed(account)
+    case .unresolved: true
+    }
+  }
+
+  // The account a request is served as, nil when anonymous.
+  public var account: String? {
+    guard case .account(let account) = self else { return nil }
+    return account
+  }
 }
 
 // Faults a push meets (§6.6): a budget of admissions standing for PUSH_WORK_MS, a transient failure in the binding, and
@@ -392,17 +460,21 @@ public struct CallFaults: Sendable, Hashable {
   }
 }
 
-// §9.3 a push body, exactly `{replica, ackThrough, intents}`: a replica id of D-3's form, `rp_` and 32 lowercase hex,
-// a safe integer `ackThrough ≥ 0`, and a safe integer `n ≥ 1` on every intent (§9.1), in ascending `n`.
+// §9.3 a push body, exactly `{replica, account, ackThrough, intents}`: a replica id of D-3's form, `rp_` and 32 lowercase
+// hex, a string account, a safe integer `ackThrough ≥ 0`, and a safe integer `n ≥ 1` on every intent (§9.1), in
+// ascending `n`.
 struct PushBody {
   let replica: String
+  let account: String
   let ackThrough: Int64
   let intents: [(n: Int64, intent: JSON)]
 
   init?(_ body: JSON) {
-    guard case .object(let object) = body, (try? object.expectKeys(required: ["ackThrough", "intents", "replica"])) != nil,
+    guard case .object(let object) = body,
+          (try? object.expectKeys(required: ["account", "ackThrough", "intents", "replica"])) != nil,
           case .string(let replica)? = object["replica"], replica.isPrintableASCII,
           replica.wholeMatch(of: #/rp_[0-9a-f]{32}/#) != nil,
+          case .string(let account)? = object["account"],
           let ackThrough = try? object["ackThrough"]?.asInteger(atLeast: 0),
           case .array(let intents)? = object["intents"] else { return nil }
     var numbered: [(n: Int64, intent: JSON)] = []
@@ -411,6 +483,7 @@ struct PushBody {
       numbered.append((n, intent))
     }
     self.replica = replica
+    self.account = account
     self.ackThrough = ackThrough
     self.intents = numbered.sorted { $0.n < $1.n }
   }

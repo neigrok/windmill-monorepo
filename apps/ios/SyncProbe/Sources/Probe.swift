@@ -83,13 +83,15 @@ final class Probe {
 }
 
 // What the app was launched with: `-name value` pairs. Each name takes the argument after it verbatim, since a session
-// token may begin with "-", which UserDefaults' argument domain would read as the next name.
+// token may begin with "-", which UserDefaults' argument domain would read as the next name. `-foreignToken` is another
+// account's session token, which a scenario holds as `-account`'s.
 struct LaunchSettings {
   let scenario: String?
   let report: URL?
   let signals: URL?
   let account: String?
   let token: String?
+  let foreignToken: String?
   let backend: URL
   let skewMs: Int64
   let holdMs: Int64
@@ -110,6 +112,7 @@ struct LaunchSettings {
     signals = values["signals"].map { URL(fileURLWithPath: $0, isDirectory: true) } ?? report?.deletingLastPathComponent()
     account = values["account"]
     token = values["token"]
+    foreignToken = values["foreignToken"]
     backend = values["backend"].flatMap(URL.init(string:)) ?? URL(string: "http://127.0.0.1:8089")!
     skewMs = values["skewMs"].flatMap { Int64($0) } ?? 0
     holdMs = values["holdMs"].flatMap { Int64($0) } ?? Constants.holdMs

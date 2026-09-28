@@ -84,22 +84,28 @@ struct Rig {
 
   // MARK: Push answers (§9.3)
 
-  static func ok(lastN: Int64, _ results: [JSON], serverTime: Int64 = startMs, epoch: String = "ep-1", retry: JSON? = nil) -> JSON {
-    var body: JSON.Object = ["serverTime": JSON(serverTime), "epoch": .string(epoch), "lastN": JSON(lastN), "results": .array(results)]
+  // Every answer and frame says whom it was served as (§9.1): the rig's account A, unless a test says otherwise; nil
+  // writes `as: null`, anonymous.
+  static func ok(lastN: Int64, _ results: [JSON], serverTime: Int64 = startMs, epoch: String = "ep-1", retry: JSON? = nil,
+                 as served: String? = "A") -> JSON {
+    var body: JSON.Object = [
+      "serverTime": JSON(serverTime), "epoch": .string(epoch), "as": served.map(JSON.string) ?? .null, "lastN": JSON(lastN),
+      "results": .array(results),
+    ]
     body["retry"] = retry
     return .object(body)
   }
 
   static func admitted(_ n: Int64, seq: Int64) -> JSON { ["n": JSON(n), "s": "ok", "seq": JSON(seq)] }
   static func refused(_ n: Int64, _ code: String) -> JSON { ["n": JSON(n), "s": "refused", "code": .string(code)] }
-  static func failure(_ error: String, serverTime: Int64 = startMs) -> JSON {
-    ["error": .string(error), "serverTime": JSON(serverTime), "epoch": "ep-1"]
+  static func failure(_ error: String, serverTime: Int64 = startMs, as served: String? = "A") -> JSON {
+    ["error": .string(error), "serverTime": JSON(serverTime), "epoch": "ep-1", "as": served.map(JSON.string) ?? .null]
   }
 
   // MARK: Pull answers (§9.4)
 
-  static func pulled(_ pages: [JSON], serverTime: Int64 = startMs, epoch: String = "ep-1") -> JSON {
-    ["serverTime": JSON(serverTime), "epoch": .string(epoch), "pages": .array(pages)]
+  static func pulled(_ pages: [JSON], serverTime: Int64 = startMs, epoch: String = "ep-1", as served: String? = "A") -> JSON {
+    ["serverTime": JSON(serverTime), "epoch": .string(epoch), "as": served.map(JSON.string) ?? .null, "pages": .array(pages)]
   }
 
   // A rows page of `scope` ending live at `seq` (or at `cursor`), whose digest is the sum of `digestOf`.
@@ -125,9 +131,10 @@ struct Rig {
   }
 
   // §9.5 a change frame of `scope` at `seq`, whose digest is the sum of `digestOf`; `rows` nil leaves them out.
-  static func change(_ scope: ScopeRef = Rig.scope, rows: [Row]?, seq: Int64, digestOf alive: [Row], epoch: String = "ep-1") throws -> LiveFrame {
+  static func change(_ scope: ScopeRef = Rig.scope, rows: [Row]?, seq: Int64, digestOf alive: [Row], epoch: String = "ep-1",
+                     as served: String? = "A") throws -> LiveFrame {
     var frame: JSON.Object = [
-      "op": "change", "scope": scope.json, "epoch": .string(epoch), "seq": JSON(seq),
+      "op": "change", "as": served.map(JSON.string) ?? .null, "scope": scope.json, "epoch": .string(epoch), "seq": JSON(seq),
       "digest": .string(ScopeDigest(rows: alive.filter(\.isAlive).map(\.json)).hex),
     ]
     frame["rows"] = rows.map { .array($0.map(\.json)) }

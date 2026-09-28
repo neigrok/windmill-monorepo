@@ -25,7 +25,10 @@ struct SimulatorTests {
     "sign-out keep", "sign-out discard", "sign-out cancelled", "dormant discarded", "server restored", "epoch change", "store cloned",
     "store restored from a backup", "store rolled back in place", "reboot", "clock jumped", "poisoned", "visibility set",
     "read-and-commit decided nothing", "gesture tag revive", "gesture probe.copy", "notice dismissed", "scope closed",
-    "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete",
+    "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete", "session of another account",
+    "http 409 account-mismatch", "wire push loseCredential", "wire pull loseCredential", "wire live loseCredential",
+    "wire hello loseCredential", "push served as anonymous", "push served as another account", "pull served as anonymous",
+    "pull served as another account", "frame served as anonymous",
   ]
 
   @Test func everySeedHoldsEveryInvariantAfterQuiescence() async throws {

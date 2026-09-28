@@ -94,8 +94,9 @@ public struct CommitPlanner: Sendable {
     let intents = group(deltas, guards: guards, command: command, gesture: gesture, scope: scope, gestureId: gestureId)
 
     // Step 8: an intent the widest request cannot carry alone refuses the gesture, so an entry as committed always fits
-    // a request alone.
-    if intents.contains(where: { PushRequest(widestFor: $0, of: replica.meta.replica).body.count > limits.pushMaxBytes }) {
+    // a request alone, the `anon` replica's through sign-in.
+    let (id, account) = (replica.meta.replica, replica.meta.account)
+    if intents.contains(where: { PushRequest(widestFor: $0, of: id, account: account).body.count > limits.pushMaxBytes }) {
       let notice = "notice:\(gestureId)/0"
       replica.apply(.putNotice(Notice(
         id: notice, product: product, scope: scope, code: .tooLarge, detail: nil,

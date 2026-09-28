@@ -1,8 +1,8 @@
 import SyncAPI
 import SyncCore
 
-// The replica lifecycle: re-identify and the fork guard (§7.11), the epoch change (§7.5 step 1), engine start (§7.3),
-// sign-in by the lineage rule, sign-out and discard (§7.10), and subscriptions (§7.9).
+// The replica lifecycle: re-identify and the fork guard (§7.11), the epoch change (§7.5 step 1), engine start (§7.3), a
+// hello's answer (§9.2), sign-in by the lineage rule, sign-out and discard (§7.10), and subscriptions (§7.9).
 
 // The fork guard's backup-excluded copy at engine start: web keeps none; a native store's copy may be missing.
 public enum BackupCopy: Sendable, Hashable {
@@ -260,6 +260,13 @@ public struct ReplicaLifecycle: Sendable {
       _ = try Machines.replica.transition(from: .bound, .signIn)
       return
     }
+  }
+
+  // §9.2 a hello's answer to the replica: its offset sample (§10.4), then the pause of an answer handled as a 401, a hello
+  // served as anyone but the replica's account among them (§9.1).
+  public func receive(_ hello: Answer<HelloResponse>, in replica: inout LoadedReplica, timing: Timing) {
+    if let serverTime = hello.serverTime { replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) } }
+    if hello.isUnauthenticated(for: replica.meta.account) { replica.update { $0.authPaused = true } }
   }
 
   // §8.2: a bound replica a 401 paused resumes when its account re-authenticates. True iff it was paused.

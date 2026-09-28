@@ -86,6 +86,27 @@ public struct RecordKey: Sendable, Hashable, Comparable, CustomStringConvertible
   public var json: JSON { [.string(type), id.json] }
 }
 
+// MARK: - Account ids
+
+// §9.1 an account id: at most ACCOUNT_ID_BYTES bytes of UTF-8, holding no character JCS escapes (a control character, `"`
+// or `\`). The server resolves a credential to no other, so every account a push names fits §7.1 step 8's widest body.
+public enum AccountID {
+  public static func isWellFormed(_ id: String) -> Bool {
+    id.utf8.count <= Constants.accountIdBytes && JSON.string(id).jcs.count == id.utf8.count + 2
+  }
+
+  // The widest account a push can name: what an `anon` replica's commit measures an entry with, before it knows its
+  // account (§7.1 step 8).
+  public static let widest = String(repeating: "a", count: Constants.accountIdBytes)
+}
+
+extension String {
+  // Accounts and ids are the same only byte for byte, never by Unicode canonical equivalence (§9.1, INV-7).
+  public func isSameID(as other: String?) -> Bool {
+    other.map { utf8.elementsEqual($0.utf8) } ?? false
+  }
+}
+
 // MARK: - Scope references
 
 // D-4 wire references: `self/<product>`, `self/overlay/<T>`, `tree/<T>`, and the client-only `device/<product>`.

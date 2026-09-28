@@ -209,11 +209,12 @@ public enum IntentShape {
     return PlannedDelta(key: RecordKey(typeName, id), op: op, life: life, born: born, fields: fields, texts: texts)
   }
 
-  // §2.4 a delta of a `wholePut` type carries a life, and an alive one every client-written lattice field of its type,
-  // every register at the life's stamp: null alike from a server origin.
+  // §2.4 a delta of a `wholePut` type carries a life. An alive one carries every client-written lattice field of its
+  // type, every register at the life's stamp (null alike from a server origin); a dead one no field register, so a
+  // losing delete plants nothing.
   static func isWhole(life: PlannedLife?, fields: [String: PlannedRegister], of type: TypeDef) -> Bool {
     guard let life else { return false }
-    guard life.state == .alive else { return true }
+    guard life.state == .alive else { return fields.isEmpty }
     return type.clientLatticeFields.allSatisfy { fields[$0.name] != nil } && fields.values.allSatisfy { $0.slot == life.slot }
   }
 

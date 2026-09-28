@@ -6,8 +6,9 @@ import SyncReplica
 
 // The scenarios only an end-to-end run can prove (design §10 item 5), each as the steps one launch takes. A scenario that
 // spans launches or phones has one entry per launch, `<scenario>/<phase>`, and e2e.sh runs them in order around what
-// only the simulator or the server can do: leave the app, kill it, copy its container, revoke a session, regenerate the
-// epoch. Each works under an account of its own, so what the server holds afterwards is the scenario's alone.
+// only the simulator or the server can do: leave the app, kill it, copy its container, revoke a session, sign in another
+// account, regenerate the epoch. Each works under accounts of its own, so what the server holds afterwards is the
+// scenario's alone.
 enum Scenarios {
   static func named(_ name: String) -> ((ScenarioRun) async throws -> Void)? {
     switch name {
@@ -23,6 +24,10 @@ enum Scenarios {
     case "reauth/resume": reauthResume
     case "revoked-pull/pause": revokedPullPause
     case "revoked-pull/resume": revokedPullResume
+    case "revoked-live/watch": revokedLiveWatch
+    case "foreign-credential/swap": foreignCredentialSwap
+    case "foreign-credential/relaunch": foreignCredentialRelaunch
+    case "foreign-credential/resume": foreignCredentialResume
     case "clock-skew": clockSkew
     case "clock-jump/before": clockJumpBefore
     case "clock-jump/after": clockJumpAfter
@@ -109,18 +114,14 @@ enum Scenarios {
 
   // The committing phone, the same account.
   static func liveCommit(_ run: ScenarioRun) async throws {
-    try await run.signInAndSync()
-    try run.commitCard("Live")
-    try await run.waitUntilSettled()
+    try await run.signInAndSync(card: "Live")
   }
 
   // MARK: Fork guard
 
   // The phone whose container e2e.sh then copies to another, without the fork guard's copy.
   static func forkOrigin(_ run: ScenarioRun) async throws {
-    try await run.signInAndSync()
-    try run.commitCard("Origin")
-    try await run.waitUntilSettled()
+    try await run.signInAndSync(card: "Origin")
     run.note("the replica", .string(try run.probe.active().meta.replica))
   }
 
@@ -151,15 +152,23 @@ enum Scenarios {
 
   // MARK: 401 and re-authentication
 
-  // Synced, then e2e.sh revokes the session: the next push answers 401, the replica pauses and the status says so.
+  // Synced, then away from the app: its socket closes and nothing pulls, so once e2e.sh revokes the session, the push of
+  // the card committed next is the first call under it. It answers 401, as no one's; the replica pauses and the status
+  // says so.
   static func reauthPause(_ run: ScenarioRun) async throws {
-    try await syncThenRevoke(run)
-    let revoked = run.logCount
+    try await run.signInAndSync(card: "Before")
+    let left = run.logCount
+    try run.probe.engine.leave()
+    try await run.waitUntil("the live socket is closed", within: .seconds(5)) { !run.logged("live-close", from: left).isEmpty }
+    let revoked = try await awaitRevocation(run)
     try run.commitCard("After")
     try await run.waitUntil("the replica is paused", within: .seconds(10)) { try run.probe.active().meta.authPaused }
-    try run.check("the push answered 401", run.logged("push", from: revoked).map { $0["status"] } == [401], .array(run.logged("push", from: revoked)))
+    let pushes = run.logged("push", from: revoked)
+    try run.check("the push answered 401, as no one's", pushes.count == 1 && pushes[0]["status"] == 401 && pushes[0]["as"] == .null,
+                  .array(pushes))
     try await run.waitUntil("the status asks to re-authenticate", within: .seconds(2)) { run.probe.engine.status.authPaused }
     try run.check("the card waits unsent", try run.entryStates().allSatisfy { $0 == "ready" || $0 == "sent" })
+    try run.check("nothing was pulled", run.logged("pull", from: revoked).isEmpty, .array(run.logged("pull", from: revoked)))
   }
 
   // Launched with a new token for the account: the pause is cleared and the card waiting goes.
@@ -168,19 +177,23 @@ enum Scenarios {
     try run.check("both cards are drawn", try run.cardTitles() == ["After", "Before"])
   }
 
-  // Synced, then e2e.sh revokes the session while the app is away. Coming back pulls under the revoked token, which the
-  // server answers as it answers no one; the phone keeps the account's rows, forgets no scope, and pauses. Found by this
-  // run: the phone used to erase the account's rows for good.
+  // Synced, then e2e.sh revokes the session. The phone pulls under it, on the reconnect the server's close of the
+  // session's socket makes or on coming back to the foreground, and the pull answers 401, as no one's: the phone pauses,
+  // applies nothing, keeps the account's rows and forgets no scope.
   static func revokedPullPause(_ run: ScenarioRun) async throws {
-    try await syncThenRevoke(run)
-    let revoked = run.logCount
+    try await run.signInAndSync(card: "Before")
+    let cursor = try run.cursor()
+    let revoked = try await awaitRevocation(run)
     run.probe.engine.foreground()
     try await run.waitUntil("the replica is paused", within: .seconds(10)) { try run.probe.active().meta.authPaused }
     let pulls = run.logged("pull", from: revoked)
-    try run.check("coming back pulled self/probe, answered as no one's",
-                  pulls.first?["pages"] == [["scope": "self/probe", "kind": "not-found"]] && run.logged("push", from: revoked).isEmpty, .array(pulls))
+    try run.check("the pull under the revoked session answered 401, as no one's",
+                  !pulls.isEmpty && pulls.allSatisfy { $0["status"] == 401 && $0["as"] == .null }, .array(pulls))
+    try await run.waitUntil("the status asks to re-authenticate", within: .seconds(2)) { run.probe.engine.status.authPaused }
     try run.check("the phone still draws its card", try run.cardTitles() == ["Before"])
     try run.check("and knows no scope gone or not found", try run.probe.active().known.isEmpty)
+    try run.check("the cursor stands", try run.cursor() == cursor, try run.cursor())
+    try run.check("nothing was pushed", run.logged("push", from: revoked).isEmpty, .array(run.logged("push", from: revoked)))
   }
 
   // Launched with a new token: the pause is cleared, the product is pulled again from where it stood, and the card stays.
@@ -189,12 +202,38 @@ enum Scenarios {
     try run.check("the card is drawn", try run.cardTitles() == ["Before"])
   }
 
-  static func syncThenRevoke(_ run: ScenarioRun) async throws {
+  // Following self/probe live, then e2e.sh revokes the session. The server closes the socket at once, before any other
+  // frame (§6.8), so the phone learns of it without asking: the reconnect's pull is answered 401, as no one's, and the
+  // phone pauses. The card another phone of the account commits afterwards never reaches it, and it forgets nothing.
+  static func revokedLiveWatch(_ run: ScenarioRun) async throws {
     try await run.signInAndSync()
-    try run.commitCard("Before")
-    try await run.waitUntilSettled()
+    try await run.waitUntil("the live socket follows self/probe", within: .seconds(10)) {
+      run.logged("live-send").contains { $0["op"] == "sub" && $0["scopes"] == ["self/probe"] }
+    }
+    let revoked = try await awaitRevocation(run)
+    try await run.waitUntil("the replica is paused", within: .seconds(10)) { try run.probe.active().meta.authPaused }
+    let after = Array(run.probe.log.all.dropFirst(revoked))
+    let ended = after.firstIndex { $0["kind"] == "live-closed" || $0["kind"] == "live-failed" }
+    let pulled = after.firstIndex { $0["kind"] == "pull" } ?? after.count
+    try run.check("the server ended the socket before the phone asked anything", ended.map { $0 < pulled } == true, .array(after))
+    let asked = run.logged("pull", from: revoked) + run.logged("live-open", from: revoked)
+    try run.check("every pull and upgrade under the revoked session answered 401",
+                  !asked.isEmpty && asked.allSatisfy { $0["status"] == 401 }, .array(asked))
+    run.signal("paused")
+    try await run.awaitSignal("committed", within: .seconds(60))
+    try await Task.sleep(for: .seconds(3))
+    let frames = run.logged("live-frame", from: revoked).filter { $0["op"] != "pong" }
+    try run.check("no frame came after the revocation", frames.isEmpty, .array(frames))
+    try run.check("the other phone's card never reached this one", try run.cardTitles().isEmpty)
+    try run.check("and it knows no scope gone or not found", try run.probe.active().known.isEmpty)
+  }
+
+  // Tells e2e.sh the phone is synced, and waits for it to revoke the session. Answers where the log stood before.
+  static func awaitRevocation(_ run: ScenarioRun) async throws -> Int {
+    let synced = run.logCount
     run.signal("synced")
     try await run.awaitSignal("revoked", within: .seconds(30))
+    return synced
   }
 
   static func resume(_ run: ScenarioRun) async throws {
@@ -202,6 +241,72 @@ enum Scenarios {
     await run.start()
     try await run.waitForFirstPull()
     try await run.waitUntilSettled()
+  }
+
+  // MARK: Another account's credential
+
+  // Synced, then the Keychain holds a stranger's token (`-foreignToken`) as the account's. The push of the card committed
+  // next names the account and is served as the stranger: 409 account-mismatch, refused before the server reads the
+  // replica's binding. The phone handles it as a 401: it pauses, and forgets and changes nothing.
+  static func foreignCredentialSwap(_ run: ScenarioRun) async throws {
+    guard let foreign = run.probe.settings.foreignToken else { throw ScenarioRun.Failed(description: "no -foreignToken to hold") }
+    try await run.signInAndSync(card: "Mine")
+    let account = try run.probe.boundAccount() ?? ""
+    let cursor = try run.cursor()
+    try run.probe.tokens.save(SessionToken(foreign), for: account)
+    run.note("the Keychain holds the stranger's token as the account's")
+    let swapped = run.logCount
+    try run.commitCard("Stray")
+    try await run.waitUntil("the replica is paused", within: .seconds(10)) { try run.probe.active().meta.authPaused }
+    let pushes = run.logged("push", from: swapped)
+    let servedAs = pushes.first?["as"].flatMap { try? $0.asString() }
+    try run.check("the push named the account and answered 409 account-mismatch, served as another account",
+                  pushes.count == 1 && pushes[0]["status"] == 409 && pushes[0]["error"] == "account-mismatch"
+                    && pushes[0]["account"] == .string(account) && servedAs != nil && servedAs != account, .array(pushes))
+    run.note("served as", servedAs.map(JSON.string) ?? .null)
+    try await keptEverything(run, cursor: cursor)
+    try run.check("nothing was pulled", run.logged("pull", from: swapped).isEmpty, .array(run.logged("pull", from: swapped)))
+  }
+
+  // Relaunched with the stranger's token for the account: the launch re-authenticates with it, which clears the pause,
+  // and engine start's hello is served as the stranger. The phone pauses before it pulls or pushes, and forgets and
+  // changes nothing.
+  static func foreignCredentialRelaunch(_ run: ScenarioRun) async throws {
+    let account = try run.probe.boundAccount() ?? ""
+    let held = run.probe.tokens.token(for: account) == run.probe.settings.token.map(SessionToken.init)
+    let paused = try run.probe.active().meta.authPaused
+    try run.check("the launch holds the stranger's token as the account's, and cleared the pause", held && !paused)
+    let cursor = try run.cursor()
+    let launched = run.logCount
+    await run.start()
+    try await run.waitUntil("the replica is paused", within: .seconds(10)) { try run.probe.active().meta.authPaused }
+    let hellos = run.logged("hello", from: launched)
+    let servedAs = hellos.first?["as"].flatMap { try? $0.asString() }
+    try run.check("the hello was served as another account",
+                  hellos.count == 1 && hellos[0]["status"] == 200 && servedAs != nil && servedAs != account, .array(hellos))
+    run.note("served as", servedAs.map(JSON.string) ?? .null)
+    try await keptEverything(run, cursor: cursor)
+    let calls = run.logged("pull", from: launched) + run.logged("push", from: launched)
+    try run.check("nothing was pulled or pushed", calls.isEmpty, .array(calls))
+  }
+
+  // Relaunched with a new token of the account's own: the pause clears, and the stray card goes to the account.
+  static func foreignCredentialResume(_ run: ScenarioRun) async throws {
+    try await resume(run)
+    try run.check("both cards are drawn", try run.cardTitles() == ["Mine", "Stray"])
+  }
+
+  // What an answer served as another account leaves as it was: both cards are drawn, no scope is known gone or not found,
+  // the stray card waits unsent, and the cursor stands; the status asks to re-authenticate.
+  static func keptEverything(_ run: ScenarioRun, cursor: JSON) async throws {
+    try await run.waitUntil("the status asks to re-authenticate", within: .seconds(2)) { run.probe.engine.status.authPaused }
+    try run.check("both cards are drawn", try run.cardTitles() == ["Mine", "Stray"])
+    try run.check("no scope is known gone or not found", try run.probe.active().known.isEmpty)
+    let states = try run.entryStates()
+    try run.check("the stray card waits unsent", states == ["ready"] || states == ["sent"], .array(states.map(JSON.string)))
+    let standing = try run.cursor()
+    try run.check("the cursor stands", standing == cursor, standing)
+    run.note("the cursor", standing)
   }
 
   // MARK: Clocks
@@ -224,9 +329,7 @@ enum Scenarios {
 
   // Synced with the clock as it is; e2e.sh then relaunches the app with its clock 10 minutes ahead.
   static func clockJumpBefore(_ run: ScenarioRun) async throws {
-    try await run.signInAndSync()
-    try run.commitCard("Before")
-    try await run.waitUntilSettled()
+    try await run.signInAndSync(card: "Before")
     run.note("the offset", try run.probe.active().meta.offset.logged)
   }
 
@@ -252,9 +355,7 @@ enum Scenarios {
   // the new epoch: its card lands, the replica re-identifies, every cursor boots again, and the next card goes as the new
   // replica.
   static func epochChange(_ run: ScenarioRun) async throws {
-    try await run.signInAndSync()
-    try run.commitCard("Before")
-    try await run.waitUntilSettled()
+    try await run.signInAndSync(card: "Before")
     let before = try run.probe.active().meta
     run.note("before", ["replica": .string(before.replica), "epoch": before.serverEpoch.map(JSON.string) ?? .null])
     run.signal("synced")
@@ -277,9 +378,7 @@ enum Scenarios {
 
   // The account's first record, so it holds records when a signed-out phone signs in.
   static func lineageSeed(_ run: ScenarioRun) async throws {
-    try await run.signInAndSync()
-    try run.commitCard("Seed")
-    try await run.waitUntilSettled()
+    try await run.signInAndSync(card: "Seed")
   }
 
   // A fresh phone, signed out, commits; it signs in to the account, which holds records, so the decision appears; Add

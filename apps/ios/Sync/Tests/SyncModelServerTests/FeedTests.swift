@@ -25,19 +25,19 @@ struct FeedTests {
       card(1, "card0001", "alive", 1_001), card(2, "card0002", "alive", 1_002), day(3, "2026-09-01", "alive"),
       card(4, "card0001", "dead", 1_001), day(5, "2026-09-02", "alive"), day(6, "2026-09-01", "dead"), card(7, "card0003", "alive", 1_007),
     ]
-    _ = server.push(["replica": .string(replica), "ackThrough": 0, "intents": .array(history)], account: "A", at: 5_000)
+    _ = server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": .array(history)], credential: .account("A"), at: 5_000)
     var rows: [RecordKey: Row] = [:]
     var cursor = JSON.null
     var pages = 0
     while true {
-      let reply = server.pull(["scopes": [["scope": "self/probe", "cursor": cursor]]], account: "A", at: 6_000)
+      let reply = server.pull(["scopes": [["scope": "self/probe", "cursor": cursor]]], credential: .account("A"), at: 6_000)
       let page = try reply.body.member("pages").asArray()[0]
       for row in try page.member("rows").asArray().map({ try Row(json: $0) }) { rows[row.key] = row.isAlive ? row : nil }
       cursor = try page.member("cursor")
       pages += 1
       if pages == 2 {
         let later = [day(8, "2026-09-02", "dead"), card(9, "card0004", "alive", 1_009)]
-        _ = server.push(["replica": .string(replica), "ackThrough": 0, "intents": .array(later)], account: "A", at: 5_500)
+        _ = server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": .array(later)], credential: .account("A"), at: 5_500)
       }
       guard try page.member("more").asBool() else {
         #expect(try ScopeDigest(hex: page.member("digest").asString()) == ScopeDigest(rows: rows.values.map(\.json)))
@@ -56,7 +56,7 @@ struct FeedTests {
       registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1", accounts: ["A": "Ann", "B": "Bob"]))
     let replica = "rp_0000000000000000000000000000000a"
     let board = { (n: Int64, life: String) -> JSON in
-      ["replica": .string(replica), "ackThrough": 0, "intents": [
+      ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": JSON(n), "scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "10:0:r_aaaaaaaaaaaa",
                                                      "life": [.string(life), .string("\(10 * n):0:r_aaaaaaaaaaaa")]]]],
       ]]
@@ -67,30 +67,31 @@ struct FeedTests {
       ])
     }
     let tree = ScopeRef.tree("b_00000001")
-    _ = server.push(board(1, "alive"), account: "A", at: 1_000)
-    let owner = server.connect(account: "A")
-    let reader = server.connect(account: "B")
+    _ = server.push(board(1, "alive"), credential: .account("A"), at: 1_000)
+    let owner = server.connect(.account("A"))!
+    let reader = server.connect(.account("B"))!
     server.subscribe(owner, to: [tree])
     server.subscribe(reader, to: [tree])
-    #expect(server.frames(for: reader) == [["op": "not-found", "scope": "tree/b_00000001"]])
+    #expect(server.frames(for: reader) == [["op": "not-found", "as": "B", "scope": "tree/b_00000001"]])
 
     _ = server.call(visibility("public"), at: 2_000)
     let opened = try #require(server.state.scopes[ScopeKey(.tree("b_00000001"))])
     server.subscribe(reader, to: [tree])
     let titled = server.push(
-      ["replica": .string(replica), "ackThrough": 0, "intents": [
+      ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": 2, "scope": "tree/b_00000001", "d": [["t": "meta", "id": "meta", "f": ["title": ["Plan", "30:0:r_aaaaaaaaaaaa"]]]]],
-      ]], account: "A", at: 3_000)
+      ]], credential: .account("A"), at: 3_000)
     _ = server.call(visibility("private"), at: 4_000)
     let closed = try #require(server.state.scopes[ScopeKey(.tree("b_00000001"))])
-    _ = server.push(board(3, "dead"), account: "A", at: 5_000)
+    _ = server.push(board(3, "dead"), credential: .account("A"), at: 5_000)
 
-    let titleFrame = try #require(titled.events.first.map(\.json)?["frame"])
-    #expect(server.frames(for: reader) == [titleFrame, ["op": "not-found", "scope": "tree/b_00000001"]])
+    let title = try #require(titled.events.first)
+    #expect(server.frames(for: reader) == [server.frame(for: title, to: "B"), ["op": "not-found", "as": "B", "scope": "tree/b_00000001"]])
     let owned = server.frames(for: owner)
     #expect(owned.map { $0["seq"] ?? $0["op"] ?? .null } == [1, 2, 3, "gone"])
+    #expect(owned.map { $0["as"] } == ["A", "A", "A", "A"])
     #expect(owned[0]["digest"] == .string(opened.digest.hex))
-    #expect(owned[1] == titleFrame)
+    #expect(owned[1] == server.frame(for: title, to: "A"))
     #expect(owned[2]["digest"] == .string(closed.digest.hex))
     #expect(server.frames(for: owner) == [])
   }
@@ -100,16 +101,16 @@ struct FeedTests {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     let replica = "rp_0000000000000000000000000000000a"
     let board = { (n: Int64, life: String) -> JSON in
-      ["replica": .string(replica), "ackThrough": 0, "intents": [
+      ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": JSON(n), "scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "10:0:r_aaaaaaaaaaaa",
                                                      "life": [.string(life), .string("\(10 * n):0:r_aaaaaaaaaaaa")]]]],
       ]]
     }
-    _ = server.push(board(1, "alive"), account: "A", at: 1_000)
-    let socket = server.connect(account: "A")
+    _ = server.push(board(1, "alive"), credential: .account("A"), at: 1_000)
+    let socket = server.connect(.account("A"))!
     server.subscribe(socket, to: [.tree("b_00000001"), .overlay("b_00000001")])
-    _ = server.push(board(2, "dead"), account: "A", at: 2_000)
-    #expect(server.frames(for: socket) == [["op": "gone", "scope": "tree/b_00000001"]])
+    _ = server.push(board(2, "dead"), credential: .account("A"), at: 2_000)
+    #expect(server.frames(for: socket) == [["op": "gone", "as": "A", "scope": "tree/b_00000001"]])
   }
 
   // A dying public tree answers each socket as a pull would: gone to its owner, for the tree and the owner's overlay;
@@ -127,7 +128,9 @@ struct FeedTests {
         object["n"] = JSON(n + 1)
         return JSON.object(object)
       }
-      _ = server.push(["replica": .string(replica), "ackThrough": 0, "intents": .array(numbered)], account: account, at: 1_000)
+      _ = server.push(
+        ["replica": .string(replica), "account": .string(account), "ackThrough": 0, "intents": .array(numbered)],
+        credential: .account(account), at: 1_000)
     }
     let replicas = ["rp_0000000000000000000000000000000a", "rp_0000000000000000000000000000000b"]
     push(&server, replicas[0], "A", [board("alive", "10:0:r_aaaaaaaaaaaa"), mark])
@@ -135,9 +138,9 @@ struct FeedTests {
       ["scope": "tree/b_00000001", "d": [["t": "meta", "id": "meta", "f": ["visibility": ["public", .null]]]]],
     ]), at: 1_000)
     push(&server, replicas[1], "B", [mark])
-    let owner = server.connect(account: "A")
-    let reader = server.connect(account: "B")
-    let stranger = server.connect(account: "C")
+    let owner = server.connect(.account("A"))!
+    let reader = server.connect(.account("B"))!
+    let stranger = server.connect(.account("C"))!
     server.subscribe(owner, to: [.overlay("b_00000001"), .tree("b_00000001")])
     server.subscribe(reader, to: [.overlay("b_00000001"), .tree("b_00000001")])
     server.subscribe(stranger, to: [.overlay("b_00000001")])
@@ -145,8 +148,8 @@ struct FeedTests {
       board("alive", "10:0:r_aaaaaaaaaaaa"), mark, board("dead", "30:0:r_aaaaaaaaaaaa"),
     ])
     #expect([server.frames(for: owner), server.frames(for: reader), server.frames(for: stranger)] == [
-      [["op": "gone", "scope": "self/overlay/b_00000001"], ["op": "gone", "scope": "tree/b_00000001"]],
-      [["op": "not-found", "scope": "self/overlay/b_00000001"], ["op": "not-found", "scope": "tree/b_00000001"]],
+      [["op": "gone", "as": "A", "scope": "self/overlay/b_00000001"], ["op": "gone", "as": "A", "scope": "tree/b_00000001"]],
+      [["op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"], ["op": "not-found", "as": "B", "scope": "tree/b_00000001"]],
       [],
     ])
   }
@@ -175,8 +178,8 @@ struct FeedTests {
     state.scopes[scope] = ScopeRecord(owner: "A", born: .firstWrite)
     state.rows[scope] = [row.key: row]
     var server = ModelServer(registry: registry, rules: ProbeServerRules(), state: state)
-    #expect(server.hello(account: "A", at: 1_000).body == [
-      "serverTime": 1_000, "epoch": "ep-1", "schema": 1, "minSchema": 1, "holdsRecords": ["p": .bool(visible)],
+    #expect(server.hello(credential: .account("A"), at: 1_000).body == [
+      "serverTime": 1_000, "epoch": "ep-1", "as": "A", "schema": 1, "minSchema": 1, "holdsRecords": ["p": .bool(visible)],
     ])
   }
 
@@ -188,25 +191,25 @@ struct FeedTests {
                                                    "life": [.string(life), .string("\(10 * n):0:r_aaaaaaaaaaaa")]]]]
     }
     let replica = "rp_0000000000000000000000000000000a"
-    _ = server.push(["replica": .string(replica), "ackThrough": 0, "intents": [board(1, "alive")]], account: "A", at: 1_000)
-    let socket = server.connect(account: "A")
+    _ = server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [board(1, "alive")]], credential: .account("A"), at: 1_000)
+    let socket = server.connect(.account("A"))!
     server.subscribe(socket, to: [.tree("b_00000001")])
-    let reply = server.push(["replica": .string(replica), "ackThrough": 0, "intents": [
+    let reply = server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
       ["n": 2, "scope": "tree/b_00000001", "d": [["t": "meta", "id": "meta", "f": ["title": ["Plan", "20:0:r_aaaaaaaaaaaa"]]]]],
       board(3, "dead"),
-    ]], account: "A", at: 2_000)
-    let titleFrame = try #require(reply.events.first?.json["frame"])
-    #expect(server.frames(for: socket) == [titleFrame, ["op": "gone", "scope": "tree/b_00000001"]])
+    ]], credential: .account("A"), at: 2_000)
+    let title = try #require(reply.events.first)
+    #expect(server.frames(for: socket) == [server.frame(for: title, to: "A"), ["op": "gone", "as": "A", "scope": "tree/b_00000001"]])
   }
 
   // INV-7(e): a scope answers not-found identically on pull and live, a signed-out socket's `self/…` included.
   @Test func aSignedOutSocketSubscribingItsOwnScopesIsAnsweredNotFound_INV7() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
-    let socket = server.connect(account: nil)
+    let socket = server.connect(.absent)!
     server.subscribe(socket, to: [.product("probe"), .product("nope"), .overlay("b_00000001")])
     #expect(server.frames(for: socket) == [
-      ["op": "not-found", "scope": "self/probe"], ["op": "not-found", "scope": "self/nope"],
-      ["op": "not-found", "scope": "self/overlay/b_00000001"],
+      ["op": "not-found", "as": .null, "scope": "self/probe"], ["op": "not-found", "as": .null, "scope": "self/nope"],
+      ["op": "not-found", "as": .null, "scope": "self/overlay/b_00000001"],
     ])
   }
 
@@ -218,7 +221,7 @@ struct FeedTests {
       ["n": JSON(n), "scope": "self/probe", "d": [["t": "day", "id": .string("2026-09-0\(n)"), "life": ["alive", .string("\(n):0:r_aaaaaaaaaaaa")]]]]
     }
     let replica = "rp_0000000000000000000000000000000a"
-    let reply = server.push(["replica": .string(replica), "ackThrough": 0, "intents": .array(intents)], account: "A", at: 1_000)
+    let reply = server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": .array(intents)], credential: .account("A"), at: 1_000)
     let digest = try #require(server.state.scopes[ScopeKey(.product(account: "A", name: "probe"))]?.digest)
     #expect(reply.events.map(\.json).map { $0["frame"]?["seq"] } == [1, 2, 3])
     #expect(reply.events.last?.json == ["key": "acct:A/probe", "frame": [

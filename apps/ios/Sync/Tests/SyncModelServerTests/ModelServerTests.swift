@@ -17,7 +17,7 @@ struct ModelServerTests {
     var server = ModelServer(
       registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"), limits: limits)
     let body = { (intents: Int, ackThrough: JSON?) -> JSON in
-      var body: JSON.Object = ["replica": "rp_0000000000000000000000000000000a", "intents": .array((1...intents).map { n in
+      var body: JSON.Object = ["replica": "rp_0000000000000000000000000000000a", "account": "A", "intents": .array((1...intents).map { n in
         ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": .string("card000\(n)"), "born": "10:0:r_aaaaaaaaaaaa",
                                                      "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]]
       })]
@@ -26,13 +26,33 @@ struct ModelServerTests {
     }
     try #require(body(2, 0).jcs.count <= 400 && body(4, nil).jcs.count > 400)
     let answers = [
-      server.push(body(4, nil), account: nil, at: 1_000),
-      server.push(body(4, nil), account: "A", at: 1_000),
-      server.push(body(2, nil), account: "A", at: 1_000),
-      server.push(body(2, 0), account: "A", at: 1_000),
-      server.push(body(1, 0), account: "A", at: 1_000),
+      server.push(body(4, nil), credential: .absent, at: 1_000),
+      server.push(body(4, nil), credential: .account("A"), at: 1_000),
+      server.push(body(2, nil), credential: .account("A"), at: 1_000),
+      server.push(body(2, 0), credential: .account("A"), at: 1_000),
+      server.push(body(1, 0), credential: .account("A"), at: 1_000),
     ].map { reply -> JSON in [JSON(reply.status), reply.body["error"] ?? .null] }
     #expect(answers == [[401, "unauthenticated"], [413, "request-too-large"], [400, "malformed"], [413, "request-too-large"], [200, .null]])
+  }
+
+  // §9.1: a credential sent that does not resolve, or resolves to an account id outside §9.1's form (over
+  // ACCOUNT_ID_BYTES bytes of UTF-8, or holding a character JCS escapes), is answered 401 on hello, push, pull and the
+  // live upgrade, served as no one, before anything else: nothing is bound or admitted. An id of ACCOUNT_ID_BYTES is in
+  // the form.
+  @Test(arguments: [Credential.unresolved, .account(String(repeating: "a", count: 65)), .account("a\"b"), .account("a\u{1}b")])
+  func aCredentialThatFailsIsAnswered401OnEveryEndpoint_9_1(_ credential: Credential) throws {
+    var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
+    let push: JSON = ["replica": "rp_0000000000000000000000000000000a", "account": .string(credential.account ?? "A"), "ackThrough": 0,
+                      "intents": [["n": 1, "scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "10:0:r_aaaaaaaaaaaa",
+                                                                         "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]]]]
+    let unauthenticated: JSON = ["status": 401, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": .null, "error": "unauthenticated"]]
+    #expect(server.hello(credential: credential, at: 1_000).json == unauthenticated)
+    #expect(server.push(push, credential: credential, at: 1_000).json == unauthenticated)
+    #expect(server.pull(["scopes": [["scope": "self/probe", "cursor": .null]]], credential: credential, at: 1_000).json == unauthenticated)
+    #expect(server.connect(credential) == nil)
+    #expect(server.state == ServerState(epoch: "ep-1"))
+    let widest = String(repeating: "a", count: Constants.accountIdBytes)
+    #expect(server.hello(credential: .account(widest), at: 1_000).body["as"] == .string(widest))
   }
 
   // §9.1: the pull envelope over the body as received: a body over PULL_MAX_BYTES before it is parsed, then a body that
@@ -51,7 +71,7 @@ struct ModelServerTests {
     ]
     try #require(bodies.dropFirst().allSatisfy { $0.count <= 90 })
     let answers = bodies.map { body -> JSON in
-      let reply = server.pull(received: body, account: "A", at: 1_000)
+      let reply = server.pull(received: body, credential: .account("A"), at: 1_000)
       return [JSON(reply.status), reply.body["error"] ?? .null]
     }
     #expect(answers == [
@@ -64,10 +84,10 @@ struct ModelServerTests {
   @Test(arguments: ["1e400", "1e-400"])
   func aNumberLiteralNoDoubleHoldsIsMalformed_9_1(_ literal: String) throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
-    let body = #"{"ackThrough":0,"intents":[{"n":1,"scope":"self/probe","d":[{"t":"day","id":"2026-09-01","life":["alive","10:0:r_aaaaaaaaaaaa"],"f":{"score":["#
+    let body = #"{"account":"A","ackThrough":0,"intents":[{"n":1,"scope":"self/probe","d":[{"t":"day","id":"2026-09-01","life":["alive","10:0:r_aaaaaaaaaaaa"],"f":{"score":["#
       + literal + #","10:0:r_aaaaaaaaaaaa"]}}]}],"replica":"rp_0000000000000000000000000000000a"}"#
-    let reply = server.push(received: Array(body.utf8), account: "A", at: 1_000)
-    #expect(reply.json == ["status": 400, "body": ["serverTime": 1_000, "epoch": "ep-1", "error": "malformed"]])
+    let reply = server.push(received: Array(body.utf8), credential: .account("A"), at: 1_000)
+    #expect(reply.json == ["status": 400, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "error": "malformed"]])
     #expect(server.state == ServerState(epoch: "ep-1"))
   }
 
@@ -75,11 +95,11 @@ struct ModelServerTests {
   // 1000, and binds nothing.
   @Test func aTransientFailureInTheBindingIsUnavailable_6_6() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
-    let reply = server.push(["replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": [
+    let reply = server.push(["replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": [
       ["n": 1, "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
-    ]], account: "A", at: 1_000, faults: PushFaults(transientAtBind: true))
+    ]], credential: .account("A"), at: 1_000, faults: PushFaults(transientAtBind: true))
     #expect(reply.json == ["status": 503, "body": [
-      "serverTime": 1_000, "epoch": "ep-1", "error": "unavailable", "retryAfterMs": 1_000,
+      "serverTime": 1_000, "epoch": "ep-1", "as": "A", "error": "unavailable", "retryAfterMs": 1_000,
     ]])
     #expect(server.state == ServerState(epoch: "ep-1"))
   }
@@ -92,12 +112,12 @@ struct ModelServerTests {
     state.replicas[replica] = ReplicaBinding(account: "B", lastN: 3)
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: state)
     let answers = [Int64(2), 4, 9].map { n in
-      server.push(["replica": .string(replica), "ackThrough": 0, "intents": [
+      server.push(["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa",
                                                     "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
-      ]], account: "A", at: 1_000).json
+      ]], credential: .account("A"), at: 1_000).json
     }
-    let foreign: JSON = ["status": 409, "body": ["serverTime": 1_000, "epoch": "ep-1", "error": "replica-foreign"]]
+    let foreign: JSON = ["status": 409, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "error": "replica-foreign"]]
     #expect(answers == [foreign, foreign, foreign])
     #expect(server.state == state)
   }
@@ -106,16 +126,16 @@ struct ModelServerTests {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     server.refuse(code: "session-open", detail: ["why": "scripted"])
     let replica = "rp_0000000000000000000000000000000a"
-    let push: JSON = ["replica": .string(replica), "ackThrough": 0, "intents": [
+    let push: JSON = ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
       ["n": 1, "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
     ]]
-    let first = server.push(push, account: "A", at: 1_000)
+    let first = server.push(push, credential: .account("A"), at: 1_000)
     let tables = server.state
-    let resent = server.push(push, account: "A", at: 2_000)
-    #expect(first.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "lastN": 1, "results": [
+    let resent = server.push(push, credential: .account("A"), at: 2_000)
+    #expect(first.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [
       ["n": 1, "s": "refused", "code": "session-open", "detail": ["why": "scripted"]],
     ]]])
-    #expect(resent.json == ["status": 200, "body": ["serverTime": 2_000, "epoch": "ep-1", "lastN": 1, "results": [
+    #expect(resent.json == ["status": 200, "body": ["serverTime": 2_000, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [
       ["n": 1, "s": "refused", "code": "session-open", "detail": ["why": "scripted"]],
     ]]])
     #expect(server.state == tables)
@@ -126,18 +146,23 @@ struct ModelServerTests {
   @Test func aCanonicallyEquivalentAccountIsAnotherPrincipal_INV7() throws {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     let replicas = ["rp_0000000000000000000000000000000a", "rp_0000000000000000000000000000000e"]
-    let board: JSON = ["replica": .string(replicas[0]), "ackThrough": 0, "intents": [
-      ["n": 1, "scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
-    ]]
-    _ = server.push(board, account: "caf\u{E9}", at: 1_000)
-    let pulled = server.pull(["scopes": [["scope": "tree/b_00000001", "cursor": .null]]], account: "cafe\u{301}", at: 2_000)
-    let wrote = server.push(["replica": .string(replicas[1]), "ackThrough": 0, "intents": [
+    let board = { (account: String) -> JSON in
+      ["replica": .string(replicas[0]), "account": .string(account), "ackThrough": 0, "intents": [
+        ["n": 1, "scope": "self/probe", "d": [["t": "board", "id": "b_00000001", "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
+      ]]
+    }
+    let (composed, decomposed) = ("caf\u{E9}", "cafe\u{301}")
+    _ = server.push(board(composed), credential: .account(composed), at: 1_000)
+    let pulled = server.pull(["scopes": [["scope": "tree/b_00000001", "cursor": .null]]], credential: .account(decomposed), at: 2_000)
+    let wrote = server.push(["replica": .string(replicas[1]), "account": .string(decomposed), "ackThrough": 0, "intents": [
       ["n": 1, "scope": "tree/b_00000001", "d": [["t": "meta", "id": "meta", "f": ["title": ["Mine", "20:0:r_aaaaaaaaaaaa"]]]]],
-    ]], account: "cafe\u{301}", at: 2_000)
-    let rebound = server.push(board, account: "cafe\u{301}", at: 3_000)
+    ]], credential: .account(decomposed), at: 2_000)
+    let named = server.push(board(composed), credential: .account(decomposed), at: 3_000)
+    let rebound = server.push(board(decomposed), credential: .account(decomposed), at: 3_000)
     #expect(try pulled.body.member("pages") == [["scope": "tree/b_00000001", "kind": "not-found"]])
     #expect(try wrote.body.member("results") == [["n": 1, "s": "refused", "code": "not-found"]])
-    #expect(rebound.json == ["status": 409, "body": ["serverTime": 3_000, "epoch": "ep-1", "error": "replica-foreign"]])
+    #expect(named.json == ["status": 409, "body": ["serverTime": 3_000, "epoch": "ep-1", "as": .string(decomposed), "error": "account-mismatch"]])
+    #expect(rebound.json == ["status": 409, "body": ["serverTime": 3_000, "epoch": "ep-1", "as": .string(decomposed), "error": "replica-foreign"]])
   }
 
   // §9.1: the model's own values are equal only byte for byte, so a rollback check sees an epoch, an owner, an account or
@@ -166,17 +191,17 @@ struct ModelServerTests {
     let bound = 1_000_000 + Constants.maxSkewMs
     let replica = "rp_0000000000000000000000000000000a"
     let card = { (n: Int64, id: String) -> JSON in
-      ["replica": .string(replica), "ackThrough": 0, "intents": [
+      ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": JSON(n), "scope": "self/probe", "d": [["t": "card", "id": .string(id), "born": .string("\(bound):0:r_aaaaaaaaaaaa"),
                                                     "life": ["alive", .string("\(bound):0:r_aaaaaaaaaaaa")]]]],
       ]]
     }
-    let first = server.push(card(1, "card0001"), account: "A", at: 1_000_000)
-    let second = server.push(card(2, "card0002"), account: "A", at: 940_000)
+    let first = server.push(card(1, "card0001"), credential: .account("A"), at: 1_000_000)
+    let second = server.push(card(2, "card0002"), credential: .account("A"), at: 940_000)
     server.restore(ServerState(epoch: "ep-2"))
-    let hello = server.hello(account: "A", at: 900_000)
+    let hello = server.hello(credential: .account("A"), at: 900_000)
     #expect(try first.body.member("results") == [["n": 1, "s": "ok", "seq": 1]])
-    #expect(second.json == ["status": 200, "body": ["serverTime": 1_000_000, "epoch": "ep-1", "lastN": 2, "results": [
+    #expect(second.json == ["status": 200, "body": ["serverTime": 1_000_000, "epoch": "ep-1", "as": "A", "lastN": 2, "results": [
       ["n": 2, "s": "ok", "seq": 2],
     ]]])
     #expect(try hello.body.member("serverTime") == 1_000_000)
@@ -186,15 +211,15 @@ struct ModelServerTests {
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: ServerState(epoch: "ep-1"))
     let replica = "rp_0000000000000000000000000000000a"
     let intent = { (id: String) -> JSON in
-      ["replica": .string(replica), "ackThrough": 0, "intents": [
+      ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
         ["n": 1, "scope": "self/probe", "d": [["t": "card", "id": .string(id), "born": "10:0:r_aaaaaaaaaaaa", "life": ["alive", "10:0:r_aaaaaaaaaaaa"]]]],
       ]]
     }
     let faults = PushFaults(byN: [1: .fault])
-    _ = server.push(intent("card0001"), account: "A", at: 1_000, faults: faults)
-    _ = server.push(intent("card0001"), account: "A", at: 1_000, faults: faults)
-    let forked = server.push(intent("card0002"), account: "A", at: 1_000, faults: faults)
-    #expect(forked.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "lastN": 0, "results": [],
+    _ = server.push(intent("card0001"), credential: .account("A"), at: 1_000, faults: faults)
+    _ = server.push(intent("card0001"), credential: .account("A"), at: 1_000, faults: faults)
+    let forked = server.push(intent("card0002"), credential: .account("A"), at: 1_000, faults: faults)
+    #expect(forked.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 0, "results": [],
                                                    "retry": ["n": 1, "retryAfterMs": 0]]])
     #expect(server.state.results[replica]?[1]?.faults == 1)
     #expect(server.state.results[replica]?[1]?.digest == SHA256Hex.of(try intent("card0002").member("intents").asArray()[0].jcs))
@@ -213,17 +238,17 @@ struct ModelServerTests {
     state.rows[scope] = [card.key: card]
     var server = ModelServer(registry: try Corpus.probeRegistry(), rules: ProbeServerRules(), state: state)
     let replica = "rp_0000000000000000000000000000000a"
-    let push: JSON = ["replica": .string(replica), "ackThrough": 0, "intents": [
+    let push: JSON = ["replica": .string(replica), "account": "A", "ackThrough": 0, "intents": [
       ["n": 1, "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa", "f": ["tier": ["done", "20:0:r_aaaaaaaaaaaa"]]]]],
       ["n": 2, "scope": "self/probe", "d": [["t": "card", "id": "card0001", "born": "10:0:r_aaaaaaaaaaaa", "f": ["title": ["Kept", "30:0:r_aaaaaaaaaaaa"]]]]],
     ]]
-    let first = server.push(push, account: "A", at: 1_000)
-    let second = server.push(push, account: "A", at: 1_000)
-    let third = server.push(push, account: "A", at: 1_000)
-    #expect(first.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "lastN": 0, "results": [],
+    let first = server.push(push, credential: .account("A"), at: 1_000)
+    let second = server.push(push, credential: .account("A"), at: 1_000)
+    let third = server.push(push, credential: .account("A"), at: 1_000)
+    #expect(first.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 0, "results": [],
                                                   "retry": ["n": 1, "retryAfterMs": 0]]])
     #expect(second.json == first.json)
-    #expect(third.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "lastN": 2, "results": [
+    #expect(third.json == ["status": 200, "body": ["serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 2, "results": [
       ["n": 1, "s": "refused", "code": "internal"], ["n": 2, "s": "ok", "seq": 2],
     ]]])
     #expect(server.state.results[replica]?[1]?.faults == Constants.kPoison)

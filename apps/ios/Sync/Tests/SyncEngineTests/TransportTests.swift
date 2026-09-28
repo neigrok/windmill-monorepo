@@ -59,16 +59,16 @@ struct TransportTests {
   }
 
   static let request = PushRequest(
-    replica: "rp_00000000000000000000000000000001", ackThrough: 4,
+    replica: "rp_00000000000000000000000000000001", account: "A", ackThrough: 4,
     intents: [Intent(n: 5, scope: .product("probe"), command: Command(name: "probe.end", args: ["runId": "run00001", "endedAt": 9]))])
 
   @Test func aPushGoesAsJCSWithItsHeadersAndItsAnswerIsParsed() async throws {
     let transport = Stub.transport("push.test") { _, _ in
-      (200, #"{"serverTime": 1000, "epoch": "ep-1", "lastN": 5, "results": [{"n": 5, "s": "ok", "seq": 12, "write": []}]}"#)
+      (200, #"{"serverTime": 1000, "epoch": "ep-1", "as": "A", "lastN": 5, "results": [{"n": 5, "s": "ok", "seq": 12, "write": []}]}"#)
     }
     let reply = await transport.push(Self.request, token: SessionToken("secret"))
     guard case .answered(.ok(let response)) = reply else { throw RigError("the push was not answered ok") }
-    #expect((response.serverTime, response.epoch, response.lastN, response.retry) == (1000, "ep-1", 5, nil))
+    #expect((response.serverTime, response.epoch, response.servedAs, response.lastN, response.retry) == (1000, "ep-1", "A", 5, nil))
     #expect(response.results.map(\.n) == [5])
     let sent = try #require(Stub.seen.withLock { $0["push.test"] }?.first)
     #expect(sent.request.httpMethod == "POST")
@@ -291,9 +291,9 @@ struct TransportTests {
     try await connection.send(.ping)
     #expect(await server.received(2) == [#"{"op":"sub","scopes":["self/probe"]}"#, #"{"op":"ping"}"#])
     server.send(#"{"op": "pong"}"#)
-    server.send(#"{"op": "not-found", "scope": "tree/b_00000001"}"#)
+    server.send(#"{"op": "not-found", "as": "A", "scope": "tree/b_00000001"}"#)
     #expect(try await connection.receive() == .pong)
-    #expect(try await connection.receive() == .notFound(.tree("b_00000001")))
+    #expect(try await connection.receive() == .notFound(.tree("b_00000001"), servedAs: "A"))
     connection.close()
   }
 
