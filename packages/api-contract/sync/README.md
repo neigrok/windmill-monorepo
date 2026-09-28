@@ -61,8 +61,9 @@ single-threaded run can observe, nor the HTTP envelope:
   (§9.1); the transport's own 413 and number-literal syntax (§9.1): the reference push and pull take
   `jcs(request)` as the body received;
 - a transient failure in the bind, answered 503 (§6.6);
-- credentials themselves: `account` stands for the account a request is served as (`null` when it
-  carries none), and `credential: 'unresolved'` for one sent that resolves to none (§9.1);
+- sessions themselves: `server/credentials.js` reads a request's raw headers against a given map of
+  live session tokens, and the endpoints take its answer as `account` (`null` when the request sends
+  no credential) and `credential: 'unresolved'` (one sent that does not resolve, §9.1);
 - the live socket's reopen backoff and the cross-tab `upgrade` signal (§7.5, §7.8);
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
@@ -84,6 +85,7 @@ single-threaded run can observe, nor the HTTP envelope:
 | `core/derive.js` | D-26, D-8 seeded and minted ids |
 | `core/machines.js` | §8 |
 | `server/state.js`, `server/access.js` | §2.1 tables, D-4 access |
+| `server/credentials.js` | §9.1 credentials: raw headers to the principal a request is served as |
 | `server/identity.js` | §4 |
 | `server/textmerge.js` | §6.11 |
 | `server/admit.js` | §6.1 (with caps, §6.5) |

@@ -4,7 +4,7 @@
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
-import { credentialFails } from './access.js';
+import { credentialFails } from './credentials.js';
 import { admit } from './admit.js';
 import { liveEventsOf } from './pull.js';
 

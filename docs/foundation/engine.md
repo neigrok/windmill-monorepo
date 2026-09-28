@@ -1029,7 +1029,10 @@ subscribed to the scope that still holds read access. Frames of one scope so lea
 - The per-socket access check MUST use in-memory state, invalidated by every write to an `opens`
   field, by scope death, and by the revocation of the socket's credential. A socket whose credential
   is revoked or expires is closed before it sends another frame or answers another `sub`: it never
-  goes on as anonymous.
+  goes on as anonymous. Every deletion of a session (sign-out, revocation, account deletion, an
+  expiry sweep) goes through the one revocation path that closes its sockets, so the bound is that
+  close: no frame follows a deletion. A deletion that bypasses the path is a defect, never a delay
+  the engine allows for.
 - A deployment with several server processes MUST relay committed changes to every process holding
   subscribers.
 
@@ -1192,6 +1195,8 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      - otherwise the drawn life register, unchanged.
    - A put that leaves a `wholePut` record present writes every client-written lattice field of its
      type, changed or not, stamped `s`; a change that leaves one out throws.
+   - A text edit of a field that is not a text field of the record's type throws. A `wholePut` type
+     has none (§2.4), so any text edit of one throws.
    - A revive takes `born` from `drawn` or from `SpentId`.
    - An update or delete of a record absent from `drawn` throws.
    - A create or a move MAY carry an *anchor* `{field, below}`: an order field (D-25), and the
@@ -1399,7 +1404,9 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
        scope the server does not hold answers `reset` to a cursor past seq 0 and then an empty live
        page, so the client boots it empty (§6.7 step 2); and a product the registry drops is a
        version change (`426`, §2.4).
-     - A `not-found` for a scope waiting for its governing record's create (§7.9).
+     - A `not-found` for a tree or overlay scope waiting for its governing record's create, or
+       whose governing record is alive in `drawn` or in `stored`, a held delete's window included
+       (§7.9).
 
      Otherwise:
      - delete the scope's confirmed rows, `SpentId` rows and cursor, record the scope as known with
@@ -1565,12 +1572,16 @@ scopes rejoin the subscription set, so the next puller run pulls them (§7.5). A
 pulls only readable trees it opens. Every scope a replica pulls is held in full: a boot sends every
 alive row (§6.7).
 
-A tree or overlay scope whose governing record's create is still in the outbox, held, ready or
-sent (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
+A tree or overlay scope whose governing record's create is still in the outbox, held, ready or sent
+(by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
 (`sub`) on the live socket: the server holds no such scope yet. Both start once that entry has its
-result. A `not-found` page or frame for such a scope is ignored and writes no `KnownScope`: the
-server answered for a scope it does not hold yet. A `gone` needs no exception, since a tree that
-exists only in the outbox cannot have died.
+result. A `not-found` page or frame is ignored, and writes no `KnownScope`, for such a scope and for
+any tree or overlay scope whose governing record the replica holds alive, in `drawn` or in `stored`
+(§7.6): its create acked but not yet confirmed, the record confirmed, or a held delete of it
+waiting, which leaves it alive in `stored` only. Such an answer is stale: the server wrote it before
+it held the scope, as when a pull that left before the create was committed, or a `sub` answered
+before it, lands after the create's `ok`. A `gone` needs no exception, since a tree that exists only
+in the outbox cannot have died.
 
 Reconciling the subscription set unsubscribes each scope that left it, and resolves the acked
 entries of every scope outside it. It runs at the start of every puller run (§7.5); a push result
@@ -1735,13 +1746,23 @@ registry `version`, and `minVersion` with it, so a client that speaks the older 
 refused upgrade, so a web client learns a `426` from its hello, push or pull (§7.5). Keyed ids
 declared as arrays (`edge: [from, to]`) have their `jcs` as identity.
 
-**Credentials.** A request carries one credential or none. Any `Authorization` header or session
-cookie, whatever its shape, is a credential sent. One that resolves makes the request its account's.
-One that does not resolve (revoked, expired, unknown, or failing to parse) answers `401
-unauthenticated` on hello, push, pull and the live upgrade alike: a request that sends a credential
-is never served as anonymous. Only a request that carries none is anonymous: its push answers `401`,
-its hello carries no `holdsRecords` (§9.2), its pull answers `not-found` for every `self/…` scope
-(§6.7), and its live socket serves only the trees it can read (§6.8).
+**Credentials.** The server reads a request's credentials from its raw headers, every occurrence
+kept: an adapter MUST NOT rely on a framework that keeps one of two headers or drops a cookie it
+cannot parse. Every `Authorization` header, and every `Cookie` piece named `wm_session` (the session
+cookie), is a credential sent, whatever its shape, a bare `wm_session` with no `=` included. A
+cookie's token is its value verbatim: no quote is stripped and nothing is unescaped. The credentials
+resolve, making the request their account's, only when the request sends at most one `Authorization`
+header and at most one session cookie, each of its form (`Authorization: Bearer <token>`,
+`wm_session=<token>`) and each token held by a live session, and a cookie and a header sent together
+name one account. Otherwise (a credential revoked, expired, unknown or malformed, two of one kind,
+or two accounts) they do not resolve, and hello, push, pull and the live upgrade alike answer
+`401 unauthenticated`: a request that sends a credential is never served as anonymous. Only a
+request that sends none is anonymous: its push answers `401`, its hello carries no `holdsRecords`
+(§9.2), its pull answers `not-found` for every `self/…` scope (§6.7), and its live socket serves
+only the trees it can read (§6.8). Every response that sets the session cookie sets it in the
+deployment's configured scope and clears it in the other (host-only, or the configured `Domain`),
+and every response that clears it clears both, so a stray variant left by a change of `Domain`,
+which the browser would send beside the live one, never outlives the next sign-in or sign-out.
 
 **Principal.** Every response from authentication (step 2 below) on carries `as`, the account it was
 served as: the id its credential resolves to, or `null` for a request that carries none and for
@@ -1990,7 +2011,7 @@ its `README.md` states its conventions. `constants.json` holds the constants its
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
-| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope` |
+| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope` |
 | client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
 
 Runners assert exact equality, comparing values by `jcs`.

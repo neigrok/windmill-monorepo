@@ -182,8 +182,12 @@ class DeltaBuilder {
   }
 
   // §7.1 step 4: a put that leaves a `wholePut` record present writes every client-written lattice field,
-  // changed or not, and asserts presence with a fresh life, all at the gesture's stamp.
+  // changed or not, and asserts presence with a fresh life, all at the gesture's stamp. A `wholePut` type
+  // has no text field (§2.4), so a text edit names a field it does not have and throws, as it does on
+  // any type.
   wholePut(type, change) {
+    const [text] = Object.keys(change.x ?? {});
+    if (text !== undefined) throw new CommitError(`${type.type}.${text} is not a text field`);
     const missing = type.clientLatticeFieldNames.filter((name) => change.f?.[name] === undefined);
     if (missing.length) throw new CommitError(`a whole put of ${type.type} leaves out ${missing.join(', ')}`);
     return { t: type.type, id: change.id, life: ['alive', this.stamp], f: this.fields(type, change.f, undefined) };

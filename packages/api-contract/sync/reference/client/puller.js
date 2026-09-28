@@ -7,6 +7,7 @@ import { compactRow, isAlive, recordKey, stampsOf } from '../core/rows.js';
 import { Cursor } from '../core/wire.js';
 import { deltasOf } from './dependents.js';
 import { epochChange } from './lifecycle.js';
+import { drawn, stored } from './views.js';
 
 // §7.9: a tree or overlay scope whose governing record's create is still in the outbox, held, ready or
 // sent, by a delta or a prediction, is neither pulled nor subscribed live, and a `not-found` for it is
@@ -20,13 +21,26 @@ function awaitsGoverningCreate(replica, registry, scope) {
   return replica.entries().some((entry) => ['held', 'ready', 'sent'].includes(entry.state) && deltasOf(entry).some(creates));
 }
 
+// §7.9: the replica holds a tree or overlay scope's governing record alive, in `drawn` or in `stored`
+// (§7.6): its create is in the outbox, held to acked, or the record is confirmed. The server holds the
+// scope then, or is about to, so a `not-found` for it was written before the create reached the server.
+function holdsGoverningRecord(replica, registry, scope) {
+  const kind = registry.scopeKindOf(scope);
+  if (kind !== 'tree' && kind !== 'overlay') return false;
+  const governing = registry.governingType;
+  const productScope = `self/${registry.productOfScopeKind(governing.scope)}`;
+  const key = recordKey(governing.type, scope.split('/').pop());
+  return [drawn(replica, registry, productScope), stored(replica, registry, productScope)].some((view) => view.get(key)?.life?.[0] === 'alive');
+}
+
 // §7.5: the end of a scope a client does not apply: any `gone` or `not-found` for a product scope, and a
-// `not-found` for a scope that waits for its governing record's create (§7.9). The product-scope ignore
-// is defence in depth: the server answers one only to a request served as anonymous, which a bound
-// replica has already handled as a 401 (§9.1), so no described path reaches it. It stays.
+// `not-found` for a scope that waits for its governing record's create or whose governing record the
+// replica holds alive (§7.9). The product-scope ignore is defence in depth: the server answers one only
+// to a request served as anonymous, which a bound replica has already handled as a 401 (§9.1), so no
+// described path reaches it. It stays.
 function ignoresEnd(replica, registry, scope, kind) {
   if (registry.scopeKindOf(scope)?.startsWith('product:')) return true;
-  return kind === 'not-found' && awaitsGoverningCreate(replica, registry, scope);
+  return kind === 'not-found' && (awaitsGoverningCreate(replica, registry, scope) || holdsGoverningRecord(replica, registry, scope));
 }
 
 // A pull of `scopes` under their stored cursors, leaving out the scopes that wait for their governing
