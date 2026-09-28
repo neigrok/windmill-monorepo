@@ -847,7 +847,8 @@ write-map stamps.
   under a refused commit are not retired.
 - `throws.json`: commits that throw. The step answers `{throws: true}` and writes nothing, the clock
   included: a commit is one local transaction. A text edit of a field that is not a text field of its
-  type throws, a whole put's included, since a `wholePut` type has no text field.
+  type throws, a whole put's included, since a `wholePut` type has no text field. A change that removes
+  a `wholePut` record carries its life alone: one that names a field value throws.
 
 ### hold/*.json
 

@@ -171,7 +171,8 @@ class DeltaBuilder {
     const current = this.drawnView.get(recordKey(type.type, change.id));
     const presentBefore = current?.life?.[0] === 'alive';
     const present = change.present ?? true;
-    if (present && type.wholePut) return this.wholePut(type, change);
+    if (type.wholePut && present) return this.wholePut(type, change);
+    if (type.wholePut && Object.keys({ ...change.f, ...change.x }).length) throw new CommitError(`a removal of ${type.type} carries its life alone`);
     let life = current?.life;
     if (present && !presentBefore) life = ['alive', this.stamp];
     if (!present && presentBefore) life = ['dead', this.stamp];

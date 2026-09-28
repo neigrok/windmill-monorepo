@@ -1194,7 +1194,9 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
      - `[dead, s]` when it removes it;
      - otherwise the drawn life register, unchanged.
    - A put that leaves a `wholePut` record present writes every client-written lattice field of its
-     type, changed or not, stamped `s`; a change that leaves one out throws.
+     type, changed or not, stamped `s`; a change that leaves one out throws. A change that removes a
+     `wholePut` record carries its life alone (§6.1 step 2 refuses a dead whole delta with a field
+     register); one that names a field value throws.
    - A text edit of a field that is not a text field of the record's type throws. A `wholePut` type
      has none (§2.4), so any text edit of one throws.
    - A revive takes `born` from `drawn` or from `SpentId`.
