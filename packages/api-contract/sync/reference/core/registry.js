@@ -2,11 +2,16 @@
 // Scope references (§9.1 ScopeRef) map to registry scope kinds here.
 
 import { readFileSync } from 'node:fs';
+import { checkFieldValue } from './values.js';
 
 const LATTICE_KINDS = new Set(['lww', 'ranked', 'fww', 'const', 'time']);
 const SYNTAX_CHARACTERS = '^$\\.*+?()[]{}|/';
 const DASH = Symbol('dash');
 const MAX_REPEAT = 65_535;
+// §9.6's refusal codes, which no product's `codes` may declare again.
+const ENGINE_CODES = new Set(['not-found', 'scope-dead', 'forbidden', 'invalid', 'too-large', 'clock-skew', 'id-taken', 'id-spent',
+  'unknown-record', 'record-dead', 'parent-dead', 'stale', 'cap', 'base-unknown', 'request-conflict', 'request-running',
+  'internal', 'target-merged']);
 
 export class RegistryError extends Error {}
 
@@ -263,10 +268,14 @@ export class Registry {
         if (field.ref && !this.types.has(field.ref)) fail(`${type.type}.${name}: ref to unknown ${field.ref}`);
         if (field.domain?.type === 'fracKey' && !type.hasBorn) fail(`${type.type}.${name}: an order field belongs to a minted or derived type`);
         for (const next of field.serialNext ?? []) if (!type.field(next)) fail(`${type.type}.${name}: serialNext names unknown ${next}`);
-        if (field.quantum !== undefined && field.domain?.type !== 'number') fail(`${type.type}.${name}: quantum needs a number domain`);
         if ((field.min !== undefined || field.max !== undefined) && field.unit === undefined) fail(`${type.type}.${name}: a bound states its unit`);
         const fault = field.domain ? domainFault(field.domain) : null;
         if (fault) fail(`${type.type}.${name}: ${fault}`);
+        if (Object.hasOwn(field, 'default')) {
+          if (!LATTICE_KINDS.has(field.kind)) fail(`${type.type}.${name}: a default is for a lattice field`);
+          const reason = checkFieldValue(this, field, field.default);
+          if (reason) fail(`${type.type}.${name}: the default is off the field's domain: ${reason}`);
+        }
         if (field.opens) {
           const placed = type.scope === 'tree' && type.identity === 'singleton' && field.writer === 'server';
           if (!placed) fail(`${type.type}.${name}: opens is for a server-written field of a tree singleton`);
@@ -284,9 +293,15 @@ export class Registry {
         if (fault) fail(`${command.name}.${name}: ${fault}`);
       }
     }
+    const declared = new Set();
     for (const [product, def] of Object.entries(this.products)) {
       for (const [name, row] of Object.entries(def.device ?? {})) {
         if (!isPortablePattern(row.keyPattern)) fail(`${product} device row ${name}: keyPattern ${row.keyPattern} is outside §2.4's patterns`);
+      }
+      for (const code of def.codes ?? []) {
+        if (ENGINE_CODES.has(code)) fail(`${product}: ${code} is an engine code`);
+        if (declared.has(code)) fail(`${product}: ${code} is declared twice`);
+        declared.add(code);
       }
     }
   }

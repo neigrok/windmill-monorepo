@@ -152,6 +152,8 @@ function shape() {
     admitted('a number at the domain bound is admitted', { state: base, intent: cardUpdate({ size: -500 }) }),
     admitted('a number off the quantum is invalid', { state: base, intent: cardUpdate({ size: 1.005 }) }),
     admitted('a number on the quantum is admitted', { state: base, intent: cardUpdate({ size: 1.01 }) }),
+    admitted('a nested number off its domain\'s quantum is invalid', { state: base, intent: cardUpdate({ attachment: { id: 'pic00001', scale: 1.2 } }) }),
+    admitted('a nested number on its domain\'s quantum is admitted', { state: base, intent: cardUpdate({ attachment: { id: 'pic00001', scale: 1.5 } }) }),
     admitted('null is admitted where the domain is nullable', { state: base, intent: cardUpdate({ size: null }) }),
     admitted('null is invalid where the domain is not nullable', { state: base, intent: cardUpdate({ title: null }) }),
     admitted('a title over 12 chars is invalid', { state: base, intent: cardUpdate({ title: 'thirteen char' }) }),

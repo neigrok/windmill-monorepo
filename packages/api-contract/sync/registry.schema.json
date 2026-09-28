@@ -115,6 +115,15 @@
           "additionalProperties": {
             "$ref": "#/$defs/deviceRow"
           }
+        },
+        "codes": {
+          "description": "The refusal codes the product's check and commands answer beyond the engine's (§2.4, §9.6): none is an engine code, and no two products declare one.",
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^[a-z][a-z0-9]*(-[a-z0-9]+)*$"
+          },
+          "uniqueItems": true
         }
       }
     },
@@ -534,11 +543,6 @@
         "domain": {
           "$ref": "#/$defs/domain"
         },
-        "quantum": {
-          "description": "A number field's step: an integer, or 1/k for an integer k (0.01, 0.1, 0.5). Clients round to it half away from zero; the server refuses a value off it.",
-          "type": "number",
-          "exclusiveMinimum": 0
-        },
         "serialNext": {
           "description": "A serial field numbers new records 1 + the maximum over alive records sharing these fields (§6.1 step 11).",
           "type": "array",
@@ -563,6 +567,9 @@
           },
           "minItems": 1,
           "uniqueItems": true
+        },
+        "default": {
+          "description": "On a lattice field: the value a reader takes while the register is unset (§2.4). It is on the field's domain; the engine never stores or sends it."
         }
       },
       "allOf": [
@@ -758,6 +765,11 @@
             },
             "max": {
               "type": "number"
+            },
+            "quantum": {
+              "description": "The number's step at any depth: an integer, or 1/k for an integer k (0.01, 0.1, 0.5). Clients round to it half away from zero; the server refuses a value off it (§2.4, §7.1 step 4).",
+              "type": "number",
+              "exclusiveMinimum": 0
             }
           }
         },

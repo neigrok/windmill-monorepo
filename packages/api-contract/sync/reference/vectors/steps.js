@@ -145,7 +145,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(null);
           break;
         case 'pull':
-          lastPull = pullRequest(replica, step.scopes);
+          lastPull = pullRequest(replica, registry, step.scopes);
           answer(lastPull);
           break;
         case 'pullResponse':

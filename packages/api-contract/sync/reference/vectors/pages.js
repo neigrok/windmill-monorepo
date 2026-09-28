@@ -225,6 +225,21 @@ function lives() {
       .pullRound(['self/probe'], { serverNow: 5000 })
       .vector('a boot that ends resolves acked entries through its asOf'),
     bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }], deviceNow: 5001 })
+      .pullRound(['self/probe', 'tree/b_00000002'], { serverNow: 5002 })
+      .pushRound(5003)
+      .pullRound(['tree/b_00000002'], { serverNow: 5004 })
+      .vector('a tree whose board create is still in the outbox is not pulled; once the create has its result, the tree boots'),
+    bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }], deviceNow: 5001 })
+      .add({ op: 'frame', frame: { op: 'not-found', scope: 'tree/b_00000002' }, deviceNow: 5002 })
+      .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan' } }], deviceNow: 5003 })
+      .pull(['tree/b_00000002'], 5004)
+      .pushRound(5005)
+      .pullRound(['tree/b_00000002'], { serverNow: 5006 })
+      .add({ op: 'commit', scope: 'tree/b_00000002', changes: [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Plan B' } }], deviceNow: 5007 })
+      .vector('a not-found frame for a tree whose board create is still in the outbox is ignored: commits into it are accepted, a pull of it alone sends nothing, and it boots once the create has its result'),
+    bootedOnProbe()
       .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0003', f: { title: 'Mine' } }], deviceNow: 5001 })
       .pushFrameFirst(5001)
       .vector('an ok whose seq the frame before it already applied resolves in its own transaction'),

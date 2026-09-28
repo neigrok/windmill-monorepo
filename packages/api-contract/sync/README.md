@@ -28,13 +28,15 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 `registry.schema.json` is the authoritative registry format (engine.md D-7, §2.4). A registry declares:
 
 - a root with `registry`, `version` (the version every request carries, §9.1; `hello.schema`),
-  `minVersion` (`hello.minSchema`) and `products`, each with its `surfaces` (§7.9) and its
-  device-scope rows (`device`, with `keyPattern` and `localOnly`);
+  `minVersion` (`hello.minSchema`) and `products`, each with its `surfaces` (§7.9), its
+  device-scope rows (`device`, with `keyPattern`, `localOnly` and a `value` domain) and its refusal
+  `codes` beyond the engine's (§9.6);
 - types, with `mint` (the CSPRNG recipe: prefix, alphabet, length), `seeded`, `key` (a `ref`, or a
   `tuple` of named refs whose JCS is the identity), `singletonId` and `derive.fallback`;
 - fields, with `min`, `max` and their `unit`, a structured `domain` (a string domain's bounds state
-  their `unit` too), and `opens` (the values of a tree singleton's server-written field that open the
-  tree to every reader, D-4);
+  their `unit` too, and a number domain at any depth may carry a `quantum`), a `default` a reader takes
+  while the register is unset, and `opens` (the values of a tree singleton's server-written field that
+  open the tree to every reader, D-4);
 - patterns (`idPattern`, a string domain's `pattern`, a device row's `keyPattern`) in §2.4's portable
   subset, which `core/registry.js` checks: printable ASCII, `^…$`, literals, escaped syntax
   characters, bracket classes of literals and ranges, groups and greedy quantifiers;
@@ -43,7 +45,7 @@ FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node --test reference/test/fuzz/
 
 The product registries, every `*.registry.json` but the probe's, ship together as one registry. They
 declare one `version` and one `minVersion`, the version every request carries (§9.1), and no product,
-type or command twice; `reference/test/core/registry.test.js` checks both. The Swift engine composes
+type, command or refusal code twice; `reference/test/core/registry.test.js` checks both. The Swift engine composes
 them in `apps/ios/Sync/Sources/SyncSchema`, generated from these files: after editing a product
 registry, run `swift run SyncSchemaGen` in `apps/ios/Sync`. iOS CI fails while `SyncSchema` is stale.
 

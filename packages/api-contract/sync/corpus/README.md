@@ -29,10 +29,11 @@ written from this README alone needs no other file than `../probe.registry.json`
   by type, then id; `revisions` by type, id, field, then rev; `results` by `n`; `requests` by
   `requestId`; request `parts` by `k`; a device's `replicas` by replica id; an outbox by `commitOrder`;
   `notices` in the order they were written. Object keys have no order.
-- **Quanta**: a number field with quantum `q` holds `roundHalfAway(x × k) ÷ k` with `k = round(1/q)` (or
-  `roundHalfAway(x ÷ q) × q` for an integer `q`), computed in IEEE-754 doubles, `roundHalfAway(y) =
-  sign(y) × round(|y|)`. So 1.005 → 1 and 10.235 → 10.24 at `q = 0.01`. The server accepts a value iff
-  that rounding returns it unchanged.
+- **Quanta**: a number whose domain has quantum `q`, at any depth of a field value or a command
+  argument, holds `roundHalfAway(x × k) ÷ k` with `k = round(1/q)` (or `roundHalfAway(x ÷ q) × q` for an
+  integer `q`), computed in IEEE-754 doubles, `roundHalfAway(y) = sign(y) × round(|y|)`. So 1.005 → 1
+  and 10.235 → 10.24 at `q = 0.01`. The server accepts a value iff that rounding returns it unchanged,
+  and a commit rounds every such number.
 - `constants.json` holds the Appendix B and §9.7 values the vectors were generated with. A runner whose
   constants differ fails on it first.
 - Nothing in the corpus covers migration, import intents or owner-unknown replicas: the engine starts
@@ -54,7 +55,7 @@ journal.
 |---|---|---|---|---|
 | `board` | `self/probe` | minted, global `^b_[0-9a-f]{8}$` | terminal, keep | the governing type: a board creates and kills `tree/<id>` and its overlays; primary |
 | `day` | `self/probe` | keyed, a date `^[0-9]{4}-[0-9]{2}-[0-9]{2}$` | yes, spent | a keyed type whose dead rows are spent: its `sync_spent` row has no born, and a newer put removes it; `score` lww 0–10 |
-| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row; cap 3; guarded saves; primary |
+| `card` | `self/probe` | minted, global | terminal, spent | lww chars/bytes bounds, `ord` order key, `size` quantum 0.01, `claim` fww, `tier` ranked (draft 0, review 1, done 2, dropped 2), `attachment` referencing a `localOnly` device row, its optional `scale` a nested number of quantum 0.5; cap 3; guarded saves; primary |
 | `run` | `self/probe` | minted, global | terminal, spent | created only by `probe.start`; `startedAt` time, `label` lww, `endedAt` server-written |
 | `lap` | `self/probe` | minted, global, seeded (seed ≤ 58, n ≤ 99 999) | terminal, spent | `runId` const parent ref, `no` serial next `[runId]`, `at` time, `weight` quantum 0.01 |
 | `meta` | `tree/<T>` | singleton `meta` | none | `title` lww; `visibility` server-written, whose `opens` values `unlisted` and `public` open the tree to every reader (D-4) |
@@ -667,9 +668,9 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `pushResponse` | `response` | §7.4, for the last `push` | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
-| `pull` | `scopes` | request with the stored cursors | the PullRequest |
-| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found` |
-| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found` or `ignored` |
+| `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
+| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (a `not-found` for a scope waiting for its governing record's create, §7.9) |
+| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found` or `ignored` (an unknown op, or a `not-found` for a scope waiting for its governing record's create) |
 | `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
 | `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
 | `signOut` | `choice?` (`keep` or `discard`), `counted?` | §7.10 | `{complete, unsent, ready, sent, counted}` |

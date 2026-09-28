@@ -108,7 +108,7 @@ for (const file of transcripts) {
         assert.equal(jcs(request), jcs(line.request), `step ${line.step}`);
         if (!line.lost) onPushResponse(replica, context, request, line.response, timing);
       } else if (line.http === 'pull') {
-        const request = pullRequest(replica, line.request.scopes.map((entry) => entry.scope));
+        const request = pullRequest(replica, registry, line.request.scopes.map((entry) => entry.scope));
         assert.equal(jcs(request), jcs(line.request), `step ${line.step}`);
         assert.equal(jcs(onPullResponse(replica, context, request, line.response, timing)), jcs(line.returns), `step ${line.step}`);
       } else if (line.frame) {

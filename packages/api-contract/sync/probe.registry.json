@@ -48,8 +48,7 @@
         "size": {
           "kind": "lww",
           "writer": "client",
-          "domain": { "type": "number", "min": -500, "max": 500, "nullable": true },
-          "quantum": 0.01
+          "domain": { "type": "number", "min": -500, "max": 500, "nullable": true, "quantum": 0.01 }
         },
         "claim": { "kind": "fww", "writer": "client", "unit": "chars", "max": 12, "domain": { "type": "string" } },
         "tier": { "kind": "ranked", "writer": "client", "rank": { "draft": 0, "review": 1, "done": 2, "dropped": 2 } },
@@ -63,7 +62,8 @@
             "nullable": true,
             "properties": {
               "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
-              "localOnly": { "type": "boolean" }
+              "localOnly": { "type": "boolean" },
+              "scale": { "type": "number", "min": 0, "max": 10, "quantum": 0.5 }
             },
             "required": ["id"]
           }
@@ -103,7 +103,7 @@
         "runId": { "kind": "const", "writer": "client", "ref": "run", "parent": true },
         "no": { "kind": "serial", "writer": "server", "serialNext": ["runId"] },
         "at": { "kind": "time", "writer": "client" },
-        "weight": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500 }, "quantum": 0.01 }
+        "weight": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 } }
       }
     },
     {

@@ -15,7 +15,8 @@
         "offer": { "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
         "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
         "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } }
-      }
+      },
+      "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant"]
     }
   },
   "types": [
@@ -53,7 +54,7 @@
                     "type": "object",
                     "properties": {
                       "reps": { "type": "number", "integer": true, "min": 1, "max": 100, "nullable": true },
-                      "weightKg": { "type": "number", "min": -500, "max": 500, "nullable": true }
+                      "weightKg": { "type": "number", "min": -500, "max": 500, "nullable": true, "quantum": 0.01 }
                     }
                   }
                 }
@@ -147,10 +148,10 @@
         "sessionId": { "kind": "const", "writer": "client", "ref": "session", "parent": true },
         "exerciseId": { "kind": "const", "writer": "client", "ref": "exercise" },
         "setNumber": { "kind": "serial", "writer": "server", "serialNext": ["sessionId", "exerciseId"] },
-        "weightKg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500 }, "quantum": 0.01 },
+        "weightKg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 } },
         "reps": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 1, "max": 500 } },
         "kind": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] } },
-        "rpe": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 1, "max": 10, "nullable": true }, "quantum": 0.1 },
+        "rpe": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 } },
         "note": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 4000, "domain": { "type": "string" } },
         "completedAt": { "kind": "time", "writer": "client" }
       }
@@ -185,7 +186,7 @@
       "origins": ["replica"],
       "primary": true,
       "fields": {
-        "kg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 20, "max": 400 }, "quantum": 0.01 },
+        "kg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 20, "max": 400, "quantum": 0.01 } },
         "recordedAt": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
       }
     },
@@ -198,11 +199,11 @@
       "life": false,
       "origins": ["replica", "server"],
       "fields": {
-        "units": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["kg", "lb"] } },
-        "restSeconds": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 15, "max": 900, "nullable": true } },
-        "restSound": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" } },
-        "confirmHaptic": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" } },
-        "confirmSound": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" } }
+        "units": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["kg", "lb"] }, "default": "kg" },
+        "restSeconds": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 15, "max": 900, "nullable": true }, "default": null },
+        "restSound": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" }, "default": true },
+        "confirmHaptic": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" }, "default": true },
+        "confirmSound": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" }, "default": false }
       }
     },
     {
@@ -330,10 +331,10 @@
               "properties": {
                 "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
                 "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-                "weightKg": { "type": "number", "min": -500, "max": 500 },
+                "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 },
                 "reps": { "type": "number", "integer": true, "min": 1, "max": 500 },
                 "kind": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] },
-                "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true },
+                "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 },
                 "note": { "type": "string", "unit": "bytes", "max": 4000 },
                 "completedAt": { "type": "number", "integer": true, "min": 0 }
               },
@@ -366,9 +367,9 @@
                 "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
                 "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
                 "setNumber": { "type": "number", "integer": true, "min": 1 },
-                "weightKg": { "type": "number", "min": -500, "max": 500 },
+                "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 },
                 "reps": { "type": "number", "integer": true, "min": 1, "max": 500 },
-                "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true },
+                "rpe": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 },
                 "note": { "type": "string", "unit": "bytes", "max": 4000 },
                 "completedAt": { "type": "number", "integer": true, "min": 0 }
               },

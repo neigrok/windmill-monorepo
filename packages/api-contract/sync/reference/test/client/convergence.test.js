@@ -77,7 +77,7 @@ test('after results and a pull to the head, drawn equals the server rows', () =>
         onPushResponse(replica, ctx, request, out.response, steadyTiming(now, now));
       }
       for (let more = true; more;) {
-        const request = pullRequest(replica, Object.keys(SCOPES));
+        const request = pullRequest(replica, registry, Object.keys(SCOPES));
         const pulled = pull({ state: server, registry, product, account: 'A', request, serverNow: now });
         server = pulled.state;
         const response = pulled.response;

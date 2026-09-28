@@ -149,7 +149,7 @@ class Stage {
   // One pull: the server runs the scopes' beforePull commands, then answers the pages.
   pull(name, scopes, { serverNow, deviceNow = serverNow, frames = [] }) {
     const replica = this.devices[name].activeReplica;
-    const request = pullRequest(replica, scopes);
+    const request = pullRequest(replica, registry, scopes);
     const account = this.account(name);
     const out = pull({ state: this.server, registry, product, account, request, serverNow });
     this.server = out.state;

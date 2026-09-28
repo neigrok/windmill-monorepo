@@ -380,9 +380,10 @@ export class World {
     const scopes = device.subscriptions();
     if (scopes.length === 0) return;
     reconcile(device.replica, device.ctx(), scopes);
-    const request = pullRequest(device.replica, scopes);
-    device.pulling = { kind: 'pull', device, replica: device.replica, request: structuredClone(request), send: device.reading(), id: this.id('m') };
+    const request = pullRequest(device.replica, this.registry, scopes);
     device.wantsPull = false;
+    if (request === null) return;
+    device.pulling = { kind: 'pull', device, replica: device.replica, request: structuredClone(request), send: device.reading(), id: this.id('m') };
     this.network.push({ ...device.pulling, phase: 'request' });
   }
 

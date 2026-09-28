@@ -79,6 +79,10 @@ function deltas() {
       device: device(bound({ confirmed: PROBE })),
       steps: [commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'Again' } }])],
     }),
+    stepsVector('a nested number rounds to its domain\'s quantum half away from zero', {
+      device: device(bound({ confirmed: PROBE })),
+      steps: [commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { attachment: { id: 'pic00001', scale: 1.25 } } }])],
+    }),
     stepsVector('values round to the quantum half away from zero in IEEE doubles', {
       device: device(bound()),
       steps: [commitStep('self/probe', [
