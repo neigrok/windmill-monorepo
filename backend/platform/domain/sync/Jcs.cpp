@@ -388,6 +388,13 @@ Json::Value parseJson(std::string_view text) {
   return StrictReader(text).document();
 }
 
+bool isSafeInteger(const Json::Value& value) {
+  constexpr double largest = 9007199254740991.0;  // 2^53 − 1
+  if (!value.isNumeric() || value.isBool()) return false;
+  const double number = value.asDouble();
+  return std::isfinite(number) && std::floor(number) == number && std::fabs(number) <= largest;
+}
+
 std::strong_ordering compareJcs(const Json::Value& a, const Json::Value& b) {
   return jcs(a) <=> jcs(b);
 }

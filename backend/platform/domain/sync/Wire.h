@@ -18,27 +18,6 @@
 
 namespace wm::sync {
 
-// §9.6: the engine's refusal codes. A product adds its own (Appendix A).
-namespace code {
-inline const std::string notFound = "not-found";
-inline const std::string scopeDead = "scope-dead";
-inline const std::string forbidden = "forbidden";
-inline const std::string invalid = "invalid";
-inline const std::string tooLarge = "too-large";
-inline const std::string clockSkew = "clock-skew";
-inline const std::string idTaken = "id-taken";
-inline const std::string idSpent = "id-spent";
-inline const std::string unknownRecord = "unknown-record";
-inline const std::string recordDead = "record-dead";
-inline const std::string parentDead = "parent-dead";
-inline const std::string stale = "stale";
-inline const std::string cap = "cap";
-inline const std::string baseUnknown = "base-unknown";
-inline const std::string requestConflict = "request-conflict";
-inline const std::string requestRunning = "request-running";
-inline const std::string internal = "internal";
-}
-
 // D-16: a refused intent's code, and its detail when the code carries one (null otherwise).
 struct Refused {
   std::string code;
@@ -116,9 +95,6 @@ Json::Value changeFrame(const std::string& epoch, const ScopeKey& scope, Seq seq
 // §6.2: digest(intent) = sha256(jcs(intent)), over the intent as the request carried it; and §6.3's
 // digest of a server-origin call, sha256(jcs({tool, args})).
 Digest256 intentDigest(const Json::Value& intent);
-
-// §9.1 Integers: every integer on the wire is a JSON safe integer, at most 2^53 − 1 in magnitude.
-bool isSafeInteger(const Json::Value& value);
 
 // Appendix B and §9.7: the constants the server applies. A test may shrink one for one call.
 struct Limits {

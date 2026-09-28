@@ -9,7 +9,7 @@ on:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
-      - 'packages/api-contract/sync/probe.registry.json'
+      - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/corpus/**'
       - '.github/workflows/backend.yml'
       - '!backend/**/*.md'
@@ -18,7 +18,7 @@ on:
     paths:
       - 'backend/**'
       - 'services/embedder/**'
-      - 'packages/api-contract/sync/probe.registry.json'
+      - 'packages/api-contract/sync/*.registry.json'
       - 'packages/api-contract/sync/corpus/**'
       - '.github/workflows/backend.yml'
       - '!backend/**/*.md'

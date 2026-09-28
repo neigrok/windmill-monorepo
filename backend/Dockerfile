@@ -9,8 +9,8 @@
 # resolve them once in a fat builder and ship a slim runtime that carries only the two
 # binaries, the schema, and the shared libraries ldd actually reports.
 #
-# The context is backend/, which cannot see the sync contract the build embeds and the tests
-# replay, so the build takes it as a second, named context:
+# The context is backend/, which cannot see the sync contract the build embeds and the tests read
+# (the corpus and the registries), so the build takes it as a second, named context:
 #   docker buildx build --build-context contract=packages/api-contract backend
 
 ########################  builder  ########################
@@ -37,7 +37,7 @@ RUN apt-get update \
 
 WORKDIR /src
 COPY . .
-COPY --from=contract sync/probe.registry.json /contract/sync/probe.registry.json
+COPY --from=contract sync/*.registry.json /contract/sync/
 COPY --from=contract sync/corpus /contract/sync/corpus
 
 # Configure once, then build the two service binaries plus every test suite. The guard

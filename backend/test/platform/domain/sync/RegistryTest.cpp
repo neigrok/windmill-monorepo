@@ -5,11 +5,17 @@
 #include "products/probe/ProbeRegistry.h"
 #include "test/testing.h"
 
+#include <algorithm>
 #include <cmath>
+#include <filesystem>
+#include <fstream>
 #include <functional>
 #include <limits>
 #include <map>
 #include <optional>
+#include <set>
+#include <sstream>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -45,6 +51,31 @@ std::string refusalOf(const std::function<void(Json::Value&)>& breakIt) {
     return error.what();
   }
   return "(admitted)";
+}
+
+// The registries the products ship: every registry file of the contract but the test-only probe's, by file name.
+std::vector<Registry> productRegistries() {
+  std::vector<std::filesystem::path> files;
+  for (const auto& entry : std::filesystem::directory_iterator(WM_SYNC_CONTRACT_DIR)) {
+    const std::string name = entry.path().filename().string();
+    if (name.ends_with(".registry.json") && name != "probe.registry.json") files.push_back(entry.path());
+  }
+  std::sort(files.begin(), files.end());
+  std::vector<Registry> registries;
+  for (const std::filesystem::path& file : files) {
+    std::ifstream in(file);
+    std::stringstream text;
+    text << in.rdbuf();
+    registries.emplace_back(parseJson(text.str()));
+  }
+  return registries;
+}
+
+const Domain& propertyOf(const Domain& object, const std::string& name) {
+  for (const Domain::Property& property : object.properties) {
+    if (property.name == name) return property.domain;
+  }
+  throw std::out_of_range(name);
 }
 
 }
@@ -89,7 +120,7 @@ TEST(the_probe_card_reads_as_declared) {
   const FieldDef& size = card->fields.at("size");
   CHECK(size.domain->type == Domain::Type::number && size.domain->nullable);
   CHECK_EQ(size.domain->min, std::optional<double>(-500));
-  CHECK_EQ(size.quantum->step(), 0.01);
+  CHECK_EQ(size.domain->quantum->step(), 0.01);
 
   const FieldDef& tier = card->fields.at("tier");
   CHECK(tier.kind == FieldKind::ranked);
@@ -98,10 +129,16 @@ TEST(the_probe_card_reads_as_declared) {
   const Domain& attachment = *card->fields.at("attachment").domain;
   CHECK(attachment.type == Domain::Type::object && attachment.nullable);
   CHECK_EQ(attachment.required, (std::vector<std::string>{"id"}));
-  REQUIRE_EQ(attachment.properties.size(), 2u);
-  CHECK_EQ(attachment.properties[0].name, std::string("id"));
+  REQUIRE_EQ(attachment.properties.size(), 3u);
+  CHECK_EQ(attachment.properties[0].name + " " + attachment.properties[1].name + " " + attachment.properties[2].name,
+           std::string("id localOnly scale"));
   CHECK(attachment.properties[0].domain.pattern->matches("abcdefgh"));
   CHECK(attachment.properties[1].domain.type == Domain::Type::boolean);
+  const Domain& scale = attachment.properties[2].domain;
+  CHECK(scale.type == Domain::Type::number && !scale.nullable);
+  CHECK_EQ(scale.min, std::optional<double>(0));
+  CHECK_EQ(scale.max, std::optional<double>(10));
+  CHECK_EQ(scale.quantum->step(), 0.5);
 }
 
 TEST(the_probe_types_carry_every_identity_class) {
@@ -227,6 +264,32 @@ TEST(a_registry_refuses_what_section_2_4_forbids) {
            std::string("registry.types.item opens a tree from \"seen\", which is not a field of a tree singleton"));
 }
 
+TEST(a_key_names_ids_of_other_types_and_never_leads_back_to_its_own) {
+  auto keyed = [](const char* name, const char* key) {
+    return parseJson(std::string(R"({"type": ")") + name + R"(", "scope": "product:p", "identity": "keyed", "key": )" + key +
+                     R"(, "life": false, "origins": ["replica"], "fields": {}})");
+  };
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             r["types"].append(keyed("alias", R"({"ref": "alias"})"));
+             r["types"][0]["fields"]["alias"] = parseJson(R"({"kind": "lww", "writer": "client", "ref": "alias", "default": "x"})");
+           }),
+           std::string("registry.types.alias has a key that leads back to its own type"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             r["types"].append(keyed("left", R"({"ref": "right"})"));
+             r["types"].append(keyed("right", R"({"ref": "left"})"));
+           }),
+           std::string("registry.types.left has a key that leads back to its own type"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             r["types"].append(keyed("pair", R"({"tuple": [{"name": "a", "ref": "item"}, {"name": "b", "ref": "pair"}]})"));
+           }),
+           std::string("registry.types.pair has a key that leads back to its own type"));
+  CHECK_EQ(refusalOf([&](Json::Value& r) {
+             r["types"].append(keyed("alias", R"({"ref": "item"})"));
+             r["types"].append(keyed("pair", R"({"tuple": [{"name": "a", "ref": "alias"}, {"name": "b", "ref": "alias"}]})"));
+           }),
+           std::string("(admitted)"));
+}
+
 TEST(a_registry_refuses_a_field_its_kind_cannot_hold) {
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["state"] = parseJson(R"({"kind":"ranked","writer":"client"})"); }),
            std::string("registry.types.item.fields.state is ranked without a \"rank\""));
@@ -243,12 +306,95 @@ TEST(a_registry_refuses_a_field_its_kind_cannot_hold) {
            std::string("registry.types.item numbers \"no\" after the unknown field \"ghost\""));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["memo"] = parseJson(R"({"kind":"text","writer":"client"})"); }),
            std::string("registry.types.item.fields.memo is text without a \"unit\" and a \"max\""));
+}
+
+TEST(a_quantum_belongs_to_a_number_domain_at_any_depth_and_never_to_a_field) {
   CHECK_EQ(refusalOf([](Json::Value& r) {
-             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number"},"quantum":0.3})");
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number"},"quantum":0.01})");
            }),
-           std::string("registry.types.item.fields.size.quantum: a quantum is an integer or 1/k for an integer k"));
-  CHECK_EQ(refusalOf([](Json::Value& r) { r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","quantum":0.5})"); }),
-           std::string("registry.types.item.fields.size has a quantum without a number domain"));
+           std::string("registry.types.item.fields.size holds the unknown key \"quantum\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["title"]["domain"] = parseJson(R"({"type":"string","quantum":1})");
+           }),
+           std::string("registry.types.item.fields.title.domain holds the unknown key \"quantum\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","quantum":0.3}})");
+           }),
+           std::string("registry.types.item.fields.size.domain.quantum: a quantum is an integer or 1/k for an integer k"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","quantum":0}})");
+           }),
+           std::string("registry.types.item.fields.size.domain.quantum: a quantum is a positive number"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["commands"][0]["args"]["sets"] = parseJson(
+                 R"({"type":"json","domain":{"type":"array","items":{"type":"object","properties":{"kg":{"type":"number","quantum":0.3}}}}})");
+           }),
+           std::string("registry.commands.p.sweep.args.sets.domain.items.properties.kg.quantum: a quantum is an integer or 1/k for an integer k"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","quantum":0.25}})");
+           }),
+           std::string("(admitted)"));
+}
+
+TEST(a_default_is_on_its_lattice_field_s_domain) {
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","quantum":0.01},"default":1.005})");
+           }),
+           std::string("registry.types.item.fields.size has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["units"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"string","enum":["kg","lb"]},"default":"st"})");
+           }),
+           std::string("registry.types.item.fields.units has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["rest"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","integer":true},"default":null})");
+           }),
+           std::string("registry.types.item.fields.rest has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["title"] = parseJson(R"({"kind":"lww","writer":"client","unit":"chars","max":3,"default":"four"})");
+           }),
+           std::string("registry.types.item.fields.title has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["twin"] = parseJson(R"({"kind":"lww","writer":"client","ref":"item","default":"x_1"})");
+           }),
+           std::string("registry.types.item.fields.twin has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["state"] = parseJson(R"({"kind":"ranked","writer":"client","rank":{"a":0,"b":1},"default":"c"})");
+           }),
+           std::string("registry.types.item.fields.state has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["seen"] = parseJson(R"({"kind":"time","writer":"client","default":-1})");
+           }),
+           std::string("registry.types.item.fields.seen has a default off its field's domain"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["memo"] = parseJson(R"({"kind":"text","writer":"client","unit":"bytes","max":8,"default":""})");
+           }),
+           std::string("registry.types.item.fields.memo has a default without being a lattice field"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["types"][0]["fields"]["size"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","quantum":0.01},"default":1.01})");
+             r["types"][0]["fields"]["units"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"string","enum":["kg","lb"]},"default":"kg"})");
+             r["types"][0]["fields"]["rest"] = parseJson(R"({"kind":"lww","writer":"client","domain":{"type":"number","nullable":true},"default":null})");
+             r["types"][0]["fields"]["twin"] = parseJson(R"({"kind":"lww","writer":"client","ref":"item","default":"i_1"})");
+             r["types"][0]["fields"]["state"] = parseJson(R"({"kind":"ranked","writer":"client","rank":{"a":0,"b":1},"default":"b"})");
+           }),
+           std::string("(admitted)"));
+}
+
+TEST(a_product_declares_its_own_refusal_codes_and_no_engine_code) {
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["codes"] = parseJson(R"(["stale"])"); }),
+           std::string("registry.products.p declares the engine code \"stale\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["codes"] = parseJson(R"(["target-merged"])"); }),
+           std::string("registry.products.p declares the engine code \"target-merged\""));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["codes"] = parseJson(R"(["Bad_Code"])"); }),
+           std::string("registry.products.p has a \"codes\" item that is not a valid name"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["codes"] = parseJson(R"(["too-soon", "too-soon"])"); }),
+           std::string("registry.products.p has a \"codes\" that repeats too-soon"));
+  CHECK_EQ(refusalOf([](Json::Value& r) {
+             r["products"]["p"]["codes"] = parseJson(R"(["too-soon"])");
+             r["products"]["q"]["codes"] = parseJson(R"(["too-late", "too-soon"])");
+           }),
+           std::string("registry declares the code \"too-soon\" in both p and q"));
+  CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["codes"] = parseJson(R"(["too-soon", "too-late"])"); }),
+           std::string("(admitted)"));
 }
 
 TEST(a_registry_refuses_a_string_domain_bound_without_its_unit_at_any_depth) {
@@ -275,6 +421,89 @@ TEST(a_registry_refuses_a_pattern_outside_section_2_4_s_portable_subset_wherever
            std::string("registry.types.item.fields.title.domain.pattern: the pattern ^\\S+$ is outside §2.4's portable patterns"));
   CHECK_EQ(refusalOf([](Json::Value& r) { r["products"]["p"]["device"]["picture"] = parseJson(R"({"keyPattern": "^picture:[^/]{8,64}$"})"); }),
            std::string("registry.products.p.device.picture.keyPattern: the pattern ^picture:[^/]{8,64}$ is outside §2.4's portable patterns"));
+}
+
+TEST(a_domain_admits_a_number_only_on_its_quantum_at_any_depth) {
+  const Domain& attachment = *probe::registry().type("card")->fields.at("attachment").domain;
+  CHECK(attachment.admits(parseJson(R"({"id": "pic00001", "scale": 1.5})")));
+  CHECK_FALSE(attachment.admits(parseJson(R"({"id": "pic00001", "scale": 1.2})")));
+  CHECK(attachment.admits(parseJson(R"({"id": "pic00001"})")));
+
+  const std::vector<Registry> registries = productRegistries();
+  const Registry& gym = registries.front();
+  const Domain& entries = *gym.type("routine")->fields.at("entries").domain;
+  CHECK(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {"weightKg": null}]}])")));
+  CHECK_FALSE(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {"weightKg": 60.005}]}])")));
+
+  const ArgDef& sets = gym.command("gym.importSession")->args.at("sets");
+  const Json::Value onQuanta = parseJson(R"([{"id": "set00001", "exerciseId": "dip", "weightKg": 60.01, "reps": 8, "rpe": 7.5, "completedAt": 1}])");
+  CHECK(gym.admitsArgument(sets, onQuanta));
+  Json::Value offWeight = onQuanta;
+  offWeight[0]["weightKg"] = 60.004;
+  CHECK_FALSE(gym.admitsArgument(sets, offWeight));
+  Json::Value offRpe = onQuanta;
+  offRpe[0]["rpe"] = 7.25;
+  CHECK_FALSE(gym.admitsArgument(sets, offRpe));
+}
+
+TEST(a_string_domain_measures_its_bounds_in_the_unit_it_states) {
+  const Json::Value twoAccents("\xc3\xa9\xc3\xa9");  // two code points, four UTF-8 bytes
+  auto stringDomain = [](const std::string& json) {
+    Json::Value document = smallestRegistry();
+    document["types"][0]["fields"]["title"]["domain"] = parseJson(json);
+    return *Registry{document}.type("item")->field("title")->domain;
+  };
+  CHECK(stringDomain(R"({"type": "string", "unit": "chars", "max": 2})").admits(twoAccents));
+  CHECK_FALSE(stringDomain(R"({"type": "string", "unit": "bytes", "max": 2})").admits(twoAccents));
+  CHECK(stringDomain(R"({"type": "string", "unit": "bytes", "max": 4})").admits(twoAccents));
+  CHECK_FALSE(stringDomain(R"({"type": "string", "unit": "chars", "min": 3})").admits(twoAccents));
+}
+
+TEST(the_product_registries_are_gym_and_journal_and_each_loads) {
+  std::vector<std::string> names;
+  for (const Registry& registry : productRegistries()) names.push_back(registry.name());
+  CHECK_EQ(names, (std::vector<std::string>{"gym", "journal"}));
+}
+
+TEST(the_gym_registry_reads_as_declared) {
+  const std::vector<Registry> registries = productRegistries();
+  const Registry& gym = registries.front();
+  CHECK_EQ(namesOf(gym.types()), (std::vector<std::string>{"routine", "exercise", "exerciseName", "session", "set", "note", "weighin",
+                                                          "prefs", "proposal", "thread", "message"}));
+  CHECK_EQ(namesOf(gym.commands()), (std::vector<std::string>{"gym.start", "gym.importSession", "gym.correctSession", "gym.finish",
+                                                             "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"}));
+  CHECK_EQ(gym.products().at("gym").codes, (std::vector<std::string>{"payload-conflict", "session-finished", "session-open",
+                                                                    "session-overlap", "unknown-exercise", "bad-instant"}));
+  CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);
+  CHECK_EQ(gym.type("set")->fields.at("rpe").domain->quantum->step(), 0.1);
+  CHECK_EQ(gym.type("weighin")->fields.at("kg").domain->quantum->step(), 0.01);
+  const Domain& entries = *gym.type("routine")->fields.at("entries").domain;
+  CHECK_EQ(propertyOf(*propertyOf(*entries.items, "sets").items, "weightKg").quantum->step(), 0.01);
+  for (const char* command : {"gym.importSession", "gym.correctSession"}) {
+    const Domain& set = *gym.command(command)->args.at("sets").domain->items;
+    CHECK_EQ(propertyOf(set, "weightKg").quantum->step(), 0.01);
+    CHECK_EQ(propertyOf(set, "rpe").quantum->step(), 0.1);
+  }
+}
+
+// The product registries ship as one registry: one version and minVersion, and no product, type, command or
+// refusal code a second registry declares again.
+TEST(the_product_registries_compose_into_one_registry) {
+  const std::vector<Registry> registries = productRegistries();
+  std::set<std::pair<std::int64_t, std::int64_t>> versions;
+  std::vector<std::string> declared;
+  for (const Registry& registry : registries) {
+    versions.emplace(registry.version(), registry.minVersion());
+    for (const auto& [name, product] : registry.products()) {
+      declared.push_back("product " + name);
+      for (const std::string& refusal : product.codes) declared.push_back("code " + refusal);
+    }
+    for (const std::string& name : namesOf(registry.types())) declared.push_back("type " + name);
+    for (const std::string& name : namesOf(registry.commands())) declared.push_back("command " + name);
+  }
+  CHECK_EQ(versions.size(), 1u);
+  std::sort(declared.begin(), declared.end());
+  CHECK(std::adjacent_find(declared.begin(), declared.end()) == declared.end());
 }
 
 // SPEC-GAP 12: roundHalfAway(x × k) ÷ k for q = 1/k, roundHalfAway(x ÷ q) × q for an integer q, in doubles.
