@@ -47,6 +47,7 @@ extension GymRefusal {
     switch self {
     case .invalid(let violation): ["invalid": violation.form]
     case .stale(let subject, let path): ["stale": ["subject": subject.form, "path": path.form]]
+    case .future(let subject, let path): ["future": ["subject": subject.form, "path": path.form]]
     case .gone(let subject, let path): ["gone": ["subject": subject.form, "path": path.form]]
     case .taken(let subject, let path): ["taken": ["subject": subject.form, "path": path.form]]
     case .full(let type, let cap, let path): ["full": ["type": .string(type), "cap": JSON(cap), "path": path.form]]
