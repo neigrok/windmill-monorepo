@@ -42,7 +42,7 @@ card(){ # n id title
 }
 
 # ── a clean engine and a session ───────────────────────────────────────────────────────────────
-for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_marks probe_links probe_tags probe_metas probe_days \
+for table in probe_marks_revisions probe_start_receipts probe_copy_receipts probe_marks probe_links probe_tags probe_metas probe_facts probe_days \
              probe_laps probe_runs probe_cards probe_boards sync_spent sync_requests sync_replicas sync_scopes; do
   psql "$DB" -q -c "delete from $table"
 done
@@ -198,6 +198,39 @@ check "$(sed -n 3p <<<"$LIVE")" '{"op": "not-found", "scope": "tree/b_ffffffff"}
 check "$(sed -n 4p <<<"$LIVE")" "change self/probe True ['2026-09-02']" "a push reaches the subscriber as a change frame at its seq, rows inline"
 check "$(sed -n 5p <<<"$LIVE")" '{"op": "not-found", "scope": "self/probe"}' "a signed-out sub to self/probe answers not-found"
 check "$(sed -n 6p <<<"$LIVE")" "stranger refused" "an upgrade from an origin off the allow-list is closed"
+
+echo "a fact saved whole"
+FACTS="$(python3 - "$NOW" <<'PY'
+import json, sys
+def stamp(counter):
+    return f"{sys.argv[1]}:{counter}:r_e2eaaaaaaaa"
+def fact(n, life, f=None):
+    delta = {"t": "fact", "id": "2027-01-15", "life": life}
+    if f:
+        delta["f"] = f
+    return {"n": n, "scope": "self/probe", "d": [delta]}
+print(json.dumps([
+    fact(9, ["alive", stamp(9)], {"value": [80, stamp(9)]}),
+    fact(10, ["alive", stamp(9)], {"value": [80, stamp(9)], "at": [1, stamp(8)]}),
+    fact(11, ["alive", stamp(9)], {"value": [80, stamp(9)], "at": [1, stamp(9)]}),
+    fact(12, ["dead", stamp(10)]),
+    fact(13, ["alive", stamp(11)], {"value": [82.4, stamp(11)], "at": [3, stamp(11)]}),
+]))
+PY
+)"
+check "$(push_all 8 "$FACTS")" \
+  '[{"code":"invalid","n":9,"s":"refused"},{"code":"invalid","n":10,"s":"refused"},{"n":11,"s":"ok","seq":7},{"n":12,"s":"ok","seq":8},{"n":13,"s":"ok","seq":9}]' \
+  "a put that leaves out a field or splits its stamp is refused invalid; a whole put, its delete and a newer whole put are admitted"
+sync -X POST "$BASE/v1/sync/pull" -d '{"scopes":[{"scope":"self/probe","cursor":null}]}' > "$BODY"
+SAVED="$(python3 - "$BODY" <<'PY'
+import json, sys
+rows = json.load(open(sys.argv[1]))["pages"][0]["rows"]
+print(json.dumps([{key: row[key] for key in ("life", "f", "seq")} for row in rows if row["t"] == "fact"], separators=(",", ":"), sort_keys=True))
+PY
+)"
+STAMP="$NOW:11:r_e2eaaaaaaaa"
+check "$SAVED" "[{\"f\":{\"at\":[3,\"$STAMP\"],\"value\":[82.4,\"$STAMP\"]},\"life\":[\"alive\",\"$STAMP\"],\"seq\":9}]" \
+  "the save newer than the delete keeps the fact, every field at its stamp"
 
 rm -f "$JAR" "$BODY" "$BODY.big" "$BODY.huge" "$BODY.transport" "$BODY.pull"
 echo

@@ -181,6 +181,7 @@ struct TypeDef {
   std::optional<MintRecipe> mint;             // minted and derived types
   std::optional<Seeding> seeded;              // D-8
   bool life = false;
+  bool wholePut = false;  // §2.4: a keyed record that is one fact, only ever written whole by a delta
   bool revivable = false;
   std::optional<DeadRows> deadRows;
   bool governsTree = false;  // D-5: each record creates and kills `tree:<id>`
