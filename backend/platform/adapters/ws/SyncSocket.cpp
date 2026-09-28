@@ -1,17 +1,15 @@
 #include "platform/adapters/ws/SyncSocket.h"
 
-#include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/SyncApi.h"
 
 #include "platform/application/Heartbeat.h"
 #include "platform/domain/Auth.h"
 #include "platform/domain/sync/Jcs.h"
 
+#include <trantor/net/EventLoop.h>
 #include <trantor/utils/Logger.h>
 
-#include <cstdint>
 #include <exception>
-#include <map>
 #include <mutex>
 #include <optional>
 #include <utility>
@@ -21,108 +19,87 @@ namespace wm::sync {
 
 namespace {
 
-// Collab's rule: a revoked session keeps reading its private scopes for at most this plus one heartbeat period.
-constexpr std::uint64_t kReproveAfterMs = 60'000;
 constexpr double kReproveEverySeconds = 15.0;
-// RFC 6455 1013 Try Again Later: the connection's principal could not be resolved on a worker.
+// RFC 6455 1013 Try Again Later: the socket could not be opened on a worker.
 constexpr auto kTryAgainLater = static_cast<drogon::CloseCode>(1013);
+// RFC 6455 1008 Policy Violation: the socket's session stopped resolving.
+constexpr auto kSessionEnded = static_cast<drogon::CloseCode>(1008);
+// Where the gate leaves what it served an upgrade as, for handleNewConnection.
+constexpr char kUpgradeAttribute[] = "wm.sync.upgrade";
 
-// One connection's frames as JCS text, queued on its loop. It holds the connection weakly: the connection's
-// context holds it.
+// What the gate served an upgrade as: its principal, and the digest of every session secret it sent.
+struct Upgrade {
+  std::optional<UserId> principal;
+  std::vector<std::string> digests;
+};
+
+// The credential the upgrade's session digests make, each proven against its session now ("" proving nothing).
+Credential provenCredential(AuthService& auth, const std::vector<std::string>& digests) {
+  return credentialOf(digests, [&auth](const std::string& digest) -> std::optional<UserId> {
+    const std::optional<User> user = auth.revalidate(digest);
+    return user ? std::optional(user->id) : std::nullopt;
+  });
+}
+
+// One connection's frames as JCS text, queued on its loop until the socket closes. It holds the connection weakly:
+// the connection's context holds it.
 class ConnectionSocket final : public LiveSocket {
 public:
   explicit ConnectionSocket(const drogon::WebSocketConnectionPtr& conn) : conn_(conn) {}
 
   void send(const Json::Value& frame) override {
-    const drogon::WebSocketConnectionPtr conn = conn_.lock();
-    if (!conn || !conn->connected()) return;
     try {
-      conn->send(jcs(frame));
+      const std::string text = jcs(frame);
+      std::lock_guard lock(mutex_);
+      const drogon::WebSocketConnectionPtr conn = conn_.lock();
+      if (closed_ || !conn || !conn->connected()) return;
+      conn->send(text);
     } catch (const std::exception& error) {
       LOG_ERROR << "sync live dropped a frame: " << error.what();
     }
   }
 
-  void hangUp() {
-    if (const drogon::WebSocketConnectionPtr conn = conn_.lock()) conn->shutdown(kTryAgainLater);
+  // Sends nothing more once it returns, and shuts the connection with `code`.
+  void close(drogon::CloseCode code) {
+    {
+      std::lock_guard lock(mutex_);
+      closed_ = true;
+    }
+    if (const drogon::WebSocketConnectionPtr conn = conn_.lock()) conn->shutdown(code);
   }
 
 private:
+  std::mutex mutex_;
+  bool closed_ = false;
   std::weak_ptr<drogon::WebSocketConnection> conn_;
 };
 
-// A connection's context: its engine socket, and the strand that runs its principal, sub, unsub and close in
-// arrival order.
+// A connection's context: its engine socket, the strand that runs its open, sub, unsub and close in arrival order,
+// and its entry among the live sessions once its open made one.
 struct LiveConnection {
   LiveConnection(WorkerPool& workers, const drogon::WebSocketConnectionPtr& conn)
       : socket(std::make_shared<ConnectionSocket>(conn)), strand(workers) {}
 
   std::shared_ptr<ConnectionSocket> socket;
   WorkerPool::Strand strand;
+  std::optional<LiveSessions::Handle> session;
 };
 
-// Every signed-in socket's session digest and when it last proved itself. Jobs on the worker pool share it, so
-// it outlives the installation for as long as one of them runs.
-class Sessions {
-public:
-  void enter(const std::shared_ptr<LiveSocket>& socket, const std::string& digest, Ms now) {
-    std::lock_guard lock(mutex_);
-    sessions_.insert_or_assign(socket, Session{digest, now});
-  }
-
-  void leave(const std::shared_ptr<LiveSocket>& socket) {
-    std::lock_guard lock(mutex_);
-    sessions_.erase(socket);
-  }
-
-  // One pass, on a worker: each session last proven kReproveAfterMs ago or more is revalidated, and a revoked one
-  // signs its socket out. The lock is never held across the session read.
-  void reprove(SyncLive& live, AuthService& auth, Ms now) {
-    for (const auto& [socket, digest] : due(now)) {
-      const bool proven = auth.revalidate(digest).has_value();
-      {
-        std::lock_guard lock(mutex_);
-        const auto session = sessions_.find(socket);
-        if (session == sessions_.end()) continue;
-        if (proven) {
-          session->second.provenAt = now;
-          continue;
-        }
-        sessions_.erase(session);
-      }
-      live.signOut(*socket);
-    }
-  }
-
-private:
-  struct Session {
-    std::string digest;
-    Ms provenAt = 0;
-  };
-
-  std::vector<std::pair<std::shared_ptr<LiveSocket>, std::string>> due(Ms now) {
-    std::lock_guard lock(mutex_);
-    std::vector<std::pair<std::shared_ptr<LiveSocket>, std::string>> due;
-    for (const auto& [socket, session] : sessions_) {
-      if (session.provenAt + kReproveAfterMs <= now) due.emplace_back(socket, session.digest);
-    }
-    return due;
-  }
-
-  std::mutex mutex_;
-  std::map<std::shared_ptr<LiveSocket>, Session> sessions_;
-};
-
-// What installSyncSocket installs: the deps, the signed-in sessions, and the heartbeat that re-proves them.
+// What installSyncSocket installs: the deps, and the heartbeat that re-proves the live sessions.
 struct Installed {
-  explicit Installed(SyncSocketDeps deps) : deps(std::move(deps)), sessions(std::make_shared<Sessions>()), reprove("sync-live") {}
+  explicit Installed(SyncSocketDeps deps) : deps(std::move(deps)), reprove("sync-live") {}
 
   SyncSocketDeps deps;
-  std::shared_ptr<Sessions> sessions;
   Heartbeat reprove;  // last, so it destructs first, while what a pass reads is still alive
 };
 
 std::unique_ptr<Installed> g_installed;
+
+drogon::HttpResponsePtr forbidden() {
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k403Forbidden);
+  return response;
+}
 
 }
 
@@ -130,48 +107,75 @@ void installSyncSocket(SyncSocketDeps deps) {
   g_installed = std::make_unique<Installed>(std::move(deps));
   Installed& installed = *g_installed;
   installed.reprove.start(kReproveEverySeconds, kReproveEverySeconds, [&installed] {
-    installed.deps.workers->post([sessions = installed.sessions, live = installed.deps.live, auth = installed.deps.auth, clock = installed.deps.clock] {
-      sessions->reprove(*live, *auth, clock->nowMs());
+    installed.deps.workers->post([sessions = installed.deps.sessions, auth = installed.deps.auth, clock = installed.deps.clock] {
+      sessions->reprove([&auth](const std::string& digest) { return auth->revalidate(digest).has_value(); }, clock->nowMs());
     });
   });
 }
 
 void linkSyncSocket() {}
 
-void SyncSchemaGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
+void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
   if (!g_installed) return pass();
   const SyncSocketDeps& deps = g_installed->deps;
-  const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch);
-  if (refused) return refuse(responseOf(*refused));
-  pass();
+  const std::string origin = req->getHeader("origin");
+  if (!origin.empty() && !deps.allowedOrigins.contains(origin)) {
+    LOG_WARN << "sync live upgrade refused: origin " << origin << " is not allow-listed";
+    return refuse(forbidden());
+  }
+  const Json::Value envelope = SyncReply::envelope(deps.clock->nowMs(), deps.epoch);
+  if (const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
+    return refuse(responseOf(*refused));
+
+  std::vector<std::string> digests;
+  for (const std::string& secret : sentSecretsOf(req)) digests.push_back(secret.empty() ? "" : deps.auth->digestOf(secret));
+  trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
+  const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, digests] {
+    Upgrade upgrade{std::nullopt, digests};
+    std::optional<SyncReply> refusal;
+    try {
+      const Credential credential = provenCredential(*auth, digests);
+      if (credential.fails()) refusal = SyncReply::unauthenticated(envelope);
+      else upgrade.principal = credential.servedAs();
+    } catch (const std::exception& error) {
+      LOG_ERROR << "sync live upgrade could not resolve its credential: " << error.what();
+      refusal = SyncReply::unavailable(envelope);
+    }
+    loop->queueInLoop([req, refuse, pass, refusal, upgrade] {
+      if (refusal) return refuse(responseOf(*refusal));
+      req->attributes()->insert(kUpgradeAttribute, upgrade);
+      pass();
+    });
+  });
+  if (!posted) refuse(responseOf(SyncReply::unavailable(envelope)));
 }
 
 void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) {
-  if (!g_installed) return conn->forceClose();
-  const Installed& installed = *g_installed;
-  // A WebSocket upgrade gets no CORS preflight, so a stated origin must be allow-listed. A refused connection gets no
-  // context, and every handler ignores a connection without one.
-  const std::string origin = req->getHeader("origin");
-  if (!origin.empty() && !installed.deps.allowedOrigins.contains(origin)) {
-    LOG_WARN << "sync live upgrade refused: origin " << origin << " is not allow-listed";
-    return conn->forceClose();
-  }
-  const std::string secret = sessionSecretOf(req);
-  const std::string digest = secret.empty() ? "" : installed.deps.auth->digestOf(secret);
-
-  const auto connection = std::make_shared<LiveConnection>(*installed.deps.workers, conn);
+  // On the connection's own loop: a connection that went away while the gate resolved its credential never reports
+  // its close, so it gets no context, and every handler ignores a connection without one.
+  if (!g_installed || !req->attributes()->find(kUpgradeAttribute) || !conn->connected()) return conn->forceClose();
+  const SyncSocketDeps& deps = g_installed->deps;
+  const Upgrade upgrade = req->attributes()->get<Upgrade>(kUpgradeAttribute);
+  const auto connection = std::make_shared<LiveConnection>(*deps.workers, conn);
   conn->setContext(connection);
-  const bool posted = connection->strand.post([live = installed.deps.live, auth = installed.deps.auth, clock = installed.deps.clock,
-                                               sessions = installed.sessions, socket = connection->socket, digest] {
-    std::optional<User> user;
+  // The upgrade's sessions enter the registry before they are proven again, so a revocation after the gate's proof
+  // closes the socket whether it lands before the proof or after it.
+  const bool posted = connection->strand.post([live = deps.live, auth = deps.auth, sessions = deps.sessions, clock = deps.clock, connection, upgrade] {
+    const std::shared_ptr<ConnectionSocket> socket = connection->socket;
+    if (!upgrade.digests.empty()) {
+      connection->session = sessions->enter(upgrade.digests, clock->nowMs(), [live, socket] {
+        socket->close(kSessionEnded);
+        live->close(*socket);
+      });
+    }
     try {
-      if (!digest.empty()) user = auth->revalidate(digest);
+      const Credential again = provenCredential(*auth, upgrade.digests);
+      if (again.fails() || again.servedAs() != upgrade.principal) return socket->close(kSessionEnded);
     } catch (...) {
-      socket->hangUp();
+      socket->close(kTryAgainLater);
       throw;
     }
-    live->open(socket, user ? std::optional(user->id) : std::nullopt);
-    if (user) sessions->enter(socket, digest, clock->nowMs());
+    live->open(socket, upgrade.principal);
   });
   if (!posted) conn->shutdown(kTryAgainLater);
 }
@@ -204,9 +208,9 @@ void SyncSocket::handleNewMessage(const drogon::WebSocketConnectionPtr& conn, st
 void SyncSocket::handleConnectionClosed(const drogon::WebSocketConnectionPtr& conn) {
   const std::shared_ptr<LiveConnection> connection = conn->getContext<LiveConnection>();
   if (!g_installed || !connection) return;
-  const auto close = [live = g_installed->deps.live, sessions = g_installed->sessions, socket = connection->socket] {
-    live->close(*socket);
-    sessions->leave(socket);
+  const auto close = [live = g_installed->deps.live, sessions = g_installed->deps.sessions, connection] {
+    live->close(*connection->socket);
+    if (connection->session) sessions->leave(*connection->session);
   };
   // The strand refuses a job only while none of its jobs is queued or running, so closing here still follows the open.
   if (!connection->strand.post(close)) close();

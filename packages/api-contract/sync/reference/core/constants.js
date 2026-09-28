@@ -29,6 +29,7 @@ export const CONSTANTS = Object.freeze({
   LIVE_INLINE_BYTES: 65_536,
   KEEPALIVE_BYTES: 65_536,
   MERGE_WORK_CELLS: 4_194_304,
+  ACCOUNT_ID_BYTES: 64,
 });
 
 export const COUNTER_LIMIT = 2 ** 32;

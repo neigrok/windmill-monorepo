@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "probe",
-  "version": 1,
-  "minVersion": 1,
+  "version": 2,
+  "minVersion": 2,
   "products": {
     "probe": {
       "surfaces": ["web", "ios", "android"],

@@ -98,10 +98,29 @@ export function isPortablePattern(source) {
   return depth === 0;
 }
 
-// A domain's first fault against §2.4, or null: a string domain's pattern is portable and its bounds
-// state their unit, at any depth.
+// §2.4: whether a keyed type's key leads back to it, through the keys of the types it names in turn.
+function keyReachesItself(registry, start) {
+  const refsOf = (type) => [type.key?.ref, ...(type.key?.tuple ?? []).map((part) => part.ref)].filter(Boolean);
+  const seen = new Set();
+  const pending = refsOf(start);
+  while (pending.length) {
+    const name = pending.pop();
+    if (name === start.type) return true;
+    if (seen.has(name)) continue;
+    seen.add(name);
+    const type = registry.type(name);
+    if (type) pending.push(...refsOf(type));
+  }
+  return false;
+}
+
+// A domain's first fault against §2.4, or null, at any depth: a number domain's quantum is an integer or
+// 1/k, and a string domain's pattern is portable and its bounds state their unit.
 function domainFault(domain) {
   switch (domain.type) {
+    case 'number':
+      if (domain.quantum !== undefined && !Number.isInteger(domain.quantum) && !Number.isInteger(1 / domain.quantum)) return `the quantum ${domain.quantum} is neither an integer nor 1/k`;
+      return null;
     case 'string':
       if (domain.pattern !== undefined && !isPortablePattern(domain.pattern)) return `the pattern ${domain.pattern} is outside §2.4's patterns`;
       if ((domain.min !== undefined || domain.max !== undefined) && domain.unit === undefined) return 'a string bound states its unit';
@@ -270,6 +289,7 @@ export class Registry {
       if (type.wholePut && type.clientLatticeFieldNames.some((name) => type.field(name).kind !== 'lww')) fail(`${type.type}: a wholePut type's client fields are lww`);
       for (const part of type.key?.tuple ?? []) if (!this.types.has(part.ref)) fail(`${type.type}: key refers to unknown ${part.ref}`);
       if (type.key?.ref && !this.types.has(type.key.ref)) fail(`${type.type}: key refers to unknown ${type.key.ref}`);
+      if (keyReachesItself(this, type)) fail(`${type.type}: its key leads back to its own type`);
       if (type.fieldNames((field) => field.parent === true).length > 1) fail(`${type.type}: at most one parent field`);
       for (const name of type.visibleWhen ?? []) if (!type.field(name)) fail(`${type.type}: visibleWhen names unknown ${name}`);
       for (const [name, field] of Object.entries(type.fields)) {

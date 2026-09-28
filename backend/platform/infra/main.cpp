@@ -50,6 +50,7 @@
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
+#include "platform/application/LiveSessions.h"
 #include "platform/domain/AiFuse.h"
 #include "platform/domain/MailArming.h"
 #include "products/roadmap/application/ForkService.h"
@@ -227,9 +228,14 @@ int main() {
                 {"paddle_subscriptions", "user_id"},  // platform
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
+                {"sync_scopes", "owner"},             // the sync engine
+                {"sync_replicas", "account"},         // the sync engine
+                {"sync_requests", "account"},         // the sync engine
             });
+  // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
+  auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
-                                                   *oauthService, *accountFootprint, appBaseUrl);
+                                                   *oauthService, *accountFootprint, *liveSessions, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
   // Empty client id/secret leaves configured() false and the routes bounce to the app. The redirect
   // URI must be registered verbatim in the Google Cloud console.
@@ -920,6 +926,7 @@ int main() {
   sync::installSyncSocket(sync::SyncSocketDeps{.live = syncLive,
                                                .workers = syncWorkers,
                                                .auth = authService,
+                                               .sessions = liveSessions,
                                                .clock = physNow,
                                                .allowedOrigins = allowedOrigins,
                                                .minSchema = syncRegistry.minVersion(),

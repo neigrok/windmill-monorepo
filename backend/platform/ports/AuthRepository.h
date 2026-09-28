@@ -90,9 +90,10 @@ struct AuthRepository {
   // Scoped to the owner, so a foreign id matches nothing. Returns the deleted row's digest,
   // or nullopt when nothing matched.
   virtual std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) = 0;
-  // Drops every session but the one whose digest is kept.
-  virtual void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) = 0;
-  virtual void revokeAllSessions(const UserId& userId) = 0;
+  // Drops every session but the one whose digest is kept. Returns the dropped rows' digests.
+  virtual std::vector<std::string> revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) = 0;
+  // Returns the dropped rows' digests.
+  virtual std::vector<std::string> revokeAllSessions(const UserId& userId) = 0;
 };
 
 }

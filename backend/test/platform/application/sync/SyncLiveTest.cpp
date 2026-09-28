@@ -18,8 +18,8 @@
 #include <utility>
 #include <vector>
 
-// §6.8 and §9.5 over the fakes: the exact frames each socket receives as real admissions commit, and when each
-// subscription ends.
+// §6.8 and §9.5 over the fakes: the exact frames each socket receives as real admissions commit, each carrying the
+// principal its socket was opened as, and when each subscription ends.
 
 using namespace wm;
 using namespace wm::sync;
@@ -90,7 +90,7 @@ TEST(sync_live_sends_the_owner_of_a_product_scope_each_change_with_its_rows) {
 
   const Json::Value card = parseJson(R"({"t": "card", "id": "card0001", "life": ["alive", "1000000:0:srv"], "born": "1000000:0:srv",
       "f": {"title": ["First", "1000000:0:srv"]}, "seq": 1, "rc": 1000000, "ru": 1000000})");
-  Json::Value expected = parseJson(R"([{"op": "change", "scope": "self/probe", "epoch": "ep-1", "seq": 1, "rows": []}])");
+  Json::Value expected = parseJson(R"([{"op": "change", "as": "A", "scope": "self/probe", "epoch": "ep-1", "seq": 1, "rows": []}])");
   expected[0]["digest"] = scopeDigest({card}).hex();
   expected[0]["rows"].append(card);
   CHECK_EQ(jcs(ann->frames), jcs(expected));
@@ -110,7 +110,7 @@ TEST(sync_live_leaves_the_rows_out_of_a_change_frame_past_live_inline_bytes) {
 
   const Json::Value card = parseJson(R"({"t": "card", "id": "card0001", "life": ["alive", "1000000:0:srv"], "born": "1000000:0:srv",
       "f": {"title": ["First", "1000000:0:srv"]}, "seq": 1, "rc": 1000000, "ru": 1000000})");
-  Json::Value expected = parseJson(R"([{"op": "change", "scope": "self/probe", "epoch": "ep-1", "seq": 1}])");
+  Json::Value expected = parseJson(R"([{"op": "change", "as": "A", "scope": "self/probe", "epoch": "ep-1", "seq": 1}])");
   expected[0]["digest"] = scopeDigest({card}).hex();
   CHECK_EQ(jcs(ann->frames), jcs(expected));
 }
@@ -134,11 +134,12 @@ TEST(sync_live_answers_another_accounts_private_tree_exactly_as_an_absent_tree_a
   admitAsServer(admission, world.account("A"), R"({"scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Pine", null]}}]})");
 
   CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([
-      {"op": "not-found", "scope": "tree/b_00000001"}, {"op": "not-found", "scope": "self/overlay/b_00000001"},
-      {"op": "not-found", "scope": "tree/b_0000000f"}, {"op": "not-found", "scope": "self/overlay/b_0000000f"},
-      {"op": "not-found", "scope": "device/probe"}, {"op": "not-found", "scope": "self/nope"},
-      {"op": "not-found", "scope": "tree/B_00000001"}, {"op": "not-found", "scope": "self/overlay/B_00000001"}])")));
-  CHECK_EQ(jcs(guest->frames), jcs(parseJson(R"([{"op": "not-found", "scope": "tree/b_00000001"}, {"op": "not-found", "scope": "self/probe"}])")));
+      {"op": "not-found", "as": "B", "scope": "tree/b_00000001"}, {"op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"},
+      {"op": "not-found", "as": "B", "scope": "tree/b_0000000f"}, {"op": "not-found", "as": "B", "scope": "self/overlay/b_0000000f"},
+      {"op": "not-found", "as": "B", "scope": "device/probe"}, {"op": "not-found", "as": "B", "scope": "self/nope"},
+      {"op": "not-found", "as": "B", "scope": "tree/B_00000001"}, {"op": "not-found", "as": "B", "scope": "self/overlay/B_00000001"}])")));
+  CHECK_EQ(jcs(guest->frames),
+           jcs(parseJson(R"([{"op": "not-found", "as": null, "scope": "tree/b_00000001"}, {"op": "not-found", "as": null, "scope": "self/probe"}])")));
 }
 
 TEST(sync_live_ends_a_strangers_tree_and_overlay_subscriptions_when_the_owner_makes_the_tree_private) {
@@ -157,13 +158,14 @@ TEST(sync_live_ends_a_strangers_tree_and_overlay_subscriptions_when_the_owner_ma
   admitAsServer(admission, world.account("A"), R"({"scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"visibility": ["private", null]}}]})");
   admitAsServer(admission, world.account("A"), R"({"scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Pine", null]}}]})");
 
-  CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([{"op": "not-found", "scope": "self/overlay/b_00000001"}, {"op": "not-found", "scope": "tree/b_00000001"}])")));
+  CHECK_EQ(jcs(bob->frames),
+           jcs(parseJson(R"([{"op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"}, {"op": "not-found", "as": "B", "scope": "tree/b_00000001"}])")));
   const Json::Value privateMeta = parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Oak", "2000:0:r_aaaaaaaaaaaa"],
       "visibility": ["private", "1000000:0:srv"]}, "seq": 2, "rc": 1000, "ru": 1000000})");
   const Json::Value renamedMeta = parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Pine", "1000000:1:srv"],
       "visibility": ["private", "1000000:0:srv"]}, "seq": 3, "rc": 1000, "ru": 1000000})");
-  Json::Value expected = parseJson(R"([{"op": "change", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 2, "rows": []},
-      {"op": "change", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 3, "rows": []}])");
+  Json::Value expected = parseJson(R"([{"op": "change", "as": "A", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 2, "rows": []},
+      {"op": "change", "as": "A", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 3, "rows": []}])");
   expected[0]["digest"] = scopeDigest({privateMeta}).hex();
   expected[0]["rows"].append(privateMeta);
   expected[1]["digest"] = scopeDigest({renamedMeta}).hex();
@@ -190,15 +192,15 @@ TEST(sync_live_answers_a_board_death_with_gone_to_its_owner_and_not_found_to_a_s
   live.subscribe(*bob, parseJson(R"(["tree/b_00000001", "self/overlay/b_00000001"])"));
 
   Json::Value annExpected = parseJson(R"([
-      {"op": "change", "scope": "self/probe", "epoch": "ep-1", "seq": 2,
+      {"op": "change", "as": "A", "scope": "self/probe", "epoch": "ep-1", "seq": 2,
        "rows": [{"t": "board", "id": "b_00000001", "life": ["dead", "1000000:0:srv"], "born": "2000:0:r_aaaaaaaaaaaa", "seq": 2}]},
-      {"op": "gone", "scope": "self/overlay/b_00000001"}, {"op": "gone", "scope": "tree/b_00000001"},
-      {"op": "gone", "scope": "tree/b_00000001"}, {"op": "gone", "scope": "self/overlay/b_00000001"}])");
+      {"op": "gone", "as": "A", "scope": "self/overlay/b_00000001"}, {"op": "gone", "as": "A", "scope": "tree/b_00000001"},
+      {"op": "gone", "as": "A", "scope": "tree/b_00000001"}, {"op": "gone", "as": "A", "scope": "self/overlay/b_00000001"}])");
   annExpected[0]["digest"] = Digest256{}.hex();
   CHECK_EQ(jcs(ann->frames), jcs(annExpected));
   CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([
-      {"op": "not-found", "scope": "self/overlay/b_00000001"}, {"op": "not-found", "scope": "tree/b_00000001"},
-      {"op": "not-found", "scope": "tree/b_00000001"}, {"op": "not-found", "scope": "self/overlay/b_00000001"}])")));
+      {"op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"}, {"op": "not-found", "as": "B", "scope": "tree/b_00000001"},
+      {"op": "not-found", "as": "B", "scope": "tree/b_00000001"}, {"op": "not-found", "as": "B", "scope": "self/overlay/b_00000001"}])")));
 }
 
 TEST(sync_live_sends_one_scopes_frames_in_seq_order_while_its_writes_race) {
@@ -241,41 +243,6 @@ TEST(sync_live_sends_one_scopes_frames_in_seq_order_while_its_writes_race) {
   CHECK_EQ(jcs(sent), jcs(expected));
 }
 
-TEST(sync_live_sign_out_ends_every_subscription_that_needs_an_account_and_keeps_a_public_tree) {
-  BlockingThread::Mark blocking;
-  test::FakeWorld world;
-  Json::Value state = boardState("public");
-  state["scopes"]["tree:b_00000002"] = parseJson(R"({"kind": "tree", "owner": "A", "state": "alive", "seq": 1, "counters": {},
-      "governedBy": "acct:A/probe#board#b_00000002"})");
-  state["rows"]["acct:A/probe"].append(parseJson(R"({"t": "board", "id": "b_00000002", "life": ["alive", "2000:1:r_aaaaaaaaaaaa"],
-      "born": "2000:1:r_aaaaaaaaaaaa", "seq": 1, "rc": 1000, "ru": 1000})"));
-  state["rows"]["tree:b_00000002"].append(parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Elm", "2000:1:r_aaaaaaaaaaaa"],
-      "visibility": ["private", "2500:0:srv"]}, "seq": 1, "rc": 1000, "ru": 1000})"));
-  world.seed(withDigests(state));
-  SyncLive live(world.catalog(), world.store(), Limits{});
-  Admission admission(world.catalog(), world.store(), live, world.clock(), world.failures);
-  const auto ann = std::make_shared<fake::RecordingSocket>();
-  live.open(ann, world.account("A"));
-
-  live.subscribe(*ann, parseJson(R"(["self/probe", "self/overlay/b_00000001", "tree/b_00000001", "tree/b_00000002"])"));
-  live.signOut(*ann);
-  live.subscribe(*ann, parseJson(R"(["self/probe"])"));
-  admitAsServer(admission, world.account("A"), R"({"scope": "self/probe", "d": [{"t": "board", "id": "b_00000003", "born": null,
-      "life": ["alive", null]}]})");
-  admitAsServer(admission, world.account("A"), R"({"scope": "tree/b_00000002", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Ash", null]}}]})");
-  admitAsServer(admission, world.account("A"), R"({"scope": "tree/b_00000001", "d": [{"t": "meta", "id": "meta", "f": {"title": ["Pine", null]}}]})");
-
-  const Json::Value renamedMeta = parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Pine", "1000000:2:srv"],
-      "visibility": ["public", "2500:0:srv"]}, "seq": 2, "rc": 1000, "ru": 1000000})");
-  Json::Value expected = parseJson(R"([
-      {"op": "not-found", "scope": "self/overlay/b_00000001"}, {"op": "not-found", "scope": "self/probe"},
-      {"op": "not-found", "scope": "tree/b_00000002"}, {"op": "not-found", "scope": "self/probe"},
-      {"op": "change", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 2, "rows": []}])");
-  expected[4]["digest"] = scopeDigest({renamedMeta}).hex();
-  expected[4]["rows"].append(renamedMeta);
-  CHECK_EQ(jcs(ann->frames), jcs(expected));
-}
-
 TEST(sync_live_sends_a_closed_socket_nothing_more) {
   BlockingThread::Mark blocking;
   test::FakeWorld world;
@@ -297,7 +264,7 @@ TEST(sync_live_sends_a_closed_socket_nothing_more) {
 
   const Json::Value renamedMeta = parseJson(R"({"t": "meta", "id": "meta", "f": {"title": ["Pine", "1000000:1:srv"],
       "visibility": ["public", "2500:0:srv"]}, "seq": 2, "rc": 1000, "ru": 1000000})");
-  Json::Value expected = parseJson(R"([{"op": "change", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 2, "rows": []}])");
+  Json::Value expected = parseJson(R"([{"op": "change", "as": "B", "scope": "tree/b_00000001", "epoch": "ep-1", "seq": 2, "rows": []}])");
   expected[0]["digest"] = scopeDigest({renamedMeta}).hex();
   expected[0]["rows"].append(renamedMeta);
   CHECK_EQ(jcs(ann->frames), "[]");
@@ -323,6 +290,6 @@ TEST(sync_live_decides_a_sub_by_what_was_published_while_its_snapshot_was_read) 
   store.then = [&live, &tree] { live.publish(CommittedChange{"ep-1", {}, {tree}}); };
   live.subscribe(*ann, parseJson(R"(["tree/b_00000001"])"));
 
-  CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([{"op": "not-found", "scope": "tree/b_00000001"}])")));
-  CHECK_EQ(jcs(ann->frames), jcs(parseJson(R"([{"op": "gone", "scope": "tree/b_00000001"}])")));
+  CHECK_EQ(jcs(bob->frames), jcs(parseJson(R"([{"op": "not-found", "as": "B", "scope": "tree/b_00000001"}])")));
+  CHECK_EQ(jcs(ann->frames), jcs(parseJson(R"([{"op": "gone", "as": "A", "scope": "tree/b_00000001"}])")));
 }

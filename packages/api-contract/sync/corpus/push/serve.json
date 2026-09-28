@@ -54,6 +54,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -110,6 +111,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 2,
           "results": [
             {
@@ -421,6 +423,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -477,6 +480,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 2,
           "results": [
             {
@@ -727,6 +731,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 2,
         "intents": []
       },
@@ -738,6 +743,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 2,
           "results": []
         }
@@ -933,6 +939,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 2,
         "intents": [
           {
@@ -967,6 +974,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "replica-forked"
         }
       },
@@ -1183,6 +1191,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -1217,6 +1226,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "replica-forked"
         }
       },
@@ -1391,6 +1401,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -1425,6 +1436,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "gap"
         }
       },
@@ -1541,6 +1553,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -1575,6 +1588,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "replica-foreign"
         }
       },
@@ -1637,6 +1651,310 @@
     }
   },
   {
+    "name": "a fresh replica's push naming A under B's credential answers account-mismatch: nothing lands in B, and the replica stays unbound",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "B",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 409,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "B",
+          "error": "account-mismatch"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "a bound replica's push naming A under B's credential answers account-mismatch before its binding is read",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "replicas": {
+          "rp_0000000000000000000000000000000a": {
+            "account": "A",
+            "lastN": 0
+          }
+        }
+      },
+      "account": "B",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 409,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "B",
+          "error": "account-mismatch"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        },
+        "replicas": {
+          "rp_0000000000000000000000000000000a": {
+            "account": "A",
+            "lastN": 0
+          }
+        }
+      },
+      "frames": []
+    }
+  },
+  {
     "name": "no principal answers 401",
     "input": {
       "state": {
@@ -1691,6 +2009,7 @@
       "account": null,
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -1725,6 +2044,546 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": null,
+          "error": "unauthenticated"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "a losing delete that carries a field register is refused invalid, so the newer whole save after it keeps every value",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "05d90a26c65654a0aa3ffafffa4e08df2339e7868025f0dffa7f4cfec6ff3d97"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "fact",
+              "id": "2027-01-15",
+              "life": [
+                "alive",
+                "5000:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "at": [
+                  5000,
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "value": [
+                  80,
+                  "5000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "fact",
+                "id": "2027-01-15",
+                "life": [
+                  "dead",
+                  "4000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "value": [
+                    99,
+                    "6000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          },
+          {
+            "n": 2,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "fact",
+                "id": "2027-01-15",
+                "life": [
+                  "alive",
+                  "5500:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "at": [
+                    5500,
+                    "5500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "value": [
+                    81,
+                    "5500:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g2"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "A",
+          "lastN": 2,
+          "results": [
+            {
+              "n": 1,
+              "s": "refused",
+              "code": "invalid"
+            },
+            {
+              "n": 2,
+              "s": "ok",
+              "seq": 2
+            }
+          ]
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "107b087504f247d5176e151ea8b0913c8cb77309623c0cffc2ffbf0cccbe9dab"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "fact",
+              "id": "2027-01-15",
+              "life": [
+                "alive",
+                "5500:0:r_aaaaaaaaaaaa"
+              ],
+              "f": {
+                "at": [
+                  5500,
+                  "5500:0:r_aaaaaaaaaaaa"
+                ],
+                "value": [
+                  81,
+                  "5500:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 1000,
+              "ru": 1000000
+            }
+          ]
+        },
+        "replicas": {
+          "rp_0000000000000000000000000000000a": {
+            "account": "A",
+            "lastN": 2
+          }
+        },
+        "results": {
+          "rp_0000000000000000000000000000000a": [
+            {
+              "n": 1,
+              "digest": "988c3dff8421760ca0388f109a2615a03cbc3f5533f80f584294c6efa1c338da",
+              "result": {
+                "s": "refused",
+                "code": "invalid"
+              },
+              "faults": 0
+            },
+            {
+              "n": 2,
+              "digest": "c658a34c0f33679ab32621cbd3a899a3e64f5f060d1aa35cf785c15c43ccd958",
+              "result": {
+                "s": "ok",
+                "seq": 2
+              },
+              "faults": 0
+            }
+          ]
+        }
+      },
+      "frames": [
+        {
+          "key": "acct:A/probe",
+          "frame": {
+            "op": "change",
+            "scope": "self/probe",
+            "epoch": "ep-1",
+            "seq": 2,
+            "digest": "107b087504f247d5176e151ea8b0913c8cb77309623c0cffc2ffbf0cccbe9dab",
+            "rows": [
+              {
+                "t": "fact",
+                "id": "2027-01-15",
+                "life": [
+                  "alive",
+                  "5500:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "at": [
+                    5500,
+                    "5500:0:r_aaaaaaaaaaaa"
+                  ],
+                  "value": [
+                    81,
+                    "5500:0:r_aaaaaaaaaaaa"
+                  ]
+                },
+                "seq": 2,
+                "rc": 1000,
+                "ru": 1000000
+              }
+            ]
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a credential that resolves to an account id over ACCOUNT_ID_BYTES answers 401, so every account a push names fits the widest body",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 401,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": null,
+          "error": "unauthenticated"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "a sent credential that resolves to no account answers 401",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": null,
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000,
+      "credential": "unresolved"
+    },
+    "expect": {
+      "response": {
+        "status": 401,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": null,
           "error": "unauthenticated"
         }
       },
@@ -1835,6 +2694,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -1892,6 +2752,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 1,
           "results": [
             {
@@ -2081,6 +2942,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -2121,6 +2983,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 0,
           "results": [],
           "retry": {
@@ -2242,6 +3105,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -2282,6 +3146,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 0,
           "results": [],
           "retry": {
@@ -2429,6 +3294,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -2491,6 +3357,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 2,
           "results": [
             {
@@ -2690,6 +3557,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "intents": [
           {
             "n": 1,
@@ -2723,6 +3591,298 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
+          "error": "malformed"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "a body without account is 400 malformed",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "A",
+          "error": "malformed"
+        }
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "frames": []
+    }
+  },
+  {
+    "name": "an account that is not a string is 400 malformed",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c5f75ee2d183e6b9c0c7fdc9cc53f293143285305bf005394272eb42c89fa20f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "account": "A",
+      "request": {
+        "replica": "rp_0000000000000000000000000000000a",
+        "account": null,
+        "ackThrough": 0,
+        "intents": [
+          {
+            "n": 1,
+            "scope": "self/probe",
+            "d": [
+              {
+                "t": "card",
+                "id": "card0002",
+                "born": "2000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "2000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "title": [
+                    "Card 1",
+                    "2000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ],
+            "gestureId": "g1"
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "response": {
+        "status": 400,
+        "body": {
+          "serverTime": 1000000,
+          "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -2833,6 +3993,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -2867,6 +4028,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -2977,6 +4139,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -3036,6 +4199,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "request-too-large"
         }
       },
@@ -3146,6 +4310,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -3183,6 +4348,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "request-too-large"
         }
       },
@@ -3346,6 +4512,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -3374,6 +4541,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 1,
           "results": [
             {
@@ -3601,6 +4769,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000A",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -3635,6 +4804,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -3691,7 +4861,7 @@
     }
   },
   {
-    "name": "a body with a key beyond replica, ackThrough and intents is 400 malformed",
+    "name": "a body with a key beyond replica, account, ackThrough and intents is 400 malformed",
     "input": {
       "state": {
         "epoch": "ep-1",
@@ -3745,6 +4915,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -3780,6 +4951,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -3954,6 +5126,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 2,
         "intents": [
           {
@@ -3988,6 +5161,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "gap"
         }
       },
@@ -4226,6 +5400,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -4327,6 +5502,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 3,
           "results": [
             {
@@ -4575,6 +5751,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "request-too-large"
         }
       },
@@ -4685,6 +5862,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -4744,6 +5922,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -4854,6 +6033,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 0,
         "intents": [
           {
@@ -4888,6 +6068,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -4998,6 +6179,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 9007199254740992,
         "intents": [
           {
@@ -5032,6 +6214,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "error": "malformed"
         }
       },
@@ -5158,6 +6341,7 @@
       "account": "A",
       "request": {
         "replica": "rp_0000000000000000000000000000000a",
+        "account": "A",
         "ackThrough": 5,
         "intents": []
       },
@@ -5169,6 +6353,7 @@
         "body": {
           "serverTime": 1000000,
           "epoch": "ep-1",
+          "as": "A",
           "lastN": 0,
           "results": []
         }

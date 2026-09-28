@@ -23,7 +23,7 @@ function after(replica, steps) {
 }
 
 function ok(n, seq) {
-  return { status: 200, body: { serverTime: 5000, epoch: 'ep-1', lastN: n, results: [{ n, s: 'ok', seq }] } };
+  return { status: 200, body: { serverTime: 5000, epoch: 'ep-1', as: 'A', lastN: n, results: [{ n, s: 'ok', seq }] } };
 }
 
 const CARDS = [
@@ -77,6 +77,7 @@ function scenarios() {
         body: {
           serverTime: 5001,
           epoch: 'ep-1',
+          as: 'A',
           pages: [{
             scope: 'self/probe',
             kind: 'rows',

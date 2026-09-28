@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "journal",
-  "version": 1,
-  "minVersion": 1,
+  "version": 2,
+  "minVersion": 2,
   "products": {
     "journal": {
       "surfaces": ["web", "ios"]

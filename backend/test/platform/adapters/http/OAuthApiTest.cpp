@@ -30,8 +30,9 @@ struct Harness {
   FakeOAuthRepository oauthRepo;
   std::shared_ptr<OAuthService> oauth = std::make_shared<OAuthService>(oauthRepo, tokens, *clock);
   FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth = std::make_shared<AuthService>(
-      authRepo, email, tokens, *clock, *oauth, footprint, kApp);
+      authRepo, email, tokens, *clock, *oauth, footprint, revocations, kApp);
   OAuthApi api{oauth, auth, kIssuer, kApp, kConsent, supportedScopes({"roadmap", "gym"})};
 
   UserId signIn(const std::string& sessionSecret, const std::string& address = "sam@example.com") {

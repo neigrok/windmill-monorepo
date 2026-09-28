@@ -9,14 +9,6 @@ namespace wm::sync {
 
 namespace {
 
-// §9.5 {op: 'gone' | 'not-found', scope}.
-Json::Value answer(const std::string& op, const std::string& scope) {
-  Json::Value frame(Json::objectValue);
-  frame["op"] = op;
-  frame["scope"] = scope;
-  return frame;
-}
-
 // A sub or unsub frame's scopes: every ref a string. Anything else leaves the whole frame ignored.
 bool isRefList(const Json::Value& scopeRefs) {
   return scopeRefs.isArray() && std::all_of(scopeRefs.begin(), scopeRefs.end(), [](const Json::Value& ref) { return ref.isString(); });
@@ -81,14 +73,6 @@ void SyncLive::unsubscribe(const LiveSocket& socket, const Json::Value& scopeRef
   }
 }
 
-void SyncLive::signOut(const LiveSocket& socket) {
-  std::lock_guard lock(mutex_);
-  const auto subscriber = sockets_.find(&socket);
-  if (subscriber == sockets_.end()) return;
-  subscriber->second.principal.reset();
-  endUnreadable(subscriber->second, [](const ScopeKey&) { return true; });
-}
-
 void SyncLive::publish(const CommittedChange& change) {
   std::lock_guard lock(mutex_);
   const std::vector<ScopeKey> flipped = learn(change);
@@ -137,7 +121,7 @@ void SyncLive::decide(const LiveSocket& socket, const std::vector<Wanted>& wante
   if (const auto subscriber = sockets_.find(&socket); subscriber != sockets_.end()) {
     for (const Wanted& one : wanted) {
       if (!one.key) {
-        subscriber->second.socket->send(answer("not-found", one.ref));
+        answer(subscriber->second, "not-found", one.ref);
         continue;
       }
       const Access access = accessTo(*one.key, subscriber->second.principal);
@@ -171,17 +155,30 @@ std::vector<ScopeKey> SyncLive::learn(const CommittedChange& change) {
   return flipped;
 }
 
-// §6.8: {op: change} to every subscriber still holding read access; one who lost it gets not-found and ends.
+// §6.8: {op: change} to every subscriber still holding read access, with its socket's `as`; one who lost it gets
+// not-found and ends.
 void SyncLive::sendChange(const std::string& epoch, const ScopeChange& changed) {
   const auto subscribed = subscribers_.find(changed.key);
   if (subscribed == subscribers_.end()) return;
-  const Json::Value frame = changeFrame(epoch, changed.key, changed.seq, changed.digest, changed.rows, limits_.liveInlineBytes);
+  Json::Value frame = changeFrame(epoch, changed.key, changed.seq, changed.digest, changed.rows, limits_.liveInlineBytes);
   for (const LiveSocket* socket : std::vector(subscribed->second.begin(), subscribed->second.end())) {
     Subscriber& subscriber = sockets_.at(socket);
     const Access access = accessTo(changed.key, subscriber.principal);
-    if (access.read) subscriber.socket->send(frame);
-    else end(subscriber, changed.key, access);
+    if (!access.read) {
+      end(subscriber, changed.key, access);
+      continue;
+    }
+    frame["as"] = servedAsJson(subscriber.principal);
+    subscriber.socket->send(frame);
   }
+}
+
+void SyncLive::answer(const Subscriber& subscriber, const std::string& op, const std::string& scope) {
+  Json::Value frame(Json::objectValue);
+  frame["op"] = op;
+  frame["as"] = servedAsJson(subscriber.principal);
+  frame["scope"] = scope;
+  subscriber.socket->send(frame);
 }
 
 // A dead scope answers as a read of it now would: gone to its tree's owner, not-found to everyone else (INV-7).
@@ -211,7 +208,7 @@ void SyncLive::endUnreadable(Subscriber& subscriber, const std::function<bool(co
 }
 
 void SyncLive::end(Subscriber& subscriber, const ScopeKey& key, const Access& access) {
-  subscriber.socket->send(answer(access.gone ? "gone" : "not-found", key.ref()));
+  answer(subscriber, access.gone ? "gone" : "not-found", key.ref());
   detach(subscriber, key);
 }
 

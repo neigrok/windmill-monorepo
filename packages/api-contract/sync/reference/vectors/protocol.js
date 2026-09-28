@@ -11,7 +11,7 @@ import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
 import { Device, Replica } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../client/sender.js';
 import { reconcile } from '../client/subscriptions.js';
-import { deathFrameFor, hello, pull } from '../server/pull.js';
+import { frameFor, hello, pull } from '../server/pull.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
 import { ACTOR, OTHER, product, registry } from './fixtures.js';
@@ -107,11 +107,11 @@ class Stage {
 
   // One push: the device numbers its batch, the server answers, and unless the reply is lost the device
   // applies it. Change frames and death frames (§6.8) go to the listed subscribers of each scope.
-  push(name, { serverNow, deviceNow = serverNow, authenticated = true, budget, fault = [], lost = false, frames = [] }) {
+  push(name, { serverNow, deviceNow = serverNow, servedAs = this.account(name), budget, fault = [], lost = false, frames = [] }) {
     const replica = this.devices[name].activeReplica;
     const request = this.call(name, deviceNow, (ctx) => nextPush(replica, ctx));
     if (request === null) throw new Error(`${name} has nothing to push`);
-    const account = authenticated ? this.account(name) : null;
+    const account = servedAs;
     const out = push({
       state: this.server,
       registry,
@@ -141,7 +141,7 @@ class Stage {
       for (const subscriber of subscribers) {
         const owner = event.key.startsWith('acct:') ? event.key.slice('acct:'.length).split('/')[0] : null;
         if (owner !== null && owner !== this.account(subscriber)) continue;
-        this.frame(subscriber, event.frame ?? deathFrameFor(this.server, event.key, this.account(subscriber)), deviceNow);
+        this.frame(subscriber, frameFor(this.server, event, this.account(subscriber)), deviceNow);
       }
     }
   }
@@ -193,11 +193,11 @@ const editCard = (id, title) => ({ scope: 'self/probe', changes: [{ op: 'update'
 
 function pushTranscript() {
   const one = replicaId(1);
-  const stage = new Stage('push', 'numbering, results, resends answered from sync_results, ackThrough pruning, retry by budget, poison, 401, and the three 409s with re-identify', {
+  const stage = new Stage('push', 'numbering, results, resends answered from sync_results, ackThrough pruning, retry by budget, poison, 401, the three 409s with re-identify, and a fresh replica of A pushing under B\'s credential, answered account-mismatch: nothing lands and the sender pauses', {
     server: EMPTY,
-    devices: { d1: boundDevice(one, 'A'), d2: boundDevice(replicaId(2), 'A', { nextN: 3 }), d3: boundDevice(one, 'B') },
-    ids: { d1: [replicaId(11)], d2: [replicaId(21)], d3: [replicaId(31)] },
-    actors: { d1: ACTOR, d2: 'r_cccccccccccc', d3: OTHER },
+    devices: { d1: boundDevice(one, 'A'), d2: boundDevice(replicaId(2), 'A', { nextN: 3 }), d3: boundDevice(one, 'B'), d4: boundDevice(replicaId(4), 'A') },
+    ids: { d1: [replicaId(11)], d2: [replicaId(21)], d3: [replicaId(31)], d4: [] },
+    actors: { d1: ACTOR, d2: 'r_cccccccccccc', d3: OTHER, d4: 'r_dddddddddddd' },
   });
   stage.do('d1', 'commit', createCard('card0001', 'One'), T);
   stage.do('d1', 'commit', createCard('card0002', 'Two'), T + 10);
@@ -216,13 +216,15 @@ function pushTranscript() {
   stage.push('d1', { serverNow: T + 130, fault: poisoned });
   stage.push('d1', { serverNow: T + 140, fault: poisoned });
   stage.do('d1', 'commit', editCard('card0002', 'Zwei'), T + 150);
-  stage.push('d1', { serverNow: T + 160, authenticated: false });
+  stage.push('d1', { serverNow: T + 160, servedAs: null });
   stage.do('d2', 'commit', { scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000002' }] }, T + 170);
   stage.push('d2', { serverNow: T + 180 });
   stage.push('d2', { serverNow: T + 190 });
   stage.do('d3', 'commit', createCard('cardbbbb', 'Bee'), T + 200);
   stage.push('d3', { serverNow: T + 210 });
   stage.push('d3', { serverNow: T + 220 });
+  stage.do('d4', 'commit', createCard('card0004', 'Four'), T + 224);
+  stage.push('d4', { serverNow: T + 226, servedAs: 'B' });
   const snapshot = boundDevice(one, 'A', { nextN: 1 });
   stage.do('d1', 'load', { device: snapshot }, T + 230);
   stage.do('d1', 'commit', { scope: 'self/probe', changes: [{ op: 'create', t: 'board', id: 'b_00000003' }] }, T + 240);

@@ -30,12 +30,13 @@ function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
 }
 
-// §6.1 step 2: a delta of a `wholePut` type carries a life, and an alive one carries every client-written
-// lattice field, every register at the life's stamp (null alike from a server origin).
+// §6.1 step 2: a delta of a `wholePut` type carries a life; an alive one carries every client-written
+// lattice field, every register at the life's stamp (null alike from a server origin), and a dead one no
+// field register, so a losing delete plants nothing.
 function isWholeDelta(type, delta) {
   if (delta.life === undefined) return false;
-  if (delta.life[0] !== 'alive') return true;
   const registers = delta.f ?? {};
+  if (delta.life[0] !== 'alive') return Object.keys(registers).length === 0;
   return type.clientLatticeFieldNames.every((name) => Object.hasOwn(registers, name))
     && Object.values(registers).every((register) => register[1] === delta.life[1]);
 }

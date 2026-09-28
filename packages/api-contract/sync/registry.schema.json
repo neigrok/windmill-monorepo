@@ -493,7 +493,7 @@
           }
         },
         {
-          "description": "A whole put is for keyed types with life, whose every client-written field is lww (§2.4).",
+          "description": "A whole put is for keyed types with life, with no text field and every client-written field lww (§2.4).",
           "if": {
             "required": [
               "wholePut"
@@ -509,6 +509,13 @@
               },
               "fields": {
                 "additionalProperties": {
+                  "not": {
+                    "properties": {
+                      "kind": {
+                        "const": "text"
+                      }
+                    }
+                  },
                   "if": {
                     "properties": {
                       "writer": {
@@ -810,9 +817,18 @@
               "type": "number"
             },
             "quantum": {
-              "description": "The number's step at any depth: an integer, or 1/k for an integer k (0.01, 0.1, 0.5). Clients round to it half away from zero; the server refuses a value off it (§2.4, §7.1 step 4).",
-              "type": "number",
-              "exclusiveMinimum": 0
+              "description": "The number's step at any depth: an integer, or 1/k for an integer k (0.01, 0.1, 0.5), so that 1/quantum is an integer, which the registry loader checks. Clients round to it half away from zero; the server refuses a value off it (§2.4, §7.1 step 4).",
+              "oneOf": [
+                {
+                  "type": "integer",
+                  "minimum": 1
+                },
+                {
+                  "type": "number",
+                  "exclusiveMinimum": 0,
+                  "exclusiveMaximum": 1
+                }
+              ]
             }
           }
         },

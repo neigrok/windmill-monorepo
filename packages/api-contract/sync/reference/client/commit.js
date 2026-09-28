@@ -10,7 +10,7 @@ import { INTENT_MACHINE, moveEntry, transition } from '../core/machines.js';
 import { Registry } from '../core/registry.js';
 import { isVisible, recordKey } from '../core/rows.js';
 import { roundToDomain } from '../core/values.js';
-import { bodyBytes, holdsNul } from '../core/wire.js';
+import { holdsNul, widestAloneBytes } from '../core/wire.js';
 import { deltasOf, foldSilently, silentFoldOf } from './dependents.js';
 import { drawn, foldDelta, stored, visibleCount } from './views.js';
 
@@ -392,9 +392,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const gestureId = opts.gestureId ?? ctx.nextGestureId();
   const intents = groupIntents(scope, deltas, guards, opts, cmd, gestureId);
 
-  const widest = Number.MAX_SAFE_INTEGER;
-  const aloneBytes = (intent) => bodyBytes({ replica: replica.meta.replica, ackThrough: widest, intents: [{ ...intent, n: widest }] });
-  const oversize = intents.find((intent) => aloneBytes(intent) > limits.PUSH_MAX_BYTES);
+  const oversize = intents.find((intent) => widestAloneBytes(replica.meta, intent) > limits.PUSH_MAX_BYTES);
   if (oversize) {
     const content = {};
     if (deltas.length) content.d = deltas;

@@ -109,6 +109,19 @@ export class Replica {
     this.meta.serverOffsetMs = Offset.choose(taken.samples);
   }
 
+  // §9.1: an answer or frame is this replica's only when served as its account. A replica with none
+  // (anon) is never answered as another.
+  servedAsOther(as) {
+    return this.meta.account !== undefined && as !== this.meta.account;
+  }
+
+  // §9.6: a 401, a 409 account-mismatch, or a 200 or 409 (the answers whose handling depends on the
+  // principal) served as anyone but this replica's account, pauses sync with nothing applied.
+  isUnauthenticated({ status, body }) {
+    if (status === 401 || (status === 409 && body?.error === 'account-mismatch')) return true;
+    return (status === 200 || status === 409) && this.servedAsOther(body?.as);
+  }
+
   // §2.5 admittedHigh: the greatest stamp in any row the server sent or in an acked entry.
   raiseAdmittedHigh(stamps) {
     for (const stamp of stamps) this.meta.admittedHigh = Stamp.max(this.meta.admittedHigh, stamp);

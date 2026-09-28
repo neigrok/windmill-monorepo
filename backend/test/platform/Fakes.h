@@ -7,6 +7,7 @@
 #include "platform/ports/EmailSender.h"
 #include "platform/ports/McpKeyRepository.h"
 #include "platform/ports/OAuthRepository.h"
+#include "platform/ports/SessionRevocations.h"
 #include "platform/ports/SubscriptionRepository.h"
 #include "platform/ports/TokenGenerator.h"
 
@@ -243,17 +244,23 @@ struct FakeAuthRepository : AuthRepository {
     }
     return std::nullopt;
   }
-  void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override {
-    for (auto it = sessions.begin(); it != sessions.end();) {
-      if (it->second.user == userId && it->first != keepDigest) it = sessions.erase(it);
-      else ++it;
-    }
+  std::vector<std::string> revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override {
+    return revokeSessionsWhere([&](const auto& session) { return session.second.user == userId && session.first != keepDigest; });
   }
-  void revokeAllSessions(const UserId& userId) override {
+  std::vector<std::string> revokeAllSessions(const UserId& userId) override {
+    return revokeSessionsWhere([&](const auto& session) { return session.second.user == userId; });
+  }
+  std::vector<std::string> revokeSessionsWhere(const std::function<bool(const std::pair<const std::string, SessionRecord>&)>& revokes) {
+    std::vector<std::string> revoked;
     for (auto it = sessions.begin(); it != sessions.end();) {
-      if (it->second.user == userId) it = sessions.erase(it);
-      else ++it;
+      if (!revokes(*it)) {
+        ++it;
+        continue;
+      }
+      revoked.push_back(it->first);
+      it = sessions.erase(it);
     }
+    return revoked;
   }
 
   void setDeleted(const UserId& userId, std::optional<UnixMs> at) {
@@ -268,6 +275,12 @@ struct FakeAuthRepository : AuthRepository {
 struct FakeAccountFootprint : AccountFootprint {
   std::set<std::string> withData;
   bool anyData(const UserId& userId) override { return withData.count(userId.str()) > 0; }
+};
+
+// Every digest the account service reported revoked, in order.
+struct FakeSessionRevocations : SessionRevocations {
+  std::vector<std::string> digests;
+  void revoked(const std::vector<std::string>& revoked) override { digests.insert(digests.end(), revoked.begin(), revoked.end()); }
 };
 
 // findActiveKey models the digest→(user, scope, id, name) + expiry gate; the real deleted_at JOIN is SQL-only.

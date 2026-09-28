@@ -132,6 +132,7 @@ function wholePuts() {
     admitted('an alive whole-put delta whose registers carry another stamp than its life is invalid', { state: empty, intent: probe([fact(['alive', s(5000)], { at: [5000, s(5000)], value: [80, s(4000)] })]) }),
     admitted('a whole put writes every field and its life at one stamp', { state: empty, intent: probe([fact(['alive', s(5000)], both(s(5000)))]) }),
     admitted('a delete of a whole fact carries its life alone', { state: empty, intent: probe([fact(['dead', s(5000)])]) }),
+    admitted('a dead whole-put delta that carries a field register is invalid', { state: empty, intent: probe([fact(['dead', s(5000)], { value: [99, s(6000)] })]) }),
     admitted('a whole put newer than the fact\'s delete makes it alive again (INV-2)', { state: deleted, intent: probe([fact(['alive', s(5000)], both(s(5000)))]) }),
     admitted('a whole put older than the fact\'s delete leaves it dead', { state: deleted, intent: probe([fact(['alive', s(2000)], both(s(2000)))]) }),
     admitted('a server-origin whole put carries a null stamp in every register', { state: empty, origin: SERVER_A, intent: probe([fact(['alive', null], both(null))]) }),

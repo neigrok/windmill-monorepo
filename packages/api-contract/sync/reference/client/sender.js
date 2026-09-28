@@ -55,7 +55,7 @@ export function nextPush(replica, ctx, { limit } = {}) {
         continue;
       }
       const intent = { ...entry.intent, n: meta.nextN };
-      const bytesWith = (batch) => bodyBytes({ replica: meta.replica, ackThrough: meta.ackThrough, intents: batch });
+      const bytesWith = (batch) => bodyBytes(pushRequest(meta, batch));
       if (bytesWith([intent]) > limits.PUSH_MAX_BYTES) {
         refuseOutgrown(replica, ctx, entry);
         back = heldBack(replica, ctx.registry);
@@ -74,18 +74,24 @@ export function nextPush(replica, ctx, { limit } = {}) {
   }
   const batch = sent().slice(0, maxIntents);
   if (batch.length === 0) return null;
-  return { replica: meta.replica, ackThrough: meta.ackThrough, intents: batch.map((entry) => entry.intent) };
+  return pushRequest(meta, batch.map((entry) => entry.intent));
+}
+
+// §9.3: a push names the replica and the account it is bound to (§6.2 step 3).
+function pushRequest(meta, intents) {
+  return { replica: meta.replica, account: meta.account, ackThrough: meta.ackThrough, intents };
 }
 
 // A push response, one local transaction per result. After a 400 or 413 on several intents it answers
 // {limit}, ⌈count/2⌉, which the caller's next nextPush passes to resend the first half by n; otherwise
 // nothing. Every 400 emits sync-push-malformed. After a 409 or an epoch change the instance takes a new
-// actor (§7.11).
+// actor (§7.11). A 401, or a 200 or 409 served as anyone but the replica's account, pauses sync with
+// nothing applied (§9.1).
 export function onPushResponse(replica, ctx, request, response, timing) {
   const { meta } = replica;
   const { status, body } = response;
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
-  if (status === 401) {
+  if (replica.isUnauthenticated(response)) {
     meta.authPaused = true;
     return undefined;
   }
@@ -184,7 +190,9 @@ export class SenderWait {
   }
 }
 
-// §10.4: every response carrying serverTime yields an offset sample, hello included.
+// §10.4: every response carrying serverTime yields an offset sample, hello included. A 401, or a hello
+// served as anyone but the replica's account, pauses sync (§9.1).
 export function onHello(replica, ctx, response, timing) {
   if (response.body?.serverTime !== undefined) replica.takeOffsetSample(response.body.serverTime, timing, ctx.limits);
+  if (replica.isUnauthenticated(response)) replica.meta.authPaused = true;
 }

@@ -128,6 +128,7 @@
     "expect": {
       "frame": {
         "op": "gone",
+        "as": "A",
         "scope": "tree/b_00000001"
       }
     }
@@ -261,6 +262,7 @@
     "expect": {
       "frame": {
         "op": "not-found",
+        "as": "B",
         "scope": "tree/b_00000001"
       }
     }
@@ -394,6 +396,7 @@
     "expect": {
       "frame": {
         "op": "gone",
+        "as": "A",
         "scope": "self/overlay/b_00000001"
       }
     }
@@ -527,6 +530,7 @@
     "expect": {
       "frame": {
         "op": "not-found",
+        "as": "B",
         "scope": "self/overlay/b_00000001"
       }
     }

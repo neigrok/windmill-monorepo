@@ -103,15 +103,15 @@ TEST(sync_service_push_takes_intents_in_ascending_n_whatever_order_the_request_c
   SyncService service(world.catalog(), world.store(), admission, clock);
   const Json::Value first = cardIntent(1, "card0001");
   const Json::Value second = cardIntent(2, "card0002");
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(second);
   request["intents"].append(first);
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 2,
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 2,
       "results": [{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 2}]})")));
   Json::Value stored = parseJson(R"({"rp_0000000000000000000000000000000a": [
       {"n": 1, "result": {"s": "ok", "seq": 1}, "faults": 0}, {"n": 2, "result": {"s": "ok", "seq": 2}, "faults": 0}]})");
@@ -141,14 +141,14 @@ TEST(sync_service_pull_of_more_than_pull_max_scopes_is_malformed_and_runs_no_bef
     return request;
   };
 
-  const SyncReply refused = service.pull(world.account("A"), jcs(pullOf(65)));
+  const SyncReply refused = service.pull(Credential::sent(world.account("A")), jcs(pullOf(65)));
 
   CHECK_EQ(refused.status, 400);
-  CHECK_EQ(jcs(refused.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "malformed"})")));
+  CHECK_EQ(jcs(refused.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "malformed"})")));
   CHECK_EQ(jcs(world.dump()), jcs(seeded));
   CHECK(world.feed.published.empty());
 
-  const SyncReply served = service.pull(world.account("A"), jcs(pullOf(64)));
+  const SyncReply served = service.pull(Credential::sent(world.account("A")), jcs(pullOf(64)));
 
   CHECK_EQ(served.status, 200);
   CHECK_EQ(served.body["pages"].size(), 64u);
@@ -162,11 +162,11 @@ TEST(sync_service_pull_refuses_a_key_beyond_scopes_and_beyond_each_scope_s_scope
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
-  const std::string malformed = jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "malformed"})"));
+  const std::string malformed = jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "malformed"})"));
 
-  const SyncReply rootKey = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}], "since": 0})");
-  const SyncReply scopeKey = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null, "since": 0}]})");
-  const SyncReply exact = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
+  const SyncReply rootKey = service.pull(Credential::sent(world.account("A")), R"({"scopes": [{"scope": "self/probe", "cursor": null}], "since": 0})");
+  const SyncReply scopeKey = service.pull(Credential::sent(world.account("A")), R"({"scopes": [{"scope": "self/probe", "cursor": null, "since": 0}]})");
+  const SyncReply exact = service.pull(Credential::sent(world.account("A")), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
 
   CHECK_EQ(rootKey.status, 400);
   CHECK_EQ(jcs(rootKey.body), malformed);
@@ -199,9 +199,9 @@ TEST(sync_service_boot_pages_a_scope_larger_than_one_feed_read_in_seq_then_id_or
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
 
-  const SyncReply reply = service.pull(world.account("A"), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
+  const SyncReply reply = service.pull(Credential::sent(world.account("A")), R"({"scopes": [{"scope": "self/probe", "cursor": null}]})");
 
-  Json::Value body = parseJson(R"({"serverTime": 1000000, "epoch": "ep-1",
+  Json::Value body = parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A",
       "pages": [{"scope": "self/probe", "kind": "rows", "rows": [], "more": false, "seq": 7, "total": 600}]})");
   for (int seq = 1; seq <= 7; ++seq) {
     for (const Json::Value& run : bySeq[seq]) body["pages"][0]["rows"].append(run);
@@ -226,15 +226,15 @@ TEST(sync_service_push_answers_an_n_a_concurrent_push_answered_with_the_result_i
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(first);
   request["intents"].append(second);
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 2,
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 2,
       "results": [{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 7}]})")));
   CHECK_EQ(world.dump()["scopes"]["acct:A/probe"]["seq"].asUInt64(), 1u);
 }
@@ -247,15 +247,15 @@ TEST(sync_service_push_from_a_replica_id_outside_d3_is_malformed_and_binds_nothi
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
-  const Json::Value malformed = parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "malformed"})");
+  const Json::Value malformed = parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "malformed"})");
 
   for (const char* replica : {"rp_0000000000000000000000000000000A", "rp_000000000000000000000000000000a", "r_aaaaaaaaaaaa"}) {
-    Json::Value request = parseJson(R"({"ackThrough": 0, "intents": []})");
+    Json::Value request = parseJson(R"({"account": "A", "ackThrough": 0, "intents": []})");
     request["replica"] = replica;
     request["intents"].append(cardIntent(1, "card0001"));
     TimeBudget budget(60'000);
 
-    const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+    const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
     CHECK_EQ(reply.status, 400);
     CHECK_EQ(jcs(reply.body), jcs(malformed));
@@ -278,16 +278,16 @@ TEST(sync_service_push_spends_no_budget_on_an_n_a_concurrent_push_answered) {
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), world.store(), admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   request["intents"].append(second);
   request["intents"].append(cardIntent(3, "card0003"));
   test::CountBudget twoAdmissions(2);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), twoAdmissions);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), twoAdmissions);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3,
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 3,
       "results": [{"n": 1, "s": "ok", "seq": 1}, {"n": 2, "s": "ok", "seq": 7}, {"n": 3, "s": "ok", "seq": 2}]})")));
 }
 
@@ -307,14 +307,14 @@ TEST(sync_service_push_compares_each_n_with_last_n_read_under_the_replica_lock_n
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 2, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 2, "intents": []})");
   request["intents"].append(cardIntent(3, "card0003"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 3, "results": [{"n": 3, "s": "ok", "seq": 1}]})")));
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 3, "results": [{"n": 3, "s": "ok", "seq": 1}]})")));
 }
 
 TEST(sync_service_push_answers_503_when_the_bind_fails_transiently_and_binds_nothing) {
@@ -327,14 +327,14 @@ TEST(sync_service_push_answers_503_when_the_bind_fails_transiently_and_binds_not
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 503);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "unavailable", "retryAfterMs": 1000})")));
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "unavailable", "retryAfterMs": 1000})")));
   CHECK_EQ(jcs(world.dump()), jcs(untouched));
 }
 
@@ -347,15 +347,15 @@ TEST(sync_service_push_answers_the_results_so_far_with_a_retry_when_step_4_s_rea
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   request["intents"].append(cardIntent(2, "card0002"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 1,
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 1,
       "results": [{"n": 1, "s": "ok", "seq": 1}], "retry": {"n": 2, "retryAfterMs": 1000}})")));
 }
 
@@ -368,14 +368,14 @@ TEST(sync_service_push_prunes_and_answers_last_n_without_waiting_on_the_replica_
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 1, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 1, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 200);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]})")));
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [{"n": 1, "s": "ok", "seq": 1}]})")));
   CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 1}})")));
   CHECK_FALSE(world.dump().isMember("results"));
 }
@@ -393,14 +393,14 @@ TEST(sync_service_push_answers_replica_foreign_when_another_account_holds_the_bi
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(1, "card0001"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 409);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "replica-foreign"})")));
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "replica-foreign"})")));
   CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "B", "lastN": 0}})")));
   CHECK(world.feed.published.empty());
 }
@@ -417,14 +417,14 @@ TEST(sync_service_push_409_keeps_a_binding_it_inserted_once_a_concurrent_push_ta
   wm::fake::FakeClock clock;
   clock.now = 1'000'000;
   SyncService service(world.catalog(), store, admission, clock);
-  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "ackThrough": 0, "intents": []})");
+  Json::Value request = parseJson(R"({"replica": "rp_0000000000000000000000000000000a", "account": "A", "ackThrough": 0, "intents": []})");
   request["intents"].append(cardIntent(2, "card0002"));
   TimeBudget budget(60'000);
 
-  const SyncReply reply = service.push(world.account("A"), jcs(request), budget);
+  const SyncReply reply = service.push(Credential::sent(world.account("A")), jcs(request), budget);
 
   CHECK_EQ(reply.status, 409);
-  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "error": "gap"})")));
+  CHECK_EQ(jcs(reply.body), jcs(parseJson(R"({"serverTime": 1000000, "epoch": "ep-1", "as": "A", "error": "gap"})")));
   Json::Value tallied = parseJson(R"({"rp_0000000000000000000000000000000a": [{"n": 1, "result": null, "faults": 1}]})");
   tallied["rp_0000000000000000000000000000000a"][0]["digest"] = intentDigest(first).hex();
   CHECK_EQ(jcs(world.dump()["replicas"]), jcs(parseJson(R"({"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}})")));

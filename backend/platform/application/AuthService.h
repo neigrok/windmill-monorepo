@@ -6,6 +6,7 @@
 #include "platform/ports/AuthRepository.h"
 #include "platform/ports/Clock.h"
 #include "platform/ports/EmailSender.h"
+#include "platform/ports/SessionRevocations.h"
 #include "platform/ports/SignupFork.h"  // ForkDescription
 #include "platform/ports/TokenGenerator.h"
 
@@ -33,11 +34,12 @@ struct SessionView {
 };
 
 // Holds no policy of its own: lifetimes, limits, the name cap and the close grace live in
-// domain/Auth.
+// domain/Auth. Every session it revokes is told to `revocations` once its row is gone.
 class AuthService {
 public:
   AuthService(AuthRepository& repo, EmailSender& email, TokenGenerator& tokens, Clock& clock,
-              OAuthService& oauth, AccountFootprint& footprint, std::string appBaseUrl);
+              OAuthService& oauth, AccountFootprint& footprint, SessionRevocations& revocations,
+              std::string appBaseUrl);
 
   enum class RequestResult { sent, invalidEmail, rateLimited, unreachable };
 
@@ -137,6 +139,7 @@ private:
   Clock& clock_;
   OAuthService& oauth_;
   AccountFootprint& footprint_;
+  SessionRevocations& revocations_;
   std::string appBaseUrl_;
 };
 

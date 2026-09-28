@@ -51,10 +51,10 @@ bool isSafeAtLeast(const Json::Value& value, std::uint64_t least) {
   return isSafeInteger(value) && value.asDouble() >= static_cast<double>(least);
 }
 
-// §6.2 step 1's shape: exactly {replica: a D-3 replica id, ackThrough: a safe integer ≥ 0, intents: [{n: a safe
-// integer ≥ 1, …}]}.
+// §6.2 step 1's shape: exactly {replica: a D-3 replica id, account: a string, ackThrough: a safe integer ≥ 0,
+// intents: [{n: a safe integer ≥ 1, …}]}.
 bool isPushRequest(const Json::Value& request) {
-  if (!request.isObject() || request.size() != 3) return false;
+  if (!request.isObject() || request.size() != 4 || !request["account"].isString()) return false;
   if (!isReplicaId(request["replica"]) || !isSafeAtLeast(request["ackThrough"], 0) || !request["intents"].isArray()) return false;
   return std::all_of(request["intents"].begin(), request["intents"].end(),
                      [](const Json::Value& intent) { return intent.isObject() && isSafeAtLeast(intent["n"], 1); });
@@ -86,8 +86,8 @@ std::optional<ScopeFacts> factsOf(const std::optional<ScopeRow>& row) {
   return row ? std::optional(row->facts()) : std::nullopt;
 }
 
-// §6.2 steps 3–6 for one well-formed push: bind the replica, answer its intents in ascending n, prune what
-// it acknowledged. Each step is a short transaction of its own, and none is open across an admission.
+// §6.2 steps 3–6 for one well-formed push served as `account`: bind the replica, answer its intents in ascending n,
+// prune what it acknowledged. Each step is a short transaction of its own, and none is open across an admission.
 class ReplicaPush {
 public:
   ReplicaPush(SyncStore& store, Admission& admission, UserId account, const Json::Value& request, Ms serverNow)
@@ -95,6 +95,7 @@ public:
         serverNow_(serverNow) {}
 
   SyncReply run(PushBudget& budget, Json::Value body) {
+    if (request_["account"].asString() != account_.str()) return SyncReply::refused(409, std::move(body), "account-mismatch");
     const Binding binding = bind();
     if (binding == Binding::unavailable) return SyncReply::unavailable(std::move(body));
     if (binding == Binding::foreign) return SyncReply::refused(409, std::move(body), "replica-foreign");
@@ -143,8 +144,9 @@ public:
 private:
   enum class Binding { bound, foreign, unavailable };
 
-  // Step 3: an absent binding is inserted at last_n 0; a replica bound to another account is foreign. A transient
-  // failure comes before the push takes its first intent, so the push answers it 503 (§6.6).
+  // Step 3, once the push names the account it is served as: an absent binding is inserted at last_n 0, bound to that
+  // account; a replica bound to another account is foreign. A transient failure comes before the push takes its
+  // first intent, so the push answers it 503 (§6.6).
   Binding bind() {
     try {
       const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
@@ -506,6 +508,11 @@ SyncReply SyncReply::refused(int status, Json::Value envelope, const std::string
   return SyncReply{status, std::move(envelope)};
 }
 
+SyncReply SyncReply::unauthenticated(Json::Value envelope) {
+  envelope["as"] = Json::Value(Json::nullValue);
+  return refused(401, std::move(envelope), "unauthenticated");
+}
+
 SyncReply SyncReply::unavailable(Json::Value envelope) {
   envelope["retryAfterMs"] = Json::UInt(Retry::kTransientMs);
   return refused(503, std::move(envelope), "unavailable");
@@ -521,11 +528,14 @@ SyncService::SyncService(const SyncCatalog& catalog, SyncStore& store, Admission
     : catalog_(catalog), store_(store), admission_(admission), clock_(clock) {}
 
 // §9.2: holdsRecords[p] iff acct:<caller>/<p> holds a visible row of a primary type, from one snapshot.
-SyncReply SyncService::hello(const std::optional<UserId>& caller) {
+SyncReply SyncService::hello(const Credential& credential) {
   const Ms serverTime = clock_.nowMs();
   const Registry& registry = catalog_.registry();
   const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
   Json::Value body = SyncReply::envelope(serverTime, store_.epoch(*txn));
+  if (credential.fails()) return SyncReply::unauthenticated(std::move(body));
+  const std::optional<UserId>& caller = credential.servedAs();
+  body["as"] = servedAsJson(caller);
   body["schema"] = Json::Int64(registry.version());
   body["minSchema"] = Json::Int64(registry.minVersion());
   if (!caller) return SyncReply{200, std::move(body)};
@@ -540,11 +550,13 @@ SyncReply SyncService::hello(const std::optional<UserId>& caller) {
   return SyncReply{200, std::move(body)};
 }
 
-SyncReply SyncService::push(const std::optional<UserId>& caller, std::string_view body, PushBudget& budget) {
+SyncReply SyncService::push(const Credential& credential, std::string_view body, PushBudget& budget) {
   const Ms serverNow = clock_.nowMs();
   const Limits& limits = admission_.limits();
   Json::Value answer = SyncReply::envelope(serverNow, epochOf(store_));
-  if (!caller) return SyncReply::refused(401, std::move(answer), "unauthenticated");
+  const std::optional<UserId>& caller = credential.servedAs();
+  if (credential.fails() || !caller) return SyncReply::unauthenticated(std::move(answer));
+  answer["as"] = servedAsJson(caller);
   if (body.size() > limits.pushMaxBytes) return SyncReply::refused(413, std::move(answer), "request-too-large");
   const std::optional<Json::Value> request = parsed(body);
   if (!request || !isPushRequest(*request)) return SyncReply::refused(400, std::move(answer), "malformed");
@@ -552,10 +564,13 @@ SyncReply SyncService::push(const std::optional<UserId>& caller, std::string_vie
   return ReplicaPush(store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
 }
 
-SyncReply SyncService::pull(const std::optional<UserId>& caller, std::string_view body) {
+SyncReply SyncService::pull(const Credential& credential, std::string_view body) {
   const Ms serverNow = clock_.nowMs();
   const Limits& limits = admission_.limits();
   Json::Value answer = SyncReply::envelope(serverNow, epochOf(store_));
+  if (credential.fails()) return SyncReply::unauthenticated(std::move(answer));
+  const std::optional<UserId>& caller = credential.servedAs();
+  answer["as"] = servedAsJson(caller);
   if (body.size() > limits.pullMaxBytes) return SyncReply::refused(413, std::move(answer), "request-too-large");
   const std::optional<Json::Value> request = parsed(body);
   if (!request || !isPullRequest(*request) || (*request)["scopes"].size() > limits.pullMaxScopes)

@@ -94,6 +94,34 @@ Json::Value refusedResult(const Refused& refused) {
   return result;
 }
 
+bool isAccountId(std::string_view id) {
+  if (id.size() > kAccountIdBytes) return false;
+  const std::string text(id);
+  try {
+    return jcs(Json::Value(text)) == "\"" + text + "\"";
+  } catch (const JsonError&) {
+    return false;
+  }
+}
+
+Credential::Credential(bool sent, std::optional<UserId> account) : sent_(sent), account_(std::move(account)) {}
+
+Credential Credential::none() {
+  return Credential(false, std::nullopt);
+}
+
+Credential Credential::sent(std::optional<UserId> account) {
+  return Credential(true, std::move(account));
+}
+
+bool Credential::fails() const {
+  return sent_ && (!account_ || !isAccountId(account_->str()));
+}
+
+Json::Value servedAsJson(const std::optional<UserId>& principal) {
+  return principal ? Json::Value(principal->str()) : Json::Value(Json::nullValue);
+}
+
 std::string Cursor::encode() const {
   Json::Value wire(Json::objectValue);
   wire["e"] = epoch;

@@ -71,6 +71,7 @@ add_library(windmill_platform
   platform/domain/sync/Admit.cpp
   platform/application/AuthService.cpp
   platform/application/Entitlements.cpp
+  platform/application/LiveSessions.cpp
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
   platform/application/WorkerPool.cpp
@@ -197,6 +198,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/sync/PatternTest.cpp
   test/platform/domain/sync/RegistryTest.cpp
   test/platform/domain/sync/ShapeTest.cpp
+  test/platform/domain/sync/WireTest.cpp
   test/platform/domain/sync/LatticeTest.cpp
   test/platform/domain/sync/FractionalIndexTest.cpp
   test/platform/domain/sync/TextMergeTest.cpp
@@ -209,6 +211,7 @@ add_executable(windmill_domain_tests
   test/platform/domain/OAuthTest.cpp
   test/platform/application/AuthServiceTest.cpp
   test/platform/application/EntitlementsTest.cpp
+  test/platform/application/LiveSessionsTest.cpp
   test/platform/application/OAuthServiceTest.cpp
   test/platform/application/McpKeyServiceTest.cpp
   test/platform/application/MailSweepTest.cpp
@@ -507,6 +510,7 @@ if(Drogon_FOUND AND libpqxx_FOUND)
     test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp
     test/platform/adapters/amplitude/AmplitudeClientTest.cpp
     test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
+    test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
     test/platform/adapters/postgres/PgPoolTest.cpp
     test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
     test/products/roadmap/adapters/json/SubgraphJsonTest.cpp

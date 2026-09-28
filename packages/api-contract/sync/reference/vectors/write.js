@@ -3,7 +3,7 @@
 // gives later queued writes of the named registers fresh stamps. Responses come from the reference server.
 
 import { freshMeta } from '../client/replica.js';
-import { bodyBytes } from '../core/wire.js';
+import { widestAloneBytes } from '../core/wire.js';
 import { push } from '../server/push.js';
 import { ServerState } from '../server/state.js';
 import { OTHER, product, productScope, registry, row, serverState, st } from './fixtures.js';
@@ -76,8 +76,7 @@ function outgrown() {
   const lap = commitStep([{ op: 'create', t: 'lap', id: 'lap00001', f: { runId: 'run00009', weight: 40 } }], undefined, 5001);
   const committed = runSteps({ device: device([longRun]), steps: [commitStep([], start('run00009'), 5000), lap] });
   const entry = committed.device.replicas[0].outbox.find((candidate) => candidate.localId === 'g2/0');
-  const widest = Number.MAX_SAFE_INTEGER;
-  const limit = bodyBytes({ replica: REPLICA, ackThrough: widest, intents: [{ ...entry.intent, n: widest }] });
+  const limit = widestAloneBytes({ replica: REPLICA, account: 'A' }, entry.intent);
   return new ServerScript({ device: device([longRun]), server: server([longRun]) })
     .limit({ PUSH_MAX_BYTES: limit })
     .add(commitStep([], start('run00009'), 5000))

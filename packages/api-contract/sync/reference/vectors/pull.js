@@ -17,10 +17,11 @@ const OVERLAY_A = `acct:A/overlay/${BOARD}`;
 const SRV = (ms) => `${ms}:0:srv`;
 
 // expect.state and expect.live appear when a beforePull admission changed the state.
-function pulled(name, { state, account, request, serverNow = NOW, limits }) {
+function pulled(name, { state, account, credential, request, serverNow = NOW, limits }) {
   const input = { state, account, request, serverNow };
+  if (credential) input.credential = credential;
   if (limits) input.limits = limits;
-  const out = pull({ state: new ServerState(state), registry, product, account, request, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
+  const out = pull({ state: new ServerState(state), registry, product, account, credential, request, serverNow, limits: { ...CONSTANTS, ...(limits ?? {}) } });
   const expect = { response: out.response };
   const after = out.state.toJSON();
   if (JSON.stringify(after) !== JSON.stringify(new ServerState(state).toJSON())) expect.state = after;
@@ -28,8 +29,10 @@ function pulled(name, { state, account, request, serverNow = NOW, limits }) {
   return vector(name, input, expect);
 }
 
-function helloed(name, { state, account, serverTime = NOW }) {
-  return vector(name, { state, account, serverTime }, { response: hello({ state: new ServerState(state), registry, account, serverTime }) });
+function helloed(name, { state, account, credential, serverTime = NOW }) {
+  const input = { state, account, serverTime };
+  if (credential) input.credential = credential;
+  return vector(name, input, { response: hello({ state: new ServerState(state), registry, account, credential, serverTime }) });
 }
 
 // A's product scope: three alive cards, a run, a spent card, and the board of A's tree. The tree holds
@@ -187,7 +190,13 @@ function serve() {
       state: plain, account: 'A', limits: { PULL_MAX_BYTES: 32 }, request: { scopes: [{ scope: 'self/probe' }] },
     }),
     pulled('a pull body other than {scopes: [{scope, cursor}]} is 400 malformed', { state: plain, account: 'A', request: { scopes: [{ scope: 'self/probe' }] } }),
-    pulled('a signed-out principal reads a public tree and nothing of its own', {
+    pulled('a sent credential that resolves to no account answers 401, never the anonymous answer: no page, and no beforePull runs', {
+      state: plain,
+      account: null,
+      credential: 'unresolved',
+      request: { scopes: [{ scope: 'self/probe', cursor: null }, { scope: `tree/${BOARD}`, cursor: null }] },
+    }),
+    pulled('a request with no credential is served as anonymous, as null: it reads a public tree and nothing of its own', {
       state: open,
       account: null,
       request: { scopes: [{ scope: `tree/${BOARD}`, cursor: null }, { scope: 'self/probe', cursor: null }] },
@@ -215,12 +224,14 @@ function hellos() {
   });
   return [
     helloed('an account holding an alive primary record holds records', { state: state(), account: 'A' }),
+    helloed('a sent credential that resolves to no account answers 401', { state: state(), account: null, credential: 'unresolved' }),
+    helloed('a credential that resolves to an account id over ACCOUNT_ID_BYTES answers 401', { state: state(), account: 'a'.repeat(65) }),
     helloed('an account holding only a non-primary record holds none', { state: withRun, account: 'B' }),
     helloed('an account whose primary records are dead holds none', { state: deadCard, account: 'B' }),
     helloed('a kept dead row of a primary type is not visible, so the account holds none', { state: deadBoard, account: 'B' }),
     helloed('an alive row of the governing primary type holds records', { state: aliveBoard, account: 'B' }),
     helloed('an account without a product scope holds none', { state: state(), account: 'B' }),
-    helloed('a signed-out caller gets no holdsRecords', { state: state(), account: null }),
+    helloed('a hello with no credential is served as anonymous, as null, with no holdsRecords', { state: state(), account: null }),
   ];
 }
 

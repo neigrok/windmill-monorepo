@@ -61,6 +61,8 @@ single-threaded run can observe, nor the HTTP envelope:
   (§9.1); the transport's own 413 and number-literal syntax (§9.1): the reference push and pull take
   `jcs(request)` as the body received;
 - a transient failure in the bind, answered 503 (§6.6);
+- credentials themselves: `account` stands for the account a request is served as (`null` when it
+  carries none), and `credential: 'unresolved'` for one sent that resolves to none (§9.1);
 - the live socket's reopen backoff and the cross-tab `upgrade` signal (§7.5, §7.8);
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
