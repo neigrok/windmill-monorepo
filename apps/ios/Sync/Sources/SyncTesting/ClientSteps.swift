@@ -366,7 +366,7 @@ public enum ClientSteps {
       let newID: NewID = if let id { .given(id) } else if let label = try json["label"]?.asString() { .derived(label: label) } else { .minted }
       return Change(type: type, operation: .create(newID), values: values, texts: texts, anchor: anchor)
     case "update": return Change(type: type, operation: .update(try required()), values: values, texts: texts)
-    case "delete": return Change(type: type, operation: .delete(try required()))
+    case "delete": return Change(type: type, operation: .delete(try required()), values: values, texts: texts)
     case "revive": return Change(type: type, operation: .revive(try required()), values: values)
     case "put": return Change(type: type, operation: .put(try required(), present: try json["present"]?.asBool() ?? true), values: values, texts: texts)
     case "write": return Change(type: type, operation: .write(try required()), values: values, texts: texts)

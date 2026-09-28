@@ -158,10 +158,11 @@ package actor Puller {
 
   // MARK: Frames
 
-  // §7.5 step 3 in one transaction; a frame that is not admitted, or whose digest check reset the cursor, wants its scope
-  // pulled, and one whose alive governing row brought a tree back wants the tree's scopes (§7.9). One that forgot its
-  // scope, ended one it ignores, paused the replica, or brought scopes back has the live channel look again at what it
-  // follows, so it stops following an ended scope, and follows a waiting or returning one once it is pulled.
+  // §7.5 step 3 in one transaction; a frame that is not admitted, whose digest check reset the cursor, or a not-found
+  // ignored for a tree that waits or has not booted wants its scope pulled, and one whose alive governing row brought a
+  // tree back wants the tree's scopes (§7.9). One that forgot its scope, ended one it ignores, paused the replica, or
+  // brought scopes back has the live channel look again at what it follows, so it stops following an ended scope, and
+  // follows a waiting, returning or ignored one once it is pulled.
   func apply(_ queued: (frame: LiveFrame, replica: String)) -> PullerStep {
     guard let scope = queued.frame.scope else { return .again }
     do {

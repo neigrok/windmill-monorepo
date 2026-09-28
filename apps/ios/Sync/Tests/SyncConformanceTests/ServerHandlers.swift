@@ -27,6 +27,7 @@ enum ServerHandlers {
       return ["text": .string(merged.text), "conflict": .bool(merged.conflict)]
     },
     "text/merge.json": { try textMerge($0) },
+    "envelope/credentials.json": { try credentials($0) },
     "admit/requests.json": { try requests($0) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
@@ -63,6 +64,22 @@ enum ServerHandlers {
   static func credential(_ input: JSON) throws -> Credential {
     if try input["credential"]?.asString() == "unresolved" { return .unresolved }
     return try account(input).map(Credential.account) ?? .absent
+  }
+
+  // `{headers: [[name, value], …], sessions: {token: account}}`: the principal the raw headers are served as, in the shape
+  // `credential(_:)` reads.
+  static func credentials(_ input: JSON) throws -> JSON {
+    let headers = try input.member("headers").asArray().map { header in
+      let pair = try header.asArray()
+      guard pair.count == 2 else { throw ServerVectorError("a header is [name, value]") }
+      return (name: try pair[0].asString(), value: try pair[1].asString())
+    }
+    let sessions = try Dictionary(uniqueKeysWithValues: input.member("sessions").asObject().members.map { ($0.key, try $0.value.asString()) })
+    switch Credential(headers: headers, sessions: sessions) {
+    case .absent: return ["principal": ["account": .null]]
+    case .account(let account): return ["principal": ["account": .string(account)]]
+    case .unresolved: return ["principal": ["account": .null, "credential": "unresolved"]]
+    }
   }
 
   // `{type, delta: {life?, born?}, idState: {state, born?}}` answers the §4.1 op and the §4.3 verdict.

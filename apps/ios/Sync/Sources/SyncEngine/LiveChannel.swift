@@ -6,14 +6,15 @@ import SyncStore
 // §7.5 and §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device
 // online and the app in the foreground. On open it follows every subscribed scope the replica pulls (§7.9); while open it
 // keeps what it follows in step with the subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping
-// failing the socket. Change, gone and not-found frames served as the replica's account go to the puller's queue; one
-// served as anyone else is a 401 (§9.1), which closes the socket and pauses the replica. A pong keeps the heartbeat, and
-// any other op is ignored. An open that fails, and a socket that ends or fails, count as a reconnect, so the puller pulls
-// every scope at once; a close the client makes (leaving, going offline, a replica change) pulls nothing. The next
-// socket after a reconnect opens after the channel's own backoff, with its own `k` and a 30 s ceiling, `k` reset once a
-// socket has stayed open 30 s; a re-authentication that clears the pause opens the next one at once, with `k` reset. A
-// 401 at the handshake pauses the replica, and a 426 stops the channel for the process. When the loops run, a reader
-// task per socket receives its frames; in step mode the caller receives them.
+// failing the socket. Change, gone and not-found frames served as the replica's account go to the puller's queue; a gone
+// or not-found ends the server's subscription (§6.8), so the scope is followed no more, and is subscribed again while the
+// replica still pulls it. A frame served as anyone else is a 401 (§9.1), which closes the socket and pauses the replica.
+// A pong keeps the heartbeat, and any other op is ignored. An open that fails, and a socket that ends or fails, count as
+// a reconnect, so the puller pulls every scope at once; a close the client makes (leaving, going offline, a replica
+// change) pulls nothing. The next socket after a reconnect opens after the channel's own backoff, with its own `k` and a
+// 30 s ceiling, `k` reset once a socket has stayed open 30 s; a re-authentication that clears the pause opens the next
+// one at once, with `k` reset. A 401 at the handshake pauses the replica, and a 426 stops the channel for the process.
+// When the loops run, a reader task per socket receives its frames; in step mode the caller receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -248,8 +249,12 @@ package actor LiveChannel {
       self.socket?.pongDue = nil
     case .other:
       break
-    case .change, .gone, .notFound:
+    case .change:
       guard frame.isServed(to: socket.account) else { return servedAsAnother(socket) }
+      await puller.enqueue(frame, for: socket.replica)
+    case .gone(let scope, _), .notFound(let scope, _):
+      guard frame.isServed(to: socket.account) else { return servedAsAnother(socket) }
+      self.socket?.following.removeAll { $0 == scope }
       await puller.enqueue(frame, for: socket.replica)
     }
   }

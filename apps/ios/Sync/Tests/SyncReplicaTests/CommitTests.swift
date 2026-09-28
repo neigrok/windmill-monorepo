@@ -152,4 +152,32 @@ struct CommitTests {
     }
     #expect(replica.writes == [])
   }
+
+  // §7.1 step 4: a put that leaves a whole record absent carries its life alone, since §6.1 step 2 refuses a dead whole
+  // delta with a field register: one that names a field value throws, whether it removes the record, deletes it, or keeps
+  // it dead with `present` nil, and writes nothing.
+  @Test func aChangeLeavingAWholeRecordAbsentThatNamesAFieldValueThrows() throws {
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let fact = { (life: Life.State, day: String) in
+      Row(key: RecordKey("fact", RecordID(day)), lattice: Lattice(life: Life(life, stamp), fields: [
+        "value": Register(80, stamp), "at": Register(900, stamp),
+      ]), seq: 1, rc: 1, ru: 1)
+    }
+    let changes: [Change] = [
+      .put("fact", "2026-09-01", present: false, ["value": 81]),
+      Change(type: "fact", operation: .delete("2026-09-01"), values: ["value": 81]),
+      .put("fact", "2026-09-02", present: nil, ["value": 81, "at": 5000]),
+    ]
+    for change in changes {
+      var replica = LoadedReplica(
+        meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"),
+        confirmed: [Self.product: Rows([fact(.alive, "2026-09-01"), fact(.dead, "2026-09-02")])], wholeScopes: true)
+      #expect(throws: CommitFailure.malformed("a removal of fact \(change.id!) carries its life alone")) {
+        try CommitPlanner(registry: Self.probe).commit(
+          Gesture(changes: [change]), in: Self.product, to: &replica, as: Self.instance(5000), identities: try QueuedIdentities([:]),
+          gestureIdTaken: false)
+      }
+      #expect(replica.writes == [])
+    }
+  }
 }

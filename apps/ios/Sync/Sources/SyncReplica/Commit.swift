@@ -41,9 +41,7 @@ public struct CommitPlanner: Sendable {
     }
     selection.keys.formUnion(gesture.guards.map(\.key))
     var reads = [scope: selection]
-    if let tree = scope.tree, let governing = registry.governingType, let productScope = registry.governingScope() {
-      reads[productScope, default: RowSelection()].keys.insert(RecordKey(governing.name, RecordID(tree)))
-    }
+    if let governing = registry.governingRecord(of: scope) { reads[governing.scope, default: RowSelection()].keys.insert(governing.key) }
     return reads
   }
 
@@ -148,9 +146,8 @@ public struct CommitPlanner: Sendable {
   func scopeIsDead(_ scope: ScopeRef, in replica: LoadedReplica) throws -> Bool {
     guard let tree = scope.tree else { return false }
     if replica.known[scope] != nil || replica.known[.tree(tree)] != nil { return true }
-    guard let governing = registry.governingType, let productScope = registry.governingScope() else { return false }
-    let stored = try ScopeView(replica, productScope, .stored, registry: registry)
-    return stored.record(RecordKey(governing.name, RecordID(tree)))?.lattice.life?.state == .dead
+    guard let governing = registry.governingRecord(of: scope) else { return false }
+    return try ScopeView(replica, governing.scope, .stored, registry: registry).record(governing.key)?.lattice.life?.state == .dead
   }
 
   // Step 4's retire: the held gestures of the scope with no command, whose every delta removes a named record.
@@ -279,7 +276,7 @@ struct DeltaBuilder {
       return try update(type, id, values: change.values, texts: change.texts)
     case .delete(let id):
       ids.append(id)
-      return try remove(type, id)
+      return try remove(type, id, values: change.values, texts: change.texts)
     case .revive(let id):
       ids.append(id)
       return try revive(type, id, values: change.values)
@@ -406,8 +403,9 @@ struct DeltaBuilder {
     return try withChanges(&delta, type, values, edits, current: current) ? delta : nil
   }
 
-  mutating func remove(_ type: TypeDef, _ id: RecordID) throws -> Delta? {
-    guard type.identity != .keyed else { return try put(type, id, present: false, values: [:], texts: [:]) }
+  // A keyed record is removed by a put that makes it absent, with what the change names.
+  mutating func remove(_ type: TypeDef, _ id: RecordID, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
+    guard type.identity != .keyed else { return try put(type, id, present: false, values: values, texts: edits) }
     guard type.hasBorn else { throw CommitFailure.malformed("\(type.name) has no life") }
     let current = try existing(type, id)
     return Delta(key: current.key, lattice: Lattice(life: Life(.dead, stamp), born: current.lattice.born))
@@ -426,7 +424,8 @@ struct DeltaBuilder {
   }
 
   // A keyed put's life: alive when it makes the record present, dead when it removes it, else the drawn life unchanged. A
-  // put that leaves a `wholePut` record present is a whole put.
+  // put that leaves a `wholePut` record present is a whole put; any other carries its life alone, since §6.1 step 2 refuses
+  // a dead whole delta with a field register, so one that names a field value throws.
   mutating func put(_ type: TypeDef, _ id: RecordID, present: Bool?, values: [String: JSON], texts edits: [String: TextEdit]) throws -> Delta? {
     guard type.identity == .keyed, type.life else { throw CommitFailure.malformed("\(type.name) is not keyed with life") }
     let key = RecordKey(type.name, id)
@@ -435,6 +434,7 @@ struct DeltaBuilder {
     let presentBefore = current?.lattice.life?.isAlive == true
     let present = present ?? presentBefore
     if present && type.wholePut { return try wholePut(type, key, values: values, texts: edits) }
+    guard !type.wholePut || (values.isEmpty && edits.isEmpty) else { throw CommitFailure.malformed("a removal of \(key) carries its life alone") }
     var life = current?.lattice.life
     if present && !presentBefore { life = Life(.alive, stamp) }
     if !present && presentBefore { life = Life(.dead, stamp) }

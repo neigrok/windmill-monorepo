@@ -213,10 +213,10 @@ public final class ModelServerHandle: Sendable {
 }
 
 extension ModelServerHandle.Process {
-  // No token is no credential; a token of a live session resolves to its account, and any other to none.
+  // A token is sent as the transport sends it, `Authorization: Bearer <token>`, and read as §9.1 reads raw headers: no
+  // token is no credential; a token of a live session resolves to its account, and any other to none.
   func credential(of token: SessionToken?) -> Credential {
-    guard let token else { return .absent }
-    return sessions[token.value].map(Credential.account) ?? .unresolved
+    Credential(headers: token.map { [(name: "Authorization", value: "Bearer \($0.value)")] } ?? [], sessions: sessions)
   }
 
   mutating func issue(for account: String) -> SessionToken {

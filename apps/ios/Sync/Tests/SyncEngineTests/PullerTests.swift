@@ -495,6 +495,65 @@ struct PullerTests {
     #expect(try Self.cursor(rig, Self.tree)?.booted == true)
   }
 
+  // §7.9: the tree's pull left before its board was committed, and the server answered not-found; the board's create is
+  // pushed and acked while that answer is on its way, and only then does it land. The replica holds the board alive, so
+  // the answer is stale: ignored, nothing recorded. It took the pull that would have booted the tree, so the tree is
+  // pulled again at once and boots, and a write into it is taken.
+  @Test func aNotFoundWrittenBeforeTheBoardsCreateLandingAfterItsAckIsIgnored() async throws {
+    let (rig, _) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    let gate = Gate()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]), after: gate)
+    async let asked = rig.engine.puller.step()
+    await gate.arrival()
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))], gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 2)]))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    gate.open()
+    #expect(await asked == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(try rig.active().known == [:])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+    #expect(try Self.cursor(rig, Self.tree)?.booted == true)
+    let outcome = try rig.engine.commit(Self.tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g2"))
+    guard case .committed = outcome else { throw RigError("the tree's commit was \(outcome)") }
+  }
+
+  // §7.9: the same through the live socket: the not-found frame the server wrote for the `sub`, applied after the board's
+  // create was answered ok, is ignored for the tree and its overlay alike.
+  @Test func aNotFoundFrameQueuedBeforeTheBoardsAckIsIgnored() async throws {
+    let (rig, _) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    try rig.engine.subscribe(Self.overlay)
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))], gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 2)]))
+    let replica = try rig.meta().replica
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: replica)
+    await rig.engine.puller.enqueue(.notFound(Self.overlay, servedAs: "A"), for: replica)
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(try rig.outbox() == ["g1/0 acked 1"])
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    #expect(await rig.engine.puller.step() == .frame(Self.overlay, .ignored))
+    #expect(try rig.active().known == [:])
+  }
+
+  // §7.9: a board whose delete is on its way is dead in `drawn` and in `stored`: the replica holds it alive nowhere, so a
+  // not-found for its tree is an end, and recorded.
+  @Test func aNotFoundForATreeWhoseBoardsDeleteIsSentIsRecorded() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    try rig.commit(Gesture(changes: [.delete("board", "b_00000001")], gestureId: "g1"))
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .notFound))
+    #expect(try rig.active().known == [Self.tree: .notFound])
+  }
+
   // An unsubscribe removes only its own scopes: a subscribe landing while its transaction runs is kept, and pulled.
   @Test func aSubscribeDuringAnUnsubscribeIsKept() async throws {
     let kept = ScopeRef.tree("b_00000002")

@@ -106,6 +106,31 @@ struct LiveChannelTests {
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])])
   }
 
+  // §6.8, §7.9: the socket subscribed the tree before its board reached the server, which answered not-found and kept no
+  // subscription. The frame lands after the board's create is acked, so it is ignored; the tree, still pulled, is
+  // subscribed again, and pulled, since the stale answer left it unbooted.
+  @Test func aTreeWhoseStaleNotFoundFrameIsIgnoredIsSubscribedAgain() async throws {
+    let (rig, socket) = try await Self.open()
+    try rig.engine.subscribe(Self.tree)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))], gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)]))
+    #expect(await rig.engine.sender.step() == .again)
+    socket.deliver(.notFound(Self.tree, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    #expect(try rig.active().known == [:])
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.tree])])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1), Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .applied),
+    ]))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [
+      PullRequest.Pulled(scope: Rig.scope, cursor: nil), PullRequest.Pulled(scope: Self.tree, cursor: nil),
+    ]))
+  }
+
   // Leaving closes the socket; back in the foreground another opens.
   @Test func leavingClosesTheSocketAndTheForegroundOpensAnother() async throws {
     let (rig, socket) = try await Self.open()

@@ -194,9 +194,11 @@ extension Registry {
     types.first(where: \.governsTree)
   }
 
-  // The scope a governing record lives in, where §7.1 step 2 reads it.
-  public func governingScope() -> ScopeRef? {
-    governingType?.scope.productName.map(ScopeRef.product)
+  // A tree or overlay scope's governing record, and the product scope it lives in, where §7.1 step 2 and §7.9 read it; nil
+  // for any other scope.
+  public func governingRecord(of scope: ScopeRef) -> (key: RecordKey, scope: ScopeRef)? {
+    guard let tree = scope.tree, let governing = governingType, let product = governing.scope.productName else { return nil }
+    return (RecordKey(governing.name, RecordID(tree)), .product(product))
   }
 
   // A reference from `scope` to a record of `type` names it in the scope that type lives in (§7.7 step 3).

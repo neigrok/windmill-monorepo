@@ -68,22 +68,30 @@ public struct PageApplier: Sendable {
   // §7.9: a tree or overlay scope waits while its governing record's create is still in the outbox, held, ready or sent,
   // by a delta or a prediction, since the server holds no such scope yet. It is pulled once that entry has its result.
   public func awaitsGoverningCreate(_ scope: ScopeRef, in replica: LoadedReplica) -> Bool {
-    guard let tree = scope.tree, let governing = registry.governingType else { return false }
-    let key = RecordKey(governing.name, RecordID(tree))
+    guard let key = registry.governingRecord(of: scope)?.key else { return false }
     return replica.outbox.contains { entry in
       entry.state != .acked && entry.drawnDeltas.contains { $0.key == key && $0.creates }
     }
   }
 
+  // §7.9: the replica holds a tree or overlay scope's governing record alive, in `drawn` or in `stored` (§7.6): its create
+  // acked but not yet confirmed, the record confirmed, or a held delete of it waiting, which leaves it alive in `stored`
+  // only. The server holds the scope then, so a not-found for it was written before the create reached the server.
+  public func holdsGoverningRecord(_ scope: ScopeRef, in replica: LoadedReplica) throws -> Bool {
+    guard let governing = registry.governingRecord(of: scope) else { return false }
+    return try [ViewMode.drawn, .stored].contains { mode in
+      try ScopeView(replica, governing.scope, mode, registry: registry).record(governing.key)?.lattice.life?.isAlive == true
+    }
+  }
+
   // §7.5: the scopes a page wants pulled next. Its own after a stale or reset page, a page with more rows, a digest check
-  // that reset its cursor to boot it, or a not-found ignored while the scope waits, so it is pulled once it waits no
-  // more. And, from applied rows, the tree and overlay scopes an alive governing row brought back (§7.9). `before` is
-  // the replica as the page found it.
+  // that reset its cursor to boot it, or a not-found ignored that `pullsAgain` names. And, from applied rows, the tree and
+  // overlay scopes an alive governing row brought back (§7.9). `before` is the replica as the page found it.
   public func wants(after page: PullPage, _ outcome: PageOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> [ScopeRef] {
     switch outcome {
     case .stale, .reset: return [page.scope]
     case .gone, .notFound: return []
-    case .ignored: return awaitsGoverningCreate(page.scope, in: replica) ? [page.scope] : []
+    case .ignored: return pullsAgain(afterIgnoring: page.scope, in: replica) ? [page.scope] : []
     case .applied:
       guard case .rows(let rows) = page.body else { return [] }
       let again = rows.more || replica.cursors[page.scope]?.cursor == nil
@@ -92,16 +100,24 @@ public struct PageApplier: Sendable {
   }
 
   // The scopes a frame wants pulled next: its own when it was not admitted, its digest check reset the cursor, or it was a
-  // not-found ignored while the scope waits; and those an alive governing row of an applied change brought back.
+  // not-found ignored that `pullsAgain` names; and those an alive governing row of an applied change brought back.
   public func wants(after frame: LiveFrame, _ outcome: FrameOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> [ScopeRef] {
     switch (outcome, frame) {
     case (.pull, .change(let change)): return [change.scope]
-    case (.ignored, .notFound(let scope, _)): return awaitsGoverningCreate(scope, in: replica) ? [scope] : []
+    case (.ignored, .notFound(let scope, _)): return pullsAgain(afterIgnoring: scope, in: replica) ? [scope] : []
     case (.applied, .change(let change)):
       let again = replica.cursors[change.scope]?.cursor == nil
       return (again ? [change.scope] : []) + rejoins(change.rows ?? [], in: before)
     default: return []
     }
+  }
+
+  // §7.9: a tree or overlay scope whose not-found was ignored is pulled again while it waits for its governing record's
+  // create, so it is pulled once it waits no more; and while it has not booted, since the stale answer took the pull that
+  // would have booted it, and the server holds the scope now. A booted scope keeps its cursor and wants nothing.
+  func pullsAgain(afterIgnoring scope: ScopeRef, in replica: LoadedReplica) -> Bool {
+    guard scope.tree != nil else { return false }
+    return awaitsGoverningCreate(scope, in: replica) || replica.cursors[scope]?.cursor == nil
   }
 
   // §7.9: the tree and overlay scopes the replica knows not found whose governing record `rows` holds alive. The answer
@@ -119,22 +135,36 @@ public struct PageApplier: Sendable {
 
   // §7.5 step 2: the ends a client does not apply, forgetting and recording nothing. Any gone or not-found of a product
   // scope: a product scope never dies, and the server answers one only to a request served as anonymous, which a bound
-  // replica has already handled as a 401 (§9.1); defence in depth. And a not-found for a scope that waits for its
-  // governing record's create (§7.9), since the server holds no such scope yet.
-  public func ignoresEnd(of scope: ScopeRef, _ kind: KnownKind, in replica: LoadedReplica) -> Bool {
+  // replica has already handled as a 401 (§9.1); defence in depth. And a not-found for a tree or overlay scope that waits
+  // for its governing record's create, or whose governing record the replica holds alive (§7.9): the answer is stale.
+  public func ignoresEnd(of scope: ScopeRef, _ kind: KnownKind, in replica: LoadedReplica) throws -> Bool {
     if case .product = scope.kind { return true }
-    return kind == .notFound && awaitsGoverningCreate(scope, in: replica)
+    guard kind == .notFound else { return false }
+    return try awaitsGoverningCreate(scope, in: replica) || holdsGoverningRecord(scope, in: replica)
   }
 
-  // The rows a page or frame reads, for its Action to load first: the stored rows of the records it carries.
+  // The rows a page or frame reads, for its Action to load first: the stored rows of the records it carries, and for a
+  // not-found the governing record `ignoresEnd` reads.
   public func reads(of step: PullStep) -> [ScopeRef: RowSelection] {
-    guard case .page(let page, _) = step, case .rows(let rows) = page.body else { return [:] }
-    return [page.scope: RowSelection(keys: Set(rows.rows.map(\.key)))]
+    guard case .page(let page, _) = step else { return [:] }
+    switch page.body {
+    case .rows(let rows): return [page.scope: RowSelection(keys: Set(rows.rows.map(\.key)))]
+    case .notFound: return governingReads(of: page.scope)
+    case .reset, .gone: return [:]
+    }
   }
 
   public func reads(of frame: LiveFrame) -> [ScopeRef: RowSelection] {
-    guard case .change(let change) = frame, let rows = change.rows else { return [:] }
-    return [change.scope: RowSelection(keys: Set(rows.map(\.key)))]
+    switch frame {
+    case .change(let change): return change.rows.map { [change.scope: RowSelection(keys: Set($0.map(\.key)))] } ?? [:]
+    case .notFound(let scope, _): return governingReads(of: scope)
+    default: return [:]
+    }
+  }
+
+  func governingReads(of scope: ScopeRef) -> [ScopeRef: RowSelection] {
+    guard let governing = registry.governingRecord(of: scope) else { return [:] }
+    return [governing.scope: RowSelection(keys: [governing.key])]
   }
 
   // The answer to a pull the replica of `account` made: its offset sample first; then, for an answer handled as a 401
@@ -190,7 +220,7 @@ public struct PageApplier: Sendable {
       replica.apply(.putCursor(scope, record))
       if replica.staging[scope] != nil { replica.apply(.dropStaging(scope)) }
       return .reset
-    case .gone where ignoresEnd(of: scope, .gone, in: replica), .notFound where ignoresEnd(of: scope, .notFound, in: replica):
+    case .gone where try ignoresEnd(of: scope, .gone, in: replica), .notFound where try ignoresEnd(of: scope, .notFound, in: replica):
       return .ignored
     case .gone:
       try forget(scope, as: .gone, in: &replica)
@@ -322,8 +352,8 @@ public struct PageApplier: Sendable {
       return .paused
     }
     switch frame {
-    case .gone(let scope, _) where ignoresEnd(of: scope, .gone, in: replica),
-      .notFound(let scope, _) where ignoresEnd(of: scope, .notFound, in: replica):
+    case .gone(let scope, _) where try ignoresEnd(of: scope, .gone, in: replica),
+      .notFound(let scope, _) where try ignoresEnd(of: scope, .notFound, in: replica):
       return .ignored
     case .gone(let scope, _):
       try forget(scope, as: .gone, in: &replica)

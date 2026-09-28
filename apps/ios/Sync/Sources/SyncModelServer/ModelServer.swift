@@ -378,29 +378,6 @@ public struct LiveSocket: Sendable, Hashable {
   public let id: Int
 }
 
-// §9.1 what a request's credential resolved to: none was sent, so the request is anonymous; it resolved to an account;
-// or it was sent and resolved to none (revoked, expired, unknown or malformed). One that does not resolve, or resolves
-// to an account id outside §9.1's form, fails: every endpoint answers it 401, never as anonymous.
-public enum Credential: Sendable, Hashable {
-  case absent
-  case account(String)
-  case unresolved
-
-  public var fails: Bool {
-    switch self {
-    case .absent: false
-    case .account(let account): !AccountID.isWellFormed(account)
-    case .unresolved: true
-    }
-  }
-
-  // The account a request is served as, nil when anonymous.
-  public var account: String? {
-    guard case .account(let account) = self else { return nil }
-    return account
-  }
-}
-
 // Faults a push meets (§6.6): a budget of admissions standing for PUSH_WORK_MS, a transient failure in the binding, and
 // injected faults by `n`.
 public struct PushFaults: Sendable, Hashable {
