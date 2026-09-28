@@ -3,19 +3,22 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-// A weigh-in: the lifter's one number for one local day, keyed by that day, so writing the day again corrects it.
-public struct WeighIn: Writable, Removable, Equatable {
+// A weigh-in: the lifter's one number for one local day, keyed by that day. It is one fact, saved whole, so the newest
+// save of the day wins whole: its weight, its moment and its presence.
+public struct WeighIn: Draftable, Removable, Timestamped, Equatable {
   public static let type = Gym.Types.weighin
   public static let scope = Gym.scope
+  public static let savesGuarded = false
   public static let heldRemoval = true
+  public static let timestampField = "recordedAt"
 
   public let id: ID<WeighIn>
   // Nil or NaN while the field holds no number.
-  public private(set) var kg: Double?
-  // The device's clock when the lifter saved.
+  public var kg: Double?
+  // The moment of the save that wrote it, which the save itself stamps.
   public private(set) var recordedAt: Instant?
 
-  public init(day: LocalDay, kg: Double?, recordedAt: Instant?) {
+  public init(day: LocalDay, kg: Double? = nil, recordedAt: Instant? = nil) {
     id = ID(day)
     self.kg = kg
     self.recordedAt = recordedAt
@@ -64,31 +67,7 @@ public enum WeighInRules {
   ]
 }
 
-// The sheet's one save: the weight and the save's moment written together as one fact, so the newest save wins whole.
-public struct SaveWeighIn: Action {
-  public let day: LocalDay
-  // Nil or NaN while the field holds no number.
-  public let kg: Double?
-
-  public init(day: LocalDay, kg: Double?) {
-    self.day = day
-    self.kg = kg
-  }
-
-  public var scope: ScopeRef { WeighIn.scope }
-
-  public func load(_ read: Reader) throws -> Moment {
-    read.moment
-  }
-
-  public func decide(_ moment: Moment, ids: IDSource) throws(Violation) -> Decision<WeighIn, GymRefusal> {
-    let weighIn = try Valid(WeighIn(day: day, kg: kg, recordedAt: moment.now), at: moment)
-    var plan = Plan()
-    plan.create(weighIn, fields: ["kg", "recordedAt"])
-    return .write(plan, weighIn.value)
-  }
-}
-
+public typealias SaveWeighIn = SaveDraft<WeighIn, GymRefusal>
 public typealias DeleteWeighIn = Remove<WeighIn, GymRefusal>
 
 // The room's one read: the stance reads the store, a held delete included; all else reads what is drawn up to today.

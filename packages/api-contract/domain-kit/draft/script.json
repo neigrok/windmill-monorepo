@@ -958,5 +958,142 @@
         }
       ]
     }
+  },
+  {
+    "name": "a whole save leaves the draft holding what it wrote, its timestamp included, and an untouched save writes it all again",
+    "input": {
+      "t": "fact",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {"op": "openOrNew", "id": "2027-01-10"},
+        {"op": "edit", "f": {"value": 80.04}},
+        {"op": "save", "gesture": true},
+        {"op": "save", "gesture": true}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": null, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 80.04, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": 80, "at": 1800000000000},
+            "current": {"value": 80, "at": 1800000000000},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "fact",
+                  "id": "2027-01-10",
+                  "present": true,
+                  "f": {"value": 80, "at": 1800000000000}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [{"t": "fact", "id": "2027-01-10"}],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": 80, "at": 1800000000000},
+            "current": {"value": 80, "at": 1800000000000},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g2",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "fact",
+                  "id": "2027-01-10",
+                  "present": true,
+                  "f": {"value": 80, "at": 1800000000000}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [{"t": "fact", "id": "2027-01-10"}],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a refused whole save leaves the draft as it was",
+    "input": {
+      "t": "fact",
+      "drawn": [],
+      "stored": [],
+      "ops": [{"op": "openOrNew", "id": "2027-01-10"}, {"op": "edit", "f": {"value": 600}}, {"op": "save"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": null, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 600, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 600, "at": null},
+            "isNew": true,
+            "placement": null
+          },
+          "result": {"refused": {"violation": {"rule": "fact.value", "path": "value", "reason": "above", "max": 500}}}
+        }
+      ]
+    }
   }
 ]

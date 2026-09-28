@@ -1,37 +1,33 @@
 ---
 name: domain-feature
-description: Build or change a gym or journal feature's domain logic on iOS, on the Windmill domain kit in Swift (apps/ios/Domain, GymDomain or JournalDomain) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, moves, held deletes and Undo, Coach executors, and their harness tests and shared vectors. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS.
+description: Build or change a gym or journal feature's domain logic on iOS, on the Windmill domain kit in Swift (apps/ios/Domain, GymDomain or JournalDomain) — entities, value specs, rules and the product refusal, reads, actions, drafts and their one save, keyed records saved whole, moves, held deletes and Undo, Coach executors, and their harness tests and shared vectors. Pure logic, no UI. Use when asked to add or change a gym or journal feature's entities, rules, actions, drafts or saves on iOS.
 ---
 
 # A feature domain on the domain kit
 
-The kit's spec, `docs/foundation/domain-kit.md` (§n below), is normative; the engine's is
-`docs/foundation/engine.md` (engine §n). This skill gives the build order, the checks that fail you and
-the traps, and restates neither. Copy the shape of the reference feature, gym Notes:
-`apps/ios/Domain/Sources/GymDomain/{Notes,GymRules}.swift`, its tests
-`apps/ios/Domain/Tests/GymDomainTests/{NotesTests,GymRulesTests}.swift`, and its vectors
-`packages/api-contract/gym/domain/{rules,values,actions}.json` with the `README.md` stating their forms.
+This skill carries a feature's common path end to end; the kit's spec, `docs/foundation/domain-kit.md` (§n below), and
+the engine's, `docs/foundation/engine.md` (engine §n), are normative for the rest. The reference shapes are gym
+**Notes** (minted, ordered, capped, guarded) and gym **Bodyweight** (keyed by day, one fact saved whole):
+`apps/ios/Domain/Sources/GymDomain/{Notes,Bodyweight,GymRules}.swift`, tests in `apps/ios/Domain/Tests/GymDomainTests/`,
+vectors in `packages/api-contract/gym/`.
 
-**Use it** for any entity, spec, rule, action, save, reorder, delete or Coach executor in `GymDomain` or
-`JournalDomain`. **Not** for screens, view models or copy (the `Windmill<P>` UI modules, §2.1), the
-engine or a registry (`apps/ios/Sync`, `packages/api-contract/sync`), or roadmap, which is web only.
+**Not** for screens, view models or copy (the `Windmill<P>` UI modules), the engine or a registry (`apps/ios/Sync`,
+`packages/api-contract/sync`), or roadmap, which is web only.
 
 ## Non-negotiables
 
 `LayeringTests`, part of every `swift test` of `apps/ios/Domain`, fails on each:
 
-- A product domain imports, and depends on, only `DomainKit`, `SyncCore`, `SyncAPI` and `SyncSchema`
-  (§2.1): no `Foundation`, UI framework, Combine name or import attribute; no engine runtime, test
-  support or other product's domain.
-- Its settings are exactly `[.enableUpcomingFeature("MemberImportVisibility")]`, language mode 6 (§2.4).
-- §2.3's source rules reject tokens such as `print`, `Task`, `async`, `await`, `MainActor`, `random`,
-  `@unchecked`, `#if` and identifiers beginning `_`. Time comes only from a `Moment`; ids only from
-  `IDSource.mint`, `runner.mint`, a natural key or the action's input (INV-11).
-- A test target never depends on a platform or UI module; `<P>DomainTests` takes the domain, the kit,
-  `DomainKitTesting`, `SyncCore`, `SyncAPI`, `SyncSchema` and `SyncTesting` (§2.1).
-
-`JournalDomain` has its layering row and no target yet: add its library, target and test target to
-`apps/ios/Domain/Package.swift` exactly as `GymDomain`'s are. Before handing back, run everything:
+- A product domain imports only `DomainKit`, `SyncCore`, `SyncAPI` and `SyncSchema` (a file naming `.stored` or
+  `.drawn` imports `SyncAPI`, which declares `ViewMode`), and its settings are exactly
+  `[.enableUpcomingFeature("MemberImportVisibility")]`, language mode 6. No `Foundation`, UI framework, Combine name,
+  import attribute, engine runtime, test support or other product's domain.
+- Source rules reject tokens such as `print`, `Task`, `async`, `await`, `MainActor`, `random`, `@unchecked`, `#if` and
+  identifiers beginning `_`. Time comes only from a `Moment`; ids only from `IDSource.mint`, `runner.mint`, a natural
+  key or the action's input.
+- `<P>DomainTests` takes the domain, `DomainKit`, `DomainKitTesting`, `SyncCore`, `SyncAPI`, `SyncSchema` and
+  `SyncTesting`. `JournalDomain` has its layering row and no target yet: add its library, target and test target to
+  `apps/ios/Domain/Package.swift` exactly as `GymDomain`'s are. Before handing back, run everything:
 
 ```sh
 cd apps/ios/Domain
@@ -40,211 +36,245 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-t
 
 ## Build order
 
-### 1. Read what the registry already declares
+### 1. Read the registry, the binding and the canon
 
-Read the type in `packages/api-contract/sync/<product>.registry.json` and its binding in engine Appendix
-A.2 (gym) or A.3 (journal); `SyncSchema` generates its names (`Gym.Types.note`, `Gym.scope`).
+Read the type in `packages/api-contract/sync/<product>.registry.json`, its binding in engine Appendix A.2 (gym) or A.3
+(journal), and the feature's brief in `docs/design/<product>/briefs/`. `SyncSchema` generates the names: `Gym.scope`,
+`Gym.Types.weighin`, product refusal codes `Gym.Codes.badInstant`, defaults `Gym.Defaults.Prefs.units`.
 
-| The registry or binding says | The entity declares |
+| The registry, binding or canon says | The entity declares |
 |---|---|
 | `identity: minted` | ids from `runner.mint` as a draft opens, or from `IDSource.mint` or the call in an action |
 | `identity: keyed` or `singleton` | its natural id (`ID(day)` for a local-date key); drafts open with `open(_:orNew:)` |
-| `life: true`, and the binding lets a client delete it | `Removable`; `heldRemoval = true` iff Appendix A lists that delete as held |
+| `wholePut: true` (keyed, with life): each record is one fact | `Draftable`, `savesGuarded = false`, writing every client field |
+| a field that records each save's moment (A.2 `weighin.recordedAt`) | `Timestamped`, naming it `timestampField`, with no check |
+| `life: true`, and the binding lets a client delete it | `Removable` |
+| the delete is in the canon's delete windows (gym: `docs/design/gym/briefs/13-gestures.md`) | `heldRemoval = true`; A.2's **Held** list must agree, else record the drift in `docs/design/consistency.md` |
 | a client `lww` field with a `fracKey` domain | `Ordered`, naming it `orderField` |
-| "Editor save guards the fields it writes" | `Draftable` with `savesGuarded = true`, and so no `text` field |
-| the `writer: client` fields it writes, with bounds, enum, `quantum` | `fields`, and a spec no looser than the registry |
+| "Editor save guards the fields it writes" | `savesGuarded = true`, and so no `text` field |
+| the `writer: client` fields, with bounds, enum, `quantum` | `fields`, and a spec no looser than the registry |
 
-A type or field the registry lacks is an engine change first (the registry file, engine Appendix A, then
-`swift run SyncSchemaGen` in `apps/ios/Sync`), never a domain workaround.
+A type or field the registry lacks is an engine change first (registry, engine Appendix A, `swift run SyncSchemaGen` in
+`apps/ios/Sync`), never a domain workaround.
 
-### 2. The entity and its specs (§3, §4)
+### 2. The entity, its checks and specs (§3, §4)
 
-A `struct` of values conforming to what step 1 found (`Note: Draftable, Removable, Ordered`). Its
-`init(_ r: Fields) throws(DecodeError)` is lenient (a default for what may be absent, `r.text(f)` for a
-`text` field) and decodes what `fields` builds. `fields` lists every client-written field it writes, a
-nil as `.null`, never the order field or a serial. `checks` holds a `Check` per written field with a
-spec, in the order violations are reported, each normalising its own field only. Specs are data, each
-named by its registry path and listed as the feature's rules:
+A `struct` of values. `init(_ r: Fields) throws(DecodeError)` is lenient (a default or an optional for what may be
+absent, `r.text(f)` for a `text` field, any id the registry admits) and decodes what `fields` builds. `fields` lists
+every client field it writes, a nil as `.null` (`.of(x)`), never the order field or a serial. `checks` run in the order
+violations are reported: a `Check("f")` normalises its own field only; a `.key` check is a rule on the natural key,
+reading only the id and the moment, on every write. Specs are data named by their registry path. The keyed whole shape:
 
 ```swift
-public static let checks: [Check<Note>] = [
-  Check("title") { n, _ in n.title = try NoteRules.title.apply(n.title, at: "title") },
-  Check("body") { n, _ in n.body = try NoteRules.body.apply(n.body, at: "body") },
-]
+public struct WeighIn: Draftable, Removable, Timestamped {
+  public static let type = Gym.Types.weighin
+  public static let scope = Gym.scope
+  public static let savesGuarded = false
+  public static let heldRemoval = true
+  public static let timestampField = "recordedAt"
+  public let id: ID<WeighIn>
+  public var kg: Double?
+  public private(set) var recordedAt: Instant?
+  public init(day: LocalDay, kg: Double? = nil) {
+    id = ID(day)
+    self.kg = kg
+  }
+  public init(_ r: Fields) throws(DecodeError) {
+    id = ID(r.id)
+    kg = try r.optionalDouble("kg")
+    recordedAt = try r.optionalInstant("recordedAt")
+  }
+  public var fields: [String: JSON] { ["kg": .of(kg), "recordedAt": .of(recordedAt)] }
+  public static let checks: [Check<WeighIn>] = [
+    .key { w, moment in
+      guard let day = w.id.day, day <= moment.today else {
+        throw Violation(rule: WeighInRules.day, path: "id", reason: .custom("future"))
+      }
+    },
+    Check("kg") { w, _ in
+      guard let kg = w.kg else { throw Violation(rule: WeighInRules.kg.path, path: "kg", reason: .notANumber) }
+      w.kg = try WeighInRules.kg.apply(kg, at: "kg") as Double
+    },
+  ]
+}
 
-public enum NoteRules {
-  public static let title = TextSpec("note.title", unit: .chars, min: 1, max: 60, trim: true, nfc: true)
-  public static let body = TextSpec("note.body", unit: .bytes, min: 0, max: 500, trim: true, nfc: true)
-  static let rules: [Rule] = [.local(title), .local(body)]
+public enum WeighInRules {
+  public static let kg = NumberSpec("weighin.kg", min: 20, max: 400, quantum: 0.01)
+  public static let day = "weighin.day"
+  static let rules: [Rule] = [.local(kg), .local(day, subject: WeighIn.type, backstop: [Gym.Codes.badInstant])]
 }
 ```
 
-A nested value is a `ValueObject` whose `validated(at:)` applies its specs, and a list of them takes a
-`CountSpec` (Appendix A). A LOCAL rule written as code throws a `Violation` with reason `.custom(_:)`
-and is declared `.local(name, subject:)`. A field saved while the person may still type takes no `trim`.
+`Valid` gives a `Timestamped` field the moment's now, so any write of it, the sheet's or an action's, records the
+commit's now. `apply` has plain and optional overloads, so a result assigned to an optional needs `as Double`. No `trim`
+on a field saved while the person may still type. A nested value is a `ValueObject` whose `validated(at:)` applies its
+specs, a list of them a `CountSpec`. A LOCAL rule written as code throws `.custom(_:)`, declared `.local(name, subject:)`
+with a `backstop:` of the product code the server refuses the same thing with (`bad-instant`: past its UTC tomorrow).
 
 ### 3. The product refusal and the rule book (§6.3, §12)
 
-One refusal type per product, shared by its features: gym's is `GymRefusal`; journal declares its own
-once (Appendix C). `init(_ r: Refused)` is one total mapping of the code, subject, path and, for `cap`,
-the detail; an unexpected code maps to the one case whose `isGeneric` is true:
+One refusal type per product (gym's `GymRefusal` in `GymRules.swift`; journal declares its own once, on its pattern):
+`init(_ r: Refused)` is one total `switch (r.code, r.subject, r.cap)`, an unexpected code mapping to the one case whose
+`isGeneric` is true. Every case keeps the path: `.predicted` means nothing was written, `.notice` that a write committed
+on this phone was refused by the server (`DomainNotice.values(of:)` holds its words). A feature's code is one line:
+`case (Gym.Codes.badInstant, let s?, _) where s.type == WeighIn.type: self = .future(s, r.path)`.
 
-```swift
-public init(_ r: Refused) {
-  switch (r.code, r.subject, r.cap) {
-  case (.stale, let s?, _): self = .stale(s, r.path)
-  case (.unknownRecord, let s?, _), (.recordDead, let s?, _): self = .gone(s, r.path)
-  case (.idTaken, let s?, _), (.idSpent, let s?, _): self = .taken(s, r.path)
-  case (.cap, _, let c?): self = .full(type: c.type, cap: c.cap, r.path)
-  default: self = .other(r)
-  }
-}
-```
+The book adds each entity's standard rules: `<type>.gone` for a type with life, `.taken` for a minted type, `.stale`
+for a guarded save, `.cap` for a capped type, `.size` for a type with a `text` field. Declare only the feature's own:
+its specs, its code rules, and a SERVER-DECIDED rule for every other code the server refuses its writes with,
+`.serverDecided("routine.movement", codes: [Gym.Codes.unknownExercise], subject: Gym.Types.routine)`.
 
-Every case keeps the path: `.predicted` means nothing was written; `.notice` means a write committed on
-this phone was refused by the server, and `DomainNotice.values(of:)` holds its words. Add the entity to
-the book's `entities:` and its rules to `rules:` (`GymRules.book`). The book adds each entity's standard
-rules: `<type>.gone` for a type with life, `.taken` for a minted type, `.stale` for a guarded save,
-`.cap` for a capped type, `.size` for a type with a `text` field. Declare only the feature's own: its
-specs and code rules, and a SERVER-DECIDED rule for every other code the server refuses its writes with,
-each code with a case of its own in the refusal. `RefusalCode` names only the engine's codes, so a
-product's (engine Appendix A, "Codes") is spelled out:
-`.serverDecided("routine.movement", codes: [RefusalCode("unknown-exercise")], subject: Routine.type)`.
+**What a feature adds to the product's shared files**, and nothing else: a case per new code and its mapping line in
+`GymRefusal`; that case's JSON form in `GymRefusal.form` (`GymRulesTests.swift`) and in the refusal forms of
+`packages/api-contract/gym/domain/README.md`; its entities to `GymRules.book`'s `entities:` and its rules to `rules:`,
+then `rules.json` (`RuleBookParity` prints the book's JSON on a mismatch); its spec and entity cases in `values.json`.
+Its actions, reads and their vectors live in its own files (step 9).
 
-### 4. Reads and positions (§7)
+### 4. Reads (§7)
 
-A `Reader` exists only inside `load` and inside `runner.read(scope) { … }`; its `repository(E.self)`
-gives `find(_:in:)`, `all(in:)`, `children(of:via:in:)` and `capacity()`, as in
-`try runner.read(Note.scope) { try $0.repository(Note.self).capacity() }`. The view is always named:
-**`.stored` decides** (caps, positions, anchors, stale checks) and **`.drawn` draws** (what the person
-sees and acts on); they differ only in records a held delete names. A derived read is a pure static
-function over decoded entities, and a moment when it depends on time, so the UI, actions and Coach share
-it (`Note.position(of:stored:)`). A read that asserts absence also takes `firstPullComplete`.
+A `Reader` exists only inside `load` and `runner.read(scope) { … }`; `repository(E.self)` gives `find(_:in:)`,
+`all(in:)`, `children(of:via:in:)` and `capacity()`. The view is always named: **`.stored` decides** (caps, positions,
+anchors, stale checks) and **`.drawn` draws** (what the person sees and acts on); they differ only in records a held
+delete names. A derived read is a pure value over decoded entities (and a moment, when it depends on time) shared by the
+UI, actions and Coach; one asserting absence ("no weigh-ins yet") takes `firstPullComplete`. `Bodyweight.init(_ read:
+Reader)` reads both views, the flag and the moment, so `try runner.read(WeighIn.scope, Bodyweight.init)` serves all.
 
 ### 5. Actions (§8, §9)
 
-Name the standard deciders with type aliases (`SaveNote = SaveDraft<Note, GymRefusal>`, `DeleteNote`
-over `Remove`, `MoveNote` over `Move`). A custom action is a `struct` conforming to `Action`, its stored
-properties its input, shaped as `SaveNoteCall` is (step 8):
+Name the standard deciders with type aliases: `SaveWeighIn = SaveDraft<WeighIn, GymRefusal>`, `DeleteWeighIn` over
+`Remove`, `MoveNote` over `Move`. A custom action is a `struct` conforming to `Action`, its stored properties its input:
 
-- `load(_ read: Reader)` reads through the reader only, `read.moment` included; when one read depends on
-  another, load calls a pure domain function between them.
-- `decide(_:ids:)` is pure: it validates with `Valid(value, at: moment)` or `Valid(value, fields:at:)`,
-  predicts what it can from `stored`, and returns `.write(plan, result)`, `.unchanged(result)` or
-  `.refuse(refusal)`. A `Violation` it throws becomes `.refuse` in `decision(_:ids:)`, the one channel
-  the runner and every composer read.
-- A `Plan` takes only `Valid` values: `create`, `create(_:fields:)` (keyed or singleton),
-  `insert(_:below:)` (ordered), `update(_:fields:)` naming only the fields its caller set, `remove`,
-  `move`, `guardRead`, `device`. Breaking §8.3 (two operations on one record, another scope, a held
-  removal beside any write but device rows) is a `PlanError`, a programming fault.
-- `Result` is `Sendable` and the action's own. `runner.run` returns `.committed(result, receipt)` (on
-  this phone, not yet accepted by the account), `.unchanged(result)` or `.refused(refusal)`.
+- `load(_ read: Reader)` reads through the reader only, `read.moment` included, calling a pure domain function between
+  two reads when one depends on the other.
+- `decide(_:ids:)` is pure: it validates with `Valid(value, at: moment)` or `Valid(value, fields:at:)`, predicts from
+  `stored`, and returns `.write(plan, result)`, `.unchanged(result)` or `.refuse(refusal)`; a thrown `Violation` becomes
+  `.refuse` in `decision(_:ids:)`, the one channel the runner and every composer read.
+- A `Plan` takes only `Valid` values: `create`, `create(_:fields:)` (keyed, singleton), `insert(_:below:)` (ordered),
+  `update(_:fields:)` naming only the fields its caller set, `remove`, `move`, `guardRead`, `device`. Two operations on
+  one record, another scope, a held removal beside a write, or a whole type written in part is a `PlanError`.
+- `runner.run` returns `.committed(result, receipt)` (on this phone, not yet accepted), `.unchanged` or `.refused`.
 
 ### 6. Drafts and their one save (§10)
 
-An editor holds one `Draft` of one record, opened as
-`Draft(new: Note(id: runner.mint(Note.self)), placed: .bottom)` for a new ordered record (`Draft(new:)`
-unordered), `runner.open(id)` for one the person sees (nil when `drawn` lacks it), or
-`runner.open(ID(day), orNew: Page(id: ID(day)))` for a keyed or singleton one. Edits go to
-`draft.current`; a prefill is an edit. `runner.save(&draft, SaveNote.self)` is its only door:
-synchronous and never throwing, it validates and writes the touched fields (a new minted draft: every
-field), writes nothing when nothing changed, and leaves the draft holding the values as stored. Read it
-with a `switch` and no `default`:
+An editor holds one `Draft` of one record: `Draft(new: Note(id: runner.mint(Note.self)), placed: .bottom)` for a new
+minted ordered record (`Draft(new:)` unordered), `runner.open(id)` for one the person sees (nil when `drawn` lacks it),
+or, for a keyed or singleton record, the record or a new draft of its blank:
 
 ```swift
-switch runner.save(&draft, SaveNote.self) {
+var sheet = try runner.open(ID(day), orNew: WeighIn(day: day))
+sheet.current.kg = typed
+switch runner.save(&sheet, SaveWeighIn.self) {
 case .saved: close()
 case .refused(let refusal): show(refusal)
 case .failed(let error): showNotSaved(error)
 }
 ```
 
-`.stale` (a guarded type) offers *Keep mine*, `draft.rebased(onto:)` the drawn record, so the next save
-writes only this phone's touched fields, and *Take theirs*, `Draft(opening:)` of it. `.gone` abandons
-the draft, or starts `Draft(new:)` and sets its values (§10.3).
+Edits, a prefill included, go to `current`. `save` is the only door: synchronous, never throwing, leaving the draft
+holding the values as stored; its `switch` has no `default`.
 
-### 7. Order, held deletes and Undo (§7.5, §8.1, §11)
+- **Most types** write the touched fields (a new minted draft: every field), nothing when nothing changed. On `.stale`
+  (guarded) offer *Keep mine*, `draft.rebased(onto:)` the drawn record, or *Take theirs*, `Draft(opening:)` of it; on
+  `.gone`, abandon the draft or start `Draft(new:)` with its values.
+- **A whole type** writes every field, validated, with a fresh life on every save, touched or not: never `.unchanged`,
+  `.gone` or `.stale`. A sheet left open across a pull or another phone's delete saves what it shows as the newest fact;
+  a save inside this phone's delete window retires the delete. The draft holds the stamp after `.saved`.
 
-A new member's placement resolves against `stored`: `.bottom` goes below the last stored member, a held
-one included. A move names the member it lands below, `nil` for the top, and writes the moved key alone;
-a drop in place is `.unchanged` and writes nothing, so it never reverts another phone's reorder.
-`Remove` of a record `drawn` lacks is `.unchanged`. Of a `heldRemoval` type it hides the record from
-`drawn` at once, while `stored` keeps it, its cap slot and its place until the hold releases after
-`Constants.holdMs`; `runner.undo(receipt.gestureId)` is true only while it lasts.
+### 7. Order, held deletes and Undo (§7.5, §11)
 
-### 8. Coach executors (§9.3, §11)
+A new member's placement resolves against `stored`: `.bottom` goes below the last stored member, a held one included.
+A move names the member it lands below, `nil` for the top, and writes the moved key alone; a drop in place writes
+nothing. `Remove` of a record `drawn` lacks is `.unchanged`. Of a `heldRemoval` type it hides the record from `drawn`
+at once, while `stored` keeps it, its cap slot and its place until the hold releases after `Constants.holdMs`;
+`runner.undo(receipt.gestureId)` is true only while it lasts.
 
-A Coach call on the phone composes `SaveDraft(creating:)` (`creating:placed:` for an ordered type): the
-call's record under the id its turn gave it, every field touched. `SaveNoteCall` is the pattern:
+### 8. Coach executors (§9.3)
+
+A Coach call composes `SaveDraft(creating:)` (`creating:placed:` if ordered): the call's record under the id its turn
+gave it. A replay's `.taken` is done, and a refusal at commit records nothing, so `SaveNoteCall` hears the cap in
+decide, by the growth rule:
 
 ```swift
-public func decide(_ loaded: Loaded, ids: IDSource) -> Decision<ID<Note>, GymRefusal> {
-  switch save.decision(loaded.save, ids: ids) {
-  case .refuse(.taken), .unchanged: return .unchanged(note.id)
-  case .refuse(let refusal): return .refuse(refusal)
-  case .write(let plan, let saved):
-    if let same = loaded.stored.first(where: { $0.fields == saved.values }) { return .unchanged(same.id) }
-    if let full = loaded.slots.refusal(growing: 1, subject: note.id.ref) { return .refuse(GymRefusal(full)) }
-    return .write(plan, note.id)
-  }
+switch save.decision(loaded.save, ids: ids) {
+case .refuse(.taken), .unchanged: return .unchanged(note.id)
+case .refuse(let refusal): return .refuse(refusal)
+case .write(let plan, _):
+  if let full = loaded.slots.refusal(growing: 1, subject: note.id.ref) { return .refuse(GymRefusal(full)) }
+  return .write(plan, note.id)
 }
 ```
 
-`.taken` is done: a replay finds its own record, stored or inside its delete window; once that delete
-has landed, the replay returns as a `.taken` notice the UI dismisses undrawn. Reading `decision`, it
-gets a thrown violation as `.refuse` too, as a turn composing it does (`NotesTests.Recording`). A
-refusal at commit records nothing, so it hears the cap in decide, by the growth rule.
+### 9. Tests (§14, §15)
 
-### 9. Tests (§14, §15.3)
+**The harness** runs the real engine, stepped on the test's thread, over a model server shared by every phone:
 
-**Harness tests**, as in `NotesTests.swift`, run the real engine in step mode and a model server:
-`let a = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))`, and
-`let b = a.device()` for a second phone of the account. `a.sync()` runs every phone to quiescence,
-`a.advance(ms: Constants.holdMs)` releases holds, `failNextCommit()` makes the next save `.failed`;
-`drawn`, `stored`, `notices(GymRefusal.self)` and `undoOffers()` read a phone, and `saved`, `refused`,
-`failed`, `committed`, `unchanged` read results. A product rule the model server enforces takes a
-`ServerRules` double (`Harness(…, rules:)`); `a.server.refuse(next:code:detail:)` scripts a refusal it
-does not model. Per action, cover the predicted outcome; the same refusal as a notice when two phones
-race (both save, then `sync`); a hold, its Undo and its release; stale and Keep mine; gone; and each
-product prediction against the server holding the same state (INV-6).
+| Member | What it does |
+|---|---|
+| `Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))` | a phone; also `zone:` (default UTC) and `rules:`, a `ServerRules` double |
+| `a.device()` | another phone of the same account, server and clock |
+| `a.runner` | that phone's `ActionRunner`: `run`, `open`, `save`, `read`, `undo`, `moment()` |
+| `a.sync()` | **every** phone's sender and puller, to quiescence |
+| `a.advance(ms:)` | the one clock; `advance(ms: Constants.holdMs)` releases every hold committed before |
+| `a.leave()`, `a.failNextCommit()` | leaving the app; the next commit fails, so a save is `.failed` |
+| `a.drawn(E.self)`, `a.stored(E.self)` | that phone's views, decoded |
+| `a.notices(GymRefusal.self)` | its notices, mapped; `values(of: ref)` holds what was refused |
+| `a.undoOffers()` | its open holds; an offer's `id` is the gesture id `runner.undo` takes |
+| `a.server.refuse(next: 1, code: Gym.Codes.badInstant, detail: nil)` | the server refuses the next intent, for a rule no double models |
+| `a.server.rows(scope, of: "acct-1")` | what the server holds |
+| `saved(r)`, `refused(r)`, `failed(r)`; `committed(o)`, `unchanged(o)` | result readers |
 
-**Checks and vectors**, as in `GymRulesTests.swift`; every implementation reproduces the vectors
-(INV-13). `RegistryCheck.entity(_:sample:book:registry:)` runs per entity, its sample setting every
-field, and `RegistryCheck.command` per `ServerCommand`. `RuleBookCheck.check(_:refusal:vectors:)` needs
-every SERVER-DECIDED code mapped to a non-generic case on both paths, and in `values.json` a spec case
-per spec and an entity case whose `violation` names each LOCAL rule on an entity. `RuleBookParity` holds
-the book to `rules.json` and prints the book's JSON on a mismatch. `ProductCorpus(book)` runs
-`value(_:)` per `values.json` case and `decision(of:_:result:refusal:)` per `actions.json` case, the
-test's `switch` building each named action from its `input`; `README.md` states each action's input and
-result, and the refusal's form.
+**Staging.** A commit stays on its phone until a `sync()`, which moves every phone. For one phone's write to land first,
+commit it and `sync()` before the other commits; when both commit before a `sync()`, the phone created first sends
+first, and the other's write returns as a notice if the server refuses it. Per action, cover the predicted outcome, the
+refusal as a notice from a race, a hold with its Undo and release, stale and Keep mine, gone, and each prediction
+against the server holding the same state.
+
+**Checks and vectors**, which every implementation reproduces. A feature's test file runs
+`RegistryCheck.entity(E.self, sample:book:registry:)` per entity (its sample setting every field) and its own vectors;
+`GymRulesTests.swift` runs `RuleBookCheck`, `RuleBookParity` and `values.json`. Actions and draft saves go in
+`packages/api-contract/gym/domain/<feature>-actions.json`: `{name, input: {action, input, records: {drawn, stored?},
+ids, now, offsetSeconds}, expect: {decision}}`, a record an engine row (`{"t", "id", "seq", "life": ["alive", stamp],
+"f": {"kg": [82.4, stamp]}}`). A `switch` builds each named action:
+
+```swift
+@Test(arguments: try Contract.vectors("gym/domain/bodyweight-actions.json"))
+func action(_ vector: Vector) throws {
+  let corpus = ProductCorpus(GymRules.book)
+  let input = try vector.input.member("input")
+  let day = try #require(LocalDay(try input.member("day").asString()))
+  let result = switch try vector.input.member("action").asString() {
+  case "SaveWeighIn":
+    try corpus.save(SaveWeighIn.self, vector, opening: WeighIn(day: day), edit: { $0.kg = try? input.member("kg").asDouble() },
+                    result: { ["id": ID<WeighIn>(day).json, "fields": .object(fields: $0.values)] }, refusal: \.form)
+  case "DeleteWeighIn":
+    try corpus.decision(of: DeleteWeighIn(ID(day)), vector, result: { _ in .null }, refusal: \.form)
+  case let name: throw ContractError("no bodyweight action \(name)")
+  }
+  #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)")
+}
+```
+
+A derived read goes in `packages/api-contract/gym/rules/<read>.json`, `{name, input: {read, input?, records,
+firstPullComplete?, now, offsetSeconds}, expect: {result}}`, run as
+`ProductCorpus(GymRules.book).read(vector, in: WeighIn.scope) { try Bodyweight($0).form(from: from, to: to) }`, the
+result's form a test extension of the read. The corpus `README.md` states each action's and read's input and result.
 
 ## Traps
 
-- **Saving a copy of the draft**, or a second draft of the record: the held draft stays on its old base,
-  so its next guarded save refuses `.stale` against this phone's own write. Off the main actor a copy's
-  save does not compile in a UI module; on it, it does. Save the held draft, in place.
-- **`creating:` is for minted types.** It refuses `id-taken` whenever the id is drawn or stored, which
-  for a minted type means a replay, done. On a keyed type nothing traps, but the same refusal means only
-  that the key already has its record, and the book declares no `.taken` rule for it.
-- **A client-written string with no spec**: `RegistryCheck` fails it (step 10), since a pasted U+0000
-  would reach the engine; likewise an enum under a `TextSpec`, a `quantum` field without its
-  `NumberSpec`, a spec on a field with no check, a check on a field `fields` leaves out.
-- **`.failed` read as saved**: `.failed` means no gesture was written and the draft is as it was. Say
-  "not saved", keep the words; the next save retries. A `switch` missing `.failed` does not compile.
-- **UI code on the main actor**: `Draft` and `Saved` are not `Sendable`, so an `Action` cannot hold a
-  draft or return `Saved`, and UI code, main-actor by default with warnings as errors, cannot save a
-  draft from a task or queue. Domain code names no actor.
-- **The wrong view**: a missing view does not compile, a wrong one does; a cap or position read from
-  `.drawn` lets a held delete go before it lands.
-- **Journal's `Page`**: `SyncCore` declares a `Page` too (a pull page), so outside `JournalDomain` a
-  file importing both, tests included, names the entity `JournalDomain.Page`.
-- **Kit traps**: a `current` of another id at `save`, or a record of another id at `rebased(onto:)`; a
-  run inside a run; `open(_:orNew:)` on a minted type; `rebased` on an unguarded type; `capacity()` of
-  an uncapped type; a check throwing anything but `Violation`.
+- **Saving a copy of the draft**, or a second draft of the record: the held draft stays on its old base, so its next
+  guarded save refuses `.stale` against this phone's own write. Save the held draft, in place.
+- **A whole type's checks bind every save**: each save validates every field, so a check refusing a value the registry
+  admits blocks the record until it is retyped.
+- **`creating:` is for minted types.** On a keyed type its `.taken` means only that the key has its record.
+- **`RegistryCheck` fails** a client string with no spec (a pasted U+0000 would reach the engine), an enum under a
+  `TextSpec`, a `quantum` at any depth without its `NumberSpec`, a spec on a field with no check, a check on a field
+  `fields` leaves out, and a whole type written in part.
+- **`.failed` read as saved**: no gesture was written and the draft is as it was; say "not saved".
+- **`Draft` and `Saved` are not `Sendable`**: no `Action` holds a draft or returns `Saved`; domain code names no actor.
+- **The wrong view**: a cap or position read from `.drawn` lets a held delete go before it lands.
+- **Kit traps**: a `current` of another id at `save`; a run inside a run; `open(_:orNew:)` on a minted type; `rebased`
+  on an unguarded type; `capacity()` of an uncapped type; a check throwing anything but `Violation`. And `SyncCore`
+  declares a `Page` too: a file importing both names journal's `JournalDomain.Page`.
 
-## Where to look
-
-Code: the Notes files above. Depth: §2 layering · §3 entities, `RegistryCheck`'s steps · §4 specs,
-`Valid` · §5 time · §6 rules, the book · §7 reads · §8 plans, plan rules, commands · §9 actions,
-composition · §10 drafts, `SaveDraft`'s steps · §11 `Remove`, `Move`, Undo · §12 refusals, notices ·
-§14–§15 tests, vectors · Appendix A (value objects), B (notes), C (a page saved as it is typed).
+**Depth:** §2 layering · §3 entities, `RegistryCheck`'s steps · §4 specs, `Valid` · §5 time · §6 the book · §7 reads ·
+§8 plans · §9 actions · §10 drafts, `SaveDraft`'s steps · §11 `Remove`, `Move`, Undo · §12 refusals · §14–§15 tests.

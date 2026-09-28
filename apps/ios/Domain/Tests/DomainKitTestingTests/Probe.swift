@@ -98,6 +98,35 @@ struct Day: ProbeEntity, Draftable, Removable {
   ]
 }
 
+struct Fact: ProbeEntity, Draftable, Removable, Timestamped {
+  static let type = "fact"
+  static let scope = Probe.scope
+  static let savesGuarded = false
+  static let heldRemoval = true
+  static let timestampField = "at"
+  static let value = NumberSpec("fact.value", min: 0, max: 500, quantum: 0.1)
+
+  let id: ID<Fact>
+  var value: Double?
+  var at: Instant?
+
+  init(id: ID<Fact>, value: Double? = nil, at: Instant? = nil) {
+    self.id = id
+    self.value = value
+    self.at = at
+  }
+
+  init(_ r: Fields) throws(DecodeError) {
+    self.init(id: ID(r.id), value: try r.optionalDouble("value"), at: try r.optionalInstant("at"))
+  }
+
+  var fields: [String: JSON] { ["value": .of(value), "at": .of(at)] }
+
+  static let checks: [Check<Fact>] = [
+    Check("value") { f, _ in f.value = try Fact.value.apply(f.value, at: "value") },
+  ]
+}
+
 struct Mark: ProbeEntity, Draftable {
   static let type = "mark"
   static let scope = Probe.overlay
@@ -238,7 +267,7 @@ struct Tag: ProbeEntity {
 
 // The entity a vector names by its registry type.
 func probeEntity(_ type: String) throws -> any ProbeEntity.Type {
-  let entities: [any ProbeEntity.Type] = [Card.self, Day.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
+  let entities: [any ProbeEntity.Type] = [Card.self, Day.self, Fact.self, Mark.self, Meta.self, Lap.self, Run.self, Link.self, Tag.self]
   guard let entity = entities.first(where: { $0.type == type }) else { throw ContractError("no probe entity \(type)") }
   return entity
 }

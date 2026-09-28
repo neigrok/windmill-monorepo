@@ -1,7 +1,7 @@
 {
   "entities": [
     {"type": "note", "removable": true, "held": true, "ordered": true, "guarded": true},
-    {"type": "weighin", "removable": true, "held": true, "ordered": false, "guarded": false}
+    {"type": "weighin", "removable": true, "held": true, "ordered": false, "guarded": false, "timestamp": "recordedAt"}
   ],
   "rules": [
     {

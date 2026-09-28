@@ -64,11 +64,14 @@ public struct RuleBook: Sendable {
     entities.first { $0.type.utf8.elementsEqual(type.utf8) }?.entity
   }
 
-  // Pinned byte for byte across implementations by `packages/api-contract/<product>/domain/rules.json`.
+  // Pinned byte for byte across implementations by `packages/api-contract/<product>/domain/rules.json`: per entity
+  // `{type, removable, held, ordered, guarded, timestamp?}`, `timestamp` naming a `Timestamped` entity's field.
   public var json: JSON {
     let facts = entities.map { entity -> JSON in
-      ["type": .string(entity.type), "removable": .bool(entity.isRemovable), "held": .bool(entity.heldRemoval == true),
-       "ordered": .bool(entity.isOrdered), "guarded": .bool(entity.isGuarded)]
+      var facts: JSON.Object = ["type": .string(entity.type), "removable": .bool(entity.isRemovable), "held": .bool(entity.heldRemoval == true),
+                                "ordered": .bool(entity.isOrdered), "guarded": .bool(entity.isGuarded)]
+      facts["timestamp"] = entity.timestampField.map { .string($0) }
+      return .object(facts)
     }
     return ["entities": .array(facts), "rules": .array(rules.map(\.json))]
   }

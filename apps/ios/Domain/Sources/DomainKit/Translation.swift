@@ -135,6 +135,7 @@ extension Operation {
   // step 4).
   func creation(_ definition: TypeDef, writing names: [String], anchor: OrderAnchor?, editedFrom base: [String: JSON]? = nil)
     throws(PlanError) -> Change {
+    try checkWhole(definition, writing: names)
     var (values, texts) = try split(names, definition, editedFrom: base)
     if definition.identity == .minted {
       values = values.filter { name, value in !(value.isNull && definition.field(name)?.isTime == true) }
@@ -162,12 +163,20 @@ extension Operation {
       default: continue
       }
     }
+    try checkWhole(definition, writing: names)
     let (values, texts) = try split(names, definition, editedFrom: base)
     switch definition.identity {
     case .minted: return .update(entity.type, id, values, texts: texts)
     case .keyed where definition.life: return .put(entity.type, id, present: nil, values, texts: texts)
     default: return .write(entity.type, recordID(in: definition), values, texts: texts)
     }
+  }
+
+  // Rule 9: a record that is one fact is written whole, every client-written field at once (engine §2.4, §7.1 step 4).
+  func checkWhole(_ definition: TypeDef, writing names: [String]) throws(PlanError) {
+    guard definition.wholePut else { return }
+    let missing = definition.clientLatticeFields.map(\.name).filter { !names.contains($0) }.uniqueInByteOrder
+    guard missing.isEmpty else { throw PlanError(rule: 9, "a write of the whole type \(entity.type) leaves out \(missing.joined(separator: ", "))") }
   }
 
   func removal(_ definition: TypeDef) throws(PlanError) -> Change {

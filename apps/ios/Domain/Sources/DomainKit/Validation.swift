@@ -91,8 +91,9 @@ public struct Valid<E: Writable>: Sendable {
     try self.init(value, fields: Array(value.fields.keys), at: moment)
   }
 
-  // Runs, in `E.checks` order, every key check and the check of every named field on a copy of the value; then refuses a
-  // U+0000 in any named field no check caught, which the engine would refuse in every string it sends.
+  // Runs, in `E.checks` order, every key check and the check of every named field on a copy of the value; gives a named
+  // `Timestamped` field the moment's now, whatever it held, so inside a run every write of it records the commit's now;
+  // then refuses a U+0000 in any named field no check caught, which the engine would refuse in every string it sends.
   public init(_ value: E, fields: [String], at moment: Moment) throws(Violation) {
     let named = fields.uniqueInByteOrder
     var checking = value
@@ -107,6 +108,9 @@ public struct Valid<E: Writable>: Sendable {
       let after = checking.fields
       let others = Set(before.keys).union(after.keys).filter { !$0.utf8.elementsEqual(field.utf8) }
       precondition(others.allSatisfy { before[$0] == after[$0] }, "the check of \(E.type).\(field) changed another field")
+    }
+    if let stamped = (E.self as? any Timestamped.Type)?.timestampField, named.contains(where: { $0.utf8.elementsEqual(stamped.utf8) }) {
+      checking = E.decoding(checking.id, checking.fields.merging([stamped: JSON(moment.now.ms)]) { _, now in now })
     }
     let written = checking.fields
     for field in named {
@@ -124,6 +128,17 @@ public struct Valid<E: Writable>: Sendable {
       throw violation
     } catch {
       preconditionFailure("a check of \(E.type) threw \(error), and a check throws only Violation")
+    }
+  }
+}
+
+extension Writable {
+  // §3.4 step 7: a value takes field values by decoding the record they build, which a `Draftable` always decodes.
+  static func decoding(_ id: ID<Self>, _ fields: [String: JSON]) -> Self {
+    do {
+      return try Self(Fields(type: type, id: id.record, values: fields))
+    } catch {
+      preconditionFailure("\(type) does not decode the record its own fields build: \(error)")
     }
   }
 }

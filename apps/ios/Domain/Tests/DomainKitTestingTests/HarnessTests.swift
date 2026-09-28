@@ -132,6 +132,38 @@ struct HarnessTests {
     #expect(try b.drawn(Day.self).map(\.fields) == [["score": 3]])
   }
 
+  // A record that is one fact: a save of what its phone already holds is still the newest fact, so it wins whole over
+  // another phone's older save, stamped with its own moment; a save inside the phone's delete window retires the removal.
+  @Test func aWholeSaveIsTheNewestFactOnEveryPhone() throws {
+    let a = try HarnessTests.phone()
+    let b = a.device()
+    let day = ID<Fact>(RecordID("2027-01-10"))
+    var onA = try a.runner.open(day, orNew: Fact(id: day))
+    onA.current.value = 80
+    #expect(saved(a.runner.save(&onA, SaveDraft<Fact, ProbeRefusal>.self)))
+    a.sync()
+    a.advance(ms: 60_000)
+    var onB = try b.runner.open(day, orNew: Fact(id: day))
+    onB.current.value = 82
+    #expect(saved(b.runner.save(&onB, SaveDraft<Fact, ProbeRefusal>.self)))
+    a.advance(ms: 60_000)
+    #expect(!onA.isDirty)
+    #expect(saved(a.runner.save(&onA, SaveDraft<Fact, ProbeRefusal>.self)))
+    a.sync()
+    let newest: [String: JSON] = ["value": 80, "at": JSON(Probe.start.ms + 120_000)]
+    #expect(onA.current.fields == newest)
+    #expect(try a.drawn(Fact.self).map(\.fields) == [newest] && b.drawn(Fact.self).map(\.fields) == [newest])
+
+    let removal = try #require(try a.runner.run(Remove<Fact, ProbeRefusal>(day)).receipt)
+    var again = try a.runner.open(day, orNew: Fact(id: day))
+    again.current.value = 81
+    guard case .saved(let rewrite?) = a.runner.save(&again, SaveDraft<Fact, ProbeRefusal>.self) else {
+      Issue.record("the save inside the delete window did not commit")
+      return
+    }
+    #expect(rewrite.retired == [removal.gestureId] && a.undoOffers() == [])
+  }
+
   // The engine refuses at commit a gesture too large to push, and writes a notice holding it. The save's refusal is the
   // one report: the runner dismisses that notice, so a draft saved again at every pause piles up none.
   @Test func aGestureTooLargeToPushIsRefusedOnceAndTheDraftKeepsIt() throws {

@@ -7,7 +7,7 @@ import SyncSchema
 import Testing
 
 // Notes over the real engine: the Add row, the editor's one save, a move, a held delete and its Undo, Coach's
-// `save_note`, and the races two phones of one account run.
+// `save_note`, and the races two phones of one account run; then the note against the registry and its actions' vectors.
 struct NotesTests {
   static func phone() -> Harness {
     Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000))
@@ -255,6 +255,23 @@ struct NotesTests {
     #expect(try a.runner.run(full).refusal == .full(type: "note", cap: 10, .predicted))
     #expect(try [full, blank].map { try unchanged(a.runner.run(Recording(call: $0))) }
       == [.full(type: "note", cap: 10, .predicted), .invalid(Violation(rule: "note.title", path: "title", reason: .blank))])
+  }
+
+  @Test func theNoteAgreesWithTheRegistry() throws {
+    let sample = Note(id: ID("note0001"), title: "How I want to be talked to", body: "Blunt. No pep talks.")
+    try RegistryCheck.entity(Note.self, sample: sample, book: GymRules.book, registry: SyncSchema.registry)
+  }
+
+  @Test(arguments: try Contract.vectors("gym/domain/notes-actions.json"))
+  func action(_ vector: Vector) throws {
+    let corpus = ProductCorpus(GymRules.book)
+    let input = try vector.input.member("input")
+    let result = switch try vector.input.member("action").asString() {
+    case "SaveNoteCall":
+      try corpus.decision(of: SaveNoteCall(try Note(form: input.member("note"))), vector, result: \.json, refusal: \.form)
+    case let action: throw ContractError("no notes action \(action)")
+    }
+    #expect(result == vector.expect, "\(vector)\n  got    \(result.jcsText)\n  expect \(vector.expect.jcsText)")
   }
 
   // How a turn composes a call (domain-kit §9.3): every refusal of its decision is what the turn records.

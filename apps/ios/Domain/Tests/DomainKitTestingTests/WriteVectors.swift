@@ -24,7 +24,7 @@ enum Plans {
     let registry = try vector.registry
     let drawn = vector.input["drawn"]
     let replica = VectorReplica(try VectorRecords(drawn: drawn, stored: vector.input["stored"] ?? drawn, registry: registry),
-                                now: vector.moment.now.ms, answer: try answer(vector))
+                                now: vector.moment.now.ms, registry: registry, answer: try answer(vector))
     let runner = ActionRunner(replica: replica, registry: registry, zone: vector.moment.zone)
     do {
       let outcome = try runner.run(VectorAction(vector: vector, scope: try vector.scope))
@@ -200,7 +200,7 @@ enum Drafts {
   static func script<E: ProbeEntity & Draftable>(_ type: E.Type, _ vector: Vector, trapping: Bool) throws -> JSON {
     let registry = try vector.registry
     let replica = VectorReplica(try VectorRecords(drawn: vector.input["drawn"], stored: vector.input["stored"], registry: registry),
-                                now: vector.moment.now.ms)
+                                now: vector.moment.now.ms, registry: registry)
     let runner = ActionRunner(replica: replica, registry: registry, zone: vector.moment.zone)
     let operations = try vector.input.member("ops").asArray()
     let trapsLast = Traps.trapsLast(vector)

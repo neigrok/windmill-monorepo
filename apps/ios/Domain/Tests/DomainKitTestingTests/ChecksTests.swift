@@ -6,7 +6,8 @@ import SyncCore
 import Testing
 
 // §14.4 the checks a product runs over its declarations, against a small registry built for them: `item` (minted, life,
-// ordered, capped, a quantum, nested value objects, a serial), `page` (keyed, a text field) and `flag` (keyed, no life).
+// ordered, capped, a quantum, nested value objects, a serial), `page` (keyed, a text field), `flag` (keyed, no life) and
+// `reading` (keyed, life, one fact saved whole).
 struct ChecksTests {
   static let registry = try! Registry(json: JSON(parsing: """
     {"registry": "check", "version": 1, "minVersion": 1,
@@ -34,7 +35,12 @@ struct ChecksTests {
         "fields": {"state": {"kind": "ranked", "writer": "client", "rank": {"open": 0, "done": 1}}}},
        {"type": "shelf", "scope": "product:chk", "identity": "keyed", "idPattern": "^[a-z]+$", "life": false, "origins": ["replica"],
         "fields": {"tags": {"kind": "lww", "writer": "client", "unit": "bytes", "max": 400,
-                            "domain": {"type": "array", "maxItems": 5, "items": {"type": "string", "unit": "chars", "max": 10}}}}}],
+                            "domain": {"type": "array", "maxItems": 5, "items": {"type": "string", "unit": "chars", "max": 10}}}}},
+       {"type": "reading", "scope": "product:chk", "identity": "keyed", "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "life": true,
+        "wholePut": true, "deadRows": "spent", "origins": ["replica"],
+        "fields": {
+          "value": {"kind": "lww", "writer": "client", "domain": {"type": "number", "min": 0, "max": 500}},
+          "at": {"kind": "lww", "writer": "client", "domain": {"type": "number", "integer": true, "min": 0}}}}],
      "commands": [
        {"name": "chk.ask", "scope": "product:chk", "origins": ["replica", "server"], "serverInternal": false,
         "args": {"text": {"type": "json", "domain": {"type": "string", "unit": "chars", "max": 50}}, "itemId": {"type": "ref<item>"}}}]}
@@ -151,10 +157,27 @@ struct ChecksTests {
   }
 
   @Test func stepNineRefusesAQuantumWithNoSpecOnIt() {
-    #expect(throws: ChecksTests.failure(9, "item.weight", "a field with a quantum has no number spec on it")) {
+    #expect(throws: ChecksTests.failure(9, "item.weight", "a number with a quantum has no number spec on it")) {
       try RegistryCheck.entity(Item.self, sample: ChecksTests.item, book: ChecksTests.book(ChecksTests.rules.filter { $0.name != "item.weight" }),
                                registry: ChecksTests.registry)
     }
+  }
+
+  // A quantum at any depth: here on a property of the items of `item.tags`, whose bound grows to hold it.
+  @Test func stepNineRefusesANestedQuantumWithNoSpecOnIt() throws {
+    var text = String(decoding: ChecksTests.registry.json.jcs, as: UTF8.self)
+    text = text.replacingOccurrences(
+      of: #""properties":{"label":{"max":10,"type":"string","unit":"chars"}}"#,
+      with: #""properties":{"kg":{"quantum":0.5,"type":"number"},"label":{"max":10,"type":"string","unit":"chars"}}"#)
+    text = text.replacingOccurrences(of: #""max":400,"unit":"bytes""#, with: #""max":900,"unit":"bytes""#)
+    try #require(text.contains(#""kg":{"quantum":0.5"#))
+    let registry = try Registry(json: JSON(parsing: Array(text.utf8)))
+    let book = { (rules: [Rule]) in RuleBook(registry: registry, entities: [Item.self, Page.self], rules: rules) }
+    #expect(throws: ChecksTests.failure(9, "item.tags.kg", "a number with a quantum has no number spec on it")) {
+      try RegistryCheck.entity(Item.self, sample: ChecksTests.item, book: book(ChecksTests.rules), registry: registry)
+    }
+    let kg = NumberSpec("item.tags.kg", min: -100, max: 100, quantum: 0.5)
+    try RegistryCheck.entity(Item.self, sample: ChecksTests.item, book: book(ChecksTests.rules + [.local(kg)]), registry: registry)
   }
 
   @Test func stepTenRefusesAWrittenStringWithNoSpec() throws {
@@ -170,6 +193,29 @@ struct ChecksTests {
     }
     #expect(throws: ChecksTests.failure(10, "chk.ask.text", reason)) {
       try RegistryCheck.command(Unspecced.self, book: ChecksTests.book(ChecksTests.rules + [.local(Ask.text)]), registry: ChecksTests.registry)
+    }
+  }
+
+  @Test func stepElevenHoldsAWholeTypeToAWholeUnguardedSaveStampedByTheKit() throws {
+    func check<E: Writable>(_ sample: E) throws {
+      let book = RuleBook(registry: ChecksTests.registry, entities: [E.self], rules: [])
+      try RegistryCheck.entity(E.self, sample: sample, book: book, registry: ChecksTests.registry)
+    }
+    try check(Reading(id: ID("2027-01-15")))
+    #expect(throws: ChecksTests.failure(11, "reading.at", "a field of a whole type the entity does not write")) {
+      try check(HalfReading(id: ID("2027-01-15")))
+    }
+    #expect(throws: ChecksTests.failure(11, "reading", "a whole type whose saves are guarded")) {
+      try check(GuardedReading(id: ID("2027-01-15")))
+    }
+    #expect(throws: ChecksTests.failure(11, "reading.value", "the timestamp field is no client lww integer the entity writes")) {
+      try check(MistimedReading(id: ID("2027-01-15")))
+    }
+    #expect(throws: ChecksTests.failure(11, "reading.at", "a check on the timestamp field")) {
+      try check(CheckedReading(id: ID("2027-01-15")))
+    }
+    #expect(throws: ChecksTests.failure(11, "page", "a timestamped type that is not wholePut")) {
+      try check(StampedPage(id: ID("2027-01-15")))
     }
   }
 
@@ -380,6 +426,83 @@ extension ChecksTests {
 
     var fields: [String: JSON] { ["mood": .of(mood)] }
     static let checks: [Check<GuardedPage>] = []
+  }
+
+  // A reading as the kit saves one fact: every field, the save's moment in `at`.
+  struct Reading: Timestamped, Removable {
+    static let type = "reading"
+    static let scope = ScopeRef.product("chk")
+    static let savesGuarded = false
+    static let heldRemoval = true
+    static let timestampField = "at"
+    let id: ID<Reading>
+    var value: Double? = nil
+    var at: Instant? = nil
+    init(id: ID<Reading>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) {
+      id = ID(r.id)
+      value = try r.optionalDouble("value")
+      at = try r.optionalInstant("at")
+    }
+    var fields: [String: JSON] { ["value": .of(value), "at": .of(at)] }
+    static let checks: [Check<Reading>] = []
+  }
+
+  struct HalfReading: Writable {
+    static let type = "reading"
+    static let scope = ScopeRef.product("chk")
+    let id: ID<HalfReading>
+    init(id: ID<HalfReading>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
+    var fields: [String: JSON] { ["value": .null] }
+    static let checks: [Check<HalfReading>] = []
+  }
+
+  struct GuardedReading: Draftable {
+    static let type = "reading"
+    static let scope = ScopeRef.product("chk")
+    static let savesGuarded = true
+    let id: ID<GuardedReading>
+    init(id: ID<GuardedReading>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
+    var fields: [String: JSON] { ["value": .null, "at": .null] }
+    static let checks: [Check<GuardedReading>] = []
+  }
+
+  struct MistimedReading: Timestamped {
+    static let type = "reading"
+    static let scope = ScopeRef.product("chk")
+    static let savesGuarded = false
+    static let timestampField = "value"
+    let id: ID<MistimedReading>
+    init(id: ID<MistimedReading>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
+    var fields: [String: JSON] { ["value": .null, "at": .null] }
+    static let checks: [Check<MistimedReading>] = []
+  }
+
+  struct CheckedReading: Timestamped {
+    static let type = "reading"
+    static let scope = ScopeRef.product("chk")
+    static let savesGuarded = false
+    static let timestampField = "at"
+    let id: ID<CheckedReading>
+    init(id: ID<CheckedReading>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
+    var fields: [String: JSON] { ["value": .null, "at": .null] }
+    static let checks: [Check<CheckedReading>] = [Check("at") { _, _ in }]
+  }
+
+  struct StampedPage: Timestamped {
+    static let type = "page"
+    static let scope = ScopeRef.product("chk")
+    static let savesGuarded = false
+    static let timestampField = "mood"
+    let id: ID<StampedPage>
+    init(id: ID<StampedPage>) { self.id = id }
+    init(_ r: Fields) throws(DecodeError) { id = ID(r.id) }
+    var fields: [String: JSON] { ["mood": .null] }
+    static let checks: [Check<StampedPage>] = []
   }
 
   struct Flag: Removable {

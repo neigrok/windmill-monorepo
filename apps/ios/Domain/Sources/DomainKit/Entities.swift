@@ -30,6 +30,12 @@ public protocol Draftable: Writable {
   static var savesGuarded: Bool { get }
 }
 
+// A record that is one fact (engine §2.4 `wholePut`) whose every save records its own moment: the save writes
+// `timestampField`, a client `lww` field of integer milliseconds, with the commit's now (engine §7.1 step 4).
+public protocol Timestamped: Draftable {
+  static var timestampField: String { get }
+}
+
 // D-5 a record id only an entity of type `E` carries; ids order by the UTF-8 bytes of their JCS.
 public struct ID<E: Entity>: Hashable, Comparable, Sendable, CustomStringConvertible {
   public let record: RecordID
@@ -59,6 +65,7 @@ struct EntityFacts: Sendable {
   let orderField: String?
   let heldRemoval: Bool?
   let savesGuarded: Bool?
+  let timestampField: String?
 
   init(_ entity: any Entity.Type) {
     self.entity = entity
@@ -67,6 +74,7 @@ struct EntityFacts: Sendable {
     orderField = (entity as? any Ordered.Type)?.orderField
     heldRemoval = (entity as? any Removable.Type)?.heldRemoval
     savesGuarded = (entity as? any Draftable.Type)?.savesGuarded
+    timestampField = (entity as? any Timestamped.Type)?.timestampField
   }
 
   var isRemovable: Bool { heldRemoval != nil }

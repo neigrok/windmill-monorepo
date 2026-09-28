@@ -62,6 +62,7 @@ not kit content. `f` in an input lists field values; a field it leaves out takes
 |---|---|---|---|---|
 | `Card` | `card`, `self/probe` | `Draftable` (`savesGuarded` true), `Removable` (`heldRemoval` true), `Ordered` (`ord`) | `title` (`""`), `body` (`""`), `size` (null), `claim` (null), `tier` (`"draft"`) | `title`: text `card.title` chars 1–12 trim nfc; `body`: text `card.body` bytes 0–24 trim nfc; `size`: number `card.size` −500…500 quantum 0.01; `claim`: text `card.claim` chars 0–12 trim nfc; `tier`: choice `card.tier` `draft`, `review`, `done`, `dropped` |
 | `Day` | `day`, `self/probe` | `Draftable` (`savesGuarded` false), `Removable` (`heldRemoval` true) | `score` (null) | key check `day.notFuture`: the id's local day after the moment's `today` → `{rule: "day.notFuture", path: "id", reason: "custom", custom: "future"}`; `score`: number `day.score` 0–10 integer |
+| `Fact` | `fact`, `self/probe` | `Draftable` (`savesGuarded` false), `Removable` (`heldRemoval` true), `Timestamped` (`at`) | `value` (null), `at` (null, epoch ms) | `value`: number `fact.value` 0–500 quantum 0.1; then `at` takes the moment's `now` when named |
 | `Mark` | `mark`, `self/overlay/b_00000001` | `Draftable` (`savesGuarded` false) | `done` (null), `memo` (`""`, a text field) | `memo`: text `mark.memo` bytes 0–40, no trim, no nfc |
 | `Meta` | `meta`, `tree/b_00000001` | `Draftable` (`savesGuarded` false) | `title` (`""`) | `title`: text `meta.title` chars 0–12 trim nfc |
 | `Lap` | `lap`, `self/probe` | `Writable`, `Removable` (`heldRemoval` false) | `runId` (`""`), `at` (null), `weight` (null) | `weight`: number `lap.weight` −500…500 quantum 0.01 |
@@ -166,7 +167,9 @@ over the loaded value §10.2 defines, `anchor` given (default null).
 - `draft`: `{t, id, base, current, isNew, placement?}`, `base` and `current` as `f`.
 - `creating`: `{t, id, f, placement?}`, `SaveDraft(creating:)` (with `placed:` when given).
 
-A present-again create (§10.2 step 4) edits a text field from the base's text (§10.1), `""` in a blank.
+A present-again create (§10.2 step 5) edits a text field from the base's text (§10.1), `""` in a blank. A draft of a
+`wholePut` type (`fact`) is saved whole (§10.2 step 1): every field, its timestamp at the vector's `now` as `Valid` gives
+it, whatever it touched and whatever the records hold.
 
 ### `draft/script.json`
 

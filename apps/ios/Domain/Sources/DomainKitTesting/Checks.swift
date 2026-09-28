@@ -22,7 +22,7 @@ public struct CheckFailure: Error, Equatable, CustomStringConvertible {
 }
 
 public enum RegistryCheck {
-  // §3.4 steps 1–10, in order; the first step an entity fails throws.
+  // §3.4 steps 1–11, in order; the first step an entity fails throws.
   public static func entity<E: Writable>(_ type: E.Type, sample: E, book: RuleBook, registry: Registry) throws {
     let definition = try declaration(of: E.self, in: registry)
     let written = sample.fields
@@ -50,13 +50,34 @@ public enum RegistryCheck {
       }
     }
     for field in definition.fields {
-      guard let quantum = field.domain?.quantum else { continue }
-      let path = "\(E.type).\(field.name)"
-      guard specs(in: book).contains(where: { $0.path == path && $0.quantum.map(quantum.holds) == true }) else {
-        throw failure(9, path, "a field with a quantum has no number spec on it")
+      for leaf in field.domain?.leaves(at: "\(E.type).\(field.name)") ?? [] {
+        guard let quantum = leaf.domain.quantum else { continue }
+        guard specs(in: book).contains(where: { $0.path == leaf.path && $0.quantum.map(quantum.holds) == true }) else {
+          throw failure(9, leaf.path, "a number with a quantum has no number spec on it")
+        }
       }
     }
     try stringsSpecced(StringPaths(of: definition, writing: written.keys).paths, by: specs(in: book), step: 10)
+    try wholeSaved(E.self, writing: written, definition)
+  }
+
+  // Step 11: a record that is one fact is written whole and never guarded, so the entity writes every client-written field
+  // of its type; a `Timestamped` entity is such a record, its timestamp field a client `lww` integer that the save alone
+  // writes, so no check reaches it.
+  static func wholeSaved<E: Writable>(_ type: E.Type, writing written: [String: JSON], _ definition: TypeDef) throws {
+    if definition.wholePut {
+      if let unwritten = definition.clientLatticeFields.first(where: { written[$0.name] == nil }) {
+        throw failure(11, "\(E.type).\(unwritten.name)", "a field of a whole type the entity does not write")
+      }
+      if (E.self as? any Draftable.Type)?.savesGuarded == true { throw failure(11, E.type, "a whole type whose saves are guarded") }
+    }
+    guard let stamped = (E.self as? any Timestamped.Type)?.timestampField else { return }
+    guard definition.wholePut else { throw failure(11, E.type, "a timestamped type that is not wholePut") }
+    guard let field = definition.field(stamped), field.writer == .client, case .lww = field.kind,
+          case .number(true, _, _, _)? = field.domain?.shape, written[stamped] != nil else {
+      throw failure(11, "\(E.type).\(stamped)", "the timestamp field is no client lww integer the entity writes")
+    }
+    if E.checks.contains(where: { $0.field == stamped }) { throw failure(11, "\(E.type).\(stamped)", "a check on the timestamp field") }
   }
 
   // Steps 1–3 for a read-only entity.
@@ -342,11 +363,18 @@ struct StringPaths {
   }
 
   static func of(_ domain: Domain, at path: String) -> [String] {
-    switch domain.shape {
-    case .string: [path]
-    case .array(let items, _): of(items, at: path)
-    case .object(let properties, _): properties.flatMap { of($0.domain, at: "\(path).\($0.name)") }
-    default: []
+    domain.leaves(at: path).filter { SpecTarget.isString($0.domain) }.map(\.path)
+  }
+}
+
+extension Domain {
+  // Every value that is neither an object nor an array, at its registry path (§4.2): `.<property>` through objects, arrays
+  // passed through.
+  func leaves(at path: String) -> [(path: String, domain: Domain)] {
+    switch shape {
+    case .array(let items, _): items.leaves(at: path)
+    case .object(let properties, _): properties.flatMap { $0.domain.leaves(at: "\(path).\($0.name)") }
+    default: [(path, self)]
     }
   }
 }

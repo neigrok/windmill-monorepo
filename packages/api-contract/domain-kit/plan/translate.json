@@ -1259,5 +1259,59 @@
     "name": "a U+0000 in a command argument no spec covers is a violation of that argument",
     "input": {"cmd": {"name": "probe.copy", "args": {"src": "b_0000\u00001", "dst": "b_00000002"}}, "plan": []},
     "expect": {"violation": {"rule": "probe.copy.src", "path": "src", "reason": "nul"}}
+  },
+  {
+    "name": "a create of a whole fact puts every field present, its timestamp at the moment's now, and retires its held removal",
+    "input": {"plan": [{"op": "create", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}}]},
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 80, "at": 1800000000000}}
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [{"t": "fact", "id": "2027-01-10"}],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "an update of a whole fact naming every field puts it with present null, its timestamp at the moment's now",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}, "fields": ["value", "at"]}
+      ]
+    },
+    "expect": {
+      "gesture": {
+        "changes": [
+          {"op": "put", "t": "fact", "id": "2027-01-10", "present": null, "f": {"value": 80, "at": 1800000000000}}
+        ],
+        "atomic": false,
+        "hold": false,
+        "guards": [],
+        "retire": [],
+        "cmd": null,
+        "predict": [],
+        "local": []
+      }
+    }
+  },
+  {
+    "name": "rule 9: a create of a whole fact naming only some of its fields",
+    "input": {
+      "plan": [{"op": "create", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}, "fields": ["value"]}]
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "rule 9: an update of a whole fact naming only some of its fields",
+    "input": {
+      "plan": [{"op": "update", "t": "fact", "id": "2027-01-10", "f": {"value": 80, "at": 5}, "fields": ["value"]}]
+    },
+    "expect": {"error": true}
   }
 ]

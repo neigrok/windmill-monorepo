@@ -13,8 +13,9 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
   let touched: [String]
   let creating: Bool
 
-  // Only `ActionRunner.save` builds a draft's save.
-  init(_ draft: Draft<E>) {
+  // Only `ActionRunner.save` builds a draft's save, and the kit's test support, which runs one over a product's vectors.
+  package init(_ draft: Draft<E>) {
+    precondition(draft.current.id == draft.id, "a draft saves its own record \(draft.id), and its current names \(draft.current.id)")
     recordID = draft.id
     base = draft.base
     current = draft.current
@@ -52,9 +53,10 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
                            anchor: anchor, moment: read.moment, definition: definition)
   }
 
-  // §10.2, in order: taken (a creating save), unchanged, gone, create, present again, update.
+  // §10.2, in order: taken (a creating save), whole, unchanged, gone, create, present again, update.
   public func decide(_ loaded: SaveDraftLoaded<E>, ids: IDSource) throws(Violation) -> Decision<Saved, R> {
     if creating && (loaded.drawn != nil || loaded.stored != nil) { return .refuse(refusal(.idTaken)) }
+    if loaded.definition.wholePut { return try whole(loaded) }
     let minted = loaded.definition.identity == .minted
     if touched.isEmpty && !(isNew && minted) { return .unchanged(Saved(values: [:], exists: loaded.stored != nil)) }
     if loaded.drawn == nil && isGone(loaded) { return .refuse(refusal(.unknownRecord)) }
@@ -63,7 +65,17 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     return try update(loaded)
   }
 
-  // Step 2: a minted record that is not new, or stored while drawn is not; a keyed record another device deleted.
+  // Step 1: a record that is one fact (engine §2.4) is saved whole, whatever is touched: every field validated, a
+  // `Timestamped` entity's at the moment's now, and written with a fresh life. So it is never unchanged, gone or stale,
+  // and it retires this device's held removal of it: the newest save wins whole.
+  func whole(_ loaded: SaveDraftLoaded<E>) throws(Violation) -> Decision<Saved, R> {
+    let valid = try Valid(current, at: loaded.moment)
+    var plan = Plan()
+    plan.create(valid)
+    return .write(plan, Saved(values: valid.value.fields, exists: true))
+  }
+
+  // Step 3: a minted record that is not new, or stored while drawn is not; a keyed record another device deleted.
   func isGone(_ loaded: SaveDraftLoaded<E>) -> Bool {
     switch loaded.definition.identity {
     case .minted: !isNew || loaded.stored != nil
@@ -72,7 +84,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     }
   }
 
-  // Step 3: every field validated and written; an ordered type placed below its anchor. A nil time field is the engine's
+  // Step 4: every field validated and written; an ordered type placed below its anchor. A nil time field is the engine's
   // to fill, with the commit's now, which is the moment's.
   func create(_ loaded: SaveDraftLoaded<E>) throws(Violation) -> Decision<Saved, R> {
     let valid = try Valid(current, at: loaded.moment)
@@ -88,7 +100,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     return .write(plan, Saved(values: Dictionary(uniqueKeysWithValues: stamped), exists: true))
   }
 
-  // Step 4: a keyed or singleton record drawn nowhere writes the touched fields, never compared with `stored`; a text
+  // Step 5: a keyed or singleton record drawn nowhere writes the touched fields, never compared with `stored`; a text
   // field edits from the base's text (§10.1), "" in a blank.
   func presentAgain(_ loaded: SaveDraftLoaded<E>) throws(Violation) -> Decision<Saved, R> {
     let valid = isNew ? try Valid(current, at: loaded.moment) : try Valid(current, fields: touched, at: loaded.moment)
@@ -99,7 +111,7 @@ public struct SaveDraft<E: Draftable, R: ProductRefusal>: Decider {
     return .write(plan, Saved(values: values, exists: true))
   }
 
-  // Step 5: the touched fields the store does not already hold, refused stale when a guarded one moved since the base.
+  // Step 6: the touched fields the store does not already hold, refused stale when a guarded one moved since the base.
   func update(_ loaded: SaveDraftLoaded<E>) throws(Violation) -> Decision<Saved, R> {
     let valid = try Valid(current, fields: touched, at: loaded.moment)
     let (stored, written, before) = (loaded.stored?.fields ?? [:], valid.value.fields, base.fields)

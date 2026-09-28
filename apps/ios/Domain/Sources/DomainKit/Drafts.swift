@@ -60,14 +60,13 @@ extension Draft where E: Ordered {
   }
 }
 
-extension Draftable {
-  // §3.4 step 7: a draft takes field values by decoding the record they build, which a `Draftable` always decodes.
-  static func decoding(_ id: ID<Self>, _ fields: [String: JSON]) -> Self {
-    do {
-      return try Self(Fields(type: type, id: id.record, values: fields))
-    } catch {
-      preconditionFailure("\(type) does not decode the record its own fields build: \(error)")
-    }
+extension Draft {
+  // §10.1 the keyed or singleton record of the blank's id as `drawn` shows it, or a new draft of the blank: how
+  // `open(_:orNew:)` and the kit's test support open one.
+  package init(orNew blank: E, in read: Reader) throws {
+    let identity = read.registry.type(E.type)?.identity
+    precondition(identity == .keyed || identity == .singleton, "open(_:orNew:) opens a keyed or singleton type, and \(E.type) is not")
+    self = try read.repository(E.self).find(blank.id, in: .drawn).map { Draft(opening: $0) } ?? Draft(new: blank)
   }
 }
 
@@ -99,16 +98,13 @@ extension ActionRunner {
 
   // A keyed or singleton record, or a new draft of its blank.
   public func open<E: Draftable>(_ id: ID<E>, orNew blank: E) throws -> Draft<E> {
-    let identity = registry.type(E.type)?.identity
-    precondition(identity == .keyed || identity == .singleton, "open(_:orNew:) opens a keyed or singleton type, and \(E.type) is not")
     precondition(blank.id == id, "open(_:orNew:) takes a blank of \(id), not of \(blank.id)")
-    return try open(id) ?? Draft(new: blank)
+    return try read(E.scope) { try Draft(orNew: blank, in: $0) }
   }
 
   // §10.1 the draft's save as one commit. Synchronous, and it never throws: a refused or failed save leaves the draft as
   // it was; a programming fault traps.
   public func save<E: Draftable, R: ProductRefusal>(_ draft: inout Draft<E>, _ type: SaveDraft<E, R>.Type) -> SaveResult<R> {
-    precondition(draft.current.id == draft.id, "a draft saves its own record \(draft.id), and its current names \(draft.current.id)")
     let outcome: Outcome<Saved, R>
     do {
       outcome = try perform(SaveDraft<E, R>(draft))

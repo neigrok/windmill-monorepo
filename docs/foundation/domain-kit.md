@@ -339,6 +339,7 @@ public protocol Writable: Entity {
 public protocol Removable: Entity { static var heldRemoval: Bool { get } }
 public protocol Ordered: Entity { static var orderField: String { get } }
 public protocol Draftable: Writable { static var savesGuarded: Bool { get } }
+public protocol Timestamped: Draftable { static var timestampField: String { get } }
 
 public struct ID<E: Entity>: Hashable, Comparable, Sendable {
   public let record: RecordID
@@ -363,6 +364,7 @@ interface WritableType<E : Writable<E>> : EntityType<E> { val checks: List<Check
 interface RemovableType<E : Entity<E>> : EntityType<E> { val heldRemoval: Boolean }
 interface OrderedType<E : Entity<E>> : EntityType<E> { val orderField: String }
 interface DraftType<E : Writable<E>> : WritableType<E> { val savesGuarded: Boolean }
+interface TimestampedType<E : Writable<E>> : DraftType<E> { val timestampField: String }
 @JvmInline value class Id<E>(val record: RecordId) { constructor(day: LocalDay) : this(RecordId(day.text)) }
 ```
 
@@ -384,9 +386,16 @@ Rules:
   entity back (§3.4 step 7). It reads serial and server-written values from the engine's `Record`, or
   from a second, read-only entity.
 - An entity is `Removable` only if its registry type has life and its product binding lets a client
-  delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held").
+  delete it. `heldRemoval` is true iff the binding holds that delete (engine Appendix A, "Held"),
+  as the product's canon lists it among its delete windows (gym: `docs/design/gym/briefs/13-gestures.md`).
 - `Ordered.orderField` names a client `lww` field whose domain is `fracKey`.
 - `Draftable.savesGuarded` is true iff the binding guards the type's editor save.
+- A registry type flagged `wholePut` (engine §2.4) is one fact, saved whole: its entity writes every
+  client-written field of the type, and a `Draftable` of it saves unguarded (§10.2 step 1).
+- `Timestamped.timestampField` names the field that records each save's own moment: a client `lww`
+  field with an integer domain, of a `wholePut` type (engine §7.1 step 4). `Valid` gives it the
+  moment's `now` (§4.5), so every write of it inside a run records the commit's now; no check,
+  editor or action sets it.
 
 ### §3.2 Identity
 
@@ -456,11 +465,14 @@ entity, fails unless:
 7. for a `Draftable`, decoding a record built from `sample.fields` gives an entity whose `fields`
    equal `sample.fields` by JCS;
 8. a `Draftable` whose `savesGuarded` is true has no `text` field;
-9. every registry path of the type with a `quantum` has a `NumberSpec` in `book` whose quantum is on
-   it, so a checked value is the value the store holds;
+9. every registry path of the type with a `quantum`, nested ones included, has a `NumberSpec` in
+   `book` whose quantum is on it, so a checked value is the value the store holds;
 10. every string path of a field the entity writes (a key of `sample.fields`), a `text` field's and
     each nested one included, has a `TextSpec` or `ChoiceSpec` in `book`, so a pasted U+0000 is a
-    `Violation` (§4.3). A field the entity does not write needs none.
+    `Violation` (§4.3). A field the entity does not write needs none;
+11. for a `wholePut` type, `sample.fields` names every client-written field of the type and a
+    `Draftable`'s `savesGuarded` is false; a `Timestamped` entity's type is `wholePut`, and its
+    `timestampField` a client `lww` integer field of `sample.fields` that no check names.
 
 `RuleBookCheck` (§6.3) then requires an entity case in `values.json` for every LOCAL rule bound to a
 field, so the wiring from spec to check to field runs in a vector.
@@ -635,9 +647,12 @@ public struct Valid<E: Writable>: Sendable {
   the record's id, which never changes.
 - A **key check** constrains the natural key, such as a weigh-in's day: "today or earlier". It reads
   only the id and the moment, and runs on every write of the record.
+- A `Timestamped` entity's field, when named, takes the moment's `now` after the checks, whatever
+  it held. Inside a run the moment is the one the load read, whose `now` is the commit's (§5.3).
 - `Valid` has no other initialiser, so no plan writes a value that skipped its checks (INV-5).
 - A save validates exactly the fields it writes (§10.2). A stored value that another writer admitted
-  within the registry, and that today's checks would refuse, never blocks an edit of another field.
+  within the registry, and that today's checks would refuse, never blocks an edit of another field,
+  except in a record that is one fact, whose every save writes and so validates every field.
 
 ---
 
@@ -696,6 +711,8 @@ text: year, month and day zero-padded to 4, 2 and 2 digits
   `now`. A minted create leaves a nil `time` field unset, and the engine fills it with the commit's
   `now` (engine §7.1 step 4). An `instant` command argument is a person's choice; a rule comparing it
   with `now` is LOCAL.
+- A field that records each save's own moment is an `lww` field, not a `time` one, which keeps its
+  first value: a `Timestamped` entity names it, and `Valid` gives it the moment's `now` (§4.5).
 - A keyed type whose key is a local date takes `LocalDay.text` as its id (`ID(day)`).
 
 ---
@@ -760,10 +777,11 @@ public struct RuleBook: Sendable {
   type with life; `<type>.taken` (`id-taken`, `id-spent`) for a minted type; `<type>.stale` (`stale`)
   for a guarded `Draftable`; `<type>.cap` (`cap`) for a type with a registry cap; `<type>.size`
   (`too-large`) for a type with a `text` field (engine §6.11 step 3). A product declares only its own.
-- Its JSON holds the rules and, per entity, `{type, removable, held, ordered, guarded}`. It is
-  checked in as `packages/api-contract/<product>/domain/rules.json`. Each implementation's tests
-  encode its book and compare it with that file by JCS (`RuleBookParity`), so a spec, a hold or a
-  guard declared in Swift and Kotlin cannot drift.
+- Its JSON holds the rules and, per entity, `{type, removable, held, ordered, guarded, timestamp?}`,
+  `timestamp` naming a `Timestamped` entity's field. It is checked in as
+  `packages/api-contract/<product>/domain/rules.json`. Each implementation's tests encode its book
+  and compare it with that file by JCS (`RuleBookParity`), so a spec, a hold, a guard or a
+  timestamp declared in Swift and Kotlin cannot drift.
 - A LOCAL rule written as code MAY declare the code its server half refuses with: a weigh-in's
   "today or earlier" is a key check here, and `bad-instant` from the server (engine A.2).
 - `RuleBookCheck` fails unless names are unique, every LOCAL rule has a vector, every code of every
@@ -914,10 +932,12 @@ public struct Plan: Sendable {
 - `f` holds the named fields' values, less a nil `time` field of a minted create (§5.3). A text field,
   by the registry's field kinds, goes in `texts` as a `TextEdit`, edited from its value in the
   operation's base: an update's `base`, or the draft's base in a present-again save's create (§10.2
-  step 4). A create with no base edits from `""`.
+  step 5). A create with no base edits from `""`.
 - A keyed create inside that record's own delete window retires the held removal in the same
   transaction (engine §7.1 step 4). The record never died, so it keeps its untouched fields, and the
   put adds the written ones.
+- A `wholePut` type's create and update name every client-written field (§8.3 rule 9); the engine
+  writes such a put whole, every field and a fresh life at one stamp (engine §7.1 step 4).
 
 | Gesture option | Value |
 |---|---|
@@ -953,7 +973,8 @@ when:
 6. a named field is not client-written, is `serial` or the order field, is absent from
    `value.fields`, or is not among `value.checked`;
 7. an update names a `const` or `time` field (engine §4.4), or a text field without a `base`;
-8. an update names no field, or a keyed create writes no field.
+8. an update names no field, or a keyed create writes no field;
+9. a create or update of a `wholePut` type leaves out one of its client-written fields (engine §2.4).
 
 So a held plan carries removals only, and `drawn` and `stored` differ only in records a held removal
 names (INV-9).
@@ -1195,7 +1216,8 @@ field refuses `stale` against this device's write.
   engine §4.6); the Kotlin engine's budget is owed (ER-10).
 - A record with a text field has one open draft per device, and no other local writer of its text:
   two unsent writes from one base merge against each other on the server (engine §6.11).
-- A field stamped at save, such as a weigh-in's `recordedAt`, is set on `current` before `save`.
+- A `Timestamped` entity's field belongs to the save: each save of it writes the commit's `now`
+  there (§4.5), whatever `current` holds, and the draft takes that value with the others.
 - A field saved while the person may still be typing in it declares no `trim`, since a save writes
   the stored value into `current`.
 
@@ -1207,25 +1229,30 @@ type, `anchor := anchor(placement ?? .bottom)`.
 
 **Decide**, in order. A `Saved` names the fields the draft takes, a written field at its validated
 value, and `exists`, whether the record is in `stored` after the save:
-1. **Unchanged.** No field touched, and the draft is not a new draft of a minted type → `unchanged`,
+1. **Whole.** A `wholePut` type (engine §2.4), whatever is touched: validate every field (a
+   `Timestamped` entity's at the moment's `now`, §4.5) and write `create(valid)`: every client-written
+   field and a fresh life, which retires this device's held removal of the record (§8.2). It is
+   never unchanged, gone or stale: each save is the newest fact, and the newest save wins whole
+   (engine §7.1 step 4). Saved: every field; `exists` is true.
+2. **Unchanged.** No field touched, and the draft is not a new draft of a minted type → `unchanged`,
    with no field; `exists` iff `stored ≠ nil`. A new keyed draft with nothing touched so writes
    nothing.
-2. **Gone** → refuse `Refused(unknown-record, subject, path: .predicted)`, when `drawn = nil` and:
+3. **Gone** → refuse `Refused(unknown-record, subject, path: .predicted)`, when `drawn = nil` and:
    - the type is minted, and the draft is not new or its record is in `stored`; or
    - the type is keyed with life, the draft is not new, and `stored = nil`: another device deleted
      the record this draft opened.
-3. **Create.** A minted type with `stored = nil`: validate every field and write `create(valid)`,
+4. **Create.** A minted type with `stored = nil`: validate every field and write `create(valid)`,
    or `insert(valid, below: anchor)` for an `Ordered` type. A blank refuses on its checks, and a
    prefill is created. Saved: every field, a nil `time` field at the moment's `now`, which the engine
    writes (§5.3).
-4. **Present again.** A keyed or singleton type with `drawn = nil`: a new draft, or a record inside
+5. **Present again.** A keyed or singleton type with `drawn = nil`: a new draft, or a record inside
    this device's own delete window (`stored ≠ nil`), or a keyed record without life that holds no
    visible value. Validate every field of a new draft, and the touched fields otherwise, then write
    `create(valid, fields: touched)` from the draft's base, so its text fields edit from the base's
    text (§10.1). It is never compared with `stored`, so it is neither skipped nor stale; the create
    retires the held removal, and the record keeps its untouched fields (§8.2).
    Saved: every field, an untouched one at its `folded` value, or the blank's when `folded = nil`.
-5. **Update.** Otherwise:
+6. **Update.** Otherwise:
    1. Validate the touched fields.
    2. `changed := touched fields whose stored value differs from the validated one`.
    3. `changed = ∅` → `unchanged`. Saved: the touched fields.
@@ -1421,7 +1448,8 @@ and the refusal carries its path.
 **INV-8 Touched fields only.** A draft's update writes exactly the touched fields the store does not
 already hold; its keyed or singleton create writes exactly the touched fields, never compared with
 the store. Both validate what they write, a new draft every field. A guarded update guards exactly
-its written lattice fields. A minted create writes every field.
+its written lattice fields. A minted create writes every field, and so does every save of a record
+that is one fact, whatever is touched.
 
 *Mechanism.* §10.2; `rebased` keeps only touched fields (§10.3).
 
@@ -1551,7 +1579,12 @@ public struct ProductCorpus {                                                   
   public init(_ book: RuleBook)
   public func value(_ vector: Vector) throws -> JSON                                 // a values.json case
   public func decision<D: Decider>(of decider: D, _ vector: Vector, result: (D.Result) -> JSON,
-                                   refusal: (D.Refusal) -> JSON) throws -> JSON       // an actions.json case
+                                   refusal: (D.Refusal) -> JSON) throws -> JSON       // an action's case
+  public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector,
+                                                   opening blank: E, edit: (inout E) -> Void,
+                                                   result: (Saved) -> JSON, refusal: (R) -> JSON)
+    throws -> JSON                                                                   // a draft save's case
+  public func read(_ vector: Vector, in scope: ScopeRef, _ body: (Reader) throws -> JSON) throws -> JSON
 }
 extension Entity { public init(form: JSON) throws }                                 // {id, fields}
 public enum Contract { public static func vectors(_ path: String) throws -> [Vector] }
@@ -1560,11 +1593,15 @@ public struct Vector: Sendable { public let file: String, name: String, input: J
 
 Each product's tests run `RegistryCheck` for every entity (§3.4) and command (§8.4), `RuleBookCheck`
 and `RuleBookParity` over its rule book (§6.3), and `ProductCorpus` over every case of its
-`values.json` and `actions.json` (§15.3), comparing the result with the case's `expect` by JCS.
-`vectors`, `file` and `Contract.vectors` take paths under `packages/api-contract/`. An actions test
-maps each case's `action` to the decider it names, built from the case's `input`, and gives the JSON
-forms of its result and its product refusal. These live in `DomainKitTesting`. The kit's own tests
-run the kit's corpus (§15.2) and the layering tests (§2.4).
+`values.json`, each feature's `<feature>-actions.json` and each `rules/<read>.json` (§15.3),
+comparing the result with the case's `expect` by JCS. `vectors`, `file` and `Contract.vectors` take
+paths under `packages/api-contract/`. A feature's actions test maps each case's `action` to the
+decider it names, built from the case's `input`, and gives the JSON forms of its result and its
+product refusal; a draft's save runs through `save`, which opens the draft of `blank`'s id over the
+case's records as `open(_:orNew:)` does, applies `edit` to its current value and decides its save,
+trapping where they trap; a derived read runs through `read`, in its scope. Each reads the case's
+records as the engine's readers of the decider's or read's scope do, a type of another scope throwing. These live in `DomainKitTesting`. The kit's own tests run the
+kit's corpus (§15.2) and the layering tests (§2.4).
 
 ---
 
@@ -1591,8 +1628,8 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 | `capacity/count.json` | §7.3 over `stored`, held deletes counted | `{records, type}` → `{used, cap, full}` |
 | `plan/translate.json` | §8.2 every cell, text edits from an update's `base` and from `""`, anchors, `retire`, hold, exact guards, null fields, UTF-8 order; every §8.3 rule; §8.4 a command's specs applied, nested strings included | `{plan}` → `{gesture}`, `{violation}` or `{error}` |
 | `run/pipeline.json` | §9.2 gone for update, remove and move; an emptied gesture → `unchanged`, a retire-only receipt → `committed`; the refusal subject | `{plan, drawn, receipt?}` → `{outcome}` |
-| `draft/save.json` | §10.2 every step: unchanged; gone, a keyed record another device deleted included; an untouched new minted draft (refused on its checks) and a prefilled one (created); present again, new and inside a delete window, and over an invisible keyed record, whose untouched field is taken from it; already stored, `exists` included; stale; update; a text field edited from the base's text, and from `""` in a blank; `creating`, which refuses `id-taken` over a drawn or stored record | `{draft | creating, drawn, stored, anchor?, now, offsetSeconds}` → `{decision}` |
-| `draft/script.json` | §10.1 and §10.3 as operation scripts: `new`, `open` (absent → nil; `orNew` on a minted type, or with a blank of another key, traps), `edit`, `save` (§10.2 over the case's records; `fail: true` fails the commit; a `current` of another id traps), `rebase` (touched and untouched fields; an unguarded type, and a `theirs` of another id, trap), and `records`, which replaces the records; the draft after each op. A refused and a failed save leave the draft as it was; a quantum field is taken rounded | `{drawn, stored, now, offsetSeconds, ops}` → `{steps: [{draft, result?} | {trap: true}]}` |
+| `draft/save.json` | §10.2 every step: a whole save of a `wholePut` type, untouched, edited, over a record another device deleted and inside a delete window, its timestamp at `now`, and refused on a check; unchanged; gone, a keyed record another device deleted included; an untouched new minted draft (refused on its checks) and a prefilled one (created); present again, new and inside a delete window, and over an invisible keyed record, whose untouched field is taken from it; already stored, `exists` included; stale; update; a text field edited from the base's text, and from `""` in a blank; `creating`, which refuses `id-taken` over a drawn or stored record | `{draft | creating, drawn, stored, anchor?, now, offsetSeconds}` → `{decision}` |
+| `draft/script.json` | §10.1 and §10.3 as operation scripts: `new`, `open` (absent → nil; `orNew` on a minted type, or with a blank of another key, traps), `edit`, `save` (§10.2 over the case's records; `fail: true` fails the commit; a `current` of another id traps), `rebase` (touched and untouched fields; an unguarded type, and a `theirs` of another id, trap), and `records`, which replaces the records; the draft after each op. A refused and a failed save leave the draft as it was; a quantum field is taken rounded, and a whole save's timestamp as written | `{drawn, stored, now, offsetSeconds, ops}` → `{steps: [{draft, result?} | {trap: true}]}` |
 | `refusal/subject.json` | §12.1 subjects; the notice's gesture id and `values(of:)` | `{source, plan? | notice?}` → `{subject, gestureId?, values?}` |
 
 **JSON forms.**
@@ -1613,9 +1650,9 @@ run. Records are engine §9.1 `Row`s listed per view (`drawn`, `stored`), which 
 |---|---|
 | `domain/rules.json` | the rule book and entity facts, pinned (§6.3) |
 | `domain/values.json` | each LOCAL rule: spec cases, the kit's value-vector forms (§15.2) over a spec of the book, and entity cases (`{entity, id, fields, now, offsetSeconds}` → `{fields}` or `{violation}`) pinning check order |
-| `domain/actions.json` | each action: `{action, input, records: {drawn, stored?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records, `stored` defaulting to `drawn`, minting `ids` in order |
-| `domain/README.md` | each action's `input` and result, and the forms of the product refusal |
-| `rules/<read>.json` | derived reads (for gym, gym Coach §3.5 `rules/`) |
+| `domain/<feature>-actions.json` | each action and draft save of a feature: `{action, input, records: {drawn, stored?}, ids, now, offsetSeconds}` → `{decision}`: the action's `load` and `decision` over the records, `stored` defaulting to `drawn`, minting `ids` in order; a draft save's decision over the draft its editor opens there |
+| `domain/README.md` | each action's and read's `input` and result, and the forms of the product refusal |
+| `rules/<read>.json` | each derived read (§7.4; for gym, gym Coach §3.5 `rules/`): `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`, the read over a reader of the records in its scope at the moment, `firstPullComplete` defaulting to true |
 
 An entity in a product's corpus is `{id, fields}`. A decision's `refuse` holds the product refusal's
 form, which the product's README states.
@@ -1768,7 +1805,7 @@ public enum RoutineRules {
   static func zero(at p: Path) -> Violation { Violation(rule: "routine.zeroTarget", path: p, reason: .custom("zero")) }
   static let rules: [Rule] = [.local(name), .local(movements), .local(sets), .local(reps), .local(load), .local(rest),
                               .local("routine.zeroTarget", subject: Routine.type),
-                              .serverDecided("routine.movement", codes: [.unknownExercise], subject: Routine.type)]
+                              .serverDecided("routine.movement", codes: [Gym.Codes.unknownExercise], subject: Routine.type)]
 }
 
 public typealias SaveRoutine = SaveDraft<Routine, GymRefusal>
@@ -1796,7 +1833,7 @@ public enum GymRefusal: ProductRefusal, Equatable {
     case (.unknownRecord, let s?, _), (.recordDead, let s?, _): self = .gone(s, r.path)
     case (.idTaken, let s?, _), (.idSpent, let s?, _): self = .taken(s, r.path)
     case (.cap, _, let c?): self = .full(type: c.type, cap: c.cap, r.path)
-    case (.unknownExercise, _, _): self = .unknownMovement(r.path)
+    case (Gym.Codes.unknownExercise, _, _): self = .unknownMovement(r.path)
     default: self = .other(r)
     }
   }

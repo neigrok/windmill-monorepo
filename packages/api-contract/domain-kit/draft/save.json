@@ -1218,5 +1218,191 @@
         }
       }
     }
+  },
+  {
+    "name": "whole: a new draft of a fact writes every field and presence, its timestamp at the save's now, not the editor's",
+    "input": {
+      "draft": {"t": "fact", "id": "2027-01-10", "base": {}, "current": {"value": 80.04, "at": 5}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 80, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 80, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: an untouched draft of a stored fact writes every field again, never unchanged",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 81, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 81, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 81, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: an edit of one field writes every field, the untouched one at the draft's value",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 82, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [83, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [83, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: a draft of a fact another device deleted writes it again, never gone",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 82, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: a new draft inside this device's delete window writes every field and retires the removal",
+    "input": {
+      "draft": {"t": "fact", "id": "2027-01-10", "base": {}, "current": {"value": 82}, "isNew": true},
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: every field is validated, and a value beyond its spec writes nothing",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 500.06, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {"refuse": {"violation": {"rule": "fact.value", "path": "value", "reason": "above", "max": 500}}}
+    }
   }
 ]

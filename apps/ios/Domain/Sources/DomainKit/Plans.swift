@@ -62,7 +62,7 @@ public struct Plan: Sendable {
     deviceWrites.append(DeviceWrite(key: key, value: value))
   }
 
-  // An insert of an entity the kit knows is ordered only by its metatype: a new draft's first save (§10.2 step 3).
+  // An insert of an entity the kit knows is ordered only by its metatype: a new draft's first save (§10.2 step 4).
   mutating func place<E: Writable>(_ value: Valid<E>, below anchor: RecordID?) {
     append(.insert(below: anchor), value)
   }

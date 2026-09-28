@@ -6,8 +6,9 @@ import SyncTesting
 // §15 running a vector: the records it lists as the engine's readers answer them, its value cases, and a product's
 // corpus over the product's rule book.
 
-// §15.3 a product's corpus under `packages/api-contract/<product>/domain/`: each LOCAL rule's cases (`values.json`) and
-// each action's decisions (`actions.json`), run over the book that declares them.
+// §15.3 a product's corpus under `packages/api-contract/<product>/`: each LOCAL rule's cases (`domain/values.json`), each
+// action's and draft save's decisions (`domain/<feature>-actions.json`) and each derived read's results
+// (`rules/<read>.json`), run over the book that declares them.
 public struct ProductCorpus {
   let book: RuleBook
 
@@ -39,20 +40,48 @@ public struct ProductCorpus {
     }
   }
 
-  // `actions.json`, `{action, input, records: {drawn, stored}, ids, now, offsetSeconds}` → `{decision}`: the decision the
-  // decider makes over the records at the moment, minting the listed ids in order, a violation its decide throws folded
-  // into its refusal (§9.1). `stored` defaults to `drawn`.
+  // `<feature>-actions.json`, `{action, input, records: {drawn, stored}, ids, now, offsetSeconds}` → `{decision}`: the
+  // decision the decider makes over the records at the moment, minting the listed ids in order, a violation its decide
+  // throws folded into its refusal (§9.1). `stored` defaults to `drawn`.
   public func decision<D: Decider>(of decider: D, _ vector: Vector, result: (D.Result) -> JSON, refusal: (D.Refusal) -> JSON)
     throws -> JSON
   {
-    let input = vector.input
-    let rows = try input.member("records")
-    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], registry: book.registry)
-    let (moment, ids) = (try Moment(form: input), try input.member("ids").asArray().map { try RecordID(json: $0) })
-    let context = VectorReader(records: records, now: moment.now.ms, ids: ids)
+    let (context, moment) = try scene(of: vector, in: decider.scope)
     let loaded = try decider.load(Reader(context, scope: decider.scope, moment: moment, registry: book.registry))
     let decision = decider.decision(loaded, ids: IDSource(context: context))
     return ["decision": try decision.form(in: decider.scope, registry: book.registry, result: result, refusal: refusal)]
+  }
+
+  // A draft's one save in the same form, as an editor makes it: the draft `open(id, orNew: blank)` gives over the
+  // records, `edit` applied to its current value, then the save's decision (§10.2).
+  public func save<E: Draftable, R: ProductRefusal>(_ type: SaveDraft<E, R>.Type, _ vector: Vector, opening blank: E,
+                                                   edit: (inout E) -> Void, result: (Saved) -> JSON, refusal: (R) -> JSON)
+    throws -> JSON
+  {
+    let (context, moment) = try scene(of: vector, in: E.scope)
+    var draft = try Draft(orNew: blank, in: Reader(context, scope: E.scope, moment: moment, registry: book.registry))
+    edit(&draft.current)
+    return try decision(of: SaveDraft<E, R>(draft), vector, result: result, refusal: refusal)
+  }
+
+  // `rules/<read>.json`, `{read, input?, records: {drawn, stored?}, firstPullComplete?, now, offsetSeconds}` → `{result}`:
+  // a derived read (§7.4) over a reader of the records in `scope` at the moment, the first pull complete unless the
+  // vector says otherwise.
+  public func read(_ vector: Vector, in scope: ScopeRef, _ body: (Reader) throws -> JSON) throws -> JSON {
+    let (context, moment) = try scene(of: vector, in: scope)
+    return ["result": try body(Reader(context, scope: scope, moment: moment, registry: book.registry))]
+  }
+
+  // A vector's records as the engine's readers of `scope` answer them, at its moment, minting its `ids` in order.
+  func scene(of vector: Vector, in scope: ScopeRef) throws -> (VectorReader, Moment) {
+    let input = vector.input
+    let rows = try input.member("records")
+    let records = try VectorRecords(drawn: rows["drawn"], stored: rows["stored"] ?? rows["drawn"], registry: book.registry)
+    let (moment, ids) = (try Moment(form: input), try (input["ids"]?.asArray() ?? []).map { try RecordID(json: $0) })
+    let firstPullComplete = try input["firstPullComplete"]?.asBool() ?? true
+    let reader = VectorReader(records: records, now: moment.now.ms, ids: ids, firstPullComplete: firstPullComplete,
+                              scope: (scope, book.registry))
+    return (reader, moment)
   }
 }
 
@@ -82,33 +111,45 @@ package struct VectorRecords: Sendable {
 }
 
 // A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
-// order, as the engine's readers answer (ER-3, ER-12). It mints the ids the vector lists, in order, and no other.
+// order, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It
+// mints the ids the vector lists, in order, and no other.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
   var ids: [RecordID]
+  let pulled: Bool
+  let scope: (ref: ScopeRef, registry: Registry)?
 
-  package init(records: VectorRecords, now: Int64, ids: [RecordID] = []) {
+  package init(records: VectorRecords, now: Int64, ids: [RecordID] = [], firstPullComplete: Bool = true,
+               scope: (ref: ScopeRef, registry: Registry)? = nil) {
     self.records = records
     self.now = now
     self.ids = ids
+    pulled = firstPullComplete
+    self.scope = scope
   }
 
-  package func drawn(_ type: String, _ id: RecordID) throws -> Record? { find(records.drawn, type, id) }
-  package func stored(_ type: String, _ id: RecordID) throws -> Record? { find(records.stored, type, id) }
-  package func drawn(_ type: String) throws -> [Record] { visible(records.drawn, type) }
-  package func stored(_ type: String) throws -> [Record] { visible(records.stored, type) }
+  package func drawn(_ type: String, _ id: RecordID) throws -> Record? { find(records.drawn, try lives(type), id) }
+  package func stored(_ type: String, _ id: RecordID) throws -> Record? { find(records.stored, try lives(type), id) }
+  package func drawn(_ type: String) throws -> [Record] { visible(records.drawn, try lives(type)) }
+  package func stored(_ type: String) throws -> [Record] { visible(records.stored, try lives(type)) }
 
   package func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    visible(records.drawn, type).filter { $0.values[field] == id.json }
+    visible(records.drawn, try lives(type)).filter { $0.values[field] == id.json }
   }
 
   package func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    visible(records.stored, type).filter { $0.values[field] == id.json }
+    visible(records.stored, try lives(type)).filter { $0.values[field] == id.json }
+  }
+
+  // The engine's readers throw on a type of another scope.
+  func lives(_ type: String) throws -> String {
+    guard let scope, !scope.registry.lives(type, in: scope.ref) else { return type }
+    throw CommitFailure.malformed("\(type) is no type of \(scope.ref)")
   }
 
   package func device(_ key: String) throws -> JSON? { nil }
-  package func firstPullComplete() throws -> Bool { true }
+  package func firstPullComplete() throws -> Bool { pulled }
 
   package func mintID(_ type: String) throws -> RecordID {
     guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint a \(type)") }
