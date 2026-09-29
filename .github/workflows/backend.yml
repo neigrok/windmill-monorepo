@@ -55,8 +55,9 @@ jobs:
 
   # The builder stage the test job built and cached, run again against a Postgres service: the domain,
   # sync and adapters suites with their WM_PG_TEST cases, the domain suite's pattern fuzz over cases
-  # the JS reference generated and answered for a fresh seed, and engine.md §9.1's credential cases
-  # against its windmill_server_probe, directly and through the production Caddyfile over HTTP/1.1 and HTTP/2.
+  # the JS reference generated and answered for a fresh seed, and what engine.md asks of a deployment (§9.1's
+  # credential cases and §6.8's idle live socket) against its windmill_server_probe, directly and through the
+  # production Caddyfile over HTTP/1.1 and HTTP/2.
   postgres:
     needs: test
     runs-on: ubuntu-latest
@@ -109,8 +110,8 @@ jobs:
           done
           docker logs probe
           exit 1
-      - name: Credentials, directly and through the production edge (engine.md §9.1)
-        run: WM_E2E_DB="$DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/credentials_conformance.mjs
+      - name: Credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
+        run: WM_E2E_DB="$DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
 
   build-and-push:
     needs: [test, postgres]

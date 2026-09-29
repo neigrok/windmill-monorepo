@@ -1,14 +1,17 @@
 #!/usr/bin/env node
-// engine.md §9.1 Credentials against a running windmill_server_probe: every case of envelope/credentials.json on hello,
-// pull, push and the live socket, first over raw HTTP/1.1 to the origin, then through the production edge, Caddy from
-// its image with backend/deploy/Caddyfile, over HTTP/1.1 and HTTP/2. Over HTTP/1.1 each runs on a connection of its own,
-// then hello, pull and push all on one keep-alive connection, then all of them pipelined at once. A live socket is
-// judged by the `as` of the first frame it answers, a not-found for a tree that does not exist.
+// What engine.md asks of a deployment, against a running windmill_server_probe, first directly and then through the
+// production edge, Caddy from its image with backend/deploy/Caddyfile:
+// - §9.1 Credentials: every case of envelope/credentials.json on hello, pull, push and the live socket, over raw
+//   HTTP/1.1 to the origin, then through the edge over HTTP/1.1 and HTTP/2. Over HTTP/1.1 each runs on a connection of
+//   its own, then hello, pull and push all on one keep-alive connection, then all of them pipelined at once. A live
+//   socket is judged by the `as` of the first frame it answers, a not-found for a tree that does not exist.
+// - §6.8 the idle live socket: one socket to the origin and one through the edge say nothing for LIVE_PING_MS +
+//   LIVE_PONG_MS and a second more, and are still open; then each answers a `ping` with `pong` at once.
 //
 // Prereqs: a THROWAWAY Postgres holding db/schema.sql and db/probe.sql (this script rewrites its sessions for the
 // corpus's tokens), the probe server on it listening on every interface, Docker, curl with HTTP/2, and cmake.
 //   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=18613 ./build/windmill_server_probe
-// Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=18613 EDGE_PORT=18643 node test/e2e/credentials_conformance.mjs
+// Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=18613 EDGE_PORT=18643 node test/e2e/deployment_conformance.mjs
 // EDGE_PORT is where the edge's HTTPS listens on 127.0.0.1; without it the edge runs are skipped and said so.
 
 import { execFileSync, spawnSync } from 'node:child_process';
@@ -393,6 +396,57 @@ async function liveOverHttp2() {
   check(false, 'edge h2 live', 'the edge offers extended CONNECT (RFC 8441): open the live socket over HTTP/2 here too');
 }
 
+// ── §6.8: the idle live socket ───────────────────────────────────────────────────────────────────────────────────────
+// Appendix B: a client pings after LIVE_PING_MS with nothing received, and fails the socket after LIVE_PONG_MS more.
+const { LIVE_PING_MS, LIVE_PONG_MS } = JSON.parse(readFileSync(path.resolve(path.dirname(corpusFile), '../constants.json'), 'utf8'));
+const PONG_AT_ONCE_MS = 1_000;
+
+// RFC 6455 control frames keep a connection alive below the engine (Drogon pings every live socket each 30 s), so a
+// socket the engine says nothing on may still carry them.
+const isControl = (frame) => frame === 'opcode 9' || frame === 'opcode 10';
+
+// Every whole frame already received on `connection`.
+function framesReceived(connection) {
+  const frames = [];
+  for (let parsed = parseFrame(connection.buffer); parsed; parsed = parseFrame(connection.buffer)) {
+    frames.push(parsed.value);
+    connection.buffer = connection.buffer.subarray(parsed.length);
+  }
+  return frames;
+}
+
+// The next frame on `connection` that is not a control frame.
+async function engineFrame(connection) {
+  for (let frame = await connection.frame(); ; frame = await connection.frame()) {
+    if (frame === null || !isControl(frame)) return frame;
+  }
+}
+
+// Opens a live socket on each of `edges`, lets every one idle past the client's whole ping bound, then pings each.
+async function idleLiveSockets(edges) {
+  const sockets = [];
+  for (const edge of edges) {
+    const connection = await Connection.open(edge);
+    connection.write(requestBytes('live', { input: { headers: [] }, expect: { principal: { account: null } } }, edge ? 'localhost' : `127.0.0.1:${PORT}`, false));
+    const answer = await connection.response();
+    sockets.push({ where: edge ? 'edge h1' : 'origin h1', connection, upgraded: answer?.status === 101 });
+  }
+  await sleep(LIVE_PING_MS + LIVE_PONG_MS + 1_000);
+  for (const { where, connection, upgraded } of sockets) {
+    const label = `${where} live: a socket idle ${(LIVE_PING_MS + LIVE_PONG_MS + 1_000) / 1000} s is still open and answers a ping with pong at once`;
+    const engineFrames = framesReceived(connection).filter((frame) => !isControl(frame));
+    if (!upgraded || connection.closed || engineFrames.length > 0) {
+      check(false, label, `upgraded ${upgraded}, closed ${connection.closed}, engine frames while idle: ${JSON.stringify(engineFrames)}`);
+      continue;
+    }
+    const pinged = Date.now();
+    connection.write(textFrame(JSON.stringify({ op: 'ping' })));
+    const pong = await Promise.race([engineFrame(connection), sleep(PONG_AT_ONCE_MS).then(() => 'no answer')]);
+    check(pong === '{"op":"pong"}' && Date.now() - pinged < PONG_AT_ONCE_MS, label, `answered ${pong} after ${Date.now() - pinged} ms`);
+    connection.close();
+  }
+}
+
 // ── the edge: the production Caddyfile, its upstream pointed at the probe server ────────────────────────────────────
 function startEdge() {
   execFileSync('cmake', [`-DCADDYFILE=${caddyfile}`, '-P', path.join(backend, 'test/deploy/caddyfile_forwards_credentials.cmake')], { stdio: 'inherit' });
@@ -434,11 +488,13 @@ if (EDGE_PORT) {
     await fullBucket(true);
     await runHttp2();
     await liveOverHttp2();
+    await idleLiveSockets([false, true]);
   } finally {
     stopEdge();
   }
 } else {
   console.log('edge: skipped, EDGE_PORT unset');
+  await idleLiveSockets([false]);
 }
 console.log(`\n${results.pass} passed, ${results.fail} failed`);
 process.exit(results.fail === 0 ? 0 : 1);

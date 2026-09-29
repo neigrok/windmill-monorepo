@@ -511,6 +511,16 @@ TEST(the_gym_registry_reads_as_declared) {
                                                              "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"}));
   CHECK_EQ(gym.products().at("gym").codes, (std::vector<std::string>{"payload-conflict", "session-finished", "session-open",
                                                                     "session-overlap", "unknown-exercise", "bad-instant"}));
+  // Device rows live in `device/gym` alone (§2.5): never a wire type, never sent.
+  const std::map<std::string, DeviceRowDef>& device = gym.products().at("gym").device;
+  std::vector<std::string> deviceRows;
+  for (const auto& [name, row] : device) deviceRows.push_back(name);
+  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
+  CHECK(device.at("runningTurn").keyPattern.matches("runningTurn"));
+  CHECK_FALSE(device.at("runningTurn").keyPattern.matches("runningTurn:t_0001"));
+  CHECK_FALSE(device.at("runningTurn").localOnly);
+  CHECK(device.at("picture").localOnly);
+  for (const std::string& row : deviceRows) CHECK(gym.type(row) == nullptr);
   CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);
   CHECK_EQ(gym.type("set")->fields.at("rpe").domain->quantum->step(), 0.1);
   CHECK_EQ(gym.type("weighin")->fields.at("kg").domain->quantum->step(), 0.01);
