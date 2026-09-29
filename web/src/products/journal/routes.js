@@ -64,7 +64,7 @@ export const journalRoutes = {
     preload: importJournalLanding,
     tagline: 'Notice what happened',
     root: {
-      platforms: 'Web · iOS',
+      platforms: 'Web',
       // A card of prose, so its height steps with where the text wraps rather than scaling with the
       // frame: it settles at these once the words stop rewrapping, and stands taller on a phone.
       // Holding the settled height is strictly better than holding nothing at every width.

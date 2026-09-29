@@ -1,0 +1,2 @@
+ios.yml: workflow xcodebuild sets CODE_SIGNING_ALLOWED
+ios.yml: workflow xcodebuild sets SWIFT_VERSION

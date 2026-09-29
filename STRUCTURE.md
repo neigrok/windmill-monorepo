@@ -28,7 +28,8 @@ web/                        Vite/React superapp for all three products
     products/               roadmap/, journal/ and gym/
   test/                     mirrors the source
 apps/
-  ios/                      Sync/: WindmillSync, the SwiftPM package of the sync engine client
+  ios/                      no product app yet: Sync/ (the sync engine client), Domain/ (the domain kit
+                            and gym's domains on it), SyncTestingSurface/ and the dev-only SyncProbe/ app
   android/                  Kotlin/Compose app; :app, :platform and :gym Gradle modules
 packages/
   api-contract/             shared wire contracts and executable golden fixtures
@@ -55,7 +56,8 @@ room machinery.
   and marketing surfaces consume that registry. Showcase reaches a product only through its
   `showcase.js` entry point; `test/shell-boundaries` checks those imports.
 - **Native:** Android products depend on `:platform`; Android implements gym. iOS holds the sync
-  engine client, which names no product.
+  engine client, which names no product, and the domain kit with gym's first domains on it; it
+  carries no product app yet.
 
 Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
@@ -65,10 +67,9 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 
 | Workflow | Responsibility |
 |---|---|
-| `backend.yml` | build and run C++ tests in Docker; publish server and embedder images |
+| `backend.yml` | build and run C++ tests in Docker, then the Postgres cases and the pattern fuzz in that image against a Postgres service; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
-| `ios.yml` | `swift test` of the WindmillSync package on macOS and its iOS simulator build |
-| `ios-release.yml` | archive and upload the tested iOS main-push commit to App Store Connect, or release manually |
+| `ios.yml` | `swift test` of the Sync, Domain and SyncTestingSurface packages on macOS; simulator builds of the engine and the SyncProbe app |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |
@@ -77,9 +78,10 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
 their consumers, and web retains its email README because a test reads it.
 
-Backend Postgres integration cases require `WM_PG_TEST` and a local database; the Docker CI build
-runs without one. Automated model tests use deterministic fakes and fixtures. Actual-model
-exploration is manual and local with a user-provided key.
+Backend Postgres integration cases require `WM_PG_TEST` and a database: the Docker build skips them,
+and backend CI runs them in the image it built against a Postgres service. Automated model tests use
+deterministic fakes and fixtures. Actual-model exploration is manual and local with a user-provided
+key.
 
 The web deploy must land first on a fresh host because the embedder mounts its weights from the
 served web directory. See [deployment](backend/deploy/README.md) and
@@ -100,7 +102,7 @@ contents. Native acceptance and a same-key update check precede publication. See
   [the sync engine](docs/foundation/engine.md) for every product and surface, built in the C++ server
   (`backend/platform/**/sync*`) and the Swift client (`apps/ios/Sync`);
   [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
-  domain is declared on, specified and not yet built; and
+  domain is declared on, built in Swift (`apps/ios/Domain`) and not yet in Kotlin; and
   [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not
   yet built.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).

@@ -10,9 +10,9 @@ const CSS = readFileSync(new URL('../../../src/products/journal/journal.css', im
 const hrefs = (text) => findLinks(text).map((link) => link.href);
 const spans = (text) => findLinks(text).map((link) => text.slice(link.lo, link.hi));
 
-// ─── the grammar iOS paints from the same file ────────────────────────────────────────────────────
+// ─── the shared golden ────────────────────────────────────────────────────────────────────────────
 
-test('every case in the shared golden, exactly — this is the file iOS reads too', () => {
+test('every case in the shared golden, exactly', () => {
   assert.ok(GOLDEN.cases.length >= 22, `the golden shrank to ${GOLDEN.cases.length} cases`);
   for (const one of GOLDEN.cases) {
     assert.deepEqual(findLinks(one.text), one.links, `${one.why} — ${JSON.stringify(one.text)}`);

@@ -30,10 +30,23 @@ import Testing
     let findings = try await Shell.offThePool {
       try Scratch.withDirectory { root in
         try Fixture.copy(Checkout.fixtures.appending(path: "Apps"), into: root)
-        return try AppProject.findings(root: root, spec: appCase.spec)
+        return try AppProject.findings(root: root, app: .product(at: appCase.spec))
       }
     }
     #expect(findings.sorted().map(\.withoutFile) == appCase.expected)
+  }
+
+  // The probe app's row names the engine's package alone, placed from the spec's own directory; no remote package.
+  @Test func probeAppNamesTheEngineAlone() {
+    let spec = JSONValue.object([
+      "packages": .object([
+        "WindmillSync": .object(["path": .string("../Sync")]),
+        "WindmillDomain": .object(["path": .string("../Domain")]),
+        "Lottie": .object(["url": .string("https://github.com/airbnb/lottie-spm")]),
+      ])
+    ])
+    let findings = AppProject.specFindings(spec, root: URL(fileURLWithPath: "/checkout/apps/ios"), app: .probe)
+    #expect(findings == ["package Lottie is remote", "package WindmillDomain at ../Domain is not §2.1's"])
   }
 
   @Test(arguments: [

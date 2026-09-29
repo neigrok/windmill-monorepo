@@ -118,7 +118,7 @@ object Finish {
     // same shape. The top set stands against the plan's own top set, and `now.sets` counts only the
     // sets at the TOP LOAD, so short is read on reps alone, at a load that did not go up. An open line
     // is nothing to measure against, so the row falls through to last time. review.js `detailOf`'s
-    // rule, and iOS's.
+    // rule.
     private fun detail(movement: AgainstMovement): String {
         val planned = movement.planned
         val top = planned?.top

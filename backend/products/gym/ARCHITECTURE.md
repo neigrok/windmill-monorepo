@@ -341,8 +341,8 @@ agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing e
   does) and in the weigh-in sheet's refusal, which is the constructor's own sentence: `Between 20 and
   400 kg — check the number.` Kilograms are the only unit on the wire; a unit toggle is a display
   transform on the client.
-- **A weigh-in is never a forecast.** The phones refuse a day past the device's local today at the
-  field, with `A weigh-in is not a forecast — today or earlier.`; the server refuses the same
+- **A weigh-in is never a forecast.** Android and web refuse a day past the device's local today at
+  the field, with `A weigh-in is not a forecast — today or earlier.`; the server refuses the same
   sentence (`400`, no code) for a day more than one past ITS UTC today (`domain/Bodyweight.h`'s
   `beyondTomorrowUtc`, read by `BodyweightApi` alone) — the one opinion a server clock has about a
   weigh-in, loose by the one day a local calendar can run ahead of UTC, so no honest local today is
@@ -361,8 +361,8 @@ agent holding `gym:read` (`list_bodyweight`), written by a hand and by nothing e
   only the lifter observed; an agent writing one would be inventing a number, which the prompt
   already forbids. `GymToolsTest` pins it off the declarations: every tool whose name or argument
   names say bodyweight is `gym:read`; Coach offers no weigh-in write.
-- On `PgAccountFootprint`'s owned list. On the phones it is local-first like sessions and replays
-  LAST in the claim.
+- On `PgAccountFootprint`'s owned list. On Android it is local-first like sessions and replays LAST
+  in the claim.
 
 ## 4. Domain
 
@@ -437,7 +437,7 @@ within four hours of the last activity, staying at that activity when the tap ca
   band-assisted pull-up at −20 have no honest estimate. It returns the value rounded to the decimal
   the screen prints, and every comparison uses that rounded number.
 - **`topE1rmOf` is the one definition of a session's e1RM**, over *every* working set the session held
-  — never Epley over the top set: 3 × 95 × 10 beats 100 × 5. All three surfaces that print one come
+  — never Epley over the top set: 3 × 95 × 10 beats 100 × 5. Every surface that prints one comes
   through it.
 - **`recordAgainst` is the one implementation of the three record rules**; `recordedIn` walks it
   forward over a page, judging each session against the history as it stood that day and folding a
@@ -698,7 +698,7 @@ share token and return the same 404 for absent, revoked or expired links.
 
 ### 8.2 Shapes
 
-`adapters/json/TrainingJson` is the one cross-surface codec — web, iOS, Android and the MCP tools all
+`adapters/json/TrainingJson` is the one cross-surface codec — web, Android and the MCP tools all
 speak it, which is why a tool's arguments are the REST body's field names.
 
 Instants are epoch-ms numbers and weights are numbers in kg. The codecs in
@@ -754,7 +754,7 @@ carries a machine word under `code`
 | 400 | — | unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant out of bounds, a bad cursor, a prefill read naming no movement, a close instant running backwards | terminal |
 | 400 | `unknown-exercise` | a set, routine entry or prefill read names a movement **this account's** catalog does not hold | terminal — resolve against `GET /v1/gym/exercises` first |
 | 400 | `clock-ahead` | a start that would CREATE a session more than five minutes past the log's now; replays and joins exempt | terminal — the fix is the clock |
-| 409 | `session-id-taken` | start with a reserved id whose workout cannot be returned, including a deleted workout | native queues currently mint a new session id; MCP asks for log reconciliation and preserves deletion |
+| 409 | `session-id-taken` | start with a reserved id whose workout cannot be returned, including a deleted workout | Android's set queue currently mints a new session id; MCP asks for log reconciliation and preserves deletion |
 | 409 | `session-already-open` | start that said `joinOpenSession: false` while another session is open | wait for the open workout to end, then resend |
 | 409 | `routine-stale` | a PUT that NAMED the revision it read, over a day that moved since, whose bytes would move it | re-read the routine and save again |
 | 409 | `set-id-taken` | append a NEW set id already spent outside this session | mint a NEW set id, resend the set |
@@ -911,8 +911,8 @@ shared catalog seeds do not count as account data. Preferences do not count towa
 ## 11. Client synchronization
 
 The API is owner-scoped and surface-neutral. Clients, MCP tools and import scripts use the same
-services. Surface behavior and local storage belong in the [iOS](../../../apps/ios/README.md),
-[Android](../../../apps/android/README.md) and web product documentation.
+services. Surface behavior and local storage belong in the [Android](../../../apps/android/README.md)
+and web product documentation.
 
 - Set writes use client-minted IDs and durable queues. Flush sets before finishing: a new set into
   a finished session is refused. Two phones can still race a finish against another phone's queue.
@@ -1092,13 +1092,13 @@ committed changes; deleted conversation IDs remain tombstoned.
 
 - Native dogfood acceptance requires eight consecutive real sessions without another app, with
   correct first-set prefill in at least six. Distribution and signing requirements live in the
-  [iOS](../../../apps/ios/README.md) and [Android](../../../apps/android/README.md) runbooks.
+  [Android](../../../apps/android/README.md) runbook.
 - Merging a custom movement onto a catalog ID is unbuilt.
 - Some aggregate read receipts lack per-session identity (`MovementTop` and its store projection).
 - MCP `get_stats` loads history before movement filtering and has no date window; `list_sessions`
   exposes `before`/`beforeId` without a continuation marker; `get_last_times` queries per exercise.
-- Native set queues remint IDs on `session-id-taken`, which also covers an owned deleted session
+- Android's set queue remints IDs on `session-id-taken`, which also covers an owned deleted session
   with a durable receipt. A stale start can therefore become another workout under a fresh ID.
-  The queues need a distinct terminal outcome or reconciliation rule.
+  The queue needs a distinct terminal outcome or reconciliation rule.
 - Coach duplicates the unknown-argument check instead of using the platform's `ToolDeclaration`
   validation shared by MCP and roadmap assistance.

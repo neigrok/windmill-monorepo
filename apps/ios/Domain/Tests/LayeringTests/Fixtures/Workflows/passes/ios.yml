@@ -1,0 +1,24 @@
+name: iOS CI
+
+on: push
+
+defaults:
+  run:
+    working-directory: apps/ios/Sync
+
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    steps:
+      - name: Test on macOS
+        run: swift test --explicit-target-dependency-import-check error
+      - name: Build for the iOS simulator
+        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
+      # An invocation on continued lines passes no setting; a comment naming -xcconfig passes nothing.
+      - name: Build the SyncProbe app for the iOS simulator
+        working-directory: apps/ios/SyncProbe
+        run: |
+          xcodegen generate
+          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe \
+            -destination 'generic/platform=iOS Simulator'  # never -xcconfig, never SWIFT_VERSION=5
+          echo "SWIFT_VERSION=5 is not an invocation"

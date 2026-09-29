@@ -153,13 +153,10 @@ game metaphor entirely** — nothing is unlocked, earned, or planted here.
   value. A day you didn't write is `--neutral-300`. Brick appears nowhere. The ramp, its bands
   and its motion ladder are `scales.md`.
 - **Calm ceiling:** at most one infinite loop on screen at a time, and the scale ladder adds
-  none — every scale event terminates. On **iOS** that one loop is today's breathing pip
-  (`DayGlyphs.swift`); while recording, the waveform takes the slot and the pip goes static.
-  On **web** there is currently none: the canvas draws no glyphs at all for today
-  (`DayMarker.jsx`), so there is no dot to breathe, and `wm-ember` belongs to the shell rather
-  than to journal. This line named the iOS ember as though it were both surfaces' until
-  2026-08-23; the divergence underneath — today's marker drawing glyphs on one surface and not
-  the other — is filed in `consistency.md` 1j and is not settled here.
+  none — every scale event terminates. On **web** there is currently none: the canvas draws no
+  glyphs at all for today (`DayMarker.jsx`), so there is no dot to breathe, and `wm-ember` belongs
+  to the shell rather than to journal. Whether today's marker draws glyphs is filed in
+  `consistency.md` 1j and is not settled here.
 - Entrances are `wm-fade-in-up` / `--ease-soft`; state changes are 180–240ms `--ease-standard`.
 - **Nothing bounces.** The one overshoot the product owns, `--journal-ease-catch`, is a single
   soft overshoot with no oscillation; no springs, no elastic, anywhere.
@@ -175,7 +172,7 @@ One product, four shells:
 | **Installed (PWA)** | The reference web experience. Push, app icon, no browser chrome |
 | **Mobile web** | Same canvas inside browser chrome. The app's tab bar sits *above* the browser toolbar; one install offer, stating plainly that a tab can't receive nudges |
 | **Desktop web** | Gutter + scroll-following margin + month rail, ⌘K, select-to-search, print |
-| **Native (iOS)** | The journal room inside the Windmill superapp (`apps/ios`), entered from Where to start? or the room menu. Same canvas, same canon. The shell owns the room menu top-left and the account button top-right (`guidelines/superapp-shell.md`); journal owns everything below them, including the night default. Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
+| **Native (iOS)** | The journal room inside the Windmill superapp, entered from Where to start? or the room menu. Same canvas, same canon. The shell owns the room menu top-left and the account button top-right (`guidelines/superapp-shell.md`); journal owns everything below them, including the night default. Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
 
 Phone is primary. Breakpoints: 744 / 1024 / 1440.
 
@@ -183,7 +180,7 @@ Phone is primary. Breakpoints: 744 / 1024 / 1440.
 neighbours intact), `/journal/search?q=`, `/journal/thread/…`, `/journal/week/<iso-week>`,
 `/journal/year/<year>`. Scrolling rewrites the URL by replace, so reload lands where you were
 reading. **No route is public** — every one 404s for anyone but the owner, and none render a
-share view. The iOS app has no associated domain, so a day link opens the web, not the room.
+share view.
 
 Browser rules that change behaviour, not layout: nudges fall back to in-app + email in a tab
 (the panel says so rather than showing a dead toggle); permission is requested only when the

@@ -39,7 +39,7 @@ function parseStamp(text) {
   return { ms, counter, actor: parts.slice(2).join(':') };
 }
 
-// Exactly the order the server and iOS resolve a page by: physicalMs, then counter, then actor.
+// Exactly the order the server resolves a page by: physicalMs, then counter, then actor.
 export function compareStamps(left, right) {
   const a = parseStamp(left);
   const b = parseStamp(right);

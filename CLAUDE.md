@@ -6,9 +6,10 @@ Windmill is one brand with three self-growth products:
 - **journal** — a night-canvas daily journal.
 - **gym** — a training log.
 
-One shared backend serves all three; each surface (web · iOS · Android) presents them as one
-superapp behind one account and one paid line. Web carries all three products. iOS carries journal
-and gym. Android carries gym only (Kotlin/Compose, modules `:app` `:platform` `:gym`).
+One shared backend serves all three behind one account and one paid line; each surface presents the
+products it carries as one superapp. Web carries all three products. Android carries gym only
+(Kotlin/Compose, modules `:app` `:platform` `:gym`). iOS is being rebuilt on the sync engine and
+carries no product yet: `apps/ios` holds the engine client, the domain kit and a dev-only probe app.
 
 The paid line — Windmill One — is one backend predicate, `Entitlements::hasWindmillOne`. It cannot
 be bought: `paidPlansOpen()` in `web/src/shell/billing/checkout.js` returns `false`, so no surface

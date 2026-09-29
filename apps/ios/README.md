@@ -37,7 +37,7 @@ and test host over the probe product, which never ships; there is no product app
 | `Domain/Sources/GymDomain/` | Gym's feature domains on the kit: Notes (the `Note` entity and its specs, positions, the Coach's `save_note` call) and Bodyweight (a weigh-in per local day, saved whole, with its day rules and derived reads); the gym refusal type and rule book. Their vectors live in `packages/api-contract/gym/domain/` and `packages/api-contract/gym/rules/`. |
 | `Domain/Tests/DomainKitTests/` | The kit's traps, each in a process of its own; `Valid`'s refusal of a U+0000 no check caught; and the compile attacks: every file under `Attacks/` compiles to SIL against this build's modules, as product-domain code or as UI code (main actor by default, warnings as errors), and a `fail` attack must fail with the error its first line names. |
 | `Domain/Tests/DomainKitTestingTests/` | The runner of the kit's shared vectors, `packages/api-contract/domain-kit/`, over the probe declarations its README lists (a trap a vector expects runs in a process of its own); the harness over the real engine and model server; and the three checks against a registry built for them. |
-| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, the CI workflows, and the app project when `project.yml` exists; with one fixture per rule under `Fixtures/`. |
+| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, the CI workflows, and each app project that exists, `SyncProbe/project.yml` among them; with one fixture per rule under `Fixtures/`. |
 
 The package is written in the Swift 6 language mode with strict concurrency, for iOS 18 and macOS 15.
 `SyncCore` and `SyncAPI`, which other packages compile against, enable `MemberImportVisibility` and
@@ -70,7 +70,7 @@ DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SYNC_SIM_SEEDS=1000 \
 
 **The domain kit.** `WindmillDomain` builds `WindmillSync` as a dependency. Its compile attacks run the Xcode
 toolchain's `swiftc` against the modules the build made; its layering tests run `swift package dump-package` on every
-package, and `xcodegen` and `xcodebuild` on the app's fixtures when `xcodegen` is installed:
+package, and `xcodegen` and `xcodebuild` on the app fixtures and on `SyncProbe/project.yml` when `xcodegen` is installed:
 
 ```sh
 cd apps/ios/Domain
@@ -107,5 +107,5 @@ the SQLite store, in `SyncStoreTests`.
 `SYNC_SEED=<seed> swift test --filter <test>`.
 
 [CI](../../.github/workflows/ios.yml) checks the generated registry, runs `WindmillSync`'s `swift test` on macOS, builds
-that package for the iOS simulator, and runs the tests of `WindmillDomain` and `SyncTestingSurface`. It neither builds
-`SyncProbe` nor runs `e2e.sh`, which needs the local backend.
+that package and the `SyncProbe` app for the iOS simulator, and runs the tests of `WindmillDomain` and
+`SyncTestingSurface`. It does not run `e2e.sh`, which needs the local backend.

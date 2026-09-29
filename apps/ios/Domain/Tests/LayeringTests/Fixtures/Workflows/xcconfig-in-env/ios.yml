@@ -1,0 +1,13 @@
+name: iOS CI
+
+on: push
+
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    steps:
+      - name: Build the SyncProbe app for the iOS simulator
+        working-directory: apps/ios/SyncProbe
+        env:
+          XCODE_XCCONFIG_FILE: ci.xcconfig
+        run: xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator'

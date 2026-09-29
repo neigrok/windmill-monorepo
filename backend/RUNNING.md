@@ -136,9 +136,20 @@ DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 WINDMILL_COOKIE_DO
 WM_E2E_DB=wm_sync_test PORT=8089 bash test/e2e/sync_probe.sh
 ```
 
-Nothing in `.github/workflows/backend.yml` sets `WM_PG_TEST`: CI runs `ctest` inside the Docker
-builder stage with no database beside it, so those cases are proven on a developer's machine and
-nowhere else. Run them before pushing a change to a Pg repository or the tables it reads.
+The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
+`postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
+`sync` and `adapters` tests under `WM_PG_TEST` against a Postgres 16 service holding `db/schema.sql`
+and `db/probe.sql`, one suite after another in one database.
+
+The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
+(`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference
+generates and answers. It runs only when `WM_PATTERN_CASES` names a case file; the `postgres` job
+generates one for a fresh seed on every run, and `--seed <n>` replays one:
+
+```sh
+node test/platform/domain/sync/reference_pattern_cases.mjs > /tmp/pattern-cases.json
+WM_PATTERN_CASES=/tmp/pattern-cases.json ctest --test-dir build -R domain -V
+```
 
 ## Coach verification
 
