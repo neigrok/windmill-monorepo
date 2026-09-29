@@ -65,6 +65,7 @@ public struct PlannedDevice: ClientDevice {
 
   public mutating func commit(_ gesture: Gesture?, in scope: ScopeRef, instance: Instance, identities: IdentitySource) throws -> CommitOutcome? {
     let gestureIdTaken = gesture?.gestureId.map(device.carries(gestureId:)) ?? false
+    let identities = UniqueGestureIDs(identities, carries: device.carries(gestureId:))
     return try device.modify(device.active) { replica in
       guard let gesture else {
         try commits.checkWritable(replica.meta)

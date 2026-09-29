@@ -143,6 +143,9 @@ struct BatchWriter {
 
   // MARK: The outbox
 
+  // An entry keeps its replica and its commit order: a put that would replace another replica's entry, or another entry
+  // of the same local id, is refused. Every put replaces the records the entry touches in `outbox_touch`, and a delete
+  // takes them along.
   func put(_ entry: OutboxEntry, in replica: String) throws {
     let baseTexts = JSON.object(from: Dictionary(uniqueKeysWithValues: entry.baseTexts.map { ($0.key.text, $0.value) })) { .string($0) }
     try db.execute(sql: """
@@ -154,7 +157,7 @@ struct BatchWriter {
         stamp = excluded.stamp, intent = excluded.intent, predict = excluded.predict,
         base_texts = excluded.base_texts, n = excluded.n, digest = excluded.digest, result_seq = excluded.result_seq,
         result_epoch = excluded.result_epoch, orphan_of = excluded.orphan_of
-      WHERE outbox.replica = excluded.replica
+      WHERE outbox.replica = excluded.replica AND outbox.commit_order = excluded.commit_order
       """, arguments: [
         replica, entry.localId, entry.gestureId, entry.lineage, entry.scope.text, entry.state.rawValue, entry.commitOrder,
         entry.releaseAt, entry.stamp.text, Blob.of(entry.intent.json),
@@ -162,6 +165,11 @@ struct BatchWriter {
         entry.digest.map { Data(Blob.hexBytes($0)) }, entry.resultSeq, entry.resultEpoch, entry.orphanOf,
       ])
     guard db.changesCount == 1 else { throw StoreError.localIdTaken(entry.localId) }
+    try db.cachedStatement(sql: "DELETE FROM outbox_touch WHERE local_id = ?").execute(arguments: [entry.localId])
+    for key in Set(entry.drawnDeltas.map(\.key)) {
+      try db.cachedStatement(sql: "INSERT INTO outbox_touch (local_id, scope, type, id) VALUES (?, ?, ?, ?)")
+        .execute(arguments: [entry.localId, entry.scope.text, key.type, key.id.text])
+    }
   }
 
   // MARK: Rows and their ref index

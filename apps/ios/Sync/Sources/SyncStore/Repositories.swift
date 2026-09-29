@@ -5,8 +5,9 @@ import SyncCore
 import SyncReplica
 
 // `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type. Its loaders build the
-// working copies planners change; its queries serve the readers. The outbox, cursors, staging digests, known scopes
-// and device rows of a replica are always loaded whole; rows only as a planner's read set names them.
+// working copies planners change; its queries serve the readers. The cursors, staging digests, known scopes and device
+// rows of a replica are always loaded whole; rows only as a planner's read set names them, and outbox entries whole or
+// as its entry selection names them.
 
 public struct StoreTransaction {
   let db: Database
@@ -28,8 +29,9 @@ public struct StoreTransaction {
     try String.fetchAll(db, sql: "SELECT replica FROM replica ORDER BY rowid")
   }
 
-  // One replica with the rows `reads` names; `notices` loads its notices too.
-  public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], notices: Bool = false) throws -> LoadedReplica? {
+  // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too.
+  public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
+                      notices: Bool = false) throws -> LoadedReplica? {
     guard let meta = try meta(of: id) else { return nil }
     let cursors = try cursors(of: id)
     var confirmed: [ScopeRef: Rows] = [:]
@@ -42,9 +44,11 @@ public struct StoreTransaction {
     for (scope, digest) in cursors.staging {
       staging[scope] = Staging(digest: digest, rows: try rows(.staging, of: id, in: scope, reads[scope] ?? RowSelection()))
     }
+    let outbox = try self.outbox(of: id, entries, touching: reads)
     return LoadedReplica(
-      meta: meta, outbox: try outbox(of: id), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
-      known: try known(of: id), notices: notices ? try self.notices(of: id) : nil, deviceRows: try deviceRows(of: id), wholeScopes: false)
+      meta: meta, outbox: outbox.read, entries: entries, unreadCommitOrder: outbox.unreadCommitOrder, confirmed: confirmed,
+      staging: staging, spent: spent, cursors: cursors.records, known: try known(of: id),
+      notices: notices ? try self.notices(of: id) : nil, deviceRows: try deviceRows(of: id), wholeScopes: false)
   }
 
   // Every replica with its notices: what the lifecycle planners read. `rows` loads every row too.
@@ -75,7 +79,7 @@ public struct StoreTransaction {
       known: try known(of: id), notices: try notices(of: id), deviceRows: try deviceRows(of: id), wholeScopes: true)
   }
 
-  func meta(of id: String) throws -> ReplicaMeta? {
+  public func meta(of id: String) throws -> ReplicaMeta? {
     guard let record = try GRDB.Row.fetchOne(db, sql: "SELECT * FROM replica WHERE replica = ?", arguments: [id]) else { return nil }
     guard let state = ReplicaMeta.State(rawValue: record["state"]) else { throw StoreError.corrupt("replica state") }
     var meta = ReplicaMeta(replica: id, state: state, account: record["account"])
@@ -95,21 +99,65 @@ public struct StoreTransaction {
   }
 
   func outbox(of id: String) throws -> [OutboxEntry] {
-    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox WHERE replica = ? ORDER BY commit_order", arguments: [id]).map { record in
-      guard let state = EntryState(rawValue: record["state"]) else { throw StoreError.corrupt("entry state") }
-      let baseTexts = try (record["base_texts"] as Data?).map { try Blob.json($0).asObject().members } ?? []
-      var entry = OutboxEntry(
-        localId: record["local_id"], gestureId: record["gesture_id"], lineage: record["lineage"],
-        scope: try ScopeRef(record["scope"] as String), state: state, commitOrder: record["commit_order"],
-        releaseAt: record["release_at"], stamp: try Stamp(record["stamp"] as String), intent: try Intent(json: Blob.json(record["intent"])),
-        predict: try (record["predict"] as Data?).map { try Blob.json($0).asArray().map { try Delta(json: $0) } } ?? [],
-        baseTexts: Dictionary(uniqueKeysWithValues: try baseTexts.map { (try TextRef(text: $0.key), try $0.value.asString()) }))
-      entry.digest = (record["digest"] as Data?).map(Blob.hex)
-      entry.resultSeq = record["result_seq"]
-      entry.resultEpoch = record["result_epoch"]
-      entry.orphanOf = record["orphan_of"]
-      return entry
+    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox WHERE replica = ? ORDER BY commit_order", arguments: [id]).map(entry)
+  }
+
+  // The entries `selection` names: every one, or those that touch a record `reads` covers, every entry of the held
+  // gestures and the sent entries numbered, each found through an index; with the highest commit order among the entries
+  // left unread, which only the orders above every entry read can hold.
+  func outbox(of id: String, _ selection: EntrySelection,
+              touching reads: [ScopeRef: RowSelection]) throws -> (read: [OutboxEntry], unreadCommitOrder: Int64) {
+    if selection.all { return (try outbox(of: id), 0) }
+    var queries: [(sql: String, arguments: StatementArguments)] = []
+    for (scope, rows) in reads {
+      if rows.all { queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [id, scope.text])) }
+      for key in rows.keys {
+        queries.append(("""
+          SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
+          WHERE outbox_touch.scope = ? AND outbox_touch.type = ? AND outbox_touch.id = ? AND outbox.replica = ?
+          """, [scope.text, key.type, key.id.text, id]))
+      }
+      for type in rows.types {
+        queries.append(("""
+          SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
+          WHERE outbox_touch.scope = ? AND outbox_touch.type = ? AND outbox.replica = ?
+          """, [scope.text, type, id]))
+      }
     }
+    if selection.heldGestures {
+      queries.append(("""
+        SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)
+        WHERE held.replica = ?1 AND held.state = 'held' AND gesture.replica = ?1
+        """, [id]))
+    }
+    for n in selection.numbered { queries.append(("SELECT * FROM outbox WHERE replica = ? AND state = 'sent' AND n = ?", [id, n])) }
+    var read: [[UInt8]: GRDB.Row] = [:]
+    for query in queries {
+      for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: query.sql), arguments: query.arguments) {
+        read[Array((record["local_id"] as String).utf8)] = record
+      }
+    }
+    let highest = try GRDB.Row.fetchAll(
+      db.cachedStatement(sql: "SELECT local_id, commit_order FROM outbox WHERE replica = ? ORDER BY commit_order DESC LIMIT ?"),
+      arguments: [id, read.count + 1])
+    let unread = highest.first { read[Array(($0["local_id"] as String).utf8)] == nil }
+    return (try read.values.map(entry), unread?["commit_order"] ?? 0)
+  }
+
+  func entry(_ record: GRDB.Row) throws -> OutboxEntry {
+    guard let state = EntryState(rawValue: record["state"]) else { throw StoreError.corrupt("entry state") }
+    let baseTexts = try (record["base_texts"] as Data?).map { try Blob.json($0).asObject().members } ?? []
+    var entry = OutboxEntry(
+      localId: record["local_id"], gestureId: record["gesture_id"], lineage: record["lineage"],
+      scope: try ScopeRef(record["scope"] as String), state: state, commitOrder: record["commit_order"],
+      releaseAt: record["release_at"], stamp: try Stamp(record["stamp"] as String), intent: try Intent(json: Blob.json(record["intent"])),
+      predict: try (record["predict"] as Data?).map { try Blob.json($0).asArray().map { try Delta(json: $0) } } ?? [],
+      baseTexts: Dictionary(uniqueKeysWithValues: try baseTexts.map { (try TextRef(text: $0.key), try $0.value.asString()) }))
+    entry.digest = (record["digest"] as Data?).map(Blob.hex)
+    entry.resultSeq = record["result_seq"]
+    entry.resultEpoch = record["result_epoch"]
+    entry.orphanOf = record["orphan_of"]
+    return entry
   }
 
   func cursors(of id: String) throws -> (records: [ScopeRef: CursorRecord], staging: [ScopeRef: ScopeDigest]) {
@@ -152,18 +200,28 @@ public struct StoreTransaction {
     return rows
   }
 
-  // A row of `device/<product>`, found by its key's bytes as SQLite compares text.
   // §2.5: an outbox entry or a notice of any replica on the device carries the gesture id, whose local ids are
-  // `<gestureId>/<k>` and notice ids `notice:<localId>`.
+  // `<gestureId>/<k>` and notice ids `notice:<localId>`. The notices are those whose ids begin `notice:<gestureId>/`, a
+  // range of the text key, which ends before `notice:<gestureId>0` since "0" is the byte after "/".
   public func carries(gestureId: String) throws -> Bool {
     if try Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = ?)", arguments: [gestureId]) == true {
       return true
     }
-    let prefix = "notice:\(gestureId)/"
-    let noticed = try String.fetchAll(db, sql: "SELECT id FROM notice WHERE substr(id, 1, length(?1)) = ?1", arguments: [prefix])
+    let noticed = try String.fetchAll(db, sql: "SELECT id FROM notice WHERE id >= ? AND id < ?",
+                                      arguments: ["notice:\(gestureId)/", "notice:\(gestureId)0"])
     return noticed.contains { Notice.gestureId(ofNotice: $0)?.utf8.elementsEqual(gestureId.utf8) == true }
   }
 
+  // §7.6: the records of `type` in `scope` that the replica's entries touch, a held entry's only `withHeld`, in id order.
+  public func touched(_ replica: String, in scope: ScopeRef, type: String, withHeld: Bool) throws -> [RecordKey] {
+    let ids = try String.fetchAll(db, sql: """
+      SELECT DISTINCT outbox_touch.id FROM outbox_touch JOIN outbox USING (local_id)
+      WHERE outbox.replica = ? AND outbox_touch.scope = ? AND outbox_touch.type = ? AND (? OR outbox.state <> 'held')
+      """, arguments: [replica, scope.text, type, withHeld])
+    return try ids.map { RecordKey(type, try RecordID(text: $0)) }.sorted()
+  }
+
+  // A row of `device/<product>`, found by its key's bytes as SQLite compares text.
   public func deviceRow(_ replica: String, product: String, key: String) throws -> JSON? {
     try Data.fetchOne(db, sql: "SELECT value FROM device_row WHERE replica = ? AND product = ? AND key = ?",
                       arguments: [replica, product, key]).map(Blob.json)
@@ -237,6 +295,21 @@ public struct StoreTransaction {
     }
     return (stored.sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
   }
+
+  // The outbox's touch index as it stands and as the entries say it must be, as JSON lines: equal whenever the batch
+  // writer kept it true.
+  public func touchIndex() throws -> (stored: [JSON], expected: [JSON]) {
+    let stored = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox_touch").map { record -> JSON in
+      .array(["local_id", "scope", "type", "id"].map { .string(record[$0] as String) })
+    }
+    var expected: [JSON] = []
+    for entry in try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox").map(entry) {
+      for key in Set(entry.drawnDeltas.map(\.key)) {
+        expected.append(.array([entry.localId, entry.scope.text, key.type, key.id.text].map { .string($0) }))
+      }
+    }
+    return (stored.sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
+  }
 }
 
 public enum StoreError: Error, Hashable, CustomStringConvertible {
@@ -254,7 +327,7 @@ public enum StoreError: Error, Hashable, CustomStringConvertible {
     case .noNotice(let id): "the active replica holds no notice \(id)"
     case .corrupt(let column): "the store holds an unreadable \(column)"
     case .notARefField(let type, let field): "\(type).\(field) is not a top-level ref field"
-    case .localIdTaken(let localId): "another replica holds the local id \(localId), which is unique on the device"
+    case .localIdTaken(let localId): "another entry or notice holds the local id \(localId), which is unique on the device"
     }
   }
 }

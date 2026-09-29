@@ -6,8 +6,9 @@ import SyncStore
 import SyncTesting
 import Testing
 
-// The batch writer keeps the ref index (ER-12) a function of the rows: after any sequence of batches, and after a
-// registry-version change, it equals its recomputation from the rows.
+// The batch writer keeps the ref index (ER-12) a function of the rows, after any sequence of batches and after a
+// registry-version change, and the outbox's touch index one of the entries, after any sequence of batches: each equals
+// its recomputation.
 
 struct BatchWriterTests {
   static let probe = try! Corpus.probeRegistry()
@@ -90,6 +91,67 @@ struct BatchWriterTests {
       == [RecordKey("card", "card0001")])
     let rebuilt = try after.read { try $0.refIndex() }
     #expect(rebuilt.stored == rebuilt.expected)
+  }
+
+  // The touch index is a function of the entries too: after puts of new and rewritten entries, deletes and renames, it
+  // equals its recomputation.
+  @Test func theTouchIndexEqualsItsRecomputationAfterAnyBatches() throws {
+    var random = SeededRandom.fromEnvironment()
+    let store = try Store.inMemory(registry: Self.probe)
+    var replica = try store.firstLaunch(identities: try QueuedIdentities(["ids": ["rp_1"]])).value
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let overlay = ScopeRef.overlay("b_00000001")
+    let deltas = { (random: inout SeededRandom, scope: ScopeRef) -> [Delta] in
+      (0..<Int.random(in: 0...3, using: &random)).map { _ in
+        scope == overlay ? Delta(key: RecordKey("mark", RecordID("m\(random.below(3))")))
+          : Delta(key: RecordKey(random.pick(["card", "lap"]), RecordID("r\(random.below(4))")))
+      }
+    }
+    for round in 0..<300 {
+      let outbox = try store.read { try $0.replica(replica)!.outbox }
+      var writes: [StoreWrite] = []
+      for k in 0..<Int.random(in: 1...4, using: &random) {
+        switch random.below(5) {
+        case 0, 1:
+          let scope = random.chance(0.7) ? Self.scope : overlay
+          writes.append(.replica(replica, .putEntry(OutboxEntry(
+            localId: "e\(round)/\(k)", gestureId: "e\(round)", lineage: "anon", scope: scope, state: .ready,
+            commitOrder: Int64(round * 10 + k + 1), releaseAt: 0, stamp: stamp,
+            intent: Intent(scope: scope, deltas: deltas(&random, scope)), predict: deltas(&random, scope)))))
+        case 2 where !outbox.isEmpty:
+          var entry = random.pick(outbox)
+          entry.intent.deltas = deltas(&random, entry.scope)
+          writes.append(.replica(replica, .putEntry(entry)))
+        case 3 where !outbox.isEmpty:
+          writes.append(.replica(replica, .deleteEntry(random.pick(outbox).localId)))
+        default:
+          writes.append(.replica(replica, .rename(to: "rp_\(round)_\(k)")))
+          replica = "rp_\(round)_\(k)"
+        }
+      }
+      _ = try store.write(.commit) { _ in Planned((), ReplicaBatch(writes: writes)) }
+      let index = try store.read { try $0.touchIndex() }
+      #expect(index.stored == index.expected, "seed \(random.seed), round \(round)")
+    }
+  }
+
+  // A local id names one entry, which keeps its commit order: a put of another entry under a local id the replica holds
+  // is refused, and its transaction leaves the store as it was.
+  @Test func aPutOfAnotherEntryUnderATakenLocalIdIsRefused() throws {
+    let store = try Store.inMemory(registry: Self.probe)
+    let replica = try store.firstLaunch(identities: try QueuedIdentities(["ids": ["rp_1"]])).value
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let entry = { (order: Int64) in
+      StoreWrite.replica(replica, .putEntry(OutboxEntry(
+        localId: "g/0", gestureId: "g", lineage: "anon", scope: Self.scope, state: .ready, commitOrder: order, releaseAt: 0, stamp: stamp,
+        intent: Intent(scope: Self.scope, deltas: [Delta(key: RecordKey("card", "card0001"))]))))
+    }
+    _ = try store.write(.commit) { _ in Planned((), ReplicaBatch(writes: [entry(1)])) }
+    let before = try store.read { try $0.device(rows: true).json }
+    #expect(throws: StoreError.localIdTaken("g/0")) {
+      try store.write(.commit) { _ in Planned((), ReplicaBatch(writes: [entry(2)])) }
+    }
+    #expect(try store.read { try $0.device(rows: true).json } == before)
   }
 
   @Test func anIndexedReadOfAFieldThatIsNotARefThrows() throws {

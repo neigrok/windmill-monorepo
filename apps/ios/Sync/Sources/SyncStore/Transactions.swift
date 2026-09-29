@@ -2,8 +2,9 @@ import SyncAPI
 import SyncCore
 import SyncReplica
 
-// The design's §3.5 table: one Action per transaction, each an ordered load → plan → batch inside one `write`. The
-// runtime calls these; a crash between any two of them loses nothing.
+// The design's §3.5 table: one Action per transaction, each an ordered load → plan → batch inside one `write`; a commit
+// that mints ids its load did not cover loads them all and plans again. The runtime calls these; a crash between any two of
+// them loses nothing.
 
 extension Store {
   // MARK: Writing (§7.1, §7.3)
@@ -18,7 +19,9 @@ extension Store {
   }
 
   // §7.1 read-and-commit: step 1, then `decide` through this transaction, then steps 2–11 over the rows the decided
-  // gesture reads. A nil gesture writes nothing and ticks no clock.
+  // gesture reads and the entries that touch them. The ids the commit mints are read by their keys once drawn: a plan
+  // that drew ids its load did not read is planned again over the same draws with those records read, and a gesture id
+  // it mints is drawn again while the device carries it. A nil gesture writes nothing and ticks no clock.
   public func commit<T>(in scope: ScopeRef, instance: Instance, identities: IdentitySource,
                         _ decide: (StoreTransaction) throws -> (Gesture?, T)) throws -> Written<(outcome: CommitOutcome?, value: T)> {
     try write(.commit) { tx in
@@ -27,11 +30,21 @@ extension Store {
       try planners.commits.checkWritable(meta)
       let (gesture, value) = try decide(tx)
       guard let gesture else { return Planned((nil, value), ReplicaBatch()) }
-      var replica = try loaded(active, in: tx, reads: planners.commits.reads(of: gesture, in: scope))
       let gestureIdTaken = try gesture.gestureId.map(tx.carries(gestureId:)) ?? false
-      let outcome = try planners.commits.commit(
-        gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
-      return Planned((outcome, value), replica.batch)
+      let identities = UniqueGestureIDs(identities, carries: tx.carries(gestureId:))
+      var reads = planners.commits.reads(of: gesture, in: scope)
+      var draws: [Draw] = []
+      while true {
+        var replica = try loaded(active, in: tx, reads: reads, entries: planners.commits.entryReads(of: gesture))
+        do {
+          let outcome = try planners.commits.commit(
+            gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken, draws: draws)
+          return Planned((outcome, value), replica.batch)
+        } catch let unread as UnreadDraws {
+          reads[scope, default: RowSelection()].keys.formUnion(unread.keys)
+          draws = unread.draws
+        }
+      }
     }
   }
 
@@ -89,7 +102,8 @@ extension Store {
   public func apply(_ step: PushStep, replica id: String, instance: inout Instance, timing: Timing,
                     identities: IdentitySource) throws -> Written<String?> {
     try write(step.transaction) { tx in
-      guard var replica = try tx.replica(id, notices: step.readsNotices) else { return Planned(nil, ReplicaBatch()) }
+      guard let meta = try tx.meta(of: id),
+            var replica = try tx.replica(id, entries: step.entries(of: meta), notices: step.readsNotices) else { return Planned(nil, ReplicaBatch()) }
       try planners.pushes.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
       return Planned(replica.id, replica.batch)
     }
@@ -242,8 +256,9 @@ extension Store {
 
   // MARK: The Action shapes
 
-  func loaded(_ id: String, in tx: StoreTransaction, reads: [ScopeRef: RowSelection] = [:], notices: Bool = false) throws -> LoadedReplica {
-    guard let replica = try tx.replica(id, reads: reads, notices: notices) else { throw StoreError.noReplica(id) }
+  func loaded(_ id: String, in tx: StoreTransaction, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
+              notices: Bool = false) throws -> LoadedReplica {
+    guard let replica = try tx.replica(id, reads: reads, entries: entries, notices: notices) else { throw StoreError.noReplica(id) }
     return replica
   }
 

@@ -32,6 +32,17 @@ struct PortsTests {
     #expect(identities.replicaID() != identities.replicaID())
   }
 
+  // §7.1 step 7: a minted gesture id holds at least 122 bits from the CSPRNG: 24 symbols, each drawn from 36, 124.1 bits.
+  @Test func aGestureIdHoldsAtLeast122Bits() {
+    let identities = Identities(random: SeededRandomSource(seed: 7))
+    let drawn = (0..<400).map { _ in identities.gestureID() }
+    #expect(Set(drawn.map { $0.prefix(2) }) == ["g_"])
+    let symbols = drawn.map { $0.dropFirst(2) }
+    #expect(Set(symbols.map(\.count)) == [24])
+    #expect(Set(symbols.joined()) == Set("0123456789abcdefghijklmnopqrstuvwxyz"))
+    #expect((24 * log2(36.0) * 10).rounded() / 10 == 124.1)
+  }
+
   @Test func sessionTokensAreTheSameOnlyByteForByte() {
     #expect(Set([SessionToken("\u{E9}"), SessionToken("e\u{301}"), SessionToken("\u{E9}")]).count == 2)
   }

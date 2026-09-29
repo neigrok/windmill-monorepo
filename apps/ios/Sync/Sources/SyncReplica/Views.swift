@@ -47,9 +47,14 @@ public struct ScopeView: Sendable {
     self.registry = registry
     coverage = replica.rows(scope)
     loaded = coverage.loaded.mapValues(ViewRecord.init)
-    for entry in replica.entries(in: scope) where entry.state != .held || mode == .drawn {
+    for entry in replica.entriesTouchingReads where entry.scope == scope && (entry.state != .held || mode == .drawn) {
       for delta in entry.drawnDeltas { try fold(delta) }
     }
+  }
+
+  // Whether the load read `key`'s row and entries, so `record` can answer for it.
+  public func covers(_ key: RecordKey) -> Bool {
+    coverage.covers(key)
   }
 
   // The folded record, visible or not; nil when no row, delta or prediction names it.

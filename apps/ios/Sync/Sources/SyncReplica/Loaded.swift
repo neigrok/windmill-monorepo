@@ -8,7 +8,11 @@ import SyncCore
 
 public struct LoadedReplica: Sendable {
   public private(set) var meta: ReplicaMeta
-  public private(set) var outbox: [OutboxEntry]
+  // The entries the load read and every one written since, in commit order: the whole outbox, or what `entrySelection`
+  // names, and then `unreadCommitOrder` is the highest commit order among the entries it left unread, 0 when none.
+  private(set) var loadedEntries: [OutboxEntry]
+  let entrySelection: EntrySelection
+  let unreadCommitOrder: Int64
   public private(set) var confirmed: [ScopeRef: Rows]
   public private(set) var staging: [ScopeRef: Staging]
   public private(set) var spent: [ScopeRef: [RecordKey: SpentID]]
@@ -22,14 +26,17 @@ public struct LoadedReplica: Sendable {
   // Every scope's rows were loaded, so a scope absent from `confirmed` holds none; otherwise reading it traps.
   public private(set) var wholeScopes: Bool
 
-  // The outbox, cursors, known scopes and staging digests are always loaded whole; rows and notices as a planner needs,
-  // `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
-  public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
+  // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries and notices as a planner
+  // needs, `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
+  public init(meta: ReplicaMeta, outbox: [OutboxEntry] = [], entries: EntrySelection = .every, unreadCommitOrder: Int64 = 0,
+              confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
               wholeScopes: Bool) {
     self.meta = meta
-    self.outbox = outbox.sorted { $0.commitOrder < $1.commitOrder }
+    loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
+    entrySelection = entries
+    self.unreadCommitOrder = unreadCommitOrder
     self.confirmed = confirmed
     self.staging = staging
     self.spent = spent
@@ -49,12 +56,43 @@ public struct LoadedReplica: Sendable {
 
   // MARK: Reading
 
+  // Every entry, in commit order; reading it after a load of part of the outbox is a loader bug, and traps.
+  public var outbox: [OutboxEntry] {
+    precondition(entrySelection.all, "the whole outbox of \(meta.replica) was read but not loaded")
+    return loadedEntries
+  }
+
+  // Every entry of a scope, in commit order; like `outbox`, it traps after a load of part of the outbox.
   public func entries(in scope: ScopeRef) -> [OutboxEntry] {
     outbox.filter { $0.scope == scope }
   }
 
+  // The entries that touch a record the load read, in commit order: every entry after a load of the whole outbox, and
+  // otherwise those that touch a record the rows it read cover. Views fold these and the silent fold searches them, since
+  // no other entry changes what those records draw.
+  public var entriesTouchingReads: [OutboxEntry] {
+    if entrySelection.all { return loadedEntries }
+    return loadedEntries.filter { entry in
+      entry.drawnDeltas.contains { delta in confirmed[entry.scope].map { $0.covers(delta.key) } ?? wholeScopes }
+    }
+  }
+
+  // Every entry of each gesture that holds a held entry, in commit order.
+  public var heldGestures: [OutboxEntry] {
+    precondition(entrySelection.all || entrySelection.heldGestures, "the held gestures of \(meta.replica) were read but not loaded")
+    let held = loadedEntries.filter { $0.state == .held }.map(\.gestureId)
+    return loadedEntries.filter { entry in held.contains { $0.utf8.elementsEqual(entry.gestureId.utf8) } }
+  }
+
+  // The sent entry numbered `n`, which a push result answers.
+  public func sentEntry(numbered n: Int64) -> OutboxEntry? {
+    precondition(entrySelection.all || entrySelection.numbered.contains(n), "the sent entry \(n) was read but not loaded")
+    return loadedEntries.first { $0.state == .sent && $0.n == n }
+  }
+
+  // The entries the load read, or that were written since, by local id.
   public func entry(_ localId: String) -> OutboxEntry? {
-    outbox.first { $0.localId.utf8.elementsEqual(localId.utf8) }
+    loadedEntries.first { $0.localId.utf8.elementsEqual(localId.utf8) }
   }
 
   public func rows(_ scope: ScopeRef) -> Rows {
@@ -79,7 +117,8 @@ public struct LoadedReplica: Sendable {
     cursors[scope]
   }
 
-  public var nextCommitOrder: Int64 { (outbox.map(\.commitOrder).max() ?? 0) + 1 }
+  // After every entry the replica holds, read or not, as its outbox stands now.
+  public var nextCommitOrder: Int64 { max(unreadCommitOrder, loadedEntries.map(\.commitOrder).max() ?? 0) + 1 }
 
   // MARK: Writing
 
@@ -94,9 +133,11 @@ public struct LoadedReplica: Sendable {
       self.meta = meta
     case .rename(let id): meta.replica = id
     case .putEntry(let entry):
-      outbox.removeAll { $0.localId.utf8.elementsEqual(entry.localId.utf8) }
-      outbox.insert(entry, at: outbox.firstIndex { $0.commitOrder > entry.commitOrder } ?? outbox.endIndex)
-    case .deleteEntry(let localId): outbox.removeAll { $0.localId.utf8.elementsEqual(localId.utf8) }
+      precondition(self.entry(entry.localId).map { $0.commitOrder == entry.commitOrder } ?? true,
+                   "\(entry.localId) is another entry's local id, which is unique on the device")
+      loadedEntries.removeAll { $0.localId.utf8.elementsEqual(entry.localId.utf8) }
+      loadedEntries.insert(entry, at: loadedEntries.firstIndex { $0.commitOrder > entry.commitOrder } ?? loadedEntries.endIndex)
+    case .deleteEntry(let localId): loadedEntries.removeAll { $0.localId.utf8.elementsEqual(localId.utf8) }
     case .putRow(let scope, let row):
       precondition(confirmed[scope] != nil || wholeScopes, "the rows of \(scope) were written but not loaded")
       confirmed[scope, default: Rows()].put(row)

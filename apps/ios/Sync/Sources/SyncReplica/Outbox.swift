@@ -149,11 +149,13 @@ public struct Hold: Sendable {
 
   // The silent fold of an undo and a retire (§7.1 step 4): the held entries end by `event`, and every later held or
   // ready entry loses its dependent part without a notice; one left empty ends undone. The parts are found before
-  // anything moves. §7.4 numbers no entry that depends on a held one, so the fold never meets a sent entry.
+  // anything moves, among the entries that touch what the load read: an undo reads the whole outbox, and a retire the
+  // records it names, the only ones a dependent of a retired removal touches. §7.4 numbers no entry that depends on a held
+  // one, so the fold never meets a sent entry.
   func end(_ held: [OutboxEntry], by event: IntentEvent, in replica: inout LoadedReplica) throws {
     var dependents = Dependents(registry: registry)
     var parts: [(entry: OutboxEntry, part: Dependents.Part)] = []
-    for entry in replica.outbox {
+    for entry in replica.entriesTouchingReads {
       if held.contains(where: { $0.commitOrder == entry.commitOrder }) {
         dependents.absorb(scope: entry.scope, deltas: entry.drawnDeltas, stamp: entry.stamp)
         continue

@@ -38,8 +38,27 @@ public enum PushStep: Sendable, Hashable {
   // A refusal may fold an orphan's dependents into its origin's stored notice, so its Action loads the notices.
   public var readsNotices: Bool {
     switch self {
-    case .result, .refuseLocally: true
+    case .result(let result, _, _): if case .refused = result.verdict { true } else { false }
+    case .refuseLocally: true
     case .sample, .pauseAuth, .reidentify, .halve, .ack, .epoch: false
+    }
+  }
+
+  // What of the outbox a step reads in a replica holding `meta`: an `ok` with no write map its own entry; a step of the
+  // meta alone, or an epoch that is the replica's already or its first, none; and any other every entry, which a
+  // refusal's fold, a write map, a re-identify or an epoch change may rewrite.
+  public func entries(of meta: ReplicaMeta) -> EntrySelection {
+    switch self {
+    case .sample, .pauseAuth, .halve, .ack:
+      return EntrySelection()
+    case .result(let result, _, _):
+      guard case .ok(_, nil) = result.verdict else { return .every }
+      return EntrySelection(numbered: [result.n])
+    case .epoch(let epoch):
+      guard let held = meta.serverEpoch, !held.utf8.elementsEqual(epoch.utf8) else { return EntrySelection() }
+      return .every
+    case .reidentify, .refuseLocally:
+      return .every
     }
   }
 }
@@ -205,7 +224,7 @@ public struct PushPlanner: Sendable {
   // A result applies only to the entry still sent with its n; any other entry moved on since the request. An `ok` whose
   // seq its scope's cursor already covers in the same epoch (its own page or frame came first) resolves at once (§7.5).
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
-    guard let entry = replica.outbox.first(where: { $0.state == .sent && $0.n == result.n }) else { return }
+    guard let entry = replica.sentEntry(numbered: result.n) else { return }
     switch result.verdict {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)

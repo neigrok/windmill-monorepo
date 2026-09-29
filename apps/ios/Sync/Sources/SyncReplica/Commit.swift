@@ -18,21 +18,25 @@ public struct CommitPlanner: Sendable {
   // §7.1 for a decided gesture. The read-and-commit form runs step 1, `checkWritable`, then its body through the
   // caller's reader, and commits here only when the body decides a gesture: a nil one writes nothing and ticks no clock.
   // `gestureIdTaken`: an outbox entry or a notice of any replica on the device carries the gesture's given id (§2.5).
+  // `draws`: the ids an earlier plan of this commit drew before it stopped at `UnreadDraws`, taken again first.
   public func commit(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw] = []) throws -> CommitOutcome {
     try checkWritable(replica.meta)
-    return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken)
+    return try commitGesture(gesture, in: scope, to: &replica, as: instance, identities: identities, gestureIdTaken: gestureIdTaken,
+                             draws: draws)
   }
 
-  // The rows a commit of `gesture` reads, for its Action to load first: the records its changes, predictions and
-  // guards name; whole types where it mints or derives an id, places by an anchor, or may grow a capped type; and in a
-  // tree or overlay scope, the governing record the scope check reads.
+  // The rows a commit of `gesture` reads, for its Action to load first with the entries that touch them: the records its
+  // changes, predictions, guards and retire name; whole types where it derives an id from a label, places by an anchor,
+  // or may grow a capped type; and in a tree or overlay scope, the governing record the scope check reads. The ids
+  // minted creates draw are read by their keys once drawn (`UnreadDraws`).
   public func reads(of gesture: Gesture, in scope: ScopeRef) -> [ScopeRef: RowSelection] {
     var selection = RowSelection()
     for change in gesture.changes + gesture.predict {
       guard let type = registry.type(change.type) else { continue }
       switch change.operation {
-      case .create(.minted), .create(.derived): selection.types.insert(type.name)
+      case .create(.minted): break
+      case .create(.derived): selection.types.insert(type.name)
       case .create(.seeded(let seed, let ordinal)):
         if let id = try? SeededID(seed: seed, ordinal: ordinal, for: type).id { selection.keys.insert(RecordKey(type.name, RecordID(id))) }
       default: if let id = change.id { selection.keys.insert(RecordKey(type.name, id)) }
@@ -40,9 +44,16 @@ public struct CommitPlanner: Sendable {
       if change.anchor != nil || type.cap != nil { selection.types.insert(type.name) }
     }
     selection.keys.formUnion(gesture.guards.map(\.key))
+    selection.keys.formUnion(gesture.retire.map(\.key))
     var reads = [scope: selection]
     if let governing = registry.governingRecord(of: scope) { reads[governing.scope, default: RowSelection()].keys.insert(governing.key) }
     return reads
+  }
+
+  // The entries a commit of `gesture` reads beyond those of its rows: every entry of the held gestures, when it retires
+  // (step 4). A retired gesture only removes records it names, so the entries its fold reaches are those of its rows.
+  public func entryReads(of gesture: Gesture) -> EntrySelection {
+    EntrySelection(heldGestures: !gesture.retire.isEmpty)
   }
 
   // Step 1: the replica is anon or bound.
@@ -53,7 +64,7 @@ public struct CommitPlanner: Sendable {
   // Steps 2–11, after the checks before step 2. The retire and its silent fold run on a working copy, which the diff reads
   // and which the replica becomes once the commit is accepted.
   func commitGesture(_ gesture: Gesture, in scope: ScopeRef, to replica: inout LoadedReplica, as instance: Instance,
-                     identities: IdentitySource, gestureIdTaken: Bool) throws -> CommitOutcome {
+                     identities: IdentitySource, gestureIdTaken: Bool, draws: [Draw]) throws -> CommitOutcome {
     guard registry.scopeKind(of: scope) != nil else { throw CommitFailure.malformed("\(scope) is no scope of the registry") }
     let product = try product(of: scope)
     if let taken = gesture.gestureId, gestureIdTaken { throw CommitFailure.malformed("the gesture id \(taken) is taken") }
@@ -73,9 +84,16 @@ public struct CommitPlanner: Sendable {
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
       drawn: try ScopeView(retired, scope, .drawn, registry: registry),
-      stored: try ScopeView(retired, scope, .stored, registry: registry), identities: identities)
-    let deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
-    let predict = try gesture.predict.map { try builder.predicted($0) }
+      stored: try ScopeView(retired, scope, .stored, registry: registry), identities: identities, draws: draws)
+    let deltas: [Delta]
+    let predict: [Delta]
+    do {
+      deltas = try oneDeltaPerRecord(try gesture.changes.compactMap { change in try builder.delta(change).map { (change, $0) } })
+      predict = try gesture.predict.map { try builder.predicted($0) }
+    } catch where !builder.unread.isEmpty {
+      throw UnreadDraws(keys: builder.unread, draws: builder.draws)
+    }
+    guard builder.unread.isEmpty else { throw UnreadDraws(keys: builder.unread, draws: builder.draws) }
     let guards = try exactGuards(gesture.guards, in: scope, stored: builder.stored)
     let command = gesture.command.map(registry.rounded)
     // Step 7: a string the intents send (their scope, deltas, guards, command and given gesture id) holding U+0000
@@ -86,9 +104,6 @@ public struct CommitPlanner: Sendable {
       return .refused(.cap, detail: ["type": .string(capped), "cap": JSON(cap)])
     }
     let gestureId = try gesture.gestureId ?? identities.gestureID()
-    guard gesture.gestureId != nil || !replica.outbox.contains(where: { $0.gestureId.utf8.elementsEqual(gestureId.utf8) }) else {
-      throw CommitFailure.malformed("the minted gesture id \(gestureId) is taken")
-    }
     let intents = group(deltas, guards: guards, command: command, gesture: gesture, scope: scope, gestureId: gestureId)
 
     // Step 8: an intent the widest request cannot carry alone refuses the gesture, so an entry as committed always fits
@@ -159,7 +174,7 @@ public struct CommitPlanner: Sendable {
         && entry.intent.deltas.allSatisfy { $0.removes && named.contains($0.key) }
     }
     var gestures: [(id: String, entries: [OutboxEntry])] = []
-    for entry in replica.outbox {
+    for entry in replica.heldGestures {
       if let index = gestures.firstIndex(where: { $0.id.utf8.elementsEqual(entry.gestureId.utf8) }) {
         gestures[index].entries.append(entry)
       } else {
@@ -242,6 +257,44 @@ public struct CommitPlanner: Sendable {
   }
 }
 
+// An id a commit drew by a type's mint.
+public struct Draw: Sendable, Hashable {
+  public let mint: Mint
+  public let id: RecordID
+}
+
+// The minted ids a plan drew whose rows and entries its load did not read, so it decided nothing: the Action reads those
+// keys and plans the commit again, which takes `draws`, every id drawn so far in order, before it draws another, so it
+// draws as one plan over every row would.
+public struct UnreadDraws: Error, Sendable {
+  public let keys: [RecordKey]
+  public let draws: [Draw]
+}
+
+// §7.1 step 7 on a device: the identities a commit draws from, a gesture id drawn again while an outbox entry or a notice
+// of any replica on the device carries it, so a minted gesture id is never another gesture's.
+public final class UniqueGestureIDs: IdentitySource {
+  let drawing: IdentitySource
+  let carries: (String) throws -> Bool
+
+  public init(_ drawing: IdentitySource, carries: @escaping (String) throws -> Bool) {
+    self.drawing = drawing
+    self.carries = carries
+  }
+
+  public func gestureID() throws -> String {
+    while true {
+      let id = try drawing.gestureID()
+      if try !carries(id) { return id }
+    }
+  }
+
+  public func draw(below bound: Int) throws -> Int { try drawing.draw(below: bound) }
+  public func replicaID() throws -> String { try drawing.replicaID() }
+  public func actor() throws -> Stamp.Actor { try drawing.actor() }
+  public func forkGuard() throws -> String { try drawing.forkGuard() }
+}
+
 // MARK: - Deltas (§7.1 steps 4 and 5)
 
 // Diffs one gesture's changes against `drawn`, stamped `s`, resolving each create's id.
@@ -254,6 +307,9 @@ struct DeltaBuilder {
   let drawn: ScopeView
   let stored: ScopeView
   let identities: IdentitySource
+  var draws: [Draw]
+  var drawsTaken = 0
+  var unread: [RecordKey] = []
   var chosen: Set<RecordID> = []
   var baseTexts: [TextRef: String] = [:]
   var ids: [RecordID?] = []
@@ -319,7 +375,8 @@ struct DeltaBuilder {
   }
 
   // Step 5: a given id; a seeded one (D-8); a derived one from its label (D-26); else one minted by the type's mint,
-  // drawn again while taken in drawn, spent, or chosen earlier in this gesture.
+  // drawn again while chosen earlier in this gesture, or taken in drawn or spent, which its key alone answers. A drawn key
+  // the load did not read answers nothing yet: it is noted unread, and the plan goes on only to draw the rest.
   mutating func id(of type: TypeDef, _ newID: NewID) throws -> RecordID {
     switch newID {
     case .given(let id): return id
@@ -334,13 +391,26 @@ struct DeltaBuilder {
       return RecordID(DerivedID.from(label: label, fallback: fallback, taken: takenIDs(of: type).compactMap(\.string)))
     case .minted:
       guard let mint = type.mint else { throw CommitFailure.malformed("\(type.name) does not mint ids") }
-      let taken = takenIDs(of: type)
-      let identities = self.identities
-      let draw = { () throws -> RecordID in RecordID(try mint.id(drawing: identities.draw(below:))) }
-      var id = try draw()
-      while taken.contains(id) { id = try draw() }
-      return id
+      while true {
+        let id = try draw(by: mint)
+        let key = RecordKey(type.name, id)
+        if chosen.contains(id) { continue }
+        guard drawn.covers(key) else {
+          unread.append(key)
+          return id
+        }
+        if drawn.record(key) == nil && replica.spentIDs(scope)[key] == nil { return id }
+      }
     }
+  }
+
+  // The next id `mint` draws: the next an earlier plan of this commit drew, while that plan drew it by the same mint,
+  // else a new one.
+  mutating func draw(by mint: Mint) throws -> RecordID {
+    if drawsTaken < draws.count && draws[drawsTaken].mint != mint { draws.removeSubrange(drawsTaken...) }
+    if drawsTaken == draws.count { draws.append(Draw(mint: mint, id: RecordID(try mint.id(drawing: identities.draw(below:))))) }
+    drawsTaken += 1
+    return draws[drawsTaken - 1].id
   }
 
   func takenIDs(of type: TypeDef) -> Set<RecordID> {
@@ -353,8 +423,9 @@ struct DeltaBuilder {
     let id = try id(of: type, newID)
     ids.append(id)
     chosen.insert(id)
-    let values = try change.anchor.map { try placed(type, id, change.values, $0) } ?? change.values
     let key = RecordKey(type.name, id)
+    if unread.contains(key) { return nil }
+    let values = try change.anchor.map { try placed(type, id, change.values, $0) } ?? change.values
     if drawn.record(key) != nil { return nil }
     var delta = Delta(key: key, lattice: Lattice(life: Life(.alive, stamp), born: stamp))
     delta.lattice.fields = try fields(type, values, current: nil, create: true)

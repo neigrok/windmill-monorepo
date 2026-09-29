@@ -3,8 +3,8 @@ import SyncCore
 import SyncReplica
 import Testing
 
-// A partially loaded replica answers only for what its Action loaded: a planner reading any other row, or notices it
-// did not load, is a loader bug, and the process traps instead of deciding from what it never saw.
+// A partially loaded replica answers only for what its Action loaded: a planner reading any other row, outbox entry or
+// notice is a loader bug, and the process traps instead of deciding from what it never saw.
 
 struct ModelTests {
   @Test func readingARowTheLoadDidNotCoverTraps() async {
@@ -32,6 +32,64 @@ struct ModelTests {
     await #expect(processExitsWith: .failure) {
       let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), notices: nil, wholeScopes: false)
       _ = replica.notices
+    }
+  }
+
+  @Test func readingTheWholeOutboxOfAPartialLoadTraps() async {
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(heldGestures: true),
+                                  wholeScopes: false)
+      _ = replica.outbox
+    }
+  }
+
+  @Test func readingEveryEntryOfAScopeAfterALoadOfPartOfTheOutboxTraps() async {
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(
+        meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(),
+        confirmed: [.product("probe"): Rows(loaded: [], keys: [RecordKey("card", "card0001")], types: [], empty: true)], wholeScopes: false)
+      _ = replica.entries(in: .product("probe"))
+    }
+  }
+
+  // After a load of part of the outbox, the entries that touch what was read are those that touch a record the rows it
+  // read cover: a held gesture loaded for a retire, touching another record, is not one of them.
+  @Test func theEntriesTouchingReadsAreThoseOfTheRecordsTheRowsCover() throws {
+    let entry = { (localId: String, order: Int64, state: EntryState, card: String) in
+      OutboxEntry(localId: localId, gestureId: String(localId.dropLast(2)), lineage: "anon", scope: .product("probe"), state: state,
+                  commitOrder: order, releaseAt: 0, stamp: try Stamp("10:0:r_aaaaaaaaaaaa"),
+                  intent: Intent(scope: .product("probe"), deltas: [Delta(key: RecordKey("card", RecordID(card)))]))
+    }
+    let touching = try entry("a/0", 1, .ready, "card0001")
+    let replica = LoadedReplica(
+      meta: ReplicaMeta(replica: "rp_1", state: .anon), outbox: [touching, try entry("h/0", 2, .held, "card0002")],
+      entries: EntrySelection(heldGestures: true),
+      confirmed: [.product("probe"): Rows(loaded: [], keys: [RecordKey("card", "card0001")], types: [], empty: true)], wholeScopes: false)
+    #expect(replica.entriesTouchingReads == [touching])
+    #expect(replica.heldGestures.map(\.localId) == ["h/0"])
+  }
+
+  @Test func readingHeldGesturesOrANumberTheLoadLeftOutTraps() async {
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(numbered: [1]), wholeScopes: false)
+      _ = replica.heldGestures
+    }
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(heldGestures: true), wholeScopes: false)
+      _ = replica.sentEntry(numbered: 1)
+    }
+  }
+
+  // A local id names one entry, which keeps its commit order: a put of another entry under a local id the copy holds
+  // is a planner bug.
+  @Test func puttingAnotherEntryUnderALoadedLocalIdTraps() async {
+    await #expect(processExitsWith: .failure) {
+      let entry = { (order: Int64) in
+        OutboxEntry(localId: "g1/0", gestureId: "g1", lineage: "anon", scope: .product("probe"), state: .ready, commitOrder: order,
+                    releaseAt: 0, stamp: try! Stamp("10:0:r_aaaaaaaaaaaa"), intent: Intent(scope: .product("probe")))
+      }
+      var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), outbox: [entry(1)], wholeScopes: true)
+      replica.apply(.putEntry(entry(2)))
     }
   }
 

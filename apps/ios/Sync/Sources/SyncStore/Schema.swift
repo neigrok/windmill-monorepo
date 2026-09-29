@@ -26,6 +26,8 @@ enum Schema {
   // Ids are stored as their JCS text, a tuple key and a string id never alike. Local ids, and so notice ids, are unique
   // on the device; commit order counts within a replica (§2.5, corpus/README.md "Ids and order"). Sent entries hold
   // distinct numbers; an acked one keeps its number past a re-identify, which numbers from 1 again (§7.11).
+  // `outbox_touch` holds each record an entry's deltas and prediction touch, so a load finds the entries of the records
+  // it reads without reading the rest.
   static let v1 = """
     CREATE TABLE device (
       id                INTEGER PRIMARY KEY CHECK (id = 1),
@@ -152,9 +154,19 @@ enum Schema {
       CHECK ((n IS NULL) = (state IN ('held','ready'))),
       CHECK ((state = 'acked') = (result_seq IS NOT NULL))
     );
-    CREATE UNIQUE INDEX outbox_n     ON outbox(replica, n) WHERE state = 'sent';
-    CREATE INDEX        outbox_scope ON outbox(replica, scope, commit_order);
-    CREATE INDEX        outbox_state ON outbox(replica, state, commit_order);
+    CREATE UNIQUE INDEX outbox_n       ON outbox(replica, n) WHERE state = 'sent';
+    CREATE INDEX        outbox_scope   ON outbox(replica, scope, commit_order);
+    CREATE INDEX        outbox_state   ON outbox(replica, state, commit_order);
+    CREATE INDEX        outbox_gesture ON outbox(gesture_id);
+
+    CREATE TABLE outbox_touch (
+      local_id TEXT NOT NULL REFERENCES outbox ON DELETE CASCADE,
+      scope    TEXT NOT NULL,
+      type     TEXT NOT NULL,
+      id       TEXT NOT NULL,
+      PRIMARY KEY (scope, type, id, local_id)
+    ) WITHOUT ROWID;
+    CREATE INDEX outbox_touch_entry ON outbox_touch(local_id);
 
     CREATE TABLE notice (
       id        TEXT PRIMARY KEY,

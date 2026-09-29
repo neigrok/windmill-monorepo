@@ -399,7 +399,7 @@ public struct Rows: Sendable, Hashable {
 }
 
 // What a planner reads of one scope's rows, so its Action loads exactly that: some records and some whole types, or
-// every row.
+// every row. The outbox entries that touch the records it covers load with them (`EntrySelection`).
 public struct RowSelection: Sendable, Hashable {
   public var keys: Set<RecordKey>
   public var types: Set<String>
@@ -410,6 +410,22 @@ public struct RowSelection: Sendable, Hashable {
     self.types = types
     self.all = all
   }
+}
+
+// What a planner reads of one replica's outbox, so its Action loads exactly that: every entry, or the entries that touch
+// a record its row reads cover, with every entry of the held gestures and the sent entries of some numbers.
+public struct EntrySelection: Sendable, Hashable {
+  public var all: Bool
+  public var heldGestures: Bool
+  public var numbered: Set<Int64>
+
+  public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = []) {
+    self.all = all
+    self.heldGestures = heldGestures
+    self.numbered = numbered
+  }
+
+  public static let every = EntrySelection(all: true)
 }
 
 // MARK: - Events

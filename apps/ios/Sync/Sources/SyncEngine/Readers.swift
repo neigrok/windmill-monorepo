@@ -5,7 +5,7 @@ import SyncStore
 
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
-// rows it names with the scope's pending entries. A misuse of the reader (a scope the registry does not hold, a type
+// rows it names with the pending entries that touch them. A misuse of the reader (a scope the registry does not hold, a type
 // outside it, a field that is no ref, a mint of a type that mints none, a read or a mint after its call returned) throws
 // a malformed `CommitFailure` where it happens, so it is malformed wherever it surfaces. The first failure of a read or
 // a mint is kept, and fails the commit whose body met it.
@@ -29,12 +29,12 @@ final class TransactionReader: CommitContext {
       throw CommitFailure.malformed("\(scope) is no product, tree or overlay scope of the registry")
     }
     let active = try tx.activeReplica()
-    guard let replica = try tx.replica(active) else { throw StoreError.noReplica(active) }
+    guard let meta = try tx.meta(of: active) else { throw StoreError.noReplica(active) }
     self.tx = tx
     self.core = core
     self.scope = scope
-    meta = replica.meta
-    now = replica.meta.physNow(deviceNow: deviceNow)
+    self.meta = meta
+    now = meta.physNow(deviceNow: deviceNow)
   }
 
   var registry: Registry { core.registry }
@@ -145,8 +145,7 @@ final class TransactionReader: CommitContext {
       throw CommitFailure.malformed("\(type).\(field) is not a top-level ref field")
     }
     let indexed = try tx.referencing(meta.replica, in: scope, type: type, field: field, target: id)
-    let pending = try load(RowSelection()).entries(in: scope).filter { $0.state != .held || mode == .drawn }
-      .flatMap(\.drawnDeltas).map(\.key).filter { $0.type.utf8.elementsEqual(type.utf8) }
+    let pending = try tx.touched(meta.replica, in: scope, type: type, withHeld: mode == .drawn)
     let candidates = Set(indexed).union(pending)
     let replica = try load(RowSelection(keys: candidates))
     let view = try ScopeView(replica, scope, mode, registry: registry)
@@ -155,9 +154,12 @@ final class TransactionReader: CommitContext {
       .map { shaped($0, in: view, of: replica) }
   }
 
+  // The rows `selection` names, with the entries that touch them.
   func load(_ selection: RowSelection) throws -> LoadedReplica {
     guard isOpen else { throw TransactionReader.ended }
-    guard let replica = try tx.replica(meta.replica, reads: [scope: selection]) else { throw StoreError.noReplica(meta.replica) }
+    guard let replica = try tx.replica(meta.replica, reads: [scope: selection], entries: EntrySelection()) else {
+      throw StoreError.noReplica(meta.replica)
+    }
     return replica
   }
 
@@ -169,7 +171,7 @@ final class TransactionReader: CommitContext {
   // A folded record as products read it: its texts marked pending where an entry of the view writes them, its server
   // times from the confirmed row, and whether the view's entries or a held entry touch it.
   func shaped(_ record: ViewRecord, in view: ScopeView, of replica: LoadedReplica) -> Record {
-    let touching = replica.entries(in: scope).filter { $0.touches(record.key) }
+    let touching = replica.entriesTouchingReads.filter { $0.scope == scope && $0.touches(record.key) }
     let folded = touching.filter { $0.state != .held || view.mode == .drawn }
     let confirmed = replica.rows(scope).row(record.key)
     let pendingTexts = Set(folded.flatMap { $0.drawnDeltas.filter { $0.key == record.key }.flatMap(\.texts.keys) })

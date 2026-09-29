@@ -346,7 +346,7 @@ final class EngineCore: Sendable {
 
   // The active replica's meta.
   func seat() throws -> ReplicaMeta? {
-    try store.read { tx in try tx.replica(tx.activeReplica())?.meta }
+    try store.read { tx in try tx.meta(of: tx.activeReplica()) }
   }
 
   // §10.2: the device wall clock plus the active replica's offset.
