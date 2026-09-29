@@ -8,7 +8,7 @@
 
 namespace wm {
 
-// The wire shape web, iOS and Android all speak. Incoming carries the device's HLC stamp; the day
+// The wire shape the journal's clients speak. Incoming carries the device's HLC stamp; the day
 // comes from the URL, not the body.
 //
 //   in  : { "body": "...", "mood": null|0..10, "energy": null|0..10, "source": "typed"|"spoken", "stamp": "ms:ctr:actor" }

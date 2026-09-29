@@ -234,7 +234,7 @@ class NotesScreenTests {
     private fun titleX(title: String): Float =
         compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().positionInRoot.x
 
-    // One note has no order to explain: no caption and no handle, the same rule as web and iOS.
+    // One note has no order to explain: no caption and no handle, the same rule as web.
     @Test
     fun testOneNoteDrawsNeitherTheCaptionNorTheHandle() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

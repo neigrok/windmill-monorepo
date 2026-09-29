@@ -674,7 +674,7 @@ a.journal-link:focus-visible {
 /* The hold's structural mark: a static 1px ring whose CENTRELINE sits 6px clear of the head's edge —
    stroke +5.5 -> +6.5, clearing the 2 -> 4px focus band by 1.5px. That centreline is the canonical
    fact; the box below is what it costs in a model that draws a border INWARD, hence head + 13px.
-   iOS declares head + 12px for the same geometry because a centred .stroke straddles its path.
+   A stroke centred on its path straddles it, so that model declares head + 12px for the same geometry.
    The two numbers are one geometry in two stroke models: do not reconcile them. */
 .journal-head::before { content: ''; position: absolute; left: 50%; top: 50%; }
 .journal-track-mood.is-floor .journal-head::before {

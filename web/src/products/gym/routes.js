@@ -59,7 +59,7 @@ export const gymRoutes = {
     tagline: 'Keep a training log',
     // The words and the two still scenes the brand root composes gym's band and section from.
     root: {
-      platforms: 'Web · iOS · Android',
+      platforms: 'Web · Android',
       // Cards of prose, so the height steps with where the text wraps rather than scaling with the
       // frame: these are where it settles once the logger and the proposal sit side by side, and
       // the pair stands taller stacked. Holding the settled height beats holding nothing.

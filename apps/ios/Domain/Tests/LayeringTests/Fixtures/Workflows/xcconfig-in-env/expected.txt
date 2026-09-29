@@ -1,1 +1,1 @@
-ios-release.yml: workflow XCODE_XCCONFIG_FILE in an env
+ios.yml: workflow XCODE_XCCONFIG_FILE in an env

@@ -2,8 +2,13 @@
 
 #include "test/testing.h"
 
+#include <json/json.h>
+
 #include <cstddef>
 #include <cstdint>
+#include <cstdlib>
+#include <fstream>
+#include <iostream>
 #include <map>
 #include <random>
 #include <set>
@@ -287,4 +292,54 @@ TEST(a_pattern_answers_as_the_plain_meaning_of_its_parts_on_every_generated_patt
   }
   CHECK_EQ(compared, 60'000);
   CHECK(held > 20'000);
+}
+
+// The JS reference's verdicts (core/registry.js isPortablePattern, core/values.js checkDomain) on every case in WM_PATTERN_CASES.
+TEST(a_pattern_answers_as_the_js_reference_does_on_every_case_it_generated) {
+  const char* path = std::getenv("WM_PATTERN_CASES");
+  if (path == nullptr) SKIP("WM_PATTERN_CASES names no file: write one with node backend/test/platform/domain/sync/reference_pattern_cases.mjs");
+  std::ifstream file{path};
+  REQUIRE(file.is_open());
+  Json::Value generated;
+  std::string errors;
+  REQUIRE(Json::parseFromStream(Json::CharReaderBuilder{}, file, &generated, &errors));
+  Json::StreamWriterBuilder escaper;
+  escaper["indentation"] = "";
+  const auto quoted = [&escaper](const std::string& text) { return Json::writeString(escaper, Json::Value{text}); };
+  const auto verdict = [](bool yes) { return std::string(yes ? "true" : "false"); };
+  const std::string seed = generated["seed"].asString();
+  int disagreements = 0;
+  const auto disagree = [&disagreements, &seed](const std::string& what) {
+    if (++disagreements <= 20) std::cerr << "  seed " << seed << ": " << what << "\n";
+  };
+  int patterns = 0;
+  int portable = 0;
+  int pairs = 0;
+  int matching = 0;
+  for (const Json::Value& generatedCase : generated["cases"]) {
+    const std::string source = generatedCase["pattern"].asString();
+    const bool referencePortable = generatedCase["portable"].asBool();
+    ++patterns;
+    if (Pattern::isPortable(source) != referencePortable) {
+      disagree("Pattern::isPortable(" + quoted(source) + ") is " + verdict(!referencePortable) + ", the reference says " + verdict(referencePortable));
+      continue;
+    }
+    if (!referencePortable) continue;
+    ++portable;
+    const Pattern pattern{source};
+    for (const Json::Value& checked : generatedCase["values"]) {
+      const std::string value = checked["value"].asString();
+      const bool referenceMatches = checked["matches"].asBool();
+      ++pairs;
+      matching += referenceMatches ? 1 : 0;
+      if (pattern.matches(value) != referenceMatches) {
+        disagree("Pattern{" + quoted(source) + "}.matches(" + quoted(value) + ") is " + verdict(!referenceMatches) + ", the reference says " + verdict(referenceMatches));
+      }
+    }
+  }
+  CHECK_EQ(disagreements, 0);
+  CHECK(patterns >= 1000);
+  CHECK(portable >= 500 && patterns - portable >= 500);
+  CHECK(pairs >= 10'000);
+  CHECK(matching >= 2'000 && pairs - matching >= 2'000);
 }

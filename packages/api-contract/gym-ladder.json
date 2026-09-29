@@ -1,5 +1,5 @@
 {
-  "note": "The weight ladder. Web, iOS and Android each run this file as a test. The fine step is the program step; the coarse step is a plate change.",
+  "note": "The weight ladder. Web and Android each run this file as a test. The fine step is the program step; the coarse step is a plate change.",
   "grid": 0.01,
   "bands": [
     { "under": 20, "small": 1, "large": 2.5 },

@@ -1,6 +1,6 @@
-// One fixture, three surfaces. The same sixty-character name is pinned here, in
-// `NameCodePointTests.swift` (iOS) and in `NameCodePointTests.kt` (Android): thirty emoji and thirty
-// accented letters. It reads as sixty characters on all three because a character is a CODE POINT —
+// One fixture, two surfaces. The same sixty-character name is pinned here and in
+// `NameCodePointTests.kt` (Android): thirty emoji and thirty accented letters. It reads as sixty
+// characters on both because a character is a CODE POINT —
 // the unit Postgres `char_length` counts — and it weighs 180 bytes, under the store's 240.
 // The three units this name tells apart: 60 code points · 90 UTF-16 units · 180 UTF-8 bytes.
 

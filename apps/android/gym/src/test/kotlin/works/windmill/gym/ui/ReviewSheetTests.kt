@@ -505,8 +505,8 @@ class ReviewSheetTests {
     }
 
     // `4m`: ONE fact, ONE node. A reader walking the shut band met the refusal twice in a row on this
-    // phone — on Apply's state and again on the drawn row beneath it — where iOS hides its row with
-    // `.accessibilityHidden` and the web with `aria-hidden`. The count is taken over every property a
+    // phone — on Apply's state and again on the drawn row beneath it — where the web hides its row
+    // with `aria-hidden`. The count is taken over every property a
     // screen reader speaks, on the MERGED tree, which is the tree the accessibility bridge walks.
     @Test
     fun theShutBandExposesTheGatesRefusalOnExactlyOneNode() {
@@ -556,8 +556,7 @@ class ReviewSheetTests {
         scope.cancel()
     }
 
-    // The promise sits in the band between Apply and turning down, where iOS already draws it —
-    // never below the turn-down row, and never in the scrolling body where it scrolls away.
+    // The promise sits in the band between Apply and turning down — never below the turn-down row, and never in the scrolling body where it scrolls away.
     @Test
     fun theAtomicPromiseStandsInTheBandBetweenApplyAndTurningDown() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)

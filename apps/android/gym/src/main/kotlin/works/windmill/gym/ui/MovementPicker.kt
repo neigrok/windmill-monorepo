@@ -101,7 +101,7 @@ object PickerOptions {
     // further back does not rank differently from one that has not.
     const val trainedWindow = 50
 
-    // The bytes web and iOS say for the same silence.
+    // The bytes web says for the same silence.
     const val catalogUnread = "The catalog didn’t load. It comes back when you have signal."
 
     // `never logged` is only ever said where an ANSWER carried no row for that movement.

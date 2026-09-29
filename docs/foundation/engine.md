@@ -5,7 +5,10 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 ## §0 Status and scope
 
-**Status:** Specified; not yet implemented. The engine starts from empty stores.
+**Status:** Built in the C++ server (`backend/platform/**/sync*`), which only
+`windmill_server_probe` mounts, and in the Swift client (`apps/ios/Sync`);
+`packages/api-contract/sync/reference/` is the JS reference. No product has adopted it yet. The
+engine starts from empty stores.
 
 **In the engine:**
 - record identity, deletion and spent ids;

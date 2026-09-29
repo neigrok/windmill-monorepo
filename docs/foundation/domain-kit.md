@@ -8,7 +8,8 @@ client's design, whose public API the kit binds to.
 ## §0 Status and scope
 
 **Status:** Built in Swift (`apps/ios/Domain`); Kotlin implements it from this spec. Each
-implementation passes the shared vectors of §15.
+implementation passes the shared vectors of §15. Of §2.1's packages and apps, `WindmillKit` and the
+app are not built yet.
 
 **The kit is pure logic.** It is the layer every Windmill feature's domain logic is declared on, on iOS
 and Android: §3–§15 and the layering tests of §2. It provides base interfaces and base implementations;
@@ -281,12 +282,13 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
      that crosses an isolation domain does not compile, while an SDK deprecation stays a warning;
    - every other target: `[]`; a UI module's test target MAY take `.defaultIsolation(MainActor.self)`.
 
-   Every target and configuration of the app project resolves, for `iphoneos` and `iphonesimulator`,
-   `SWIFT_VERSION` 6.0, `SWIFT_TREAT_WARNINGS_AS_ERRORS` YES, `SWIFT_WARNINGS_AS_WARNINGS_GROUPS`
-   `DeprecatedDeclaration`, `SWIFT_DEFAULT_ACTOR_ISOLATION` `MainActor` for the app target, and no
-   `OTHER_SWIFT_FLAGS`, `SWIFT_EXEC`, `SWIFT_USE_INTEGRATED_DRIVER` or `TOOLCHAINS` of its own. Each
-   target sets those values in `project.yml`, literally, and nothing else sets a pinned key: no `[…]`
-   condition, no `$(…)`, no xcconfig. The project has no build rule; no script phase compiles Swift.
+   Every target and configuration of each app project of §2.1, the probe app's included, resolves,
+   for `iphoneos` and `iphonesimulator`, `SWIFT_VERSION` 6.0, `SWIFT_TREAT_WARNINGS_AS_ERRORS` YES,
+   `SWIFT_WARNINGS_AS_WARNINGS_GROUPS` `DeprecatedDeclaration`, `SWIFT_DEFAULT_ACTOR_ISOLATION`
+   `MainActor` for its app target, and no `OTHER_SWIFT_FLAGS`, `SWIFT_EXEC`,
+   `SWIFT_USE_INTEGRATED_DRIVER` or `TOOLCHAINS` of its own. Each target sets those values in its
+   `project.yml`, literally, and nothing else sets a pinned key: no `[…]` condition, no `$(…)`, no
+   xcconfig. A project has no build rule; no script phase compiles Swift.
 4. **Closed world, read from the resolved build.** The checks read what the build tool resolved,
    never source text, so anything the build compiles is scanned:
    - A package holds one manifest, `Package.swift`, and no `Package@swift-*.swift`. It is constant
@@ -294,9 +296,9 @@ Kotlin does not check global mutable state (an `object` holding a `var`); a doma
      literals, PackageDescription calls with no `moduleAliases`, `MainActor.self` and those lets.
      SwiftParser checks it with backticks stripped: no other declaration, statement, branch, operator,
      closure, interpolation or identifier, so no `Context`, `CommandLine`, environment or file read.
-   - `LayeringTests` then reads each package as `swift package dump-package` resolves it, and the app
-     as `xcodegen` generates it and `xcodebuild -showBuildSettings` resolves every target in every
-     configuration.
+   - `LayeringTests` then reads each package as `swift package dump-package` resolves it, and each
+     app project as `xcodegen` generates it and `xcodebuild -showBuildSettings` resolves every target
+     in every configuration; an app names only the packages its §2.1 row lists.
    - It fails when a package, package dependency, module or module kind is not §2.1's, or lives
      elsewhere than §2.1 places it; when an edge breaks §2.2 or a closure leaves kit and engine API;
      when a target's settings, plugins or language modes differ from item 3; and when any path under a

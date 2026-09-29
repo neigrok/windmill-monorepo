@@ -54,8 +54,8 @@ test("the focus ring's box is the head's BORDER box, so the head's own ring pain
 });
 
 // Canon states the GEOMETRY — a centreline 6px clear of the head's edge. Each platform's declaration
-// is derived from it: web draws a 1px border INWARD, so its box is head + 13px; iOS strokes a path
-// CENTRED, so its box is head + 12px. Same ring. The two numbers must never be "reconciled".
+// is derived from it: web draws a 1px border INWARD, so its box is head + 13px; a path stroked
+// CENTRED has a box of head + 12px. Same ring. The two numbers must never be "reconciled".
 test("the held ring's centreline is 6px clear — head + 13px here, and the hold contracts onto it", () => {
   const held = CSS.slice(CSS.indexOf('.journal-track-mood.is-floor .journal-head::before {')).split('}')[0];
   assert.match(held, /width: calc\(var\(--head-w\) \+ 13px\);/);

@@ -1,7 +1,7 @@
 # Auth
 
 Passwordless. One door keyed by email, 15-minute single-use links — every mint also carrying a
-6-digit code twin the native apps type instead of tapping — and 90-day rolling sessions. This file
+6-digit code twin a native app types instead of tapping — and 90-day rolling sessions. This file
 is the contract the frontend consumes and the operator's wiring reference.
 
 ## Shape
@@ -105,9 +105,9 @@ arrives here or never; it seeds a NEW account and never renames an existing one.
 | Apple refused, or the identity is unusable | `401` | `{ "error": "apple sign-in could not be completed" }` |
 | Not configured (any of the four env vars missing) | `404` | `{ "error": "apple sign-in is not configured" }` |
 
-`session` is the same secret as the cookie, returned in the body because a native app keeps it in
-the Keychain and sends it as `Authorization: Bearer`. `created` **and** `privateEmail` together are
-the condition the app offers the link door on.
+`session` is the same secret as the cookie, returned in the body so a native client can keep it and
+send it as `Authorization: Bearer`. `created` **and** `privateEmail` together are the condition a
+client offers the link door on.
 
 ### `POST /v1/auth/link` — fold this account into the one the link names
 
@@ -215,8 +215,8 @@ fourth product adds one line to it.
 ### Native surface notes
 
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
-  absent, and `AuthService::authenticate` is transport-neutral. The iOS app keeps the secret in the
-  Keychain.
+  absent, and `AuthService::authenticate` is transport-neutral. The sync engine's iOS client keeps
+  each account's secret in the Keychain (`KeychainTokenStore`).
 - The sync endpoints and the live upgrade (`SyncApi.cpp`, `SyncSocket.cpp`) read credentials as sent
   (`docs/foundation/engine.md` §9.1). Drogon keeps one of two headers and drops a cookie it cannot
   parse, so a server that mounts them listens through `TappedListener`: a `CredentialTap` frames every
@@ -229,8 +229,8 @@ fourth product adds one line to it.
   sync sockets the session opened before they send another frame: a sign-out, a revoked session,
   sign-out everywhere, a closed account, and a folded account with every session its deleted row took
   along. The sockets' re-proof, once a minute, is a backstop.
-- The apps sign in by code: mint with `door: "app"`, post the typed digits to `/v1/auth/verify-code`,
-  capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
+- The Android app signs in by code: mint with `door: "app"`, post the typed digits to
+  `/v1/auth/verify-code`, capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
   (sign-in) or `/v1/auth/link` (the merge above).
 - App Store guideline 5.1.1(v) requires in-app account deletion wherever Sign in with Apple ships;
   settings has close-with-grace.
@@ -255,8 +255,8 @@ fourth product adds one line to it.
   sets it in the configured scope and then expires the host-only one; a response that clears it
   expires both. A host-only variant left from before a `Domain` was configured would ride beside the
   live cookie, and two session cookies answer every sync request `401`; this way it never outlives
-  the next sign-in or sign-out. The live cookie is written first because both apps lift the first
-  `wm_session` a response sets; a browser files a host-only and a `Domain` cookie apart, so the
+  the next sign-in or sign-out. The live cookie is written first because the Android app lifts the
+  first `wm_session` a response sets; a browser files a host-only and a `Domain` cookie apart, so the
   expiry after it reaches only the stray. With no `Domain` configured only the host-only cookie is
   written, so a variant in a `Domain` no longer configured, or in the one before a change of `Domain`,
   is never expired.
@@ -271,7 +271,7 @@ fourth product adds one line to it.
 | `WINDMILL_COOKIE_DOMAIN` | Cookie `Domain`; empty = host-only. When set, every sign-in and sign-out also expires the host-only cookie | compose: `${DOMAIN_APP}` |
 | `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in; unset → the routes bounce to the app | — |
-| `APPLE_CLIENT_ID` | The iOS app's bundle identifier | — |
+| `APPLE_CLIENT_ID` | The bundle identifier Sign in with Apple is issued for | — |
 | `APPLE_TEAM_ID` · `APPLE_KEY_ID` | The team, and the id of the Sign-in-with-Apple key | — |
 | `APPLE_PRIVATE_KEY` | The `.p8` key's PEM contents, used to sign each ES256 client secret | — |
 
@@ -281,13 +281,12 @@ than stored, so there is no long-lived secret to rotate.
 
 ### Apple sign-in activation
 
-The iOS button is disabled by `WMAppleSignInEnabled: false` in
-[project.yml](../apps/ios/project.yml). The deployment workflow and Compose service do not forward
-the four Apple environment variables.
+No client offers Sign in with Apple: iOS carries no product app yet, and the deployment workflow and
+Compose service do not forward the four Apple environment variables.
 
 Activation requires an Apple Developer app identifier and key for `works.windmill.app`, the team's
 signing configuration and `com.apple.developer.applesignin` entitlement. Add all four inputs to the
-deployment secret bindings, environment renderer and Compose environment before enabling the
+deployment secret bindings, environment renderer and Compose environment before an app offers the
 button. The private-key transport must preserve PEM newlines; the current renderer writes
 single-line values. Setting GitHub secrets alone is insufficient because
 [deploy.yml](../.github/workflows/deploy.yml) replaces the server environment.

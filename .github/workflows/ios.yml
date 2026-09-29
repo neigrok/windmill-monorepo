@@ -1,7 +1,8 @@
 name: iOS CI
 
 # Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
-# and the engine's public-surface test (SyncTestingSurface); ships nothing. The corpus runners read
+# and the engine's public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app for
+# the simulator; ships nothing. The corpus runners read
 # packages/api-contract/sync and packages/api-contract/domain-kit by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
 # change to either contract runs this workflow too.
@@ -36,7 +37,7 @@ jobs:
   test-and-build:
     # swift-tools-version 6.2 needs Xcode 26.
     runs-on: macos-26
-    timeout-minutes: 30
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
 
@@ -50,6 +51,15 @@ jobs:
           xcodebuild -version
           swift --version
 
+      # The probe app's project is generated from project.yml, and the domain kit's layering tests
+      # resolve it and their app fixtures with XcodeGen.
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
+        run: |
+          brew install xcodegen
+          xcodegen --version
+
       # Sources/SyncSchema is generated from the product registries and checked in; a stale file fails here.
       - name: Check the generated registry
         run: swift run --explicit-target-dependency-import-check error SyncSchemaGen --check
@@ -60,6 +70,12 @@ jobs:
 
       - name: Build for the iOS simulator
         run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
+
+      - name: Build the SyncProbe app for the iOS simulator
+        working-directory: apps/ios/SyncProbe
+        run: |
+          xcodegen generate
+          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator'
 
       # The domain kit's tests include the layering checks over every package under apps/ios.
       - name: Test the domain kit

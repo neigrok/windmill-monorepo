@@ -1,11 +1,28 @@
 import Foundation
 
-// §2.4 items 3 and 4, the app: project.yml as written, and what XcodeGen generates and xcodebuild resolves.
+// §2.4 items 3 and 4, each app: its project.yml as written, and what XcodeGen generates and xcodebuild resolves.
 enum AppProject {
+  // An app row of §2.1: where its spec lives under apps/ios, and the packages it may name.
+  struct App: Sendable {
+    let spec: String
+    let localPackages: Set<String>
+    let remotePackages: Bool
+
+    static let product = product(at: "project.yml")
+    static let probe = App(spec: "SyncProbe/project.yml", localPackages: ["Sync"], remotePackages: false)
+
+    // The app's row judging a spec at `spec`: the three packages, and remote packages of its own.
+    static func product(at spec: String) -> App {
+      App(spec: spec, localPackages: ["Sync", "Domain", "WindmillKit"], remotePackages: true)
+    }
+
+    // The spec's directory, which XcodeGen resolves the spec's paths against.
+    func directory(in root: URL) -> URL { root.appending(path: spec).deletingLastPathComponent() }
+  }
+
   static let targetTypes: Set<String> = [
     "com.apple.product-type.application", "com.apple.product-type.bundle.unit-test", "com.apple.product-type.bundle.ui-testing",
   ]
-  static let localPackages: Set<String> = ["Sync", "Domain", "WindmillKit"]
   static let pinnedValues: Set<String> = ["SWIFT_VERSION", "SWIFT_TREAT_WARNINGS_AS_ERRORS", "SWIFT_WARNINGS_AS_WARNINGS_GROUPS"]
   static let pinnedUnset: Set<String> = ["OTHER_SWIFT_FLAGS", "SWIFT_EXEC", "SWIFT_USE_INTEGRATED_DRIVER", "TOOLCHAINS"]
   static let isolation = "SWIFT_DEFAULT_ACTOR_ISOLATION"
@@ -13,35 +30,37 @@ enum AppProject {
   static let sdks = ["iphoneos", "iphonesimulator"]
   static let defaultToolchain = "com.apple.dt.toolchain.XcodeDefault"
 
-  static func findings(root: URL, spec: String) throws -> [Finding] {
+  static func findings(root: URL, app: App) throws -> [Finding] {
     let written = try JSONDecoder().decode(
-      JSONValue.self, from: Data(try Shell.run(["xcodegen", "dump", "--type", "json", "--spec", root.appending(path: spec).path]).utf8))
-    let resolved = try Scratch.withDirectory { scratch in try resolve(root: root, spec: spec, scratch: scratch) }
-    return specFindings(written, root: root).map { Finding(spec, "project", $0) }
-      + resolvedFindings(resolved).map { Finding(spec, "build-settings", $0) }
+      JSONValue.self, from: Data(try Shell.run(["xcodegen", "dump", "--type", "json", "--spec", root.appending(path: app.spec).path]).utf8))
+    let resolved = try Scratch.withDirectory { scratch in try resolve(root: root, app: app, scratch: scratch) }
+    return specFindings(written, root: root, app: app).map { Finding(app.spec, "project", $0) }
+      + resolvedFindings(resolved).map { Finding(app.spec, "build-settings", $0) }
   }
 
-  // Each target sets the pinned keys in its own settings, literally; nothing else sets one; no build rule compiles Swift.
-  static func specFindings(_ spec: JSONValue, root: URL) -> [String] {
+  // The app names only its row's packages; each target sets the pinned keys in its own settings, literally; nothing else sets one; no build rule compiles Swift.
+  static func specFindings(_ spec: JSONValue, root: URL, app: App) -> [String] {
     var configurationFilesRead: Set<String> = []
+    let directory = app.directory(in: root)
     let groups = spec["settingGroups"]?.fields ?? []
     let packages: [String] = (spec["packages"]?.fields ?? []).compactMap { name, package in
-      guard let path = package["path"]?.text, !localPackages.contains((path as NSString).standardizingPath) else { return nil }
-      return "package \(name) at \(path) is not §2.1's"
+      guard let path = package["path"]?.text else { return app.remotePackages ? nil : "package \(name) is remote" }
+      let placed = directory.appending(path: path).standardized.relativePath(from: root)
+      return app.localPackages.contains(placed) ? nil : "package \(name) at \(path) is not §2.1's"
     }
     let literal: [String] = literalFindings("settings", spec["settings"]) + groups.flatMap { literalFindings("settingGroups.\($0.key)", $0.value) }
     let outside: [String] = pinnedFindings("settings", spec["settings"], "is set outside a target")
       + groups.flatMap { pinnedFindings("settingGroups.\($0.key)", $0.value, "is set outside a target") }
     let files: [String] = (spec["configFiles"]?.fields ?? []).flatMap { configuration, file in
-      configurationFileFindings(root.appending(path: file.text ?? ""), "configFiles.\(configuration)", &configurationFilesRead)
+      configurationFileFindings(directory.appending(path: file.text ?? ""), "configFiles.\(configuration)", &configurationFilesRead)
     }
     let targets: [String] = (spec["targets"]?.fields ?? []).flatMap { name, target in
-      targetFindings(name, target, root: root, &configurationFilesRead)
+      targetFindings(name, target, directory: directory, &configurationFilesRead)
     }
     return Array([packages, literal, outside, files, targets].joined())
   }
 
-  static func targetFindings(_ name: String, _ target: JSONValue, root: URL, _ configurationFilesRead: inout Set<String>) -> [String] {
+  static func targetFindings(_ name: String, _ target: JSONValue, directory: URL, _ configurationFilesRead: inout Set<String>) -> [String] {
     let settings = target["settings"] ?? .object([:])
     let grouped = ["base", "configs", "groups"].contains { settings[$0] != nil }
     let own = grouped ? settings["base"]?.fields ?? [] : settings.fields
@@ -52,7 +71,7 @@ enum AppProject {
     let missing = wanted.subtracting(own.map(\.key)).sorted().map { "\(name): \($0) is not set in the target's own settings" }
     let set = pinnedUnset.intersection(own.map { bareKey($0.key) }).sorted().map { "\(name): sets \($0)" }
     let files: [String] = (target["configFiles"]?.fields ?? []).flatMap { configuration, file in
-      configurationFileFindings(root.appending(path: file.text ?? ""), "\(name).configFiles.\(configuration)", &configurationFilesRead)
+      configurationFileFindings(directory.appending(path: file.text ?? ""), "\(name).configFiles.\(configuration)", &configurationFilesRead)
     }
     let rules: [String] = (target["buildRules"]?.elements ?? []).map { rule in
       "\(name): a build rule (\(rule["filePattern"]?.text ?? rule["fileType"]?.text ?? "?"))"
@@ -111,11 +130,12 @@ enum AppProject {
   }
 
   // Generated into scratch (its path shown as $(SRCROOT), its derived data kept there); nil when it does not resolve.
-  static func resolve(root: URL, spec: String, scratch: URL) throws -> [Resolved]? {
+  static func resolve(root: URL, app: App, scratch: URL) throws -> [Resolved]? {
     let project = scratch.appending(path: "project"), derivedData = "-IDECustomDerivedDataLocation=\(scratch.appending(path: "derived").path)"
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
     _ = try Shell.run([
-      "xcodegen", "generate", "--quiet", "--spec", root.appending(path: spec).path, "--project", project.path, "--project-root", root.path,
+      "xcodegen", "generate", "--quiet", "--spec", root.appending(path: app.spec).path, "--project", project.path, "--project-root",
+      app.directory(in: root).path,
     ])
     guard let generated = try FileManager.default.contentsOfDirectory(atPath: project.path).first(where: { $0.hasSuffix(".xcodeproj") }),
       let listing = try? Shell.run(["xcodebuild", derivedData, "-list", "-json", "-project", project.appending(path: generated).path])

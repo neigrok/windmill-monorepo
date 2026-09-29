@@ -1,10 +1,8 @@
 import Foundation
 
-// §2.4 item 4: xcodebuild and swift in .github/workflows/ios*.yml pass only listed settings, no -xcconfig, no -Xswiftc.
+// §2.4 item 4: xcodebuild and swift in .github/workflows/ios*.yml pass only listed settings (none: no workflow signs an app), no -xcconfig, no -Xswiftc.
 enum Workflows {
-  static let allowedBuildSettings: Set<String> = [
-    "DEVELOPMENT_TEAM", "CODE_SIGN_STYLE", "CODE_SIGNING_ALLOWED", "CURRENT_PROJECT_VERSION", "IOS_SENTRY_DSN",
-  ]
+  static let allowedBuildSettings: Set<String> = []
   static let tools: Set<String> = ["xcodebuild", "swift"]
   static let forbiddenFlags: Set<String> = ["-xcconfig", "-Xswiftc"]
   static let configurationFileVariable = "XCODE_XCCONFIG_FILE"

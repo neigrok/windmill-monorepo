@@ -58,7 +58,7 @@ export function trainedCounts(sessions = []) {
   return counted;
 }
 
-// The six ids both phones open their own picker on (`MovementPicker.swift`, `MovementPicker.kt`): a
+// The six ids Android opens its own picker on (`MovementPicker.kt`): a
 // client constant, never a server concept. Web ranks the account's own log first and fills what is
 // left from these, so a section headed `The six` holds six of them and an account with no log yet is
 // offered the same opener every surface offers.

@@ -1,1 +1,1 @@
-ios-release.yml: workflow xcodebuild -xcconfig
+ios.yml: workflow xcodebuild -xcconfig

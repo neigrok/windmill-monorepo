@@ -31,8 +31,7 @@ import works.windmill.gym.domain.WorkoutMoment
 import works.windmill.gym.domain.WorkoutState
 
 // The local-first write queue: appends, corrections and deletions of the live session's sets ride
-// one walk. iOS's SetQueue.swift is the same contract and the two must not drift. A set's
-// client-minted id IS the idempotency key, so sends may repeat in any order and the log converges on
+// one walk. A set's client-minted id IS the idempotency key, so sends may repeat in any order and the log converges on
 // one row per id. An append once sent may be on the log until the log answers it, so a change to that
 // set is filed behind the append rather than over it, and a reply settles an entry only while it
 // still reads as it did when sent.
