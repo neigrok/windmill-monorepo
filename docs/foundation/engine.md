@@ -1750,9 +1750,9 @@ page) → none (`gone` or `not-found`).
 
 ### §9.1 Encodings
 
-JSON over HTTPS and WebSocket. Every response carries `serverTime` and `epoch`, except a transport's
-own `413` (below). Every request carries the registry version, on every surface: hello, push and
-pull in the header `Sync-Schema`, and the live socket's upgrade request, to which a browser
+JSON over HTTPS and WebSocket. Every response carries `serverTime` and `epoch`, except a transport's own
+`400`, `413` or `501` (below). Every request carries the registry version, on every surface: hello, push
+and pull in the header `Sync-Schema`, and the live socket's upgrade request, to which a browser
 `WebSocket` cannot add headers, in the query parameter `schema` (`/v1/sync/live?schema=<version>`).
 The server reads each request's version from that carrier only, as its HTTP framework presents it. A
 missing value, or one that is not a decimal integer, → `400 malformed`; a version below the server's
@@ -1788,15 +1788,24 @@ cookie in: host-only, and each `Domain` it has configured, the current one and e
 response that sets the session cookie writes the live cookie in the current scope first, then
 expires it in every other scope on that list; a response that clears it expires it in every scope on
 the list. The live cookie comes first because a client that takes the first `wm_session` of a
-response, as the iOS and Android apps do, then gets the live one. A stray variant left by a change
-of `Domain`, which a browser would send beside the live one, never outlives the next sign-in or
+response, as the Android app does, then gets the live one. A stray variant left by a change of
+`Domain`, which a browser would send beside the live one, never outlives the next sign-in or
 sign-out. A deployment whose configured `Domain` differs from the host that answers sign-in and
 sign-out never writes the same cookie twice in one response. One whose `Domain` equals that host
 (the only `Domain` a site served at its registrable domain can set) relies on its clients: a store
 that takes a host-only cookie and a `Domain=<host>` one as the same cookie (RFC 6265 §5.3) would
 lose the live cookie to the expiry that follows it. So every client of such a deployment MUST keep
-the two apart, as Chrome does, or read the first `wm_session` of a response, as the iOS and Android
-apps do.
+the two apart, as Chrome does for a host under a registrable domain, read the first `wm_session` of
+a response, as the Android app does, or keep no cookie, as the iOS engine's transport does, which
+sends its token as `Authorization: Bearer`. At `localhost` Chrome files `Domain=localhost` as
+host-only, so the expiry that follows the live cookie removes it: a deployment served at a host with
+no registrable domain (`localhost`, an IP address, any single-label name) configures no `Domain`. The
+server refuses to start with a `Domain`, current or earlier, that is an IP address (an IPv6 literal,
+or a name whose last label is a decimal or `0x` number), a single label, a name whose last label is
+`localhost`, or not a host name of letters, digits, `-` and `.` with at most one leading dot; it names
+each scope once, whatever its case or leading dot (RFC 6265 §5.2.3), so no response writes the same
+cookie twice. A `Domain` that is a public suffix is the browser's refusal, not the server's: it
+ignores the cookie at every host but the suffix itself (RFC 6265 §5.3).
 
 **Principal.** Every response from authentication (step 2 below) on carries `as`, the account it was
 served as: the id its credential resolves to, or `null` for a request that carries none and for
@@ -1819,6 +1828,16 @@ An HTTP request is checked in this order, and the first failing check answers:
 
 The HTTP transport MAY answer a body over its own limit, which is above every endpoint's bound, with a
 bare `413` before these checks. A client never sends such a body.
+The transport and the edge MAY refuse a request that is not valid HTTP before these checks. Over
+HTTP/1.1 (RFC 9112 §5, §6.1, §6.3) that is a field name that is not a token or is followed by
+whitespace, a field line with no colon, a folded line, a bare CR or LF, `Content-Length` sent twice or
+beside `Transfer-Encoding`, or a `Transfer-Encoding` other than `chunked` alone, answered with a bare
+`400`, or a bare `501` for a transfer coding it does not implement (RFC 9112 §6.1). Over HTTP/2 (RFC
+9113 §8.2) it is those, an uppercase letter or a byte outside 0x21–0x7e in a field name, a field value
+that starts or ends with space or tab, or a connection-specific field, answered by resetting the stream,
+with or without a `400` first. A request is refused for its syntax, never for what it carries: a
+`Cookie` or `Authorization` line of any value, sent any number of times, is valid HTTP and reaches the
+checks. A client never sends such a request.
 
 **Numbers.** A number literal whose value is not a finite double (such as `1e400`), or a nonzero
 literal that rounds to zero (such as `1e-400`), makes a body malformed. A client sends numbers as

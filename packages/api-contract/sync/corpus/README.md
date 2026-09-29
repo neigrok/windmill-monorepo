@@ -503,7 +503,9 @@ null}` when the request sends none, and `{account: null, credential: 'unresolved
   one account.
 - The vectors describe what the origin answers for the fields as the client sent them. A deployment
   runs them against the origin directly and through its edge, over HTTP/1.1 and HTTP/2 (engine.md
-  §9.1).
+  §9.1). A vector whose field name is not a token may instead be refused there, with a bare `400` or a
+  reset stream, since such a request is not valid HTTP; over HTTP/2 so may one whose field value starts
+  or ends with space or tab (RFC 9113 §8.2.1), which HTTP/1.1 keeps outside the value (RFC 9112 §5).
 
 ### live/death.json (server)
 
