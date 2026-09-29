@@ -356,7 +356,8 @@ Apply action for routine proposals; annotations describe each tool's effects.
 
 ## Build
 
-`brew install drogon libpqxx`, then `cmake --build build`. The MCP-carrying targets are
+The dependencies are in `RUNNING.md` §1 (the configure builds the patched Drogon itself), then
+`cmake -S . -B build && cmake --build build`. The MCP-carrying targets are
 `windmill_server` (REST + socket + MCP), `windmill_mcp` (stdio), `windmill_mcp_http` (standalone
 HTTP), and the `windmill_mcp_tests` suite. The Docker image builds, smoke-tests and installs
 `windmill_server` and `windmill_mcp_http`; `windmill_mcp` is a developer-machine target.

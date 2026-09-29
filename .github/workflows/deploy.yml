@@ -73,6 +73,8 @@ jobs:
           PADDLE_PRICE_ID: ${{ vars.PADDLE_PRICE_ID }}
           RESEND_FROM: ${{ vars.RESEND_FROM }}
           AMPLITUDE_HOST: ${{ vars.AMPLITUDE_HOST }}
+          # Every Domain the session cookie was set in before DOMAIN_APP, comma-separated (backend/AUTH.md). Empty ⇒ none.
+          WINDMILL_COOKIE_RETIRED_DOMAINS: ${{ vars.WINDMILL_COOKIE_RETIRED_DOMAINS }}
           # Retention windows for the telemetry tables (days; <=0 keeps a table forever and skips it).
           WINDMILL_EVENTS_RETENTION_DAYS: ${{ vars.WINDMILL_EVENTS_RETENTION_DAYS }}
           WINDMILL_FEEDBACK_RETENTION_DAYS: ${{ vars.WINDMILL_FEEDBACK_RETENTION_DAYS }}
@@ -137,7 +139,7 @@ jobs:
                        REMINDERS_ENABLED REMINDERS_ALLOWLIST REMINDERS_ADMIN_TOKEN \
                        JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST JOURNAL_NUDGE_ADMIN_TOKEN \
                        JOURNAL_ECHO_ADMIN_TOKEN \
-                       WINDMILL_OWNER_EMAILS \
+                       WINDMILL_OWNER_EMAILS WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"
             done

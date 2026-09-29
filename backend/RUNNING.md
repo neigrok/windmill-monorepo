@@ -8,8 +8,11 @@ can read a public tree and nothing else. `CLAUDE.md` in this directory is the ma
 ## 1. Dependencies
 
 ```sh
-brew install postgresql@14 openssl@3 drogon libpqxx
+brew install cmake postgresql@14 openssl@3 jsoncpp c-ares brotli libpqxx
 ```
+
+Drogon is not among them: the build makes its own, from the pinned release and the patches in
+`third_party/drogon` (its `README.md`).
 
 ## 2. Database
 
@@ -28,8 +31,9 @@ cmake -S . -B build
 cmake --build build --target windmill_server
 ```
 
-CMake prints `windmill_server enabled` once Drogon + libpqxx are found. Without them it builds only
-the core libraries and tests and skips the server.
+The first configure builds the patched Drogon into `~/.cache/windmill/drogon-<version>-<key>` (about
+20 seconds on an M-series Mac) and every later one, in any checkout, reuses it; `-DWM_DROGON_PREFIX`
+puts it elsewhere. A missing dependency fails the configure.
 
 ## 4. Run
 
@@ -87,7 +91,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four binaries: domain · mcp · adapters · sync
+ctest --test-dir build --output-on-failure       # four binaries (domain · mcp · adapters · sync) and the deploy check
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -115,10 +119,8 @@ WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ctest --test-di
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
-that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It listens through
-`TappedListener`, so every request's credentials are read as sent (`AUTH.md`). Off Linux, where Drogon
-applies no connection callback, it logs `credential tap: relaying …`: a relay holds the port and Drogon
-listens behind it on a free loopback port. It also mounts the dev stack's endpoints
+that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It also mounts the
+dev stack's endpoints
 (`products/probe/adapters/http/DevApi.h`), which native end-to-end runs drive:
 
 - `POST /v1/dev/sign-in` `{"email"}` → `{"account", "token"}`: finds or creates the account and mints a
@@ -128,18 +130,37 @@ listens behind it on a free loopback port. It also mounts the dev stack's endpoi
   pull and live frames carry the new one at once; the schema refusals (400, 426) and every 503
   keep the epoch read at boot until the process restarts.
 
-`test/e2e/sync_probe.sh` drives it over HTTP, with the session cookie scoped to `Domain=localhost` so a
-sign-in shows both of the cookie's scopes:
+`test/e2e/sync_probe.sh` drives it over HTTP, with the session cookie scoped to `Domain=sync-probe.test` so
+a sign-in shows both of the cookie's scopes. The server refuses a `Domain` with no registrable domain, such
+as `localhost` (`AUTH.md`), so the script reaches it as that dotted host through `curl --resolve`; every
+other local run keeps the cookie host-only:
 
 ```sh
-DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=localhost ./build/windmill_server_probe &
+DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=sync-probe.test ./build/windmill_server_probe &
 WM_E2E_DB=wm_sync_test PORT=8089 bash test/e2e/sync_probe.sh
+```
+
+`test/e2e/credentials_conformance.mjs` replays `envelope/credentials.json` (engine.md §9.1) against the
+same server on hello, pull, push and the live socket: over raw HTTP/1.1 to it directly, then through the
+production edge, `deploy/Caddyfile` in Caddy's own image with only its upstream pointed at the server,
+over HTTP/1.1 and HTTP/2. Over HTTP/1.1 each runs on a connection of its own, then hello, pull and push
+all on one keep-alive connection, then all pipelined at once. A live socket is judged by the `as` of the frame a `sub` for a
+missing tree answers. It rewrites the corpus's sessions in the database, needs Docker and curl, and checks
+the Caddyfile first (the `deploy` test). A request that is not valid HTTP may be refused before the origin
+reads it, never served: the vector that spells `Cookie` with a Kelvin sign, and over HTTP/2 one whose value
+ends in space or tab (RFC 9113 §8.2.1); only a bare `400` or a reset stream counts as that refusal. The run
+says so when the edge offers no HTTP/2 extended CONNECT (RFC 8441), so that the live socket goes over
+HTTP/1.1 alone:
+
+```sh
+WM_E2E_DB=wm_sync_test PORT=8089 EDGE_PORT=8443 node test/e2e/credentials_conformance.mjs
 ```
 
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
 `sync` and `adapters` tests under `WM_PG_TEST` against a Postgres 16 service holding `db/schema.sql`
-and `db/probe.sql`, one suite after another in one database.
+and `db/probe.sql`, one suite after another in one database, then serves the stage's own
+`windmill_server_probe` on that database and runs `test/e2e/credentials_conformance.mjs` against it.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

@@ -101,7 +101,6 @@
 
 #ifdef WM_SYNC_PROBE
 #include "platform/adapters/http/SyncApi.h"
-#include "platform/adapters/http/TappedListener.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/adapters/ws/SyncSocket.h"
 #include "platform/application/WorkerPool.h"
@@ -121,7 +120,9 @@
 #include <cctype>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <typeinfo>
@@ -171,13 +172,21 @@ int main() {
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto presence = std::make_shared<PresenceHub>();
 
-  // The session rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment.
+  // The session rides in an HttpOnly cookie whose Secure flag and scopes follow the deployment: the live Domain, and
+  // every Domain it was set in before (engine.md §9.1 Session cookie scopes).
   const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
   std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
   const char* resendKey = std::getenv("RESEND_API_KEY");
   const char* resendFrom = std::getenv("RESEND_FROM");
   const char* cookieDomainEnv = std::getenv("WINDMILL_COOKIE_DOMAIN");
-  std::string cookieDomain = cookieDomainEnv ? cookieDomainEnv : "";
+  const char* retiredCookieDomainsEnv = std::getenv("WINDMILL_COOKIE_RETIRED_DOMAINS");
+  std::optional<SessionCookieScopes> cookieScopes;
+  try {
+    cookieScopes.emplace(cookieDomainEnv ? cookieDomainEnv : "", retiredCookieDomainsEnv ? retiredCookieDomainsEnv : "");
+  } catch (const std::invalid_argument& refused) {
+    std::fprintf(stderr, "refusing to start: %s (WINDMILL_COOKIE_DOMAIN, WINDMILL_COOKIE_RETIRED_DOMAINS)\n", refused.what());
+    return 1;
+  }
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
   auto authRepo = std::make_shared<PgAuthRepository>(pool);
@@ -255,7 +264,7 @@ int main() {
       appleClientId ? appleClientId : "", appleTeamId ? appleTeamId : "", appleKeyId ? appleKeyId : "",
       applePrivateKey ? applePrivateKey : "");
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
-  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, cookieDomain,
+  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
                                            googleClient, appBaseUrl, appleClient);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
@@ -960,12 +969,7 @@ int main() {
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
   const char* listenHostEnv = std::getenv("WINDMILL_HOST");
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
-#ifdef WM_SYNC_PROBE
-  // The sync endpoints read §9.1's credentials as sent: every connection is tapped before Drogon parses it.
-  listenTapped(app, listenHost, static_cast<std::uint16_t>(port), ioThreads);
-#else
   app.addListener(listenHost, port);
-#endif
   app.setThreadNum(ioThreads).run();
   return 0;
 }

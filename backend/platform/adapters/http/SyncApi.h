@@ -16,7 +16,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <vector>
 
 namespace wm::sync {
 
@@ -34,7 +33,7 @@ struct SyncDeps {
 
 // §9.2–§9.4 over HTTP. A handler runs on the IO thread only long enough to post its work to the pool; at
 // the pool's ceiling it answers 503 {error: "unavailable", retryAfterMs} without touching the database.
-// On the worker, in §9.1's order: the Sync-Schema header, then the credentials (tappedCredentialsOf) and the body as
+// On the worker, in §9.1's order: the Sync-Schema header, then the credentials every header line sends and the body as
 // received, which the service checks. Bodies are written as JCS, so every number crosses the wire exactly as the
 // digest hashed it (§6.12).
 class SyncApi {
@@ -53,15 +52,14 @@ private:
   void onWorker(Reply&& reply, std::function<SyncReply()> work);
   // §9.1's first check, on the version the header Sync-Schema carries.
   std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
-  // The request's credentials as the tap read them, each token resolved to its session's account; the access log learns
-  // the account they resolve to.
+  // The credentials the request's header lines send as received, each token resolved to its session's account; the
+  // access log learns the account they resolve to.
   Credential credentialOf(const drogon::HttpRequestPtr& req) const;
 
   SyncDeps deps_;
 };
 
-// Mounts /v1/sync/hello, /v1/sync/push and /v1/sync/pull. Their credentials are read as the tap read them, so a server
-// that mounts them listens through listenTapped (TappedListener.h).
+// Mounts /v1/sync/hello, /v1/sync/push and /v1/sync/pull.
 void registerSyncRoutes(drogon::HttpAppFramework& app, const std::shared_ptr<SyncApi>& api);
 
 // §9.1: the check every request passes first, on the registry version as Drogon presents its one carrier:
@@ -72,10 +70,5 @@ std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t mi
 
 // A reply as the wire carries it: its status, and its body as JCS.
 drogon::HttpResponsePtr responseOf(const SyncReply& reply);
-
-// §9.1 Credentials over HTTP, and the live socket's upgrade alike: every credential the request sends, as the tap read
-// them from its bytes (kSentCredentialsField). nullopt when no tap read the request, which every sync endpoint answers
-// as credentials that do not resolve.
-std::optional<std::vector<SentCredential>> tappedCredentialsOf(const drogon::HttpRequestPtr& req);
 
 }

@@ -130,6 +130,9 @@ services:
       # Magic links point at the app; the session cookie is first-party on the single origin.
       WINDMILL_APP_URL: https://${DOMAIN_APP}
       WINDMILL_COOKIE_DOMAIN: ${DOMAIN_APP}
+      # Every Domain the session cookie was set in before DOMAIN_APP, comma-separated: each sign-in and
+      # sign-out expires the cookie there too (AUTH.md). None so far.
+      WINDMILL_COOKIE_RETIRED_DOMAINS: ${WINDMILL_COOKIE_RETIRED_DOMAINS:-}
       # Single origin: the app IS the API host. This is the OAuth issuer and, by default, the MCP
       # resource audience — windmill_server serves REST + socket + /mcp in-process on this host.
       WINDMILL_API_URL: https://${DOMAIN_APP}

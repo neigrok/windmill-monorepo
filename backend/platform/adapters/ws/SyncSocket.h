@@ -39,8 +39,8 @@ void linkSyncSocket();
 // 1. a stated origin off the allow-list → 403, since a WebSocket upgrade gets no CORS preflight;
 // 2. §9.1's version, the query parameter `schema` alone (a browser WebSocket cannot send headers) as Drogon presents
 //    it (the last value of a repeated one): missing or not a decimal integer → 400 malformed, below minSchema → 426;
-// 3. §9.1's credentials as the tap read them (tappedCredentialsOf), resolved on a worker: ones that fail → 401
-//    unauthenticated, never an anonymous socket.
+// 3. §9.1's credentials, from every header line the upgrade was received with (SentCredentials::fromOccurrences),
+//    resolved on a worker: ones that fail → 401 unauthenticated, never an anonymous socket.
 // The answer returns to the connection's own loop, where Drogon upgrades it served as the credential's account.
 // Drogon creates the gate by the name SyncSocket's path list gives.
 class SyncUpgradeGate : public drogon::HttpFilter<SyncUpgradeGate> {

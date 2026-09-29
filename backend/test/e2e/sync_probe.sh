@@ -3,13 +3,17 @@
 # wipes every sync_* and probe_* row of $WM_E2E_DB.
 #
 # Prereqs: psql "$WM_E2E_DB" -f db/schema.sql -f db/probe.sql, and the probe server running on it with the session
-# cookie scoped to Domain=localhost, so a sign-in shows both of the cookie's scopes:
-#   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=localhost ./build/windmill_server_probe
+# cookie scoped to Domain=sync-probe.test, so a sign-in shows both of the cookie's scopes. curl reaches the server as
+# that dotted host (--resolve), since the server takes no Domain without a registrable domain (engine.md §9.1):
+#   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=8089 WINDMILL_COOKIE_DOMAIN=sync-probe.test ./build/windmill_server_probe
 # Run:  WM_E2E_DB=<db> PORT=8089 bash test/e2e/sync_probe.sh
 set -uo pipefail
 
 PORT="${PORT:-8089}"
-BASE="http://localhost:$PORT"
+HOST="sync-probe.test"
+BASE="http://$HOST:$PORT"
+curl(){ command curl --resolve "$HOST:$PORT:127.0.0.1" "$@"; }
+DIRECT="http://127.0.0.1:$PORT"  # for Python, which sends its cookie by hand and resolves no test host
 DB="${WM_E2E_DB:?set WM_E2E_DB to a throwaway database}"
 EMAIL="sync-probe-e2e@example.com"
 OTHER="sync-probe-e2e-other@example.com"
@@ -29,7 +33,7 @@ mint_session(){ # email → the secret of a fresh session of that account, minte
 bearer(){ curl -s -H "Authorization: Bearer $1" -H 'Sync-Schema: 2' -H 'content-type: application/json' "${@:2}"; }  # token, then curl's args
 # A push answers only the prefix of its intents its 50 ms budget reaches; a client resends the rest, and so does this.
 push_all(){ # ackThrough, the intents as one JSON array → every result, in n order
-  python3 - "$BASE" "$SESSION" "$REPLICA" "$ACCOUNT" "$1" "$2" <<'PY'
+  python3 - "$DIRECT" "$SESSION" "$REPLICA" "$ACCOUNT" "$1" "$2" <<'PY'
 import json, sys, urllib.request
 base, session, replica, account, ack, pending = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4], int(sys.argv[5]), json.loads(sys.argv[6])
 results = []
@@ -119,13 +123,13 @@ cookies(){ tr -d '\r' | grep -i '^set-cookie: wm_session=' | tr 'A-Z' 'a-z' | se
 SCOPED_SECRET="$(openssl rand -hex 24)"
 psql "$DB" -q -c "insert into magic_links (token_hash,email,created_ms,expires_ms) values ('$(printf '%s' "$SCOPED_SECRET" | shasum -a 256 | awk '{print $1}')','$EMAIL',$NOW,$((NOW+900000)))"
 SIGNED_IN="$(curl -s -D - -o /dev/null -X POST "$BASE/v1/auth/verify" -H 'content-type: application/json' -d "{\"token\":\"$SCOPED_SECRET\"}")"
-check "$(cookies <<<"$SIGNED_IN")" "$(printf '%s\n' 'set-cookie: wm_session=<token>; max-age=7776000; domain=localhost; path=/; samesite=lax; httponly' \
+check "$(cookies <<<"$SIGNED_IN")" "$(printf '%s\n' 'set-cookie: wm_session=<token>; max-age=7776000; domain=sync-probe.test; path=/; samesite=lax; httponly' \
   'set-cookie: wm_session=; max-age=0; path=/; samesite=lax; httponly')" \
   "a sign-in sets the session cookie in the configured Domain, first, and then expires the host-only one"
 SCOPED="$(tr -d '\r' <<<"$SIGNED_IN" | grep -i '^set-cookie: wm_session=[^;]' | sed -E 's/^[^=]*=([^;]*);.*/\1/')"
 check "$(bare -H "Cookie: wm_session=$SCOPED" "$BASE/v1/sync/hello" | field "['as']")" "$ACCOUNT" "the cookie it set resolves"
 check "$(curl -s -D - -o /dev/null -X POST "$BASE/v1/auth/logout" -H "Cookie: wm_session=$SCOPED" | cookies)" \
-  "$(printf '%s\n' 'set-cookie: wm_session=; max-age=0; domain=localhost; path=/; samesite=lax; httponly' \
+  "$(printf '%s\n' 'set-cookie: wm_session=; max-age=0; domain=sync-probe.test; path=/; samesite=lax; httponly' \
   'set-cookie: wm_session=; max-age=0; path=/; samesite=lax; httponly')" \
   "a sign-out expires the session cookie in both scopes"
 

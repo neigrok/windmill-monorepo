@@ -5,6 +5,7 @@
 
 #include <json/json.h>
 
+#include <algorithm>
 #include <memory>
 #include <optional>
 #include <string>
@@ -45,10 +46,10 @@ struct Harness {
   std::shared_ptr<GoogleOAuthClient> google;
   std::shared_ptr<AuthApi> api;
 
-  explicit Harness(bool secure = true, std::string domain = kDomain,
+  explicit Harness(bool secure = true, SessionCookieScopes scopes = {kDomain, ""},
                    std::shared_ptr<GoogleOAuthClient> googleClient = nullptr)
       : google(std::move(googleClient)),
-        api(std::make_shared<AuthApi>(auth, fork, secure, std::move(domain), google, kApp)) {}
+        api(std::make_shared<AuthApi>(auth, fork, secure, std::move(scopes), google, kApp)) {}
 
   UserId signIn(const std::string& sessionSecret, const std::string& address = "sam@example.com") {
     User user = authRepo.createUser(Email{address}, "sam");
@@ -84,18 +85,22 @@ drogon::HttpRequestPtr request(drogon::HttpMethod method, const std::string& pat
 }
 
 bool hasCookie(const drogon::HttpResponsePtr& response, const std::string& name) {
-  return response->cookies().find(name) != response->cookies().end();
+  return std::any_of(response->cookies().begin(), response->cookies().end(), [&name](const auto& cookie) { return cookie.second.key() == name; });
 }
 
-// Every Set-Cookie line a response writes for wm_session, in wire order: Drogon writes its raw Set-Cookie header ahead of
-// its cookies.
+// Every Set-Cookie line a response writes for wm_session: its raw Set-Cookie header first, as Drogon writes it ahead of
+// its cookies, then each cookie of the name, in text order, since Drogon writes those in no order of their own.
 std::vector<std::string> sessionCookieLines(const drogon::HttpResponsePtr& response) {
   std::vector<std::string> lines;
   if (const std::string& header = response->getHeader("set-cookie"); header.starts_with("wm_session=")) lines.push_back(header);
-  if (hasCookie(response, "wm_session")) {
-    const std::string line = response->getCookie("wm_session").cookieString();
-    lines.push_back(line.substr(std::string("Set-Cookie: ").size(), line.size() - std::string("Set-Cookie: \r\n").size()));
+  std::vector<std::string> cookies;
+  for (const auto& [scope, cookie] : response->cookies()) {
+    if (cookie.key() != "wm_session") continue;
+    const std::string line = cookie.cookieString();
+    cookies.push_back(line.substr(std::string("Set-Cookie: ").size(), line.size() - std::string("Set-Cookie: \r\n").size()));
   }
+  std::sort(cookies.begin(), cookies.end());
+  lines.insert(lines.end(), cookies.begin(), cookies.end());
   return lines;
 }
 
@@ -264,13 +269,13 @@ TEST(auth_signing_in_mints_the_session_cookie_with_every_flag_it_needs) {
   CHECK_EQ(me->getStatusCode(), drogon::k200OK);
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 
-  Harness local(false, "");
+  Harness local(false, {"", ""});
   const std::string localToken = local.linkFor("sam@example.com");
   const drogon::HttpResponsePtr insecure = call(
       local, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + localToken + "\"}"));
   checkSessionCookies(insecure, false, "", 7776000);
 
-  Harness insecureDomain(false, kDomain);
+  Harness insecureDomain(false, {kDomain, ""});
   const std::string insecureToken = insecureDomain.linkFor("sam@example.com");
   checkSessionCookies(call(insecureDomain, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + insecureToken + "\"}")), false,
                       kDomain, 7776000);
@@ -294,9 +299,42 @@ TEST(auth_signing_out_expires_the_cookie_with_the_same_flags_it_was_set_with) {
   CHECK_EQ(anonymous->getStatusCode(), drogon::k204NoContent);
   checkSessionCookies(anonymous, true, kDomain, 0);
 
-  Harness local(false, "");
+  Harness local(false, {"", ""});
   local.signIn("s-live");
   checkSessionCookies(call(local, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout", "", "s-live")), false, "", 0);
+}
+
+TEST(auth_a_sign_in_writes_the_live_cookie_first_then_expires_it_in_every_other_scope_the_deployment_has_used) {
+  Harness h(true, {"windmill.works", " api.windmill.works, .WINDMILL.works ,, old.example "});
+  const std::string token = h.linkFor("sam@example.com");
+  const drogon::HttpResponsePtr signedIn = call(h, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + token + "\"}"));
+  const std::vector<std::string> set = sessionCookieLines(signedIn);
+  REQUIRE_EQ(set.size(), std::size_t{4});
+  const std::string session = set[0].substr(11, set[0].find(';') - 11);
+  CHECK_EQ(set, (std::vector<std::string>{"wm_session=" + session + "; Max-Age=7776000; Domain=windmill.works; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                          "wm_session=; Max-Age=0; Domain=api.windmill.works; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                          "wm_session=; Max-Age=0; Domain=old.example; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                          "wm_session=; Max-Age=0; Path=/; SameSite=Lax; Secure; HttpOnly"}));
+
+  CHECK_EQ(sessionCookieLines(call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout", "", session))),
+           (std::vector<std::string>{"wm_session=; Max-Age=0; Domain=windmill.works; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                     "wm_session=; Max-Age=0; Domain=api.windmill.works; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                     "wm_session=; Max-Age=0; Domain=old.example; Path=/; SameSite=Lax; Secure; HttpOnly",
+                                     "wm_session=; Max-Age=0; Path=/; SameSite=Lax; Secure; HttpOnly"}));
+}
+
+TEST(auth_a_host_only_deployment_that_retired_a_domain_sets_the_host_only_cookie_first_and_expires_the_domain_one) {
+  Harness h(false, {"", "windmill.works"});
+  const std::string token = h.linkFor("sam@example.com");
+  const std::vector<std::string> set =
+      sessionCookieLines(call(h, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + token + "\"}")));
+  REQUIRE_EQ(set.size(), std::size_t{2});
+  const std::string session = set[0].substr(11, set[0].find(';') - 11);
+  CHECK_EQ(set, (std::vector<std::string>{"wm_session=" + session + "; Max-Age=7776000; Path=/; SameSite=Lax; HttpOnly",
+                                          "wm_session=; Max-Age=0; Domain=windmill.works; Path=/; SameSite=Lax; HttpOnly"}));
+  CHECK_EQ(sessionCookieLines(call(h, &AuthApi::logout, request(drogon::Post, "/v1/auth/logout", "", session))),
+           (std::vector<std::string>{"wm_session=; Max-Age=0; Path=/; SameSite=Lax; HttpOnly",
+                                     "wm_session=; Max-Age=0; Domain=windmill.works; Path=/; SameSite=Lax; HttpOnly"}));
 }
 
 TEST(auth_the_link_door_signs_the_surviving_account_in_across_both_cookie_scopes) {
@@ -500,7 +538,7 @@ TEST(auth_a_fork_link_plants_through_the_port_and_a_deployment_without_one_signs
   checkSessionCookies(plain, true, kDomain, 7776000);
 
   Harness bare;
-  bare.api = std::make_shared<AuthApi>(bare.auth, nullptr, true, kDomain);
+  bare.api = std::make_shared<AuthApi>(bare.auth, nullptr, true, SessionCookieScopes{kDomain, ""});
   const std::string third = bare.linkFor("sam@example.com", "t_source");
   const drogon::HttpResponsePtr noProduct = call(
       bare, &AuthApi::verify, request(drogon::Post, "/v1/auth/verify", kVerified + third + "\"}"));
@@ -638,7 +676,7 @@ TEST(auth_the_google_door_bounces_into_the_app_until_it_is_configured) {
 }
 
 TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
-  Harness h(true, kDomain,
+  Harness h(true, {kDomain, ""},
             std::make_shared<GoogleOAuthClient>("cli", "secret", kApp + "/v1/auth/google/callback"));
 
   const drogon::HttpResponsePtr start =
@@ -663,7 +701,7 @@ TEST(auth_the_google_start_mints_a_state_the_callback_will_insist_on) {
 }
 
 TEST(auth_a_failed_google_callback_expires_only_the_state_and_never_the_session) {
-  Harness h(true, kDomain,
+  Harness h(true, {kDomain, ""},
             std::make_shared<GoogleOAuthClient>("cli", "secret", kApp + "/v1/auth/google/callback"));
   h.signIn("s-live");
 

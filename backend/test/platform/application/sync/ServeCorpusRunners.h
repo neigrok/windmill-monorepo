@@ -1,6 +1,5 @@
 #pragma once
 
-#include "platform/adapters/http/CredentialTap.h"
 #include "platform/application/AuthService.h"
 #include "platform/application/OAuthService.h"
 #include "platform/application/WorkerPool.h"
@@ -29,7 +28,7 @@
 // The server's readings of push/serve.json, pull/serve.json and pull/hello.json (corpus/README.md) through
 // SyncService, and of live/death.json through SyncLive, over any SyncWorld. Accounts in an input, a push body's
 // `account` and every answer's `as` are the corpus's aliases, which a world maps to the ids its store keeps.
-// envelope/credentials.json is read through the CredentialTap and AuthService, over any AuthRepository.
+// envelope/credentials.json is read by SentCredentials and resolved by AuthService, over any AuthRepository.
 
 namespace wm::sync::test {
 
@@ -208,11 +207,22 @@ inline Json::Value liveDeathVector(SyncWorld& world, const Json::Value& input) {
   return object({{"frame", socket->frames.empty() ? Json::Value(Json::nullValue) : aliasedAs(world, socket->frames[0])}});
 }
 
-// envelope/credentials.json: the principal a request is served as (§9.1). Its header fields go out as the bytes of one
-// request through a CredentialTap, and its credentials are read back from what the tap hands on. Each of `sessions` is
-// minted into `repo` for the account its alias signs up as, and AuthService resolves every token.
+// FakeTokens with a digest every byte string survives as text: a sent token need not be UTF-8, and a Postgres
+// repository stores and looks up the digest.
+struct HexDigestTokens final : wm::fake::FakeTokens {
+  std::string digestOf(const std::string& secret) override {
+    static constexpr char kHex[] = "0123456789abcdef";
+    std::string digest = "d";
+    for (const unsigned char byte : secret) digest.append({kHex[byte >> 4], kHex[byte & 0x0F]});
+    return digest;
+  }
+};
+
+// envelope/credentials.json: the principal a request is served as (§9.1). Its headers are the request's header lines as
+// received. Each of `sessions` is minted into `repo` for the account its alias signs up as, and AuthService resolves
+// every token.
 inline Json::Value credentialsVector(AuthRepository& repo, const Json::Value& input) {
-  wm::fake::FakeTokens tokens;
+  HexDigestTokens tokens;
   wm::fake::FakeClock clock;
   wm::fake::FakeEmail email;
   wm::fake::FakeOAuthRepository oauthRepo;
@@ -231,16 +241,9 @@ inline Json::Value credentialsVector(AuthRepository& repo, const Json::Value& in
     aliases[user.id.str()] = alias;
   }
 
-  std::string request = "GET /v1/sync/hello HTTP/1.1\r\n";
-  for (const Json::Value& header : input["headers"]) request += header[0].asString() + ": " + header[1].asString() + "\r\n";
-  CredentialTap tap;
-  const CredentialTap::Fed fed = tap.feed(request + "\r\n");
-  CHECK_FALSE(fed.refuses);
-  const std::string field = "\r\n" + std::string(kSentCredentialsField) + ": ";
-  const std::size_t value = fed.forward.find(field) + field.size();
-  const std::vector<SentCredential> sent = parseSentCredentialsField(fed.forward.substr(value, fed.forward.find("\r\n", value) - value)).value();
-
-  const Credential credential = credentialOf(sent, [&auth](const std::string& token) -> std::optional<UserId> {
+  HeaderOccurrences occurrences;
+  for (const Json::Value& header : input["headers"]) occurrences.emplace_back(header[0].asString(), header[1].asString());
+  const Credential credential = SentCredentials::fromOccurrences(occurrences).resolve([&auth](const std::string& token) -> std::optional<UserId> {
     const std::optional<User> user = auth.authenticate(token);
     return user ? std::optional(user->id) : std::nullopt;
   });

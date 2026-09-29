@@ -896,8 +896,8 @@ flow. This intake guidance does not block recording supplied workout facts.
 
 ## 10. Composition
 
-`windmill_gym` links the domain and application layers to `windmill_platform`; CMake adds adapters
-and routes when Drogon and libpqxx are available. Tests live in `test/products/gym/` and join the
+`windmill_gym` links the domain and application layers to `windmill_platform`, and CMake folds the
+adapters and routes into the same library. Tests live in `test/products/gym/` and join the
 existing domain, MCP and adapter executables. Build and portability rules live in
 [backend rules](../../CLAUDE.md).
 

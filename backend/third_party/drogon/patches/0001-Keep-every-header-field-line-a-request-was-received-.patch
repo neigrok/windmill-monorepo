@@ -1,0 +1,106 @@
+From 4e1a9cef7945381311ad2928e44cae5cecf3a3a7 Mon Sep 17 00:00:00 2001
+From: Windmill <noreply@windmill.works>
+Date: Tue, 29 Sep 2026 22:17:31 +0400
+Subject: [PATCH 1/3] Keep every header field line a request was received with
+
+HttpRequest::headers() keeps one value per name: the parser emplaces, so the
+first occurrence wins, and the Cookie field is split into cookies() where a
+later cookie of one name replaces an earlier one and a piece without '='
+is dropped. A server that must see every credential a request sends (two
+Authorization headers, two session cookies in one Cookie line or across
+several) cannot read them from either map.
+
+headerOccurrences() lists every header field line the parser read, in the
+order received: each name as sent and the bytes after its colon. The pooled
+request clears the list in reset() and swaps it in swap(), so a request on a
+keep-alive connection never carries the lines of the one before it.
+---
+ lib/inc/drogon/HttpRequest.h | 9 +++++++++
+ lib/src/HttpRequestImpl.cc   | 3 +++
+ lib/src/HttpRequestImpl.h    | 8 ++++++++
+ 3 files changed, 20 insertions(+)
+
+diff --git a/lib/inc/drogon/HttpRequest.h b/lib/inc/drogon/HttpRequest.h
+index 2ffd4fc..54fd4cb 100644
+--- a/lib/inc/drogon/HttpRequest.h
++++ b/lib/inc/drogon/HttpRequest.h
+@@ -28,6 +28,8 @@
+ #include <memory>
+ #include <string>
+ #include <unordered_map>
++#include <utility>
++#include <vector>
+ #include <optional>
+ #include <string_view>
+ #include <trantor/net/TcpConnection.h>
+@@ -174,6 +176,13 @@ class DROGON_EXPORT HttpRequest
+         return headers();
+     }
+ 
++    /// Get every header field line the request was received with, in the
++    /// order received: each name as sent and the bytes after its colon. Unlike
++    /// headers(), a name sent twice keeps both occurrences. Empty for a
++    /// request that was not parsed from a connection.
++    virtual const std::vector<std::pair<std::string, std::string>>
++        &headerOccurrences() const = 0;
++
+     /// Get all cookies of the request
+     virtual const SafeStringMap<std::string> &cookies() const = 0;
+ 
+diff --git a/lib/src/HttpRequestImpl.cc b/lib/src/HttpRequestImpl.cc
+index a11e4ea..94089a5 100644
+--- a/lib/src/HttpRequestImpl.cc
++++ b/lib/src/HttpRequestImpl.cc
+@@ -432,6 +432,8 @@ void HttpRequestImpl::addHeader(const char *start,
+                                 const char *colon,
+                                 const char *end)
+ {
++    headerOccurrences_.emplace_back(std::string(start, colon),
++                                    std::string(colon + 1, end));
+     std::string field(start, colon);
+     // Field name is case-insensitive.so we transform it to lower;(rfc2616-4.2)
+     std::transform(field.begin(),
+@@ -596,6 +598,7 @@ void HttpRequestImpl::swap(HttpRequestImpl &that) noexcept
+     swap(pathEncode_, that.pathEncode_);
+     swap(query_, that.query_);
+     swap(headers_, that.headers_);
++    swap(headerOccurrences_, that.headerOccurrences_);
+     swap(cookies_, that.cookies_);
+     swap(contentLengthHeaderValue_, that.contentLengthHeaderValue_);
+     swap(realContentLength_, that.realContentLength_);
+diff --git a/lib/src/HttpRequestImpl.h b/lib/src/HttpRequestImpl.h
+index 2d956df..c9e65d6 100644
+--- a/lib/src/HttpRequestImpl.h
++++ b/lib/src/HttpRequestImpl.h
+@@ -72,6 +72,7 @@ class HttpRequestImpl : public HttpRequest
+         version_ = Version::kUnknown;
+         flagForParsingJson_ = false;
+         headers_.clear();
++        headerOccurrences_.clear();
+         cookies_.clear();
+         contentLengthHeaderValue_.reset();
+         realContentLength_ = 0;
+@@ -392,6 +393,12 @@ class HttpRequestImpl : public HttpRequest
+         return headers_;
+     }
+ 
++    const std::vector<std::pair<std::string, std::string>> &headerOccurrences()
++        const override
++    {
++        return headerOccurrences_;
++    }
++
+     const SafeStringMap<std::string> &cookies() const override
+     {
+         return cookies_;
+@@ -732,6 +739,7 @@ class HttpRequestImpl : public HttpRequest
+     std::string_view matchedPathPattern_{""};
+     std::string query_;
+     SafeStringMap<std::string> headers_;
++    std::vector<std::pair<std::string, std::string>> headerOccurrences_;
+     SafeStringMap<std::string> cookies_;
+     std::optional<size_t> contentLengthHeaderValue_;
+     size_t realContentLength_{0};
+-- 
+2.50.1 (Apple Git-155)
+

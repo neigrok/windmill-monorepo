@@ -1,7 +1,6 @@
 #include "platform/adapters/http/SyncApi.h"
 
 #include "platform/adapters/http/Caller.h"
-#include "platform/adapters/http/CredentialTap.h"
 #include "platform/domain/sync/Jcs.h"
 
 #include <trantor/utils/Logger.h>
@@ -55,12 +54,7 @@ std::optional<SyncReply> SyncApi::versionRefusal(const drogon::HttpRequestPtr& r
 }
 
 Credential SyncApi::credentialOf(const drogon::HttpRequestPtr& req) const {
-  const std::optional<std::vector<SentCredential>> sent = tappedCredentialsOf(req);
-  if (!sent) {
-    LOG_ERROR << "sync request read by no credential tap; answered as credentials that do not resolve";
-    return Credential::sent(std::nullopt);
-  }
-  const Credential credential = sync::credentialOf(*sent, [this](const std::string& token) -> std::optional<UserId> {
+  const Credential credential = SentCredentials::fromOccurrences(req->headerOccurrences()).resolve([this](const std::string& token) -> std::optional<UserId> {
     const std::optional<User> user = deps_.auth->authenticate(token);
     return user ? std::optional(user->id) : std::nullopt;
   });
@@ -78,12 +72,6 @@ std::optional<SyncReply> schemaRefusal(std::string_view version, std::int64_t mi
   const bool below = error == std::errc::result_out_of_range ? version.front() == '-' : schema < minSchema;
   if (below) return SyncReply::refused(426, envelope, "upgrade-required");
   return std::nullopt;
-}
-
-std::optional<std::vector<SentCredential>> tappedCredentialsOf(const drogon::HttpRequestPtr& req) {
-  const auto field = req->headers().find(kSentCredentialsField);
-  if (field == req->headers().end()) return std::nullopt;
-  return parseSentCredentialsField(field->second);
 }
 
 drogon::HttpResponsePtr responseOf(const SyncReply& reply) {

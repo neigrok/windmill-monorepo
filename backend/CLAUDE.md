@@ -40,12 +40,16 @@ never the composite, so a prompt-injection-exposed agent cannot reach another pr
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four binaries: domain · mcp · adapters · sync
+ctest --test-dir build --output-on-failure      # four binaries (domain · mcp · adapters · sync) and the deploy check
 ```
 
-Drogon and libpqxx are the two vendor dependencies (`brew install drogon libpqxx`). Without them
-CMake builds the core libraries and the domain tests and skips the server — read the configure
-status line rather than assuming.
+Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
+comes from the system (`RUNNING.md` §1). Drogon is its pinned release with the patches in
+`third_party/drogon`, which the configure builds once into a cache and the image builds in a layer of
+its own: a request keeps every header line it was received with (`headerOccurrences()`), a response
+keeps a cookie per name, domain and path, and a request whose field lines or framing RFC 9112 calls
+invalid is refused. Its headers come first on every include path, so an unpatched Drogon installed
+beside the others never shadows them.
 
 Never build `-O0`: an un-inlined call chain overflows Drogon's worker-thread stack and corrupts
 return values with no crash. That is why the default build type is forced.
@@ -58,9 +62,8 @@ shape, identity, the join, text merge), `ports/SyncStore.h` (the engine's own ta
 `ports/SyncType.h` (what a product binds per type and command), `application/sync/` (the catalog,
 admission, push, pull, hello and the live channel, all run on `application/WorkerPool`), and the
 adapters `postgres/PgSyncStore`, `postgres/PgTableType` (the common one-table product store),
-`http/SyncApi` (`/v1/sync/hello`, `push`, `pull`), `ws/SyncSocket` (`/v1/sync/live`), and
-`http/CredentialTap` with `http/TappedListener`, which read every request's credentials from its bytes
-before Drogon's parser folds duplicate headers (§9.1). It is built
+`http/SyncApi` (`/v1/sync/hello`, `push`, `pull`) and `ws/SyncSocket` (`/v1/sync/live`), which read every
+request's credentials from the header lines it was received with (§9.1, `domain/sync/Credentials.h`). It is built
 against the sync contract in `../packages/api-contract/sync`, which CMake finds through
 `WM_API_CONTRACT_DIR` and the image build receives as the named context `contract` (`Dockerfile`,
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one

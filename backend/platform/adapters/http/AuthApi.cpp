@@ -9,8 +9,10 @@
 #include <openssl/rand.h>
 
 #include <ctime>
+#include <iterator>
 #include <optional>
 #include <string_view>
+#include <vector>
 
 namespace wm {
 
@@ -39,31 +41,29 @@ drogon::Cookie sessionCookie(const std::string& secret, int maxAge, bool secure,
   return cookie;
 }
 
-// Writes wm_session's Set-Cookie lines in order: `first`, then `second` when there is one. Drogon keeps one cookie of a
-// name and writes a raw Set-Cookie header ahead of its cookies, so the first rides as that header.
-void writeSessionCookies(const drogon::HttpResponsePtr& response, const drogon::Cookie& first, const std::optional<drogon::Cookie>& second) {
+// Writes `cookies` as wm_session's Set-Cookie lines, the first ahead of the rest: it rides as Drogon's raw Set-Cookie
+// header, which Drogon writes before its cookies, and each other one as a cookie of its own scope (third_party/drogon).
+void writeSessionCookies(const drogon::HttpResponsePtr& response, const std::vector<drogon::Cookie>& cookies) {
   constexpr std::string_view header = "Set-Cookie: ";
-  const std::string line = first.cookieString();
-  response->addHeader("Set-Cookie", line.substr(header.size(), line.size() - header.size() - 2));
-  if (second) response->addCookie(*second);
+  const std::string first = cookies.front().cookieString();
+  response->addHeader("Set-Cookie", first.substr(header.size(), first.size() - header.size() - 2));
+  for (auto cookie = std::next(cookies.begin()); cookie != cookies.end(); ++cookie) response->addCookie(*cookie);
 }
 
-// §9.1: a response that sets the session cookie sets it in the configured scope (`domain`, or host-only when none is
-// configured) and expires it in the other, and one that clears it expires both, so a host-only variant left from before
-// a Domain was configured never outlives the next sign-in or sign-out. The live cookie is written first: each app lifts
-// the first wm_session a response sets, and a browser files a host-only and a Domain cookie apart, so the expiry after
-// it reaches only the stray.
-void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure,
-                      const std::string& domain) {
-  const drogon::Cookie live = sessionCookie(secret, 7776000, secure, domain);  // 90 days
-  if (domain.empty()) return writeSessionCookies(response, live, std::nullopt);
-  writeSessionCookies(response, live, sessionCookie("", 0, secure, ""));
+// §9.1 Session cookie scopes: a response that sets the session cookie writes the live cookie in the live scope first,
+// then expires it in every other scope the deployment has set it in, so a variant a change of Domain left behind never
+// outlives the next sign-in. Each app lifts the first wm_session a response sets, so it lifts the live one.
+void setSessionCookie(const drogon::HttpResponsePtr& response, const std::string& secret, bool secure, const SessionCookieScopes& scopes) {
+  std::vector<drogon::Cookie> cookies{sessionCookie(secret, 7776000, secure, scopes.live())};  // 90 days
+  for (const std::string& scope : scopes.others()) cookies.push_back(sessionCookie("", 0, secure, scope));
+  writeSessionCookies(response, cookies);
 }
 
-void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, const std::string& domain) {
-  const drogon::Cookie expired = sessionCookie("", 0, secure, domain);
-  if (domain.empty()) return writeSessionCookies(response, expired, std::nullopt);
-  writeSessionCookies(response, expired, sessionCookie("", 0, secure, ""));
+// A response that clears the session cookie expires it in every scope the deployment has set it in.
+void clearSessionCookie(const drogon::HttpResponsePtr& response, bool secure, const SessionCookieScopes& scopes) {
+  std::vector<drogon::Cookie> cookies;
+  for (const std::string& scope : scopes.all()) cookies.push_back(sessionCookie("", 0, secure, scope));
+  writeSessionCookies(response, cookies);
 }
 
 // Expires ONLY wm_oauth_state — never wm_session, so a bounced callback can't log a signed-in user out.
@@ -100,10 +100,10 @@ std::string isoUtc(UnixMs ms) {
 }
 
 AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
-                 std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl,
+                 SessionCookieScopes cookieScopes, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl,
                  std::shared_ptr<AppleOAuthClient> apple)
     : auth_(std::move(auth)), signupFork_(std::move(signupFork)), secureCookies_(secureCookies),
-      cookieDomain_(std::move(cookieDomain)), google_(std::move(google)), appUrl_(std::move(appUrl)),
+      cookieScopes_(std::move(cookieScopes)), google_(std::move(google)), appUrl_(std::move(appUrl)),
       apple_(std::move(apple)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
@@ -220,7 +220,7 @@ void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::
 
   // The session secret rides only in the cookie here, never the body.
   auto response = jsonResponse(body);
-  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
+  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieScopes_);
   callback(response);
 }
 
@@ -238,7 +238,7 @@ void AuthApi::googleStart(const drogon::HttpRequestPtr&, HttpCallback&& callback
   stateCookie.setPath("/");
   stateCookie.setSameSite(drogon::Cookie::SameSite::kLax);  // Lax rides the top-level callback nav back
   if (secureCookies_) stateCookie.setSecure(true);
-  if (!cookieDomain_.empty()) stateCookie.setDomain(cookieDomain_);
+  if (!cookieScopes_.live().empty()) stateCookie.setDomain(cookieScopes_.live());
   stateCookie.setMaxAge(600);  // 10 minutes to complete the consent
   response->addCookie(std::move(stateCookie));
   callback(response);
@@ -250,7 +250,7 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
   // A bounce expires only the OAuth state cookie — never wm_session.
   auto bounce = [this](const std::string& hash) {
     auto response = drogon::HttpResponse::newRedirectionResponse(appUrl_ + hash);
-    expireStateCookie(response, cookieDomain_);
+    expireStateCookie(response, cookieScopes_.live());
     return response;
   };
 
@@ -268,19 +268,19 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
 
   const SessionContext ctx = contextOf(req);
   google_->exchangeCode(
-      code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, appUrl = appUrl_,
+      code, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, appUrl = appUrl_,
              callback = std::move(callback), ctx](std::optional<ProviderIdentity> identity) mutable {
         const std::optional<AuthService::ProviderSignIn> signIn =
             identity ? auth->completeProvider(*identity, ctx) : std::nullopt;
         if (!signIn) {
           auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/?signin=google_failed");
-          expireStateCookie(response, domain);
+          expireStateCookie(response, scopes.live());
           callback(response);
           return;
         }
         auto response = drogon::HttpResponse::newRedirectionResponse(appUrl + "/#/");
-        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, domain);
-        expireStateCookie(response, domain);
+        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
+        expireStateCookie(response, scopes.live());
         callback(response);
       });
 }
@@ -308,7 +308,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
   const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
 
   apple_->exchangeCode(
-      code, [auth = auth_, secure = secureCookies_, domain = cookieDomain_, name, caller, ctx,
+      code, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
              callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         if (!identity) {
           callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
@@ -346,7 +346,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
         // A relay address can never find the account this human has on the web; the client owns the decision.
         body["privateEmail"] = signIn->privateEmail;
         auto response = jsonResponse(body);
-        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, domain);
+        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
         callback(response);
       });
 }
@@ -395,7 +395,7 @@ void AuthApi::link(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   body["session"] = signedIn.sessionSecret;  // the caller's own row is gone, and its session with it
   body["linked"] = true;
   auto response = jsonResponse(body);
-  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieDomain_);
+  setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieScopes_);
   callback(response);
 }
 
@@ -415,7 +415,7 @@ void AuthApi::logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
-  clearSessionCookie(response, secureCookies_, cookieDomain_);
+  clearSessionCookie(response, secureCookies_, cookieScopes_);
   callback(response);
 }
 
@@ -453,7 +453,7 @@ void AuthApi::deleteMe(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
   body["closesMs"] = static_cast<Json::Int64>(closesMs);
   body["closingOn"] = isoUtc(closesMs);
   auto response = jsonResponse(body);
-  clearSessionCookie(response, secureCookies_, cookieDomain_);  // this device's session is gone too
+  clearSessionCookie(response, secureCookies_, cookieScopes_);  // this device's session is gone too
   callback(response);
 }
 
@@ -497,7 +497,7 @@ void AuthApi::revokeSession(const drogon::HttpRequestPtr& req, HttpCallback&& ca
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   if (outcome == AuthService::RevokeOutcome::revokedCurrent)
-    clearSessionCookie(response, secureCookies_, cookieDomain_);
+    clearSessionCookie(response, secureCookies_, cookieScopes_);
   callback(response);
 }
 

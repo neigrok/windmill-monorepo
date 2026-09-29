@@ -8,33 +8,17 @@
 #include <utility>
 #include <vector>
 
-// §9.1 Credentials: what a request sends, read from its header fields as received, and the principal it is served as.
+// §9.1 Credentials: what a request sends, read from its header field lines as received, and the principal it is served
+// as.
 
 namespace wm::sync {
 
 // The session cookie.
 inline constexpr char kSessionCookie[] = "wm_session";
 
-// A request's header fields as received: every occurrence in order, each name as sent and its value without the
-// whitespace around it. A framework's header map keeps one of two, so the fields are read before one is built.
-using HeaderFields = std::vector<std::pair<std::string, std::string>>;
-
-// One credential a request sends: an Authorization header, or a Cookie piece named the session cookie, whatever its
-// shape. A Cookie header splits on `;` into pieces, each trimmed of whitespace as the reference trims it (sentCredentialsOf
-// names it). `token` is the token of `Authorization: Bearer <token>` (the scheme in any case) or of `wm_session=<token>`,
-// verbatim: no quote is stripped and nothing is unescaped. Any other shape carries none and resolves to no account:
-// another scheme, a bare `Bearer`, a bare `wm_session` with no `=`, or an empty value.
-struct SentCredential {
-  enum class Kind { authorization, cookie };
-
-  Kind kind;
-  std::optional<std::string> token;
-
-  bool operator==(const SentCredential&) const = default;
-};
-
-// Every credential `headers` send, in the order they send them.
-std::vector<SentCredential> sentCredentialsOf(const HeaderFields& headers);
+// A request's header field lines as received: every occurrence in order, each name as sent and the bytes after its
+// colon, whitespace included (Drogon's HttpRequest::headerOccurrences, third_party/drogon).
+using HeaderOccurrences = std::vector<std::pair<std::string, std::string>>;
 
 // What a request's credentials resolve to: nothing sent, so the request is anonymous; or sent, resolving to an account
 // or to none.
@@ -58,12 +42,48 @@ private:
   std::optional<UserId> account_;
 };
 
+// One credential a request sends: an Authorization line, or a Cookie piece named the session cookie, whatever its
+// shape. `token` is the token of `Authorization: Bearer <token>` (the scheme in any case) or of `wm_session=<token>`,
+// verbatim: no quote is stripped and nothing is unescaped. Any other shape carries none and resolves to no account:
+// another scheme, a bare `Bearer`, a bare `wm_session` with no `=`, or an empty value.
+struct SentCredential {
+  enum class Kind { authorization, cookie };
+
+  Kind kind;
+  std::optional<std::string> token;
+
+  bool operator==(const SentCredential&) const = default;
+};
+
 // Resolves one token to the account its live session holds, or to none.
 using ResolveToken = std::function<std::optional<UserId>(const std::string& token)>;
 
-// The credential `sent` make: none when the list is empty. Otherwise they resolve only when at most one of each kind is
-// sent, each carries a token that `resolve` resolves, and a cookie and a header sent together name one account. Two of
-// one kind are refused before any token is resolved.
-Credential credentialOf(const std::vector<SentCredential>& sent, const ResolveToken& resolve);
+// Every credential a request sends, in the order its header lines send them.
+class SentCredentials {
+public:
+  // Each Authorization line is one, and each piece of a Cookie line, split on `;`, whose name is the session cookie.
+  // Header names compare in ASCII case only; the session cookie's name compares exactly. Space and tab, and nothing
+  // else, are trimmed around a field value and around a Cookie piece's name and value (RFC 9110 OWS, RFC 6265).
+  static SentCredentials fromOccurrences(const HeaderOccurrences& occurrences);
+
+  // None sent.
+  SentCredentials() = default;
+  explicit SentCredentials(std::vector<SentCredential> each) : each_(std::move(each)) {}
+
+  // The same credentials, each token replaced by what `replace` makes of it: the live socket keeps digests.
+  SentCredentials withTokens(const std::function<std::string(const std::string& token)>& replace) const;
+
+  // The credential they make: none when nothing is sent. Otherwise they resolve only when at most one of each kind is
+  // sent, each carries a token that `resolve` resolves, and a cookie and a header sent together name one account. Two
+  // of one kind are refused before any token is resolved.
+  Credential resolve(const ResolveToken& resolve) const;
+
+  const std::vector<SentCredential>& each() const { return each_; }
+
+  bool operator==(const SentCredentials&) const = default;
+
+private:
+  std::vector<SentCredential> each_;
+};
 
 }

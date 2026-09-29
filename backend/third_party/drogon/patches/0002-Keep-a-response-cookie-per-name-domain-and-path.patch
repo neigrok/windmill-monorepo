@@ -1,0 +1,107 @@
+From fe51e164f151e08a9026c9a9a85b9294268e5963 Mon Sep 17 00:00:00 2001
+From: Windmill <noreply@windmill.works>
+Date: Tue, 29 Sep 2026 22:17:31 +0400
+Subject: [PATCH 2/3] Keep a response cookie per name, domain and path
+
+A response keyed its cookies by name alone, so it could not set a cookie in
+one scope and expire the same name in another (RFC 6265 5.3 identifies a
+cookie by its name, domain and path): the second addCookie replaced the
+first. A cookie with a domain or a path is now keyed by all three, one with
+neither by its name as before. getCookie(name) answers a cookie of that name
+and removeCookie(name) removes every one.
+---
+ lib/inc/drogon/HttpResponse.h | 10 ++++++----
+ lib/src/HttpResponseImpl.h    | 23 ++++++++++++++++++++---
+ 2 files changed, 26 insertions(+), 7 deletions(-)
+
+diff --git a/lib/inc/drogon/HttpResponse.h b/lib/inc/drogon/HttpResponse.h
+index f949bd0..feb6a9e 100644
+--- a/lib/inc/drogon/HttpResponse.h
++++ b/lib/inc/drogon/HttpResponse.h
+@@ -272,15 +272,17 @@ class DROGON_EXPORT HttpResponse
+     virtual void addCookie(const std::string &key,
+                            const std::string &value) = 0;
+ 
+-    /// Add a cookie
++    /// Add a cookie. It replaces a cookie of the same name, domain and path
++    /// (RFC 6265 5.3), and sits beside one of the same name in another scope.
+     virtual void addCookie(const Cookie &cookie) = 0;
+     virtual void addCookie(Cookie &&cookie) = 0;
+ 
+-    /// Get the cookie identified by the key parameter.
++    /// Get a cookie named by the key parameter.
+     /// If there is no the cookie, the empty cookie is returned.
+     virtual const Cookie &getCookie(const std::string &key) const = 0;
+ 
+-    /// Get all cookies.
++    /// Get all cookies, each keyed by its name, or by its name, domain and
++    /// path when it has a domain or a path.
+     virtual const SafeStringMap<Cookie> &cookies() const = 0;
+ 
+     /// Get all cookies.
+@@ -289,7 +291,7 @@ class DROGON_EXPORT HttpResponse
+         return cookies();
+     }
+ 
+-    /// Remove the cookie identified by the key parameter.
++    /// Remove every cookie named by the key parameter.
+     virtual void removeCookie(const std::string &key) = 0;
+ 
+     /// Set the response body(content).
+diff --git a/lib/src/HttpResponseImpl.h b/lib/src/HttpResponseImpl.h
+index aa8018c..bd51e3a 100644
+--- a/lib/src/HttpResponseImpl.h
++++ b/lib/src/HttpResponseImpl.h
+@@ -182,14 +182,25 @@ class DROGON_EXPORT HttpResponseImpl : public HttpResponse
+         cookies_[key] = Cookie(key, value);
+     }
+ 
++    // A cookie is its name, domain and path (RFC 6265 5.3), so a response can
++    // set one name in several scopes: set it in one and expire it in another.
++    static std::string scopeOf(const Cookie &cookie)
++    {
++        if (cookie.domain().empty() && cookie.path().empty())
++            return cookie.key();
++        return cookie.key() + "; Domain=" + cookie.domain() +
++               "; Path=" + cookie.path();
++    }
++
+     void addCookie(const Cookie &cookie) override
+     {
+-        cookies_[cookie.key()] = cookie;
++        cookies_[scopeOf(cookie)] = cookie;
+     }
+ 
+     void addCookie(Cookie &&cookie) override
+     {
+-        cookies_[cookie.key()] = std::move(cookie);
++        auto scope = scopeOf(cookie);
++        cookies_[std::move(scope)] = std::move(cookie);
+     }
+ 
+     const Cookie &getCookie(const std::string &key) const override
+@@ -200,6 +211,11 @@ class DROGON_EXPORT HttpResponseImpl : public HttpResponse
+         {
+             return it->second;
+         }
++        for (const auto &[scope, cookie] : cookies_)
++        {
++            if (cookie.key() == key)
++                return cookie;
++        }
+         return defaultCookie;
+     }
+ 
+@@ -210,7 +226,8 @@ class DROGON_EXPORT HttpResponseImpl : public HttpResponse
+ 
+     void removeCookie(const std::string &key) override
+     {
+-        cookies_.erase(key);
++        for (auto it = cookies_.begin(); it != cookies_.end();)
++            it = it->second.key() == key ? cookies_.erase(it) : std::next(it);
+     }
+ 
+     void setBody(const std::string &body) override
+-- 
+2.50.1 (Apple Git-155)
+

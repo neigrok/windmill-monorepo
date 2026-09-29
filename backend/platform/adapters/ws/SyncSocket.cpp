@@ -30,12 +30,12 @@ constexpr char kUpgradeAttribute[] = "wm.sync.upgrade";
 // What the gate served an upgrade as: its principal, and every credential it sent, each token's digest in its place.
 struct Upgrade {
   std::optional<UserId> principal;
-  std::vector<SentCredential> sent;
+  SentCredentials sent;
 };
 
 // The credential the upgrade's sent credentials make, each digest proven against its session now.
-Credential provenCredential(AuthService& auth, const std::vector<SentCredential>& sent) {
-  return credentialOf(sent, [&auth](const std::string& digest) -> std::optional<UserId> {
+Credential provenCredential(AuthService& auth, const SentCredentials& sent) {
+  return sent.resolve([&auth](const std::string& digest) -> std::optional<UserId> {
     const std::optional<User> user = auth.revalidate(digest);
     return user ? std::optional(user->id) : std::nullopt;
   });
@@ -127,16 +127,10 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
   if (const std::optional<SyncReply> refused = schemaRefusal(req->getParameter("schema"), deps.minSchema, deps.clock->nowMs(), deps.epoch))
     return refuse(responseOf(*refused));
 
-  std::optional<std::vector<SentCredential>> sent = tappedCredentialsOf(req);
-  if (!sent) {
-    LOG_ERROR << "sync live upgrade read by no credential tap; refused as credentials that do not resolve";
-    return refuse(responseOf(SyncReply::unauthenticated(envelope)));
-  }
-  for (SentCredential& credential : *sent) {
-    if (credential.token) credential.token = deps.auth->digestOf(*credential.token);
-  }
+  const SentCredentials sent = SentCredentials::fromOccurrences(req->headerOccurrences()).withTokens(
+      [&auth = *deps.auth](const std::string& token) { return auth.digestOf(token); });
   trantor::EventLoop* loop = trantor::EventLoop::getEventLoopOfCurrentThread();
-  const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent = *sent] {
+  const bool posted = deps.workers->post([auth = deps.auth, loop, req, refuse, pass, envelope, sent] {
     Upgrade upgrade{std::nullopt, sent};
     std::optional<SyncReply> refusal;
     try {
@@ -169,7 +163,7 @@ void SyncSocket::handleNewConnection(const drogon::HttpRequestPtr& req, const dr
   const bool posted = connection->strand.post([live = deps.live, auth = deps.auth, sessions = deps.sessions, clock = deps.clock, connection, upgrade] {
     const std::shared_ptr<ConnectionSocket> socket = connection->socket;
     std::vector<std::string> digests;
-    for (const SentCredential& credential : upgrade.sent) {
+    for (const SentCredential& credential : upgrade.sent.each()) {
       if (credential.token) digests.push_back(*credential.token);
     }
     if (!digests.empty()) {

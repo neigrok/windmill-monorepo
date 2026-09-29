@@ -36,7 +36,8 @@ env:
   IMAGE: ghcr.io/${{ github.repository }}
 
 jobs:
-  # The builder stage compiles everything and runs ctest, so a red suite fails here.
+  # The builder stage compiles everything and runs ctest, so a red suite fails here. Its Drogon layer, the pinned
+  # release with the patches in backend/third_party/drogon, comes out of this cache until the pin or a patch changes.
   test:
     runs-on: ubuntu-latest
     steps:
@@ -53,8 +54,9 @@ jobs:
           cache-to: type=gha,mode=max
 
   # The builder stage the test job built and cached, run again against a Postgres service: the domain,
-  # sync and adapters suites with their WM_PG_TEST cases, and the domain suite's pattern fuzz over cases
-  # the JS reference generated and answered for a fresh seed.
+  # sync and adapters suites with their WM_PG_TEST cases, the domain suite's pattern fuzz over cases
+  # the JS reference generated and answered for a fresh seed, and engine.md §9.1's credential cases
+  # against its windmill_server_probe, directly and through the production Caddyfile over HTTP/1.1 and HTTP/2.
   postgres:
     needs: test
     runs-on: ubuntu-latest
@@ -98,6 +100,17 @@ jobs:
           docker run --rm --network host -e WM_PG_TEST=1 -e DATABASE_URL \
             -e WM_PATTERN_CASES=/cases/pattern-cases.json -v "$RUNNER_TEMP:/cases:ro" \
             windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters)$' --output-on-failure
+      - name: Serve windmill_server_probe from the tested builder stage
+        run: |
+          docker run -d --name probe --network host -e DATABASE_URL -e PORT=18613 windmill-backend-build build/windmill_server_probe
+          for attempt in $(seq 1 50); do
+            curl -sf -o /dev/null -H 'Sync-Schema: 2' http://127.0.0.1:18613/v1/sync/hello && exit 0
+            sleep 0.2
+          done
+          docker logs probe
+          exit 1
+      - name: Credentials, directly and through the production edge (engine.md §9.1)
+        run: WM_E2E_DB="$DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/credentials_conformance.mjs
 
   build-and-push:
     needs: [test, postgres]

@@ -5,7 +5,10 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <span>
 #include <string>
+#include <string_view>
+#include <vector>
 
 namespace wm {
 
@@ -100,5 +103,29 @@ bool isPrivateRelay(const Email& email);
 //   unusable  — unverified or unparseable; must not touch an account at all
 enum class AddressTrust { crossDoor, appOnly, unusable };
 AddressTrust trustOf(const ProviderIdentity& identity);
+
+// engine.md §9.1 Session cookie scopes: every scope the deployment has set the session cookie in, the live one first.
+// A scope is a Domain, or "" for host-only, which is always one of them.
+class SessionCookieScopes {
+public:
+  // `domain` is the live scope ("" keeps the cookie host-only) and `retiredDomains`, comma-separated, the Domains the
+  // deployment set it in before, each read with space and tab trimmed around it; an empty entry names none. A scope
+  // named twice, in another case or with a leading dot, is one scope. Throws std::invalid_argument naming the first
+  // Domain refusalOf refuses: the server does not start with it.
+  SessionCookieScopes(std::string_view domain, std::string_view retiredDomains);
+
+  const std::string& live() const { return scopes_.front(); }
+  std::span<const std::string> others() const { return std::span(scopes_).subspan(1); }
+  const std::vector<std::string>& all() const { return scopes_; }
+
+  // Why `domain`, with space and tab trimmed around it, is no scope the session cookie may be set in; nullopt when it
+  // is one: empty (host-only), or a host name of letters, digits, `-` and `.` with at most one leading dot and no empty
+  // label that is not an IP address (an IPv6 literal, or a name whose last label is a decimal or `0x` number), a
+  // single label, or a name whose last label is `localhost`. Those have no registrable domain to scope a cookie to.
+  static std::optional<std::string> refusalOf(std::string_view domain);
+
+private:
+  std::vector<std::string> scopes_;
+};
 
 }

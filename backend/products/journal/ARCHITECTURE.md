@@ -223,7 +223,7 @@ Two obligations fall out of on-device search:
 - `JOURNAL_NUDGE_ADMIN_TOKEN` and `JOURNAL_ECHO_ADMIN_TOKEN` each close one rehearsal door. Unset
   means 403 to everyone.
 - **CMake:** `windmill_journal` (core: `domain/ + application/`) links `windmill_platform`; the
-  Pg/http adapters sit under the same `Drogon_FOUND AND libpqxx_FOUND` guard roadmap uses.
+  Pg/http adapters fold into the same library, as roadmap's do.
 - **Tests:** `test/products/journal/{domain,application,adapters}` mirrors the tree. Every test file
   must be named by hand in `CMakeLists.txt`; one that is not in a list never runs.
 - **CI portability:** calendar work belongs in Postgres via `AT TIME ZONE`, never C++ calendar
