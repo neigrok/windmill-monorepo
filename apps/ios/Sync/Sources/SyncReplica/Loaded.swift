@@ -98,13 +98,11 @@ public struct LoadedReplica: Sendable {
       outbox.insert(entry, at: outbox.firstIndex { $0.commitOrder > entry.commitOrder } ?? outbox.endIndex)
     case .deleteEntry(let localId): outbox.removeAll { $0.localId.utf8.elementsEqual(localId.utf8) }
     case .putRow(let scope, let row):
-      var rows = rows(scope)
-      rows.put(row)
-      confirmed[scope] = rows
+      precondition(confirmed[scope] != nil || wholeScopes, "the rows of \(scope) were written but not loaded")
+      confirmed[scope, default: Rows()].put(row)
     case .deleteRow(let scope, let key):
-      var rows = rows(scope)
-      rows.remove(key)
-      confirmed[scope] = rows
+      precondition(confirmed[scope] != nil || wholeScopes, "the rows of \(scope) were written but not loaded")
+      confirmed[scope, default: Rows()].remove(key)
     case .beginStaging(let scope):
       precondition(cursors[scope] != nil, "staging of \(scope) begins after its cursor record")
       staging[scope] = Staging()
@@ -116,9 +114,8 @@ public struct LoadedReplica: Sendable {
       confirmed[scope] = staging[scope]!.rows
       staging[scope] = nil
     case .putSpent(let scope, let id):
-      var ids = spentIDs(scope)
-      ids[id.key] = id
-      spent[scope] = ids
+      precondition(spent[scope] != nil || wholeScopes, "the spent ids of \(scope) were written but not loaded")
+      spent[scope, default: [:]][id.key] = id
     case .putCursor(let scope, let record): cursors[scope] = record
     case .forgetScope(let scope):
       confirmed[scope] = Rows()

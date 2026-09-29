@@ -170,25 +170,27 @@ struct BatchWriter {
     case confirmed, staging
   }
 
+  // A pull page puts every row it carries in one transaction, so the statements of a row and of a delete are prepared
+  // once per connection.
   func put(_ row: SyncCore.Row, in table: RowTable, replica: String, scope: ScopeRef) throws {
-    try db.execute(sql: """
+    try db.cachedStatement(sql: """
       INSERT INTO \(table.rawValue) (replica, scope, type, id, seq, visible, row, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
       ON CONFLICT (replica, scope, type, id) DO UPDATE SET seq = excluded.seq, visible = excluded.visible, row = excluded.row,
         hash = excluded.hash
-      """, arguments: [replica, scope.text, row.key.type, row.key.id.text, row.seq, Visibility.of(row, registry: registry),
-                       Blob.of(row.json), Data(row.digest.bytes)])
-    try db.execute(sql: "DELETE FROM \(table.rawValue)_ref WHERE replica = ? AND scope = ? AND type = ? AND id = ?",
-                   arguments: [replica, scope.text, row.key.type, row.key.id.text])
+      """).execute(arguments: [replica, scope.text, row.key.type, row.key.id.text, row.seq, Visibility.of(row, registry: registry),
+                               Blob.of(row.json), Data(row.digest.bytes)])
+    try db.cachedStatement(sql: "DELETE FROM \(table.rawValue)_ref WHERE replica = ? AND scope = ? AND type = ? AND id = ?")
+      .execute(arguments: [replica, scope.text, row.key.type, row.key.id.text])
     for (field, target) in BatchWriter.references(of: row, registry: registry) {
-      try db.execute(sql: "INSERT INTO \(table.rawValue)_ref (replica, scope, type, field, target, id) VALUES (?, ?, ?, ?, ?, ?)",
-                     arguments: [replica, scope.text, row.key.type, field, target.text, row.key.id.text])
+      try db.cachedStatement(sql: "INSERT INTO \(table.rawValue)_ref (replica, scope, type, field, target, id) VALUES (?, ?, ?, ?, ?, ?)")
+        .execute(arguments: [replica, scope.text, row.key.type, field, target.text, row.key.id.text])
     }
   }
 
   func delete(_ key: RecordKey, in table: RowTable, replica: String, scope: ScopeRef) throws {
     for suffix in ["", "_ref"] {
-      try db.execute(sql: "DELETE FROM \(table.rawValue)\(suffix) WHERE replica = ? AND scope = ? AND type = ? AND id = ?",
-                     arguments: [replica, scope.text, key.type, key.id.text])
+      try db.cachedStatement(sql: "DELETE FROM \(table.rawValue)\(suffix) WHERE replica = ? AND scope = ? AND type = ? AND id = ?")
+        .execute(arguments: [replica, scope.text, key.type, key.id.text])
     }
   }
 
