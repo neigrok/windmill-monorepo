@@ -64,9 +64,18 @@ single-threaded run can observe, nor the HTTP envelope:
 - sessions themselves: `server/credentials.js` reads a request's raw headers against a given map of
   live session tokens, and the endpoints take its answer as `account` (`null` when the request sends
   no credential) and `credential: 'unresolved'` (one sent that does not resolve, §9.1);
-- the live socket's reopen backoff and the cross-tab `upgrade` signal (§7.5, §7.8);
+- the live socket's reopen backoff and ping, the request timeout, and the cross-tab `upgrade` and
+  `activeReplicaChanged` signals (§7.5, §7.8);
+- one pull in flight per scope (§7.5): the reference has no puller scheduler; the replay simulator
+  keeps one pull in flight per device, which is stricter;
+- a store's replica handle (§7.11): a reference replica holds its own rows, so a re-identify there
+  already touches none;
+- the live socket's following and the puller's timers (§7.9); `Doubts` models only when a scope in
+  doubt may be pulled again and subscribed, from the answers and socket events its caller reports;
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
+- the store's writer and its latency intent (§2.5): a page's chunks and a push answer's result batches
+  run back to back, and a process death between two of them is a step's `dieAfter`;
 - the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step), and
   stored credentials (§7.10);
 - web tab leadership (§7.8).
@@ -97,7 +106,7 @@ single-threaded run can observe, nor the HTTP envelope:
 | `client/sender.js`, `client/puller.js` | §7.4, §7.5 |
 | `client/dependents.js` | §7.7 step 3's dependents: a refusal's fold, the silent fold of an undo and a retire (§7.3), and §7.4's held-back entries |
 | `client/refusal.js` | §7.7 refusal, recovery, the restamp rule, write maps, and D-17's dismissal |
-| `client/subscriptions.js` | §7.9 |
-| `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor) |
+| `client/subscriptions.js` | §7.9, scopes in doubt included |
+| `client/lifecycle.js` | §7.10, §7.11, engine start (§7.3 releases, the per-store fork guard, a fresh actor), §7.12's `activeReplicaChanged` |
 | `vectors/` | corpus builders, one per corpus directory; `steps.js` is the client-step language |
 | `test/fuzz/` | §11.3 the replay simulator |

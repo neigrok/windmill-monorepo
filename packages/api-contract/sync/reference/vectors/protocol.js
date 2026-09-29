@@ -280,6 +280,7 @@ function liveTranscript() {
   stage.pull('d1', ['tree/b_00000001', 'self/overlay/b_00000001'], { serverNow: T + 100 });
   stage.do('d2', 'commit', { scope: 'self/probe', changes: [{ op: 'delete', t: 'board', id: 'b_00000001' }] }, T + 110);
   stage.push('d2', { serverNow: T + 120, frames: ['d1'] });
+  stage.do('d1', 'reconcile', { scopes: ['self/probe'] }, T + 130);
   return stage.finish();
 }
 

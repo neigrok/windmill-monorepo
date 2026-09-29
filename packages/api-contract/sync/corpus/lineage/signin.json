@@ -2278,6 +2278,13 @@
           "outcome": "discarded",
           "event": "discard"
         }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a0",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
       ]
     }
   },
@@ -2913,7 +2920,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a0",
+          "replica": "rp_000000000000000000000000000000a1"
+        }
+      ]
     }
   },
   {
@@ -3590,7 +3604,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a0",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {

@@ -14,7 +14,7 @@ import { onFrame, onPullResponse, pullRequest } from '../client/puller.js';
 import { dismiss } from '../client/refusal.js';
 import { Device } from '../client/replica.js';
 import { nextPush, onHello, onPushResponse } from '../client/sender.js';
-import { reconcile, subscribe } from '../client/subscriptions.js';
+import { reconcile, subscribe, subscriptionsOf } from '../client/subscriptions.js';
 import { capCount, view } from '../client/views.js';
 import { ACTOR, registry } from './fixtures.js';
 
@@ -78,6 +78,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
   let device = new Device(structuredClone(deviceJson));
   const ended = [];
   const telemetry = [];
+  const events = [];
   const queues = new Queues({ ids, actors, forkGuards, draws });
   const returns = [];
   const answer = (value) => returns.push(structuredClone(value));
@@ -85,8 +86,10 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
   let current = actor;
   let lastPush = null;
   let lastPull = null;
+  let pulledFor = null;
+  let reconciled = null;
   for (const step of structuredClone(steps)) {
-    const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, queues: queues.snapshot(), gestures, current };
+    const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, events: events.length, queues: queues.snapshot(), gestures, current };
     const stepActor = step.actor ?? current;
     const ctx = {
       registry,
@@ -94,6 +97,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
       deviceNow: step.deviceNow ?? 0,
       ended,
       telemetry,
+      events,
       appVersion: step.appVersion ?? '1',
       device,
       nextGestureId: () => `g${(gestures += 1)}`,
@@ -138,7 +142,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(lastPush);
           break;
         case 'pushResponse':
-          answer(onPushResponse(replica, ctx, lastPush, step.response, timing) ?? null);
+          answer(onPushResponse(replica, ctx, lastPush, step.response, timing, dieAfter(step)) ?? null);
           break;
         case 'hello':
           onHello(replica, ctx, step.response, timing);
@@ -146,19 +150,30 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           break;
         case 'pull':
           lastPull = pullRequest(replica, registry, step.scopes);
+          pulledFor = replica;
           answer(lastPull);
           break;
         case 'pullResponse':
-          answer(onPullResponse(replica, ctx, lastPull, step.response, timing));
+          if (pulledFor !== replica) {
+            answer(null);
+            break;
+          }
+          answer(onPullResponse(replica, ctx, lastPull, step.response, timing, {
+            ...dieAfter(step),
+            ...(step.chunk === undefined ? {} : { chunkRows: step.chunk }),
+            ...(reconciled === null ? {} : { inSet: (scope) => reconciled.includes(scope) }),
+          }));
           break;
         case 'frame':
-          answer(onFrame(replica, ctx, step.frame));
+          answer(onFrame(replica, ctx, step.frame, reconciled === null ? undefined : (scope) => reconciled.includes(scope)));
           break;
         case 'reconcile':
-          reconcile(replica, ctx, step.scopes);
+          reconciled = step.scopes === undefined ? subscriptionsOf(replica, registry, ['probe']) : [...step.scopes];
+          reconcile(replica, ctx, reconciled);
           answer(null);
           break;
         case 'subscribe':
+          if (reconciled !== null && !reconciled.includes(step.scope)) reconciled.push(step.scope);
           answer(subscribe(replica, step.scope));
           break;
         case 'signIn':
@@ -200,15 +215,22 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
     } catch (error) {
       if (!(error instanceof CommitError) && !(error instanceof TransitionError)) throw error;
       device = new Device(before.device);
+      if (pulledFor) pulledFor = device.replica(pulledFor.id);
       ended.length = before.ended;
       telemetry.length = before.telemetry;
+      events.length = before.events;
       queues.restore(before.queues);
       gestures = before.gestures;
       current = before.current;
       answer({ throws: true });
     }
   }
-  return { returns, device: device.toJSON(), ended, telemetry };
+  return { returns, device: device.toJSON(), ended, telemetry, events };
+}
+
+// A response step's process death: the answer's first `dieAfter` transactions commit, and nothing after.
+function dieAfter(step) {
+  return step.dieAfter === undefined ? {} : { dieAfter: step.dieAfter };
 }
 
 export function stepsVector(name, input) {
@@ -218,5 +240,6 @@ export function stepsVector(name, input) {
   const out = runSteps(input);
   const expect = { returns: out.returns, device: out.device, ended: out.ended };
   if (out.telemetry.length) expect.telemetry = out.telemetry;
+  if (out.events.length) expect.events = out.events;
   return { name, input, expect };
 }

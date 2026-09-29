@@ -155,7 +155,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {
@@ -600,7 +607,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {
@@ -796,6 +810,13 @@
           "localId": "g2/0",
           "outcome": "discarded",
           "event": "discard"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
         }
       ]
     }
@@ -1285,6 +1306,13 @@
           "outcome": "resolved",
           "event": "resolve"
         }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
       ]
     }
   },
@@ -1516,6 +1544,13 @@
           "localId": "late/0",
           "outcome": "discarded",
           "event": "discard"
+        }
+      ],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
         }
       ]
     }
@@ -1794,7 +1829,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {
@@ -1975,7 +2017,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000a0"
+        }
+      ]
     }
   },
   {

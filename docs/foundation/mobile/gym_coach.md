@@ -186,7 +186,9 @@ emoji and combining marks.
    - the question exceeds `MAX_QUESTION_BYTES`, or more than `MAX_PICTURES_PER_MESSAGE` pictures
      are attached.
 2. **Record.** In one local transaction, write the lifter message and the Coach message in state
-   `running`, with id `turnId` and `replica` set to this replica.
+   `running`, with id `turnId` and `replica` set to the id of the replica the commit writes to, which
+   the engine gives the commit (engine §7.12), and the device row `runningTurn := turnId` (engine §2.5
+   `DeviceRow`), cleared with the terminal state.
 3. **Context.** Run `list_sessions` (first page), `list_notes`, `list_exercises` and
    `list_routines` through the executor, together within `CONTEXT_READ_BYTES`. Record them as
    ability calls on the Coach message. They count toward the read receipt.
@@ -241,14 +243,20 @@ The model's reasoning and every assistant content block stay on the server.
 - **Disconnect.** The server keeps running the current model call and buffers its text. A pending
   batch waits up to `CALL_RESULT_TIMEOUT`.
 - **Resume.** After a reconnect or a return to the foreground, the phone reads the turn stream
-  (§6.1). It starts with a `snapshot` of the text so far, the state and any unanswered batch.
+  (§6.1). It starts with a `snapshot` of the text so far, the state and any unanswered batch. At
+  engine start, a `running` Coach message the device row `runningTurn` names ends `interrupted`,
+  whatever its `replica`: the death ended its stream, and the event that would have named it may have
+  died with the process (engine §7.12).
 - **Background.** While a turn runs, the phone keeps its process alive within the platform
   allowance: an iOS background task, an Android expedited job.
 - **Lost turn.** A server restart drops running turns. A resume then answers
   `coach-turn-unknown`, and the phone ends the turn `interrupted`.
 - **Writer.** Only the replica named on the Coach message writes its state, text, receipt and
-  calls. Another device shows a running turn as answering on another device and never writes it.
-  A turn whose writer replica re-identifies (engine §7.4, §7.5, §7.11) ends `interrupted`.
+  calls; another device shows a running turn as answering on another device and never writes it. One
+  write is excepted: the device whose active replica's id changed from the named one —
+  `activeReplicaChanged(previous, replica)` with `previous` the message's `replica` (engine §7.12) —
+  ends that `running` turn `interrupted`, under its new id, since the turn's stream ended with its
+  identity.
   When the server drops a turn (§4.4) whose `bound` Coach message is still `running`, it MAY write
   `interrupted` on it, as a server-origin write that sets only `state` (engine §6.3).
 
@@ -533,6 +541,9 @@ by code, duration and bytes. It never carries text, pictures or results.
 A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - the account's full history: no boot window on `session` and `set`;
 - a signal that the replica's first pull of history is complete;
+- the active replica's id, given to a commit, and the `activeReplicaChanged` event that announces
+  every change of it (engine §7.12);
+- a device row `runningTurn` in `device/gym` (engine A.2);
 - `proposal` records mintable by a replica, with `changes` computed by the shared diff rule and
   re-checked by the server on admission;
 - `thread` and `message` as full records with the fields and merge rule of §9.1, and

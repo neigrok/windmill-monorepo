@@ -1,17 +1,25 @@
 // §7.10 the replica lifecycle (sign-in by the lineage rule, sign-out, discard), §7.11 the fork guard
-// and re-identify, §7.3's engine start and §7.5 step 1's epoch change.
+// and re-identify, §7.3's engine start, §7.5 step 1's epoch change, and §7.12's `activeReplicaChanged`,
+// which announces every change of `activeReplica()` in `ctx.events`.
 
 import { moveEntry, REPLICA_MACHINE, transition } from '../core/machines.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
 import { Replica } from './replica.js';
 
+// §7.12: `activeReplica()` answers `replica` where it answered `previous`.
+function announce(ctx, previous, replica) {
+  if (previous !== replica) ctx.events?.push({ event: 'activeReplicaChanged', previous, replica });
+}
+
 export function reidentify(replica, ctx) {
   transition(REPLICA_MACHINE, replica.meta.state, 'reidentify', replica.meta.state);
+  const previous = replica.meta.replica;
   replica.meta.replica = ctx.newReplicaId();
   replica.meta.nextN = 1;
   replica.meta.ackThrough = 0;
   for (const entry of replica.entries()) if (entry.state === 'sent') moveEntry(replica, ctx.ended, entry, 'reidentify');
+  if (ctx.device?.activeReplica === replica) announce(ctx, previous, replica.meta.replica);
 }
 
 // D-2: the engine instance takes a fresh actor at every process launch and at every re-identify.
@@ -84,6 +92,7 @@ function sameCounted(pinned, counted) {
 // release of holds, and a decision whose entries changed since its question is due again.
 export function signIn(device, ctx, { account, holdsRecords, decisions = {}, counted = {} }) {
   const { registry } = ctx;
+  const previous = device.activeReplica?.id;
   const anon = device.anonReplica();
   if (anon) releaseAll(anon, registry, ctx.ended);
   const due = Object.keys(registry.products).sort()
@@ -133,6 +142,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
   target.meta.authPaused = false;
   delete device.meta.pendingSignIn;
   device.activeReplica = target;
+  announce(ctx, previous, target.id);
   return { complete: true, due };
 }
 
@@ -143,6 +153,7 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
 // asked again. The finish resolves acked entries, which the server holds.
 export function signOut(device, ctx, { choice, counted } = {}) {
   const bound = device.activeReplica;
+  const previous = bound.id;
   releaseAll(bound, ctx.registry, ctx.ended);
   const unsent = bound.entries().filter((entry) => entry.state === 'ready' || entry.state === 'sent');
   const question = {
@@ -168,6 +179,7 @@ export function signOut(device, ctx, { choice, counted } = {}) {
     device.remove(bound);
   }
   device.activeReplica = device.anonReplica() ?? device.add(Replica.fresh({ replica: ctx.newReplicaId(), state: 'anon' }));
+  announce(ctx, previous, device.activeReplica.id);
   return { complete: true, ...question };
 }
 

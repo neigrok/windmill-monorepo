@@ -26,6 +26,7 @@ for (const path of STEP_FILES) {
       const out = runSteps(input);
       const actual = { returns: out.returns, device: out.device, ended: out.ended };
       if (out.telemetry.length) actual.telemetry = out.telemetry;
+      if (out.events.length) actual.events = out.events;
       assert.deepEqual(JSON.parse(JSON.stringify(actual)), expect, name);
     }
   });

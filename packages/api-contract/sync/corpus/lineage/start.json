@@ -1104,7 +1104,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {
@@ -1311,7 +1318,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
     }
   },
   {

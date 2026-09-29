@@ -14,7 +14,8 @@
         "movement": { "keyPattern": "^movement:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } },
         "offer": { "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
         "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
-        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } }
+        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } },
+        "runningTurn": { "keyPattern": "^runningTurn$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } }
       },
       "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant"]
     }

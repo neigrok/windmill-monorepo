@@ -1,6 +1,7 @@
 // pull/pages.json (§7.5, client): pull responses and live frames applied to a replica: boots straight in
 // or through staging, stale pages, reset, gone and not-found, replace by seq, the resolution of acked
-// entries, the digest check, frames and the epoch change. Responses come from the reference server,
+// entries, the digest check, frames, the epoch change, and pages applied in chunks with a process death
+// between two of them. Responses come from the reference server,
 // except the few edge cases no correct server produces (an older row, a wrong digest).
 
 import { CONSTANTS } from '../core/constants.js';
@@ -74,17 +75,20 @@ class PullScript {
   }
 
   // Answers the last pull, served as `account` (§9.1): null for a request that arrives with no credential,
-  // or, with `credential: 'unresolved'`, one whose credential resolves to no account.
-  respond({ serverNow, limits = CONSTANTS, edit = (response) => response, account = 'A', credential }) {
+  // or, with `credential: 'unresolved'`, one whose credential resolves to no account. `chunk` applies its
+  // rows pages in chunks of that many rows, and `dieAfter` ends the process after that many page
+  // transactions (§7.5 step 2).
+  respond({ serverNow, limits = CONSTANTS, edit = (response) => response, account = 'A', credential, chunk, dieAfter }) {
     const { index, request } = this.lastRequest('pull');
     const pulled = pull({ state: this.server, registry, product, account, credential, request, serverNow, limits });
     this.server = pulled.state;
     const response = edit(pulled.response);
-    return this.add({ op: 'pullResponse', response, tSend: this.input.steps[index].deviceNow, tRecv: serverNow, deviceNow: serverNow });
+    const cut = { ...(chunk === undefined ? {} : { chunk }), ...(dieAfter === undefined ? {} : { dieAfter }) };
+    return this.add({ op: 'pullResponse', response, tSend: this.input.steps[index].deviceNow, tRecv: serverNow, deviceNow: serverNow, ...cut });
   }
 
-  pullRound(scopes, { serverNow, limits, edit, account, credential }) {
-    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit, account, credential });
+  pullRound(scopes, { serverNow, limits, edit, account, credential, chunk, dieAfter }) {
+    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit, account, credential, chunk, dieAfter });
   }
 
   // A push whose own change frame reaches the device before the response does.
@@ -417,6 +421,130 @@ function epochs() {
   ];
 }
 
+// §7.5 step 2 a rows page in chunks: only the last stores the cursor and does what it decides, so a
+// process death between two chunks leaves their rows applied under the cursor as it was, and the page
+// pulled again applies to the same end.
+function chunks() {
+  const edits = [
+    titleOf('card0002', 'Two, edited', st(5002, 0, 'r_cccccccccccc')),
+    { scope: 'self/probe', d: [{ t: 'card', id: 'card0003', born: CARDS[2].born, life: ['dead', st(5003, 0, 'r_cccccccccccc')] }] },
+    { scope: 'self/probe', d: [{ t: 'card', id: 'card0004', born: st(5004, 0, 'r_cccccccccccc'), life: ['alive', st(5004, 0, 'r_cccccccccccc')], f: { title: ['Four', st(5004, 0, 'r_cccccccccccc')] } }] },
+  ];
+  const mineThenEdits = () => {
+    const script = bootedOnProbe()
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Mine' } }], deviceNow: 5001 })
+      .pushRound(5001)
+      .elsewhere(edits, 5004);
+    script.input.actors = ['r_dddddddddddd'];
+    return script;
+  };
+  const view = { op: 'view', scope: 'self/probe', withHeld: true, deviceNow: 5006 };
+  const reboot = () => {
+    const staleRows = [
+      row({ t: 'card', id: 'card0001', life: ['alive', st(1001)], born: st(1001), f: { title: ['Old title', st(900)] }, seq: 1 }),
+      row({ t: 'card', id: 'card0009', life: ['alive', st(950)], born: st(950), f: { title: ['Gone since', st(950)] }, seq: 2 }),
+    ];
+    const script = new PullScript({
+      device: device({ confirmed: { 'self/probe': staleRows }, cursors: { 'self/probe': { cursor: null, digest: scopeDigest(staleRows), booted: true } } }),
+      server: server(),
+    });
+    script.input.actors = ['r_dddddddddddd'];
+    return script;
+  };
+  const fresh = () => {
+    const script = new PullScript({ device: device(), server: server() });
+    script.input.actors = ['r_dddddddddddd'];
+    return script;
+  };
+  const deleteCard1 = [{ scope: 'self/probe', d: [{ t: 'card', id: 'card0001', born: CARDS[0].born, life: ['dead', st(5002, 0, 'r_cccccccccccc')] }] }];
+  const relayedLate = bootedOnProbe().elsewhere(edits, 5003);
+  relayedLate.input.actors = ['r_dddddddddddd'];
+  const late = relayedLate.frames.find((frame) => frame.seq === 5);
+  const C = 'r_cccccccccccc';
+  const day = (id, score, ms) => ({ scope: 'self/probe', d: [{ t: 'day', id, life: ['alive', st(ms, 0, C)], f: { score: [score, st(ms, 0, C)] } }] });
+  const shortOfHead = bootedOnProbe().elsewhere([day('2026-01-01', 1, 5001), day('2026-01-02', 2, 5002), day('2026-01-03', 3, 5003), day('2026-01-01', 4, 5004)], 5004);
+  const next = shortOfHead.frames.find((frame) => frame.seq === 7);
+  return [
+    shortOfHead.pullRound(['self/probe'], { serverNow: 5005, limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 } })
+      .add({ op: 'frame', frame: next, deviceNow: 5006 })
+      .pullRound(['self/probe'], { serverNow: 5007 })
+      .vector('a live page short of its head leaves the scope behind: the next frame asks for a pull, since a row changed twice is not yet in its state at the cursor, and the pull to the head clears it'),
+    relayedLate.pull(['self/probe'], 5005).respond({ serverNow: 5005, chunk: 1, dieAfter: 2 })
+      .add({ op: 'engineStart', deviceNow: 5006 })
+      .add({ op: 'frame', frame: late, deviceNow: 5007 })
+      .pullRound(['self/probe'], { serverNow: 5008 })
+      .vector('after a death between chunks the scope is behind: a frame of the next seq, relayed late to a new socket, asks for a pull instead of applying over rows past the cursor'),
+    bootedOnProbe().elsewhere(edits, 5003).pullRound(['self/probe'], { serverNow: 5005, chunk: 1 })
+      .vector('a live page applied one row a chunk leaves what the page applied whole leaves, and its last chunk checks the digest'),
+    mineThenEdits().pull(['self/probe'], 5005).respond({ serverNow: 5005, chunk: 1, dieAfter: 2 }).add(view)
+      .vector('a process death between chunks of a live page keeps the rows applied, digest with them, and the cursor where it was; the acked entry the page covers stays acked, and a reader sees the page as if it ended at the last row applied'),
+    mineThenEdits().pull(['self/probe'], 5005).respond({ serverNow: 5005, chunk: 1, dieAfter: 2 })
+      .add({ op: 'engineStart', deviceNow: 5006 })
+      .pullRound(['self/probe'], { serverNow: 5007 })
+      .vector('the live page a death cut short, pulled again under the unmoved cursor, applies to the same end: the acked entry resolves and the check matches'),
+    fresh().pullRound(['self/probe'], { serverNow: 5000, limits: SMALL_PAGES, chunk: 1, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5001 })
+      .elsewhere(deleteCard1, 5002)
+      .pullRound(['self/probe'], { serverNow: 5003, limits: SMALL_PAGES })
+      .pullRound(['self/probe'], { serverNow: 5004, limits: SMALL_PAGES })
+      .vector('a death in the first page of a boot straight in leaves its rows under a null cursor; the boot pulled again goes into staging, and its swap drops a row deleted since'),
+    reboot().pullRound(['self/probe'], { serverNow: 5000, limits: SMALL_PAGES, chunk: 1, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5001 })
+      .elsewhere(deleteCard1, 5002)
+      .pullRound(['self/probe'], { serverNow: 5003, limits: SMALL_PAGES })
+      .pullRound(['self/probe'], { serverNow: 5004, limits: SMALL_PAGES })
+      .vector('a death between chunks of a boot into staging leaves confirmed as it was; the boot pulled again from null starts its staging afresh, so a row deleted since is not swapped in'),
+    fresh().pullRound(['self/probe'], { serverNow: 5000, limits: SMALL_PAGES })
+      .pullRound(['self/probe'], { serverNow: 5001, limits: SMALL_PAGES, chunk: 1, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5002 })
+      .elsewhere([titleOf('card0003', 'Three, new', st(5003, 0, 'r_cccccccccccc'))], 5003)
+      .pullRound(['self/probe'], { serverNow: 5004, limits: SMALL_PAGES })
+      .pullRound(['self/probe'], { serverNow: 5005, limits: SMALL_PAGES })
+      .vector('a death between chunks of a later boot page keeps the boot cursor; the boot goes on at its asOf, and a row changed since arrives live'),
+    fresh().pullRound(['self/probe', TREE], { serverNow: 5000, chunk: 2, dieAfter: 1 })
+      .vector('a death that cuts a page short applies none of the pages after it'),
+  ];
+}
+
+// §7.5 step 2 a page for a scope outside the subscription set applies nothing and pulls nothing again:
+// the tree's board dies in a frame while the tree's first pull is in flight, so the tree is known gone
+// when its rows page lands, requested with a null cursor that the forgotten scope still matches.
+function outside() {
+  const script = bootedOnProbe().pull([TREE], 5001);
+  const early = pull({ state: script.server, registry, product, account: 'A', request: script.lastRequest('pull').request, serverNow: 5001 }).response;
+  script.elsewhere([{ scope: 'self/probe', d: [{ t: 'board', id: BOARD, born: BOARD_ROW.born, life: ['dead', st(5002, 0, 'r_cccccccccccc')] }] }], 5002);
+  const death = script.frames.find((frame) => frame.op === 'change' && frame.scope === 'self/probe');
+  return [
+    script.add({ op: 'frame', frame: death, deviceNow: 5003 })
+      .add({ op: 'pullResponse', response: early, tSend: 5001, tRecv: 5004, deviceNow: 5004 })
+      .vector('a rows page for a tree whose board died while it was in flight is outside the subscription set: it applies nothing, and the tree stays known gone with no rows and no cursor'),
+  ];
+}
+
+// §7.9 the subscription set holds a tree per governing record alive in drawn or in stored: inside a held
+// delete's window the board is alive in stored, so a not-found for its tree is ignored and a reconcile
+// against the replica's own set keeps the tree's rows for an undo to find.
+function heldWindow() {
+  return [
+    bootedOnProbe().pullRound([TREE], { serverNow: 5001 })
+      .add({ op: 'commit', scope: 'self/probe', changes: [{ op: 'delete', t: 'board', id: BOARD }], opts: { hold: true }, deviceNow: 5002 })
+      .add({ op: 'frame', frame: { op: 'not-found', as: 'A', scope: TREE }, deviceNow: 5003 })
+      .add({ op: 'reconcile', deviceNow: 5004 })
+      .vector('inside a held delete\'s window the board\'s tree stays in the subscription set: a not-found for it is ignored, and a reconcile keeps its rows'),
+  ];
+}
+
+// §7.12 a page that arrives for a replica no longer active applies nothing: a boot answered after a
+// sign-out would otherwise fill the dormant replica's purged cache, or the anon replica's.
+function seats() {
+  const script = new PullScript({ device: device(), server: server() });
+  script.input.ids = ['rp_00000000000000000000000000000002'];
+  script.pull(['self/probe'], 5000)
+    .add({ op: 'signOut', choice: 'keep', deviceNow: 5001 })
+    .respond({ serverNow: 5002 });
+  return [script.vector('a boot answered after a sign-out applies nothing: the dormant replica stays purged, and the anon replica takes no rows')];
+}
+
 export function files() {
-  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs()] };
+  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs(), ...chunks(), ...outside(), ...heldWindow(), ...seats()] };
 }

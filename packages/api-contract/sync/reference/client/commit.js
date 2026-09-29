@@ -347,16 +347,16 @@ function retiringEntries(replica, scope, retire) {
 
 // ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits, device}; `device` holds every
 // replica a given `opts.gestureId` is checked against. `changes` is a list with its `opts`, answering
-// {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a function of the views
-// and the commit's one physNow reading {drawn, stored, now}, read in this transaction before the scope
-// check, answering {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}.
+// {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a function of the views,
+// the commit's one physNow reading and the id of the replica it writes to {drawn, stored, now, replica}
+// (§7.12), read in this transaction before the scope check, answering {gesture: {changes, opts} | null, value}, and then `commit` answers {outcome, value}.
 // A null gesture writes nothing, ticks no clock and gives a null outcome. A throw writes nothing, and
 // the body's own throw passes through unchanged.
 export function commit(replica, ctx, scope, changes, opts = {}) {
   if (replica.meta.state !== 'anon' && replica.meta.state !== 'bound') throw new CommitError(`a ${replica.meta.state} replica does not commit`, 'not-writable');
   const physNow = ctx.deviceNow + replica.meta.serverOffsetMs;
   if (typeof changes !== 'function') return commitGesture(replica, ctx, physNow, scope, changes, opts);
-  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope), now: physNow });
+  const { gesture, value } = changes({ drawn: drawn(replica, ctx.registry, scope), stored: stored(replica, ctx.registry, scope), now: physNow, replica: replica.id });
   if (!gesture) return { outcome: null, value };
   return { outcome: commitGesture(replica, ctx, physNow, scope, gesture.changes, gesture.opts ?? {}), value };
 }

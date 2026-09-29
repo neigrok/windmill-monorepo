@@ -1,5 +1,6 @@
-// §7.5 the puller: pages and frames, one local transaction each, boots into staging, resolution and
-// the digest check. The client reads its cursors' mode, key and seq, which §7.5 needs.
+// §7.5 the puller: pages, in one local transaction or in chunks, and frames, in one each; boots into
+// staging, resolution and the digest check. The client reads its cursors' mode, key and seq, which §7.5
+// needs.
 
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { moveEntry } from '../core/machines.js';
@@ -130,35 +131,81 @@ function receiveRow(replica, ctx, scope, target, row) {
   target.digest = replaceRow(target.digest, previous, target.rows[key]);
 }
 
-// One page, requested with `requested` (the cursor text sent, or null). Answers 'stale' when the
-// scope's cursor moved since the request, so the scope is pulled again.
-export function applyPage(replica, ctx, requested, page) {
+// One chunk of a rows page (§7.5 step 2): its rows, whole and in page order, into staging or the
+// confirmed rows with their digest, spent ids and known scopes, their stamps observed. The first chunk
+// of a page requested with the null cursor starts a boot's staging afresh, and a later boot page's
+// chunks join it. `behind` is the last chunk's to decide; until then the rows may be past the cursor.
+function applyChunk(replica, ctx, requested, page, rows, first) {
   const { scope } = page;
+  const record = replica.cursorOf(scope);
+  const booting = requested === null || Cursor.decode(requested).m === 'boot';
+  if (first && requested === null && replica.confirmedRows(scope).length > 0) replica.staging[scope] = { rows: {}, digest: ZERO_DIGEST };
+  replica.cursors[scope] = record;
+  const confirmed = { rows: replica.confirmed[scope] ?? {}, digest: record.digest };
+  const target = booting && replica.staging[scope] ? replica.staging[scope] : confirmed;
+  for (const row of rows) receiveRow(replica, ctx, scope, target, row);
+  replica.confirmed[scope] = confirmed.rows;
+  record.digest = confirmed.digest;
+  record.behind = true;
+  observeRows(replica, rows);
+}
+
+// A page applied whole, as one transaction: a frame's, or a page no process death interrupts.
+const WHOLE = { chunkRows: Infinity, left: Infinity };
+
+// The subscription set as a page's handling reads it when its caller gives none: a known scope is outside
+// it (§7.9).
+const notKnown = (replica) => (scope) => !replica.known[scope];
+
+// One page, requested with `requested` (the cursor text sent, or null). Answers 'outside' when its scope
+// is outside the subscription set `inSet` (§7.5 step 2), which applies nothing and pulls nothing again,
+// and 'stale' when the scope's cursor moved since the request, so the scope is pulled again. A rows page applies in chunks of
+// `budget.chunkRows` rows (§7.5 step 2); `budget.left` counts the transactions that commit before the
+// process dies (each chunk, and each reset or applied end), and a page it cuts short answers 'partial'.
+// Nothing runs between two chunks here, so the stale check the first chunk makes holds for every chunk.
+export function applyPage(replica, ctx, requested, page, budget = { ...WHOLE }, inSet = notKnown(replica)) {
+  const { scope } = page;
+  if (!inSet(scope)) return 'outside';
   const record = replica.cursorOf(scope);
   if (requested !== record.cursor) return 'stale';
   if (page.kind === 'reset') {
     replica.cursors[scope] = { ...record, cursor: null };
     delete replica.staging[scope];
+    budget.left -= 1;
     return 'reset';
   }
   if (page.kind === 'gone' || page.kind === 'not-found') {
     if (ignoresEnd(replica, ctx.registry, scope, page.kind)) return 'ignored';
     forget(replica, ctx, scope, page.kind);
+    budget.left -= 1;
     return page.kind;
   }
 
-  delete replica.known[scope];
-  replica.cursors[scope] = record;
+  const size = Math.max(1, budget.chunkRows);
+  let from = 0;
+  for (; from + size < page.rows.length; from += size) {
+    if (budget.left <= 0) return 'partial';
+    applyChunk(replica, ctx, requested, page, page.rows.slice(from, from + size), from === 0);
+    budget.left -= 1;
+  }
+  if (budget.left <= 0) return 'partial';
+  applyChunk(replica, ctx, requested, page, page.rows.slice(from), from === 0);
+  finishPage(replica, ctx, requested, page);
+  budget.left -= 1;
+  return 'applied';
+}
+
+// The page's last chunk goes on with what the cursor decides: it stores the cursor, ends a boot (the
+// staging swap, booted, its resolutions), resolves by cleanSeq and checks the digest. A page short of
+// its head leaves the scope behind, and one at its head clears it (§2.5 CursorRec.behind).
+function finishPage(replica, ctx, requested, page) {
+  const { scope } = page;
+  const record = replica.cursors[scope];
   const cursor = Cursor.decode(page.cursor);
   const booting = requested === null || Cursor.decode(requested).m === 'boot';
-  if (requested === null && replica.confirmedRows(scope).length > 0) replica.staging[scope] = { rows: {}, digest: ZERO_DIGEST };
-  const confirmed = { rows: replica.confirmed[scope] ?? {}, digest: record.digest };
-  const target = booting && replica.staging[scope] ? replica.staging[scope] : confirmed;
-  for (const row of page.rows) receiveRow(replica, ctx, scope, target, row);
-  replica.confirmed[scope] = confirmed.rows;
-  record.digest = confirmed.digest;
   record.cursor = page.cursor;
-  observeRows(replica, page.rows);
+  if (page.more) record.behind = true;
+  else delete record.behind;
 
   if (booting && cursor.m === 'live') {
     const staged = replica.staging[scope];
@@ -174,11 +221,13 @@ export function applyPage(replica, ctx, requested, page) {
   if (cursor.m === 'live' && cursor.k === undefined && cursor.s === page.seq && !replica.staging[scope]) {
     checkDigest(replica, ctx, scope, page.digest, page.seq);
   }
-  return 'applied';
 }
 
 // A 401, or a 200 served as anyone but the replica's account, pauses sync and applies nothing (§9.1).
-export function onPullResponse(replica, ctx, request, response, timing) {
+// Rows pages apply in chunks of `chunkRows` rows; with `dieAfter`, the process dies once that many page
+// transactions have committed, and the pages after the one it cuts short are not applied. `inSet` tells
+// the scopes of the subscription set (§7.9), a known scope never among them.
+export function onPullResponse(replica, ctx, request, response, timing, { chunkRows = Infinity, dieAfter = Infinity, inSet } = {}) {
   const { body } = response;
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (replica.isUnauthenticated(response)) {
@@ -188,22 +237,31 @@ export function onPullResponse(replica, ctx, request, response, timing) {
   if (response.status !== 200) return [];
   if (replica.meta.serverEpoch === null) replica.meta.serverEpoch = body.epoch;
   else if (body.epoch !== replica.meta.serverEpoch) epochChange(replica, ctx, body.epoch);
-  return body.pages.map((page) => {
+  const budget = { chunkRows, left: dieAfter };
+  const subscribed = (scope) => notKnown(replica)(scope) && (inSet === undefined || inSet(scope));
+  const outcomes = [];
+  for (const page of body.pages) {
+    if (budget.left <= 0) break;
     const requested = request.scopes.find((entry) => entry.scope === page.scope).cursor;
-    return { scope: page.scope, outcome: applyPage(replica, ctx, requested, page) };
-  });
+    outcomes.push({ scope: page.scope, outcome: applyPage(replica, ctx, requested, page, budget, subscribed) });
+  }
+  return outcomes;
 }
 
-// §7.5 step 3: a change frame applies inline iff the cursor is live without a key, the epoch matches,
-// the frame is the next seq and carries its rows. Answers 'applied', 'pull', the kind forgotten,
-// 'ignored' (an unknown op, or an end the client does not apply), or 'paused' (a frame served as anyone
-// but the replica's account, handled as a 401, §9.1).
-export function onFrame(replica, ctx, frame) {
+// §7.5 step 3: a change frame applies inline iff the cursor is live without a key and not behind, the
+// epoch matches, the frame is the next seq and carries its rows. A gone or not-found frame is handled as
+// that page kind. Answers 'applied', 'pull', the kind forgotten, 'ignored' (an unknown op, or an end the
+// client does not apply), 'outside' (a frame for a scope outside the subscription set `inSet`, which
+// applies nothing), or 'paused' (a frame served as anyone but the replica's account, handled as a 401,
+// §9.1).
+export function onFrame(replica, ctx, frame, inSet) {
   if (!['change', 'gone', 'not-found'].includes(frame.op)) return 'ignored';
   if (replica.servedAsOther(frame.as)) {
     replica.meta.authPaused = true;
     return 'paused';
   }
+  const subscribed = (scope) => notKnown(replica)(scope) && (inSet === undefined || inSet(scope));
+  if (!subscribed(frame.scope)) return 'outside';
   if (frame.op === 'gone' || frame.op === 'not-found') {
     if (ignoresEnd(replica, ctx.registry, frame.scope, frame.op)) return 'ignored';
     forget(replica, ctx, frame.scope, frame.op);
@@ -211,8 +269,8 @@ export function onFrame(replica, ctx, frame) {
   }
   const record = replica.cursorOf(frame.scope);
   const cursor = Cursor.decode(record.cursor);
-  const inline = cursor !== null && cursor.m === 'live' && cursor.k === undefined && frame.epoch === replica.meta.serverEpoch
-    && frame.seq === cursor.s + 1 && frame.rows !== undefined;
+  const inline = cursor !== null && cursor.m === 'live' && cursor.k === undefined && !record.behind
+    && frame.epoch === replica.meta.serverEpoch && frame.seq === cursor.s + 1 && frame.rows !== undefined;
   if (!inline) return 'pull';
   const page = {
     scope: frame.scope,

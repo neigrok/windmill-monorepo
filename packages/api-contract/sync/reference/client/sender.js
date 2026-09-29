@@ -82,12 +82,13 @@ function pushRequest(meta, intents) {
   return { replica: meta.replica, account: meta.account, ackThrough: meta.ackThrough, intents };
 }
 
-// A push response, one local transaction per result. After a 400 or 413 on several intents it answers
-// {limit}, ⌈count/2⌉, which the caller's next nextPush passes to resend the first half by n; otherwise
-// nothing. Every 400 emits sync-push-malformed. After a 409 or an epoch change the instance takes a new
-// actor (§7.11). A 401, or a 200 or 409 served as anyone but the replica's account, pauses sync with
-// nothing applied (§9.1).
-export function onPushResponse(replica, ctx, request, response, timing) {
+// A push response, its results in ascending n, in batches of any size (each result here). After a 400 or
+// 413 on several intents it answers {limit}, ⌈count/2⌉, which the caller's next nextPush passes to resend
+// the first half by n; otherwise nothing. Every 400 emits sync-push-malformed. After a 409 or an epoch
+// change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone but the
+// replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies once
+// that many results are recorded: the rest stay sent, and ackThrough and the epoch are left as they were.
+export function onPushResponse(replica, ctx, request, response, timing, { dieAfter = Infinity } = {}) {
   const { meta } = replica;
   const { status, body } = response;
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
@@ -114,9 +115,12 @@ export function onPushResponse(replica, ctx, request, response, timing) {
   if (status !== 200) return undefined;
 
   meta.serverEpoch ??= body.epoch;
+  let left = dieAfter;
   for (const result of [...body.results].sort((a, b) => a.n - b.n)) {
     const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
     if (!entry) continue;
+    if (left <= 0) return undefined;
+    left -= 1;
     if (result.s === 'refused') {
       onRefused(replica, ctx, entry, result, body);
       continue;

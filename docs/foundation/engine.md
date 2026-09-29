@@ -49,7 +49,8 @@ server has one clock. Actors are:
 - the server: `srv`.
 
 **D-3 Replica.** One device's durable local store for one account binding. Its id is `rp_` plus 32
-lowercase hex characters. One device database holds any number of replicas.
+lowercase hex characters. One device database holds any number of replicas, one of them *active*
+(§7.12).
 
 | State | Meaning |
 |---|---|
@@ -393,7 +394,7 @@ type ReplicaMeta = { replica: string, state: 'anon'|'bound'|'dormant', account?:
 type ConfirmedRow = Row                                  // keyed (replica, scope, type, id); replaced, never joined
 type SpentId = { replica, scope, type, id, born }        // derived types only
 type CursorRec = { replica, scope, cursor: string | null, digest: string, booted: boolean,
-                   mismatchReset?: true, digestStop?: string }
+                   behind?: true, mismatchReset?: true, digestStop?: string }
 type KnownScope = { replica, scope, kind: 'gone' | 'not-found' }
 type OutboxEntry = { localId, replica, gestureId, lineage: string /* account id | 'anon' */, scope,
                      state: 'held'|'ready'|'sent'|'acked', stamp: Stamp,
@@ -406,12 +407,17 @@ type Notice = { id, replica, scope, code: RefusalCode, detail?,
 type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 ```
 
+- `replica`, in every record above but `ReplicaMeta`, names the replica by the store's handle, which
+  a re-identify leaves alone; its id is `ReplicaMeta.replica`, and nowhere else (§7.11).
 - `hlcHigh`: the greatest stamp this replica minted or observed.
 - `admittedHigh`: the greatest stamp in any row the server sent (pull, live) or in an acked entry.
 - `CursorRec.digest`: the scope digest (§6.12) of the replica's confirmed rows of the scope. A boot
   into staging keeps its own digest until the swap (§7.5).
 - `CursorRec.booted`: the scope's first pull is complete, a boot having finished with the cursor
   live (§7.5). It is deleted with the scope's cursor.
+- `CursorRec.behind`: the scope's rows may not be the server's at the cursor's seq: the last page
+  applied to the scope ended short of its head (`more`), or a chunk of a page committed and the
+  page's last did not (§7.5 step 2). No `change` frame applies inline while it is set (§7.5 step 3).
 - `CursorRec.mismatchReset`: a digest mismatch reset the scope, and no check has matched since
   (§7.5).
 - `CursorRec.digestStop`: the app version at which digest checks of the scope stopped (§7.5).
@@ -427,6 +433,23 @@ type DeviceRow = { replica, product, key, value: Json }  // device/<product>
 - `DeviceMeta.pendingSignIn`: an incomplete sign-in, resumed at the next engine start (§7.10).
 - `liveHint` (§7.4) is not stored: the product's view rule computes it when the sender backs off
   (Appendix A).
+
+**The writer.** The store runs one writing transaction at a time. A commit (§7.1) waits for the
+writer, and the person waits for the commit, so the engine's other transactions are short. This is a
+latency intent, not a conformance item (§11):
+- Each of them SHOULD hold the writer at most `WRITER_SLICE_MS` as the M11 benches measure it, on an
+  M3 Pro Mac and the iOS 26.3 simulator (the oldest supported iPhone is estimated 3–4× slower), and
+  a commit waiting for the writer SHOULD take it before the engine's next transaction.
+- Two steps may take several transactions for this: a pull page applies in chunks (§7.5 step 2), and
+  a push answer's results in batches (§7.4). Every other step stays one transaction, an epoch change
+  (§7.5 step 1), a staging swap and the transactions of §7.10 and §7.11 among them.
+- Rows that a transaction takes out of every view MAY be deleted from storage afterwards, in
+  transactions of their own:
+  a dropped staging, the confirmed rows a staging swap replaces, a forgotten scope's rows (§7.5 step 2,
+  §7.9) and a signed-out replica's (§7.10). From the transaction that takes them out, no view, digest,
+  count or rule reads them. So no single transaction's work grows with the rows it takes out; a staging
+  swap SHOULD NOT grow with the rows it brings in either (it can switch which stored rows are the
+  scope's confirmed rows).
 
 ---
 
@@ -717,24 +740,58 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
     product (§7.10).
   - So a recovered entry's resend passes the check.
 
-**INV-15 Verified replica.** A replica whose cursor for a scope is live at seq N, without a key,
-holds exactly the server's alive rows (§6.12) of the scope at N, or detects that it does not at its
-next digest check (§7.5).
+**INV-15 Verified replica.** When a page or frame leaves a scope's cursor live at the page's or
+frame's seq N, without a key, the replica holds exactly the server's alive rows (§6.12) of the scope
+at N, or the digest check of that transaction detects that it does not (§7.5 step 4). A scope whose
+checks stopped runs none until the app version changes.
 
 *Proof.*
 - The server's scope digest at every committed seq is the sum over the scope's alive rows at that
   seq. It starts at 0, and the transaction that changes a row changes it (§6.12).
 - A pull page reads its rows and its `(seq, digest)` in one snapshot (§6.7), and a live frame
   carries the digest committed with its seq, so a received `(N, d)` is the server's state at N.
-- The client changes its digest in every transaction that changes its confirmed rows, hashing each
-  row as received, so its digest is the sum over the rows it holds.
-- A pull page that leaves the cursor live at the page's seq without a key triggers a check (§7.5),
-  so every pull at N checks. Equal row sets give equal sums. Unequal sets give equal sums only if
-  the hashes of their difference sum to 0 mod 2^256, with probability about 2^−256 for a
-  difference not chosen to collide. The digest is a correctness check, not a security boundary: a
-  replica checks its own cache against rows it may read.
+- The client changes its digest in every transaction that changes its confirmed rows, each chunk of
+  a page included (§7.5 step 2), hashing each row as received, so its digest is the sum over the rows
+  it holds.
+- Such a page or frame triggers a check in its own transaction (§7.5 step 4), so every pull that
+  reaches the head checks. Equal row sets give equal sums. Unequal sets give equal sums only if the
+  hashes of their difference sum to 0 mod 2^256, with probability about 2^−256 for a difference not
+  chosen to collide. The digest is a correctness check, not a security boundary: a replica checks its
+  own cache against rows it may read.
 - A detected mismatch resets the scope, and by INV-5 the boot delivers every alive row at its
   `asOf`. A mismatch right after such a reset is reported and not reset again (§7.5).
+
+**INV-16 Bounded following.** While the app is in the foreground and its live socket is open, every
+scope of the subscription set is followed, waits for its governing record's create, or is in doubt
+with a re-pull scheduled or in flight, a request being in flight for at most `REQUEST_TIMEOUT_MS`
+(§7.9). Whatever the server answers, a scope in doubt is
+re-pulled at most once per backoff draw, and subscribed again only after a rows page of it is applied.
+
+*Proof.*
+- **No quiet scope.** A scope stops being followed only by an `unsub` (it left the set), by the
+  socket's close, or by a frame's end. An end the client applies records the scope known, which takes
+  it out of the set (§7.5 step 2). An end it ignores puts the scope in doubt, and the doubt's start
+  schedules a re-pull. A re-pull that ends with the scope still in doubt schedules the next, whether it
+  was answered by another ignored end or not answered: a request lasts at most `REQUEST_TIMEOUT_MS`,
+  after which it is a transport error. A rows page ends the doubt, and a scope of the set that is
+  neither in doubt nor followed is subscribed at once. A scope waiting for its governing create starts
+  on the create's result (§7.9).
+- **No fast `sub`.** `sub` goes only to a scope of the set not in doubt. A frame's end leaves the
+  scope known, out of the set until a subscribe or an alive governing row clears the record (§7.9), or
+  in doubt, which only an applied rows page ends. So between two ends of a scope's following stands a
+  person's subscribe, a governing row the server committed, or a pull of the scope that brought rows.
+- **No fast pull.** Re-pulls come one at a time, each `random(0, min(30 s, 1 s · 2^k))` after its
+  cause, `k` rising by one each; `k` returns to 0 only after the scope stayed followed, not in doubt,
+  for 30 s, when it leaves the set, or at a sign-in, a sign-out or a re-identify of the active
+  replica. Every other pull has a cause the server's answers do not drive: a person's act
+  (foreground, a subscribe), a launch, a socket reopen, which backs off on its own (§7.5), the
+  fallback interval, a change the server committed (a live gap), a re-authentication, or a sign-in, a
+  sign-out or a re-identify. A stale page and a page short of its head (`more`) pull again only after
+  a cursor moved, and a scope has one pull in flight at a time (§7.5).
+- So a loop of answers — a `sub` or a pull answered `not-found` while the client holds the governing
+  record alive — turns at most once per re-pull draw, whose bound doubles to 30 s, never at the
+  socket's round-trip speed. It lasts while the contradiction does: a rows page ends it, and so does
+  the client's ceasing to hold the governing record alive, after which the end is applied.
 
 ---
 
@@ -1025,6 +1082,8 @@ subscribed to the scope that still holds read access. Frames of one scope so lea
   sends no frame for it.
 - An upgrade whose credential does not resolve answers `401` (§9.1). A socket keeps the principal
   its upgrade was served as, and every frame it sends carries it as `as` (§9.5).
+- The server answers every `ping` with `pong` at once, and keeps an idle socket open at least
+  `LIVE_PING_MS + LIVE_PONG_MS`; a deployment's edge keeps the same bound.
 - A `sub` to a scope its principal cannot read is answered at once with the `gone` or `not-found`
   a pull would give, and is not kept.
 - A visibility change that removes a subscriber's access sends `not-found` and ends that
@@ -1165,8 +1224,9 @@ result: a failure in the steps after the commit (below) is the engine's to log a
 reaches the caller.
 
 In the **read-and-commit** form, `changes` is a function of the views: `commit` calls it after step 1
-and before step 2, with `drawn` and `stored` read inside the same transaction and the commit's
-`physNow()` reading (step 4), so a read and the writes it decides are one transaction. The function
+and before step 2, with `drawn` and `stored` read inside the same transaction, the commit's
+`physNow()` reading (step 4) and the id of the replica the commit writes to, the active one (§7.12),
+so a read and the writes it decides are one transaction. The function
 returns the gesture (its changes and `opts`) or none, and MAY return a value of its own, which
 `commit` returns beside its result. With none, `commit` writes nothing, ticks no clock and returns
 none. A gesture whose diff is empty still runs steps 2–11. One local transaction:
@@ -1321,7 +1381,7 @@ loop while state = bound ∧ ¬authPaused ∧ online:
           its own), and its dependents fold
   POST push jcs({ replica, account, ackThrough, intents: sent entries by n })
       // the body is its jcs
-  network error                 → backoff
+  network error, or no answer by REQUEST_TIMEOUT_MS → backoff
   503 {retryAfterMs}            → sleep max(retryAfterMs, the backoff draw)
   retry {n, retryAfterMs}       → entries from n stay sent (unless §7.7 step 1.3 returned them to
                                   ready: it takes precedence); wait, then continue
@@ -1336,10 +1396,10 @@ loop while state = bound ∧ ¬authPaused ∧ online:
   every 400                     → also emit the telemetry event sync-push-malformed, with no intent
                                   content
   replica-forked | replica-foreign | gap → re-identify (§7.11)
-  per result, in its own tx:
+  each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
-    ackThrough := the response's lastN, once its results are recorded
+  in the last batch, once every result is recorded: ackThrough := the response's lastN
   then, if the response epoch ≠ serverEpoch → epoch change (§7.5)
 backoff: sleep random(0, min(ceiling, 1 s · 2^k)), then k += 1; ceiling = liveHint ? 30 s : 300 s; k resets
          on a response with results, unless one of them is `clock-skew`
@@ -1356,23 +1416,37 @@ orphan awaiting its result (sent, or returned to ready), or touches, by a delta,
 prediction, a record that an earlier held-back entry touches. Every other ready entry is numbered
 past held and held-back entries.
 
+**Result batches.** A batch is one local transaction holding one result or several, the next in `n`
+order, sized by §2.5's writer rule; a commit may take the writer between two batches. A reader
+between batches sees every result up to some `n` recorded and none after it. A process death between
+batches keeps the batches recorded and loses the rest: their entries stay `sent`, `ackThrough` has
+not moved, and the next push resends them. The server answers them from its stored results (§6.2
+step 4), or `replica-forked` for an entry an earlier batch's `clock-skew` recovery rewrote, which
+re-identifies with nothing lost (§7.7).
+
 ### §7.5 Puller, reset and epoch change
 
-The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), an ignored
-`not-found` for a scope that has not booted (§7.9, rate-limited there), a re-authentication that
-clears `authPaused` (§8.2), and every `PULL_FALLBACK_MS`. Each run pulls the scopes of its trigger,
-each until `more = false`: a live gap its scope, a subscribe the scope subscribed, an ignored
-`not-found` its scope, and every other trigger every subscribed scope. A request names at most
-`PULL_MAX_SCOPES` scopes; a run over more sends several, and a run left with no scope to pull (every
-one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9). A pull
-answered `401`, or served as another principal (§9.1), sets `authPaused` and applies nothing (§9.6).
+The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), a re-pull of a
+scope in doubt (§7.9), a re-authentication that clears `authPaused` (§8.2), a sign-in, a sign-out or
+a re-identify of the active replica (§7.12), and every `PULL_FALLBACK_MS` in the foreground (§7.9
+**Timers**). Each run pulls the scopes of its trigger, each until `more = false`: a live gap its
+scope, a subscribe the scope subscribed, a re-pull its scope, and every other trigger every
+subscribed scope, those in doubt included. A scope with a pull in flight is not pulled again by a
+trigger; the trigger marks it, and the answer's handling pulls it once more if it is marked or
+`more`. A request names at most `PULL_MAX_SCOPES` scopes; a run over more sends several, and a run
+left with no scope to pull (every one waiting for its governing record's create, §7.9) sends none.
+Each run first reconciles the subscription set (§7.9). A pull answered `401`, or served as another
+principal (§9.1), sets `authPaused` and applies nothing (§9.6).
 
-**Live socket.** A replica that pulls keeps one live socket, subscribed (`sub`) to the scopes it
-pulls. An open that fails, and a socket that ends or fails (the server or the network closes it, or
-a `ping` goes unanswered), count as a reconnect: the puller runs at once. A close the client makes
-(leaving the foreground, going offline, a replica change) pulls nothing. Opening again backs off as
-the sender does (§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or
-ended socket, and resets once a socket has stayed open 30 s. A `401` at the upgrade, where the
+**Live socket.** A replica that pulls keeps one live socket, which follows (`sub`) the scopes it
+pulls as §7.9 states. An open that fails, and a socket that ends or fails (the server or the network
+closes it, or a `ping` goes unanswered for `LIVE_PONG_MS`), count as a reconnect: the puller runs at
+once. The client sends `ping` after `LIVE_PING_MS` with no frame or `pong` received. A close the
+client makes (leaving the foreground, going offline, a sign-in, a sign-out or a re-identify) pulls
+nothing, though the sign-in, sign-out or re-identify runs the puller itself (§7.12). Opening again
+backs off as the sender does
+(§7.4), with its own `k` and the 30 s ceiling: `k` rises with every failed open or ended socket, and
+resets once a socket has stayed open 30 s. A `401` at the upgrade, where the
 client can read it, sets `authPaused` too; a browser, which cannot, learns it from its next pull or
 push. A frame served as another principal (§9.1) sets `authPaused`, applies nothing, and the client
 closes the socket. A re-authentication that clears `authPaused` opens the socket again at once, with
@@ -1386,16 +1460,36 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
    3. Every `acked` entry with `resultEpoch ≠ epoch` returns to `ready` at its commit position.
    4. Re-identify (§7.11).
 
+   The epoch change is never split (§2.5). Split, a process death between its parts could leave
+   acked entries of the old epoch that no rule returns to ready or resolves (INV-3), or ready entries
+   numbered under the old replica id. Its work grows with the replica's scopes and its acked and sent
+   entries, never with its rows: a re-identify touches no row (§7.11), and a staging it drops is
+   deleted afterwards (§2.5).
+
    A restore is outside INV-3's condition. For example, a re-sent command may create its record
    again under a new `born`, and a pending delete already rewritten to the old `born` then ends as
    a no-op; and a notice may describe a record that a forked store later re-creates.
-2. Per page, in one local transaction:
+2. **Pages.** A `reset`, `gone` or `not-found` page applies in one local transaction. A rows page
+   applies in one local transaction, or in several, its *chunks*, sized by §2.5's writer rule: each
+   chunk takes the next rows of the page, whole and in the page's order. A page's chunks apply one
+   after another, with no other page or frame of the scope between them, and each first checks that
+   the page is not stale, that its scope is in the subscription set and that its replica is still
+   active (§7.12); a chunk that fails a check applies nothing, and neither does the rest of the page.
+   A page in one transaction is its own first and last chunk.
    - **Stale page.** A page requested with a cursor other than the scope's stored cursor is dropped,
      and the scope is pulled again, so a cursor never moves backwards.
+   - **Scope outside the set.** A page for a scope outside the subscription set (§7.9), whatever
+     cursor it was requested with, applies nothing and pulls nothing again: a forgotten scope holds no
+     cursor, so a page requested with `null` would otherwise pass the stale check and land rows and a
+     cursor the next reconcile deletes. A stale page of such a scope is not pulled again either. A
+     known scope is outside the set, one an earlier page of the same answer made known included (a
+     dead governing row): its own `gone` page applies nothing, and the next reconcile forgets it.
    - **`reset`:** the cursor becomes `null`, and any staging is dropped.
    - **Boot rows** go to staging when the boot starts from a `null` cursor while confirmed rows
-     exist, otherwise straight in. A thin dead derived row adds a `SpentId`. On the page that ends
-     the boot's scan (its cursor turns live):
+     exist, otherwise straight in; the first chunk of the page requested with the `null` cursor
+     decides, and starts that staging afresh; a later boot page's chunks join it. A thin dead derived
+     row adds a `SpentId`. On the last chunk of the page that ends the boot's scan (its cursor turns
+     live):
      - staging replaces the scope's confirmed rows, and its digest replaces theirs;
      - `booted := true`;
      - acked entries of the scope with `resultEpoch = serverEpoch` and `resultSeq ≤ asOf` resolve.
@@ -1419,26 +1513,57 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
        that kind, and unsubscribe;
      - acked entries of the scope resolve;
      - pending entries stay, and the server refuses them.
-   - A rows page clears the scope's `KnownScope` record. Only it, a subscribe and an alive governing
-     row (§7.9) clear one, the last two only a `not-found` one.
+   - A subscribe and an alive governing row (§7.9) clear a `not-found` `KnownScope` record; nothing
+     clears a `gone` one.
    - Every change to the scope's confirmed rows changes `CursorRec.digest`, and every change to its
-     staging changes the staging digest (§6.12).
-   - Store the cursor, observe every stamp, update `admittedHigh`.
-   - Resolve acked entries whose `resultSeq ≤ cleanSeq` in the same epoch.
+     staging changes the staging digest (§6.12), in the chunk that makes the change.
+   - Every chunk observes the stamps of its rows and updates `admittedHigh`. The last chunk stores
+     the cursor.
+   - Every chunk before the last sets `CursorRec.behind`. The last sets it when the page's `more` is
+     true, and clears it otherwise.
+   - The last chunk resolves acked entries whose `resultSeq ≤ cleanSeq` in the same epoch.
      - Live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key.
      - While booting: `cleanSeq = −∞`.
 
    An `ok` whose `resultSeq` the scope's `cleanSeq` already covers, in the same epoch, resolves its
-   entry in the result's own transaction (§7.4).
-3. **Live frames.** A `change` frame is applied as a live page iff the cursor is live without a key,
-   `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or
-   `not-found` frame is applied as that page kind, and the two a page ignores (step 2) are ignored
-   alike.
-4. **Digest check.** When, after a page or frame is applied, the cursor is live, carries no key and
-   its seq equals the page's or frame's `seq`, and no staging is pending, the client compares its
-   digest with the received one, in that transaction. This covers a live page that reaches the head,
-   a frame applied inline, and a boot whose `asOf` scan has ended and caught up to the head. On a
-   mismatch:
+   entry in its result's batch (§7.4).
+
+   **Between chunks.** Only a page's last chunk does what its cursor decides: it stores the cursor,
+   ends a boot (the swap, `booted`, its resolutions), resolves by `cleanSeq`, and runs the digest
+   check (step 4). So a reader between two chunks sees what it would see had the server ended the page
+   at the last row applied, except that none of those has happened; no record is torn, since chunks
+   take whole rows. A process death between chunks keeps the chunks committed and loses the rest, and
+   the scope's next pull, under the unmoved cursor, asks for the page again:
+   - Applying it again changes nothing the chunks got right: each row it brings has a `seq` at least
+     that of the row a chunk applied, and replaces it (§3.4). The chunks' rows changed at seqs above
+     the cursor, so the pull, continued to its head, brings each in its state there (INV-5), and the
+     check at the head compares like with like (INV-15).
+   - A boot from a `null` cursor whose chunks went straight in finds their rows, so it goes into
+     staging, whose swap replaces them; one whose chunks went into staging starts it afresh.
+   - No frame applies inline over the chunks' rows, whichever socket brings it: the scope is
+     `behind` until a page brings its cursor to the head (step 3).
+
+   A chunk fails its check only after a transaction outside the page moved the scope's cursor (an
+   epoch change leaves it `null`), took the scope out of the subscription set, or changed the active
+   replica. It leaves the same state as a death, with the process alive.
+
+   A straight-in boot's chunks are visible before `booted`, in the page's `(seq, type, id)` order, so
+   a record can arrive before one it references (a roadmap `edge` before its `node`). The pages of a
+   multi-page boot show the same, at a coarser grain. A product that must not draw a partly booted
+   scope waits for `firstPullComplete` (§7.9; the domain kit's ER-3).
+3. **Live frames.** A frame applies in one local transaction. A `change` frame is applied as a live
+   page iff the cursor is live without a key, the scope is not `behind`, `epoch` matches,
+   `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or `not-found` frame is
+   handled as that page kind (step 2: applied, ignored, or outside the set). A scope `behind`
+   may hold a row older than its state at the cursor's seq (changed below the cursor and again above
+   it, so a page short of the head skipped it), or rows past the cursor (chunks a death cut short). A
+   `change` frame, which may arrive late on any socket, would then check its digest against rows that
+   are not the server's at its seq.
+4. **Digest check.** When, after a page's last chunk or a frame is applied, the cursor is live,
+   carries no key and its seq equals the page's or frame's `seq`, and no staging is pending, the
+   client compares its digest with the received one, in that transaction. This covers a live page
+   that reaches the head, a frame applied inline, and a boot whose `asOf` scan has ended and caught up
+   to the head. On a mismatch:
    1. emit the telemetry event `sync-digest-mismatch`, with the scope kind and seq and no row
       content;
    2. reset the scope: the cursor becomes `null`, `mismatchReset := true`, and the next pull boots
@@ -1511,7 +1636,7 @@ notice of its own, as step 3 states):
 5. **Redraw.** Recompute the touched views. This is the whole rebase; clients re-execute no
    business logic.
 
-**Write map.** An `ok` result's write map applies in the result's transaction. Let `s` be the
+**Write map.** An `ok` result's write map applies in the result's batch (§7.4). Let `s` be the
 command entry's stamp, which every register it predicted carries. Steps 1 and 2 run for each map
 entry `w`, then step 3 once for the map:
 1. `w.from` is present only when the resolved id differs from the id the command was called with,
@@ -1545,7 +1670,7 @@ restamp leaves the entry's `stamp` unchanged. For each register that moves from 
 4. every later held, ready or sent guard on that register naming `o` takes `n`.
 
 A later `sent` entry so recovers from its own `clock-skew` refusal with borns and guards that match.
-A process death between two result transactions of one response can leave such an entry rewritten
+A process death between two result batches of one response can leave such an entry rewritten
 before its own result is recorded; its resend then carries another digest, the server answers
 `replica-forked`, and the replica re-identifies (§7.11), with nothing lost.
 
@@ -1555,10 +1680,14 @@ before its own result is recorded; its resend then carries another digest, the s
   the live socket.
 - A tab requests the lock when it becomes visible. A hidden tab releases it once a peer announces
   it is visible.
-- Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)` and `upgrade` on
-  `BroadcastChannel('wm-sync:<replica>')`, and a tab answers a peer's `hello` with its own. A tab
-  that knows no other live tab is the last tab. A tab that receives a `426` posts `upgrade`, and
-  every tab then stops sync until the app is upgraded (§7.5).
+- Tabs post `hello {visible}`, `visible`, `hidden`, `bye`, `changed(scope, ids)`, `upgrade` and
+  `activeReplicaChanged(previous, replica)` on `BroadcastChannel('wm-sync:<replica>')`, and a tab
+  answers a peer's `hello` with its own. A tab that knows no other live tab is the last tab. A tab
+  that receives a `426` posts `upgrade`, and every tab then stops sync until the app is upgraded
+  (§7.5). A tab whose transaction changes `activeReplica()` posts `activeReplicaChanged` on the
+  channel of the replica it replaced, and every tab delivers the event (§7.12). A tab compares
+  `activeReplica()` with its channel's id on every `hello`, `visible` and lock acquisition, and
+  rekeys its channel and lock.
 - Every tab holds the lock `wm-tab` in shared mode while it lives. A tab that finds it unheld
   (`navigator.locks.query()`) when it starts is the first tab.
 - Every tab reads views from IndexedDB and commits through §7.1.
@@ -1567,7 +1696,9 @@ before its own result is recorded; its resend then carries another digest, the s
 
 A bound replica subscribes the product scopes of the products its surface carries (the registry's
 `surfaces`), and no scope of another product. It also subscribes the tree and overlay scopes its
-product binding lists (A.1), and any `tree/<T>` while it is open: the engine exposes
+product binding lists (A.1): the set holds a tree and its overlay per governing record alive in
+`drawn` or in `stored`, so a held create's tree is in it, and so is a tree inside its governing
+record's delete window, so an undo finds its rows. It also subscribes any `tree/<T>` while it is open: the engine exposes
 `subscribe(scope)` and `unsubscribe(scope)`, which a product calls when it opens and closes a tree.
 A subscribe deletes a `not-found` `KnownScope` record; the scope has no cursor, so its first pull
 boots it. A `gone` record stays, since a scope's death is final (INV-13): a subscribe to it answers
@@ -1581,23 +1712,44 @@ alive row (§6.7).
 A tree or overlay scope whose governing record's create is still in the outbox, held, ready or sent
 (by a delta or a prediction), stays in the subscription set but is neither pulled nor subscribed
 (`sub`) on the live socket: the server holds no such scope yet. Both start once that entry has its
-result. A `not-found` page or frame is ignored, and writes no `KnownScope`, for such a scope and for
-any tree or overlay scope whose governing record the replica holds alive, in `drawn` or in `stored`
+result, the `sub` of a scope in doubt once that pull has brought rows (below). A `not-found` page or
+frame is ignored, and writes no `KnownScope`, for such a scope and for any tree or overlay scope whose governing record the replica holds alive, in `drawn` or in `stored`
 (§7.6): its create acked but not yet confirmed, the record confirmed, or a held delete of it
 waiting, which leaves it alive in `stored` only. Such an answer is stale: the server wrote it before
 it held the scope, as when a pull that left before the create was committed, or a `sub` answered
 before it, lands after the create's `ok`. A `gone` needs no exception, since a tree that exists only
 in the outbox cannot have died.
 
-Two rules keep a followed scope from going quiet:
-- A `gone` or `not-found` frame, applied or ignored, removes its scope from the set the live socket
-  follows: the server kept no subscription for it (§6.8), so a later subscribe sends `sub` again.
-- An ignored `not-found` for a scope that has not booted (`CursorRec.booted` false) pulls it again
-  (§7.5), so a new tree boots without waiting for `PULL_FALLBACK_MS`: at most once per response or
-  frame that carried the `not-found`, and each further re-pull of that scope backs off as opening
-  the live socket does (§7.5), with its own `k` and the 30 s ceiling, until the scope boots. While
-  the governing create is still in the outbox, the pull leaves the scope out, and the create's
-  result starts it.
+**Following.** While the live socket is open it *follows* the scopes it has sent `sub` for, less
+those it has sent `unsub` for and those a `gone` or `not-found` frame named, applied or ignored: the
+server keeps no subscription for them (§6.8). A socket that opens follows none. The socket keeps
+this set in step with the subscription set: it sends `sub` for each scope of the subscription set it
+does not follow, unless the scope waits for its governing record's create (above) or is in doubt
+(below), and `unsub` for each scope it follows that left the subscription set.
+
+**Doubt.** An ignored end, a `gone` or `not-found` page or frame that §7.5 step 2 ignores, puts its
+scope *in doubt*, unless it is already. A rows page of the scope, applied, ends the doubt and drops its
+scheduled re-pull. While a scope is in doubt:
+- the socket does not `sub` it. A scope the doubt began with an ignored frame is so not followed until
+  the doubt ends; one it began with an ignored page stays followed if it was;
+- one re-pull of it is always scheduled or in flight. The doubt's start schedules the first, and a
+  re-pull that ends with the scope still in doubt, answered by another ignored end or not answered
+  within `REQUEST_TIMEOUT_MS` (a transport error), schedules the next. Each is scheduled `random(0, min(30 s, 1 s · 2^k))` after its cause, then
+  `k += 1`, with the scope's own `k` (Appendix B's re-pull backoff). A re-pull pulls its scope alone.
+  While the governing create is still in the outbox it waits for the create's result, which pulls
+  the scope (above);
+- the pulls of every other trigger (§7.5) take the scope as they take any subscribed scope, and leave
+  its re-pull and its `k` as they are.
+
+The scope's `k` returns to 0 once it has stayed followed, not in doubt, for 30 s. A scope that leaves
+the subscription set loses its doubt and its `k`, and a sign-in, a sign-out or a re-identify of the
+active replica (§7.12) ends every doubt and returns every `k` to 0, whether or not its id changed. Doubts and `k`s are not stored: a process starts with none. INV-16
+bounds what they cost.
+
+**Timers.** The puller's timers, `PULL_FALLBACK_MS` and every scheduled re-pull, run only while the
+app is in the foreground (§7.3 defines leaving). A re-pull whose time comes in the background is due:
+a puller run in the background for another trigger takes it with its own scopes. Returning to the
+foreground pulls every subscribed scope (§7.5). `k` keeps its value across the background.
 
 Reconciling the subscription set unsubscribes each scope that left it, and resolves the acked
 entries of every scope outside it. It runs at the start of every puller run (§7.5); a push result
@@ -1679,12 +1831,49 @@ Then, in one local transaction:
 At engine start (iOS and Android), a `DeviceMeta.forkGuard` that differs from its backup-excluded
 copy, or a missing copy, triggers **re-identify** of every replica in the local database, and a new
 `forkGuard`. A local database with no `forkGuard` (a first launch) mints its first guard, kept in
-both places, without re-identifying. Re-identify, in one local transaction per replica:
+both places, without re-identifying. A re-identify changes `ReplicaMeta.replica` and nothing keyed
+by it: a store keys rows, entries, cursors, notices and device rows by a handle of the replica that a
+re-identify leaves alone, and the id lives in `ReplicaMeta` alone. Its work grows with the replica's
+`sent` entries, never with its rows. Re-identify, in one local transaction per replica:
 1. Mint a new replica id. The re-identifying engine instance takes a new actor; other instances
    take one at their next launch (D-2).
 2. `nextN := 1`, and `ackThrough := 0`.
 3. Every `sent` entry returns to `ready`. The sender numbers them again in commit order, with new
    digests.
+
+### §7.12 The active replica
+
+One replica of the device is **active**: the one `commit` (§7.1), the views (§7.6), the sender
+(§7.4), the puller and the live socket (§7.5) act on. It is the `bound` replica while an account is
+signed in, and otherwise the `anon` replica, which stays active through an incomplete sign-in
+(§7.10). A re-identify changes the active replica's id, not which replica is active. A page or frame
+that arrives for a replica no longer active applies nothing; push results still in flight are
+recorded in the replica that sent them (§7.10).
+
+The engine exposes:
+- `activeReplica()`: the active replica's id (D-3).
+- The event `activeReplicaChanged(previous, replica)`: `activeReplica()` answers `replica` where it
+  answered `previous`. It follows every transaction that changes that answer, and no other:
+  - a re-identify of the active replica (§7.11): at engine start by the fork guard, after a push
+    answered `replica-forked`, `replica-foreign` or `gap` (§7.4), and in an epoch change (§7.5
+    step 1);
+  - a completed sign-in (§7.10) whose `bound(A)` replica is a `dormant(A)` replica bound again, or a
+    new replica. One that rebinds the `anon` replica keeps its id and fires none;
+  - a finished sign-out (§7.10), which makes the `anon` replica active.
+
+  A re-identify of a replica that is not active, such as a dormant one whose in-flight push is
+  answered `replica-forked`, fires none.
+- The id of the replica a commit writes to, given to its read-and-commit function (§7.1), so a
+  record that names its writer, such as gym `message.replica` (Appendix A.2), names it exactly.
+
+The event is delivered after its transaction commits, once per change, in the order of the changes.
+It is not durable: a change whose process dies before delivering it is announced by no later event,
+so whoever holds an id reads `activeReplica()` again at engine start, or keeps a durable mark of
+its own, as the gym Coach's `runningTurn` device row does (gym Coach §4.5). On web every tab delivers
+it (§7.8).
+
+A sign-in, a sign-out or a re-identify of the active replica runs the puller (§7.5) and ends every
+doubt (§7.9), whether or not its id changed.
 
 ---
 
@@ -1710,7 +1899,7 @@ both places, without re-identifying. Re-identify, in one local transaction per r
 | `sent` | transport error, 401, 503, `retry`; a 400 or 413 on a several-intent request (halved, §7.4) | `sent` |
 | `sent` | re-identify (fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change) | `ready` |
 | `sent`, unprocessed | an earlier entry's `clock-skew` recovery (§7.7 step 1); a 400 or 413 on a one-intent request at a lower `n` (§7.4) | `ready` (restamped after a skew) |
-| `acked` | `cleanSeq ≥ resultSeq` in the same epoch, checked by every page and frame and by the `ok` itself (§7.5); boot complete with `asOf ≥ resultSeq`; scope `gone` or `not-found`; the scope leaves the subscription set (§7.9); sign-out (§7.10) | `resolved` |
+| `acked` | `cleanSeq ≥ resultSeq` in the same epoch, checked by every page's last chunk, every frame and the `ok` itself (§7.5); boot complete with `asOf ≥ resultSeq`; scope `gone` or `not-found`; the scope leaves the subscription set (§7.9); sign-out (§7.10) | `resolved` |
 | `acked` | epoch change, when `resultEpoch ≠ epoch` | `ready` |
 | any non-terminal | discarded by the person (§7.10) | `discarded` |
 
@@ -2096,7 +2285,9 @@ run, and against the real server and Postgres nightly.
 **Faults:**
 - drop, duplicate, delay and reorder;
 - lost replies;
-- process death between local transactions;
+- process death between local transactions, two chunks of a pull page (§7.5 step 2) and two batches
+  of a push answer's results (§7.4) among them;
+- pull pages that end short of the head (`more`), with frames arriving between them;
 - clock error of ±10 min, and device clock jumps;
 - holds, undo, retire, leaving the app, and activity or scene recreation;
 - multiple tabs;
@@ -2110,7 +2301,8 @@ run, and against the real server and Postgres nightly.
 - a store restored from a snapshot, or cloned.
 
 **It checks at every answer and frame** that one served as anyone but the replica's account changes
-nothing the replica pulled (§9.1).
+nothing the replica pulled (§9.1), and **at every step** that each change of a device's active replica
+id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12).
 
 **It checks after quiescence:**
 - INV-2: no resurrection without a revive or a newer keyed put.
@@ -2181,14 +2373,15 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
   (§6.3), and tending.
 - **Consequences:** a `tree` delete also writes the owner's `track` of that tree dead.
 - **Subscriptions** (§7.9): a bound replica also subscribes `tree/<T>` and `self/overlay/<T>` for
-  every alive `tree` and `track` record.
+  every `tree` and `track` record alive in `drawn` or in `stored`.
 
 ### A.2 Gym
 
-**Scope:** `self/gym`. **Device scope** `device/gym`, keyed per session
-([gym Coach](mobile/gym_coach.md) §9.3): `movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the
-chosen movement), `offer:<session>` (a pre-minted offer id), `rack:<session>` (rack state), and
-`picture:<id>`, marked `localOnly`. **Surfaces:** web, iOS, Android.
+**Scope:** `self/gym`. **Device scope** `device/gym` ([gym Coach](mobile/gym_coach.md) §9.3), with
+rows keyed per session, per picture and one per replica: `movementOrder:<session>` (the live movement
+order, exercise ids), `movement:<session>` (the chosen movement), `offer:<session>` (a pre-minted
+offer id), `rack:<session>` (rack state), `picture:<id>`, marked `localOnly`, and `runningTurn` (the
+Coach turn running on this device, gym Coach §4.1 step 2). **Surfaces:** web, iOS, Android.
 
 Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
 and `n ≤ 99 999`. Minted ids match `^[A-Za-z0-9_-]{8,64}$`, except `exercise` ids, which match
@@ -2334,6 +2527,11 @@ an open session), `session-overlap` (`gym.importSession`, `gym.correctSession`),
 | `PULL_FALLBACK_MS` | 300 000 |
 | Backoff | base 1000 ms; ceiling 300 000 ms, or 30 000 ms while `liveHint`; full jitter |
 | Live reopen backoff | base 1000 ms; ceiling 30 000 ms; full jitter; `k` resets after 30 000 ms open |
+| `LIVE_PING_MS` | 25 000: the client sends `ping` after this long with no frame or `pong` received |
+| `LIVE_PONG_MS` | 10 000: a `ping` unanswered for this long fails the socket (§7.5) |
+| `REQUEST_TIMEOUT_MS` | 60 000: a pull or push with no answer by then is a transport error |
+| Re-pull backoff (§7.9) | base 1000 ms; ceiling 30 000 ms; full jitter; per scope; `k` resets after 30 000 ms followed and not in doubt, when the scope leaves the subscription set, and at a sign-in, a sign-out or a re-identify of the active replica |
+| `WRITER_SLICE_MS` | 25: how long, at most, an engine transaction other than a commit should hold the store's writer (§2.5, a latency intent) |
 | `OFFSET_SAMPLES` | 8 |
 | `CLOCK_JUMP_MS` | 1000 |
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |

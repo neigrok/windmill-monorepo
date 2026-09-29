@@ -31,14 +31,15 @@ class ServerScript {
     return this.add({ op: 'push', deviceNow });
   }
 
-  // Answers the request of the last push step with the server's response, received at tRecv.
-  respond({ serverNow, budget, tRecv = serverNow }) {
+  // Answers the request of the last push step with the server's response, received at tRecv. With
+  // `dieAfter`, the process dies once that many of its results are recorded.
+  respond({ serverNow, budget, tRecv = serverNow, dieAfter }) {
     const out = runSteps(this.input);
     const index = this.input.steps.map((step) => step.op).lastIndexOf('push');
     const request = out.returns[index];
     const pushed = push({ state: this.server, registry, product, account: 'A', request, serverNow, budget });
     this.server = pushed.state;
-    return this.add({ op: 'pushResponse', response: pushed.response, deviceNow: tRecv, tSend: this.input.steps[index].deviceNow, tRecv });
+    return this.add({ op: 'pushResponse', response: pushed.response, deviceNow: tRecv, tSend: this.input.steps[index].deviceNow, tRecv, ...(dieAfter === undefined ? {} : { dieAfter }) });
   }
 
   pushRound({ deviceNow, serverNow = deviceNow, budget, tRecv = deviceNow }) {
@@ -532,6 +533,14 @@ function transports() {
       actors: ['r_cccccccccccc'],
       steps: [rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), { op: 'push', deviceNow: 5002 }, { op: 'reidentify', deviceNow: 5003 }, { op: 'push', deviceNow: 5004 }],
     }),
+    new ServerScript({ device: base(), server: server() })
+      .withActors(['r_cccccccccccc'])
+      .add(rename('card0001', 'One', 5000), rename('card0002', 'Two', 5001), rename('card0003', 'Three', 5002))
+      .push(5003)
+      .respond({ serverNow: 5010, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5020 })
+      .pushRound({ deviceNow: 5030 })
+      .vector('a process death between result batches keeps the results recorded; the rest stay sent and ackThrough holds, and the resend is answered from the stored results'),
     stepsVector('an epoch change nulls every cursor, returns acked entries of another epoch to ready and re-identifies, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],

@@ -4166,7 +4166,14 @@
           }
         ]
       },
-      "ended": []
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_00000000000000000000000000000001",
+          "replica": "rp_00000000000000000000000000000002"
+        }
+      ]
     }
   },
   {

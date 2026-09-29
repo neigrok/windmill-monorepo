@@ -2,8 +2,10 @@
 // server over a network that drops, duplicates, delays and reorders, with process death and reboots,
 // clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, credentials
 // that expire (401), are dropped on the way (served as anonymous) or are another account's (served as
-// it), 400 and 413 envelopes, poison, epoch change and restored or cloned stores behind fork guards. `check()` states the invariants after
-// quiescence.
+// it), 400 and 413 envelopes, poison, epoch change, restored or cloned stores behind fork guards, pull
+// pages short of the head, and a process death between two chunks of a pull page or two batches of a
+// push answer's results. Each step checks that every change of a device's active replica id was
+// announced (§7.12); `check()` states the invariants after quiescence.
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../../core/constants.js';
@@ -56,6 +58,8 @@ class SimDevice {
     this.credential = 'valid';
     this.ended = [];
     this.telemetry = [];
+    this.events = [];
+    this.announced = this.store.activeReplica.id;
     this.committed = [];
     this.discardedNotices = [];
     this.gestures = 0;
@@ -80,6 +84,7 @@ class SimDevice {
       deviceNow: this.world.now + this.skew,
       ended: this.ended,
       telemetry: this.telemetry,
+      events: this.events,
       appVersion: '1',
       device: this.store,
       nextGestureId: () => `${this.name}-g${++this.gestures}`,
@@ -128,8 +133,12 @@ class SimDevice {
     return { store: this.store.toJSON(), ended: structuredClone(this.ended), committed: [...this.committed], discardedNotices: [...this.discardedNotices], gestures: this.gestures };
   }
 
+  // A store restored from a backup, or cloned, starts as a new process does: what it announces next
+  // follows the active replica it holds.
   restore(snapshot) {
     this.store = new Device(snapshot.store);
+    this.announced = this.store.activeReplica.id;
+    this.events.length = 0;
     this.ended = structuredClone(snapshot.ended);
     this.committed = [...snapshot.committed];
     this.discardedNotices = [...snapshot.discardedNotices];
@@ -145,6 +154,14 @@ export class World {
     this.seed = seed;
     this.steps = steps;
     this.faults = faults;
+    // Process deaths between two chunks of a pull page or two batches of a push answer's results: during
+    // the faults, and in quiescence's first round, where the long pages and answers are. They draw from
+    // their own generator, so the other faults each seed draws stay as they were.
+    this.midDeaths = faults;
+    this.deathRng = new Rng(seed ^ 0x5eed5);
+    // A server whose pull pages hold a few hundred bytes answers most pulls short of the head, so frames
+    // meet scopes left behind (§7.5 step 3). Drawn apart too.
+    this.pullLimits = faults && new Rng(seed ^ 0xbead5).chance(0.3) ? { ...CONSTANTS, PULL_PAGE_BYTES: 600 } : CONSTANTS;
     this.registry = registry;
     this.product = new ProbeProduct();
     this.now = 10_000_000;
@@ -192,10 +209,29 @@ export class World {
   }
 
   run() {
-    for (let step = 0; step < this.steps; step += 1) this.step();
+    for (let step = 0; step < this.steps; step += 1) {
+      this.step();
+      this.checkAnnounced();
+    }
     this.quiesce();
+    this.checkAnnounced();
     this.check();
     return this;
+  }
+
+  // §7.12: each change of a device's active replica id is announced once, by an activeReplicaChanged event
+  // naming the id it replaces, so a holder of the last announced id always holds the active one.
+  checkAnnounced() {
+    for (const device of this.devices) {
+      for (const event of device.events) {
+        if (event.previous !== device.announced) this.violations.push(`§7.12 ${device.name}: activeReplicaChanged from ${event.previous}, but ${device.announced} was announced`);
+        device.announced = event.replica;
+        this.count('activeReplicaChanged announced');
+      }
+      device.events.length = 0;
+      if (device.announced !== device.store.activeReplica.id) this.violations.push(`§7.12 ${device.name}: the active replica became ${device.store.activeReplica.id} unannounced`);
+      device.announced = device.store.activeReplica.id;
+    }
   }
 
   step() {
@@ -442,7 +478,7 @@ export class World {
       this.network.push({ ...message, phase: 'reply', response: out.response, tRecvServer: this.now });
       return;
     }
-    const pulled = pull({ state: this.server, registry: this.registry, product: this.product, account, credential, request: message.request, serverNow: this.now });
+    const pulled = pull({ state: this.server, registry: this.registry, product: this.product, account, credential, request: message.request, serverNow: this.now, limits: this.pullLimits });
     this.server = pulled.state;
     if (pulled.response.status === 200 && account === null) this.count('pull served as anonymous');
     if (pulled.response.status === 200 && account !== null && account !== message.replica.meta.account) this.count('pull served as another account');
@@ -461,18 +497,37 @@ export class World {
       if (replica !== message.replica || replica.id !== message.replicaId) return;
       const before = this.contentsOf(device, message.response);
       const from = device.ended.length;
-      device.pushLimit = onPushResponse(replica, device.ctx(), message.request, message.response, timing)?.limit;
+      const results = message.response.status === 200 ? message.response.body.results.length : 0;
+      const dieAfter = this.midDeaths && results > 1 && this.deathRng.chance(0.2) ? this.deathRng.int(results) : Infinity;
+      device.pushLimit = onPushResponse(replica, device.ctx(), message.request, message.response, timing, { dieAfter })?.limit;
       this.checkRefusals(device, before, from);
+      if (dieAfter !== Infinity) {
+        this.count('death between result batches');
+        this.processDeath(device);
+      }
       return;
     }
     if (device.pulling?.id !== message.id) return;
     device.pulling = null;
     if (replica !== message.replica) return;
     const before = pulledState(replica);
-    const outcomes = onPullResponse(replica, device.ctx(), message.request, message.response, timing);
+    const chunkRows = this.midDeaths ? 1 + this.deathRng.int(2) : Infinity;
+    const dieAfter = this.midDeaths && this.deathRng.chance(0.3) ? 1 + this.deathRng.int(4) : Infinity;
+    const subscribed = device.subscriptions();
+    const inSet = (scope) => subscribed.includes(scope);
+    const outcomes = onPullResponse(replica, device.ctx(), message.request, message.response, timing, { chunkRows, dieAfter, inSet });
     this.checkServedAs(device, message.response.body?.as, before);
+    const answered = message.response.status === 200 && !replica.isUnauthenticated(message.response);
+    const cut = outcomes.some((page) => page.outcome === 'partial');
+    if (dieAfter !== Infinity && answered && (cut || outcomes.length < message.response.body.pages.length)) {
+      if (cut) this.count('death between page chunks');
+      this.processDeath(device);
+      return;
+    }
     if (outcomes.length === 0) return;
-    if (outcomes.some((page) => page.outcome !== 'applied') || message.response.body.pages.some((page) => page.more)) device.wantsPull = true;
+    if (outcomes.some((page) => page.outcome === 'outside')) this.count('page outside the subscription set');
+    const again = (page) => page.outcome !== 'applied' && page.outcome !== 'outside';
+    if (outcomes.some(again) || message.response.body.pages.some((page, k) => page.more && outcomes[k]?.outcome === 'applied')) device.wantsPull = true;
   }
 
   // A change frame, or a scope's death (gone to its owner, not-found to other subscribers, §6.8), as each
@@ -494,7 +549,8 @@ export class World {
     const { device, frame } = message;
     if (device.replica !== message.replica || device.replica.meta.state !== 'bound') return;
     const before = pulledState(device.replica);
-    const outcome = onFrame(device.replica, device.ctx(), frame);
+    const subscribed = device.subscriptions();
+    const outcome = onFrame(device.replica, device.ctx(), frame, (scope) => subscribed.includes(scope));
     this.checkServedAs(device, frame.as, before);
     if (outcome === 'pull') device.wantsPull = true;
     if (outcome === 'paused') this.count(frame.as === null ? 'frame served as anonymous' : 'frame served as another account');
@@ -687,6 +743,7 @@ export class World {
     }
     this.network = [];
     for (let round = 0; round < 40; round += 1) {
+      this.midDeaths = round === 0;
       this.now += CONSTANTS.HOLD_MS + 1;
       let moved = false;
       for (const device of this.devices) {

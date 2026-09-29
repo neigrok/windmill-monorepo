@@ -36,6 +36,16 @@ test('§7.1: a read-and-commit body decides its gesture from drawn and stored in
   assert.equal(replica.entry('g2/0').state, 'held');
 });
 
+test('§7.1 and §7.12: a read-and-commit body is given the id of the replica it writes to, which a record naming its writer takes', () => {
+  const replica = bound();
+  const answer = commit(replica, ctx(), 'self/probe', ({ replica: writer }) => ({
+    gesture: { changes: [{ op: 'create', t: 'card', id: 'card0003', f: { title: writer } }] },
+    value: writer,
+  }));
+  assert.equal(answer.value, 'rp_1');
+  assert.deepEqual(replica.entry('g1/0').intent.d[0].f.title, ['rp_1', '5000:0:r_aaaaaaaaaaaa']);
+});
+
 test('§7.1: a body answering no gesture writes nothing and ticks no clock, and its value still comes back', () => {
   const replica = bound({ 'self/probe': [CARD] });
   const before = replica.toJSON();

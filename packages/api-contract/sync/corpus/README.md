@@ -621,8 +621,8 @@ boot: 'boot-1'}`; it feeds frames, asserts
 | File | Covers |
 |---|---|
 | `push.jsonl` | numbering, a lost reply resent and answered from `sync_results`, retry by budget, poison → `internal` at K_POISON, 401, 409 `gap`, `replica-foreign` and `replica-forked` (a restored store resending a pruned `n`), each followed by re-identify, and a fresh replica of A pushing under B's credential, answered `account-mismatch`: nothing lands in B, the replica stays unbound, and the sender pauses |
-| `pull.jsonl` | a boot straight into confirmed rows, a live page, `gone` for a deleted board's tree and overlay, and after a server restore an epoch change that drops the stale page and boots into staging |
-| `live.jsonl` | a frame applied inline at the next seq; a frame past a gap answered by a pull; a board created, its tree booted by another device, the board deleted: the change frame, then `{op: 'gone', scope: 'tree/<T>'}`, which forgets the scope |
+| `pull.jsonl` | a boot straight into confirmed rows, a live page, `gone` pages for a deleted board's tree and overlay, which the client answers `outside`, the same answer's product page having killed the board, and after a server restore an epoch change that drops the stale page and boots into staging |
+| `live.jsonl` | a frame applied inline at the next seq; a frame past a gap answered by a pull; a board created, its tree booted by another device, the board deleted: the change frame, whose dead board records the tree known `gone`, then `{op: 'gone', scope: 'tree/<T>'}`, which the client answers `outside`, and a reconcile that forgets the scope |
 | `join.jsonl` | `probe.start` joining another device's run: the write map rewrites a later lap and rename, and a held delete of the called id ends `target-merged` |
 | `skew.jsonl` | a device ten minutes fast: `clock-skew`, the offset from the response, the restamp in commit order, the resend |
 | `hello.jsonl` | hello signed out and signed in, an incomplete sign-in, then the signed-out decision `add` |
@@ -643,9 +643,11 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
   - `meta`: §2.5 `ReplicaMeta`; `clockReading` `{wall, mono, boot}` is present once a sample was taken.
   - `confirmed`: `{scopeRef: [Row]}`.
   - `spentIds`: `{scopeRef: [{t, id, born}]}`.
-  - `cursors`: `{scopeRef: {cursor, digest, booted, digestStop?, mismatchReset?}}`. `mismatchReset` is
-    set when a digest mismatch reset the scope; the next check clears it on a match, or on a second
-    mismatch stops checks by writing the app version to `digestStop`.
+  - `cursors`: `{scopeRef: {cursor, digest, booted, behind?, digestStop?, mismatchReset?}}`.
+    `behind: true` when the last page applied ended short of its head (`more`) or a chunk committed
+    without its page's last; a page at its head clears it, and no `change` frame applies inline while
+    it is set. `mismatchReset` is set when a digest mismatch reset the scope; the next check clears it
+    on a match, or on a second mismatch stops checks by writing the app version to `digestStop`.
   - `staging`: `{scopeRef: {digest, rows: [Row]}}`, a boot in progress over confirmed rows.
   - `known`: `{scopeRef: 'gone' | 'not-found'}`, the scopes the replica learned are gone or not
     found. They leave the subscription set, and §7.1 step 2 refuses commits to them.
@@ -677,9 +679,18 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
     readings for the §10.4 offset sample: either `send` and `recv`, each `{wall, mono, boot}`, or
     `tSend` and `tRecv` (default `deviceNow`), which stand for `{wall: tSend, mono: tSend, boot:
     'boot-1'}` and `{wall: tRecv, mono: tRecv, boot: 'boot-1'}`.
+  - `pullResponse` may carry `chunk`, the rows of a page each chunk takes (§7.5 step 2; absent, a
+    page applies in one transaction), and `dieAfter`: the process dies once that many page
+    transactions have committed, each chunk and each `reset` or applied `gone` or `not-found` page
+    counting one (a stale page and an ignored end write nothing and count none). Nothing after them
+    applies, and the pages after the one cut short are not reported. `pushResponse` may carry
+    `dieAfter`: the process dies once that many results are recorded, in ascending `n` (§7.4), and
+    `ackThrough` and any epoch change wait for the last. The offset sample and an epoch change the
+    answer carries come before any page (§7.5 step 1). A runner whose engine sizes its own chunks
+    takes `chunk` as that size.
   - `physNow` is `deviceNow + meta.serverOffsetMs`.
 
-Expect: `{returns, device, ended, telemetry?}`.
+Expect: `{returns, device, ended, telemetry?, events?}`.
 
 - `returns` holds one value per step, `null` for a step that returns nothing.
 - `device` is the device after the last step.
@@ -690,6 +701,9 @@ Expect: `{returns, device, ended, telemetry?}`.
 - `telemetry` lists `{event: 'sync-digest-mismatch', kind, seq}` events, `kind` being `product`,
   `tree` or `overlay`, and `{event: 'sync-push-malformed'}` events, one per push answered 400. It is
   present only when any were emitted.
+- `events` lists the engine's `{event: 'activeReplicaChanged', previous, replica}` events (§7.12), one
+  per change of `activeReplica()`, in order. It is present only when any were emitted: a sign-in that
+  rebinds the `anon` replica, and a re-identify of a replica that is not active, emit none.
 
 | op | args | spec | returns |
 |---|---|---|---|
@@ -701,13 +715,13 @@ Expect: `{returns, device, ended, telemetry?}`.
 | `subscribe` | `scope` | §7.9: deletes a `not-found` `KnownScope` record; a `gone` one stays | `'gone'` for a scope known gone, else `null` |
 | `dismiss` | `id` | D-17: the notice `id` of the active replica takes `dismissed: true` | `null` |
 | `push` | `limit?` | §7.4 numbering; with `limit`, at most that many sent entries, numbering none beyond them | the PushRequest, or `null` |
-| `pushResponse` | `response` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1) | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
+| `pushResponse` | `response`, `dieAfter?` | §7.4, for the last `push`; a 401, a 409 `account-mismatch`, or a 200 or 409 whose `as` is not the replica's account, sets `authPaused` and applies nothing (§9.1) | `{limit}` after a 400 or 413 on several intents, `limit` = ⌈count/2⌉ (the next `push` passes it, resending the first half by `n`), else `null` |
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
-| `pullResponse` | `response` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1) |
-| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `ignored` (an unknown op, any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
-| `reconcile` | `scopes` | §7.9: unsubscribe scopes outside `scopes` | `null` |
+| `pullResponse` | `response`, `chunk?`, `dieAfter?` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `partial` (a page `dieAfter` cut short), `outside` (a page for a scope outside the subscription set, which applies nothing and pulls nothing again: a known scope, or one the last `reconcile` left out), `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1); `null` when the replica the last `pull` was made for is no longer the active one, and nothing applies (§7.12) |
+| `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `outside` (a frame for a scope outside the subscription set, as `pullResponse` defines it, which applies nothing), `ignored` (an unknown op, any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
+| `reconcile` | `scopes?` | §7.9: unsubscribe scopes outside `scopes`, which is the subscription set from then on, with the scopes later `subscribe` steps add. Without `scopes`, the set is the replica's own: `self/probe` and, per `board` alive in `drawn` or in `stored`, its tree and overlay, less known scopes (empty unless the replica is bound). Before any `reconcile`, every scope a vector pulls or a frame names is in the set unless the replica knows it | `null` |
 | `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
 | `signOut` | `choice?` (`keep` or `discard`), `counted?` | §7.10 | `{complete, unsent, ready, sent, counted}` |
 | `discardUnsent` | `replica` | §7.10 | `null` |
@@ -871,8 +885,9 @@ write-map stamps.
 `fold.json`, `restamp.json` (clock-skew) and `base-unknown.json` use responses from the reference
 server.
 `transport.json` covers one-intent 400 and 413, a halving 413, the 401 and 409 offset samples, a 409
-`account-mismatch`, a 200, 409 or hello served as another principal, hello, re-identify and an epoch
-change.
+`account-mismatch`, a 200, 409 or hello served as another principal, hello, re-identify, an epoch
+change, and a process death between two result batches: the results recorded stand, the rest stay
+`sent` with `ackThrough` unmoved, and their resend is answered from the stored results.
 - A record is `(scope, t, id)`. A ref names a record in the scope its type lives in, relative to the
   referencing scope's tree: a tree type → `tree/<T>`, an overlay type → `self/overlay/<T>`, a product
   type → `self/<product>`. Dependents and `anonCount` key records this way.
@@ -941,6 +956,9 @@ part through a write map. The reference does rewrite them.
 - `start.json`: `engineStart` on web; with an equal backup copy; with a missing or different copy
   (every replica re-identified, a new `forkGuard`, then a push under the new id); a first launch
   minting the first `forkGuard`; a pending sign-in answered.
+- `events` (§7.12): a completed sign-in into a dormant or a new replica, a finished sign-out, and a
+  fork-guard re-identify at start each announce `activeReplicaChanged` once; a re-identify at start
+  announces only the active replica's.
 
 ### pull/pages.json
 
@@ -955,3 +973,21 @@ part through a write map. The reference does rewrite them.
 - A pull or frame served as anyone but the replica's account (`as` null: a request that arrived with no
   credential; `as` another account) is a 401: each scope kind pulled alone, and `not-found` frames,
   leave its rows, cursors and known records as they were (§9.1).
+- Chunks (§7.5 step 2): each takes whole rows in page order, with their digest, spent ids and known
+  records, and observes their stamps; the first chunk of the page requested with the `null` cursor
+  starts a boot's staging afresh, and a later boot page's chunks join it; every chunk but the last
+  sets `behind`; only the last stores the cursor, ends a boot
+  (the swap, `booted`, its resolutions), resolves by `cleanSeq`, sets `behind` by the page's `more`
+  and checks the digest. A page applied in chunks ends as the page applied
+  whole. After a death between chunks the cursor is where it was, the acked entries the page covers
+  stay acked, and a view shows the rows applied; the page pulled again applies to the same end. A boot
+  from a `null` cursor finds the rows a straight-in chunk left and goes into staging.
+- A page that arrives after the replica it was pulled for stopped being active (a sign-out between
+  the pull and its answer) applies nothing, and `pullResponse` answers `null`.
+- A page for a scope outside the subscription set applies nothing, whatever cursor it was requested
+  with, and answers `outside`: a tree pulled with a `null` cursor whose board dies in a frame before
+  the page lands keeps no rows and no cursor, and stays known `gone`. Nothing clears a `gone` record;
+  a subscribe and an alive governing row clear a `not-found` one.
+- A scope `behind` (a live page short of its head, or chunks a death cut short) answers the next
+  seq's `change` frame `pull`: its rows are not the server's at that seq, so the frame's digest check
+  would fail on a correct replica.

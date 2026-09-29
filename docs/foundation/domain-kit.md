@@ -1699,7 +1699,8 @@ makes expressible, where the product still has to use what the kit gives:
 
 The kit binds to the Swift engine's public API (Swift engine §5.2) and requires the following of it,
 and the same of the Kotlin engine. The engine API owner accepted ER-1 to ER-9 and ER-11 to ER-18 as
-stated here; ER-10 is the Kotlin engine owner's.
+stated here, except ER-12's observable view, which the Swift engine owes; ER-10 is the Kotlin engine
+owner's.
 
 | ER | Requirement | Engine text it relies on |
 |---|---|---|
@@ -1714,7 +1715,7 @@ stated here; ER-10 is the Kotlin engine owner's.
 | ER-9 | `SyncTesting` publicly offers `SteppedEngine` over an in-memory store, `ModelServer` with the `ServerRules` plug-in and scripted refusals, `SimClock`, a second device on the same server and account, and a way to make the next `commit` throw at the store's before-commit point, whether or not its body returns a gesture, so its transaction rolls back. | Swift engine §1.3, §3.1, §3.6, §9.4, §9.5 |
 | ER-10 | Kotlin: `:sync-testing` runs the engine's algorithms and an in-memory store on the plain JVM, and `commit` runs on Android's main thread within a stated budget (owed). `:sync-engine` keeps its store `internal`, so no UI or platform module reaches it. | — |
 | ER-11 | `SyncCore` makes public `Quantum`, built from a step (`Quantum(step)`, nil for a step that is neither an integer nor `1/k`), with `rounded(_:)` and `holds(_:)`; `MeasureUnit.chars` and `MeasureUnit.bytes` with `length(of:)`; and `Constants.holdMs`. | engine §7.1 step 4, §6.1 step 2, D-9, Appendix B |
-| ER-12 | Both readers offer `drawn(type, where: field, is: id)` and `stored(…)`: the visible records of a type whose top-level `ref` field names `id`, in id-byte order, from an index, at a cost that follows the result and the scope's outbox, not the type. Any other `field` throws. | engine D-10; Swift engine §3.3 (the ref index) |
+| ER-12 | Both readers offer `drawn(type, where: field, is: id)` and `stored(…)`: the visible records of a type whose top-level `ref` field names `id`, in id-byte order, from an index, at a cost that follows the result and the scope's outbox, not the type. Any other `field` throws. The same narrowed read is offered as an observable view (a `RecordsView`), whose first load runs off the main thread and whose refresh follows the changed records, not the type. | engine D-10; Swift engine §3.3 (the ref index) |
 | ER-13 | `SyncCore`, `SyncAPI` and `SyncSchema` follow §2.3's rules for the engine API: their settings, their imports, no `@_` attribute, no `#if` or availability branch. The determinism lint does not apply to them. | Swift engine §1.1 |
 | ER-14 | `SyncAPI` and `:sync-api` declare `CommitFailure`, whose `kind` is one of the three failures engine §7.1 defines: `malformed`, `notWritable` or `storeFailure`. The kit traps on `malformed` and on no other kind. | engine §7.1 |
 | ER-15 | The engine's package meets §2.1–§2.4 as the layering tests read it: its modules and their kinds, its package dependency, each module's imports, tools 6.2 and language mode 6, its targets' settings, a constant-data manifest, no symbolic link, and `GRDB` from `SyncStore` only. | Swift engine §1.1 |
