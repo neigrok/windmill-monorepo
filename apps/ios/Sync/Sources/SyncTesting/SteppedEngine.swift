@@ -213,7 +213,7 @@ public final class SteppedEngine: Sendable {
     for _ in 0..<bound {
       switch await puller.step() {
       case .pulled, .frame, .again: continue
-      case .idle, .fallback, .paused, .stopped, .backoff: return true
+      case .idle, .fallback, .repull, .paused, .stopped, .backoff: return true
       }
     }
     return false

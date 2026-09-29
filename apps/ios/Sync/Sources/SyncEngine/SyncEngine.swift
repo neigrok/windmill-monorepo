@@ -377,8 +377,9 @@ final class EngineCore: Sendable {
   // §7.9 "When a scope leaves the subscription set, its acked entries resolve": every scope outside the set is forgotten,
   // and every acked entry outside it resolves, since no pull will bring its row. The set is read inside the write, so a
   // scope subscribed meanwhile stays. It runs when a scope is closed, and at each pull round: a scope the last process
-  // held open is not open in this one, and an entry may be acked in a scope no longer followed.
-  func reconcileSubscriptions() throws {
+  // held open is not open in this one, and an entry may be acked in a scope no longer followed. Answers those followed.
+  @discardableResult
+  func reconcileSubscriptions() throws -> Set<ScopeRef> {
     try write { store, _ in try store.reconcile(subscribed: Set(try seat().map { subscriptions(of: $0) } ?? [])) }
   }
 

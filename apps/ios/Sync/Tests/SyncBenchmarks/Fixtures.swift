@@ -69,7 +69,7 @@ final class Phone: Sendable {
       rounds.append(ContinuousClock.now - began)
       switch step {
       case .pulled, .frame, .again: continue
-      case .idle, .fallback, .paused, .stopped, .backoff: return rounds
+      case .idle, .fallback, .repull, .paused, .stopped, .backoff: return rounds
       }
     }
   }

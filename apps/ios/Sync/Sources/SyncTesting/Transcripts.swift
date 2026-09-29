@@ -199,7 +199,7 @@ final class TranscriptDevice {
       subscribed += opening
       var step = await engine.puller.step()
       switch step {
-      case .idle, .fallback:
+      case .idle, .fallback, .repull:
         engine.puller.wants.add(scopes)
         step = await engine.puller.step()
       default:

@@ -131,6 +131,34 @@ struct LiveChannelTests {
     ]))
   }
 
+  // §6.8, §7.9: an ignored end frame drops its scope from what the socket follows, so a later keep sends `sub` again.
+  @Test(arguments: [KnownKind.gone, .notFound])
+  func anIgnoredEndFrameDropsItsScopeSoALaterKeepSendsSubAgain(_ kind: KnownKind) async throws {
+    let (rig, socket) = try await Self.open()
+    socket.deliver(kind == .gone ? .gone(Rig.scope, servedAs: "A") : .notFound(Rig.scope, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Rig.scope])])
+  }
+
+  // §6.8, §7.9: an applied end frame sends no `unsub`; a subscribe sends `sub` again for a tree not found, not one gone.
+  @Test(arguments: [KnownKind.gone, .notFound])
+  func anAppliedEndFrameIsFollowedNoMoreWithoutAnUnsub(_ kind: KnownKind) async throws {
+    let (rig, socket) = try await Self.open()
+    try rig.engine.subscribe(Self.tree)
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    socket.deliver(kind == .gone ? .gone(Self.tree, servedAs: "A") : .notFound(Self.tree, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, kind == .gone ? .gone : .notFound))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])])
+    #expect(try rig.engine.subscribe(Self.tree) == (kind == .gone ? .gone : .subscribed))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    let resubscribed: [LiveRequest] = kind == .gone ? [] : [.sub([Self.tree])]
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])] + resubscribed)
+  }
+
   // Leaving closes the socket; back in the foreground another opens.
   @Test func leavingClosesTheSocketAndTheForegroundOpensAnother() async throws {
     let (rig, socket) = try await Self.open()

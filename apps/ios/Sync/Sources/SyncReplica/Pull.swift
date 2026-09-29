@@ -30,6 +30,19 @@ public enum PullStep: Sendable, Hashable {
   case page(PullPage, requested: String?)
 }
 
+// What a page or frame leaves to pull (§7.5, §7.9): `scopes` at once, its own scope's re-pull, and whether it booted it.
+public struct PullNext: Sendable, Hashable {
+  public let scopes: [ScopeRef]
+  public let pullsAgain: Bool
+  public let boots: Bool
+
+  public init(scopes: [ScopeRef] = [], pullsAgain: Bool = false, boots: Bool = false) {
+    self.scopes = scopes
+    self.pullsAgain = pullsAgain
+    self.boots = boots
+  }
+}
+
 // What the scopes asked for make of the next request: the scopes pulled, at most PULL_MAX_SCOPES in the order asked, each
 // with its stored cursor (a scope with none boots), and nil when none is, so nothing is sent (§7.5); `later`, the rest of
 // them for the next request; and `waiting`, the scopes that wait for their governing record's create (§7.9).
@@ -84,40 +97,40 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // §7.5: the scopes a page wants pulled next. Its own after a stale or reset page, a page with more rows, a digest check
-  // that reset its cursor to boot it, or a not-found ignored that `pullsAgain` names. And, from applied rows, the tree and
-  // overlay scopes an alive governing row brought back (§7.9). `before` is the replica as the page found it.
-  public func wants(after page: PullPage, _ outcome: PageOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> [ScopeRef] {
+  // §7.5: what a page leaves to pull. Its own scope after a stale or reset page, a page with more rows, a digest check
+  // that reset its cursor to boot it, or a not-found ignored (`next(afterIgnoring:)`); and, from applied rows, the tree
+  // and overlay scopes an alive governing row brought back (§7.9). `before` is the replica as the page found it.
+  public func next(after page: PullPage, _ outcome: PageOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> PullNext {
     switch outcome {
-    case .stale, .reset: return [page.scope]
-    case .gone, .notFound: return []
-    case .ignored: return pullsAgain(afterIgnoring: page.scope, in: replica) ? [page.scope] : []
+    case .stale, .reset: return PullNext(scopes: [page.scope])
+    case .gone, .notFound: return PullNext()
+    case .ignored: return next(afterIgnoring: page.scope, in: replica)
     case .applied:
-      guard case .rows(let rows) = page.body else { return [] }
+      guard case .rows(let rows) = page.body else { return PullNext() }
       let again = rows.more || replica.cursors[page.scope]?.cursor == nil
-      return (again ? [page.scope] : []) + rejoins(rows.rows, in: before)
+      let boots = before.cursors[page.scope]?.booted != true && replica.cursors[page.scope]?.booted == true
+      return PullNext(scopes: (again ? [page.scope] : []) + rejoins(rows.rows, in: before), boots: boots)
     }
   }
 
-  // The scopes a frame wants pulled next: its own when it was not admitted, its digest check reset the cursor, or it was a
-  // not-found ignored that `pullsAgain` names; and those an alive governing row of an applied change brought back.
-  public func wants(after frame: LiveFrame, _ outcome: FrameOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> [ScopeRef] {
+  // What a frame leaves to pull: its own scope when it was not admitted, its digest check reset the cursor, or it was a
+  // not-found ignored (`next(afterIgnoring:)`); and the scopes an alive governing row of an applied change brought back.
+  public func next(after frame: LiveFrame, _ outcome: FrameOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> PullNext {
     switch (outcome, frame) {
-    case (.pull, .change(let change)): return [change.scope]
-    case (.ignored, .notFound(let scope, _)): return pullsAgain(afterIgnoring: scope, in: replica) ? [scope] : []
+    case (.pull, .change(let change)): return PullNext(scopes: [change.scope])
+    case (.ignored, .notFound(let scope, _)): return next(afterIgnoring: scope, in: replica)
     case (.applied, .change(let change)):
       let again = replica.cursors[change.scope]?.cursor == nil
-      return (again ? [change.scope] : []) + rejoins(change.rows ?? [], in: before)
-    default: return []
+      return PullNext(scopes: (again ? [change.scope] : []) + rejoins(change.rows ?? [], in: before))
+    default: return PullNext()
     }
   }
 
-  // §7.9: a tree or overlay scope whose not-found was ignored is pulled again while it waits for its governing record's
-  // create, so it is pulled once it waits no more; and while it has not booted, since the stale answer took the pull that
-  // would have booted it, and the server holds the scope now. A booted scope keeps its cursor and wants nothing.
-  func pullsAgain(afterIgnoring scope: ScopeRef, in replica: LoadedReplica) -> Bool {
-    guard scope.tree != nil else { return false }
-    return awaitsGoverningCreate(scope, in: replica) || replica.cursors[scope]?.cursor == nil
+  // §7.9: an ignored not-found wants a tree waiting for its governing create, and re-pulls one that has not booted.
+  func next(afterIgnoring scope: ScopeRef, in replica: LoadedReplica) -> PullNext {
+    guard scope.tree != nil else { return PullNext() }
+    if awaitsGoverningCreate(scope, in: replica) { return PullNext(scopes: [scope]) }
+    return PullNext(pullsAgain: replica.cursors[scope]?.booted != true)
   }
 
   // §7.9: the tree and overlay scopes the replica knows not found whose governing record `rows` holds alive. The answer

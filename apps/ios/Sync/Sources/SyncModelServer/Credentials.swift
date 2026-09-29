@@ -54,9 +54,9 @@ public enum Credential: Sendable, Hashable {
 }
 
 // One credential a request sends: an Authorization header, or a Cookie piece named the session cookie, whatever its
-// shape. Its token is the one `Bearer <token>` (the scheme in any case, one space, a token holding no whitespace) or
-// `wm_session=<token>` carries, verbatim: no quote is stripped and nothing is unescaped. Any other shape carries none: another
-// scheme, a bare `Bearer`, a bare `wm_session` with no `=`, or an empty value.
+// shape. Its token is the one `Bearer <token>` (the scheme in any ASCII case, one space, a token holding no whitespace)
+// or `wm_session=<token>` carries, the cookie's with only space and tab trimmed: no quote is stripped, nothing unescaped.
+// Any other shape carries none: another scheme, a bare `Bearer`, a bare `wm_session` with no `=`, or an empty value.
 struct SentCredential: Hashable {
   enum Kind: Hashable {
     case authorization, cookie
@@ -65,9 +65,9 @@ struct SentCredential: Hashable {
   let kind: Kind
   let token: String?
 
-  // Every credential `headers` send, in their order. Header names compare in any case; a Cookie header splits on `;` into
-  // pieces, each trimmed of whitespace, and a piece's name is what precedes its first `=`, trimmed. Names and tokens are
-  // read as Unicode scalars, so they compare byte for byte.
+  // Every credential `headers` send, in their order. Header names compare in ASCII case only, so a Kelvin sign is no `k`;
+  // a Cookie header splits on `;` into pieces, a piece's name is what precedes its first `=` and its value what follows
+  // it. Names and tokens are read as Unicode scalars, so they compare byte for byte.
   static func all(in headers: [(name: String, value: String)]) -> [SentCredential] {
     headers.flatMap { header -> [SentCredential] in
       switch header.name.unicodeScalars.map(asciiLowercased) {
@@ -79,31 +79,33 @@ struct SentCredential: Hashable {
   }
 
   static func sessionCookies(in value: [Unicode.Scalar]) -> [SentCredential] {
-    value.split(separator: ";", omittingEmptySubsequences: false).compactMap { part in
-      let piece = trimmed(Array(part))
+    value.split(separator: ";", omittingEmptySubsequences: false).compactMap { piece in
       let equals = piece.firstIndex(of: "=")
-      guard trimmed(Array(piece[..<(equals ?? piece.endIndex)])) == Array(Credential.sessionCookie.unicodeScalars) else { return nil }
-      let token = equals.map { Array(piece[($0 + 1)...]) } ?? []
+      let name = trimmingSpaceAndTab(piece[..<(equals ?? piece.endIndex)])
+      guard name == Array(Credential.sessionCookie.unicodeScalars) else { return nil }
+      let token = equals.map { trimmingSpaceAndTab(piece[($0 + 1)...]) } ?? []
       return SentCredential(kind: .cookie, token: token.isEmpty ? nil : String(String.UnicodeScalarView(token)))
     }
+  }
+
+  // RFC 6265's whitespace around a cookie's name and value: space and tab only, so a no-break space, a NEL or a BOM stays.
+  static func trimmingSpaceAndTab(_ scalars: ArraySlice<Unicode.Scalar>) -> [Unicode.Scalar] {
+    let spaceAndTab: Set<Unicode.Scalar> = [" ", "\t"]
+    guard let first = scalars.firstIndex(where: { !spaceAndTab.contains($0) }),
+          let last = scalars.lastIndex(where: { !spaceAndTab.contains($0) }) else { return [] }
+    return Array(scalars[first...last])
   }
 
   static func bearerToken(_ value: [Unicode.Scalar]) -> String? {
     let scheme = Array("bearer ".unicodeScalars)
     guard value.count > scheme.count, value[..<scheme.count].map(asciiLowercased) == scheme else { return nil }
     let token = value[scheme.count...]
-    guard !token.contains(where: isSpace) else { return nil }
+    guard !token.contains(where: isBearerSpace) else { return nil }
     return String(String.UnicodeScalarView(token))
   }
 
-  static func trimmed(_ scalars: [Unicode.Scalar]) -> [Unicode.Scalar] {
-    guard let first = scalars.firstIndex(where: { !isSpace($0) }), let last = scalars.lastIndex(where: { !isSpace($0) }) else { return [] }
-    return Array(scalars[first...last])
-  }
-
-  // The whitespace the reference reads a header by, ECMAScript's `trim` and `\s`: Unicode's White_Space less U+0085, and
-  // U+FEFF.
-  static func isSpace(_ scalar: Unicode.Scalar) -> Bool {
+  // The reference's ECMAScript `\s`, which a Bearer token holds none of: Unicode's White_Space less U+0085, plus U+FEFF.
+  static func isBearerSpace(_ scalar: Unicode.Scalar) -> Bool {
     scalar == "\u{FEFF}" || (scalar != "\u{85}" && scalar.properties.isWhitespace)
   }
 

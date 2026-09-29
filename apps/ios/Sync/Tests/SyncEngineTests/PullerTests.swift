@@ -8,8 +8,8 @@ import Synchronization
 import Testing
 
 // §7.5 the puller over a scripted transport: boot, staging and its swap, reset, epoch change, the digest check's reset
-// and stop, the request's scopes, each failure row of design §6.3, the triggers, live frame admission, and the
-// revalidation of what moved while a request was in flight.
+// and stop, the request's scopes, each failure row of design §6.3, the triggers, re-pulls after an ignored not-found, live
+// frame admission, and the revalidation of what moved while a request was in flight.
 
 struct PullerTests {
   static let tree = ScopeRef.tree("b_00000001")
@@ -552,6 +552,203 @@ struct PullerTests {
     await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .notFound))
     #expect(try rig.active().known == [Self.tree: .notFound])
+  }
+
+  // MARK: Re-pulls after an ignored not-found (§7.9)
+
+  // A tree has not booted until its boot's scan ends, so a stale not-found that cut the boot short pulls it again.
+  @Test func aTreeWhoseBootAStaleNotFoundCutShortIsPulledAgain() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    let meta = try Rig.metaRow(seq: 1)
+    let midway = Cursor(epoch: "ep-1", mode: .boot, seq: 1, key: meta.key, asOf: 1).text
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1, cursor: midway, more: true)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(try Self.cursor(rig, Self.tree) == CursorRecord(cursor: midway, digest: meta.digest))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 1, digestOf: [meta])]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls == [
+      PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
+      PullRequest(scopes: [Self.pulled(Self.tree, midway)]), PullRequest(scopes: [Self.pulled(Self.tree, midway)]),
+    ])
+    #expect(try Self.cursor(rig, Self.tree) == CursorRecord(cursor: Self.live(1), digest: meta.digest, booted: true))
+  }
+
+  // Re-pulls go at once, then back off 1 s to 30 s; a subscribe still pulls at once, and the boot ends the backoff.
+  @Test func anUnbootedTreesRePullsBackOffUntilItBoots() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 7)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    var waits: [Int64] = []
+    for _ in 0..<6 {
+      guard case .repull(let ms) = await rig.engine.puller.step() else { throw RigError("no re-pull is ahead") }
+      waits.append(ms)
+      rig.clock.advance(ms: ms)
+      rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+      #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    }
+    #expect(waits == [1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
+    #expect(await rig.engine.puller.step() == .repull(ms: 30_000))
+    rig.clock.advance(ms: 29_999)
+    #expect(await rig.engine.puller.step() == .repull(ms: 1))
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs - 90_999))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
+      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 9))
+  }
+
+  // A frame ignored while the tree's re-pull is ahead asks that same re-pull, neither moving it nor drawing a longer wait.
+  @Test func aNotFoundLandingWhileARePullIsAheadAsksThatRePull() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 2)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 2_000))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
+      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 3))
+  }
+
+  // An ignored not-found frame asks a re-pull as a page does, so the pull answered after it is a further one, and waits.
+  @Test func anIgnoredNotFoundFrameAsksARePullAsAPageDoes() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 1)
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)])])
+  }
+
+  // A new seat, here an epoch change's re-identify, starts every scope's re-pull backoff afresh.
+  @Test func aNewSeatStartsEveryRePullBackoffAfresh() async throws {
+    let rig = try Rig(account: "A")
+    let board = try Self.board(seq: 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 2)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    rig.clock.advance(ms: 1_000)
+    let replica = try rig.meta().replica
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")], epoch: "ep-2"))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(try rig.meta().replica != replica)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1, epoch: "ep-2"), Rig.page(Self.tree, "not-found")], epoch: "ep-2"))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .ignored),
+    ]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0, epoch: "ep-2")], epoch: "ep-2"))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls == [
+      PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
+      PullRequest(scopes: [Self.pulled(Self.tree, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
+      PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
+    ])
+  }
+
+  // A tree closed while its re-pull backs off loses the backoff: opened again, its first stale answer re-pulls at once.
+  @Test func aTreeOpenedAgainStartsItsRePullBackoffAfresh() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 2)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    try rig.engine.unsubscribe(Self.tree)
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
+      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 4))
+  }
+
+  // A tree whose board dies is known gone, followed no more, so its re-pull backoff goes with it.
+  @Test func aTreeKnownGoneLosesItsRePullBackoff() async throws {
+    let rig = try Rig(account: "A")
+    let board = try Self.board(seq: 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    let dead = try Self.board(seq: 2, life: "dead", ms: 2_000)
+    await rig.engine.puller.enqueue(try Rig.change(rows: [dead], seq: 2, digestOf: []), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
+    #expect(try rig.active().known == [Self.tree: .gone, Self.overlay: .gone])
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(rig.transport.pulls.count == 3)
+  }
+
+  // The backoff alone: each scope draws on its own k, and a boot, or no longer being followed, ends the scope's backoff.
+  @Test func eachScopeBacksOffOnItsOwnUntilItBootsOrIsFollowedNoMore() {
+    let random = QueuedRandom(seed: 1)
+    random.queue(raw: .max, count: 4)
+    var repulls = Repulls()
+    repulls.ask(Self.tree, at: 0, random: random)
+    #expect(repulls.take(dueBy: 0) == [Self.tree])
+    repulls.ask(Self.tree, at: 0, random: random)
+    #expect(repulls.take(dueBy: 999) == [])
+    #expect(repulls.take(dueBy: 1_000) == [Self.tree])
+    repulls.ask(Self.tree, at: 1_000, random: random)
+    repulls.ask(Self.overlay, at: 1_000, random: random)
+    #expect(repulls.take(dueBy: 1_000) == [Self.overlay])
+    repulls.ask(Self.overlay, at: 1_000, random: random)
+    #expect(repulls.nextDue == 2_000)
+    #expect(repulls.take(dueBy: 2_000) == [Self.overlay])
+    #expect(repulls.nextDue == 3_000)
+    repulls.booted(Self.tree)
+    #expect(repulls.nextDue == nil)
+    repulls.ask(Self.tree, at: 5_000, random: random)
+    #expect(repulls.take(dueBy: 5_000) == [Self.tree])
+    repulls.ask(Self.overlay, at: 5_000, random: random)
+    #expect(repulls.nextDue == 7_000)
+    repulls.keep([Self.tree])
+    #expect(repulls.nextDue == nil)
+    repulls.ask(Self.overlay, at: 8_000, random: random)
+    #expect(repulls.take(dueBy: 8_000) == [Self.overlay])
   }
 
   // An unsubscribe removes only its own scopes: a subscribe landing while its transaction runs is kept, and pulled.

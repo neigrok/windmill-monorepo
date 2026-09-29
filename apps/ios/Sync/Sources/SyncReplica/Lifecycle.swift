@@ -448,8 +448,9 @@ public struct ReplicaLifecycle: Sendable {
 
   // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the
   // replica knows gone or not found is outside it, whoever holds it open: it was unsubscribed when its page came
-  // (§7.5), and no pull brings its rows until a subscribe clears a not-found.
-  public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws {
+  // (§7.5), and no pull brings its rows until a subscribe clears a not-found. Answers the scopes still followed.
+  @discardableResult
+  public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws -> Set<ScopeRef> {
     let followed = subscribed.filter { replica.known[$0] == nil }
     for scope in replica.cursors.keys.sorted() where !followed.contains(scope) {
       replica.apply(.forgetScope(scope))
@@ -458,6 +459,7 @@ public struct ReplicaLifecycle: Sendable {
     for entry in replica.outbox where entry.state == .acked && !followed.contains(entry.scope) {
       try replica.move(entry.localId, .resolve)
     }
+    return followed
   }
 
   // The scope's first pull is complete, or the replica does not pull it.

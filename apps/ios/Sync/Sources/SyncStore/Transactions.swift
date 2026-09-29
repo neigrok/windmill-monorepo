@@ -113,35 +113,35 @@ extension Store {
   }
 
   // One step of a pull answer, for the replica the request was built in and the account it was built as: a page's
-  // outcome, the scopes it wants pulled next, and the replica's id after the step, which an epoch change re-identifies. A
-  // replica no longer active, or no longer of that account (a sign-in binds the `anon` replica in place), drops the step
-  // and answers nil, since the answer says nothing of the replica as it now stands; a page of a scope that left
-  // `subscribed` while the answer was on its way is stale.
+  // outcome, what it leaves to pull, and the replica's id after the step, which an epoch change re-identifies. A replica
+  // no longer active, or no longer of that account (a sign-in binds the `anon` replica in place), drops the step and
+  // answers nil, since the answer says nothing of the replica as it now stands; a page of a scope that left `subscribed`
+  // while the answer was on its way is stale.
   public func apply(_ step: PullStep, replica id: String, account: String?, subscribed: Set<ScopeRef>, instance: inout Instance,
-                    timing: Timing, identities: IdentitySource) throws -> Written<(outcome: PageOutcome?, wants: [ScopeRef], replica: String)?> {
+                    timing: Timing, identities: IdentitySource) throws -> Written<(outcome: PageOutcome?, next: PullNext, replica: String)?> {
     try write(step.transaction) { tx in
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8),
             var replica = try tx.replica(id, reads: planners.pages.reads(of: step)),
             replica.meta.account.map({ Array($0.utf8) }) == account.map({ Array($0.utf8) })
       else { return Planned(nil, ReplicaBatch()) }
-      if case .page(let page, _) = step, !subscribed.contains(page.scope) { return Planned((.stale, [], id), ReplicaBatch()) }
+      if case .page(let page, _) = step, !subscribed.contains(page.scope) { return Planned((.stale, PullNext(), id), ReplicaBatch()) }
       let before = replica
       let outcome = try planners.pages.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
-      guard case .page(let page, _) = step, let outcome else { return Planned((outcome, [], replica.id), replica.batch) }
-      return Planned((outcome, planners.pages.wants(after: page, outcome, from: before, in: replica), replica.id), replica.batch)
+      guard case .page(let page, _) = step, let outcome else { return Planned((outcome, PullNext(), replica.id), replica.batch) }
+      return Planned((outcome, planners.pages.next(after: page, outcome, from: before, in: replica), replica.id), replica.batch)
     }
   }
 
-  // A live frame received for `replica`: its outcome, and the scopes it wants pulled next. A replica no longer active, or
-  // a scope that left `subscribed`, drops the frame and answers nil.
+  // A live frame received for `replica`: its outcome, and what it leaves to pull. A replica no longer active, or a scope
+  // that left `subscribed`, drops the frame and answers nil.
   public func apply(_ frame: LiveFrame, replica id: String, subscribed: Set<ScopeRef>,
-                    instance: Instance) throws -> Written<(outcome: FrameOutcome, wants: [ScopeRef])?> {
+                    instance: Instance) throws -> Written<(outcome: FrameOutcome, next: PullNext)?> {
     try write(.liveFrame) { tx in
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let scope = frame.scope, subscribed.contains(scope),
             var replica = try tx.replica(id, reads: planners.pages.reads(of: frame)) else { return Planned(nil, ReplicaBatch()) }
       let before = replica
       let outcome = try planners.pages.apply(frame, to: &replica, instance: instance)
-      return Planned((outcome, planners.pages.wants(after: frame, outcome, from: before, in: replica)), replica.batch)
+      return Planned((outcome, planners.pages.next(after: frame, outcome, from: before, in: replica)), replica.batch)
     }
   }
 
@@ -150,8 +150,8 @@ extension Store {
     try onActive(.subscriptions) { replica in planners.lifecycle.subscribe(&replica, to: scope) }
   }
 
-  // A scope leaving the subscription set is forgotten, and acked entries outside the set resolve.
-  public func reconcile(subscribed: Set<ScopeRef>) throws -> Written<Void> {
+  // A scope leaving the subscription set is forgotten, and acked entries outside it resolve; answers those followed.
+  public func reconcile(subscribed: Set<ScopeRef>) throws -> Written<Set<ScopeRef>> {
     try onActive(.subscriptions) { replica in try planners.lifecycle.reconcile(&replica, subscribed: subscribed) }
   }
 
