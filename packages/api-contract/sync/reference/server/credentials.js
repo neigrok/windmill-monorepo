@@ -7,22 +7,28 @@ export const SESSION_COOKIE = 'wm_session';
 
 const BEARER = /^Bearer ([^\s]+)$/i;
 
+// Header names compare in ASCII case only: a name holding any other letter names another header.
+const asciiLower = (text) => text.replace(/[A-Z]/g, (letter) => letter.toLowerCase());
+
+// RFC 6265 whitespace, space and tab, and nothing else.
+const trimWsp = (text) => text.replace(/^[ \t]+|[ \t]+$/g, '');
+
 // Every credential a request sends, from its headers as received: [name, value] pairs with every
-// occurrence kept, since a framework that keeps one of two headers hides a credential. Each
-// Authorization header is one, whatever its shape; each Cookie piece named the session cookie is one,
-// a bare name with no `=` included. A cookie's token is its value verbatim: no quote is stripped and
-// nothing is unescaped. A credential whose shape is not a token carries a null token.
+// occurrence kept. Each Authorization header is one, whatever its shape; each Cookie piece named the
+// session cookie is one, a bare name with no `=` included. A cookie's token is its value with only
+// space and tab trimmed around it: no quote is stripped and nothing is unescaped. A credential whose
+// shape is not a token carries a null token.
 function sentCredentials(headers) {
   const sent = [];
   for (const [name, value] of headers) {
-    const header = name.toLowerCase();
+    const header = asciiLower(name);
     if (header === 'authorization') sent.push({ kind: 'authorization', token: BEARER.exec(value)?.[1] ?? null });
     if (header !== 'cookie') continue;
-    for (const piece of value.split(';').map((part) => part.trim())) {
+    for (const piece of value.split(';')) {
       const at = piece.indexOf('=');
-      const cookie = (at === -1 ? piece : piece.slice(0, at)).trim();
+      const cookie = trimWsp(at === -1 ? piece : piece.slice(0, at));
       if (cookie !== SESSION_COOKIE) continue;
-      const token = at === -1 ? '' : piece.slice(at + 1);
+      const token = at === -1 ? '' : trimWsp(piece.slice(at + 1));
       sent.push({ kind: 'cookie', token: token === '' ? null : token });
     }
   }

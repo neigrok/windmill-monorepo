@@ -493,15 +493,17 @@ principal a request is served as (§9.1), from its headers as received, every oc
 order; `sessions` maps each live session's token to its account. `principal` is the `account` and
 `credential?` that pull, push and hello take: `{account}` when the credentials resolve, `{account:
 null}` when the request sends none, and `{account: null, credential: 'unresolved'}` otherwise.
-- Header names compare case-insensitively. Every `Authorization` header is a credential, whatever its
-  shape; so is every `Cookie` piece (split on `;`, trimmed) whose name is `wm_session`, a bare
-  `wm_session` with no `=` or an empty value included. A cookie's token is its value verbatim: no
-  quote is stripped and nothing is unescaped.
-- They resolve only as one `Authorization: Bearer <token>` (the scheme in any case) and at most one
-  `wm_session=<token>`, each token a key of `sessions`, and a cookie and header together naming one
-  account.
-- A runner feeds its adapter's header reading the raw headers, so a framework that keeps one of two
-  headers fails these vectors.
+- Header names compare in ASCII case only: a name holding any other letter, such as a Kelvin sign
+  (U+212A), names another header. Every `Authorization` header is a credential, whatever its shape; so
+  is every `Cookie` piece (split on `;`) whose name, with space and tab trimmed, is `wm_session`, a
+  bare `wm_session` with no `=` or an empty value included. A cookie's token is its value with only
+  space and tab trimmed around it (RFC 6265): no quote is stripped and nothing is unescaped.
+- They resolve only as at most one `Authorization: Bearer <token>` (the scheme in any case) and at
+  most one `wm_session=<token>`, each token a key of `sessions`, and a cookie and header together naming
+  one account.
+- The vectors describe what the origin answers for the fields as the client sent them. A deployment
+  runs them against the origin directly and through its edge, over HTTP/1.1 and HTTP/2 (engine.md
+  §9.1).
 
 ### live/death.json (server)
 

@@ -1355,12 +1355,13 @@ past held and held-back entries.
 
 ### §7.5 Puller, reset and epoch change
 
-The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), a
-re-authentication that clears `authPaused` (§8.2), and every `PULL_FALLBACK_MS`. Each run pulls the
-scopes of its trigger, each until `more = false`: a live gap its scope, a subscribe the scope
-subscribed, and every other trigger every subscribed scope. A request names at most
-`PULL_MAX_SCOPES` scopes; a run over more sends several, and a run left with no scope to pull
-(every one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9). A pull
+The puller runs on start, foreground, reconnect, a live gap, a subscribe (§7.9), an ignored
+`not-found` for a scope that has not booted (§7.9, rate-limited there), a re-authentication that
+clears `authPaused` (§8.2), and every `PULL_FALLBACK_MS`. Each run pulls the scopes of its trigger,
+each until `more = false`: a live gap its scope, a subscribe the scope subscribed, an ignored
+`not-found` its scope, and every other trigger every subscribed scope. A request names at most
+`PULL_MAX_SCOPES` scopes; a run over more sends several, and a run left with no scope to pull (every
+one waiting, §7.9) sends none. Each run first reconciles the subscription set (§7.9). A pull
 answered `401`, or served as another principal (§9.1), sets `authPaused` and applies nothing (§9.6).
 
 **Live socket.** A replica that pulls keeps one live socket, subscribed (`sub`) to the scopes it
@@ -1585,6 +1586,16 @@ it held the scope, as when a pull that left before the create was committed, or 
 before it, lands after the create's `ok`. A `gone` needs no exception, since a tree that exists only
 in the outbox cannot have died.
 
+Two rules keep a followed scope from going quiet:
+- A `gone` or `not-found` frame, applied or ignored, removes its scope from the set the live socket
+  follows: the server kept no subscription for it (§6.8), so a later subscribe sends `sub` again.
+- An ignored `not-found` for a scope that has not booted (`CursorRec.booted` false) pulls it again
+  (§7.5), so a new tree boots without waiting for `PULL_FALLBACK_MS`: at most once per response or
+  frame that carried the `not-found`, and each further re-pull of that scope backs off as opening
+  the live socket does (§7.5), with its own `k` and the 30 s ceiling, until the scope boots. While
+  the governing create is still in the outbox, the pull leaves the scope out, and the create's
+  result starts it.
+
 Reconciling the subscription set unsubscribes each scope that left it, and resolves the acked
 entries of every scope outside it. It runs at the start of every puller run (§7.5); a push result
 resolves no entry of a scope outside the set. The engine exposes `firstPullComplete(scope)`:
@@ -1748,23 +1759,41 @@ registry `version`, and `minVersion` with it, so a client that speaks the older 
 refused upgrade, so a web client learns a `426` from its hello, push or pull (§7.5). Keyed ids
 declared as arrays (`edge: [from, to]`) have their `jcs` as identity.
 
-**Credentials.** The server reads a request's credentials from its raw headers, every occurrence
-kept: an adapter MUST NOT rely on a framework that keeps one of two headers or drops a cookie it
-cannot parse. Every `Authorization` header, and every `Cookie` piece named `wm_session` (the session
-cookie), is a credential sent, whatever its shape, a bare `wm_session` with no `=` included. A
-cookie's token is its value verbatim: no quote is stripped and nothing is unescaped. The credentials
-resolve, making the request their account's, only when the request sends at most one `Authorization`
-header and at most one session cookie, each of its form (`Authorization: Bearer <token>`,
-`wm_session=<token>`) and each token held by a live session, and a cookie and a header sent together
-name one account. Otherwise (a credential revoked, expired, unknown or malformed, two of one kind,
-or two accounts) they do not resolve, and hello, push, pull and the live upgrade alike answer
-`401 unauthenticated`: a request that sends a credential is never served as anonymous. Only a
-request that sends none is anonymous: its push answers `401`, its hello carries no `holdsRecords`
+**Credentials.** The origin MUST consider every occurrence of `Authorization`, and of the session
+cookie `wm_session` in every `Cookie` field line, as received; header names compare in ASCII case
+only. Any edge in front of it (a reverse proxy) MUST forward these fields without removing, merging
+away or reordering occurrences, and MUST NOT rewrite them. Every `Authorization` header and every
+session cookie is a credential sent, whatever its shape. A cookie's token is its value with only
+space and tab trimmed around it (RFC 6265): no quote is stripped and nothing is unescaped. The
+credentials resolve, making the request their account's, only when the request sends at most one
+`Authorization` header and at most one session cookie, each of its form
+(`Authorization: Bearer <token>`, `wm_session=<token>`) and each token held by a live session, and a
+cookie and a header sent together name one account. For every other request that sends a credential,
+the server MUST answer `401 unauthenticated`, on hello, push, pull and the live upgrade alike: two
+`Authorization` headers; a scheme other than `Bearer`; two session cookies, in one `Cookie` field
+line or across several; a bare or malformed session cookie (a `wm_session` with no `=`, or an empty
+value); a cookie and a header naming different accounts; a token revoked, expired or unknown. It
+MUST NOT serve such a request as anonymous, or under any single one of its credentials. A request
+that sends no credential is anonymous: its push answers `401`, its hello carries no `holdsRecords`
 (§9.2), its pull answers `not-found` for every `self/…` scope (§6.7), and its live socket serves
-only the trees it can read (§6.8). Every response that sets the session cookie sets it in the
-deployment's configured scope and clears it in the other (host-only, or the configured `Domain`),
-and every response that clears it clears both, so a stray variant left by a change of `Domain`,
-which the browser would send beside the live one, never outlives the next sign-in or sign-out.
+only the trees it can read (§6.8). A conforming deployment passes these cases
+(`envelope/credentials`, §11.1) both against the origin directly and through its edge, over HTTP/1.1
+and HTTP/2.
+
+**Session cookie scopes.** The deployment keeps the list of every scope it has set the session
+cookie in: host-only, and each `Domain` it has configured, the current one and every earlier one. A
+response that sets the session cookie writes the live cookie in the current scope first, then
+expires it in every other scope on that list; a response that clears it expires it in every scope on
+the list. The live cookie comes first because a client that takes the first `wm_session` of a
+response, as the iOS and Android apps do, then gets the live one. A stray variant left by a change
+of `Domain`, which a browser would send beside the live one, never outlives the next sign-in or
+sign-out. A deployment whose configured `Domain` differs from the host that answers sign-in and
+sign-out never writes the same cookie twice in one response. One whose `Domain` equals that host
+(the only `Domain` a site served at its registrable domain can set) relies on its clients: a store
+that takes a host-only cookie and a `Domain=<host>` one as the same cookie (RFC 6265 §5.3) would
+lose the live cookie to the expiry that follows it. So every client of such a deployment MUST keep
+the two apart, as Chrome does, or read the first `wm_session` of a response, as the iOS and Android
+apps do.
 
 **Principal.** Every response from authentication (step 2 below) on carries `as`, the account it was
 served as: the id its credential resolves to, or `null` for a request that carries none and for
