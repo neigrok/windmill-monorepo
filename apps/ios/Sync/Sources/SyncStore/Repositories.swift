@@ -198,8 +198,9 @@ public struct StoreTransaction {
     return Rows(loaded: loaded, keys: selection.keys, types: selection.types, empty: empty)
   }
 
+  // A pull page loads every row it carries by key, so the lookup is prepared once per connection.
   func row(_ table: BatchWriter.RowTable, of id: String, in scope: ScopeRef, _ key: RecordKey) throws -> SyncCore.Row? {
-    try Data.fetchOne(db, sql: "SELECT row FROM \(table.rawValue) WHERE replica = ? AND scope = ? AND type = ? AND id = ?",
+    try Data.fetchOne(db.cachedStatement(sql: "SELECT row FROM \(table.rawValue) WHERE replica = ? AND scope = ? AND type = ? AND id = ?"),
                       arguments: [id, scope.text, key.type, key.id.text]).map(Blob.row)
   }
 

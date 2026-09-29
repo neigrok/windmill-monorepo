@@ -92,18 +92,21 @@ final class TransactionReader: CommitContext {
 
   // MARK: CommitContext
 
-  // A CSPRNG id by the type's mint, drawn again while drawn, spent or minted earlier in this call holds it.
+  // A CSPRNG id by the type's mint, drawn again while drawn, spent or minted earlier in this call holds it. Each draw is
+  // looked up by its key, so a mint costs the same whatever the type holds.
   func mintID(_ type: String) throws -> RecordID {
     try reading {
       try checkLives(type)
-      let replica = try load(RowSelection(types: [type]))
-      let drawn = try ScopeView(replica, scope, .drawn, registry: registry)
-      let taken = minted.union(drawn.records(ofType: type).map(\.key.id))
-        .union(replica.spentIDs(scope).keys.filter { $0.type.utf8.elementsEqual(type.utf8) }.map(\.id))
-      var id = try core.identities.mint(type, in: registry)
-      while taken.contains(id) { id = try core.identities.mint(type, in: registry) }
-      minted.insert(id)
-      return id
+      while true {
+        let id = try core.identities.mint(type, in: registry)
+        let key = RecordKey(type, id)
+        let replica = try load(RowSelection(keys: [key]))
+        let drawn = try ScopeView(replica, scope, .drawn, registry: registry)
+        guard minted.contains(id) || drawn.record(key) != nil || replica.spentIDs(scope)[key] != nil else {
+          minted.insert(id)
+          return id
+        }
+      }
     }
   }
 
