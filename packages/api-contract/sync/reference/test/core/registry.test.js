@@ -11,6 +11,9 @@ const SCHEMA = read('registry.schema.json');
 const PROBE = read('probe.registry.json');
 // The registries the products ship: every registry file but the test-only probe's.
 const PRODUCTS = readdirSync(CONTRACT).filter((name) => name.endsWith('.registry.json') && name !== 'probe.registry.json').sort().map(read);
+// The registries a deployment composes (§2.4): composition.json names them.
+const COMPOSITION = read('composition.json');
+const COMPOSED = COMPOSITION.registries.map(read);
 
 // The JSON Schema 2020-12 keywords registry.schema.json uses, and no others: a failed keyword throws.
 function errorsOf(schema, value, path = '$', root = schema) {
@@ -200,10 +203,19 @@ test('the product registries are gym and journal, each valid against registry.sc
   }
 });
 
-// The product registries ship together as one registry: one version, the version every request carries (§9.1), and no
-// product, type, command or refusal code a second registry declares again.
-test('the product registries compose into one registry: one version and no name declared twice', () => {
-  assert.deepEqual(new Set(PRODUCTS.map((registry) => `${registry.version}/${registry.minVersion}`)).size, 1);
+// A deployment composes the registries composition.json names into one registry: one version, the version every
+// request carries (§9.1), and no product, type, command or refusal code a second registry declares again. It names
+// gym alone until journal's server binding lands (§2.4).
+test('composition.json names the composed registries: gym alone, each a product registry', () => {
+  assert.deepEqual(Object.keys(COMPOSITION).sort(), ['composition', 'registries']);
+  assert.deepEqual(COMPOSITION.registries, ['gym.registry.json']);
+  for (const name of COMPOSITION.registries) assert.ok(PRODUCTS.some((registry) => `${registry.registry}.registry.json` === name), name);
+});
+
+// So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
+// name twice.
+test('the composed registries declare one version, and no product registry declares a name another does', () => {
+  assert.deepEqual(new Set(COMPOSED.map((registry) => `${registry.version}/${registry.minVersion}`)).size, 1);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {
@@ -217,7 +229,7 @@ test('every minted gym type is seeded, its widest seeded id in its pattern', () 
   const minted = PRODUCTS.flatMap((json) => [...new Registry(json).types.values()]).filter((type) => type.identity === 'minted');
   const seeded = minted.filter((type) => type.seeded);
   assert.deepEqual(seeded.map((type) => type.type), minted.map((type) => type.type));
-  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal', 'thread', 'message']);
+  assert.deepEqual(seeded.map((type) => type.type), ['routine', 'exercise', 'session', 'set', 'note', 'proposal']);
   for (const type of seeded) {
     assert.doesNotThrow(() => seededId(type, 'Z'.repeat(type.seeded.seedMax), type.seeded.ordinalMax), type.type);
   }

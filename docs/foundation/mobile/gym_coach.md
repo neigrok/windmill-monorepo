@@ -478,7 +478,9 @@ Integrity Cloud project and service account; the grant signing key; the device-h
 Conversations are records in the `self/gym` scope. They sync for `bound` seats and stay on the
 device for `anon`. At sign-in, signed-out conversations join the account with the rest of the
 signed-out gym data: silently where the account holds no gym records, otherwise under the gym
-signed-out decision (engine §7.10).
+signed-out decision (engine §7.10). Gym's registry gains `thread` and `message` with the phone
+Coach, which binds them; until then conversations stay in the gym backend's Coach tables (engine
+A.2).
 
 | Type | Identity | Fields |
 |---|---|---|
@@ -487,7 +489,7 @@ signed-out decision (engine §7.10).
 
 - `state` moves from `running` to a terminal state. A terminal state beats `running`, and a
   writer's terminal state (`completed`, `declined`, `failed`, `stopped`) beats `interrupted`, in a
-  merge regardless of stamp (engine A.2).
+  merge regardless of stamp: `state` is a `ranked` field (engine §3.2).
 - Once `state` is a writer's terminal state, it and `text`, `receipt` and `calls` are final. A
   writer's terminal write, with its text, receipt and calls, is admitted over `interrupted`.
 - A lifter message carries `threadId`, `role`, `text`, `pictures` and `at` only.
@@ -543,11 +545,13 @@ A phone Coach requires a gym replica per [the engine](../engine.md) with:
 - a signal that the replica's first pull of history is complete;
 - the active replica's id, given to a commit, and the `activeReplicaChanged` event that announces
   every change of it (engine §7.12);
-- a device row `runningTurn` in `device/gym` (engine A.2);
+- a device row `runningTurn` in `device/gym`;
 - `proposal` records mintable by a replica, with `changes` computed by the shared diff rule and
   re-checked by the server on admission;
-- `thread` and `message` as full records with the fields and merge rule of §9.1, and
-  `localOnly` pictures;
+- `thread` and `message` as full records with the fields and merge rule of §9.1, `localOnly`
+  pictures held in `picture:<id>` device rows, and a proposal's `threadId` a `ref<thread>` its
+  replica writes. Gym's registry declares none of these, `runningTurn` included, until the phone
+  Coach binds them (engine A.2, §2.4);
 - the derived reads of INV-5 computed on the replica.
 
 ---

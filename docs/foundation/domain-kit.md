@@ -1554,7 +1554,7 @@ the engine's test support (ER-9). Kotlin's `Harness` has the same members over `
 @Test func secondEditorSeesStale() throws {
   let a = Harness(registry: SyncSchema.registry, start: Instant(ms: 1_800_000_000_000), rules: GymServerDouble())
   let b = a.device()
-  var new = Draft(new: Routine(id: a.runner.mint(Routine.self)), placed: .bottom)
+  var new = Draft(new: Routine(id: a.runner.mint(Routine.self)))
   new.current.name = "Push"
   new.current.entries = [Entry(exerciseId: benchPress, restSeconds: nil, sets: nil)]
   #expect(saved(a.runner.save(&new, SaveRoutine.self))); a.sync(); b.sync()
@@ -1738,10 +1738,9 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
-public struct Routine: Draftable, Removable, Ordered {
+public struct Routine: Draftable, Removable {
   public static let type = Gym.Types.routine
   public static let scope = Gym.scope
-  public static let orderField = "ord"
   public static let savesGuarded = true
   public static let heldRemoval = true
 
@@ -1813,8 +1812,10 @@ public enum RoutineRules {
 
 public typealias SaveRoutine = SaveDraft<Routine, GymRefusal>
 public typealias DeleteRoutine = Remove<Routine, GymRefusal>
-public typealias MoveRoutine = Move<Routine, GymRefusal>
 ```
+
+A routine is not `Ordered`: its place in the program is the integer `position` (engine A.2), which
+the editor leaves unwritten and a new routine reads as 0.
 
 `Exercise` is the gym's movement entity: an `Entity` and not `Removable`, since the binding refuses
 its delete. The refusal type and the rule book are the gym product's, shared by every gym feature:
@@ -1853,7 +1854,7 @@ The editor's view model (UI layer):
 
 ```swift
 var theirs: Routine? = nil
-var draft = Draft(new: Routine(id: runner.mint(Routine.self)), placed: .bottom)       // New routine
+var draft = Draft(new: Routine(id: runner.mint(Routine.self)))                        // New routine
 if let seen = try runner.open(id) { draft = seen }                                      // Edit
 
 switch runner.save(&draft, SaveRoutine.self) {                                          // Save
@@ -1886,10 +1887,9 @@ What the kit guarantees:
 ```kotlin
 data class Routine(override val id: Id<Routine>, val name: String = "", val entries: List<Entry> = emptyList()) : Writable<Routine> {
     override fun fields() = mapOf("name" to Json.of(name), "entries" to Json.array(entries.map { it.json() }))
-    companion object : DraftType<Routine>, RemovableType<Routine>, OrderedType<Routine> {
+    companion object : DraftType<Routine>, RemovableType<Routine> {
         override val type = Gym.Types.ROUTINE
         override val scope = Gym.SCOPE
-        override val orderField = "ord"
         override val savesGuarded = true
         override val heldRemoval = true
         override fun decode(f: Fields) = Routine(Id(f.id), f.string("name"), f.list("entries", Entry))

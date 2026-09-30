@@ -1,0 +1,4 @@
+{
+  "composition": "windmill",
+  "registries": ["gym.registry.json"]
+}

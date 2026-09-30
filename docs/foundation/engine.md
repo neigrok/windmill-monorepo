@@ -7,8 +7,8 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 **Status:** Built in the C++ server (`backend/platform/**/sync*`), which only
 `windmill_server_probe` mounts, and in the Swift client (`apps/ios/Sync`);
-`packages/api-contract/sync/reference/` is the JS reference. No product has adopted it yet. The
-engine starts from empty stores.
+`packages/api-contract/sync/reference/` is the JS reference. No product has adopted it yet. Gym
+adopts its tables in place (Appendix C); every other product starts from empty stores.
 
 **In the engine:**
 - record identity, deletion and spent ids;
@@ -21,6 +21,7 @@ engine starts from empty stores.
 **Outside the engine** (none of these is a synced record):
 - Presence and remote cursors, carried as ephemeral live-socket messages (§9.5).
 - The global gym exercise seed catalog.
+- Gym's Coach conversations, until the phone Coach binds them (A.2).
 - Gym session shares and log shares; the roadmap share page, images and gallery; the roadmap
   home-list done/total read.
 - Journal echoes, spans, nudges, voice and curation.
@@ -267,9 +268,14 @@ Each table storing a synced type holds its typed columns as the truth, and:
   `(id, born, life_stamp, seq)`.
 - One table MAY host several types, each with its own envelope columns.
 - Superseded text heads are kept in the product's revision table, keyed by `rev`.
-- A foreign key between synced tables has no `ON DELETE` action. Every referential consequence of
-  a delete is a write by admission, in the same seq (Appendix A lists them). `apply` writes the
-  consequences before it removes the parent's typed row, children first.
+- A foreign key between synced tables has no `ON DELETE` action, but for a table holding one
+  record's register, whose rows go with that record's row. Nor does a synced table's foreign key to
+  any other table, but for its account's row: account deletion purges every scope the account owns
+  (§2.3 `purge`). Every referential consequence of a delete is a write by admission, in the same seq
+  (Appendix A lists them). `apply` writes the consequences before it removes the parent's typed row,
+  children first.
+- A table adopted in place (Appendix C) MAY take its scope from an existing column in place of
+  `scope_key`, with the index `(<that column>, seq)`.
 
 ### §2.3 The `SyncType` port
 
@@ -289,7 +295,7 @@ class SyncType {
  public:
   virtual const TypeDef& def() const = 0;
   virtual std::map<Id, Row> lock(Txn&, const ScopeKey&, std::span<const Id>) = 0;    // this scope's typed rows, FOR UPDATE
-  virtual std::set<Id> elsewhere(Txn&, const ScopeKey&, std::span<const Id>) = 0;    // global ids another scope's rows hold
+  virtual std::set<Id> elsewhere(Txn&, const ScopeKey&, std::span<const Id>) = 0;    // global ids held outside this scope (§4.2)
   virtual Verdict check(Txn&, const AdmitCtx&, std::vector<Change>&) = 0;             // product rules on joined records
   virtual void apply(Txn&, const ScopeKey&, Seq, const std::vector<Change>&) = 0;     // typed rows, revisions, projections
   virtual std::vector<Row> feed(Txn&, const ScopeKey&, const FeedQuery&) = 0;         // keyset (seq, type, id)
@@ -311,10 +317,15 @@ authoritative. A registry declares its `version` and `minVersion` (§9.2), its `
 its `surfaces`, its device rows and its refusal `codes`), its `types` and its `commands`. Every
 product-specific behaviour the engine applies is registry data or a product binding (Appendix A); the
 engine body names no product. Each product ships a registry of its own
-(`packages/api-contract/sync/<product>.registry.json`), and a deployment composes them into one:
-they declare one `version` and one `minVersion`, and no product, type or command name twice. A
-registry that drops a product raises `minVersion` above every version that declares it, so a client
-that still carries the product is answered `426` (§9.1).
+(`packages/api-contract/sync/<product>.registry.json`). A deployment composes the registries
+`packages/api-contract/sync/composition.json` names into one: they declare one `version` and one
+`minVersion`, and no product, type or command name twice. The deployment binds every type and
+command they declare, so it never admits a type it cannot store, and its clients compose exactly
+those registries: server and client speak one registry, named by its version. A product joins the
+composition, and a type its product's registry, in the change that binds it on the server, and the
+composition's `version` and `minVersion` rise with it (§9.1). A registry that drops a product raises
+`minVersion` above every version that declares it, so a client that still carries the product is
+answered `426` (§9.1).
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -517,8 +528,9 @@ Any other shape is refused `invalid`.
 The engine composes the id state from `lock`, `elsewhere` and its own tables (§2.3):
 - `none`: no row and no `sync_spent` row for the id in the scope. For `idSpace: global`, none in any
   scope. For a governing type, no `sync_scopes` row for the governed scope.
-- `foreign`: `idSpace: global` and the id exists or is spent in another scope; or, for a governing
-  type, the governed scope exists and is not governed by this `(scope, type, id)`.
+- `foreign`: `idSpace: global` and the id exists or is spent in another scope, or the product holds
+  it outside every scope (gym's seed exercises, A.2); or, for a governing type, the governed scope
+  exists and is not governed by this `(scope, type, id)`.
 - `alive(b)`, `dead(b)`: alive or dead in this scope, with born `b` (a keyed type's spent row has
   no born).
 
@@ -726,7 +738,8 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
   are stored.
 - Server stamps are minted once per pass of §6.1 step 9, each one tick after observing stored
   stamps, the stamps of the intent's client deltas and an earlier pass's stamps, all bounded, by
-  induction from empty stores (§10.3).
+  induction from empty stores (§10.3), or from a scope gym's backfill adopted, whose every stamp is
+  its run's `M:0:srv` (Appendix C.9).
 - Recovery terminates. The `serverNow` of §6.1 step 2 never steps back within a server process
   (§10.2), so a stamp that passed the skew check once passes it again there. A step back of δ
   across a restart, or between server processes, costs a bounded number of extra refusals, one per
@@ -756,7 +769,8 @@ checks stopped runs none until the app version changes.
 
 *Proof.*
 - The server's scope digest at every committed seq is the sum over the scope's alive rows at that
-  seq. It starts at 0, and the transaction that changes a row changes it (§6.12).
+  seq. It starts at 0, or, in a scope gym's backfill adopted, at the sum over the rows it adopted
+  (Appendix C.9), and the transaction that changes a row changes it (§6.12).
 - A pull page reads its rows and its `(seq, digest)` in one snapshot (§6.7), and a live frame
   carries the digest committed with its seq, so a received `(N, d)` is the server's state at N.
 - The client changes its digest in every transaction that changes its confirmed rows, each chunk of
@@ -1001,7 +1015,8 @@ MCP tools, REST writes, tending and server-internal commands call
   store it rolls back. A transient failure of a later admit leaves the row `running`, so a retry
   within `REQUEST_LEASE_MS` answers `request-running`.
 - **Builders** that read records (sibling order, derived ids, whole-graph edits) read under the
-  scope lock, from rows or from a cache whose seq equals `scope.seq`.
+  scope lock, from rows or from a cache whose seq equals `scope.seq`. A builder that finds nothing
+  to write admits nothing, and its call answers from what it read.
 - **Server-built bulk writes** classify each incoming id as create, update or spent before building
   deltas, and report spent ids to the caller.
 
@@ -1010,16 +1025,16 @@ MCP tools, REST writes, tending and server-internal commands call
 `handler(txn, ctx, args) → {deltas, write, detail} | refuse(code)`:
 - It is deterministic given the locked rows, `args` and `serverNow`.
 - It MAY lock more rows through the ports, and MAY write any field.
-- It resolves its own replays (Appendix A), comparing the raw arguments stored with its receipt,
-  before the guards are checked (§6.1 step 7).
+- It resolves its own replays (Appendix A), comparing the raw arguments, or their digest, stored with
+  its receipt, before the guards are checked (§6.1 step 7).
 - A command not in the registry is refused `invalid`.
 
 ### §6.5 Caps
 
 `sync_scopes.counters[type]` equals the number of alive records of the type in the scope, and is
 kept for capped types only. A new scope's counters are 0, an absent key reading 0, and only step 13
-changes them. The cap check reads the counter and never counts rows. `holdsRecords` (§9.2) needs no
-counter: it is an existence query over visible rows of primary types.
+and gym's backfill (Appendix C.6) change them. The cap check reads the counter and never counts rows.
+`holdsRecords` (§9.2) needs no counter: it is an existence query over visible rows of primary types.
 
 ### §6.6 Faults and poison
 
@@ -1110,7 +1125,8 @@ subscribed to the scope that still holds read access. Frames of one scope so lea
 
 ### §6.9 Projections and read caches
 
-`apply` MAY write derived rows in the admitting transaction. Appendix A lists them. A read cache
+`apply` MAY write derived rows, and derived columns beside a typed row's registers, in the admitting
+transaction; neither is part of a row `feed` returns (§6.12). Appendix A lists them. A read cache
 MUST be keyed by `(scope, seq)` and MUST NOT answer an admission.
 
 ### §6.10 Retention and GC
@@ -1198,7 +1214,8 @@ full (§7.9).
 `after` taken once its seq, `rc` and `ru` are set (§6.1 step 13). `feed` MUST return every row
 exactly as `apply` stored its `after`, so the server hashes the form a page carries. Every row
 change is such a transaction: replica and server-origin admission, every command (`beforePull`
-commands included), and a command's writes into a scope it creates (§6.1 step 14). Every referential
+commands included), and a command's writes into a scope it creates (§6.1 step 14); outside admission,
+only gym's backfill, which sets the digest of each scope it adopts (Appendix C.6). Every referential
 consequence (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a
 `feed` row. A governing create starts its scope at digest 0. Scope death changes no row, and a dead
 scope's digest is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads
@@ -1929,12 +1946,13 @@ The engine exposes:
   A re-identify of a replica that is not active, such as a dormant one whose in-flight push is
   answered `replica-forked`, fires none.
 - The id of the replica a commit writes to, given to its read-and-commit function (§7.1), so a
-  record that names its writer, such as gym `message.replica` (Appendix A.2), names it exactly.
+  record that names its writer, such as the gym Coach's `message.replica` (gym Coach §9.1), names it
+  exactly.
 
 The event is delivered after its transaction commits, once per change, in the order of the changes.
 It is not durable: a change whose process dies before delivering it is announced by no later event,
 so whoever holds an id reads `activeReplica()` again at engine start, or keeps a durable mark of
-its own, as the gym Coach's `runningTurn` device row does (gym Coach §4.5). On web every tab delivers
+its own, such as the gym Coach's `runningTurn` device row (gym Coach §4.5). On web every tab delivers
 it (§7.8).
 
 A sign-in, a sign-out or a re-identify of the active replica runs the puller (§7.5) and ends every
@@ -2312,13 +2330,15 @@ server (C++), or client (JS, Swift, Kotlin).
 
 ### §11.1 Golden corpus: `packages/api-contract/sync/corpus/`
 
-The corpus runs against the probe product (`packages/api-contract/sync/probe.registry.json`), and
-its `README.md` states its conventions. `constants.json` holds the constants its vectors assume.
+The corpus runs against the probe product (`packages/api-contract/sync/probe.registry.json`), but
+for its `gym/` files, which run against gym's registry and binding (A.2) and gym's backfill
+(Appendix C). Its `README.md` states its conventions, and `constants.json` holds the constants its
+vectors assume.
 
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
-| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope` |
+| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`; the C++ server also `gym/backfill`, the store Appendix C adopts |
 | client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
 
 Runners assert exact equality, comparing values by `jcs`.
@@ -2448,53 +2468,65 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 
 ### A.2 Gym
 
-**Scope:** `self/gym`. **Device scope** `device/gym` ([gym Coach](mobile/gym_coach.md) §9.3), with
-rows keyed per session, per picture and one per replica: `movementOrder:<session>` (the live movement
-order, exercise ids), `movement:<session>` (the chosen movement), `offer:<session>` (a pre-minted
-offer id), `rack:<session>` (rack state), `picture:<id>`, marked `localOnly`, and `runningTurn` (the
-Coach turn running on this device, gym Coach §4.1 step 2). **Surfaces:** web, iOS, Android.
+**Scope:** `self/gym`. **Device scope** `device/gym`, with rows keyed per session:
+`movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the chosen
+movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state).
+**Surfaces:** web, iOS, Android. iOS syncs through the engine; web and Android write through gym's
+REST API, a server-origin door (below). **Adoption:** in place, from gym's tables (Appendix C).
 
 Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
 and `n ≤ 99 999`. Minted ids match `^[A-Za-z0-9_-]{8,64}$`, except `exercise` ids, which match
-`^[A-Za-z0-9_-]{1,64}$`: seed exercise slugs such as `dip` are shorter. Seed exercise ids are
-`foreign` to every account. **Primary types** (§9.2): `routine`, `session`, `set`, `note`,
+`^[A-Za-z0-9_-]{1,64}$`: seed exercise slugs such as `dip` are shorter. The seed exercises are a
+catalog outside every scope (§0): each seed id is `foreign` to every account, as the binding's
+`elsewhere` reports it (§2.3). **Primary types** (§9.2): `routine`, `session`, `set`, `note`,
 `weighin`, `exercise`.
 
 | Type | Identity | Life | Fields | Rules |
 |---|---|---|---|---|
-| `routine` | minted g | terminal, spent | lww: `name` ≤240 bytes, `ord` (D-25), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900 or null, `sets` (`maxItems` 20 of {`reps` 1–100 or null, `weightKg` ±500 or null, quantum 0.01})}) | Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals. Delete kills its proposals and writes `routineId = null` on its sessions. Projections: `revision`; `position` = dense rank of `(ord, id)` among alive routines. |
-| `exercise` | minted g | terminal, spent | `name` lww ≤240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell} | Never deleted (a delete is `invalid`). |
-| `exerciseName` | keyed (`ref<exercise>`) | yes, spent | `name` lww ≤240 bytes; `aliases` lww server (`maxItems` 5 of ≤240 bytes) | A rename appends the old name to `aliases`. |
-| `session` | minted g | terminal, spent | `routineId` lww server `ref<routine>` or null; `plan` const server, JSON or null; `startedAt` time; `finishedAt` lww server, an epoch ms, never null; `closedBy` lww server ∈ {finish, stale}, never null; `displayName` lww server ≤240 bytes or null | Created only by commands. At most one session with `finishedAt` unset per account. A delete runs `gym.closeStale` inside its admission, then refuses a session whose `finishedAt` is still unset with `session-open`. Delete kills its sets. |
-| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null; `completedAt` time | Set rules below. |
-| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projection: `position` = dense rank of `(ord, id)` among alive notes. |
-| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms, which each save writes from the read-and-commit function's `now` | `origins: [replica]`. `check` refuses a write of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each save writes `kg`, `recordedAt` and presence at one stamp, so the newest save wins whole, whatever `recordedAt` holds, and a save newer than a delete, held or not, keeps the weigh-in. |
+| `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` ±500 quantum 0.01})}); const server: `createdDoor` ∈ {mcp, ask} | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. Projections: `revision` (1 at create, +1 when `name` or `entries` change); `created_entries`, its entry count at create; and, for a create with `createdDoor = ask`, the routine as created, kept after its death. |
+| `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
+| `exerciseName` | keyed (`ref<exercise>`, a seed) | none | lww: `name` 1–240 bytes; lww server: `aliases` as an exercise's | A seed's name for the account: `name` unset reads as the seed's own name, and a seed renamed back to it holds it. Keyed by an id that is not a seed → `invalid`. A change of the displayed name writes `aliases` as an exercise's rename does. |
+| `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
+| `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
+| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projections: `position`, the dense rank from 0 of `(ord, id)` among alive notes; `updated_at`, the server time of its create or of the last change of `title` or `body`. |
+| `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`; a server-origin door writes the `recordedAt` its request carries, and admits nothing over a stored weigh-in with a later one (below). |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
-| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `threadId` lww `ref<thread>` or null; `state` ranked server (pending 0; applied, dismissed, superseded 1); `supersededBy` lww server ∈ {proposal, routine} | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. A replica's create requires `door = ask` and an empty `connection`, and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`) and writes `state = pending`. The supersede of the pending proposal of the same `(routine, door, connection)` is written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission; a replica never supplies them. |
-| `thread` | minted g | terminal, spent | `title` const ≤8000 bytes | Fields and rules: gym Coach §9.1. Delete kills its messages and writes `threadId = null` on its proposals. |
-| `message` | minted g | terminal, spent | `threadId` const `ref<thread>` parent; const: `role` ∈ {lifter, coach}, `replica` (`rp_` and 32 lowercase hex, or `srv`), `pictures` (`maxItems` 1 of {`id`, `mediaType` `image/…`, `localOnly`?}); lww: `text` ≤131 072 bytes, `truncated`, `receipt` ≤16 384 bytes, `calls` ≤32 768 bytes; `state` ranked (running 0; interrupted 1; completed, declined, failed, stopped 2); `at` time | Fields and rules: gym Coach §9.1 and §4.5, which `check` enforces (`invalid`). |
+| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100 of {`kind` ∈ {kept, added, removed, retargeted}, `exerciseId`, `before`, `after`}, each side {`sets`, `restSeconds`} as a routine entry's); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; lww server: `threadId` (a Coach conversation's id) or null, `state` ranked (pending 0; applied, dismissed, superseded 1; unset reads `pending`), `supersededBy` (the proposal that replaced it), `settledAt` an epoch ms | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. `changes` lists the lines the routine takes on, in order, then the lines it drops; `before` is on kept, removed and retargeted lines, `after` on kept, added and retargeted ones. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset (`invalid`), and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. `check` re-checks the create by them (`invalid`). A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create supersedes the pending proposal of the same `(routine, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`, written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the routine's `revision` and `name` at admission, which a replica never supplies; and the change count `Apply all N` shows. |
+
+**Coach conversations** (gym Coach §9.1) are not engine records yet: they stay in the gym backend's
+Coach tables, and the phone Coach adds `thread` and `message` to gym's registry, with their binding
+(§2.4). A proposal's `threadId` names such a conversation. Deleting a conversation first admits, as
+the server, `threadId = null` on every proposal that names it.
 
 **Set rules** (`check`):
-- An open session admits every set.
-- A session closed by `finish` → `session-finished`.
-- A session closed as `stale` admits a set iff `completedAt ≤ finishedAt + 4 h`, and then sets
-  `finishedAt := max(finishedAt, completedAt)`. Otherwise → `session-finished`.
+- A set create that is not a command's (`gym.importSession` and `gym.correctSession` create sets in
+  finished sessions):
+  - an open session admits it;
+  - a session with `finishedAt` set and `closedBy` other than `stale`, unset included →
+    `session-finished`;
+  - a session closed as `stale` admits it iff `completedAt ≤ finishedAt + 4 h`, and then sets
+    `finishedAt := max(finishedAt, completedAt)`. Otherwise → `session-finished`.
+- A set update or delete is admitted whatever its session's state, and moves no `finishedAt`: a
+  lifter fixes and deletes sets of a finished workout.
+- Only a command moves a standing set's `completedAt`: a delta that writes it → `invalid`.
 - Every exercise reference (a set's `exerciseId`, a routine entry's `exerciseId`, a command's set)
   must be a seed or the owner's; otherwise `unknown-exercise`.
 
-**Commands.** `gym.closeStale` (`beforePull`, §2.4) runs first inside `gym.start`,
-`gym.importSession`, `gym.correctSession` and a session delete's admission, before every pull of an
-existing `self/gym`, and before every server read of session state (REST and MCP). It is the only
-writer of `closedBy = stale`.
+**Commands.** `gym.closeStale` (`beforePull`, §2.4) runs first inside `gym.start` and
+`gym.importSession`, before every pull of an existing `self/gym`, and before the server reads that
+settle staleness ([gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md) §4.2 lists them).
+It is the only writer of `closedBy = stale`.
 
 - **`gym.start {id: ref<session>, routineId?: ref<routine>, startedAt: time, joinOpenSession}`.**
   Clients send `joinOpenSession: true`.
-  1. A start receipt for `id` (the session it created or joined) → ok. When that session is alive,
-     the write map carries it with its `born`, and `from: id` if it is a different session.
+  1. A start receipt for `id` (the session it created or joined) names a session; with none, the
+     caller's own session under `id`, alive or dead, does → ok. While that session is alive, the
+     write map carries it with its `born`, and `from: id` if it is a different session.
   2. An open session `o` exists: with `joinOpenSession` → ok, a receipt, and the write map
      `{session, o.id, from: id, born: o.born}`; otherwise → `session-open`.
-  3. Otherwise create the session with a receipt, freezing `plan` from the routine. A routine the
-     owner cannot read gives `plan = null` and `routineId = null`.
+  3. Otherwise create the session with a receipt, freezing `plan` from the routine and writing
+     `historyRoutineId := routineId`. A routine the owner cannot read gives `plan = null` and
+     `routineId = null`.
 
   Predicts the session `{id, born, startedAt, routineId}`, with `plan` composed from the drawn
   routine. A replay whose receipt names a dead session writes nothing; the predicted session stays
@@ -2504,12 +2536,15 @@ writer of `closedBy = stale`.
   200 sets, each `{id, exerciseId, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
   bounds and quanta. A set's `completedAt` is an integer epoch ms inside a `json` argument, not an
   `instant`, so §6.1 step 2 does not bound it: the command's check does (`bad-instant`).
-  - Own `id`: alive with equal raw arguments (its receipt) → ok; with different arguments →
-    `payload-conflict`. Dead → ok.
+  - An import receipt for `id`: equal raw arguments → ok, its session alive or dead; different →
+    `payload-conflict`. The caller's own session under `id` that no import created →
+    `payload-conflict`.
   - `foreign` → `id-taken`.
+  - Two sets with one id → `invalid`.
   - `finishedAt < startedAt`, `finishedAt > serverNow`, or a set outside `[startedAt, finishedAt]`
     → `bad-instant`.
-  - The interval crosses another finished session → `session-overlap`.
+  - The interval crosses another finished session → `session-overlap`, with detail `{sessionId}`
+    naming the earliest it crosses, a span being `[startedAt, max(finishedAt, startedAt + 1))`.
   - A routine the owner cannot read → `plan = null` and `routineId = null`.
 
   Sets are numbered in argument order. Predicts the session and its sets.
@@ -2517,37 +2552,47 @@ writer of `closedBy = stale`.
   Each set is `{id, exerciseId, setNumber, weightKg, reps, rpe?, note?, completedAt}`, with a set's
   bounds and quanta, its `completedAt` bounded by the command's check as `gym.importSession`'s is. `requestId` matches the gym id pattern, and `routineName` is ≤240 bytes or
   null. It replaces a finished workout:
-  - The session is alive, the owner's and finished; otherwise `unknown-record`, `record-dead` or
-    `invalid`.
-  - The `requestId` was applied with equal arguments → ok; with different arguments →
-    `payload-conflict`.
-  - 1–200 sets; set numbers positive and unique per movement; every instant within
+  - The session is alive and the owner's; otherwise `unknown-record` or `record-dead`.
+  - The `requestId` was applied to it with equal arguments → ok; otherwise → `payload-conflict`.
+  - Its `finishedAt` is unset → `session-open`.
+  - 1–200 sets with unique ids; set numbers positive and unique per movement; every instant within
     `[startedAt, finishedAt]` and not in the future → otherwise `bad-instant` or `invalid`.
   - Crossing another finished session → `session-overlap`.
   - An existing set whose `exerciseId` changes → `invalid`. A set keeps its kind; new sets are
-    `working`. Set numbers are taken as given. Omitted `rpe` and `note` keep their values. Missing
-    prior sets die. A reused or spent set id → `id-taken` or `id-spent`.
-  - `closedBy := finish`, and `displayName := routineName`.
+    `working`. Set numbers are taken as given, and a kept set takes its `completedAt`. Omitted `rpe`
+    and `note` keep their values. Missing prior sets die. A reused or spent set id → `id-taken` or
+    `id-spent`.
+  - `startedAt`, `finishedAt`, `closedBy := finish`, and `displayName := routineName`.
 
   Predicts the session and its sets.
 - **`gym.finish {sessionId: ref<session>, finishedAt: time}`.**
   - Absent or `foreign` → `unknown-record`; dead → `record-dead`.
   - `finishedAt < startedAt`, zero or out of range → `bad-instant`.
   - Unfinished → `finishedAt`, and `closedBy = finish`.
-  - Closed `stale` → `closedBy = finish`, and `finishedAt := last activity` if `finishedAt > last
-    activity + 4 h`, else `max(last activity, finishedAt)`.
-  - Closed `finish` → ok.
+  - Closed `stale` at `f` → `closedBy = finish`, and `finishedAt := f` if `finishedAt > f + 4 h`,
+    else `max(f, finishedAt)`.
+  - Closed `finish`, or finished with `closedBy` unset → ok.
 
   Predicts `finishedAt` and `closedBy`.
 - **`gym.applyProposal {proposalId: ref<proposal>}`.**
-  - Absent → `unknown-record`.
+  - Absent or `foreign` → `unknown-record`; dead, having died with its routine → `record-dead`.
   - `applied` → ok.
-  - `dismissed`, `superseded`, or `routine.revision ≠ baseRevision` → `stale`; on a revision
-    mismatch, a follow-up server write sets `state = superseded`.
-  - Otherwise write the proposal's routine document and `state = applied`.
+  - `dismissed` → `proposal-settled` with detail `{state}`; `superseded` → `proposal-superseded`
+    with detail `{reason}`; pending while `routine.revision ≠ baseRevision` →
+    `proposal-superseded` with detail `{reason: routine-changed}`, and a follow-up server write sets
+    `state = superseded` and `settledAt`.
+  - Otherwise `state = applied` and `settledAt := serverNow`, and the routine takes the proposal's
+    document: `name := proposedName` and `entries :=` its changes but the removed ones, in order,
+    each `{exerciseId, …after}`; a removal kills the routine.
+  - `reason`: `replaced` when `supersededBy` is set; otherwise `routine-changed` when
+    `routine.revision ≠ baseRevision`; otherwise `superseded`, a proposal superseded before gym
+    recorded why (Appendix C).
 
   Predicts both.
-- **`gym.dismissProposal {proposalId}`.** `pending` → `dismissed`; otherwise ok. Predicts `state`.
+- **`gym.dismissProposal {proposalId}`.** Absent or `foreign` → `unknown-record`; dead →
+  `record-dead`. `dismissed` → ok; `applied` → `proposal-settled` `{state}`; `superseded` →
+  `proposal-superseded` `{reason}`; otherwise `state = dismissed` and `settledAt := serverNow`, with
+  no revision check. Predicts `state`.
 - **`gym.closeStale`** (server-internal). An open session whose last activity (its last set's
   `completedAt`, else `startedAt`) is at least 4 h before `serverNow` gets
   `finishedAt := last activity` and `closedBy = stale`.
@@ -2557,18 +2602,26 @@ writer of `closedBy = stale`.
 stale. Logging after a stale close issues a new `gym.start`.
 
 **Gestures:**
-- **Held:** delete set, delete routine, delete thread, discard session, delete note, delete
-  weigh-in.
-- **A reorder** writes the moved note's or routine's `ord`.
+- **Held:** delete set, delete routine, discard session, delete note, delete weigh-in.
+- **A reorder** writes the moved note's `ord`, or a routine's `position`.
 
-**Projections:** note and routine `position`, routine `revision` (+1 when `name` or `entries`
-change), proposal `baseRevision` and `baseName`, set revisions (what a correction or a delete
-replaced).
+**Projections:** note `position` and `updated_at`; routine `revision`, `created_entries` and creation
+snapshot; proposal `baseRevision`, `baseName` and change count; set revisions (what a correction or a
+delete replaced). A session's death also deletes its workout share, which is outside the engine (§0).
+
+**Server-origin doors.** REST (web, Android), MCP and the server Coach admit as server origins
+(§6.3, D-23). Each keeps its wire as it is: gym ARCHITECTURE §8.4 states how each builds its
+intents, what its builders read under the scope lock and answer without admitting (a weigh-in put
+older than the stored one, a start whose clock is ahead, a start under a discarded session's id, a
+discard of an unfinished session, a routine save over a moved revision, a replayed create, a Coach
+note save the notes already hold), and how it presents replies and translates refusals.
 
 **Codes** (§9.6), the registry's `codes`: `payload-conflict` (`gym.importSession`,
-`gym.correctSession`), `session-finished` (the set rules), `session-open` (`gym.start`; a delete of
-an open session), `session-overlap` (`gym.importSession`, `gym.correctSession`), `unknown-exercise`
-(the set rules), `bad-instant` (the commands; a weigh-in's future day).
+`gym.correctSession`), `session-finished` (the set rules), `session-open` (`gym.start`,
+`gym.correctSession`, a delete of an unfinished session), `session-overlap` (`gym.importSession`,
+`gym.correctSession`), `unknown-exercise` (the set rules), `bad-instant` (the commands; a weigh-in's
+future day), `proposal-settled` and `proposal-superseded` (`gym.applyProposal`,
+`gym.dismissProposal`).
 
 ### A.3 Journal
 
@@ -2608,3 +2661,143 @@ an open session), `session-overlap` (`gym.importSession`, `gym.correctSession`),
 | `SCOPE_HORIZON` / `REPLICA_GC` / `REQUEST_RETENTION` | 30 / 365 / 90 days |
 | `REQUEST_LEASE_MS` | 60 000 |
 | Gym stale window | 4 h |
+
+---
+
+## Appendix C: Gym migration
+
+Gym adopts its tables in place: its records are the rows gym holds when the engine takes over its
+writes, and every account keeps its history. This is the engine's one migration; every other product
+starts from empty stores.
+
+**C.1 Adoption.**
+- Each account holding a gym row, or an id C.3 spends, has one scope, `acct:<A>/gym`, alive. The
+  seed catalog, the `gym_exercises` rows whose `created_by` is null, is in no scope (A.2).
+- The adopted tables:
+
+  | Type | Rows |
+  |---|---|
+  | `routine` | `gym_routines`, its `entries` register held by `gym_routine_entries` and `gym_routine_entry_sets` |
+  | `exercise` | `gym_exercises` the account created, its `aliases` in `gym_exercise_aliases` |
+  | `exerciseName` | `gym_exercise_names`, a seed's `aliases` in `gym_exercise_aliases` |
+  | `session` | `gym_sessions` |
+  | `set` | `gym_sets` |
+  | `note` | `gym_notes` |
+  | `weighin` | `gym_bodyweight` |
+  | `prefs` | `gym_preferences` |
+  | `proposal` | `gym_proposals`, its `changes` register held by `gym_proposal_changes` |
+
+- Every other gym table stays outside the engine and keeps its writers: the receipts
+  (`gym_write_receipts`, `gym_correction_receipts`, `gym_note_saves`), the projections
+  (`gym_set_revisions`, `gym_routine_creations`), the shares (`gym_session_shares`,
+  `gym_log_shares`, `gym_log_share_sessions`) and every Coach table (`gym_ask_*`).
+- Each adopted table gains the envelope of §2.2 by idempotent statements: `seq`, `rc`, `ru`, a stamp
+  column per lattice field, and `born` and `life_stamp` where its type has life. Its scope is its
+  `user_id`'s (`created_by`'s for `gym_exercises`), indexed by that column and `seq`. A register a type keeps in tables of its own (a routine's
+  `entries`, a proposal's `changes`) keeps its one stamp on the record's row.
+- No `ON DELETE` action writes a synced row: each one between adopted tables, or on an adopted
+  table's key to a table outside the engine, is dropped, and admission writes its consequence (A.2).
+  Actions that write only tables outside the engine (a session's shares and set revisions), or the
+  rows of a dead record's own register, stay; so does `user_id`'s, since account deletion purges
+  every scope the account owns (§2.3 `purge`).
+- No trigger writes a synced column: `gym_session_routine_identity`, which copies `routine_id` into
+  `history_routine_id`, is dropped, and the commands that create a session write
+  `historyRoutineId` (A.2).
+
+**C.2 Stamps and registers.**
+- The backfill reads the server clock once, as it starts: `M`, recorded with the run. Every born, life
+  and field register it writes carries the stamp `M:0:srv`.
+- A record's registers are its non-null columns, as the fields A.2 names them (`date_local` is a
+  weigh-in's id, `set_number` a set's serial value), instants as epoch ms and `numeric` values as
+  numbers. Beyond the columns of the same name:
+  - a routine's `entries`: its lines in `position` order, each `{exerciseId, restSeconds?, sets?}`,
+    with `sets` from its set rows in `set_index` order when it has any, each `{reps?, weightKg?}`;
+  - a proposal's `changes`: its rows in `position` order, each `{kind, exerciseId, before?,
+    after?}` (A.2), a side `{sets?, restSeconds?}` of its non-null columns;
+  - `aliases`: the account's alias names of the movement, newest first (`created_at` descending,
+    then name);
+  - an `exerciseName` for every seed the account renamed or holds aliases of: `name` from its
+    `gym_exercise_names` row when it has one, and its aliases.
+- A minted record is alive with `born = life = M:0:srv`; a weigh-in is alive at that stamp.
+- A value outside its field's domain (a row older than a bound) is adopted as it is: domains bind at
+  admission (§6.1 step 2), and a later write of the record meets them.
+
+**C.3 Spent ids.** `sync_spent` gains, with born and life stamp `M:0:srv`, each of these ids that no
+standing row of its type holds:
+- a set's, from a `gym_set_revisions` row marked deleted or a set receipt of `gym_write_receipts`;
+- a session's, from a session receipt of `gym_write_receipts`;
+- a routine's, from `gym_routine_creations`;
+- a note's, from `gym_note_saves`.
+
+**C.4 Order.** Notes, in `(position, id)` order, take the `ord` keys `between(null, null)`, then each
+`between(previous, null)` (D-25), so a note's dense rank is its `position`. Routines keep theirs.
+
+**C.5 Receipts and projections.**
+- The command receipts stay where they are. A session receipt of `gym_write_receipts` names the
+  session created under its id: it is `gym.start`'s receipt `id → session_id`, and, when an import
+  created the session, `gym.importSession`'s. The rows of `gym_correction_receipts` are
+  `gym.correctSession`'s. A receipt holds a request hash, and a replay compares its call by that
+  hash, the digest of the raw arguments gym computes (§6.4).
+- The projections keep their columns: a routine's `revision`, `created_entries` and `created_at`,
+  `gym_routine_creations`, a proposal's `base_revision`, `base_name`, `changes` and `created_at`, a
+  note's `position` and `updated_at`, and `gym_set_revisions`.
+
+**C.6 Seq, receipt times, counters and digest.**
+- `seq`: 1, 2, … in one pass over the scope's records and spent ids, in the registry's type order,
+  which places each type after the types its references name, then by id. `scope.seq` is the last.
+- `rc` is the row's `created_at`, else its `updated_at`, else `M`; `ru` is its `updated_at`, else
+  `M`.
+- `counters.note` counts the notes.
+- The scope digest is the sum over the adopted alive rows as `feed` returns them (§6.12). `sync_meta`
+  gains an epoch when it holds none.
+
+**C.7 The run.**
+- Gym's writes are frozen first: every gym write — REST, MCP and the Coach's ability calls — answers
+  `503`, which Android's queue keeps; no engine replica exists yet; and no read settles staleness,
+  since today's lazy close (gym ARCHITECTURE §4.2) is a write of a synced row: reads answer the rows
+  as they stand until the freeze ends.
+- Each account's C.2 to C.6 is one transaction, which marks the scope adopted. An adopted scope is
+  skipped, so a run resumes where it stopped, and a second run changes nothing.
+- The run writes rows without admission: it is the one row change outside admission (§6.12). After
+  it, gym's writes go through admission (A.2's doors), and the freeze ends.
+
+**C.8 Rehearsal gates.** The run is accepted, on a restored copy of production before production and
+on production after it, when:
+1. every read door gym serves — every REST `GET`, every MCP read tool and every share page —
+   returns, for every account, the same bytes before the run as after it, both readings made under
+   the freeze, so that no lazy close, door or replica writes between them;
+2. for every scope, the digest summed from `feed` equals the stored digest, and `scope.seq` is the
+   greatest seq of its rows and spent ids;
+3. a second run changes no row of any table.
+
+The gates see neither the write path, which gym's REST and MCP contract tests gate, nor that the
+form `feed` returns is the form a later `apply` stores: gate 2 proves each digest consistent at the
+run, and the binding's round-trip test of each `TypeStore` (a row applied, then fed, hashes as it was
+admitted) proves it survives the first admission.
+
+**C.9 Invariants of an adopted scope.** §5's proofs start from empty stores. For an adopted scope the
+base case is the state C.7 leaves, and the inductive steps are unchanged: from then on every row
+change is an admission (C.1, C.7).
+- **INV-14.** Base: every stamp the run stores is `M:0:srv`, `M` being the server clock's reading
+  as the run starts. That clock never steps back within the run's process (§10.2), so each stamp is
+  stored when `serverNow ≥ M`, inside the bound. Step: admission
+  stores a client stamp only within the bound (§6.1 step 2), and mints a server stamp one tick after
+  observing the stored stamps it overwrites (§10.3), which the base and the earlier steps bound. No
+  replica predates the run (iOS, the first engine surface, ships after it), so recovery terminates as
+  from empty stores.
+- **INV-15.** Base: the run sets each scope's digest to the sum over its alive rows as `feed` returns
+  them, in the transaction that writes them, under the freeze, which stops every write and every
+  lazy close (C.7); gate 2 checks it. Step: every
+  later row change is an admission, which moves the digest (§6.12). So the digest at every committed
+  seq is the sum over the scope's alive rows, and the rest of the proof holds as written.
+- **INV-2.** The run makes nothing dead but C.3's spent ids, which stay spent. A record deleted
+  before the run that C.3 does not name was never made dead by an admitted delete, so INV-2 does not
+  speak of it: a create may bring its id back, as today.
+- **INV-3, INV-6, INV-10 and INV-16.** No replica predates the run, so each holds from a replica's
+  first pull, as from empty stores.
+- **INV-5.** The run assigns seqs in one ascending pass under the freeze, and admission takes the
+  next from `scope.seq` (§6.1 step 13).
+- **INV-8.** The note counter is the alive count, and no account holds more than ten notes: a note's
+  `position` is 0–9 and unique per account.
+- **INV-11.** Today's partial unique indexes held A.2's invariants before the run (one open session
+  per account; one pending proposal per routine, door and connection), and the run changes neither.

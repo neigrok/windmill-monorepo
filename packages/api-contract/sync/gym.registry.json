@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "gym",
-  "version": 2,
-  "minVersion": 2,
+  "version": 3,
+  "minVersion": 3,
   "products": {
     "gym": {
       "surfaces": ["web", "ios", "android"],
@@ -13,11 +13,9 @@
         },
         "movement": { "keyPattern": "^movement:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" } },
         "offer": { "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
-        "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } },
-        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } },
-        "runningTurn": { "keyPattern": "^runningTurn$", "value": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } }
+        "rack": { "keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": { "type": "json" } }
       },
-      "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant"]
+      "codes": ["payload-conflict", "session-finished", "session-open", "session-overlap", "unknown-exercise", "bad-instant", "proposal-settled", "proposal-superseded"]
     }
   },
   "types": [
@@ -35,8 +33,8 @@
       "origins": ["replica", "server"],
       "primary": true,
       "fields": {
-        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
-        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } },
+        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "min": 1, "max": 240, "domain": { "type": "string" } },
+        "position": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 2147483647 }, "default": 0 },
         "entries": {
           "kind": "lww",
           "writer": "client",
@@ -47,15 +45,15 @@
               "type": "object",
               "properties": {
                 "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
-                "restSeconds": { "type": "number", "integer": true, "min": 15, "max": 900, "nullable": true },
+                "restSeconds": { "type": "number", "integer": true, "min": 15, "max": 900 },
                 "sets": {
                   "type": "array",
                   "maxItems": 20,
                   "items": {
                     "type": "object",
                     "properties": {
-                      "reps": { "type": "number", "integer": true, "min": 1, "max": 100, "nullable": true },
-                      "weightKg": { "type": "number", "min": -500, "max": 500, "nullable": true, "quantum": 0.01 }
+                      "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
+                      "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
                     }
                   }
                 }
@@ -63,7 +61,8 @@
               "required": ["exerciseId"]
             }
           }
-        }
+        },
+        "createdDoor": { "kind": "const", "writer": "server", "domain": { "type": "string", "enum": ["mcp", "ask"] } }
       }
     },
     {
@@ -80,7 +79,7 @@
       "origins": ["replica", "server"],
       "primary": true,
       "fields": {
-        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
+        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "min": 1, "max": 240, "domain": { "type": "string" } },
         "pattern": {
           "kind": "const",
           "writer": "client",
@@ -90,6 +89,12 @@
           "kind": "const",
           "writer": "client",
           "domain": { "type": "string", "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"] }
+        },
+        "stepKg": { "kind": "const", "writer": "client", "domain": { "type": "number", "min": 0.01, "max": 99.99, "quantum": 0.01 } },
+        "aliases": {
+          "kind": "lww",
+          "writer": "server",
+          "domain": { "type": "array", "maxItems": 5, "items": { "type": "string", "unit": "bytes", "min": 1, "max": 240 } }
         }
       }
     },
@@ -98,15 +103,14 @@
       "scope": "product:gym",
       "identity": "keyed",
       "key": { "ref": "exercise" },
-      "life": true,
-      "deadRows": "spent",
+      "life": false,
       "origins": ["replica", "server"],
       "fields": {
-        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
+        "name": { "kind": "lww", "writer": "client", "unit": "bytes", "min": 1, "max": 240, "domain": { "type": "string" } },
         "aliases": {
           "kind": "lww",
           "writer": "server",
-          "domain": { "type": "array", "maxItems": 5, "items": { "type": "string", "unit": "bytes", "max": 240 } }
+          "domain": { "type": "array", "maxItems": 5, "items": { "type": "string", "unit": "bytes", "min": 1, "max": 240 } }
         }
       }
     },
@@ -125,8 +129,9 @@
       "primary": true,
       "fields": {
         "routineId": { "kind": "lww", "writer": "server", "ref": "routine", "domain": { "type": "id", "nullable": true } },
+        "historyRoutineId": { "kind": "const", "writer": "server", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "nullable": true } },
         "plan": { "kind": "const", "writer": "server", "domain": { "type": "json", "nullable": true } },
-        "startedAt": { "kind": "time", "writer": "client" },
+        "startedAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0 } },
         "finishedAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0 } },
         "closedBy": { "kind": "lww", "writer": "server", "domain": { "type": "string", "enum": ["finish", "stale"] } },
         "displayName": { "kind": "lww", "writer": "server", "unit": "bytes", "max": 240, "domain": { "type": "string", "nullable": true } }
@@ -154,7 +159,7 @@
         "kind": { "kind": "lww", "writer": "client", "domain": { "type": "string", "enum": ["warmup", "working", "drop", "failure"] } },
         "rpe": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 1, "max": 10, "nullable": true, "quantum": 0.1 } },
         "note": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 4000, "domain": { "type": "string" } },
-        "completedAt": { "kind": "time", "writer": "client" }
+        "completedAt": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
       }
     },
     {
@@ -185,7 +190,7 @@
       "life": true,
       "wholePut": true,
       "deadRows": "spent",
-      "origins": ["replica"],
+      "origins": ["replica", "server"],
       "primary": true,
       "fields": {
         "kg": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 20, "max": 400, "quantum": 0.01 } },
@@ -225,77 +230,68 @@
         "intent": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["revise", "remove"] } },
         "proposedName": { "kind": "const", "writer": "client", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
         "summary": { "kind": "const", "writer": "client", "unit": "bytes", "max": 400, "domain": { "type": "string" } },
-        "changes": { "kind": "const", "writer": "client", "domain": { "type": "array", "maxItems": 100, "items": { "type": "json" } } },
-        "door": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["ask", "mcp"] } },
-        "connection": { "kind": "const", "writer": "client", "unit": "bytes", "max": 128, "domain": { "type": "string" } },
-        "threadId": { "kind": "lww", "writer": "client", "ref": "thread", "domain": { "type": "id", "nullable": true } },
-        "state": {
-          "kind": "ranked",
-          "writer": "server",
-          "rank": { "pending": 0, "applied": 1, "dismissed": 1, "superseded": 1 }
-        },
-        "supersededBy": { "kind": "lww", "writer": "server", "domain": { "type": "string", "enum": ["proposal", "routine"] } }
-      }
-    },
-    {
-      "type": "thread",
-      "scope": "product:gym",
-      "identity": "minted",
-      "idSpace": "global",
-      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
-      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
-      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
-      "life": true,
-      "revivable": false,
-      "deadRows": "spent",
-      "origins": ["replica", "server"],
-      "fields": {
-        "title": { "kind": "const", "writer": "client", "unit": "bytes", "max": 8000, "domain": { "type": "string" } }
-      }
-    },
-    {
-      "type": "message",
-      "scope": "product:gym",
-      "identity": "minted",
-      "idSpace": "global",
-      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
-      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
-      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
-      "life": true,
-      "revivable": false,
-      "deadRows": "spent",
-      "origins": ["replica", "server"],
-      "fields": {
-        "threadId": { "kind": "const", "writer": "client", "ref": "thread", "parent": true },
-        "role": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["lifter", "coach"] } },
-        "replica": { "kind": "const", "writer": "client", "domain": { "type": "string", "pattern": "^(?:rp_[0-9a-f]{32}|srv)$" } },
-        "pictures": {
+        "changes": {
           "kind": "const",
           "writer": "client",
           "domain": {
             "type": "array",
-            "maxItems": 1,
+            "maxItems": 100,
             "items": {
               "type": "object",
               "properties": {
-                "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
-                "mediaType": { "type": "string", "pattern": "^image/[a-z0-9.+-]{1,64}$" },
-                "localOnly": { "type": "boolean" }
+                "kind": { "type": "string", "enum": ["kept", "added", "removed", "retargeted"] },
+                "exerciseId": { "type": "string", "pattern": "^[A-Za-z0-9_-]{1,64}$" },
+                "before": {
+                  "type": "object",
+                  "properties": {
+                    "sets": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
+                          "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
+                        }
+                      }
+                    },
+                    "restSeconds": { "type": "number", "integer": true, "min": 15, "max": 900 }
+                  }
+                },
+                "after": {
+                  "type": "object",
+                  "properties": {
+                    "sets": {
+                      "type": "array",
+                      "maxItems": 20,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "reps": { "type": "number", "integer": true, "min": 1, "max": 100 },
+                          "weightKg": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 }
+                        }
+                      }
+                    },
+                    "restSeconds": { "type": "number", "integer": true, "min": 15, "max": 900 }
+                  }
+                }
               },
-              "required": ["id", "mediaType"]
+              "required": ["kind", "exerciseId"]
             }
           }
         },
-        "text": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 131072, "domain": { "type": "string" } },
-        "truncated": { "kind": "lww", "writer": "client", "domain": { "type": "boolean" } },
-        "receipt": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 16384, "domain": { "type": "json" } },
-        "calls": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 32768, "domain": { "type": "json" } },
+        "door": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["ask", "mcp"] } },
+        "connection": { "kind": "const", "writer": "client", "unit": "bytes", "max": 128, "domain": { "type": "string" } },
+        "agent": { "kind": "const", "writer": "client", "unit": "chars", "max": 64, "domain": { "type": "string" } },
+        "threadId": { "kind": "lww", "writer": "server", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$", "nullable": true } },
         "state": {
           "kind": "ranked",
-          "writer": "client",
-          "rank": { "running": 0, "interrupted": 1, "completed": 2, "declined": 2, "failed": 2, "stopped": 2 }
+          "writer": "server",
+          "rank": { "pending": 0, "applied": 1, "dismissed": 1, "superseded": 1 },
+          "default": "pending"
         },
-        "at": { "kind": "time", "writer": "client" }
+        "supersededBy": { "kind": "lww", "writer": "server", "domain": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" } },
+        "settledAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0 } }
       }
     }
   ],

@@ -12,6 +12,7 @@ import * as credentialsVectors from './vectors/credentials.js';
 import * as digestVectors from './vectors/digest.js';
 import * as deriveVectors from './vectors/derive.js';
 import * as fracindexVectors from './vectors/fracindex.js';
+import * as gymVectors from './vectors/gym.js';
 import * as hlcVectors from './vectors/hlc.js';
 import * as holdVectors from './vectors/hold.js';
 import * as identityVectors from './vectors/identity.js';
@@ -31,7 +32,7 @@ import * as viewVectors from './vectors/view.js';
 import * as writeVectors from './vectors/write.js';
 
 const BUILDERS = [
-  stampVectors, hlcVectors, jcsVectors, joinVectors, deriveVectors, identityVectors, fracindexVectors, digestVectors, machineVectors, textVectors, admitVectors, credentialsVectors, pushVectors, pullVectors, liveVectors, pagesVectors, viewVectors, commitVectors, holdVectors, refusalVectors, writeVectors, lineageVectors, protocolVectors,
+  stampVectors, hlcVectors, jcsVectors, joinVectors, deriveVectors, identityVectors, fracindexVectors, digestVectors, machineVectors, textVectors, admitVectors, credentialsVectors, pushVectors, pullVectors, liveVectors, pagesVectors, viewVectors, commitVectors, holdVectors, refusalVectors, writeVectors, lineageVectors, protocolVectors, gymVectors,
 ];
 
 export const CORPUS = fileURLToPath(new URL('../corpus/', import.meta.url));

@@ -217,16 +217,27 @@ class Admission {
     if ((def.serverInternal && !this.fromServer) || !def.origins.includes(originKind)) throw new Refusal('forbidden');
   }
 
-  // What a product's commands and checks read: the intent scope's rows, and another tree's rows when
-  // its scope is readable by the origin (a command that reads another scope, INV-7(e)).
+  // §4.2 the id state `lock` and `elsewhere` report (§2.3): a global id no scope holds is `foreign` when
+  // the product reports it held outside every scope, as gym's seed exercises are.
+  idStateOf(scopeKey, type, id) {
+    const state = this.work.idState(this.registry, scopeKey, type, id);
+    if (state.state === 'none' && this.product.elsewhere?.(this.work.product, type.type, id)) return { state: 'foreign' };
+    return state;
+  }
+
+  // What a product's commands and checks read: the origin's kind, the intent's own deltas, the intent
+  // scope's rows, and another tree's rows when its scope is readable by the origin (a command that reads
+  // another scope, INV-7(e)).
   context() {
     const { work, registry, scopeKey } = this;
     return {
       scopeKey,
       serverNow: this.serverNow,
       account: this.origin.account,
+      origin: this.fromServer ? 'server' : 'replica',
+      deltas: this.intent.d ?? [],
       productState: work.product,
-      idState: (t, id) => work.idState(registry, scopeKey, registry.type(t), id),
+      idState: (t, id) => this.idStateOf(scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
       rowsOf: (t) => work.rowsOf(scopeKey).filter((row) => row.t === t),
       readableTree: (tree) => accessOf(registry, work, { kind: 'tree', key: `tree:${tree}`, tree }, this.origin.account).read === true,
@@ -239,7 +250,7 @@ class Admission {
     for (const delta of deltas) {
       const type = this.registry.type(delta.t);
       const op = opOf(type, delta);
-      const idState = this.work.idState(this.registry, scopeKey, type, delta.id);
+      const idState = this.idStateOf(scopeKey, type, delta.id);
       const decision = decide(type, op, idState, delta.born);
       if (decision.verdict === 'refuse') throw new Refusal(decision.code);
       if (decision.verdict === 'ok') continue;

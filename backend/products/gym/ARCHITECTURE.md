@@ -426,6 +426,13 @@ All pure and clock-free, in `domain/Training.h`:
 whose answer a close rewrites — through the two-phase shape: load the open session and its last set
 instant → `autoCloseAt` → persist. **No cron, no sweep, no heartbeat**: gym arms zero tickers.
 
+The doors that settle: `start` and `importSession`; and the reads `log` (`GET /v1/gym/sessions`,
+`list_sessions`), `sessions` (`get_sessions`), `detail` (`GET /v1/gym/sessions/{id}`, `get_session`,
+the import's reply), `openSession` (Coach), `statistics` (`GET /v1/gym/stats`, `get_stats`),
+`progress` (`?projection=progress`), `movementRecord` (`GET /v1/gym/exercises/{id}/record`),
+`history` and `shareLog`. The set writes, `finish`, `discard`, `review`, `lastTime`, `lastSets`,
+`correctSession` and both share reads settle nothing.
+
 Between finishes `close` is first-writer-wins, so the first finish that lands is the session's end
 forever — only a STALE close yields. The lifter's own finish landing on a stale close **upgrades** it
 (`finishAfterStaleClose`): the word becomes `finish`, and the instant moves to the finish when it sits
@@ -761,7 +768,14 @@ carries a machine word under `code`
 | 409 | `set-deleted` | append an id naming a set **this account deleted** | terminal — drop the set. **Never a re-mint**: a fresh id is how the deletion would undo itself |
 | 409 | `session-finished` | append a NEW set after the lifter's own finish, or more than four hours past a stale close's last landed set | terminal |
 | 409 | `routine-id-taken` / `exercise-id-taken` | create under an id another account holds, or a seeded slug | mint a NEW id and resend the same document |
-| 409 | `session-open` | discard a session that is still running | wait for the workout to end |
+| 409 | `session-open` | discard or correct a session that is still running | wait for the workout to end |
+| 409 | `session-overlap` | an import or a correction whose interval crosses a finished session; the body names it (`sessionId`, `session`) | terminal — read that workout and choose other times |
+| 409 | `session-deleted` | an import replayed after its workout was discarded | terminal — the workout is gone |
+| 404 | `set-not-found` | a fix naming a set the path's workout does not hold: absent, another account's, or in another workout | terminal |
+| 400 | `fix-unreadable` | a fix body that is not json, or not a fix | terminal |
+| 409 | `correction-conflict` | a correction `requestId` already used for another request | terminal — mint a NEW request id |
+| 400 | `invalid-correction` | a correction that breaks a rule: the interval, set numbers per movement, a set changing movement, the count | terminal |
+| 409 | `share-id-taken` | a log share request id already used, a revoked one included | mint a NEW id |
 | 409 | `notes-full` | a NEW note id while ten stand | terminal — delete one; the sentence is the Add row's |
 | 409 | `note-id-taken` | a note id another account holds | mint a NEW id and resend |
 | 400 | `notes-order-mismatch` | an order that does not name every note exactly once | re-read the list and send the whole order |
@@ -783,6 +797,55 @@ carries a machine word under `code`
 - The 400s are the client's and terminal; the 500 is the server's and retryable, which is why the write
   handlers catch **only** `InvalidTraining`: a broader catch reports a lock wait as a malformed set.
 - There are no admin doors, nothing sweeps and nothing mails.
+
+### 8.4 The doors on the sync engine
+
+When gym's writes go through the sync engine ([engine](../../../docs/foundation/engine.md) A.2 and
+Appendix C), REST, MCP and Coach are server-origin doors (engine §6.3), and each keeps the ladder
+above. A door builds its intent under the scope lock; what it reads there and answers without
+admitting, and how it names an engine refusal, is this table. It names engine outcomes by their
+codes; a race between a door's read and its admission reaches the engine's own refusal.
+
+| Door (route · tool) | Read under the lock, answered without admitting | Engine outcome → reply |
+|---|---|---|
+| `POST /sessions` · `start_session` | a start that would create, with `startedAt` more than 5 min past the server's now → 400 `clock-ahead`, the gap in whole minutes; a routine it cannot read, on that path → 404 `no such routine`; a receipt naming a discarded session under the id: with a session open, today's join (that session with `joinOpenSession`, else 409 `session-already-open`), with none open → 409 `session-id-taken` | `session-open` → 409 `session-already-open`; `id-taken` → 409 `session-id-taken`; `ok` → 200 with the session its write map names |
+| `POST /sessions/import` · `import_session` | the receipts first, as today: a session receipt with this hash → the replay (201 landed now, 200 replayed, 409 `session-deleted` once discarded); another hash or owner → 409 `session-id-taken`; a set receipt of another owner or hash → 409 `set-id-taken` (`sets[i] (id): `); a set id already received → 409 `set-id-taken`; a set id deleted before receipts existed (a `gym_set_revisions` row) → 500, MCP "the set was deleted"; `SetBatch`'s sentences → 400; a routine it cannot read → 404 | `session-overlap {sessionId}` → 409 `session-overlap` with `session`; `unknown-exercise` → 400 `unknown-exercise`; `payload-conflict` (a race past the receipt read) → 409 `session-id-taken`; `ok` → 201 `{session, sets}` |
+| `POST /sessions/{id}/sets` · `log_set` | the path's session absent, another account's or discarded → 404; a standing set under the id in this session → 200 with it | `id-taken` → 409 `set-id-taken`; `id-spent` → 409 `set-deleted`; `session-finished` → 409 `session-finished`; `unknown-exercise` → 400 `unknown-exercise`; `parent-dead` → 404 |
+| `log_sets` | `SetBatch` first: 1–200 sets, unique ids, no `completedAt` in the future, two decimals of load and one of rpe → today's failure texts; then per set in id order, the receipts as today (another owner or hash → `payloadConflict`; this hash → `replayed`, or `deleted` once its row is gone, neither an error); a set deleted before receipts existed → "the set was deleted" | as `log_set`, per set, in today's texts |
+| `PATCH …/sets/{setId}` | not a standing set of the path's workout and the caller → 404 `set-not-found`; an unreadable body → 400 `fix-unreadable` | `unknown-record`, `record-dead` → 404 `set-not-found`; `ok` → 200 with the row |
+| `DELETE …/sets/{setId}` | absent, another account's or deleted → 204 | `ok` → 204 |
+| `POST …/finish` · `finish_session` | — | `unknown-record`, `record-dead` → 404; `bad-instant` → 400 `a session cannot finish before it began`; `ok` → 200 |
+| `DELETE /sessions/{id}` · `discard_session` | absent, another account's or discarded → 404; unfinished, stale or not → 409 `session-open` | `ok` → 204 |
+| `POST …/corrections` | the correction receipt: this hash → the current rows, `replayed: true`; another → 409 `correction-conflict`; `SessionCorrectionBatch`'s sentences → 400 `invalid-correction`; a new set id held or spent → 409 `set-id-taken` | `unknown-record`, `record-dead` → 404; `session-open` → 409 `session-open`; `session-overlap` → 409 `session-overlap`; `unknown-exercise` → 400 `unknown-exercise`; `payload-conflict` → 409 `correction-conflict`; `ok` → 200 `{session, sets, replayed: false}` |
+| `POST /routines` · `create_routine` | the caller's standing routine under the id → REST 200 with it, whatever the body; MCP an equal document replays and another is refused, as today; Coach the creation snapshot; the entity's sentences → 400 | `id-taken`, `id-spent` → 409 `routine-id-taken`; `unknown-exercise` → 400 `unknown-exercise`; `ok` → 200 |
+| `PUT /routines/{id}` | absent, another account's or deleted → 404; `revision` named, not the routine's, and name or entries differ → 409 `routine-stale`; nothing differs → 200 with it; otherwise only the fields that differ are written | `unknown-exercise` → 400; `ok` → 200 |
+| `DELETE /routines/{id}` | absent, another account's or deleted → 404 | `ok` → 204 |
+| `POST /proposals/{id}/apply` | — | `unknown-record`, `record-dead` → 404; `ok` → 200 `{proposal, routine}`, or `{proposal}` for a removal, composed as applied; `ok` on an applied one → 200 with it and the routine; `proposal-settled {state: dismissed}` → 409 `proposal-settled` "that proposal was already dismissed"; `proposal-superseded {reason}` → 409 `proposal-superseded`: `routine-changed` "that routine changed after this proposal was written, so it was not applied", `replaced` "a newer proposal replaced this one, so it was not applied", `superseded` "this proposal was superseded before it was applied"; after `routine-changed` on a pending one, the door admits `state = superseded` |
+| `POST /proposals/{id}/dismiss` | — | `ok` → 200; `ok` on a dismissed one → 200 with its first `settledAt`; `proposal-settled {state: applied}` → 409 `proposal-settled` "that proposal was already applied"; `proposal-superseded {reason}` → 409 `proposal-superseded` with the "…turned down" sentences |
+| `propose_routine_change` · `propose_routine_removal` | the spent-id split (`idTaken`, replay, `idReused`) and `noChange`, as today | `unknown-record` → the no-routine text; `ok` → today's receipt |
+| `POST /exercises` · `create_exercise` | the caller's custom under the id → 200 with it; `stepKg` omitted → `defaultStepKg(equipment)` | `id-taken` → 409 `exercise-id-taken`; `ok` → 200 |
+| `PATCH /exercises/{id}` | a seed → a write of its `exerciseName`; the caller's custom → a write of its `name`; else 404 `no such movement`; the name trimmed | `ok` → 200 |
+| `PUT /notes/{id}` | another account's → 409 `note-id-taken`; the caller's with this text → 200 with it; a new one → a create at the bottom | `cap` → 409 `notes-full`; `id-spent` → 409 `note-id-taken`; `ok` → 200 |
+| `PUT /notes` (order) | not every note once → 400 `notes-order-mismatch`; otherwise `ord` keys in the order given | `ok` → 200 |
+| `DELETE /notes/{id}` | absent or another account's → 204 | `ok` → 204 |
+| `save_note` | its receipt → the receipt's snapshot; a note with this title and body → that note, at ten too; ten notes → the full text; else a create, and the receipt written after it (a retry that finds none meets the same text) | `ok` → today's reply |
+| `PUT /bodyweight/{date}` | today's order: the date, the forecast (400), the body; the stored weigh-in alive with a later `recordedAt` → 200 with it; else a whole put | `bad-instant` → 400, the forecast sentence; `ok` → 200 |
+| `DELETE /bodyweight/{date}` | absent → 204 | `ok` → 204 |
+| `PUT /preferences` | the whole document, omitted fields at their defaults; today's codes | `ok` → 200 |
+
+Every read keeps its bytes (engine Appendix C.8, gate 1):
+- a routine's `position` is its register (0 while unset), its `revision` the projection, its entries
+  numbered `1..n` in array order, and its `created` history row made of `rc`, `created_entries` and
+  `createdDoor`;
+- a note's `position` is its rank by `(ord, id)`, and `updatedAt` the projection;
+- a proposal's `createdAt` is `rc`, `changeCount`, `baseRevision` and `baseName` are projections,
+  `source.thread` is `threadId`, and `supersededBy` stays off the wire;
+- a session's `routineName` is `displayName`, and `closedItself` reads the auto-close signature where
+  `closedBy` is unset;
+- a movement's `stepKg` is its register, and its aliases are newest first, omitted when empty.
+
+A Coach conversation's delete first admits `threadId = null` on the proposals naming it, then deletes
+the conversation.
 
 ## 9. MCP tools
 
@@ -850,8 +913,9 @@ in-process).
   saying a replay answers with the stored row. **A replay is the same id carrying the SAME document**;
   the two document-carrying tools refuse a spent id carrying a different one.
 - **A read's own fields survive the write that takes them back.** Duplicating a day is reading one with
-  `list_routines` and sending it back under a fresh id, so `position`, `lastTrainedAt`, `revision` and
-  `pendingProposal` are declared on `create_routine` and ignored. `additionalProperties: false` is
+  `list_routines` and sending it back under a fresh id, so `lastTrainedAt`, `revision` and
+  `pendingProposal` are declared on `create_routine` and ignored; `position` (0–10000) is required
+  and stored. `additionalProperties: false` is
   enforced by `CompositeToolHost`, so a document gym itself emitted must never be refused.
 - **`delete` is never merged into `write`.** Two tools may merge where a parameter does the job
   (`list_routines`, `get_stats`) but never across levels, and no read is reachable through a
