@@ -68,41 +68,42 @@ struct StoreTests {
       Step(name: "release timer") { store in _ = try store.releaseDue(at: 5003 + Constants.holdMs) },
       Step(name: "number") { store in _ = try store.number(at: 14_000) },
       push(.sample(serverTime: 14_100), at: 14_050),
-      push(.result(try result(1, seq: 2), lastN: 2, epoch: "ep-1"), at: 14_050),
-      push(.result(try result(2, seq: 3), lastN: 2, epoch: "ep-1"), at: 14_050),
-      push(.ack(lastN: 2), at: 14_050),
+      push(.results(ResultBatch(results: [try result(1, seq: 2)], lastN: 2, epoch: "ep-1", isLast: false)), at: 14_050),
+      push(.results(ResultBatch(results: [try result(2, seq: 3)], lastN: 2, epoch: "ep-1", isLast: true)), at: 14_050),
       push(.epoch("ep-1"), at: 14_050),
     ]
   }
 
-  // A boot over confirmed rows fills staging, the page that turns the cursor live swaps it in, and the acked entries
-  // it covers resolve.
+  // A boot over confirmed rows fills staging, chunk by chunk, the page that turns the cursor live swaps it in, and the
+  // acked entries it covers resolve; the sweep deletes the rows the swap replaced.
   static func pulling() throws -> [Step] {
-    let bootCursor = Cursor(epoch: "ep-2", mode: .boot, seq: 1, key: RecordKey("card", "card0002"), asOf: 3).text
+    let bootCursor = Cursor(epoch: "ep-2", mode: .boot, seq: 2, key: RecordKey("card", "card0004"), asOf: 3).text
     let row = { (id: String, seq: Int64) throws -> JSON in
       try JSON(parsing: """
         {"t":"card","id":"\(id)","life":["alive","\(seq)000:0:r_aaaaaaaaaaaa"],"born":"\(seq)000:0:r_aaaaaaaaaaaa","seq":\(seq),"rc":\(seq),"ru":\(seq)}
         """)
     }
-    let rows = [try row("card0002", 1), try row("card0003", 3)]
+    let rows = [try row("card0002", 1), try row("card0004", 2), try row("card0003", 3)]
     let digest = ScopeDigest(rows: rows)
-    let first = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[0]], "cursor": .string(bootCursor), "more": true,
+    let first = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[0], rows[1]], "cursor": .string(bootCursor), "more": true,
                                 "seq": 3, "digest": .string(digest.hex)])
-    let last = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[1]],
+    let last = try PullPage(json: ["scope": "self/probe", "kind": "rows", "rows": [rows[2]],
                                "cursor": .string(Cursor(epoch: "ep-2", mode: .live, seq: 3).text), "more": false, "seq": 3,
                                "digest": .string(digest.hex)])
     let pull = { (step: PullStep, replica: String) in
       Step(name: "\(step)") { store in
         var instance = at(20_000)
-        _ = try store.apply(step, replica: replica, account: "A", subscribed: [scope], instance: &instance,
+        _ = try store.apply(step, replica: replica, account: "A", subscribed: .given([scope]), instance: &instance,
                             timing: .steady(send: 20_000, recv: 20_000),
                             identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
       }
     }
     return try sending() + [
       pull(.epoch("ep-2"), "rp_1"),
-      pull(.page(first, requested: nil), "rp_2"),
-      pull(.page(last, requested: bootCursor), "rp_2"),
+      pull(.page(first, requested: nil, chunk: PageChunk(rows: 0..<1, isLast: false)), "rp_2"),
+      pull(.page(first, requested: nil, chunk: PageChunk(rows: 1..<2, isLast: true)), "rp_2"),
+      pull(.page(last, requested: bootCursor, chunk: .whole(last)), "rp_2"),
+      Step(name: "sweep") { store in _ = try store.sweep(limit: 1) },
     ]
   }
 

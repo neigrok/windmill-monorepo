@@ -6,8 +6,8 @@ import Synchronization
 import Testing
 
 // §4.6: `commit` runs on the caller's thread, so its latency is what a tap costs the main thread. Budget: p95 8 ms
-// uncontended, 50 ms while a pull page of PULL_PAGE_BYTES applies. Each benchmark runs on a phone on disk holding the
-// whole 10 000-set history.
+// uncontended, 50 ms while pull pages of PULL_PAGE_BYTES apply, chunk by chunk, or a push answer's results, batch by
+// batch. Each benchmark runs on a phone on disk holding the whole 10 000-set history.
 extension Benchmarks {
   @Suite struct CommitLatency {
     static let warmUp = 20
@@ -71,9 +71,9 @@ extension Benchmarks {
       }
     }
 
-    // While the phone boots its gym scope again after three epoch changes (a server restored from backup), page by page:
-    // each page is one transaction of up to PULL_PAGE_BYTES. The server's epoch is put back after, so later benchmarks
-    // start from it.
+    // While the phone boots its gym scope again after three epoch changes (a server restored from backup), page by page,
+    // each page of up to PULL_PAGE_BYTES in chunks of rows, and the sweep deleting what each swap replaced. The server's
+    // epoch is put back after, so later benchmarks start from it.
     @Test func contendedByPullPages() async throws {
       let history = try await GymHistory.shared.history()
       try await Bench.inDirectory { directory in
@@ -96,7 +96,7 @@ extension Benchmarks {
     }
 
     // While the phone sends a workout logged offline, 100 sets, in the two pushes that carry it (commits made meanwhile
-    // ride in the second): each result of a push answer is one transaction.
+    // ride in the second): a push answer's results are recorded in batches, each one transaction.
     @Test func contendedByAPushAnswer() async throws {
       let history = try await GymHistory.shared.history()
       try await Bench.inDirectory { directory in

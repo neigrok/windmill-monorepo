@@ -28,7 +28,8 @@ struct SimulatorTests {
     "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete", "session of another account",
     "http 409 account-mismatch", "wire push loseCredential", "wire pull loseCredential", "wire live loseCredential",
     "wire hello loseCredential", "push served as anonymous", "push served as another account", "pull served as anonymous",
-    "pull served as another account", "frame served as anonymous",
+    "pull served as another account", "frame served as anonymous", "death after a pullPage transaction",
+    "death after a results transaction", "active replica change announced", "rows swept",
   ]
 
   @Test func everySeedHoldsEveryInvariantAfterQuiescence() async throws {

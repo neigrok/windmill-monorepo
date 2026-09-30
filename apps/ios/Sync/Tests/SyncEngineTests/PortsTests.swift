@@ -2,11 +2,36 @@ import Foundation
 import SyncCore
 import SyncEngine
 import SyncTesting
+import Synchronization
 import Testing
 
 // The production ports that need no device: the system clock's readings and the identities the engine mints (D-2, D-3).
 
 struct PortsTests {
+  // §2.5: the writer passes to those that wait for it in the order they asked, so one that waits while a transaction holds
+  // it goes before any that asks later.
+  @Test(.timeLimit(.minutes(1))) func theWriterPassesInTheOrderItWasAskedFor() {
+    let line = WriterLine()
+    let order = Mutex<[String]>([])
+    line.enter()
+    var threads: [Thread] = []
+    for name in ["first", "second", "third"] {
+      let waiting = line.waiting
+      let thread = Thread {
+        line.enter()
+        order.withLock { $0.append(name) }
+        line.leave()
+      }
+      thread.start()
+      threads.append(thread)
+      while line.waiting == waiting {}
+    }
+    line.leave()
+    while order.withLock({ $0.count }) < 3 {}
+    #expect(order.withLock { $0 } == ["first", "second", "third"])
+    #expect(line.waiting == 0)
+  }
+
   @Test func theSystemClockReadsTheWallTheMonotonicClockAndTheBoot() throws {
     let clock = SystemClock()
     let before = Int64(Date().timeIntervalSince1970 * 1000)

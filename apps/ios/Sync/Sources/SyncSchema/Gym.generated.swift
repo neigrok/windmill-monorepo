@@ -191,6 +191,10 @@ public enum Gym {
           ],
           "picture": ["keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": ["type": "json"]],
           "rack": ["keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": ["type": "json"]],
+          "runningTurn": [
+            "keyPattern": "^runningTurn$",
+            "value": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
+          ],
         ],
         "surfaces": ["web", "ios", "android"],
       ],

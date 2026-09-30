@@ -1,20 +1,23 @@
 import SyncAPI
 import SyncCore
 
-// §7.5 the puller's local side: a pull answer as its ordered steps, each page one local transaction; boots into
-// staging, replace-by-seq, resolution, the digest check, and live frames. An answer or frame served as anyone but the
-// replica's account is a 401 (§9.1): it pauses sync, and nothing is applied or forgotten. §7.9: which subscribed scopes
-// are pulled.
+// §7.5 the puller's local side: a pull answer as its ordered steps, each one local transaction: the offset sample, the
+// epoch, then each page, a rows page in chunks of whole rows. Boots into staging, replace-by-seq, resolution, the digest
+// check, `behind`, and live frames. An answer or frame served as anyone but the replica's account is a 401 (§9.1): it
+// pauses sync, and nothing is applied or forgotten. A page or frame for a scope outside the subscription set (§7.9)
+// applies nothing.
 
 public enum PageOutcome: String, Sendable, Hashable {
   case applied, stale, reset, gone
   case notFound = "not-found"
-  // An end the client does not apply (`ignoresEnd`): nothing is forgotten or recorded.
+  // An end the client does not apply (`ignoresEnd`): nothing is forgotten or recorded, and the scope is in doubt (§7.9).
   case ignored
+  // A scope outside the subscription set: nothing applied, nothing pulled again.
+  case outside
 }
 
 public enum FrameOutcome: String, Sendable, Hashable {
-  case applied, pull, gone, ignored
+  case applied, pull, gone, ignored, outside
   case notFound = "not-found"
   // Served as anyone but the replica's account: handled as a 401, nothing applied.
   case paused
@@ -26,20 +29,35 @@ public enum PullStep: Sendable, Hashable {
   case pauseAuth
   // A null serverEpoch takes it; another one is an epoch change, before any page.
   case epoch(String)
-  // `requested`: the cursor the page was asked under.
-  case page(PullPage, requested: String?)
+  // `requested`: the cursor the page was asked under; `chunk`: the rows of the page this transaction applies.
+  case page(PullPage, requested: String?, chunk: PageChunk)
 }
 
-// What a page or frame leaves to pull (§7.5, §7.9): `scopes` at once, its own scope's re-pull, and whether it booted it.
-public struct PullNext: Sendable, Hashable {
-  public let scopes: [ScopeRef]
-  public let pullsAgain: Bool
-  public let boots: Bool
+// §7.5 step 2 the rows of a page one transaction applies, the next in page order; a whole page is its own first and last.
+public struct PageChunk: Sendable, Hashable {
+  public let rows: Range<Int>
+  public let isLast: Bool
 
-  public init(scopes: [ScopeRef] = [], pullsAgain: Bool = false, boots: Bool = false) {
-    self.scopes = scopes
-    self.pullsAgain = pullsAgain
-    self.boots = boots
+  public init(rows: Range<Int>, isLast: Bool) {
+    self.rows = rows
+    self.isLast = isLast
+  }
+
+  public var isFirst: Bool { rows.lowerBound == 0 }
+
+  // The chunks of `page`, each of at most `size` rows; a page without rows, or of another kind, is one.
+  public static func of(_ page: PullPage, size: Int) -> [PageChunk] {
+    let size = max(1, size)
+    guard case .rows(let rows) = page.body, rows.rows.count > size else { return [whole(page)] }
+    return stride(from: 0, to: rows.rows.count, by: size).map { start in
+      let end = min(start + size, rows.rows.count)
+      return PageChunk(rows: start..<end, isLast: end == rows.rows.count)
+    }
+  }
+
+  public static func whole(_ page: PullPage) -> PageChunk {
+    guard case .rows(let rows) = page.body else { return PageChunk(rows: 0..<0, isLast: true) }
+    return PageChunk(rows: 0..<rows.rows.count, isLast: true)
   }
 }
 
@@ -97,40 +115,35 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // §7.5: what a page leaves to pull. Its own scope after a stale or reset page, a page with more rows, a digest check
-  // that reset its cursor to boot it, or a not-found ignored (`next(afterIgnoring:)`); and, from applied rows, the tree
-  // and overlay scopes an alive governing row brought back (§7.9). `before` is the replica as the page found it.
-  public func next(after page: PullPage, _ outcome: PageOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> PullNext {
+  // §7.5: what a page's transaction leaves to pull at once. Its own scope after a stale or reset page, after the last
+  // chunk of a page short of its head or whose digest check reset the cursor, and after a not-found ignored while the
+  // governing create waits; and the tree and overlay scopes an alive governing row of its chunk brought back (§7.9).
+  // `outcome` is nil for a chunk before the last; `before` is the replica as the chunk found it.
+  public func next(after page: PullPage, chunk: PageChunk, _ outcome: PageOutcome?, from before: LoadedReplica,
+                   in replica: LoadedReplica) -> [ScopeRef] {
     switch outcome {
-    case .stale, .reset: return PullNext(scopes: [page.scope])
-    case .gone, .notFound: return PullNext()
-    case .ignored: return next(afterIgnoring: page.scope, in: replica)
-    case .applied:
-      guard case .rows(let rows) = page.body else { return PullNext() }
-      let again = rows.more || replica.cursors[page.scope]?.cursor == nil
-      let boots = before.cursors[page.scope]?.booted != true && replica.cursors[page.scope]?.booted == true
-      return PullNext(scopes: (again ? [page.scope] : []) + rejoins(rows.rows, in: before), boots: boots)
+    case .stale?, .reset?: return [page.scope]
+    case .gone?, .notFound?, .outside?: return []
+    case .ignored?: return awaitsGoverningCreate(page.scope, in: replica) ? [page.scope] : []
+    case .applied?, nil:
+      guard case .rows(let rows) = page.body else { return [] }
+      let again = outcome == .applied && (rows.more || replica.cursors[page.scope]?.cursor == nil)
+      return (again ? [page.scope] : []) + rejoins(Array(rows.rows[chunk.rows]), in: before)
     }
   }
 
   // What a frame leaves to pull: its own scope when it was not admitted, its digest check reset the cursor, or it was a
-  // not-found ignored (`next(afterIgnoring:)`); and the scopes an alive governing row of an applied change brought back.
-  public func next(after frame: LiveFrame, _ outcome: FrameOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> PullNext {
+  // not-found ignored while the governing create waits; and the scopes an alive governing row of an applied change
+  // brought back.
+  public func next(after frame: LiveFrame, _ outcome: FrameOutcome, from before: LoadedReplica, in replica: LoadedReplica) -> [ScopeRef] {
     switch (outcome, frame) {
-    case (.pull, .change(let change)): return PullNext(scopes: [change.scope])
-    case (.ignored, .notFound(let scope, _)): return next(afterIgnoring: scope, in: replica)
+    case (.pull, .change(let change)): return [change.scope]
+    case (.ignored, .notFound(let scope, _)): return awaitsGoverningCreate(scope, in: replica) ? [scope] : []
     case (.applied, .change(let change)):
       let again = replica.cursors[change.scope]?.cursor == nil
-      return PullNext(scopes: (again ? [change.scope] : []) + rejoins(change.rows ?? [], in: before))
-    default: return PullNext()
+      return (again ? [change.scope] : []) + rejoins(change.rows ?? [], in: before)
+    default: return []
     }
-  }
-
-  // §7.9: an ignored not-found wants a tree waiting for its governing create, and re-pulls one that has not booted.
-  func next(afterIgnoring scope: ScopeRef, in replica: LoadedReplica) -> PullNext {
-    guard scope.tree != nil else { return PullNext() }
-    if awaitsGoverningCreate(scope, in: replica) { return PullNext(scopes: [scope]) }
-    return PullNext(pullsAgain: replica.cursors[scope]?.booted != true)
   }
 
   // §7.9: the tree and overlay scopes the replica knows not found whose governing record `rows` holds alive. The answer
@@ -156,15 +169,21 @@ public struct PageApplier: Sendable {
     return try awaitsGoverningCreate(scope, in: replica) || holdsGoverningRecord(scope, in: replica)
   }
 
-  // The rows a page or frame reads, for its Action to load first: the stored rows of the records it carries, and for a
-  // not-found the governing record `ignoresEnd` reads.
+  // The rows a page's transaction or a frame reads, for its Action to load first: the stored rows of the records it
+  // carries, and for a not-found the governing record `ignoresEnd` reads.
   public func reads(of step: PullStep) -> [ScopeRef: RowSelection] {
-    guard case .page(let page, _) = step else { return [:] }
+    guard case .page(let page, _, let chunk) = step else { return [:] }
     switch page.body {
-    case .rows(let rows): return [page.scope: RowSelection(keys: Set(rows.rows.map(\.key)))]
+    case .rows(let rows): return [page.scope: RowSelection(keys: Set(rows.rows[chunk.rows].map(\.key)))]
     case .notFound: return governingReads(of: page.scope)
     case .reset, .gone: return [:]
     }
+  }
+
+  // What of the outbox a page's transaction reads: none for a rows chunk before the last, every entry for any other.
+  public func entries(of step: PullStep) -> EntrySelection {
+    guard case .page(let page, _, let chunk) = step, case .rows = page.body, !chunk.isLast else { return .every }
+    return EntrySelection()
   }
 
   public func reads(of frame: LiveFrame) -> [ScopeRef: RowSelection] {
@@ -181,20 +200,22 @@ public struct PageApplier: Sendable {
   }
 
   // The answer to a pull the replica of `account` made: its offset sample first; then, for an answer handled as a 401
-  // (§9.1), the pause and nothing more; for a 200, the epoch and one step per page.
-  public func steps(for answer: Answer<PullResponse>, to request: PullRequest, account: String?) -> [PullStep] {
+  // (§9.1), the pause and nothing more; for a 200, the epoch and each page's chunks of at most `chunkRows` rows.
+  public func steps(for answer: Answer<PullResponse>, to request: PullRequest, account: String?, chunkRows: Int) -> [PullStep] {
     let sample = answer.serverTime.map { [PullStep.sample(serverTime: $0)] } ?? []
     guard !answer.isUnauthenticated(for: account) else { return sample + [.pauseAuth] }
     guard case .ok(let response) = answer else { return sample }
-    return sample + [.epoch(response.epoch)] + response.pages.map { page in
-      .page(page, requested: request.scopes.first { $0.scope == page.scope }?.cursor)
+    return sample + [.epoch(response.epoch)] + response.pages.flatMap { page in
+      let requested = request.scopes.first { $0.scope == page.scope }?.cursor
+      return PageChunk.of(page, size: chunkRows).map { PullStep.page(page, requested: requested, chunk: $0) }
     }
   }
 
-  // One step, one local transaction; a page answers its outcome.
+  // One step, one local transaction, against the subscription set `subscribed`. A page's transaction answers its outcome,
+  // nil for a chunk before the last that applied; every other step answers nil.
   @discardableResult
-  public func apply(_ step: PullStep, to replica: inout LoadedReplica, instance: inout Instance, timing: Timing,
-                    identities: IdentitySource) throws -> PageOutcome? {
+  public func apply(_ step: PullStep, to replica: inout LoadedReplica, subscribed: Set<ScopeRef>, instance: inout Instance,
+                    timing: Timing, identities: IdentitySource) throws -> PageOutcome? {
     switch step {
     case .sample(let serverTime):
       replica.update { $0.sample(serverTime: serverTime, send: timing.send, recv: timing.recv) }
@@ -202,29 +223,21 @@ public struct PageApplier: Sendable {
       replica.update { $0.authPaused = true }
     case .epoch(let epoch):
       try lifecycle.checkEpoch(epoch, in: &replica, instance: &instance, identities: identities)
-    case .page(let page, let requested):
-      return try apply(page, requestedUnder: requested, to: &replica, instance: instance)
+    case .page(let page, let requested, let chunk):
+      return try apply(page, requestedUnder: requested, chunk: chunk, to: &replica, subscribed: subscribed, instance: instance)
     }
     return nil
   }
 
-  // The whole answer at once: every step in order, and each page's outcome.
-  public func receive(_ answer: Answer<PullResponse>, to request: PullRequest, in replica: inout LoadedReplica,
-                      instance: inout Instance, timing: Timing, identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)] {
-    var outcomes: [(scope: ScopeRef, outcome: PageOutcome)] = []
-    for step in steps(for: answer, to: request, account: replica.meta.account) {
-      let outcome = try apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
-      if case .page(let page, _) = step, let outcome { outcomes.append((page.scope, outcome)) }
-    }
-    return outcomes
-  }
-
   // MARK: Pages
 
-  // A page asked under a cursor the scope no longer holds is stale, so a cursor never moves backwards.
-  public func apply(_ page: PullPage, requestedUnder requested: String?, to replica: inout LoadedReplica,
-                    instance: Instance) throws -> PageOutcome {
+  // §7.5 step 2, one transaction of a page: a scope outside the subscription set, or a page asked under a cursor the scope
+  // no longer holds, applies nothing, so a cursor never moves backwards; each chunk checks both. A rows page applies its
+  // chunk; the last chunk does what the page's cursor decides.
+  public func apply(_ page: PullPage, requestedUnder requested: String?, chunk: PageChunk, to replica: inout LoadedReplica,
+                    subscribed: Set<ScopeRef>, instance: Instance) throws -> PageOutcome? {
     let scope = page.scope
+    guard subscribed.contains(scope), replica.known[scope] == nil else { return .outside }
     var record = replica.cursors[scope] ?? CursorRecord()
     guard requested.map(JSON.string) == record.cursor.map(JSON.string) else { return .stale }
     switch page.body {
@@ -242,31 +255,43 @@ public struct PageApplier: Sendable {
       try forget(scope, as: .notFound, in: &replica)
       return .notFound
     case .rows(let rows):
-      try applyRows(rows, of: scope, requestedUnder: requested, record: record, to: &replica, instance: instance)
+      guard let cursor = Cursor(decoding: rows.cursor) else { throw JSONError.shape("the page cursor \(rows.cursor) does not decode") }
+      try applyChunk(Array(rows.rows[chunk.rows]), of: scope, first: chunk.isFirst, requestedUnder: requested, record: &record,
+                     to: &replica)
+      guard chunk.isLast else {
+        replica.apply(.putCursor(scope, record))
+        return nil
+      }
+      try finish(rows, at: cursor, of: scope, requestedUnder: requested, record: record, to: &replica, instance: instance)
       return .applied
     }
   }
 
-  func applyRows(_ page: RowsPage, of scope: ScopeRef, requestedUnder requested: String?, record: CursorRecord,
-                 to replica: inout LoadedReplica, instance: Instance) throws {
-    guard let cursor = Cursor(decoding: page.cursor) else { throw JSONError.shape("the page cursor \(page.cursor) does not decode") }
-    var record = record
-    if replica.known[scope] != nil { replica.apply(.deleteKnown(scope)) }
+  // A chunk's rows into staging or the confirmed rows, `behind` until the last; a null-cursor page's first chunk restages.
+  func applyChunk(_ rows: [Row], of scope: ScopeRef, first: Bool, requestedUnder requested: String?, record: inout CursorRecord,
+                  to replica: inout LoadedReplica) throws {
+    record.behind = true
     replica.apply(.putCursor(scope, record))
+    if first && requested == nil && !replica.rows(scope).isEmpty { replica.apply(.beginStaging(scope)) }
     let booting = requested == nil || requested.flatMap(Cursor.init(decoding:))?.mode == .boot
-    if requested == nil && !replica.rows(scope).isEmpty { replica.apply(.beginStaging(scope)) }
-
     let staged = booting && replica.staging[scope] != nil
     var digest = staged ? replica.staging[scope]!.digest : record.digest
-    for row in page.rows { digest = try receive(row, into: scope, staged: staged, digest: digest, in: &replica) }
+    for row in rows { digest = try receive(row, into: scope, staged: staged, digest: digest, in: &replica) }
     if staged { replica.apply(.stagingDigest(scope, digest)) } else { record.digest = digest }
-    record.cursor = page.cursor
-    let stamps = page.rows.flatMap(\.stamps)
+    let stamps = rows.flatMap(\.stamps)
     replica.update { meta in
       meta.observe(stamps)
       meta.admit(stamps)
     }
+  }
 
+  // The last chunk: the cursor, `behind` iff the page stops short of its head, a boot's end, cleanSeq and the digest check.
+  func finish(_ page: RowsPage, at cursor: Cursor, of scope: ScopeRef, requestedUnder requested: String?, record: CursorRecord,
+              to replica: inout LoadedReplica, instance: Instance) throws {
+    var record = record
+    record.cursor = page.cursor
+    record.behind = page.more
+    let booting = requested == nil || requested.flatMap(Cursor.init(decoding:))?.mode == .boot
     if booting && cursor.mode == .live {
       if let staging = replica.staging[scope] {
         replica.apply(.swapStaging(scope))
@@ -354,37 +379,38 @@ public struct PageApplier: Sendable {
 
   // MARK: Frames
 
-  // §7.5 step 3: a frame served as anyone but the replica's account pauses sync and applies nothing (§9.1). A change frame
-  // applies as a one-page live pull iff the cursor is live at a whole seq, the epoch matches, the frame is the next seq
-  // and carries its rows; otherwise the scope is pulled. A gone or not-found frame is applied as that page kind, and the
-  // ends a page ignores are ignored alike. A pong, and an op the engine does not know, name no scope and are ignored.
-  public func apply(_ frame: LiveFrame, to replica: inout LoadedReplica, instance: Instance) throws -> FrameOutcome {
-    guard frame.scope != nil else { return .ignored }
+  // §7.5 step 3: a frame served as anyone but the replica's account pauses sync and applies nothing (§9.1), and one for a
+  // scope outside the subscription set applies nothing. A change frame applies as a one-page live pull iff the cursor is
+  // live at a whole seq, the scope is not `behind`, the epoch matches, the frame is the next seq and carries its rows;
+  // otherwise the scope is pulled. A gone or not-found frame is handled as that page kind. A pong, and an op the engine
+  // does not know, name no scope and are ignored.
+  public func apply(_ frame: LiveFrame, to replica: inout LoadedReplica, subscribed: Set<ScopeRef>, instance: Instance) throws -> FrameOutcome {
+    guard let scope = frame.scope else { return .ignored }
     guard frame.isServed(to: replica.meta.account) else {
       replica.update { $0.authPaused = true }
       return .paused
     }
+    guard subscribed.contains(scope), replica.known[scope] == nil else { return .outside }
     switch frame {
-    case .gone(let scope, _) where try ignoresEnd(of: scope, .gone, in: replica),
-      .notFound(let scope, _) where try ignoresEnd(of: scope, .notFound, in: replica):
+    case .gone(_, _) where try ignoresEnd(of: scope, .gone, in: replica), .notFound(_, _) where try ignoresEnd(of: scope, .notFound, in: replica):
       return .ignored
-    case .gone(let scope, _):
+    case .gone:
       try forget(scope, as: .gone, in: &replica)
       return .gone
-    case .notFound(let scope, _):
+    case .notFound:
       try forget(scope, as: .notFound, in: &replica)
       return .notFound
     case .pong, .other:
       return .ignored
     case .change(let change):
-      let stored = replica.cursors[change.scope]?.cursor
-      guard let cursor = stored.flatMap(Cursor.init(decoding:)), cursor.isLiveAtSeq,
+      let record = replica.cursors[scope]
+      guard let stored = record?.cursor, let cursor = Cursor(decoding: stored), cursor.isLiveAtSeq, record?.behind == false,
             replica.meta.serverEpoch.map(JSON.string) == .string(change.epoch),
             change.seq == cursor.seq + 1, let rows = change.rows else { return .pull }
-      let page = RowsPage(
+      let page = PullPage(scope: scope, body: .rows(RowsPage(
         rows: rows, cursor: Cursor(epoch: change.epoch, mode: .live, seq: change.seq).text, more: false, seq: change.seq,
-        digest: change.digest)
-      _ = try apply(PullPage(scope: change.scope, body: .rows(page)), requestedUnder: stored, to: &replica, instance: instance)
+        digest: change.digest)))
+      _ = try apply(page, requestedUnder: stored, chunk: .whole(page), to: &replica, subscribed: subscribed, instance: instance)
       return .applied
     }
   }

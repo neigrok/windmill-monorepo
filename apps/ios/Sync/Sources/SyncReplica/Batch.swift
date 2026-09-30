@@ -51,6 +51,10 @@ public struct StoreChange: Sendable, Hashable {
   public var notices = false
   public var status = false
   public var replicas = false
+  // Rows left every view, for the sweep to delete (§2.5).
+  public var released = false
+  // A sign-in, a sign-out or a re-identify of the active replica, whether or not its id changed (§7.12).
+  public var seat = false
 
   public init() {}
 
@@ -67,6 +71,8 @@ public struct StoreChange: Sendable, Hashable {
     notices = notices || other.notices
     status = status || other.status
     replicas = replicas || other.replicas
+    released = released || other.released
+    seat = seat || other.seat
   }
 }
 

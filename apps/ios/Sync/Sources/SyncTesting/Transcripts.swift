@@ -42,7 +42,7 @@ public enum Transcripts {
       if line["end"] != nil {
         for (name, device) in devices.sorted(by: { $0.key < $1.key }) {
           differences += Self.compare(try device.dump(), line["devices"]?[name], "\(place): \(name)'s store is")
-          differences += Self.compare(.array(device.ended.filter { !$0.isTelemetry }.map(\.json)), line["ended"]?[name],
+          differences += Self.compare(.array(device.ended.filter(\.isEnded).map(\.json)), line["ended"]?[name],
                                       "\(place): \(name)'s ended log is")
         }
         continue

@@ -150,6 +150,12 @@ extension SeededRandom {
     let product = ScopeRef.product("probe")
     let ordered = (view.cards + view.storedCards).filter { $0.values["ord"] != nil }.map(\.id)
     let retirable = { (type: String) in view.heldRemovals.filter { $0.type == type }.map(\.id) }
+    if !retirable("fact").isEmpty && chance(0.25) {
+      let day = pick(retirable("fact"))
+      let value = JSON.number(JSON.Number(Double(below(5_000)) / 10.3)!)
+      return PlannedGesture("fact save retiring its delete", in: product, Gesture(
+        changes: [.put("fact", day, present: true, ["value": value, "at": JSON(view.now)])], retire: [RecordRef(type: "fact", id: day)]))
+    }
     switch below(19) {
     case 0:
       let below = !ordered.isEmpty && chance(0.8) ? pick(ordered) : nil
@@ -262,6 +268,9 @@ extension SeededRandom {
     let overlay = ScopeRef.overlay(tree)
     let opens = bound ? [scope, overlay] : [scope]
     let tags = view.tags.map(\.id)
+    if !view.deadTags.isEmpty && chance(0.25) {
+      return PlannedGesture("tag revive", in: scope, opens: opens, Gesture(changes: [.revive("tag", pick(view.deadTags))]))
+    }
     switch below(6) {
     case 0 where !view.deadTags.isEmpty && chance(0.5):
       return PlannedGesture("tag revive", in: scope, opens: opens, Gesture(changes: [.revive("tag", pick(view.deadTags))]))

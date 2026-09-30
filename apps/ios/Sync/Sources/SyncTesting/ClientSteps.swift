@@ -18,17 +18,19 @@ public protocol ClientDevice {
   // D-17: the active replica's notice takes `dismissed`; a notice the replica does not hold throws.
   mutating func dismiss(_ noticeId: String) throws
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest?
-  mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
-                        identities: IdentitySource) throws -> Int?
+  // One transaction of a push answer, on the active replica.
+  mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws
   mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws
   mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart
   // Nil when no scope asked is pulled, so nothing is sent.
   mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest?
-  mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
-                        identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)]
-  mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome
+  // One transaction of a pull answer on the active replica, against `subscribed`: a page's outcome, otherwise nil.
+  mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
+                      identities: IdentitySource) throws -> PageOutcome?
+  mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome
   mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome
-  mutating func reconcile(_ scopes: Set<ScopeRef>) throws
+  // Unsubscribes what `set` leaves out; the set it read.
+  mutating func reconcile(_ set: SubscriptionSet) throws -> [ScopeRef]
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
                        counted: [String: [String]], identities: IdentitySource) throws -> SignIn
   mutating func signOut(choice: SignOutChoice?, counted: [String]?, identities: IdentitySource) throws -> SignOut
@@ -101,11 +103,8 @@ public struct PlannedDevice: ClientDevice {
     try device.modify(device.active) { try pushes.number(&$0, limit: limit, at: deviceNow) }
   }
 
-  public mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
-                               identities: IdentitySource) throws -> Int? {
-    try device.modify(device.active) {
-      try pushes.receive(answer, to: request, in: &$0, instance: &instance, timing: timing, identities: identities)
-    }
+  public mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws {
+    try device.modify(device.active) { try pushes.apply(step, to: &$0, instance: &instance, timing: timing, identities: identities) }
   }
 
   public mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws {
@@ -120,23 +119,27 @@ public struct PlannedDevice: ClientDevice {
     pages.plan(scopes, in: device.activeReplica).request
   }
 
-  public mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
-                               identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)] {
+  public mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
+                             identities: IdentitySource) throws -> PageOutcome? {
     try device.modify(device.active) {
-      try pages.receive(answer, to: request, in: &$0, instance: &instance, timing: timing, identities: identities)
+      try pages.apply(step, to: &$0, subscribed: Set(subscribed), instance: &instance, timing: timing, identities: identities)
     }
   }
 
-  public mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome {
-    try device.modify(device.active) { try pages.apply(frame, to: &$0, instance: instance) }
+  public mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {
+    try device.modify(device.active) { try pages.apply(frame, to: &$0, subscribed: Set(subscribed), instance: instance) }
   }
 
   public mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome {
     device.modify(device.active) { lifecycle.subscribe(&$0, to: scope) }
   }
 
-  public mutating func reconcile(_ scopes: Set<ScopeRef>) throws {
-    try device.modify(device.active) { try lifecycle.reconcile(&$0, subscribed: scopes) }
+  public mutating func reconcile(_ set: SubscriptionSet) throws -> [ScopeRef] {
+    try device.modify(device.active) { replica in
+      let scopes = try lifecycle.subscriptionSet(of: replica, set)
+      try lifecycle.reconcile(&replica, subscribed: Set(scopes))
+      return scopes
+    }
   }
 
   public mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
@@ -172,14 +175,15 @@ public struct PlannedDevice: ClientDevice {
 
 // MARK: - The runner
 
-// What one device's steps share: the registry, its identity queues, the actor its instance holds, and the requests
-// awaiting answers.
+// What one device's steps share: the registry, its identity queues, the actor its instance holds, the requests awaiting
+// answers with the replica a pull was made for, and the subscription set the last `reconcile` fixed.
 public struct StepContext {
   public let registry: Registry
   public let identities: QueuedIdentities
   public var actor: Stamp.Actor
   var lastPush: PushRequest?
-  var lastPull: PullRequest?
+  var lastPull: (request: PullRequest?, replica: String)?
+  var subscribed: [ScopeRef]?
 
   public init(registry: Registry, identities: QueuedIdentities, actor: Stamp.Actor) {
     self.registry = registry
@@ -191,8 +195,8 @@ public struct StepContext {
 public enum ClientSteps {
   public static let actor = "r_aaaaaaaaaaaa"
 
-  // Runs a vector's steps on a device built from its input, answering `{returns, device, ended, telemetry?}`. A step
-  // that throws a commit or transition error answers `{throws: true}` and leaves everything as it was.
+  // Runs a vector's steps on a device built from its input, answering `{returns, device, ended, telemetry?, events?}`. A
+  // step that throws a commit or transition error answers `{throws: true}` and leaves everything as it was.
   public static func run<Device: ClientDevice>(_ input: JSON, registry: Registry,
                                                device makeDevice: (LoadedDevice, Limits) throws -> Device) throws -> JSON {
     let limits = Limits(pushMaxBytes: Int(try input["limits"]?["PUSH_MAX_BYTES"]?.asInteger() ?? Int64(Constants.pushMaxBytes)))
@@ -212,11 +216,12 @@ public enum ClientSteps {
       }
     }
     var expect: JSON.Object = [
-      "returns": .array(returns), "device": try device.dump(),
-      "ended": .array(device.events.filter { !$0.isTelemetry }.map(\.json)),
+      "returns": .array(returns), "device": try device.dump(), "ended": .array(device.events.filter(\.isEnded).map(\.json)),
     ]
     let telemetry = device.events.filter(\.isTelemetry)
     if !telemetry.isEmpty { expect["telemetry"] = .array(telemetry.map(\.json)) }
+    let announced = device.events.filter { !$0.isEnded && !$0.isTelemetry }
+    if !announced.isEmpty { expect["events"] = .array(announced.map(\.json)) }
     return .object(expect)
   }
 
@@ -250,7 +255,8 @@ public enum ClientSteps {
       return context.lastPush?.json ?? .null
     case "pushResponse":
       guard let request = context.lastPush else { throw VectorError("pushResponse without a push") }
-      let limit = try device.receive(try answer(step, PushResponse.init(json:)), to: request, instance: &instance, timing: timing, identities: identities)
+      let limit = try receive(try answer(step, PushResponse.init(json:)), to: request, dieAfter: try step["dieAfter"]?.asInteger(),
+                              on: &device, instance: &instance, timing: timing, context: context)
       return limit.map { ["limit": JSON($0)] } ?? .null
     case "hello":
       try device.hello(try answer(step, HelloResponse.init(json:)), timing: timing)
@@ -260,18 +266,30 @@ public enum ClientSteps {
       return json(try device.start(backup: backup, instance: &instance, identities: identities))
     case "pull":
       let request = try device.pullRequest(try step.member("scopes").asArray().map { try ScopeRef(json: $0) })
-      context.lastPull = request
+      context.lastPull = (request, try device.activeReplica().id)
       return request?.json ?? .null
     case "pullResponse":
-      guard let request = context.lastPull else { throw VectorError("pullResponse without a pull") }
-      let outcomes = try device.receive(try answer(step, PullResponse.init(json:)), to: request, instance: &instance, timing: timing, identities: identities)
-      return .array(outcomes.map { ["scope": $0.scope.json, "outcome": .string($0.outcome.rawValue)] })
-    case "frame": return .string(try device.apply(try LiveFrame(json: step.member("frame")), instance: instance).rawValue)
+      guard let (asked, pulledFor) = context.lastPull, let request = asked else { throw VectorError("pullResponse without a pull") }
+      guard try device.activeReplica().id.utf8.elementsEqual(pulledFor.utf8) else { return .null }
+      return try receive(try answer(step, PullResponse.init(json:)), to: request, chunkRows: try step["chunk"].map { Int(try $0.asInteger()) },
+                         dieAfter: try step["dieAfter"]?.asInteger(), on: &device, instance: &instance, timing: timing, context: context)
+    case "frame":
+      let frame = try LiveFrame(json: step.member("frame"))
+      let subscribed = context.subscribed ?? frame.scope.map { [$0] } ?? []
+      return .string(try device.apply(frame, subscribed: subscribed, instance: instance).rawValue)
     case "subscribe":
-      let outcome = try device.subscribe(try ScopeRef(json: step.member("scope")))
+      let scope = try ScopeRef(json: step.member("scope"))
+      if let subscribed = context.subscribed, !subscribed.contains(scope) { context.subscribed = subscribed + [scope] }
+      let outcome = try device.subscribe(scope)
       return outcome == .gone ? .string(outcome.rawValue) : .null
     case "reconcile":
-      try device.reconcile(Set(try step.member("scopes").asArray().map { try ScopeRef(json: $0) }))
+      if let scopes = step["scopes"] {
+        let given = try scopes.asArray().map { try ScopeRef(json: $0) }
+        _ = try device.reconcile(.given(given))
+        context.subscribed = given
+      } else {
+        context.subscribed = try device.reconcile(.own(Subscriptions(products: context.registry.products.map(\.name), opened: [])))
+      }
       return .null
     case "signIn":
       let decisions = try JSON.map(step["decisions"]) { json -> LineageAnswer in
@@ -315,6 +333,56 @@ public enum ClientSteps {
     case let op:
       throw VectorError("unknown step \(op)")
     }
+  }
+
+  // A push answer, one result a batch, the process dying once `dieAfter` results are recorded; answers a halved batch.
+  static func receive<Device: ClientDevice>(_ answer: Answer<PushResponse>, to request: PushRequest, dieAfter: Int64?,
+                                            on device: inout Device, instance: inout Instance, timing: Timing,
+                                            context: StepContext) throws -> Int? {
+    var left = dieAfter ?? .max
+    var limit: Int?
+    for step in PushPlanner(registry: context.registry).steps(for: answer, to: request, resultsPerBatch: 1) {
+      if case .halve(let half, _) = step { limit = half }
+      if case .results(let batch) = step {
+        let sent = Set(try device.activeReplica().outbox.filter { $0.state == .sent }.compactMap(\.n))
+        let recording = Int64(batch.results.filter { sent.contains($0.n) }.count)
+        if recording > 0 && left <= 0 { break }
+        left -= recording
+      }
+      try device.apply(step, instance: &instance, timing: timing, identities: context.identities)
+    }
+    return limit
+  }
+
+  // A pull answer in chunks of `chunkRows`, dying after `dieAfter` page transactions (a cut page `partial`).
+  static func receive<Device: ClientDevice>(_ answer: Answer<PullResponse>, to request: PullRequest, chunkRows: Int?,
+                                            dieAfter: Int64?, on device: inout Device, instance: inout Instance, timing: Timing,
+                                            context: StepContext) throws -> JSON {
+    let account = try device.activeReplica().meta.account
+    let subscribed = context.subscribed ?? request.scopes.map(\.scope)
+    var left = dieAfter ?? .max
+    var outcomes: [JSON] = []
+    var ended: Set<ScopeRef> = []
+    let steps = PageApplier(registry: context.registry).steps(for: answer, to: request, account: account, chunkRows: chunkRows ?? .max)
+    for step in steps {
+      if case .page(let page, _, let chunk) = step {
+        if ended.contains(page.scope) { continue }
+        if left <= 0 {
+          if !chunk.isFirst { outcomes.append(["scope": page.scope.json, "outcome": "partial"]) }
+          break
+        }
+      }
+      let outcome = try device.apply(step, subscribed: subscribed, instance: &instance, timing: timing, identities: context.identities)
+      guard case .page(let page, _, let chunk) = step else { continue }
+      guard let outcome else {
+        left -= 1
+        continue
+      }
+      if [.applied, .reset, .gone, .notFound].contains(outcome) { left -= 1 }
+      if !chunk.isLast { ended.insert(page.scope) }
+      outcomes.append(["scope": page.scope.json, "outcome": .string(outcome.rawValue)])
+    }
+    return .array(outcomes)
   }
 
   // MARK: The step language

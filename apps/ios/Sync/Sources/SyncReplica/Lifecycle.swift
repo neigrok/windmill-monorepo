@@ -89,6 +89,23 @@ public enum SubscribeOutcome: String, Sendable, Hashable {
   case subscribed, gone
 }
 
+// §7.9 what a replica subscribes beside what its records govern: its surface's products and the scopes held open.
+public struct Subscriptions: Sendable, Hashable {
+  public let products: [String]
+  public let opened: [ScopeRef]
+
+  public init(products: [String], opened: [ScopeRef]) {
+    self.products = products
+    self.opened = opened
+  }
+}
+
+// What a transaction checks a scope against: the replica's own subscription set, or one given whole, as a corpus step does.
+public enum SubscriptionSet: Sendable, Hashable {
+  case own(Subscriptions)
+  case given([ScopeRef])
+}
+
 public struct ReplicaLifecycle: Sendable {
   public let registry: Registry
   let hold: Hold
@@ -147,11 +164,7 @@ public struct ReplicaLifecycle: Sendable {
   // §8.2 a store holding no replica: an anon one, active.
   public func firstLaunch(identities: IdentitySource) throws -> LoadedDevice {
     _ = try Machines.replica.transition(from: nil, .firstLaunch, to: .anon)
-    let id = try identities.replicaID()
-    var device = LoadedDevice(meta: DeviceMeta(), active: "", replicas: [])
-    device.add(ReplicaMeta(replica: id, state: .anon))
-    device.setMeta(DeviceMeta(), active: id)
-    return device
+    return .launching(ReplicaMeta(replica: try identities.replicaID(), state: .anon))
   }
 
   // §7.3 and §7.11: every held entry released, a fresh actor; a native store whose forkGuard differs from its copy, or
@@ -434,6 +447,39 @@ public struct ReplicaLifecycle: Sendable {
 
   // MARK: Subscriptions (§7.9)
 
+  // §7.9 in pull order: products, governed trees, opened scopes (signed out: opened trees); none known gone or not found.
+  public func subscriptionSet(of replica: LoadedReplica, _ set: SubscriptionSet) throws -> [ScopeRef] {
+    let scopes: [ScopeRef] = switch set {
+    case .given(let given): given
+    case .own(let subscriptions) where replica.meta.state != .bound:
+      subscriptions.opened.filter { if case .tree = $0.kind { true } else { false } }
+    case .own(let subscriptions):
+      subscriptions.products.map(ScopeRef.product) + (try governedTrees(of: replica, carrying: subscriptions.products))
+        + subscriptions.opened
+    }
+    var seen: Set<ScopeRef> = []
+    return scopes.filter { replica.known[$0] == nil && seen.insert($0).inserted }
+  }
+
+  // The rows `subscriptionSet` reads: the governing records of the replica's products.
+  public func reads(of set: SubscriptionSet) -> [ScopeRef: RowSelection] {
+    guard case .own(let subscriptions) = set, let governing = registry.governingType, let product = governing.scope.productName,
+          subscriptions.products.contains(where: { $0.utf8.elementsEqual(product.utf8) }) else { return [:] }
+    return [.product(product): RowSelection(types: [governing.name])]
+  }
+
+  // A tree and overlay per governing record alive in drawn or stored, in id order: a held create or delete keeps its tree.
+  func governedTrees(of replica: LoadedReplica, carrying products: [String]) throws -> [ScopeRef] {
+    guard let governing = registry.governingType, let product = governing.scope.productName,
+          products.contains(where: { $0.utf8.elementsEqual(product.utf8) }) else { return [] }
+    var alive: Set<RecordID> = []
+    for mode in [ViewMode.drawn, .stored] {
+      let view = try ScopeView(replica, .product(product), mode, registry: registry)
+      alive.formUnion(view.records(ofType: governing.name).filter { $0.lattice.life?.isAlive == true }.map(\.key.id))
+    }
+    return alive.sorted().compactMap(\.string).flatMap { [ScopeRef.tree($0), .overlay($0)] }
+  }
+
   // A scope the replica knows not found is known no more, so its first pull boots it; one it knows gone stays gone, since
   // a scope's death is final (INV-13).
   public func subscribe(_ replica: inout LoadedReplica, to scope: ScopeRef) -> SubscribeOutcome {
@@ -447,8 +493,8 @@ public struct ReplicaLifecycle: Sendable {
   }
 
   // A scope outside `subscribed` is forgotten, and every acked entry outside it resolves, pulled or not. A scope the
-  // replica knows gone or not found is outside it, whoever holds it open: it was unsubscribed when its page came
-  // (§7.5), and no pull brings its rows until a subscribe clears a not-found. Answers the scopes still followed.
+  // replica knows gone or not found is outside it: it was unsubscribed when its page came (§7.5), and no pull brings its
+  // rows until a subscribe clears a not-found. Answers the scopes of the set.
   @discardableResult
   public func reconcile(_ replica: inout LoadedReplica, subscribed: Set<ScopeRef>) throws -> Set<ScopeRef> {
     let followed = subscribed.filter { replica.known[$0] == nil }

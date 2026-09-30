@@ -4,17 +4,18 @@ import SyncReplica
 import SyncStore
 
 // §7.5 and §9.5 the live socket: one per device, open while the active replica is bound and not paused, the device
-// online and the app in the foreground. On open it follows every subscribed scope the replica pulls (§7.9); while open it
-// keeps what it follows in step with the subscriptions, and pings every PING_MS, a pong missing PONG_MS after a ping
-// failing the socket. Change, gone and not-found frames served as the replica's account go to the puller's queue; a gone
-// or not-found ends the server's subscription (§6.8), so the scope is followed no more, and is subscribed again while the
-// replica still pulls it. A frame served as anyone else is a 401 (§9.1), which closes the socket and pauses the replica.
-// A pong keeps the heartbeat, and any other op is ignored. An open that fails, and a socket that ends or fails, count as
-// a reconnect, so the puller pulls every scope at once; a close the client makes (leaving, going offline, a replica
-// change) pulls nothing. The next socket after a reconnect opens after the channel's own backoff, with its own `k` and a
-// 30 s ceiling, `k` reset once a socket has stayed open 30 s; a re-authentication that clears the pause opens the next
-// one at once, with `k` reset. A 401 at the handshake pauses the replica, and a 426 stops the channel for the process.
-// When the loops run, a reader task per socket receives its frames; in step mode the caller receives them.
+// online and the app in the foreground. It follows the scopes of the subscription set the replica pulls (§7.9): `sub`
+// for each it does not follow, unless the scope is in doubt, and `unsub` for each it follows that left the set. It pings
+// once LIVE_PING_MS pass with no frame or pong received, and a pong missing LIVE_PONG_MS after the ping fails the socket.
+// Change, gone and not-found frames served as the replica's account go to the puller's queue; a gone or not-found ends
+// the server's subscription (§6.8), so the scope is followed no more, and is subscribed again while the replica still
+// pulls it and it is not in doubt. A frame served as anyone else is a 401 (§9.1), which closes the socket and pauses the
+// replica. A pong keeps the heartbeat, and any other op is ignored. An open that fails, and a socket that ends or fails,
+// count as a reconnect, so the puller pulls every scope at once; a close the client makes (leaving, going offline, a
+// replica change) pulls nothing. The next socket after a reconnect opens after the channel's own backoff, with its own
+// `k` and a 30 s ceiling, `k` reset once a socket has stayed open 30 s; a re-authentication that clears the pause opens
+// the next one at once, with `k` reset. A 401 at the handshake pauses the replica, and a 426 stops the channel for the
+// process. When the loops run, a reader task per socket receives its frames; in step mode the caller receives them.
 
 package enum LiveStep: Sendable, Hashable {
   // Look again now: the socket was closed or replaced while this step waited, the seat changed during the handshake, or a
@@ -33,8 +34,6 @@ package enum LiveStep: Sendable, Hashable {
 }
 
 package actor LiveChannel {
-  static let pingMs: Int64 = 25_000
-  static let pongMs: Int64 = 10_000
   // Appendix B's live reopen backoff: its ceiling, and how long a socket stays open before `k` resets.
   static let reopenCeilingMs: Int64 = 30_000
   static let settledMs: Int64 = 30_000
@@ -48,7 +47,8 @@ package actor LiveChannel {
     let generation: Int
     let openedAt: Int64
     var following: [ScopeRef] = []
-    var pingedAt: Int64
+    // When a frame or pong was last received, or the socket opened.
+    var heardAt: Int64
     var pongDue: Int64?
   }
 
@@ -127,6 +127,7 @@ package actor LiveChannel {
   package func close() {
     if let socket, now() - socket.openedAt >= Self.settledMs { backoff.reset() }
     socket?.connection.close()
+    if socket != nil { core.doubts.withLock { $0.follow([], at: now()) } }
     socket = nil
     reader?.cancel()
     reader = nil
@@ -174,7 +175,7 @@ package actor LiveChannel {
       generation += 1
       socket = Socket(
         connection: connection, replica: meta.replica, account: account, token: token, generation: generation, openedAt: now(),
-        pingedAt: now())
+        heardAt: now())
       if core.config.drivesLoops { read(connection, generation: generation) }
       return await keep(meta)
     case .answered(.failed(let failure)) where failure.status == 401:
@@ -207,23 +208,25 @@ package actor LiveChannel {
 
   // MARK: An open socket
 
-  // Follows the subscribed scopes the replica pulls and no others, then keeps the heartbeat: a ping PING_MS after the
-  // last, its pong due before it goes, since the reader may take the pong while the ping is being sent, and a reconnect
-  // when the pong is PONG_MS late. Each send revalidates the socket, which may have ended while it waited.
+  // Follows what §7.9 says, then keeps the heartbeat: a ping once LIVE_PING_MS pass with nothing heard, its pong due
+  // before it goes, since the reader may take the pong while the ping is being sent, and a reconnect when the pong is
+  // LIVE_PONG_MS late. Each send revalidates the socket, which may have ended while it waited.
   func keep(_ meta: ReplicaMeta) async -> LiveStep {
     guard let current = socket else { return .idle }
     let mono = now()
     if let pongDue = current.pongDue, pongDue <= mono { return reopenLater() }
     do {
-      let wanted = try core.store.pulledScopes(of: meta.replica, among: core.subscriptions(of: meta))
-      let dropped = current.following.filter { !wanted.contains($0) }
-      let added = wanted.filter { !current.following.contains($0) }
+      guard let subscriptions = try core.store.subscriptions(of: meta.replica, core.subscriptions()) else { return .again }
+      let doubtful = core.doubts.withLock { doubts in Set(subscriptions.pulled.filter(doubts.inDoubt)) }
+      let dropped = current.following.filter { !subscriptions.set.contains($0) }
+      let added = subscriptions.pulled.filter { !current.following.contains($0) && !doubtful.contains($0) }
       if !dropped.isEmpty { try await send(.unsub(dropped), on: current) }
       if !added.isEmpty { try await send(.sub(added), on: current) }
-      socket?.following = wanted
-      if current.pongDue == nil, mono - current.pingedAt >= Self.pingMs {
-        socket?.pingedAt = mono
-        socket?.pongDue = mono + Self.pongMs
+      let following = current.following.filter(subscriptions.set.contains) + added
+      socket?.following = following
+      core.doubts.withLock { $0.follow(Set(following), at: mono) }
+      if current.pongDue == nil, mono - current.heardAt >= Constants.livePingMs {
+        socket?.pongDue = mono + Constants.livePongMs
         try await send(.ping, on: current)
       }
     } catch {
@@ -231,8 +234,7 @@ package actor LiveChannel {
       return reopenLater()
     }
     guard let socket else { return .again }
-    let nextPing = socket.pingedAt + Self.pingMs
-    return .open(ms: max(0, min(socket.pongDue ?? nextPing, nextPing) - mono))
+    return .open(ms: max(0, (socket.pongDue ?? socket.heardAt + Constants.livePingMs) - mono))
   }
 
   func send(_ request: LiveRequest, on sending: Socket) async throws {
@@ -244,6 +246,7 @@ package actor LiveChannel {
 
   func receive(_ frame: LiveFrame, generation: Int) async {
     guard let socket, socket.generation == generation else { return }
+    self.socket?.heardAt = now()
     switch frame {
     case .pong:
       self.socket?.pongDue = nil
@@ -254,7 +257,9 @@ package actor LiveChannel {
       await puller.enqueue(frame, for: socket.replica)
     case .gone(let scope, _), .notFound(let scope, _):
       guard frame.isServed(to: socket.account) else { return servedAsAnother(socket) }
-      self.socket?.following.removeAll { $0 == scope }
+      let following = socket.following.filter { $0 != scope }
+      self.socket?.following = following
+      core.doubts.withLock { $0.follow(Set(following), at: now()) }
       await puller.enqueue(frame, for: socket.replica)
     }
   }

@@ -1,3 +1,4 @@
+import Foundation
 import SyncAPI
 import SyncCore
 import SyncEngine
@@ -60,7 +61,7 @@ struct PullerTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([cards[0]], seq: 2, cursor: midway, more: true, digestOf: cards)]))
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([cards[1]], seq: 2, digestOf: cards)]))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
-    #expect(try Self.cursor(rig) == CursorRecord(cursor: midway, digest: cards[0].digest))
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: midway, digest: cards[0].digest, behind: true))
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
     #expect(rig.transport.pulls == [
       PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Rig.scope, midway)]),
@@ -117,6 +118,121 @@ struct PullerTests {
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, nil)]))
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1, epoch: "ep-2"), digest: card.digest, booted: true))
+  }
+
+  // MARK: Chunks (§7.5 step 2) and the writer (§2.5)
+
+  // Five cards the server holds at seqs 1 to 5.
+  static func cards() throws -> [Row] {
+    try (1...5).map { try Rig.cardRow("card000\($0)", "C\($0)", seq: Int64($0)) }
+  }
+
+  // A page applies in chunks of whole rows, each its own transaction, and a commit that waits for the writer while a chunk
+  // holds it takes it before the page's next chunk.
+  @Test(.timeLimit(.minutes(1))) func aPageAppliesInChunksAndACommitWaitingForTheWriterGoesBetweenThem() async throws {
+    let order = Mutex<[TxName]>([])
+    let inLine = Mutex(0)
+    let engine = Mutex<SyncEngine?>(nil)
+    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+      guard case .afterCommit(let tx) = point, tx == .pullPage || tx == .commit else { return }
+      let chunks = order.withLock { order in
+        order.append(tx)
+        return order.filter { $0 == .pullPage }.count
+      }
+      guard tx == .pullPage, chunks == 1, let running = engine.withLock({ $0 }) else { return }
+      Thread { _ = try? running.commit(Rig.scope, Gesture(changes: [.put("day", "2026-09-01", present: true, ["score": 1])])) }.start()
+      let giveUp = ContinuousClock.now + .seconds(5)
+      while running.writers.waiting == 0, ContinuousClock.now < giveUp {}
+      inLine.withLock { $0 = running.writers.waiting }
+    })
+    engine.withLock { $0 = rig.engine }
+    let cards = try Self.cards()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(cards, seq: 5)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(inLine.withLock { $0 } == 1)
+    #expect(order.withLock { $0 } == [.pullPage, .commit, .pullPage, .pullPage])
+    #expect(try Self.rows(rig) == cards.map(\.json))
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(5), digest: ScopeDigest(rows: cards.map(\.json)), booted: true))
+  }
+
+  // A process death between two chunks keeps the chunks committed: their rows and digest, the cursor where it was and the
+  // scope `behind`. The next process pulls the page again under the unmoved cursor, and ends as the page applied whole.
+  @Test func aDeathBetweenChunksLeavesTheScopeBehindAndThePagePulledAgainEndsAsWhole() async throws {
+    let dead = Mutex(false)
+    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+      guard point == .afterCommit(.pullPage), !dead.withLock({ $0 }) else { return }
+      dead.withLock { $0 = true }
+      throw RigError("the process died")
+    })
+    rig.random.queue(raw: .max, count: 1)
+    let cards = try Self.cards()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(cards, seq: 5)]))
+    #expect(await rig.engine.puller.step() == .backoff(ms: 1_000))
+    #expect(try Self.rows(rig) == cards.prefix(2).map(\.json))
+    #expect(try Self.cursor(rig) == CursorRecord(digest: ScopeDigest(rows: cards.prefix(2).map(\.json)), behind: true))
+    let relaunched = try rig.relaunch()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(cards, seq: 5)]))
+    relaunched.puller.wants.all()
+    #expect(await relaunched.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.transport.pulls.map(\.scopes) == [[Self.pulled(Rig.scope, nil)], [Self.pulled(Rig.scope, nil)]])
+    #expect(try Self.rows(rig) == cards.map(\.json))
+    #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(5), digest: ScopeDigest(rows: cards.map(\.json)), booted: true))
+    #expect(try Self.whole(rig).staging[Rig.scope] == nil)
+  }
+
+  // A page ends at the chunk that finds its scope outside the set: a tree closed after the page's first chunk and opened
+  // again after its second takes none of the rest, which would land beside rows the close forgot.
+  @Test(.timeLimit(.minutes(1))) func aTreeClosedAndOpenedAgainBetweenChunksTakesNoLaterChunk() async throws {
+    let chunks = Mutex(0)
+    let engine = Mutex<SyncEngine?>(nil)
+    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+      guard point == .afterCommit(.pullPage), let running = engine.withLock({ $0 }) else { return }
+      let chunk = chunks.withLock { chunks in
+        chunks += 1
+        return chunks
+      }
+      guard chunk <= 2 else { return }
+      Thread {
+        if chunk == 1 { try? running.unsubscribe(Self.tree) } else { _ = try? running.subscribe(Self.tree) }
+      }.start()
+      let giveUp = ContinuousClock.now + .seconds(5)
+      while running.writers.waiting == 0, ContinuousClock.now < giveUp {}
+    })
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    try rig.engine.subscribe(Self.tree)
+    engine.withLock { $0 = rig.engine }
+    let tags = try (1...6).map { index in
+      try Row(json: [
+        "t": "tag", "id": .string("tag-\(index)"), "life": ["alive", "1000:0:r_server00001"], "born": "1000:0:r_server00001",
+        "seq": JSON(index), "rc": 1_000, "ru": 1_000,
+      ])
+    }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(tags, in: Self.tree, seq: 6)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .outside)]))
+    #expect(chunks.withLock { $0 } == 2)
+    #expect(try Self.rows(rig, Self.tree) == [])
+    #expect(try Self.cursor(rig, Self.tree) == nil)
+  }
+
+  // §2.5: the confirmed rows a staging swap replaced leave every view at once; the swap wakes the sweep, which deletes
+  // them afterwards.
+  @Test func aSwapLeavesTheRowsItReplacedToTheSweep() async throws {
+    let (rig, _) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "reset")]))
+    rig.engine.puller.wants.all()
+    _ = await rig.engine.puller.step()
+    let fresh = try Rig.cardRow("card0002", "Two", seq: 2)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([fresh], seq: 2)]))
+    let kicks = rig.engine.sweeper.wake.kicks
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.engine.sweeper.wake.kicks > kicks)
+    #expect(try rig.store.read { try $0.releasedRows() } == 1)
+    #expect(try Self.rows(rig) == [fresh.json])
+    #expect(rig.engine.sweeper.step() == .idle)
+    #expect(try rig.store.read { try $0.releasedRows() } == 0)
+    #expect(try Self.rows(rig) == [fresh.json])
   }
 
   // MARK: The digest check (§7.5 step 4)
@@ -232,7 +348,7 @@ struct PullerTests {
   // A pull the `anon` replica sent, answered as anonymous after a sign-in bound that replica to A in place, says nothing
   // of A's replica: none of it is applied, A is not paused (its own token was never refused), and the round looks again,
   // pulling the tree as A from where it stood.
-  @Test func anAnonymousAnswerLandingAfterASignInIsDropped() async throws {
+  @Test(.timeLimit(.minutes(1))) func anAnonymousAnswerLandingAfterASignInIsDropped() async throws {
     let rig = try Rig()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "Offline")], gestureId: "g1"))
     try rig.engine.subscribe(Self.tree)
@@ -258,6 +374,37 @@ struct PullerTests {
     #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, Self.live(1))]))
   }
 
+  // §7.12: an answer for a replica no longer active applies nothing, though that replica is still in the store: here a
+  // sign-out left it dormant while its pull was in flight, and the round looks again, for the replica now active.
+  @Test(.timeLimit(.minutes(1))) func aPullAnsweredAfterASignOutAppliesNothingToTheDormantReplica() async throws {
+    let rig = try Rig(account: "A")
+    let replica = try rig.meta().replica
+    let gate = Gate()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Rig.cardRow("card0001", "One", seq: 1)], seq: 1)]), after: gate)
+    async let asked = rig.engine.puller.step()
+    await gate.arrival()
+    try await rig.engine.signOut().finish(.keep)
+    #expect(try rig.store.read { try $0.device().replica(replica)?.meta.state } == .dormant)
+    let held = try rig.store.read { try $0.device(rows: true).json }
+    gate.open()
+    #expect(await asked == .again)
+    #expect(try rig.store.read { try $0.device(rows: true).json } == held)
+  }
+
+  // §7.12: a frame for a replica no longer active applies nothing, though that replica is still in the store: here a
+  // sign-out left it dormant between the frame's arrival and its turn.
+  @Test func aFrameQueuedBeforeASignOutAppliesNothingToTheDormantReplica() async throws {
+    let rig = try Rig(account: "A")
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0), Rig.rows([try Rig.metaRow(seq: 1)], in: Self.tree, seq: 1)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
+    await rig.engine.puller.enqueue(.gone(Self.tree, servedAs: "A"), for: try rig.meta().replica)
+    try await rig.engine.signOut().finish(.keep)
+    let held = try rig.store.read { try $0.device(rows: true).json }
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, nil))
+    #expect(try rig.store.read { try $0.device(rows: true).json } == held)
+  }
+
   // §9.1: an `as` that is not a string is still not the account's, so the answer pauses sync as a 401 does, rather than
   // reading as no answer and backing off for ever.
   @Test func aPullServedAsANonStringPauses() async throws {
@@ -272,11 +419,13 @@ struct PullerTests {
   }
 
   // §7.5 step 2: a product scope never dies, so its gone or not-found, served as the account, is ignored: nothing is
-  // forgotten or recorded, sync goes on, and the scope is not pulled again for it.
+  // forgotten or recorded, sync goes on, and the scope is in doubt, pulled again as its re-pull draws (§7.9); the frame's
+  // end, while the doubt lasts, draws nothing more.
   @Test(arguments: ["not-found", "gone"])
   func aProductScopesEndIsIgnored(_ kind: String) async throws {
     let (rig, card) = try Self.booted()
     _ = await rig.engine.puller.step()
+    rig.random.queue(raw: .max, count: 1)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, kind)]))
     rig.engine.foreground()
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
@@ -284,13 +433,13 @@ struct PullerTests {
     #expect(try rig.active().known == [:])
     #expect(try Self.cursor(rig) == CursorRecord(cursor: Self.live(1), digest: card.digest, booted: true))
     #expect(try !rig.meta().authPaused)
-    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
     let frame: LiveFrame = kind == "gone" ? .gone(Rig.scope, servedAs: "A") : .notFound(Rig.scope, servedAs: "A")
     await rig.engine.puller.enqueue(frame, for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
     #expect(try Self.rows(rig) == [card.json])
     #expect(try rig.active().known == [:])
-    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
     #expect(rig.transport.pulls.count == 2)
   }
 
@@ -312,7 +461,7 @@ struct PullerTests {
   }
 
   // §7.9: a board arriving alive clears a stale not-found of its tree and overlay (a restore, then a create re-sent after
-  // it), so the tree, subscribed, is pulled again at once, booting from nothing.
+  // it), so the tree, and the overlay that joins the set with the board, are pulled at once, booting from nothing.
   @Test func anAliveBoardInAFrameBringsItsTreeBack() async throws {
     let rig = try Rig(account: "A")
     try rig.engine.subscribe(Self.tree)
@@ -323,13 +472,13 @@ struct PullerTests {
     await rig.engine.puller.enqueue(try Rig.change(rows: [board], seq: 1, digestOf: [board]), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
     #expect(try rig.active().known == [:])
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0), Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree, Self.overlay))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil), Self.pulled(Self.overlay, nil)]))
   }
 
   // §7.9: the rule holds for a pull page as for a frame: an alive board in a rows page clears its tree's not-found, and
-  // the tree, subscribed, is pulled by the next run.
+  // the tree and its overlay are pulled by the next run.
   @Test func anAliveBoardInAPageBringsItsTreeBack() async throws {
     let rig = try Rig(account: "A")
     try rig.engine.subscribe(Self.tree)
@@ -340,9 +489,9 @@ struct PullerTests {
     rig.engine.puller.wants.add([Rig.scope])
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
     #expect(try rig.active().known == [:])
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0), Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree, Self.overlay))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil), Self.pulled(Self.overlay, nil)]))
   }
 
   // §7.9: an alive board clears only a not-found record; a gone one stays, since a scope's death is final (INV-13).
@@ -414,7 +563,7 @@ struct PullerTests {
 
   // §7.9: an entry acked in a scope no longer followed resolves at the next pull round, since no pull of its scope brings
   // its row. Here the tree closes while its entry is in flight.
-  @Test func anEntryAckedInATreeClosedWhileItWasInFlightResolvesAtTheNextPullRound() async throws {
+  @Test(.timeLimit(.minutes(1))) func anEntryAckedInATreeClosedWhileItWasInFlightResolvesAtTheNextPullRound() async throws {
     let rig = try Rig(account: "A")
     try rig.engine.subscribe(Self.tree)
     try rig.commit(Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g1"), in: Self.tree)
@@ -465,13 +614,15 @@ struct PullerTests {
     #expect(try rig.outbox() == [])
   }
 
-  // §7.9: a tree whose board's create is in the outbox waits: it is not pulled, and a round with nothing else to pull
-  // sends nothing. A not-found for it, from a request made before the board was committed, is ignored and records
-  // nothing, so writes into the tree are taken. Once the create has its result the puller is woken, and the tree boots.
-  @Test func aTreeWaitsForItsBoardsCreateThenBoots() async throws {
+  // §7.9: a tree whose board's create is in the outbox waits, with its overlay, both in the subscription set: neither is
+  // pulled, and a round with nothing else to pull sends nothing. A not-found for the tree, from a request made before the
+  // board was committed, is ignored and records nothing, so writes into the tree are taken, and the tree is in doubt. Once
+  // the create has its result the puller is woken, and both boot, which ends the doubt.
+  @Test(.timeLimit(.minutes(1))) func aTreeWaitsForItsBoardsCreateThenBoots() async throws {
     let (rig, _) = try Self.booted()
     _ = await rig.engine.puller.step()
     try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 1)
     let gate = Gate()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]), after: gate)
     async let asked = rig.engine.puller.step()
@@ -481,7 +632,7 @@ struct PullerTests {
     #expect(await asked == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
     #expect(try rig.active().known == [:])
     try rig.commit(Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g2"), in: Self.tree)
-    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
     #expect(rig.transport.pulls.count == 2)
 
     let kicks = rig.engine.puller.wake.kicks
@@ -489,20 +640,22 @@ struct PullerTests {
     #expect(await rig.engine.sender.step() == .again)
     #expect(rig.engine.puller.wake.kicks > kicks)
     let meta = try Rig.metaRow(seq: 1, ms: Rig.startMs)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1)]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1), Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree, Self.overlay))
+    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil), Self.pulled(Self.overlay, nil)]))
     #expect(try Self.cursor(rig, Self.tree)?.booted == true)
+    #expect(!rig.engine.doubts.inDoubt(Self.tree))
   }
 
   // §7.9: the tree's pull left before its board was committed, and the server answered not-found; the board's create is
   // pushed and acked while that answer is on its way, and only then does it land. The replica holds the board alive, so
-  // the answer is stale: ignored, nothing recorded. It took the pull that would have booted the tree, so the tree is
-  // pulled again at once and boots, and a write into it is taken.
-  @Test func aNotFoundWrittenBeforeTheBoardsCreateLandingAfterItsAckIsIgnored() async throws {
+  // the answer is stale: ignored, nothing recorded, and the tree in doubt. The overlay, which joined the set with the
+  // board, is pulled at once; the tree when its first re-pull comes, drawn below 1 s, and it boots and takes a write.
+  @Test(.timeLimit(.minutes(1))) func aNotFoundWrittenBeforeTheBoardsCreateLandingAfterItsAckIsIgnored() async throws {
     let (rig, _) = try Self.booted()
     _ = await rig.engine.puller.step()
     try rig.engine.subscribe(Self.tree)
+    rig.random.queue(raw: .max, count: 1)
     let gate = Gate()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]), after: gate)
     async let asked = rig.engine.puller.step()
@@ -514,9 +667,13 @@ struct PullerTests {
     gate.open()
     #expect(await asked == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
     #expect(try rig.active().known == [:])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.overlay))
+    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    rig.clock.advance(ms: 1_000)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls.last == PullRequest(scopes: [Self.pulled(Self.tree, nil)]))
+    #expect(rig.transport.pulls.suffix(2) == [PullRequest(scopes: [Self.pulled(Self.overlay, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)])])
     #expect(try Self.cursor(rig, Self.tree)?.booted == true)
     let outcome = try rig.engine.commit(Self.tree, Gesture(changes: [.write("meta", "meta", ["title": "Plan"])], gestureId: "g2"))
     guard case .committed = outcome else { throw RigError("the tree's commit was \(outcome)") }
@@ -554,41 +711,30 @@ struct PullerTests {
     #expect(try rig.active().known == [Self.tree: .notFound])
   }
 
-  // MARK: Re-pulls after an ignored not-found (§7.9)
+  // MARK: Doubt (§7.9, INV-16)
 
-  // A tree has not booted until its boot's scan ends, so a stale not-found that cut the boot short pulls it again.
-  @Test func aTreeWhoseBootAStaleNotFoundCutShortIsPulledAgain() async throws {
+  // A bound replica whose board b_00000001 is confirmed, so its tree and overlay are in the subscription set; a first
+  // round pulled the product scope, a second the tree and overlay, the tree answered by `tree` and the overlay booted.
+  static func governed(tree: JSON) async throws -> Rig {
     let rig = try Rig(account: "A")
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    rig.transport.willAnswerPull(200, Rig.pulled([tree, Rig.rows(in: Self.overlay, seq: 0)]))
     _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
-    let meta = try Rig.metaRow(seq: 1)
-    let midway = Cursor(epoch: "ep-1", mode: .boot, seq: 1, key: meta.key, asOf: 1).text
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([meta], in: Self.tree, seq: 1, cursor: midway, more: true)]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(try Self.cursor(rig, Self.tree) == CursorRecord(cursor: midway, digest: meta.digest))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 1, digestOf: [meta])]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls == [
-      PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
-      PullRequest(scopes: [Self.pulled(Self.tree, midway)]), PullRequest(scopes: [Self.pulled(Self.tree, midway)]),
-    ])
-    #expect(try Self.cursor(rig, Self.tree) == CursorRecord(cursor: Self.live(1), digest: meta.digest, booted: true))
+    return rig
   }
 
-  // Re-pulls go at once, then back off 1 s to 30 s; a subscribe still pulls at once, and the boot ends the backoff.
-  @Test func anUnbootedTreesRePullsBackOffUntilItBoots() async throws {
+  // An ignored end puts its scope in doubt: its first re-pull is drawn, not taken at once, and each re-pull answered by
+  // another ignored end draws the next on the scope's own k, 1 s to 30 s; a rows page ends the doubt and its re-pulls.
+  @Test func anIgnoredEndPutsItsScopeInDoubtWhoseRePullsBackOffUntilARowsPage() async throws {
     let rig = try Rig(account: "A")
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
-    _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
     rig.random.queue(raw: .max, count: 7)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found"), Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Self.tree, outcome: .ignored), PageReport(scope: Self.overlay, outcome: .applied),
+    ]))
     var waits: [Int64] = []
     for _ in 0..<6 {
       guard case .repull(let ms) = await rig.engine.puller.step() else { throw RigError("no re-pull is ahead") }
@@ -599,156 +745,196 @@ struct PullerTests {
     }
     #expect(waits == [1_000, 2_000, 4_000, 8_000, 16_000, 30_000])
     #expect(await rig.engine.puller.step() == .repull(ms: 30_000))
-    rig.clock.advance(ms: 29_999)
-    #expect(await rig.engine.puller.step() == .repull(ms: 1))
-    try rig.engine.subscribe(Self.tree)
+    rig.clock.advance(ms: 30_000)
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
     #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs - 90_999))
-    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
-      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 9))
+    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs - 91_000))
+    #expect(rig.transport.pulls == [
+      PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil), Self.pulled(Self.overlay, nil)]),
+    ] + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 7))
   }
 
-  // A frame ignored while the tree's re-pull is ahead asks that same re-pull, neither moving it nor drawing a longer wait.
-  @Test func aNotFoundLandingWhileARePullIsAheadAsksThatRePull() async throws {
+  // Every other trigger pulls a scope in doubt as it pulls any subscribed scope, and leaves its scheduled re-pull and its
+  // k as they were: here the app returns to the foreground, and a frame's end is ignored once more.
+  @Test func otherTriggersPullAScopeInDoubtAndLeaveItsRePullAndItsKAlone() async throws {
     let rig = try Rig(account: "A")
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
-    _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
-    rig.random.queue(raw: .max, count: 2)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
-    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
-    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
-    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
-    rig.clock.advance(ms: 1_000)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(await rig.engine.puller.step() == .repull(ms: 2_000))
-    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
-      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 3))
-  }
-
-  // An ignored not-found frame asks a re-pull as a page does, so the pull answered after it is a further one, and waits.
-  @Test func anIgnoredNotFoundFrameAsksARePullAsAPageDoes() async throws {
-    let rig = try Rig(account: "A")
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
-    _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
     rig.random.queue(raw: .max, count: 1)
-    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
-    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
-    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)])])
-  }
-
-  // A new seat, here an epoch change's re-identify, starts every scope's re-pull backoff afresh.
-  @Test func aNewSeatStartsEveryRePullBackoffAfresh() async throws {
-    let rig = try Rig(account: "A")
-    let board = try Self.board(seq: 1)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
     _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
-    rig.random.queue(raw: .max, count: 2)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found"), Rig.rows(in: Self.overlay, seq: 0)]))
+    _ = await rig.engine.puller.step()
     #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
-    rig.clock.advance(ms: 1_000)
-    let replica = try rig.meta().replica
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")], epoch: "ep-2"))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(try rig.meta().replica != replica)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1, epoch: "ep-2"), Rig.page(Self.tree, "not-found")], epoch: "ep-2"))
+    rig.clock.advance(ms: 400)
+    rig.engine.foreground()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1), digestOf: [try Self.board(seq: 1)]),
+                                                  Rig.page(Self.tree, "not-found"), Rig.rows(in: Self.overlay, seq: 0)]))
     #expect(await rig.engine.puller.step() == .pulled([
       PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .ignored),
+      PageReport(scope: Self.overlay, outcome: .applied),
     ]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0, epoch: "ep-2")], epoch: "ep-2"))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls == [
-      PullRequest(scopes: [Self.pulled(Rig.scope, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
-      PullRequest(scopes: [Self.pulled(Self.tree, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
-      PullRequest(scopes: [Self.pulled(Rig.scope, nil), Self.pulled(Self.tree, nil)]), PullRequest(scopes: [Self.pulled(Self.tree, nil)]),
-    ])
+    await rig.engine.puller.enqueue(.notFound(Self.tree, servedAs: "A"), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
+    #expect(await rig.engine.puller.step() == .repull(ms: 600))
+    #expect(rig.engine.doubts.k(Self.tree) == 1)
   }
 
-  // A tree closed while its re-pull backs off loses the backoff: opened again, its first stale answer re-pulls at once.
-  @Test func aTreeOpenedAgainStartsItsRePullBackoffAfresh() async throws {
-    let rig = try Rig(account: "A")
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
-    _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
-    rig.random.queue(raw: .max, count: 2)
+  // A sign-in, a sign-out or a re-identify of the active replica ends every doubt and returns every k to 0: here an epoch
+  // change's re-identify, after which the same answer's ignored end puts the tree in doubt afresh, and every scope is
+  // wanted.
+  @Test func aNewSeatEndsEveryDoubt() async throws {
+    let rig = try await Self.governed(tree: Rig.page(Self.tree, "not-found"))
+    rig.clock.advance(ms: try #require(rig.engine.doubts.nextDue))
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
+    #expect(rig.engine.doubts.k(Self.tree) == 2)
+    let replica = try rig.meta().replica
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")], epoch: "ep-2"))
+    rig.engine.puller.wants.add([Self.tree])
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
-    try rig.engine.unsubscribe(Self.tree)
-    #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
-    try rig.engine.subscribe(Self.tree)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0)]))
-    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
-    #expect(rig.transport.pulls == [PullRequest(scopes: [Self.pulled(Rig.scope, nil)])]
-      + Array(repeating: PullRequest(scopes: [Self.pulled(Self.tree, nil)]), count: 4))
+    #expect(try rig.meta().replica != replica)
+    #expect((rig.engine.doubts.inDoubt(Self.tree), rig.engine.doubts.k(Self.tree)) == (true, 1))
+    rig.transport.willAnswerPull(200, Rig.pulled([
+      Rig.rows([try Self.board(seq: 1)], seq: 1, epoch: "ep-2"), Rig.page(Self.tree, "not-found"),
+      Rig.rows(in: Self.overlay, seq: 0, epoch: "ep-2"),
+    ], epoch: "ep-2"))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .ignored),
+      PageReport(scope: Self.overlay, outcome: .applied),
+    ]))
+    #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Rig.scope, Self.tree, Self.overlay])
   }
 
-  // A tree whose board dies is known gone, followed no more, so its re-pull backoff goes with it.
-  @Test func aTreeKnownGoneLosesItsRePullBackoff() async throws {
+  // §7.12: a sign-out, then a sign-in that binds the same replica to the same account again, ends every doubt, though
+  // the replica, its id and its account are as they were when the last round ran.
+  @Test func aSignOutAndASignInBackToTheSameReplicaEndEveryDoubt() async throws {
     let rig = try Rig(account: "A")
-    let board = try Self.board(seq: 1)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([board], seq: 1)]))
-    _ = await rig.engine.puller.step()
-    try rig.engine.subscribe(Self.tree)
-    rig.random.queue(raw: .max, count: 1)
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found")]))
-    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Self.tree, outcome: .ignored)]))
-    #expect(await rig.engine.puller.step() == .repull(ms: 1_000))
+    rig.random.queue(raw: .max, count: 4)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    for ms in [1_000, 2_000] as [Int64] {
+      #expect(await rig.engine.puller.step() == .repull(ms: ms))
+      rig.clock.advance(ms: ms)
+      rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+      #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    }
+    #expect(rig.engine.doubts.k(Rig.scope) == 3)
+    let replica = try rig.meta().replica
+    try await rig.engine.signOut().finish(.keep)
+    #expect(try await rig.signIn("A", holds: ["probe": false]).isComplete)
+    #expect(try rig.meta().replica == replica && rig.meta().account == "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    #expect((rig.engine.doubts.k(Rig.scope), rig.engine.doubts.nextDue) == (1, 4_000))
+  }
+
+  // A sign-out that discards the replica ends every doubt at once, before the puller's next round.
+  @Test func aSignOutThatDiscardsTheReplicaEndsEveryDoubtAtOnce() async throws {
+    let rig = try Rig(account: "A")
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    #expect(rig.engine.doubts.inDoubt(Rig.scope))
+    try await rig.engine.signOut().finish(.discard)
+    #expect((rig.engine.doubts.inDoubt(Rig.scope), rig.engine.doubts.k(Rig.scope), rig.engine.doubts.nextDue) == (false, 0, nil))
+  }
+
+  // §7.9: the set holds a tree per board alive in drawn or in stored, so a board's held delete, alive in stored alone,
+  // keeps its tree's rows and cursor through the undo window; once the delete is released the tree leaves the set, and
+  // the next round forgets it.
+  @Test func aBoardsHeldDeleteKeepsItsTreeInTheSetThroughTheUndoWindow() async throws {
+    let meta = try Rig.metaRow(seq: 1)
+    let rig = try await Self.governed(tree: Rig.rows([meta], in: Self.tree, seq: 1))
+    try rig.commit(Gesture(changes: [.delete("board", "b_00000001")], hold: true))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1), digestOf: [try Self.board(seq: 1)])]))
+    rig.engine.puller.wants.add([Rig.scope])
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try Self.rows(rig, Self.tree) == [meta.json])
+    #expect(try Self.cursor(rig, Self.tree)?.booted == true)
+    rig.clock.advance(ms: Constants.holdMs)
+    #expect(rig.engine.releaser.step() == .again)
+    rig.engine.puller.wants.add([Rig.scope])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1), digestOf: [try Self.board(seq: 1)])]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(try Self.cursor(rig, Self.tree) == nil)
+    #expect(try Self.rows(rig, Self.tree) == [])
+  }
+
+  // A scope that leaves the subscription set loses its doubt: here the board dies, so its tree is known gone.
+  @Test func aScopeThatLeavesTheSetLosesItsDoubt() async throws {
+    let rig = try await Self.governed(tree: Rig.page(Self.tree, "not-found"))
     let dead = try Self.board(seq: 2, life: "dead", ms: 2_000)
     await rig.engine.puller.enqueue(try Rig.change(rows: [dead], seq: 2, digestOf: []), for: try rig.meta().replica)
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
     #expect(try rig.active().known == [Self.tree: .gone, Self.overlay: .gone])
     #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
-    #expect(rig.transport.pulls.count == 3)
+    #expect(rig.engine.doubts.nextDue == nil)
+    #expect(rig.transport.pulls.count == 2)
   }
 
-  // The backoff alone: each scope draws on its own k, and a boot, or no longer being followed, ends the scope's backoff.
-  @Test func eachScopeBacksOffOnItsOwnUntilItBootsOrIsFollowedNoMore() {
-    let random = QueuedRandom(seed: 1)
-    random.queue(raw: .max, count: 4)
-    var repulls = Repulls()
-    repulls.ask(Self.tree, at: 0, random: random)
-    #expect(repulls.take(dueBy: 0) == [Self.tree])
-    repulls.ask(Self.tree, at: 0, random: random)
-    #expect(repulls.take(dueBy: 999) == [])
-    #expect(repulls.take(dueBy: 1_000) == [Self.tree])
-    repulls.ask(Self.tree, at: 1_000, random: random)
-    repulls.ask(Self.overlay, at: 1_000, random: random)
-    #expect(repulls.take(dueBy: 1_000) == [Self.overlay])
-    repulls.ask(Self.overlay, at: 1_000, random: random)
-    #expect(repulls.nextDue == 2_000)
-    #expect(repulls.take(dueBy: 2_000) == [Self.overlay])
-    #expect(repulls.nextDue == 3_000)
-    repulls.booted(Self.tree)
-    #expect(repulls.nextDue == nil)
-    repulls.ask(Self.tree, at: 5_000, random: random)
-    #expect(repulls.take(dueBy: 5_000) == [Self.tree])
-    repulls.ask(Self.overlay, at: 5_000, random: random)
-    #expect(repulls.nextDue == 7_000)
-    repulls.keep([Self.tree])
-    #expect(repulls.nextDue == nil)
-    repulls.ask(Self.overlay, at: 8_000, random: random)
-    #expect(repulls.take(dueBy: 8_000) == [Self.overlay])
+  // The re-pull timer waits only in the foreground; in the background a round run for another trigger takes the re-pulls
+  // already due, and k keeps its value.
+  @Test func aRePullWaitsOnlyInTheForegroundAndABackgroundRoundTakesTheDueOnes() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 2)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found"), Rig.rows(in: Self.overlay, seq: 0)]))
+    _ = await rig.engine.puller.step()
+    try rig.engine.leave()
+    #expect(await rig.engine.puller.step() == .idle)
+    rig.clock.advance(ms: 5_000)
+    rig.engine.puller.wants.add([Rig.scope])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1, cursor: Self.live(1), digestOf: [try Self.board(seq: 1)]),
+                                                  Rig.page(Self.tree, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .ignored),
+    ]))
+    #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Rig.scope, Self.tree])
+    #expect(await rig.engine.puller.step() == .idle)
+    #expect((rig.engine.doubts.k(Self.tree), rig.engine.doubts.nextDue) == (2, 7_000))
+  }
+
+  // One pull is in flight at a time: the frames that come while it is want their scope, marked once, so the answer is
+  // followed by one pull of it, not one per frame (§7.5 N-2).
+  @Test(.timeLimit(.minutes(1))) func framesThatComeWhileAPullIsInFlightMarkItsScopeForOneMorePull() async throws {
+    let (rig, card) = try Self.booted()
+    _ = await rig.engine.puller.step()
+    let gate = Gate()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 2, cursor: Self.live(1), more: true, digestOf: [card])]), after: gate)
+    rig.engine.foreground()
+    let puller = rig.engine.puller
+    let stepping = Task { await puller.step() }
+    await gate.arrival()
+    for seq in 2...4 as ClosedRange<Int64> {
+      await puller.enqueue(try Rig.change(rows: [try Rig.cardRow("card000\(seq)", "N", seq: seq)], seq: seq, digestOf: []), for: try rig.meta().replica)
+    }
+    gate.open()
+    #expect(await stepping.value == Self.applied(Rig.scope))
+    for _ in 2...4 { #expect(await puller.step() == .frame(Rig.scope, .pull)) }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 2, cursor: Self.live(2), digestOf: [card])]))
+    #expect(await puller.step() == Self.applied(Rig.scope))
+    #expect(await puller.step() == .fallback(ms: Constants.pullFallbackMs))
+    #expect(rig.transport.pulls.map(\.scopes) == [
+      [Self.pulled(Rig.scope, nil)], [Self.pulled(Rig.scope, Self.live(1))], [Self.pulled(Rig.scope, Self.live(1))],
+    ])
+  }
+
+  // REQUEST_TIMEOUT_MS bounds a pull: one the server never answers is a transport error once it passes, its scopes
+  // wanted again, and a re-pull in flight ends, drawing the next.
+  @Test(.timeLimit(.minutes(1))) func aPullUnansweredForTheRequestTimeoutIsATransportError() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 3)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([try Self.board(seq: 1)], seq: 1)]))
+    _ = await rig.engine.puller.step()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Self.tree, "not-found"), Rig.rows(in: Self.overlay, seq: 0)]))
+    _ = await rig.engine.puller.step()
+    rig.clock.advance(ms: 1_000)
+    rig.transport.willNotAnswerPull()
+    async let stepping = rig.engine.puller.step()
+    await rig.clock.asleep(until: 1_000 + Constants.requestTimeoutMs)
+    rig.clock.advance(ms: Constants.requestTimeoutMs)
+    #expect(await stepping == .backoff(ms: 1_000))
+    #expect((rig.engine.doubts.k(Self.tree), rig.engine.doubts.nextDue) == (2, 61_000 + 2_000))
+    #expect(rig.transport.pulls.last?.scopes.map(\.scope) == [Self.tree])
   }
 
   // An unsubscribe removes only its own scopes: a subscribe landing while its transaction runs is kept, and pulled.
@@ -864,7 +1050,7 @@ struct PullerTests {
 
   // A 401 to a pull sent under a token the account replaced while it was in flight pauses nothing, and the pull goes
   // again under the new token (design §4.4 rule 2).
-  @Test func a401ToATokenReplacedInFlightPausesNothing() async throws {
+  @Test(.timeLimit(.minutes(1))) func a401ToATokenReplacedInFlightPausesNothing() async throws {
     let rig = try Rig(account: "A")
     let gate = Gate()
     rig.transport.willAnswerPull(401, Rig.failure("unauthenticated"), after: gate)
@@ -940,7 +1126,7 @@ struct PullerTests {
 
   // §7.5: an `ok` whose seq its scope's cursor already covers (its own frame came before its push's answer) resolves in
   // the result's own transaction, and nothing is pulled for it.
-  @Test func anEntryAckedAfterItsOwnFrameResolvesAtOnce() async throws {
+  @Test(.timeLimit(.minutes(1))) func anEntryAckedAfterItsOwnFrameResolvesAtOnce() async throws {
     let rig = try Rig(account: "A")
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     _ = await rig.engine.puller.step()
@@ -1000,21 +1186,22 @@ struct PullerTests {
 
   // MARK: Revalidation (design §4.4 rule 2)
 
-  // A frame received for a replica no longer active, or for a scope no longer subscribed, is dropped.
-  @Test func aFrameForAReplicaOrScopeLeftSinceIsDropped() async throws {
+  // A frame received for a replica no longer active is dropped (§7.12); one for a scope outside the subscription set
+  // applies nothing (§7.5 step 3).
+  @Test func aFrameForAReplicaLeftSinceIsDroppedAndOneOutsideTheSetAppliesNothing() async throws {
     let (rig, card) = try Self.booted()
     _ = await rig.engine.puller.step()
     let next = try Rig.cardRow("card0002", "Two", seq: 2)
     await rig.engine.puller.enqueue(try Rig.change(rows: [next], seq: 2, digestOf: [card, next]), for: "rp_" + String(repeating: "f", count: 32))
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, nil))
     await rig.engine.puller.enqueue(.gone(Self.tree, servedAs: "A"), for: try rig.meta().replica)
-    #expect(await rig.engine.puller.step() == .frame(Self.tree, nil))
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .outside))
     #expect(try rig.active().known == [:])
     #expect(try Self.rows(rig) == [card.json])
   }
 
-  // A tree unsubscribed while its boot is in flight: its page is stale, and nothing of it is kept.
-  @Test func aPageOfAScopeUnsubscribedWhileInFlightIsStale() async throws {
+  // A tree unsubscribed while its boot is in flight: its page is outside the set, applies nothing, and pulls nothing again.
+  @Test(.timeLimit(.minutes(1))) func aPageOfAScopeUnsubscribedWhileInFlightIsOutside() async throws {
     let rig = try Rig(account: "A")
     try rig.engine.subscribe(Self.tree)
     let gate = Gate()
@@ -1024,14 +1211,14 @@ struct PullerTests {
     await gate.arrival()
     try rig.engine.unsubscribe(Self.tree)
     gate.open()
-    #expect(await stepping.value == .pulled([PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .stale)]))
+    #expect(await stepping.value == .pulled([PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .outside)]))
     #expect(try Self.cursor(rig, Self.tree) == nil)
     #expect(try Self.rows(rig, Self.tree) == [])
     #expect(await rig.engine.puller.step() == .fallback(ms: Constants.pullFallbackMs))
   }
 
   // Steps are single-flight: a step taken while a pull is in flight waits for it, then finds nothing left to pull.
-  @Test func aStepWaitsForThePullInFlight() async throws {
+  @Test(.timeLimit(.minutes(1))) func aStepWaitsForThePullInFlight() async throws {
     let rig = try Rig(account: "A")
     let gate = Gate()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]), after: gate)

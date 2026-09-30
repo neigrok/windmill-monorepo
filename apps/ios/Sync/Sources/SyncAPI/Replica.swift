@@ -23,6 +23,8 @@ public protocol ScopeReader {
 public protocol CommitContext: ScopeReader {
   // physNow() for this commit; the same value fills a create's unset time fields.
   var now: Int64 { get }
+  // The id of the replica the commit writes to, the active one (§7.12), which a record that names its writer carries.
+  var replica: String { get }
   // A CSPRNG id by the type's registry `mint`, never one taken in the views. A type that mints none, or a mint after the
   // call that passed the context returned, throws malformed.
   func mintID(_ type: String) throws -> RecordID

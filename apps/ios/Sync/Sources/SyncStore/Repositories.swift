@@ -4,10 +4,10 @@ import SyncAPI
 import SyncCore
 import SyncReplica
 
-// `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type. Its loaders build the
-// working copies planners change; its queries serve the readers. The cursors, staging digests, known scopes and device
-// rows of a replica are always loaded whole; rows only as a planner's read set names them, and outbox entries whole or
-// as its entry selection names them.
+// `StoreTransaction`: an open transaction as the rest of the engine sees it, naming no GRDB type and no handle. Its loaders
+// build the working copies planners change; its queries serve the readers. Each finds a replica by its id once, then
+// reads by its handle. The cursors, staging digests, known scopes and device rows of a replica are always loaded whole;
+// rows only as a planner's read set names them, and outbox entries whole or as its entry selection names them.
 
 public struct StoreTransaction {
   let db: Database
@@ -16,8 +16,10 @@ public struct StoreTransaction {
   // MARK: Device and replicas
 
   public func deviceMeta() throws -> (meta: DeviceMeta, active: String)? {
-    guard let device = try GRDB.Row.fetchOne(db, sql: "SELECT fork_guard, pending_sign_in, active_replica FROM device") else { return nil }
-    return (DeviceMeta(forkGuard: device["fork_guard"], pendingSignIn: device["pending_sign_in"]), device["active_replica"])
+    guard let device = try GRDB.Row.fetchOne(db, sql: """
+      SELECT fork_guard, pending_sign_in, replica.id AS active FROM device JOIN replica ON replica.handle = device.active_replica
+      """) else { return nil }
+    return (DeviceMeta(forkGuard: device["fork_guard"], pendingSignIn: device["pending_sign_in"]), device["active"])
   }
 
   public func activeReplica() throws -> String {
@@ -26,29 +28,30 @@ public struct StoreTransaction {
   }
 
   public func replicaIDs() throws -> [String] {
-    try String.fetchAll(db, sql: "SELECT replica FROM replica ORDER BY rowid")
+    try String.fetchAll(db, sql: "SELECT id FROM replica ORDER BY handle")
   }
 
   // One replica with the rows `reads` names and the outbox entries `entries` names; `notices` loads its notices too.
   public func replica(_ id: String, reads: [ScopeRef: RowSelection] = [:], entries: EntrySelection = .every,
                       notices: Bool = false) throws -> LoadedReplica? {
-    guard let meta = try meta(of: id) else { return nil }
-    let cursors = try cursors(of: id)
+    guard let (handle, meta) = try record(of: id) else { return nil }
+    let cursors = try cursors(of: handle)
     var confirmed: [ScopeRef: Rows] = [:]
     var spent: [ScopeRef: [RecordKey: SpentID]] = [:]
     for (scope, selection) in reads {
-      confirmed[scope] = try rows(.confirmed, of: id, in: scope, selection)
-      spent[scope] = try spentIDs(of: id, in: scope)
+      confirmed[scope] = try rows(.confirmed, of: handle, in: scope, selection)
+      spent[scope] = try spentIDs(of: handle, in: scope)
     }
     var staging: [ScopeRef: Staging] = [:]
     for (scope, digest) in cursors.staging {
-      staging[scope] = Staging(digest: digest, rows: try rows(.staging, of: id, in: scope, reads[scope] ?? RowSelection()))
+      staging[scope] = Staging(digest: digest, rows: try rows(.staging, of: handle, in: scope, reads[scope] ?? RowSelection()))
     }
-    let outbox = try self.outbox(of: id, entries, touching: reads)
+    let outbox = try self.outbox(of: handle, entries, touching: reads)
     return LoadedReplica(
       meta: meta, outbox: outbox.read, entries: entries, unreadCommitOrder: outbox.unreadCommitOrder, confirmed: confirmed,
-      staging: staging, spent: spent, cursors: cursors.records, known: try known(of: id),
-      notices: notices ? try self.notices(of: id) : nil, deviceRows: try deviceRows(of: id), wholeScopes: false)
+      staging: staging, spent: spent, cursors: cursors.records, known: try known(of: handle),
+      notices: notices ? try self.notices(of: handle) : nil, deviceRows: try deviceRows(of: handle), wholeScopes: false,
+      isActive: try isActive(handle))
   }
 
   // Every replica with its notices: what the lifecycle planners read. `rows` loads every row too.
@@ -62,25 +65,31 @@ public struct StoreTransaction {
 
   // Everything one replica holds, every row included.
   func wholeReplica(_ id: String) throws -> LoadedReplica {
-    guard let meta = try meta(of: id) else { throw StoreError.noReplica(id) }
-    let cursors = try cursors(of: id)
+    guard let (handle, meta) = try record(of: id) else { throw StoreError.noReplica(id) }
+    let cursors = try cursors(of: handle)
     var confirmed: [ScopeRef: Rows] = [:]
-    for (scope, rows) in try Dictionary(grouping: allRows(.confirmed, of: id), by: \.scope) { confirmed[scope] = Rows(rows.map(\.row)) }
+    for (scope, rows) in try Dictionary(grouping: allRows(.confirmed, of: handle), by: \.scope) { confirmed[scope] = Rows(rows.map(\.row)) }
     var staging: [ScopeRef: Staging] = [:]
-    let staged = try Dictionary(grouping: allRows(.staging, of: id), by: \.scope)
+    let staged = try Dictionary(grouping: allRows(.staging, of: handle), by: \.scope)
     for (scope, digest) in cursors.staging { staging[scope] = Staging(digest: digest, rows: Rows((staged[scope] ?? []).map(\.row))) }
     var spent: [ScopeRef: [RecordKey: SpentID]] = [:]
-    for record in try GRDB.Row.fetchAll(db, sql: "SELECT scope, type, id, born FROM spent WHERE replica = ?", arguments: [id]) {
+    for record in try GRDB.Row.fetchAll(db, sql: "SELECT scope, type, id, born FROM spent WHERE replica = ?", arguments: [handle.value]) {
       let id = try spentID(record)
       spent[try ScopeRef(record["scope"] as String), default: [:]][id.key] = id
     }
     return LoadedReplica(
-      meta: meta, outbox: try outbox(of: id), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
-      known: try known(of: id), notices: try notices(of: id), deviceRows: try deviceRows(of: id), wholeScopes: true)
+      meta: meta, outbox: try outbox(of: handle), confirmed: confirmed, staging: staging, spent: spent, cursors: cursors.records,
+      known: try known(of: handle), notices: try notices(of: handle), deviceRows: try deviceRows(of: handle), wholeScopes: true,
+      isActive: try isActive(handle))
   }
 
   public func meta(of id: String) throws -> ReplicaMeta? {
-    guard let record = try GRDB.Row.fetchOne(db, sql: "SELECT * FROM replica WHERE replica = ?", arguments: [id]) else { return nil }
+    try record(of: id)?.meta
+  }
+
+  // The replica of `id`: its handle, which every other table names it by, and its meta.
+  func record(of id: String) throws -> (handle: ReplicaHandle, meta: ReplicaMeta)? {
+    guard let record = try GRDB.Row.fetchOne(db.cachedStatement(sql: "SELECT * FROM replica WHERE id = ?"), arguments: [id]) else { return nil }
     guard let state = ReplicaMeta.State(rawValue: record["state"]) else { throw StoreError.corrupt("replica state") }
     var meta = ReplicaMeta(replica: id, state: state, account: record["account"])
     meta.nextN = record["next_n"]
@@ -95,42 +104,48 @@ public struct StoreTransaction {
     meta.serverEpoch = record["server_epoch"]
     meta.ackThrough = record["ack_through"]
     meta.authPaused = record["auth_paused"]
-    return meta
+    return (ReplicaHandle(value: record["handle"]), meta)
   }
 
-  func outbox(of id: String) throws -> [OutboxEntry] {
-    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox WHERE replica = ? ORDER BY commit_order", arguments: [id]).map(entry)
+  func isActive(_ handle: ReplicaHandle) throws -> Bool {
+    try Int64.fetchOne(db.cachedStatement(sql: "SELECT active_replica FROM device WHERE id = 1")) == handle.value
+  }
+
+  func outbox(of handle: ReplicaHandle) throws -> [OutboxEntry] {
+    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox WHERE replica = ? ORDER BY commit_order", arguments: [handle.value]).map(entry)
   }
 
   // The entries `selection` names: every one, or those that touch a record `reads` covers, every entry of the held
   // gestures and the sent entries numbered, each found through an index; with the highest commit order among the entries
   // left unread, which only the orders above every entry read can hold.
-  func outbox(of id: String, _ selection: EntrySelection,
+  func outbox(of handle: ReplicaHandle, _ selection: EntrySelection,
               touching reads: [ScopeRef: RowSelection]) throws -> (read: [OutboxEntry], unreadCommitOrder: Int64) {
-    if selection.all { return (try outbox(of: id), 0) }
+    if selection.all { return (try outbox(of: handle), 0) }
     var queries: [(sql: String, arguments: StatementArguments)] = []
     for (scope, rows) in reads {
-      if rows.all { queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [id, scope.text])) }
+      if rows.all { queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [handle.value, scope.text])) }
       for key in rows.keys {
         queries.append(("""
           SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
           WHERE outbox_touch.scope = ? AND outbox_touch.type = ? AND outbox_touch.id = ? AND outbox.replica = ?
-          """, [scope.text, key.type, key.id.text, id]))
+          """, [scope.text, key.type, key.id.text, handle.value]))
       }
       for type in rows.types {
         queries.append(("""
           SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)
           WHERE outbox_touch.scope = ? AND outbox_touch.type = ? AND outbox.replica = ?
-          """, [scope.text, type, id]))
+          """, [scope.text, type, handle.value]))
       }
     }
     if selection.heldGestures {
       queries.append(("""
         SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)
         WHERE held.replica = ?1 AND held.state = 'held' AND gesture.replica = ?1
-        """, [id]))
+        """, [handle.value]))
     }
-    for n in selection.numbered { queries.append(("SELECT * FROM outbox WHERE replica = ? AND state = 'sent' AND n = ?", [id, n])) }
+    for n in selection.numbered {
+      queries.append(("SELECT * FROM outbox WHERE replica = ? AND state = 'sent' AND n = ?", [handle.value, n]))
+    }
     var read: [[UInt8]: GRDB.Row] = [:]
     for query in queries {
       for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: query.sql), arguments: query.arguments) {
@@ -139,7 +154,7 @@ public struct StoreTransaction {
     }
     let highest = try GRDB.Row.fetchAll(
       db.cachedStatement(sql: "SELECT local_id, commit_order FROM outbox WHERE replica = ? ORDER BY commit_order DESC LIMIT ?"),
-      arguments: [id, read.count + 1])
+      arguments: [handle.value, read.count + 1])
     let unread = highest.first { read[Array(($0["local_id"] as String).utf8)] == nil }
     return (try read.values.map(entry), unread?["commit_order"] ?? 0)
   }
@@ -160,22 +175,23 @@ public struct StoreTransaction {
     return entry
   }
 
-  func cursors(of id: String) throws -> (records: [ScopeRef: CursorRecord], staging: [ScopeRef: ScopeDigest]) {
+  func cursors(of handle: ReplicaHandle) throws -> (records: [ScopeRef: CursorRecord], staging: [ScopeRef: ScopeDigest]) {
     var records: [ScopeRef: CursorRecord] = [:]
     var staging: [ScopeRef: ScopeDigest] = [:]
-    for record in try GRDB.Row.fetchAll(db, sql: "SELECT * FROM cursor WHERE replica = ?", arguments: [id]) {
+    for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT * FROM cursor WHERE replica = ?"), arguments: [handle.value]) {
       let scope = try ScopeRef(record["scope"] as String)
       records[scope] = CursorRecord(
         cursor: record["cursor"], digest: try ScopeDigest(bytes: [UInt8](record["digest"] as Data)), booted: record["booted"],
-        mismatchReset: record["mismatch_reset"], digestStop: record["digest_stop"])
+        behind: record["behind"], mismatchReset: record["mismatch_reset"], digestStop: record["digest_stop"])
       if let digest = record["staging_digest"] as Data? { staging[scope] = try ScopeDigest(bytes: [UInt8](digest)) }
     }
     return (records, staging)
   }
 
-  func known(of id: String) throws -> [ScopeRef: KnownKind] {
+  func known(of handle: ReplicaHandle) throws -> [ScopeRef: KnownKind] {
     var known: [ScopeRef: KnownKind] = [:]
-    for record in try GRDB.Row.fetchAll(db, sql: "SELECT scope, kind FROM known_scope WHERE replica = ?", arguments: [id]) {
+    for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT scope, kind FROM known_scope WHERE replica = ?"),
+                                        arguments: [handle.value]) {
       guard let kind = KnownKind(rawValue: record["kind"]) else { throw StoreError.corrupt("known-scope kind") }
       known[try ScopeRef(record["scope"] as String)] = kind
     }
@@ -183,8 +199,8 @@ public struct StoreTransaction {
   }
 
   // In the order they were written.
-  func notices(of id: String) throws -> [Notice] {
-    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM notice WHERE replica = ? ORDER BY rowid", arguments: [id]).map { record in
+  func notices(of handle: ReplicaHandle) throws -> [Notice] {
+    try GRDB.Row.fetchAll(db, sql: "SELECT * FROM notice WHERE replica = ? ORDER BY rowid", arguments: [handle.value]).map { record in
       Notice(
         id: record["id"], product: record["product"], scope: try ScopeRef(record["scope"] as String),
         code: RefusalCode(record["code"] as String), detail: try (record["detail"] as Data?).map(Blob.json),
@@ -192,9 +208,10 @@ public struct StoreTransaction {
     }
   }
 
-  func deviceRows(of id: String) throws -> [String: JSON.Object] {
+  func deviceRows(of handle: ReplicaHandle) throws -> [String: JSON.Object] {
     var rows: [String: JSON.Object] = [:]
-    for record in try GRDB.Row.fetchAll(db, sql: "SELECT product, key, value FROM device_row WHERE replica = ?", arguments: [id]) {
+    for record in try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT product, key, value FROM device_row WHERE replica = ?"),
+                                        arguments: [handle.value]) {
       rows[record["product"], default: JSON.Object()][record["key"]] = try Blob.json(record["value"])
     }
     return rows
@@ -214,21 +231,28 @@ public struct StoreTransaction {
 
   // §7.6: the records of `type` in `scope` that the replica's entries touch, a held entry's only `withHeld`, in id order.
   public func touched(_ replica: String, in scope: ScopeRef, type: String, withHeld: Bool) throws -> [RecordKey] {
+    guard let handle = try handle(of: replica) else { throw StoreError.noReplica(replica) }
     let ids = try String.fetchAll(db, sql: """
       SELECT DISTINCT outbox_touch.id FROM outbox_touch JOIN outbox USING (local_id)
       WHERE outbox.replica = ? AND outbox_touch.scope = ? AND outbox_touch.type = ? AND (? OR outbox.state <> 'held')
-      """, arguments: [replica, scope.text, type, withHeld])
+      """, arguments: [handle.value, scope.text, type, withHeld])
     return try ids.map { RecordKey(type, try RecordID(text: $0)) }.sorted()
   }
 
   // A row of `device/<product>`, found by its key's bytes as SQLite compares text.
   public func deviceRow(_ replica: String, product: String, key: String) throws -> JSON? {
-    try Data.fetchOne(db, sql: "SELECT value FROM device_row WHERE replica = ? AND product = ? AND key = ?",
-                      arguments: [replica, product, key]).map(Blob.json)
+    guard let handle = try handle(of: replica) else { throw StoreError.noReplica(replica) }
+    return try Data.fetchOne(db, sql: "SELECT value FROM device_row WHERE replica = ? AND product = ? AND key = ?",
+                             arguments: [handle.value, product, key]).map(Blob.json)
   }
 
-  func spentIDs(of id: String, in scope: ScopeRef) throws -> [RecordKey: SpentID] {
-    let records = try GRDB.Row.fetchAll(db, sql: "SELECT type, id, born FROM spent WHERE replica = ? AND scope = ?", arguments: [id, scope.text])
+  func handle(of id: String) throws -> ReplicaHandle? {
+    try Int64.fetchOne(db.cachedStatement(sql: "SELECT handle FROM replica WHERE id = ?"), arguments: [id]).map(ReplicaHandle.init)
+  }
+
+  func spentIDs(of handle: ReplicaHandle, in scope: ScopeRef) throws -> [RecordKey: SpentID] {
+    let records = try GRDB.Row.fetchAll(db.cachedStatement(sql: "SELECT type, id, born FROM spent WHERE replica = ? AND scope = ?"),
+                                        arguments: [handle.value, scope.text])
     return Dictionary(uniqueKeysWithValues: try records.map(spentID).map { ($0.key, $0) })
   }
 
@@ -238,32 +262,46 @@ public struct StoreTransaction {
 
   // MARK: Rows
 
+  // The row set of `role` of a scope, nil when the scope holds none.
+  func rowSet(_ role: RowRole, of handle: ReplicaHandle, in scope: ScopeRef) throws -> RowSetID? {
+    try Int64.fetchOne(db.cachedStatement(sql: "SELECT id FROM row_set WHERE replica = ? AND scope = ? AND role = ?"),
+                       arguments: [handle.value, scope.text, role.rawValue]).map(RowSetID.init)
+  }
+
   // A scope's rows as a selection names them: every row, or some records and some whole types, with whether the
   // scope holds any row at all.
-  func rows(_ table: BatchWriter.RowTable, of id: String, in scope: ScopeRef, _ selection: RowSelection) throws -> Rows {
-    if selection.all { return Rows(try allRows(table, of: id).filter { $0.scope == scope }.map(\.row)) }
+  func rows(_ role: RowRole, of handle: ReplicaHandle, in scope: ScopeRef, _ selection: RowSelection) throws -> Rows {
+    guard let set = try rowSet(role, of: handle, in: scope) else {
+      return selection.all ? Rows() : Rows(loaded: [], keys: selection.keys, types: selection.types, empty: true)
+    }
+    if selection.all {
+      return Rows(try Data.fetchAll(db, sql: "SELECT row FROM set_row WHERE row_set = ?", arguments: [set.value]).map(Blob.row))
+    }
     var loaded: [SyncCore.Row] = []
     for key in selection.keys {
-      if let row = try row(table, of: id, in: scope, key) { loaded.append(row) }
+      if let row = try row(in: set, key) { loaded.append(row) }
     }
     for type in selection.types {
-      let records = try Data.fetchAll(db, sql: "SELECT row FROM \(table.rawValue) WHERE replica = ? AND scope = ? AND type = ?",
-                                      arguments: [id, scope.text, type])
+      let records = try Data.fetchAll(db.cachedStatement(sql: "SELECT row FROM set_row WHERE row_set = ? AND type = ?"),
+                                      arguments: [set.value, type])
       loaded += try records.map(Blob.row).filter { !selection.keys.contains($0.key) }
     }
-    let empty = try !Bool.fetchOne(db, sql: "SELECT EXISTS (SELECT 1 FROM \(table.rawValue) WHERE replica = ? AND scope = ?)",
-                                   arguments: [id, scope.text])!
+    let empty = try !Bool.fetchOne(db.cachedStatement(sql: "SELECT EXISTS (SELECT 1 FROM set_row WHERE row_set = ?)"),
+                                   arguments: [set.value])!
     return Rows(loaded: loaded, keys: selection.keys, types: selection.types, empty: empty)
   }
 
   // A pull page loads every row it carries by key, so the lookup is prepared once per connection.
-  func row(_ table: BatchWriter.RowTable, of id: String, in scope: ScopeRef, _ key: RecordKey) throws -> SyncCore.Row? {
-    try Data.fetchOne(db.cachedStatement(sql: "SELECT row FROM \(table.rawValue) WHERE replica = ? AND scope = ? AND type = ? AND id = ?"),
-                      arguments: [id, scope.text, key.type, key.id.text]).map(Blob.row)
+  func row(in set: RowSetID, _ key: RecordKey) throws -> SyncCore.Row? {
+    try Data.fetchOne(db.cachedStatement(sql: "SELECT row FROM set_row WHERE row_set = ? AND type = ? AND id = ?"),
+                      arguments: [set.value, key.type, key.id.text]).map(Blob.row)
   }
 
-  func allRows(_ table: BatchWriter.RowTable, of id: String) throws -> [(scope: ScopeRef, row: SyncCore.Row)] {
-    try GRDB.Row.fetchAll(db, sql: "SELECT scope, row FROM \(table.rawValue) WHERE replica = ?", arguments: [id]).map { record in
+  func allRows(_ role: RowRole, of handle: ReplicaHandle) throws -> [(scope: ScopeRef, row: SyncCore.Row)] {
+    try GRDB.Row.fetchAll(db, sql: """
+      SELECT row_set.scope, set_row.row FROM row_set JOIN set_row ON set_row.row_set = row_set.id
+      WHERE row_set.replica = ? AND row_set.role = ?
+      """, arguments: [handle.value, role.rawValue]).map { record in
       (try ScopeRef(record["scope"] as String), try Blob.row(record["row"]))
     }
   }
@@ -271,29 +309,32 @@ public struct StoreTransaction {
   // ER-12: the confirmed records of a type whose top-level ref `field` names `target`, in id-byte order.
   public func referencing(_ replica: String, in scope: ScopeRef, type: String, field: String, target: RecordID) throws -> [RecordKey] {
     guard registry.type(type)?.field(field)?.ref != nil else { throw StoreError.notARefField(type: type, field: field) }
+    guard let handle = try handle(of: replica) else { throw StoreError.noReplica(replica) }
+    guard let set = try rowSet(.confirmed, of: handle, in: scope) else { return [] }
     let ids = try String.fetchAll(db, sql: """
-      SELECT id FROM confirmed_ref WHERE replica = ? AND scope = ? AND type = ? AND field = ? AND target = ?
-      """, arguments: [replica, scope.text, type, field, target.text])
+      SELECT id FROM set_ref WHERE row_set = ? AND type = ? AND field = ? AND target = ?
+      """, arguments: [set.value, type, field, target.text])
     return try ids.map { RecordKey(type, try RecordID(text: $0)) }.sorted()
   }
 
   // The ref index as it stands and as the rows say it must be, as JSON lines: equal whenever the batch writer kept it true.
   public func refIndex() throws -> (stored: [JSON], expected: [JSON]) {
-    var stored: [JSON] = []
+    let stored = try GRDB.Row.fetchAll(db, sql: "SELECT * FROM set_ref").map { record -> JSON in
+      .array([JSON(record["row_set"] as Int64)] + ["type", "field", "target", "id"].map { .string(record[$0] as String) })
+    }
     var expected: [JSON] = []
-    for table in [BatchWriter.RowTable.confirmed, .staging] {
-      stored += try GRDB.Row.fetchAll(db, sql: "SELECT * FROM \(table.rawValue)_ref").map { record in
-        .array(([table.rawValue] + ["replica", "scope", "type", "field", "target", "id"].map { record[$0] as String }).map { .string($0) })
-      }
-      for record in try GRDB.Row.fetchAll(db, sql: "SELECT replica, scope, row FROM \(table.rawValue)") {
-        let row = try Blob.row(record["row"])
-        let (replica, scope): (String, String) = (record["replica"], record["scope"])
-        for (field, target) in BatchWriter.references(of: row, registry: registry) {
-          expected.append(.array([table.rawValue, replica, scope, row.key.type, field, target.text, row.key.id.text].map { .string($0) }))
-        }
+    for record in try GRDB.Row.fetchAll(db, sql: "SELECT row_set, row FROM set_row") {
+      let row = try Blob.row(record["row"])
+      for (field, target) in BatchWriter.references(of: row, registry: registry) {
+        expected.append(.array([JSON(record["row_set"] as Int64)] + [row.key.type, field, target.text, row.key.id.text].map { .string($0) }))
       }
     }
     return (stored.sorted { $0.jcsPrecedes($1) }, expected.sorted { $0.jcsPrecedes($1) })
+  }
+
+  // The rows no view reads, left for the sweep (§2.5): how many, in the row sets that hold no role.
+  public func releasedRows() throws -> Int {
+    try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM set_row JOIN row_set ON row_set.id = set_row.row_set WHERE row_set.role IS NULL")!
   }
 
   // The outbox's touch index as it stands and as the entries say it must be, as JSON lines: equal whenever the batch

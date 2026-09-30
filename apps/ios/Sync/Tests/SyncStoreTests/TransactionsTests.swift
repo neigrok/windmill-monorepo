@@ -121,53 +121,61 @@ struct TransactionsTests {
 
   // A commit reads what it touches by key: the ids it mints once drawn, the entries that touch the records it reads, the
   // held gestures when it retires, and the commit orders above what it read; a push result's `ok` reads its own entry,
-  // and an epoch the replica already holds reads no entry. Every statement searches an index but each commit's read of
-  // the one device row, and none reads more for a fuller store.
+  // and an epoch the replica already holds reads no entry. Each finds its replica's handle by id once. Every statement
+  // searches an index but each commit's read of the one device row, and none reads more for a fuller store.
   @Test func aCommitAndAPushResultReadByKeyWhateverTheStoreHolds() throws {
     let runs = try [0, 40].map(Self.readsOfACommitAndAResult)
     #expect(runs[0].reads == runs[1].reads)
     #expect(runs.flatMap(\.scans) == Array(repeating: "SCAN device", count: 6))
-    let device = "SELECT fork_guard, pending_sign_in, active_replica FROM device"
-    let replica = #"SELECT * FROM replica WHERE replica = 'rp_1'"#
-    let cursors = #"SELECT * FROM cursor WHERE replica = 'rp_1'"#
-    let known = #"SELECT scope, kind FROM known_scope WHERE replica = 'rp_1'"#
-    let deviceRows = #"SELECT product, key, value FROM device_row WHERE replica = 'rp_1'"#
-    let anyRow = #"SELECT EXISTS (SELECT 1 FROM confirmed WHERE replica = 'rp_1' AND scope = 'self/probe')"#
-    let spent = #"SELECT type, id, born FROM spent WHERE replica = 'rp_1' AND scope = 'self/probe'"#
+    let device = "SELECT fork_guard, pending_sign_in, replica.id AS active FROM device JOIN replica ON replica.handle = device.active_replica"
+    let replica = #"SELECT * FROM replica WHERE id = 'rp_1'"#
+    let active = "SELECT active_replica FROM device WHERE id = 1"
+    let handle = #"SELECT handle FROM replica WHERE id = 'rp_1'"#
+    let cursors = "SELECT * FROM cursor WHERE replica = 1"
+    let known = "SELECT scope, kind FROM known_scope WHERE replica = 1"
+    let deviceRows = "SELECT product, key, value FROM device_row WHERE replica = 1"
+    let confirmed = #"SELECT id FROM row_set WHERE replica = 1 AND scope = 'self/probe' AND role = 'confirmed'"#
+    let anyRow = "SELECT EXISTS (SELECT 1 FROM set_row WHERE row_set = 1)"
+    let spent = #"SELECT type, id, born FROM spent WHERE replica = 1 AND scope = 'self/probe'"#
     let row = { (type: String, id: String) in
-      #"SELECT row FROM confirmed WHERE replica = 'rp_1' AND scope = 'self/probe' AND type = '"# + type + #"' AND id = '""# + id + #""'"#
+      #"SELECT row FROM set_row WHERE row_set = 1 AND type = '"# + type + #"' AND id = '""# + id + #""'"#
     }
     let touching = { (type: String, id: String) in
       "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
         + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + #"' AND outbox_touch.id = '""# + id
-        + #""' AND outbox.replica = 'rp_1'"#
+        + #""' AND outbox.replica = 1"#
     }
     let carried = { (gestureId: String) in
       [#"SELECT EXISTS (SELECT 1 FROM outbox WHERE gesture_id = '"# + gestureId + "')",
        #"SELECT id FROM notice WHERE id >= 'notice:"# + gestureId + #"/' AND id < 'notice:"# + gestureId + "0'"]
     }
-    let cards = #"SELECT row FROM confirmed WHERE replica = 'rp_1' AND scope = 'self/probe' AND type = 'card'"#
+    let cards = #"SELECT row FROM set_row WHERE row_set = 1 AND type = 'card'"#
     let touchingCards = "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
-      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'card' AND outbox.replica = 'rp_1'"#
+      + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = 'card' AND outbox.replica = 1"#
     let heldGestures = "SELECT gesture.* FROM outbox AS held JOIN outbox AS gesture USING (gesture_id)\n"
-      + #"WHERE held.replica = 'rp_1' AND held.state = 'held' AND gesture.replica = 'rp_1'"#
-    let above = { (count: Int) in #"SELECT local_id, commit_order FROM outbox WHERE replica = 'rp_1' ORDER BY commit_order DESC LIMIT "# + "\(count)" }
-    #expect(runs[0].reads == [
-      [
-        device, replica, replica, cursors, anyRow, spent, above(1), known, deviceRows,
-        replica, cursors, row("lap", "0123456789ABCDEF"), anyRow, spent, touching("lap", "0123456789ABCDEF"), above(1), known, deviceRows,
-      ] + carried("g1"),
-      [replica, replica, cursors, #"SELECT * FROM outbox WHERE replica = 'rp_1' AND state = 'sent' AND n = 1"#, above(2), known, deviceRows],
-      [replica, replica, cursors, above(1), known, deviceRows],
-      [
-        device, replica, replica, cursors, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
-        above(1), known, deviceRows,
-      ] + carried("g2"),
-      [
-        device, replica, replica, cursors, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
-        heldGestures, above(2), known, deviceRows,
-      ] + carried("g3"),
-    ])
+      + "WHERE held.replica = 1 AND held.state = 'held' AND gesture.replica = 1"
+    let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
+    let mint: [String] = [
+      device, replica, replica, cursors, confirmed, anyRow, spent, above(1), known, deviceRows, active,
+      replica, cursors, confirmed, row("lap", "0123456789ABCDEF"), anyRow, spent, touching("lap", "0123456789ABCDEF"), above(1), known,
+      deviceRows, active,
+    ]
+    let result: [String] = [
+      replica, replica, cursors, "SELECT * FROM outbox WHERE replica = 1 AND state = 'sent' AND n = 1", above(2), known, deviceRows, active, handle,
+    ]
+    let heldDelete: [String] = [
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      above(1), known, deviceRows, active,
+    ]
+    let retiring: [String] = [
+      device, replica, replica, cursors, confirmed, row("card", "card0001"), cards, anyRow, spent, touching("card", "card0001"), touchingCards,
+      heldGestures, above(2), known, deviceRows, active,
+    ]
+    let expected: [[String]] = [
+      mint + carried("g1") + [handle], result, [replica, replica, cursors, above(1), known, deviceRows, active],
+      heldDelete + carried("g2") + [handle], retiring + carried("g3") + [handle],
+    ]
+    #expect(runs[0].reads == expected)
   }
 
   // The statements that read, of a commit minting a lap, of the `ok` of the entry numbered 1, of the epoch the replica
@@ -201,7 +209,7 @@ struct TransactionsTests {
     _ = try store.commit(Gesture(changes: [.create("lap", ["runId": "run00001", "weight": 5])]), in: scope, instance: instance,
                          identities: identities)
     let commit = taken()
-    try apply(.result(try PushResult(json: ["n": 1, "s": "ok", "seq": 2]), lastN: 1, epoch: "ep-1"))
+    try apply(.results(ResultBatch(results: [try PushResult(json: ["n": 1, "s": "ok", "seq": 2])], lastN: 1, epoch: "ep-1", isLast: false)))
     let result = taken()
     try apply(.epoch("ep-1"))
     let epoch = taken()
@@ -294,13 +302,16 @@ struct TransactionsTests {
         action = "number"
         agreed = Self.agree(Result { try store.number(at: deviceNow).value }, Result { try pushes.number(&whole, at: deviceNow) })
       case ..<82:
-        let sent = whole.outbox.filter { $0.state == .sent }
-        guard let entry = sent.isEmpty ? nil : random.pick(sent) else { continue }
-        seq += 1
-        let verdict: JSON = random.chance(0.75) ? ["n": JSON(entry.n!), "s": "ok", "seq": JSON(seq)]
-          : ["n": JSON(entry.n!), "s": "refused", "code": .string(random.pick(["stale", "invalid", "clock-skew"]))]
-        let result = PushStep.result(try PushResult(json: verdict), lastN: sent.map { $0.n! }.max()!, epoch: "ep-1")
-        action = "result"
+        let sent = whole.outbox.filter { $0.state == .sent }.sorted { $0.n! < $1.n! }
+        guard !sent.isEmpty else { continue }
+        let answered = Array(sent.prefix(1 + random.below(min(3, sent.count))))
+        let verdicts = try answered.map { entry -> PushResult in
+          seq += 1
+          return try PushResult(json: random.chance(0.75) ? ["n": JSON(entry.n!), "s": "ok", "seq": JSON(seq)]
+            : ["n": JSON(entry.n!), "s": "refused", "code": .string(random.pick(["stale", "invalid", "clock-skew"]))])
+        }
+        let result = PushStep.results(ResultBatch(results: verdicts, lastN: sent.map { $0.n! }.max()!, epoch: "ep-1", isLast: false))
+        action = "results"
         agreed = Self.agree(
           Result { try store.apply(result, replica: "rp_1", instance: &storeInstance, timing: timing, identities: try none()).value },
           Result { () -> String? in
@@ -308,7 +319,7 @@ struct TransactionsTests {
             return whole.id
           })
       case ..<88:
-        let ack = PushStep.ack(lastN: whole.meta.nextN - 1)
+        let ack = PushStep.results(ResultBatch(results: [], lastN: whole.meta.nextN - 1, epoch: "ep-1", isLast: true))
         action = "ack"
         agreed = Self.agree(
           Result { try store.apply(ack, replica: "rp_1", instance: &storeInstance, timing: timing, identities: try none()).value },
@@ -568,17 +579,8 @@ struct StoredDevice: ClientDevice {
   mutating func dismiss(_ noticeId: String) throws { take(try store.dismissNotice(noticeId)) }
   mutating func push(limit: Int?, at deviceNow: Int64) throws -> PushRequest? { take(try store.number(limit: limit, at: deviceNow)) }
 
-  // Each step of the answer in its own transaction, as the sender runs them.
-  mutating func receive(_ answer: Answer<PushResponse>, to request: PushRequest, instance: inout Instance, timing: Timing,
-                        identities: IdentitySource) throws -> Int? {
-    var replica: String? = try active()
-    var limit: Int?
-    for step in PushPlanner(registry: store.registry, limits: store.limits).steps(for: answer, to: request) {
-      if case .halve(let half, _) = step { limit = half }
-      guard let current = replica else { break }
-      replica = take(try store.apply(step, replica: current, instance: &instance, timing: timing, identities: identities))
-    }
-    return limit
+  mutating func apply(_ step: PushStep, instance: inout Instance, timing: Timing, identities: IdentitySource) throws {
+    _ = take(try store.apply(step, replica: try active(), instance: &instance, timing: timing, identities: identities))
   }
 
   mutating func hello(_ answer: Answer<HelloResponse>, timing: Timing) throws {
@@ -595,29 +597,21 @@ struct StoredDevice: ClientDevice {
 
   mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest? { try store.pullPlan(scopes, replica: active())!.request }
 
-  // Each step of the answer in its own transaction, following the replica through an epoch change's re-identify.
-  mutating func receive(_ answer: Answer<PullResponse>, to request: PullRequest, instance: inout Instance, timing: Timing,
-                        identities: IdentitySource) throws -> [(scope: ScopeRef, outcome: PageOutcome)] {
-    var replica: String? = try active()
-    var outcomes: [(scope: ScopeRef, outcome: PageOutcome)] = []
-    let subscribed = Set(request.scopes.map(\.scope))
-    let account = try activeReplica().meta.account
-    for step in PageApplier(registry: store.registry).steps(for: answer, to: request, account: account) {
-      guard let current = replica else { break }
-      let applied = take(try store.apply(step, replica: current, account: account, subscribed: subscribed, instance: &instance,
-                                         timing: timing, identities: identities))
-      replica = applied?.replica
-      if case .page(let page, _) = step, let outcome = applied?.outcome { outcomes.append((page.scope, outcome)) }
-    }
-    return outcomes
+  mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
+                      identities: IdentitySource) throws -> PageOutcome? {
+    let replica = try activeReplica().meta
+    let applied = take(try store.apply(step, replica: replica.replica, account: replica.account, subscribed: .given(subscribed),
+                                       instance: &instance, timing: timing, identities: identities))
+    guard let applied else { throw VectorError("the store dropped a step of the active replica") }
+    return applied.outcome
   }
 
-  mutating func apply(_ frame: LiveFrame, instance: Instance) throws -> FrameOutcome {
-    guard let scope = frame.scope else { return .ignored }
-    return take(try store.apply(frame, replica: active(), subscribed: [scope], instance: instance))!.outcome
+  mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {
+    take(try store.apply(frame, replica: active(), subscribed: .given(subscribed), instance: instance))!.outcome
   }
+
   mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome { take(try store.subscribe(scope)) }
-  mutating func reconcile(_ scopes: Set<ScopeRef>) throws { take(try store.reconcile(subscribed: scopes)) }
+  mutating func reconcile(_ set: SubscriptionSet) throws -> [ScopeRef] { take(try store.reconcile(set)) }
 
   mutating func signIn(account: String, holdsRecords: [String: Bool], decisions: [String: LineageAnswer],
                        counted: [String: [String]], identities: IdentitySource) throws -> SignIn {

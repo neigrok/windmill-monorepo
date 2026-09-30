@@ -12,6 +12,7 @@ import Testing
 
 struct LiveChannelTests {
   static let tree = ScopeRef.tree("b_00000001")
+  static let overlay = ScopeRef.overlay("b_00000001")
 
   // A bound device with its socket open, following its product scope.
   static func open() async throws -> (rig: Rig, socket: FakeLiveConnection) {
@@ -83,9 +84,10 @@ struct LiveChannelTests {
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .unsub([Self.tree])])
   }
 
-  // §7.9: a tree whose board's create is in the outbox is not followed, and a not-found frame for it is ignored, so
-  // nothing is known of it; the create's result wakes the channel, which then follows the tree.
-  @Test func aTreeWaitingForItsBoardsCreateIsFollowedOnceTheCreateHasItsResult() async throws {
+  // §7.9: a tree whose board's create is in the outbox is not followed, nor its overlay, and a not-found frame for the
+  // tree is ignored, so nothing is known of it, and the tree is in doubt. The create's result wakes the channel, which
+  // then follows the overlay; the tree it follows once a rows page of it has ended the doubt.
+  @Test func aTreeWaitingForItsBoardsCreateIsFollowedOnceTheCreateHasItsResultAndItsDoubtEnded() async throws {
     let (rig, socket) = try await Self.open()
     try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))]))
     try rig.engine.subscribe(Self.tree)
@@ -103,13 +105,20 @@ struct LiveChannelTests {
     #expect(await rig.engine.sender.step() == .again)
     #expect(rig.engine.live.wake.kicks > kicks)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree])])
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.overlay])])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(in: Self.tree, seq: 0), Rig.rows(in: Self.overlay, seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([
+      PageReport(scope: Self.tree, outcome: .applied), PageReport(scope: Self.overlay, outcome: .applied),
+    ]))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.overlay]), .sub([Self.tree])])
   }
 
   // §6.8, §7.9: the socket subscribed the tree before its board reached the server, which answered not-found and kept no
-  // subscription. The frame lands after the board's create is acked, so it is ignored; the tree, still pulled, is
-  // subscribed again, and pulled, since the stale answer left it unbooted.
-  @Test func aTreeWhoseStaleNotFoundFrameIsIgnoredIsSubscribedAgain() async throws {
+  // subscription. The frame lands after the board's create is acked, so it is ignored, and the tree is in doubt: no `sub`
+  // goes out for it, while the overlay that joined with the board is followed. The next pull brings the tree's rows,
+  // which ends the doubt, and the tree is followed again.
+  @Test func aTreeWhoseStaleNotFoundFrameIsIgnoredIsSubscribedAgainOnceItsRowsCame() async throws {
     let (rig, socket) = try await Self.open()
     try rig.engine.subscribe(Self.tree)
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
@@ -121,25 +130,89 @@ struct LiveChannelTests {
     #expect(await rig.engine.puller.step() == .frame(Self.tree, .ignored))
     #expect(try rig.active().known == [:])
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
-    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.tree])])
-    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 1), Rig.rows(in: Self.tree, seq: 0)]))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.overlay])])
+    rig.transport.willAnswerPull(200, Rig.pulled([
+      Rig.rows([try PullerTests.board(seq: 1)], seq: 1), Rig.rows(in: Self.tree, seq: 0), Rig.rows(in: Self.overlay, seq: 0),
+    ]))
     #expect(await rig.engine.puller.step() == .pulled([
       PageReport(scope: Rig.scope, outcome: .applied), PageReport(scope: Self.tree, outcome: .applied),
+      PageReport(scope: Self.overlay, outcome: .applied),
     ]))
     #expect(rig.transport.pulls.last == PullRequest(scopes: [
       PullRequest.Pulled(scope: Rig.scope, cursor: nil), PullRequest.Pulled(scope: Self.tree, cursor: nil),
+      PullRequest.Pulled(scope: Self.overlay, cursor: nil),
     ]))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Self.tree]), .sub([Self.overlay]), .sub([Self.tree])])
   }
 
-  // §6.8, §7.9: an ignored end frame drops its scope from what the socket follows, so a later keep sends `sub` again.
+  // §6.8, §7.9: an ignored end frame drops its scope from what the socket follows and puts it in doubt: no `sub` goes out
+  // for it until a rows page of it is applied, which ends the doubt, and the next keep sends `sub` again.
   @Test(arguments: [KnownKind.gone, .notFound])
-  func anIgnoredEndFrameDropsItsScopeSoALaterKeepSendsSubAgain(_ kind: KnownKind) async throws {
+  func anIgnoredEndFrameIsSubscribedAgainOnlyOnceARowsPageEndsItsDoubt(_ kind: KnownKind) async throws {
     let (rig, socket) = try await Self.open()
     socket.deliver(kind == .gone ? .gone(Rig.scope, servedAs: "A") : .notFound(Rig.scope, servedAs: "A"))
     #expect(await rig.engine.live.receiveNext())
     #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope])])
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
     #expect(socket.sent == [.sub([Rig.scope]), .sub([Rig.scope])])
+  }
+
+  // An ignored end page leaves the scope followed, if it was, through its doubt, and the socket sends no `sub` for it.
+  @Test func anIgnoredEndPageLeavesItsScopeFollowed() async throws {
+    let (rig, socket) = try await Self.open()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope])])
+    #expect(rig.engine.doubts.inDoubt(Rig.scope))
+  }
+
+  // §7.9: a gone or not-found frame ends the scope's followed stretch as it arrives; one of 31 s returns its k to 0, so
+  // the doubt the frame starts draws from k = 0 again.
+  @Test func aFrameStartedDoubtAfterThirtySecondsFollowedDrawsFromKZero() async throws {
+    let (rig, socket) = try await Self.open()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    socket.deliver(.notFound(Rig.scope, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
+    #expect(rig.engine.doubts.k(Rig.scope) == 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    rig.engine.puller.wants.add([Rig.scope])
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(!rig.engine.doubts.inDoubt(Rig.scope))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .sub([Rig.scope])])
+    rig.clock.advance(ms: 31_000)
+    socket.deliver(.notFound(Rig.scope, servedAs: "A"))
+    #expect(await rig.engine.live.receiveNext())
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .ignored))
+    #expect(rig.engine.doubts.k(Rig.scope) == 1)
+  }
+
+  // A close the client makes ends the scope's followed stretch: 10 s followed, then 25 s closed, is no stretch of 30 s,
+  // so the next ignored end draws on the scope's k as it stood.
+  @Test func aCloseEndsTheFollowedStretch() async throws {
+    let (rig, _) = try await Self.open()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    rig.engine.puller.wants.add([Rig.scope])
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(await rig.engine.live.step() == .open(ms: 25_000))
+    rig.clock.advance(ms: 10_000)
+    try rig.engine.leave()
+    #expect(await rig.engine.live.step() == .idle)
+    rig.clock.advance(ms: 25_000)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.page(Rig.scope, "not-found")]))
+    rig.engine.puller.wants.add([Rig.scope])
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .ignored)]))
+    #expect(rig.engine.doubts.k(Rig.scope) == 2)
   }
 
   // §6.8, §7.9: an applied end frame sends no `unsub`; a subscribe sends `sub` again for a tree not found, not one gone.
@@ -205,14 +278,15 @@ struct LiveChannelTests {
 
   // MARK: Frames
 
-  // Change, gone and not-found frames go to the puller's queue; a pong keeps the heartbeat, and other ops are ignored.
+  // Change, gone and not-found frames go to the puller's queue, which applies nothing of one outside the subscription set;
+  // a pong keeps the heartbeat, and other ops are ignored.
   @Test func framesGoToThePullerAndOtherOpsAreIgnored() async throws {
     let (rig, socket) = try await Self.open()
     try socket.deliver(["op": "presence", "scope": "self/probe", "who": "B"])
     socket.deliver(.pong)
     socket.deliver(.notFound(Self.tree, servedAs: "A"))
     for _ in 0..<3 { #expect(await rig.engine.live.receiveNext()) }
-    #expect(await rig.engine.puller.step() == .frame(Self.tree, nil))
+    #expect(await rig.engine.puller.step() == .frame(Self.tree, .outside))
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
     #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
   }
@@ -275,9 +349,22 @@ struct LiveChannelTests {
     #expect(await rig.engine.live.step() == .open(ms: 25_000))
   }
 
+  // The ping waits LIVE_PING_MS from the last frame or pong heard, whatever the frame.
+  @Test func anyFrameHeardPutsTheNextPingOff() async throws {
+    let (rig, socket) = try await Self.open()
+    rig.clock.advance(ms: 20_000)
+    try socket.deliver(["op": "presence", "scope": "self/probe", "who": "B"])
+    #expect(await rig.engine.live.receiveNext())
+    rig.clock.advance(ms: 5_000)
+    #expect(await rig.engine.live.step() == .open(ms: 20_000))
+    rig.clock.advance(ms: 20_000)
+    #expect(await rig.engine.live.step() == .open(ms: 10_000))
+    #expect(socket.sent == [.sub([Rig.scope]), .ping])
+  }
+
   // A pong the reader receives while the ping is still being sent keeps the socket: the ping's deadline is set before
   // the send, not after it.
-  @Test func aPongReceivedWhileItsPingIsSentKeepsTheSocket() async throws {
+  @Test(.timeLimit(.minutes(1))) func aPongReceivedWhileItsPingIsSentKeepsTheSocket() async throws {
     let rig = try Rig(account: "A")
     let socket = FakeLiveConnection()
     let pinging = Gate()
@@ -399,7 +486,7 @@ struct LiveChannelTests {
   }
 
   // A handshake 401 to a token the account replaced meanwhile pauses nothing, and the next step opens under the new one.
-  @Test func aHandshake401ToATokenReplacedMeanwhilePausesNothing() async throws {
+  @Test(.timeLimit(.minutes(1))) func aHandshake401ToATokenReplacedMeanwhilePausesNothing() async throws {
     let rig = try Rig(account: "A")
     let gate = Gate()
     rig.transport.willRefuseLive(401, after: gate)
@@ -416,7 +503,7 @@ struct LiveChannelTests {
   }
 
   // A socket opened for a seat that changed during the handshake (here the app left) closes at once.
-  @Test func aSocketOpenedAfterTheAppLeftClosesAtOnce() async throws {
+  @Test(.timeLimit(.minutes(1))) func aSocketOpenedAfterTheAppLeftClosesAtOnce() async throws {
     let rig = try Rig(account: "A")
     let socket = FakeLiveConnection()
     let gate = Gate()

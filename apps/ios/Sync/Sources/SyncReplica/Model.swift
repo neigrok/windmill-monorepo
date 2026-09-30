@@ -248,15 +248,17 @@ public struct CursorRecord: Sendable, Hashable {
   public var cursor: String?
   public var digest: ScopeDigest
   public var booted: Bool
+  public var behind: Bool
   public var mismatchReset: Bool
   public var digestStop: String?
 
-  // `cursor` nil boots at the next pull; `digest` is the §6.12 sum of the scope's confirmed rows.
-  public init(cursor: String? = nil, digest: ScopeDigest = .zero, booted: Bool = false, mismatchReset: Bool = false,
-              digestStop: String? = nil) {
+  // `cursor` nil boots at the next pull; `digest` is the §6.12 sum of the scope's confirmed rows; `behind` is §2.5's.
+  public init(cursor: String? = nil, digest: ScopeDigest = .zero, booted: Bool = false, behind: Bool = false,
+              mismatchReset: Bool = false, digestStop: String? = nil) {
     self.cursor = cursor
     self.digest = digest
     self.booted = booted
+    self.behind = behind
     self.mismatchReset = mismatchReset
     self.digestStop = digestStop
   }
@@ -265,12 +267,13 @@ public struct CursorRecord: Sendable, Hashable {
     let cursor = try json.member("cursor")
     self.init(
       cursor: cursor.isNull ? nil : try cursor.asString(), digest: try ScopeDigest(hex: json.member("digest").asString()),
-      booted: try json.member("booted").asBool(), mismatchReset: try json["mismatchReset"]?.asBool() ?? false,
-      digestStop: try json["digestStop"]?.asString())
+      booted: try json.member("booted").asBool(), behind: try json["behind"]?.asBool() ?? false,
+      mismatchReset: try json["mismatchReset"]?.asBool() ?? false, digestStop: try json["digestStop"]?.asString())
   }
 
   public var json: JSON {
     var object: JSON.Object = ["cursor": cursor.map { .string($0) } ?? .null, "digest": .string(digest.hex), "booted": .bool(booted)]
+    object["behind"] = behind ? true : nil
     object["mismatchReset"] = mismatchReset ? true : nil
     object["digestStop"] = digestStop.map { .string($0) }
     return .object(object)
@@ -410,6 +413,11 @@ public struct RowSelection: Sendable, Hashable {
     self.types = types
     self.all = all
   }
+
+  // What either selection reads.
+  public func union(_ other: RowSelection) -> RowSelection {
+    RowSelection(keys: keys.union(other.keys), types: types.union(other.types), all: all || other.all)
+  }
 }
 
 // What a planner reads of one replica's outbox, so its Action loads exactly that: every entry, or the entries that touch
@@ -430,13 +438,15 @@ public struct EntrySelection: Sendable, Hashable {
 
 // MARK: - Events
 
-// What a planner reports beside its writes: intents that reached a terminal outcome, and telemetry.
+// What a planner reports beside its writes: intents that ended, telemetry, and §7.12's change of the active replica.
 public enum EngineEvent: Sendable, Hashable {
   // `orphanOf`: the refused entry whose notice holds this entry's content.
   case ended(localId: String, outcome: Outcome, event: IntentEvent, orphanOf: String?)
   // `kind`: product, tree or overlay; no row content.
   case digestMismatch(kind: String, seq: Int64)
   case pushMalformed
+  // `activeReplica()` answers `replica` where it answered `previous`; not durable.
+  case activeReplicaChanged(previous: String, replica: String)
 
   public var json: JSON {
     switch self {
@@ -446,12 +456,21 @@ public enum EngineEvent: Sendable, Hashable {
       return .object(object)
     case .digestMismatch(let kind, let seq): return ["event": "sync-digest-mismatch", "kind": .string(kind), "seq": JSON(seq)]
     case .pushMalformed: return ["event": "sync-push-malformed"]
+    case .activeReplicaChanged(let previous, let replica):
+      return ["event": "activeReplicaChanged", "previous": .string(previous), "replica": .string(replica)]
     }
   }
 
+  public var isEnded: Bool {
+    if case .ended = self { return true }
+    return false
+  }
+
   public var isTelemetry: Bool {
-    if case .ended = self { return false }
-    return true
+    switch self {
+    case .digestMismatch, .pushMalformed: true
+    case .ended, .activeReplicaChanged: false
+    }
   }
 }
 
@@ -509,16 +528,21 @@ extension Notice {
 
 // MARK: - What planners are given
 
+// A planner's bounds; `chunkRows` and `resultsPerBatch` size a page's chunks and a push answer's batches (§2.5 the writer).
 public struct Limits: Sendable, Hashable {
   public var holdMs: Int64
   public var pushMaxIntents: Int
   public var pushMaxBytes: Int
+  public var chunkRows: Int
+  public var resultsPerBatch: Int
 
   public init(holdMs: Int64 = Constants.holdMs, pushMaxIntents: Int = Constants.pushMaxIntents,
-              pushMaxBytes: Int = Constants.pushMaxBytes) {
+              pushMaxBytes: Int = Constants.pushMaxBytes, chunkRows: Int = 100, resultsPerBatch: Int = 16) {
     self.holdMs = holdMs
     self.pushMaxIntents = pushMaxIntents
     self.pushMaxBytes = pushMaxBytes
+    self.chunkRows = chunkRows
+    self.resultsPerBatch = resultsPerBatch
   }
 }
 
@@ -533,6 +557,22 @@ public struct Instance: Sendable, Hashable {
     self.deviceNow = deviceNow
     self.appVersion = appVersion
   }
+}
+
+public protocol RandomSource: Sendable {
+  // 64 uniformly random bits; the engine's only randomness.
+  func next() -> UInt64
+}
+
+// A source as the standard library's generator, for uniform draws in a range.
+package struct Draws: RandomNumberGenerator {
+  let source: any RandomSource
+
+  package init(source: any RandomSource) {
+    self.source = source
+  }
+
+  package mutating func next() -> UInt64 { source.next() }
 }
 
 // Every new identity a planner mints: CSPRNG draws for ids (D-8), gesture and replica ids, actors and fork guards.

@@ -47,7 +47,7 @@ struct AppLifecycleTests {
     #expect(time.ended == [1])
   }
 
-  @Test func timeRunningOutCancelsTheFlushAndIsHandedBackOnce() async throws {
+  @Test(.timeLimit(.minutes(1))) func timeRunningOutCancelsTheFlushAndIsHandedBackOnce() async throws {
     try holdCard()
     let gate = Gate()
     transport.willAnswerPush(200, Self.admitted, after: gate)
@@ -78,7 +78,7 @@ struct AppLifecycleTests {
 
   // Coming back while the flush pushes: the foreground app opens its live socket again, and the flush's end leaves it
   // open. Found in review, where the flush closed it and no socket opened until the next heartbeat look.
-  @Test func comingBackWhileTheFlushPushesKeepsTheSocketTheAppOpened() async throws {
+  @Test(.timeLimit(.minutes(1))) func comingBackWhileTheFlushPushesKeepsTheSocketTheAppOpened() async throws {
     try holdCard()
     let gate = Gate()
     transport.willAnswerPush(200, Self.admitted, after: gate)

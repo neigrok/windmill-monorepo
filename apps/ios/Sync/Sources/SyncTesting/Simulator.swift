@@ -58,6 +58,8 @@ package final class Simulator {
     case release, undo, foreground
     case leave(flushing: Bool)
     case relaunch(reboot: Bool)
+    // The process dies once `commits` transactions of a pull's or a push's answer have committed.
+    case die(afterCommits: Int, pulling: Bool)
     case loseForkGuardCopy
     case corruptDigest
     case signIn(LineageAnswer?)
@@ -72,6 +74,7 @@ package final class Simulator {
     case skew(ms: Int64), jump(ms: Int64)
     case advance(ms: Int64)
     case setVisibility, admitDelayed, dismissNotice, subscribe, unsubscribe
+    case sweep
   }
 
   // One phone of the run, and what the checks hold it to: every entry its commits returned (INV-3) and what each last
@@ -103,6 +106,8 @@ package final class Simulator {
     var seenTags: [String: [RecordID]] = [:]
     // The simulation corrupted a digest this phone keeps, so the mismatch it then finds is expected (INV-15).
     var digestCorrupted = false
+    // The active replica's id as the phone's announcements left it (§7.12); nil before the first is seen.
+    var announcedActive: String?
 
     // What every entry the phone holds writes is read after each transaction its store commits, so an entry's content is
     // known as it stood when a later transaction refused it, a joining write map's rewrite of its keys included.
@@ -135,6 +140,8 @@ package final class Simulator {
 
   static let startMs: Int64 = 1_800_000_000_000
   static let maxPhones = 5
+  // Pages apply two rows a chunk and push answers one result a batch, so deaths fall between them (§11.3).
+  static let limits = Limits(chunkRows: 2, resultsPerBatch: 1)
 
   package let seed: UInt64
   let registry: Registry
@@ -174,15 +181,15 @@ package final class Simulator {
     let server = ModelServerHandle(
       ModelServer(registry: registry, rules: ProbeServerRules(), state: ServerState(epoch: "ep-0", accounts: ["A": "Ann", "B": "Bob"])),
       clock: world)
-    fleet = Fleet(registry: registry, network: SimNetwork(server: server), seed: seed)
+    fleet = Fleet(registry: registry, network: SimNetwork(server: server), seed: seed, limits: Self.limits)
     rowsSeen = server.rowsVersion
     let (pushes, fleet) = (pushes, fleet)
     fleet.network.watchPushes { [weak fleet] served in pushes.record(served, devices: fleet?.devices ?? []) }
     for spec in specs {
       let clock = SimClock(wallMs: Self.startMs)
       clock.skew(ms: spec.skewMs)
-      let phone = Phone(name: spec.name, account: spec.account,
-                        device: SteppedEngine(joining: fleet, name: spec.name, clock: clock, account: spec.account, killer: spec.killer))
+      let phone = Phone(name: spec.name, account: spec.account, device: SteppedEngine(
+        joining: fleet, name: spec.name, clock: clock, account: spec.account, killer: spec.killer ?? Killer()))
       phones.append(phone)
       await phone.device.start()
       if spec.signedIn { await signIn(phone, answering: .add) }
@@ -202,6 +209,7 @@ package final class Simulator {
   // event lost. A kill test holds the store to an unkilled run's at the same commit, whose own ledger saw that ending.
   package func processDied(on index: Int) {
     let phone = phones[index]
+    phone.announcedActive = try? phone.active().id
     let held = (try? phone.device.store.read { try $0.device().replicas.flatMap { $0.outbox.map(\.localId) } }) ?? []
     let seen = Set(phone.ended.compactMap { if case .ended(let localId, _, _, _) = $0 { localId } else { nil } })
     phone.endedUnseen.formUnion(phone.committed.filter { !held.contains($0) && !seen.contains($0) })
@@ -243,7 +251,7 @@ package final class Simulator {
     case _ where !faults: nil
     case ..<720: .frameFault
     case ..<740: .relaunch(reboot: rng.chance(0.3))
-    case ..<752: .signIn(rng.chance(0.2) ? nil : rng.chance(0.8) ? .add : .discard)
+    case ..<752: .signIn(rng.chance(0.2) ? nil : rng.chance(0.5) ? .add : .discard)
     case ..<762: .signOut(rng.chance(0.2) ? nil : rng.chance(0.8) ? .keep : .discard)
     case ..<767: .discardDormant
     case ..<771: .revokeSession
@@ -260,6 +268,9 @@ package final class Simulator {
     case ..<878: .jump(ms: Int64(rng.below(1_200_000) - 600_000))
     case ..<888: .setVisibility
     case ..<900: .admitDelayed
+    case ..<904: .die(afterCommits: 3 + rng.below(4), pulling: true)
+    case ..<910: .die(afterCommits: 3 + rng.below(2), pulling: false)
+    case ..<918: .sweep
     default: .advance(ms: Int64(rng.below(60_000)))
     }
     guard let action else { return }
@@ -413,6 +424,7 @@ package final class Simulator {
     case .foreground:
       phone.engine.foreground()
     case .relaunch(let reboot): await relaunch(phone, rebooting: reboot)
+    case .die(let commits, let pulling): await die(phone, index: index, afterCommits: commits, pulling: pulling)
     case .loseForkGuardCopy:
       phone.device.loseForkGuardCopy()
       count("fork guard copy lost")
@@ -459,6 +471,7 @@ package final class Simulator {
     case .dismissNotice: dismissNotice(on: phone)
     case .subscribe: subscribe(phone)
     case .unsubscribe: unsubscribe(phone)
+    case .sweep: sweep(phone)
     }
     settleAccounts()
   }
@@ -517,6 +530,7 @@ package final class Simulator {
     network.arm(faults)
     let before = activeReplica(on: phone)
     let step = await phone.engine.sender.step()
+    if fate == .loseReply { pushes.forgetUnrecorded(after: 0, of: phone.name) }
     checkServed(network.lastAnswer(to: .push), "push", on: phone, from: before, to: activeReplica(on: phone))
     if !network.disarm(), fate != .deliver { count("wire push \(fate)") }
     count("sender \(Self.caseName(step))")
@@ -660,6 +674,28 @@ package final class Simulator {
     if !network.disarm(), fate != .deliver { count("wire hello \(fate)") }
   }
 
+  // §11.3 the process dies inside a pull's or push's answer after `commits` of its transactions, and another launches.
+  func die(_ phone: Phone, index: Int, afterCommits commits: Int, pulling: Bool) async {
+    guard let killer = phone.device.killer else { return }
+    killer.begin(killingAt: 2 * commits - 1, store: phone.device.store)
+    if pulling {
+      phone.engine.puller.wants.all()
+      _ = await phone.engine.puller.step()
+    } else {
+      _ = await phone.engine.sender.step()
+    }
+    let (points, died) = (killer.recorded.points, killer.isDead)
+    killer.end()
+    guard died else { return }
+    if case .afterCommit(let tx)? = points.last, tx == .pullPage || tx == .results { count("death after a \(tx.rawValue) transaction") }
+    if !pulling { pushes.forgetUnrecorded(after: points.filter { $0 == .afterCommit(.results) }.count, of: phone.name) }
+    let events = phone.device.events.drain()
+    phone.ended += events
+    violations += announcements(events, on: phone, died: true)
+    processDied(on: index)
+    await relaunch(phone, rebooting: false)
+  }
+
   // A sign-in as the phone's account with a session of its own: complete at once, or the person answers the signed-out
   // decision, adding or discarding, or leaves it pending (nil).
   func signIn(_ phone: Phone, answering answer: LineageAnswer?) async {
@@ -767,9 +803,12 @@ package final class Simulator {
   // The phone restored from its backup: what the person did since is gone from it, and from what it is held to.
   func restore(_ phone: Phone, keepingForkGuardCopy kept: Bool) async {
     guard let backup = phone.backup else { return }
+    phone.announcedActive = backup.store.active
     do {
       try await phone.device.restore(backup.store, keepingForkGuardCopy: kept)
     } catch {
+      phone.ended += phone.device.events.drain()
+      phone.announcedActive = try? phone.active().id
       return count("restore killed")
     }
     phone.committed = backup.committed
@@ -788,6 +827,7 @@ package final class Simulator {
     let name = "\(phone.name)c\(phones.count)"
     guard let copy = try? await phone.device.clone(named: name, on: SimClock(wallMs: phone.device.clock.nowMs())) else { return }
     let clone = Phone(name: name, account: phone.account, device: copy)
+    clone.announcedActive = phone.announcedActive
     clone.committed = phone.committed
     clone.contents.replace(with: phone.contents.all)
     clone.ended = phone.ended
@@ -816,6 +856,17 @@ package final class Simulator {
     _ = network.call(ServerCall(account: scope.owner, requestId: nil, tool: "visibility", args: ["visibility": .string(visibility)],
                                 intents: [intent]))
     count("visibility set")
+  }
+
+  // §2.5 the sweep deletes a slice of the rows no view reads; what any view, digest or check sees stays as it was.
+  func sweep(_ phone: Phone) {
+    let before = try? phone.device.store.read { try $0.device(rows: true).json }
+    guard (try? phone.device.store.read { try $0.releasedRows() }) ?? 0 > 0 else { return }
+    _ = phone.engine.sweeper.step()
+    count("rows swept")
+    guard (try? phone.device.store.read { try $0.device(rows: true).json }) == before else {
+      return violations.append("\(phone.name): the sweep changed what the store holds in view")
+    }
   }
 
   func dismissNotice(on phone: Phone) {
@@ -975,14 +1026,38 @@ package final class Simulator {
 
   // MARK: - Bookkeeping
 
-  // After each action: every event the phones published joins their ledgers, and a change of the server's rows is
-  // watched for a resurrection (INV-2).
+  // After each action: every event the phones published joins their ledgers, each change of a phone's active replica
+  // must have been announced once, naming the id it replaced (§7.12), and a change of the server's rows is watched for a
+  // resurrection (INV-2).
   func settleAccounts() {
-    for phone in phones { phone.ended += phone.device.events.drain() }
+    for phone in phones {
+      let events = phone.device.events.drain()
+      phone.ended += events
+      violations += announcements(events, on: phone)
+    }
     let version = server.rowsVersion
     guard version != rowsSeen else { return }
     rowsSeen = version
     watchDeaths()
+  }
+
+  // §7.12 each `activeReplicaChanged` names the id it replaced, and no id changes unannounced unless the process `died`.
+  func announcements(_ events: [EngineEvent], on phone: Phone, died: Bool = false) -> [String] {
+    guard phone.device.killer?.isDead != true else { return [] }
+    var found: [String] = []
+    for case .activeReplicaChanged(let previous, let replica) in events {
+      count("active replica change announced")
+      if let last = phone.announcedActive, !last.utf8.elementsEqual(previous.utf8) {
+        found.append("§7.12 \(phone.name): an announcement replaces \(previous), but the active replica was \(last)")
+      }
+      phone.announcedActive = replica
+    }
+    guard let active = try? phone.active().id else { return found }
+    if !died, let last = phone.announcedActive, !last.utf8.elementsEqual(active.utf8) {
+      found.append("§7.12 \(phone.name): the active replica became \(active) from \(last) unannounced")
+    }
+    phone.announcedActive = active
+    return found
   }
 
   // INV-2: a record the server held dead is alive there again only by a revive or a newer keyed put, which a lattice
@@ -1105,7 +1180,7 @@ package final class Simulator {
         }
       case .digestMismatch(let kind, let seq):
         if !phone.digestCorrupted { found.append("INV-15 \(phone.name): a digest mismatch in a \(kind) scope at \(seq)") }
-      case .pushMalformed:
+      case .pushMalformed, .activeReplicaChanged:
         break
       }
     }
@@ -1204,6 +1279,7 @@ final class PushLedger: Sendable {
     var tally: [String: Int] = [:]
     var skewed: [String: Set<String>] = [:]
     var joins: [RecordKey: RecordKey] = [:]
+    var lastServed: SimNetwork.ServedPush?
   }
 
   let state = Mutex(State())
@@ -1223,6 +1299,17 @@ final class PushLedger: Sendable {
   func restoreSkewed(_ skewed: [String: Set<String>], of device: String) {
     state.withLock { state in
       state.skewed = state.skewed.filter { !$0.key.hasPrefix("\(device) ") }.merging(skewed) { _, restored in restored }
+    }
+  }
+
+  // A death after `recorded` results of the last push leaves its later clock-skew refusals unrecorded, so they may recur.
+  func forgetUnrecorded(after recorded: Int, of device: String) {
+    state.withLock { state in
+      guard let served = state.lastServed else { return }
+      let n = { (result: JSON) in (try? result["n"]?.asInteger()) ?? 0 }
+      let results = ((try? served.body["results"]?.asArray()) ?? []).sorted { n($0) < n($1) }
+      let unrecorded = Set(results.dropFirst(recorded).filter { $0["code"] == "clock-skew" }.map { "\(served.request.replica) \(n($0))" })
+      for key in state.skewed.keys where key.hasPrefix("\(device) ") { state.skewed[key]?.subtract(unrecorded) }
     }
   }
 
@@ -1255,6 +1342,7 @@ final class PushLedger: Sendable {
       }
     }
     state.withLock { state in
+      state.lastServed = served
       for key in counts { state.tally[key, default: 0] += 1 }
       for (entry, under) in skewed { state.skewed[entry, default: []].insert(under) }
       for (from, joined) in joins { state.joins[from] = joined }

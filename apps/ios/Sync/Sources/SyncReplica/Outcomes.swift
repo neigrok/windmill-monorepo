@@ -31,35 +31,49 @@ public enum PushStep: Sendable, Hashable {
   case halve(limit: Int, malformed: Bool)
   // A 400 or 413 on one intent: rewind to its n, and refuse it `invalid` or `too-large`.
   case refuseLocally(n: Int64, malformed: Bool)
-  case result(PushResult, lastN: Int64, epoch: String)
-  case ack(lastN: Int64)
+  case results(ResultBatch)
   case epoch(String)
 
   // A refusal may fold an orphan's dependents into its origin's stored notice, so its Action loads the notices.
   public var readsNotices: Bool {
     switch self {
-    case .result(let result, _, _): if case .refused = result.verdict { true } else { false }
+    case .results(let batch): batch.results.contains { if case .refused = $0.verdict { true } else { false } }
     case .refuseLocally: true
-    case .sample, .pauseAuth, .reidentify, .halve, .ack, .epoch: false
+    case .sample, .pauseAuth, .reidentify, .halve, .epoch: false
     }
   }
 
-  // What of the outbox a step reads in a replica holding `meta`: an `ok` with no write map its own entry; a step of the
-  // meta alone, or an epoch that is the replica's already or its first, none; and any other every entry, which a
-  // refusal's fold, a write map, a re-identify or an epoch change may rewrite.
+  // What of the outbox a step reads in a replica holding `meta`: a batch of `ok`s with no write map their own entries; a
+  // step of the meta alone, or an epoch that is the replica's already or its first, none; and any other every entry,
+  // which a refusal's fold, a write map, a re-identify or an epoch change may rewrite.
   public func entries(of meta: ReplicaMeta) -> EntrySelection {
     switch self {
-    case .sample, .pauseAuth, .halve, .ack:
+    case .sample, .pauseAuth, .halve:
       return EntrySelection()
-    case .result(let result, _, _):
-      guard case .ok(_, nil) = result.verdict else { return .every }
-      return EntrySelection(numbered: [result.n])
+    case .results(let batch):
+      guard batch.results.allSatisfy({ if case .ok(_, nil) = $0.verdict { true } else { false } }) else { return .every }
+      return EntrySelection(numbered: Set(batch.results.map(\.n)))
     case .epoch(let epoch):
       guard let held = meta.serverEpoch, !held.utf8.elementsEqual(epoch.utf8) else { return EntrySelection() }
       return .every
     case .reidentify, .refuseLocally:
       return .every
     }
+  }
+}
+
+// §7.4 the next results of an answer in ascending n, one transaction; the last, which may hold none, moves ackThrough.
+public struct ResultBatch: Sendable, Hashable {
+  public let results: [PushResult]
+  public let lastN: Int64
+  public let epoch: String
+  public let isLast: Bool
+
+  public init(results: [PushResult], lastN: Int64, epoch: String, isLast: Bool) {
+    self.results = results
+    self.lastN = lastN
+    self.epoch = epoch
+    self.isLast = isLast
   }
 }
 
@@ -160,14 +174,22 @@ public struct PushPlanner: Sendable {
 
   // Every answer carrying `serverTime` yields its sample first. Then an answer handled as a 401 (§9.1: a 401, an
   // `account-mismatch`, or a 200 or 409 served as anyone but the account the push named) only pauses; a 200 gives its
-  // results, ack and epoch, and any other failure its own move.
-  public func steps(for answer: Answer<PushResponse>, to request: PushRequest) -> [PushStep] {
+  // results in batches of at most `resultsPerBatch`, in ascending n, the last moving ackThrough, then its epoch; and any
+  // other failure its own move.
+  public func steps(for answer: Answer<PushResponse>, to request: PushRequest, resultsPerBatch: Int) -> [PushStep] {
     let sample = answer.serverTime.map { [PushStep.sample(serverTime: $0)] } ?? []
     guard !answer.isUnauthenticated(for: request.account) else { return sample + [.pauseAuth] }
     switch answer {
     case .ok(let response):
-      return sample + response.results.map { .result($0, lastN: response.lastN, epoch: response.epoch) }
-        + [.ack(lastN: response.lastN), .epoch(response.epoch)]
+      let results = response.results
+      let size = max(1, resultsPerBatch)
+      let starts = results.isEmpty ? [0] : Array(stride(from: 0, to: results.count, by: size))
+      let batches = starts.map { start in
+        let end = min(start + size, results.count)
+        return PushStep.results(ResultBatch(
+          results: Array(results[start..<end]), lastN: response.lastN, epoch: response.epoch, isLast: end == results.count))
+      }
+      return sample + batches + [.epoch(response.epoch)]
     case .failed(let failure):
       switch failure.status {
       case 409: return sample + [.reidentify]
@@ -199,24 +221,14 @@ public struct PushPlanner: Sendable {
       replica.update { $0.nextN = n }
       for later in replica.outbox where later.state == .sent && later.n! > n { try replica.move(later.localId, .rewind) }
       try refuse(entry.localId, code: malformed ? .invalid : .tooLarge, detail: nil, lastN: n - 1, in: &replica, instance: instance)
-    case .result(let result, let lastN, let epoch):
-      try apply(result, lastN: lastN, epoch: epoch, to: &replica, instance: instance)
-    case .ack(let lastN):
-      replica.update { $0.ackThrough = lastN }
+    case .results(let batch):
+      // A replica with no epoch takes the answer's first, so no result is recorded in an epoch it never took.
+      if replica.meta.serverEpoch == nil { replica.update { $0.serverEpoch = batch.epoch } }
+      for result in batch.results { try apply(result, lastN: batch.lastN, epoch: batch.epoch, to: &replica, instance: instance) }
+      if batch.isLast { replica.update { $0.ackThrough = batch.lastN } }
     case .epoch(let epoch):
       try lifecycle.checkEpoch(epoch, in: &replica, instance: &instance, identities: identities)
     }
-  }
-
-  // The whole answer at once: every step in order. The halved batch size when the server asked for one.
-  public func receive(_ answer: Answer<PushResponse>, to request: PushRequest, in replica: inout LoadedReplica,
-                      instance: inout Instance, timing: Timing, identities: IdentitySource) throws -> Int? {
-    var limit: Int?
-    for step in steps(for: answer, to: request) {
-      if case .halve(let half, _) = step { limit = half }
-      try apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
-    }
-    return limit
   }
 
   // MARK: Results

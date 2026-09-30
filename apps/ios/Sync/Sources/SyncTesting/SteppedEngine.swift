@@ -61,8 +61,8 @@ public final class SteppedEngine: Sendable {
         if case .afterCommit = point { commits.committed() }
       })
     let store = Self.surely("open its store") {
-      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, crashPoints: ports.crashPoints) }
-        ?? Store.inMemory(registry: fleet.registry, crashPoints: ports.crashPoints)
+      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints) }
+        ?? Store.inMemory(registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints)
     }
     let forkGuard = InMemoryForkGuardStore()
     let engine = Self.surely("launch its engine") { try ports.launch(over: store, forkGuard: forkGuard) }
@@ -170,7 +170,7 @@ public final class SteppedEngine: Sendable {
   // session in the keychain out of backups, so a restore onto a wiped phone finds neither; a store rolled back in place
   // finds both.
   package func restore(_ backup: LoadedDevice, keepingForkGuardCopy kept: Bool) async throws {
-    let store = try Store.inMemory(holding: backup, registry: fleet.registry, crashPoints: ports.crashPoints)
+    let store = try Store.inMemory(holding: backup, registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints)
     let forkGuard = kept ? process.withLock(\.forkGuard) : InMemoryForkGuardStore()
     if !kept {
       for account in tokens.accounts() { tokens.delete(for: account) }
@@ -223,6 +223,12 @@ public final class SteppedEngine: Sendable {
   package func releaseDue() {
     let releaser = engine.releaser
     while releaser.step() == .again {}
+  }
+
+  // The sweep, until no row is left that no view reads (§2.5).
+  package func sweep() {
+    let sweeper = engine.sweeper
+    while sweeper.step() == .again {}
   }
 
   // A harness call's own store and engine work, which only a broken build fails: the test stops, saying what failed.
@@ -279,7 +285,8 @@ struct DevicePorts: Sendable {
 
 // MARK: - The devices of one server
 
-// What `sync()` drives and `device()` joins. It holds its devices weakly: a device lives as long as its test holds it.
+// What `sync()` drives and `device()` joins, every device's store under `limits`. It holds its devices weakly: a device
+// lives as long as its test holds it.
 final class Fleet: Sendable {
   struct Member {
     weak var device: SteppedEngine?
@@ -293,12 +300,14 @@ final class Fleet: Sendable {
   let registry: Registry
   let network: SimNetwork
   let seed: UInt64
+  let limits: Limits
   let members = Mutex(Members())
 
-  init(registry: Registry, network: SimNetwork, seed: UInt64) {
+  init(registry: Registry, network: SimNetwork, seed: UInt64, limits: Limits = Limits()) {
     self.registry = registry
     self.network = network
     self.seed = seed
+    self.limits = limits
   }
 
   var devices: [SteppedEngine] { members.withLock { $0.list.compactMap(\.device) } }
@@ -319,9 +328,10 @@ final class Fleet: Sendable {
     return (seed &* 0x9E37_79B9_7F4A_7C15) ^ (index &* 0xBF58_476D_1CE4_E5B9)
   }
 
-  // Every device's sender, then every device's puller, round after round, until a round in which no device pushed and
-  // the server's rows stood still: each device then holds what the server holds, and nothing it can send before the
-  // clock moves or the person acts. False when `rounds` rounds were not enough, or a sender or puller never stopped.
+  // Every device's sender, then every device's puller and sweep, round after round, until a round in which no device
+  // pushed and the server's rows stood still: each device then holds what the server holds, and nothing it can send
+  // before the clock moves or the person acts. False when `rounds` rounds were not enough, or a sender or puller never
+  // stopped.
   func settle(rounds: Int = 32) async -> Bool {
     for _ in 0..<rounds {
       let before = network.server.rowsVersion
@@ -332,6 +342,7 @@ final class Fleet: Sendable {
       }
       for device in devices {
         guard await device.pull() else { return false }
+        device.sweep()
       }
       if !pushed, network.server.rowsVersion == before { return true }
     }

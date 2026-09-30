@@ -2,7 +2,7 @@ import SyncCore
 import SyncTesting
 import Testing
 
-// One test case per corpus vector with a handler, and one pending known issue per file without one.
+// One test case per corpus vector with a handler; a corpus file without one fails the run.
 
 struct CorpusTests {
   @Test("vector", arguments: try Corpus.files().filter { Handlers.table[$0.path] != nil }.flatMap { try Corpus.vectors(in: $0) })
@@ -19,11 +19,8 @@ struct CorpusTests {
     #expect(answer == vector.expect, "\(vector)")
   }
 
-  @Test("pending", arguments: try Corpus.files().filter { Handlers.table[$0.path] == nil })
-  func pending(_ file: CorpusFile) {
-    withKnownIssue("pending: no Swift handler yet for \(file)") {
-      Issue.record("pending \(file.path)")
-    }
+  @Test func everyCorpusFileHasAHandler() throws {
+    #expect(try Corpus.files().filter { Handlers.table[$0.path] == nil }.map(\.path) == [])
   }
 
   // The transcript runner is no easier than the transcript: a line or an ending the engines do not meet is reported,

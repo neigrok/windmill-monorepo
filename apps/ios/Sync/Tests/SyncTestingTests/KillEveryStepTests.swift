@@ -163,13 +163,13 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
       return [(.changeEpoch, Self.phone), (Self.card("card0001", "After"), Self.phone), (Self.pull, Self.phone), (Self.send, Self.phone),
               (Self.pull, Self.phone)]
     case .digestMismatch:
-      return [(Self.pull, Self.phone), (Self.pull, Self.phone)]
+      return [(Self.pull, Self.phone), (Self.pull, Self.phone), (.sweep, Self.phone)]
     case .signInAdd:
       return [(.signIn(.add), Self.phone), (Self.send, Self.phone), (Self.pull, Self.phone)]
     case .signInDiscard:
       return [(.signIn(.discard), Self.phone), (Self.send, Self.phone), (Self.pull, Self.phone)]
     case .signOutKeep:
-      return [(.signOut(.keep), Self.phone)]
+      return [(.signOut(.keep), Self.phone), (.sweep, Self.phone)]
     case .signOutDiscard:
       return [(.signOut(.discard), Self.phone)]
     case .dormantDiscard:

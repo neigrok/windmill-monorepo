@@ -49,10 +49,10 @@ public protocol LiveConnection: Sendable {
 }
 
 // HTTPS through an ephemeral `URLSession`: no cookies, no cache, no waiting for connectivity, since the engine decides
-// retries; 30 s of silence or 60 s in all ends a request, so a trickling server cannot hold the one push in flight. The
-// live socket has a session of its own, which ends a handshake after 30 s of silence and never ends an open socket for
-// its age. Every request names the registry version it speaks (§9.1): hello, push and pull in the header `Sync-Schema`,
-// the live socket's upgrade in the query parameter `schema`. Bodies and live messages are JCS bytes.
+// retries; 30 s of silence or REQUEST_TIMEOUT_MS in all ends a request, so a trickling server cannot hold the one push in
+// flight. The live socket has a session of its own, which ends a handshake after 30 s of silence and never ends an open
+// socket for its age. Every request names the registry version it speaks (§9.1): hello, push and pull in the header
+// `Sync-Schema`, the live socket's upgrade in the query parameter `schema`. Bodies and live messages are JCS bytes.
 public final class HTTPTransport: SyncTransport {
   let baseURL: URL
   let schema: Int
@@ -67,7 +67,7 @@ public final class HTTPTransport: SyncTransport {
     configuration.httpCookieStorage = nil
     configuration.urlCache = nil
     let live = configuration.copy() as! URLSessionConfiguration
-    configuration.timeoutIntervalForResource = 60
+    configuration.timeoutIntervalForResource = TimeInterval(Constants.requestTimeoutMs) / 1000
     self.baseURL = baseURL
     self.schema = schema
     session = URLSession(configuration: configuration)

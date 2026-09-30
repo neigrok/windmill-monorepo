@@ -22,6 +22,7 @@ public final class SyncEngine: Replica {
   package let releaser: Releaser
   package let puller: Puller
   package let live: LiveChannel
+  package let sweeper: Sweeper
   let loops = Mutex(Loops())
 
   public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
@@ -50,6 +51,7 @@ public final class SyncEngine: Replica {
     releaser = Releaser(core: core)
     puller = Puller(core: core, transport: transport)
     live = LiveChannel(core: core, transport: transport, puller: puller)
+    sweeper = Sweeper(core: core)
     let (hub, changes) = (hub, core.publisher.changes)
     loops.withLock { $0.tasks.append(Task { @MainActor in await hub.run(changes) }) }
     connectivity.onChange { [weak core] _ in
@@ -79,12 +81,13 @@ public final class SyncEngine: Replica {
     }
     core.pullWants.all()
     guard core.config.drivesLoops else { return }
-    let (sender, releaser, puller, live) = (sender, releaser, puller, live)
+    let (sender, releaser, puller, live, sweeper) = (sender, releaser, puller, live, sweeper)
     loops.withLock { loops in
       guard !loops.started else { return }
       loops.started = true
       loops.tasks += [
         Task { await sender.run() }, Task { await releaser.run() }, Task { await puller.run() }, Task { await live.run() },
+        Task { await sweeper.run() },
       ]
     }
   }
@@ -165,6 +168,11 @@ public final class SyncEngine: Replica {
     try core.physNow()
   }
 
+  // §7.12 the id of the replica commits, views, the sender and the puller act on, each change of it announced.
+  public func activeReplica() throws -> String {
+    try core.store.read { try $0.activeReplica() }
+  }
+
   // MARK: Observing (UI modules)
 
   @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) -> RecordsView {
@@ -179,7 +187,7 @@ public final class SyncEngine: Replica {
   @MainActor public var undoOffers: UndoOffers { hub.undoOffers }
   @MainActor public var status: SyncStatus { hub.status }
 
-  // Every event from now on, one stream per subscriber: terminal outcomes and telemetry.
+  // Every event from now on, one stream per subscriber: terminal outcomes, telemetry and changes of the active replica.
   public func events() -> AsyncStream<EngineEvent> {
     core.publisher.events()
   }
@@ -213,7 +221,7 @@ public final class SyncEngine: Replica {
     return outcome
   }
 
-  // A scope no longer followed is forgotten, and its acked entries resolve.
+  // A scope that leaves the subscription set is forgotten, and its acked entries resolve.
   public func unsubscribe(_ scope: ScopeRef) throws {
     core.opened.withLock { $0.removeAll { $0 == scope } }
     try core.reconcileSubscriptions()
@@ -262,6 +270,12 @@ public final class SyncEngine: Replica {
   }
 
   package var identities: any IdentitySource & Sendable { core.identities }
+
+  // The scopes in doubt as they stand (§7.9).
+  package var doubts: Doubts { core.doubts.withLock { $0 } }
+
+  // The store's writer, as the engine's writes take it in turn (§2.5).
+  package var writers: WriterLine { core.writers }
 }
 
 // MARK: - The core
@@ -291,6 +305,8 @@ final class EngineCore: Sendable {
   let upgrade = Atomic(false)
   let foreground = Atomic(true)
   let opened = Mutex<[ScopeRef]>([])
+  let doubts = Mutex(Doubts())
+  let writers = WriterLine()
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
   // body) stops with a message instead of waiting on itself.
   let writingThread = Atomic<UInt64>(0)
@@ -309,17 +325,22 @@ final class EngineCore: Sendable {
 
   var registry: Registry { store.registry }
 
-  // One of the store's Actions, as this instance: its actor and the device clock now. The actor is held for the whole
-  // transaction, so an actor a re-identify mints serves every later write, and changes and events go out in commit order.
-  // A write that renames or swaps the replicas (a re-identify, an epoch change, a sign-in or out) wakes the puller, which
-  // then pulls every scope, and the live channel, which then reconnects for the replica now active. A write that changes
-  // the outbox while a scope waits for its governing record's create wakes both, which pull and follow the scope once its
-  // create has its result (§7.9).
+  // One of the store's Actions, as this instance: its actor and the device clock now. Writes take the writer in the
+  // order they asked for it, so a commit waiting while a pull's chunk holds it goes before the pull's next chunk
+  // (§2.5). The actor is held for the whole transaction, so an actor a re-identify mints serves every later write, and
+  // changes and events go out in commit order. A sign-in, a sign-out or a re-identify of the active replica ends every
+  // doubt and wants every scope (§7.12). A write that renames or swaps the replicas, or changes the seat, wakes the
+  // puller and the live channel, which then reconnects for the replica now active. A write that changes the outbox
+  // while a scope waits for its governing record's create, or that touches a governing record and so may change the
+  // subscription set, wakes both, which pull and follow the scopes that joined it (§7.9). One that takes rows out of
+  // every view wakes the sweep.
   func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
     precondition(writingThread.load(ordering: .acquiring) != thread,
                  "an engine write inside another: a commit's body reads through its context and writes nothing")
+    writers.enter()
+    defer { writers.leave() }
     let (value, change) = try actor.withLock { actor in
       writingThread.store(thread, ordering: .releasing)
       defer { writingThread.store(0, ordering: .releasing) }
@@ -329,11 +350,50 @@ final class EngineCore: Sendable {
       publisher.publish(written.change, written.events)
       return (written.value, written.change)
     }
-    if change.replicas || change.outbox && pullWants.isWaiting {
+    if change.seat {
+      doubts.withLock { $0.clear() }
+      pullWants.all()
+    }
+    if change.replicas || change.seat || change.outbox && pullWants.isWaiting || touchesGoverningRecords(change) {
       wakes.puller.kick()
       wakes.live.kick()
     }
+    if change.released { wakes.sweeper.kick() }
     return value
+  }
+
+  // A governing record changed, or a whole scope was swapped or forgotten, so the set may hold other trees now (§7.9).
+  func touchesGoverningRecords(_ change: StoreChange) -> Bool {
+    guard let governing = registry.governingType?.name else { return false }
+    return !change.scopes.isEmpty || change.records.values.contains { $0.contains { $0.type.utf8.elementsEqual(governing.utf8) } }
+  }
+
+  // §7.4, §7.5: no answer in REQUEST_TIMEOUT_MS is a transport error; cancelling the caller cancels the call too.
+  func answered<Body: Sendable>(_ call: @escaping @Sendable () async -> Reply<Body>) async -> Reply<Body> {
+    await withTaskGroup(of: RequestRace<Body>.self) { group in
+      group.addTask { .answered(await call()) }
+      group.addTask { [sleeper = clock.sleeper] in
+        do {
+          try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
+          return .timedOut
+        } catch {
+          return .stopped
+        }
+      }
+      while let first = await group.next() {
+        switch first {
+        case .answered(let reply):
+          group.cancelAll()
+          return reply
+        case .timedOut:
+          group.cancelAll()
+          return .unreachable
+        case .stopped:
+          continue
+        }
+      }
+      return .unreachable
+    }
   }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
@@ -377,18 +437,17 @@ final class EngineCore: Sendable {
   // §7.9 "When a scope leaves the subscription set, its acked entries resolve": every scope outside the set is forgotten,
   // and every acked entry outside it resolves, since no pull will bring its row. The set is read inside the write, so a
   // scope subscribed meanwhile stays. It runs when a scope is closed, and at each pull round: a scope the last process
-  // held open is not open in this one, and an entry may be acked in a scope no longer followed. Answers those followed.
+  // held open is not open in this one, and an entry may be acked in a scope no longer followed. Answers the set.
   @discardableResult
-  func reconcileSubscriptions() throws -> Set<ScopeRef> {
-    try write { store, _ in try store.reconcile(subscribed: Set(try seat().map { subscriptions(of: $0) } ?? [])) }
+  func reconcileSubscriptions() throws -> [ScopeRef] {
+    try write { store, _ in try store.reconcile(subscriptions()) }
   }
 
-  // §7.9, in the order the puller pulls and the live channel follows them: a bound replica subscribes the product
-  // scopes of the products its surface carries, then the scopes opened by hand; a signed-out one only the trees opened.
-  func subscriptions(of meta: ReplicaMeta) -> [ScopeRef] {
-    let opened = opened.withLock { $0 }
-    guard meta.state == .bound else { return opened.filter { if case .tree = $0.kind { true } else { false } } }
-    return registry.products.filter { $0.surfaces.contains(config.surface) }.map { ScopeRef.product($0.name) } + opened
+  // §7.9 the active replica's own subscription set: the products its surface carries, the trees its governing records
+  // hold alive, and the scopes opened by hand. A transaction reads it against the replica as it then stands.
+  func subscriptions() -> SubscriptionSet {
+    .own(Subscriptions(
+      products: registry.products.filter { $0.surfaces.contains(config.surface) }.map(\.name), opened: opened.withLock { $0 }))
   }
 
   var isForeground: Bool { foreground.load(ordering: .relaxed) }
@@ -418,6 +477,13 @@ final class EngineCore: Sendable {
     }
     return live ? Constants.backoffLiveCeilingMs : Constants.backoffCeilingMs
   }
+}
+
+// How a request's race against REQUEST_TIMEOUT_MS ended for one of its two runners.
+enum RequestRace<Body: Sendable>: Sendable {
+  case answered(Reply<Body>)
+  case timedOut
+  case stopped
 }
 
 // MARK: - The release timer
@@ -463,6 +529,45 @@ package final class Releaser: Sendable {
       try core.write { store, instance in try store.releaseDue(at: instance.deviceNow) }
       core.wakes.sender.kick()
       return .again
+    } catch {
+      return .wait(ms: Constants.backoffBaseMs)
+    }
+  }
+}
+
+// MARK: - The sweep
+
+package enum SweeperStep: Sendable, Hashable {
+  case again
+  case idle
+  case wait(ms: Int64)
+}
+
+// §2.5 deletes the rows no view reads any more, a slice a transaction, each taking the writer in its turn beside commits.
+package final class Sweeper: Sendable {
+  let core: EngineCore
+
+  init(core: EngineCore) {
+    self.core = core
+  }
+
+  package var wake: Wake { core.wakes.sweeper }
+
+  func run() async {
+    while !Task.isCancelled {
+      let seen = wake.kicks
+      switch step() {
+      case .again: continue
+      case .idle: await wake.wait(past: seen)
+      case .wait(let ms): await wake.wait(past: seen, atMost: .milliseconds(ms), clock: core.clock.sleeper)
+      }
+    }
+  }
+
+  // One slice; a store that fails is tried again in a second.
+  package func step() -> SweeperStep {
+    do {
+      return try core.write { store, _ in try store.sweep() } ? .again : .idle
     } catch {
       return .wait(ms: Constants.backoffBaseMs)
     }

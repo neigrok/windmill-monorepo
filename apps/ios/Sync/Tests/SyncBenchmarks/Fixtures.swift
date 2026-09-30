@@ -57,8 +57,8 @@ final class Phone: Sendable {
     }
   }
 
-  // The puller's rounds, every subscribed scope wanted or only `scopes`, until one pulls nothing more; each round's
-  // duration.
+  // The puller's rounds, every subscribed scope wanted or only `scopes`, until one pulls nothing more, each round's
+  // duration; after each, the sweep deletes what the round took out of every view, as its loop would.
   @discardableResult
   func pull(only scopes: [ScopeRef]? = nil) async -> [Duration] {
     if let scopes { engine.puller.wants.add(scopes) } else { engine.puller.wants.all() }
@@ -67,6 +67,7 @@ final class Phone: Sendable {
       let began = ContinuousClock.now
       let step = await engine.puller.step()
       rounds.append(ContinuousClock.now - began)
+      while engine.sweeper.step() == .again {}
       switch step {
       case .pulled, .frame, .again: continue
       case .idle, .fallback, .repull, .paused, .stopped, .backoff: return rounds

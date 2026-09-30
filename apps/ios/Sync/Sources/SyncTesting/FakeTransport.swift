@@ -19,9 +19,11 @@ public final class ScriptedTransport: SyncTransport {
     case openLive(token: SessionToken)
   }
 
+  // A reply, or none at all (`unanswered`): the call then ends only when its caller gives up on it.
   struct Scripted<Body: Sendable>: Sendable {
     let reply: Reply<Body>
     let gate: Gate?
+    var unanswered = false
   }
 
   struct State {
@@ -59,6 +61,15 @@ public final class ScriptedTransport: SyncTransport {
 
   public func willDropPull(after gate: Gate? = nil) {
     state.withLock { $0.pulls.append(Scripted(reply: .unreachable, gate: gate)) }
+  }
+
+  // A pull, or a push, the server never answers.
+  public func willNotAnswerPull() {
+    state.withLock { $0.pulls.append(Scripted(reply: .unreachable, gate: nil, unanswered: true)) }
+  }
+
+  public func willNotAnswerPush() {
+    state.withLock { $0.pushes.append(Scripted(reply: .unreachable, gate: nil, unanswered: true)) }
   }
 
   public func willOpenLive(_ connection: any LiveConnection, after gate: Gate? = nil) {
@@ -117,8 +128,39 @@ public final class ScriptedTransport: SyncTransport {
       return state[keyPath: queue].isEmpty ? nil : state[keyPath: queue].removeFirst()
     }
     guard let scripted else { return .unreachable }
+    if scripted.unanswered { await Unanswered().wait() }
     await scripted.gate?.pass()
     return scripted.reply
+  }
+}
+
+// A call no answer ends: it returns once the task awaiting it is cancelled.
+final class Unanswered: Sendable {
+  struct State {
+    var cancelled = false
+    var waiter: CheckedContinuation<Void, Never>?
+  }
+
+  let state = Mutex(State())
+
+  func wait() async {
+    await withTaskCancellationHandler {
+      await withCheckedContinuation { continuation in
+        let now = state.withLock { state -> Bool in
+          if state.cancelled { return true }
+          state.waiter = continuation
+          return false
+        }
+        if now { continuation.resume() }
+      }
+    } onCancel: {
+      let waiter = state.withLock { state -> CheckedContinuation<Void, Never>? in
+        state.cancelled = true
+        defer { state.waiter = nil }
+        return state.waiter
+      }
+      waiter?.resume()
+    }
   }
 }
 

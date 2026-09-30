@@ -13,6 +13,14 @@ import Testing
 struct OutcomesTests {
   static let probe = try! Corpus.probeRegistry()
 
+  // A push answer's steps in order, as the sender records them.
+  static func receive(_ answer: Answer<PushResponse>, to request: PushRequest, by planner: PushPlanner, in replica: inout LoadedReplica,
+                      instance: inout Instance, timing: Timing, identities: IdentitySource) throws {
+    for step in planner.steps(for: answer, to: request, resultsPerBatch: Limits().resultsPerBatch) {
+      try planner.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
+    }
+  }
+
   @Test func aJoinRewritesTheCalledIdInDeviceRowsThroughTheProductHook() throws {
     let rewrite: DeviceValueRewrite = { product, key, value, type, from, to in
       guard product == "probe", key == "rack", type == "run", value["run"] == from.json else { return value }
@@ -34,10 +42,77 @@ struct OutcomesTests {
       "results": [["n": 1, "s": "ok", "seq": 3, "write": [["t": "run", "id": "runtheir", "from": "runmine1", "born": "4000:0:srv"]]]],
     ])
     var receiving = instance
-    _ = try planner.receive(.ok(joined), to: request, in: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010),
-                            identities: identities)
+    try Self.receive(.ok(joined), to: request, by: planner, in: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010),
+                     identities: identities)
     #expect(replica.deviceRows["probe"]?["rack"] == ["run": "runtheir"])
     #expect(replica.outbox.first?.predict.first?.key == RecordKey("run", "runtheir"))
+  }
+
+  // §7.4: a replica with no epoch yet takes the answer's before its first result batch, so a death between batches leaves
+  // no result recorded in an epoch the replica never took (§7.5 step 1).
+  @Test func aReplicaWithNoEpochTakesTheAnswersBeforeItsFirstResult() throws {
+    let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
+    let days = (1...2).map { Change.put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }
+    _ = try CommitPlanner(registry: Self.probe).commit(Gesture(changes: days, gestureId: "g1"), in: .product("probe"), to: &replica,
+                                                         as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    let planner = PushPlanner(registry: Self.probe)
+    let request = try #require(try planner.number(&replica, at: 5000))
+    let answer = try PushResponse(json: [
+      "serverTime": 5010, "epoch": "ep-7", "as": "A", "lastN": 2, "results": [["n": 1, "s": "ok", "seq": 1], ["n": 2, "s": "ok", "seq": 2]],
+    ])
+    let steps = planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1)
+    let first = try #require(steps.firstIndex { if case .results = $0 { true } else { false } })
+    var receiving = instance
+    for step in steps[...first] {
+      try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+    }
+    #expect(replica.meta.serverEpoch == "ep-7")
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-7", "g1/1 sent -"])
+    #expect(replica.meta.ackThrough == 0)
+  }
+
+  // Why the epoch comes first: an entry acked while the replica had no epoch, the process dying before the answer's epoch
+  // step, returns to ready when the server's epoch then changes (a restore), rather than stay acked for ever.
+  @Test func anEntryAckedBeforeTheEpochStepReturnsToReadyWhenTheServerIsRestored() throws {
+    let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
+    _ = try CommitPlanner(registry: Self.probe).commit(
+      Gesture(changes: [.put("day", RecordID("2026-09-01"), present: true, ["score": JSON(1)])], gestureId: "g1"), in: .product("probe"),
+      to: &replica, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    let pushes = PushPlanner(registry: Self.probe)
+    let request = try #require(try pushes.number(&replica, at: 5000))
+    let answer = try PushResponse(json: [
+      "serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 1]],
+    ])
+    var receiving = instance
+    for step in pushes.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+      if case .epoch = step { break }
+      try pushes.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+    }
+    try PageApplier(registry: Self.probe).apply(
+      .epoch("ep-2"), to: &replica, subscribed: [], instance: &receiving, timing: .steady(send: 6000, recv: 6010),
+      identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["g1/0 ready"])
+    #expect(replica.meta.serverEpoch == "ep-2")
+  }
+
+  // §7.4: an answer with no results is one batch, the last, which still moves ackThrough to the answer's lastN.
+  @Test func anAnswerWithNoResultsStillMovesAckThrough() throws {
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.serverEpoch = "ep-1"
+    var replica = LoadedReplica(meta: meta, wholeScopes: true)
+    let planner = PushPlanner(registry: Self.probe)
+    let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 3, "results": []])
+    let steps = planner.steps(for: .ok(answer), to: PushRequest(replica: "rp_1", account: "A", ackThrough: 0, intents: []), resultsPerBatch: 16)
+    #expect(steps == [
+      .sample(serverTime: 5010), .results(ResultBatch(results: [], lastN: 3, epoch: "ep-1", isLast: true)), .epoch("ep-1"),
+    ])
+    var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    for step in steps {
+      try planner.apply(step, to: &replica, instance: &instance, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+    }
+    #expect(replica.meta.ackThrough == 3)
   }
 
   // §7.7 the restamp rule in a write map: a queued write of a register the map names takes a fresh tick of the clock of
@@ -249,8 +324,8 @@ struct OutcomesTests {
             skews[entry.localId, default: 0] += 1
           }
         }
-        _ = try pushes.receive(answer, to: request, in: &replica, instance: &instance, timing: .steady(send: deviceNow, recv: deviceNow),
-                               identities: identities)
+        try Self.receive(answer, to: request, by: pushes, in: &replica, instance: &instance,
+                         timing: .steady(send: deviceNow, recv: deviceNow), identities: identities)
       }
       let commit = { (replica: inout LoadedReplica, gesture: Gesture) throws -> CommitReceipt? in
         guard case .committed(let receipt) = try commits.commit(gesture, in: product, to: &replica, as: instance, identities: identities, gestureIdTaken: false)

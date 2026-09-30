@@ -19,6 +19,7 @@ final class TransactionReader: CommitContext {
   let scope: ScopeRef
   let meta: ReplicaMeta
   let now: Int64
+  var replica: String { meta.replica }
   var isOpen = true
   var minted: Set<RecordID> = []
   var failure: (any Error)?
@@ -85,8 +86,13 @@ final class TransactionReader: CommitContext {
 
   func firstPullComplete() throws -> Bool {
     try reading {
-      let replica = try load(RowSelection())
-      return ReplicaLifecycle(registry: registry).firstPullComplete(scope, in: replica, subscribed: Set(core.subscriptions(of: meta)))
+      guard isOpen else { throw TransactionReader.ended }
+      let lifecycle = ReplicaLifecycle(registry: registry)
+      let subscriptions = core.subscriptions()
+      guard let replica = try tx.replica(meta.replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection()) else {
+        throw StoreError.noReplica(meta.replica)
+      }
+      return lifecycle.firstPullComplete(scope, in: replica, subscribed: Set(try lifecycle.subscriptionSet(of: replica, subscriptions)))
     }
   }
 

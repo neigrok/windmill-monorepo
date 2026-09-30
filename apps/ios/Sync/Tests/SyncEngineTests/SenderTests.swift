@@ -4,6 +4,7 @@ import SyncEngine
 import SyncReplica
 import SyncStore
 import SyncTesting
+import Synchronization
 import Testing
 
 // §7.4 the sender over a scripted transport: one test per outcome row of design §6.3, backoff and kicks, the
@@ -40,6 +41,63 @@ struct SenderTests {
     #expect(await rig.engine.sender.step() == .idle)
     #expect(rig.transport.calls.count == 1)
   }
+
+  // §7.4 result batches: an answer's results are recorded in ascending n, a batch a transaction, however the answer lists
+  // them; ackThrough moves in the last batch only.
+  @Test func anAnswersResultsAreRecordedInBatchesInAscendingNAndAckThroughMovesInTheLast() async throws {
+    let seen = Mutex<(store: Store?, batches: [String])>((nil, []))
+    let rig = try Rig(account: "A", limits: Limits(resultsPerBatch: 2), crashPoints: CrashPoints { point in
+      guard point == .afterCommit(.results), let store = seen.withLock({ $0.store }) else { return }
+      let replica = try store.read { tx in try tx.replica(tx.activeReplica())! }
+      let line = "acked \(replica.outbox.filter { $0.state == .acked }.compactMap(\.n)) ackThrough \(replica.meta.ackThrough)"
+      seen.withLock { $0.batches.append(line) }
+    })
+    seen.withLock { $0.store = rig.store }
+    try rig.commit(Self.days)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 5, [3, 1, 5, 2, 4].map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(seen.withLock(\.batches) == ["acked [1, 2] ackThrough 0", "acked [1, 2, 3, 4] ackThrough 0", "acked [1, 2, 3, 4, 5] ackThrough 5"])
+  }
+
+  // A process death between two result batches keeps the batches recorded and loses the rest: their entries stay sent,
+  // ackThrough has not moved, and the next process's push sends them again under the same numbers and ackThrough, which
+  // the server answers from its stored results.
+  @Test func aDeathBetweenResultBatchesLeavesTheRestSentAndAckThroughUnmoved() async throws {
+    let dead = Mutex(false)
+    let rig = try Rig(account: "A", limits: Limits(resultsPerBatch: 2), crashPoints: CrashPoints { point in
+      guard point == .afterCommit(.results), !dead.withLock({ $0 }) else { return }
+      dead.withLock { $0 = true }
+      throw RigError("the process died")
+    })
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.days)
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 5, (1...5).map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .backoff(ms: 1_000))
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 acked 2", "g1/2 sent 3", "g1/3 sent 4", "g1/4 sent 5"])
+    #expect(try rig.meta().ackThrough == 0)
+    let relaunched = try rig.relaunch()
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 5, (3...5).map { Rig.admitted($0, seq: $0) }))
+    #expect(await relaunched.sender.step() == .again)
+    #expect(rig.transport.pushes.last.map { ($0.ackThrough, $0.intents.compactMap(\.n)) }.map { "\($0.0) \($0.1)" } == "0 [3, 4, 5]")
+    #expect(try rig.outbox() == ["g1/0 acked 1", "g1/1 acked 2", "g1/2 acked 3", "g1/3 acked 4", "g1/4 acked 5"])
+    #expect(try rig.meta().ackThrough == 5)
+  }
+
+  // REQUEST_TIMEOUT_MS bounds a push: one the server never answers is a transport error once it passes.
+  @Test(.timeLimit(.minutes(1))) func aPushUnansweredForTheRequestTimeoutIsATransportError() async throws {
+    let rig = try Rig(account: "A")
+    rig.random.queue(raw: .max, count: 1)
+    try rig.commit(Self.card1)
+    rig.transport.willNotAnswerPush()
+    async let stepping = rig.engine.sender.step()
+    await rig.clock.asleep(until: Constants.requestTimeoutMs)
+    rig.clock.advance(ms: Constants.requestTimeoutMs)
+    #expect(await stepping == .backoff(ms: 1_000))
+    #expect(try rig.outbox() == ["g1/0 sent 1"])
+  }
+
+  // Five days put in one gesture: five intents, numbered 1 to 5.
+  static let days = Gesture(changes: (1...5).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "g1")
 
   @Test func aRetryAnswerRecordsWhatWasAdmittedAndWaitsAsAsked() async throws {
     let rig = try Rig(account: "A")
@@ -347,7 +405,7 @@ struct SenderTests {
 
   // A 401 to a push sent under a token the account replaced while it was in flight pauses nothing, and the push goes
   // again under the new token (design §4.4 rule 2).
-  @Test func a401ToATokenReplacedInFlightPausesNothing() async throws {
+  @Test(.timeLimit(.minutes(1))) func a401ToATokenReplacedInFlightPausesNothing() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)
     let gate = Gate()
@@ -491,7 +549,7 @@ struct SenderTests {
   // MARK: Revalidation (design §4.4 rule 2)
 
   // A re-identify lands while the push is in flight: the answer names the old replica, so none of it is recorded.
-  @Test func anAnswerForAReplicaThatMovedOnMeanwhileIsDropped() async throws {
+  @Test(.timeLimit(.minutes(1))) func anAnswerForAReplicaThatMovedOnMeanwhileIsDropped() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Self.card1)
     let gate = Gate()

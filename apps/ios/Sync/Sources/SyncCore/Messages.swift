@@ -293,6 +293,7 @@ public struct PushResponse: Hashable, ResponseBody {
   public let epoch: String
   public let servedAs: String?
   public let lastN: Int64
+  // In ascending n, the order §7.4 records them in, however the answer lists them.
   public let results: [PushResult]
   public let retry: Retry?
 

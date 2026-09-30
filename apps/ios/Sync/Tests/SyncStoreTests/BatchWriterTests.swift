@@ -2,13 +2,14 @@ import Foundation
 import SyncAPI
 import SyncCore
 import SyncReplica
-import SyncStore
+@testable import SyncStore
 import SyncTesting
 import Testing
 
 // The batch writer keeps the ref index (ER-12) a function of the rows, after any sequence of batches and after a
 // registry-version change, and the outbox's touch index one of the entries, after any sequence of batches: each equals
-// its recomputation.
+// its recomputation. A re-identify and an epoch change do work that grows with no row, and rows taken out of every view
+// are swept a slice a transaction, never read again (§2.5, §7.11).
 
 struct BatchWriterTests {
   static let probe = try! Corpus.probeRegistry()
@@ -152,6 +153,104 @@ struct BatchWriterTests {
       try store.write(.commit) { _ in Planned((), ReplicaBatch(writes: [entry(2)])) }
     }
     #expect(try store.read { try $0.device(rows: true).json } == before)
+  }
+
+  // §7.11: a re-identify changes the one row that holds the replica's id, whatever the replica holds; so does an epoch
+  // change, which also drops a staging of any size (§7.5 step 1).
+  @Test func aReidentifyAndAnEpochChangeChangeNoRowOfTheScopes() throws {
+    let counts = try [2, 200].map { size -> [Int] in
+      let store = try Self.holding(confirmed: size, staged: size)
+      let reidentify = try Self.changes(in: store) {
+        var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 1, appVersion: "1")
+        _ = try store.reidentify(instance: &instance, identities: try QueuedIdentities(["ids": ["rp_2"], "actors": ["r_bbbbbbbbbbbb"]]))
+      }
+      let epoch = try Self.changes(in: store) {
+        var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 1, appVersion: "1")
+        _ = try store.changeEpoch(to: "ep-2", instance: &instance, identities: try QueuedIdentities(["ids": ["rp_3"], "actors": ["r_cccccccccccc"]]))
+      }
+      #expect(try store.read { try $0.releasedRows() } == size)
+      return [reidentify, epoch]
+    }
+    #expect(counts == [[1, 4], [1, 4]])
+  }
+
+  // A swap, a drop, a forgotten scope and a purge take rows out of every view at once and delete none; the sweep deletes
+  // them afterwards, a slice a transaction, and no view, digest or index sees the difference.
+  @Test func rowsTakenOutOfEveryViewAreSweptASliceATransaction() throws {
+    let store = try Self.holding(confirmed: 3, staged: 2)
+    _ = try store.write(.pullPage) { _ in Planned((), ReplicaBatch(writes: [.replica("rp_1", .swapStaging(Self.scope))])) }
+    let swapped = try store.read { try $0.device(rows: true).json }
+    #expect(try store.read { try $0.device(rows: true).activeReplica.confirmed[Self.scope]?.all.map(\.key.id) }
+      == [RecordID("lap1000"), RecordID("lap1001")])
+    var sweeps: [(more: Bool, released: Int)] = []
+    for _ in 0..<2 {
+      let more = try store.sweep(limit: 2).value
+      sweeps.append((more, try store.read { try $0.releasedRows() }))
+      #expect(try store.read { try $0.device(rows: true).json } == swapped)
+    }
+    #expect(sweeps.map(\.more) == [true, false] && sweeps.map(\.released) == [1, 0])
+    for write in [ReplicaWrite.forgetScope(Self.scope), .purgeCaches] {
+      let store = try Self.holding(confirmed: 3, staged: 2)
+      _ = try store.write(.subscriptions) { _ in Planned((), ReplicaBatch(writes: [.replica("rp_1", write)])) }
+      #expect(try store.read { try $0.releasedRows() } == 5)
+      #expect(try store.read { try $0.device(rows: true).activeReplica.confirmed[Self.scope]?.all ?? [] } == [])
+      while try store.sweep(limit: 2).value {}
+      #expect(try store.read { try $0.releasedRows() } == 0)
+      let index = try store.read { try $0.refIndex() }
+      #expect(index.stored == [] && index.expected == [])
+    }
+  }
+
+  // A boot's staging pending between two pages, or across a death, holds a role, so the sweep leaves every row of it.
+  @Test func theSweepLeavesAPendingStaging() throws {
+    let store = try Self.holding(confirmed: 3, staged: 2)
+    let before = try store.read { try $0.device(rows: true).json }
+    while try store.sweep(limit: 1).value {}
+    #expect(try store.read { try $0.device(rows: true).json } == before)
+    let replica = try store.read { try $0.device(rows: true).activeReplica }
+    #expect(replica.staging[Self.scope]?.rows.all.map(\.key.id) == [RecordID("lap1000"), RecordID("lap1001")])
+    #expect(replica.confirmed[Self.scope]?.all.map(\.key.id) == [RecordID("lap1002"), RecordID("lap1003"), RecordID("lap1004")])
+  }
+
+  // A replica deleted with its rows (a sign-out's Discard, a dormant replica discarded) leaves them to the sweep, which
+  // deletes every one, and every row set that held them.
+  @Test func aDeletedReplicasRowsAreSwept() throws {
+    let store = try Self.holding(confirmed: 3, staged: 2)
+    _ = try store.write(.signOutFinish) { _ in
+      Planned((), ReplicaBatch(writes: [
+        .createReplica(ReplicaMeta(replica: "rp_0", state: .anon)), .device(DeviceMeta(), active: "rp_0"), .deleteReplica("rp_1"),
+      ]))
+    }
+    #expect(try store.read { try $0.releasedRows() } == 5)
+    while try store.sweep(limit: 2).value {}
+    let left = try store.writer.read { db in
+      [try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM set_row")!, try Int.fetchOne(db, sql: "SELECT COUNT(*) FROM row_set")!]
+    }
+    #expect(left == [0, 0])
+  }
+
+  // A bound replica rp_1 whose probe scope holds `confirmed` laps confirmed and `staged` more in a boot's staging.
+  static func holding(confirmed: Int, staged: Int) throws -> Store {
+    let stamp = try Stamp("5:0:r_aaaaaaaaaaaa")
+    let lap = { (index: Int) in
+      Row(key: RecordKey("lap", RecordID("lap\(1000 + index)")),
+          lattice: Lattice(life: Life(.alive, stamp), born: stamp, fields: ["runId": Register("run00001", stamp)]), seq: 5, rc: 5, ru: 5)
+    }
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.serverEpoch = "ep-1"
+    let stagedRows = (0..<staged).map(lap)
+    let replica = LoadedReplica(
+      meta: meta, confirmed: [Self.scope: Rows((staged..<(staged + confirmed)).map(lap))],
+      staging: [Self.scope: Staging(digest: ScopeDigest(rows: stagedRows.map(\.json)), rows: Rows(stagedRows))],
+      cursors: [Self.scope: CursorRecord()], wholeScopes: true)
+    return try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [replica]), registry: Self.probe)
+  }
+
+  // The rows SQLite changed while `body` ran.
+  static func changes(in store: Store, _ body: () throws -> Void) throws -> Int {
+    let before = try store.writer.read { $0.totalChangesCount }
+    try body()
+    return try store.writer.read { $0.totalChangesCount } - before
   }
 
   @Test func anIndexedReadOfAFieldThatIsNotARefThrows() throws {

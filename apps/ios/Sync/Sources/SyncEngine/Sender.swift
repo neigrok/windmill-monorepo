@@ -114,26 +114,26 @@ package actor Sender {
       }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
       let send = core.clock.wall.reading()
-      let reply = await transport.push(request, token: token)
+      let reply = await core.answered { [transport] in await transport.push(request, token: token) }
       return try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
     } catch {
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
   }
 
-  // The answer's transactions in order: the offset sample first, then the results, the ack and the epoch, or the
-  // failure's own move. An answer handled as a 401 (§9.1: a 401, an `account-mismatch`, or a 200 or 409 served as anyone
-  // but the account the push named) applies nothing past its sample: it pauses while `token` is still the account's,
-  // and otherwise the push goes again under the new one, no retry consumed. A replica gone since the request
-  // (re-identified, signed out) drops the rest of the answer, which then says nothing about the replica now active: the
-  // next round looks again.
+  // The answer's transactions in order: the offset sample first, then the results in batches, the last moving ackThrough,
+  // and the epoch (§7.4), or the failure's own move. An answer handled as a 401 (§9.1: a 401, an `account-mismatch`, or
+  // a 200 or 409 served as anyone but the account the push named) applies nothing past its sample: it pauses while
+  // `token` is still the account's, and otherwise the push goes again under the new one, no retry consumed. A replica
+  // gone since the request (re-identified, signed out) drops the rest of the answer, which then says nothing about the
+  // replica now active: the next round looks again.
   func record(_ reply: Reply<PushResponse>, to request: PushRequest, under token: SessionToken, timing: Timing) throws -> SenderStep {
     guard case .answered(let answer) = reply else {
       conflicts = 0
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
     var replica: String? = request.replica
-    for step in answers.steps(for: answer, to: request) {
+    for step in answers.steps(for: answer, to: request, resultsPerBatch: core.store.limits.resultsPerBatch) {
       guard let id = replica else { break }
       if case .halve(let limit, _) = step { batchLimit = limit }
       if step == .pauseAuth {

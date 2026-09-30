@@ -11,6 +11,10 @@ public enum Constants {
   public static let backoffBaseMs: Int64 = 1_000
   public static let backoffCeilingMs: Int64 = 300_000
   public static let backoffLiveCeilingMs: Int64 = 30_000
+  public static let livePingMs: Int64 = 25_000
+  public static let livePongMs: Int64 = 10_000
+  public static let requestTimeoutMs: Int64 = 60_000
+  public static let writerSliceMs: Int64 = 25
   public static let offsetSamples = 8
   public static let clockJumpMs: Int64 = 1_000
   public static let requestLeaseMs: Int64 = 60_000

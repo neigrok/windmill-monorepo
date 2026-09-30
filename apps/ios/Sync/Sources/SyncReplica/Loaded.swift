@@ -25,6 +25,8 @@ public struct LoadedReplica: Sendable {
   public private(set) var change = StoreChange()
   // Every scope's rows were loaded, so a scope absent from `confirmed` holds none; otherwise reading it traps.
   public private(set) var wholeScopes: Bool
+  // The device's active replica (§7.12): a re-identify of it announces its new id.
+  public internal(set) var isActive: Bool
 
   // Cursors, known scopes and staging digests are always loaded whole; rows, outbox entries and notices as a planner
   // needs, `notices` nil when they were not loaded. Device rows are keyed by product, then by their key's bytes.
@@ -32,7 +34,7 @@ public struct LoadedReplica: Sendable {
               confirmed: [ScopeRef: Rows] = [:], staging: [ScopeRef: Staging] = [:],
               spent: [ScopeRef: [RecordKey: SpentID]] = [:], cursors: [ScopeRef: CursorRecord] = [:],
               known: [ScopeRef: KnownKind] = [:], notices: [Notice]? = [], deviceRows: [String: JSON.Object] = [:],
-              wholeScopes: Bool) {
+              wholeScopes: Bool, isActive: Bool = false) {
     self.meta = meta
     loadedEntries = outbox.sorted { $0.commitOrder < $1.commitOrder }
     entrySelection = entries
@@ -45,6 +47,7 @@ public struct LoadedReplica: Sendable {
     loadedNotices = notices
     self.deviceRows = deviceRows
     self.wholeScopes = wholeScopes
+    self.isActive = isActive
   }
 
   // A replica created in this transaction: it holds nothing yet.
@@ -131,7 +134,9 @@ public struct LoadedReplica: Sendable {
     case .meta(let meta):
       precondition(meta.replica.utf8.elementsEqual(self.meta.replica.utf8), "a replica's id changes only by a rename")
       self.meta = meta
-    case .rename(let id): meta.replica = id
+    case .rename(let id):
+      if isActive { record(.activeReplicaChanged(previous: meta.replica, replica: id)) }
+      meta.replica = id
     case .putEntry(let entry):
       precondition(self.entry(entry.localId).map { $0.commitOrder == entry.commitOrder } ?? true,
                    "\(entry.localId) is another entry's local id, which is unique on the device")
@@ -241,10 +246,17 @@ public struct LoadedReplica: Sendable {
   // What a write changes for the views, read before it applies: an entry's records before and after it.
   mutating func note(_ write: ReplicaWrite) {
     switch write {
-    case .meta, .putKnown, .deleteKnown, .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows, .putCursor:
+    case .meta(let meta):
       change.status = true
-    case .rename, .purgeCaches:
+      change.seat = change.seat || isActive && meta.state != self.meta.state
+    case .putKnown, .deleteKnown, .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows, .putCursor:
+      change.status = true
+    case .rename:
       change.replicas = true
+      change.seat = change.seat || isActive
+    case .purgeCaches:
+      change.replicas = true
+      change.released = true
     case .putEntry(let entry):
       change.outbox = true
       change.touch(entry.scope, entry.drawnDeltas.map(\.key) + (self.entry(entry.localId)?.drawnDeltas.map(\.key) ?? []))
@@ -253,9 +265,12 @@ public struct LoadedReplica: Sendable {
       if let entry = entry(localId) { change.touch(entry.scope, entry.drawnDeltas.map(\.key)) }
     case .putRow(let scope, let row): change.touch(scope, [row.key])
     case .deleteRow(let scope, let key): change.touch(scope, [key])
-    case .swapStaging(let scope), .forgetScope(let scope): change.scopes.insert(scope)
+    case .swapStaging(let scope), .forgetScope(let scope):
+      change.scopes.insert(scope)
+      change.released = true
+    case .beginStaging, .dropStaging: change.released = true
     case .putNotice, .moveNotice: change.notices = true
-    case .beginStaging, .putStagedRow, .deleteStagedRow, .stagingDigest, .dropStaging, .putSpent: break
+    case .putStagedRow, .deleteStagedRow, .stagingDigest, .putSpent: break
     }
   }
 
@@ -284,7 +299,19 @@ public struct LoadedDevice: Sendable {
   public init(meta: DeviceMeta, active: String, replicas: [LoadedReplica]) {
     self.meta = meta
     self.active = active
-    self.replicas = replicas
+    self.replicas = replicas.map { replica in
+      var marked = replica
+      marked.isActive = replica.id.utf8.elementsEqual(active.utf8)
+      return marked
+    }
+  }
+
+  // §8.2 a store's first launch: its one replica, active from the start, so no change of the active replica is announced.
+  public static func launching(_ meta: ReplicaMeta) -> LoadedDevice {
+    var device = LoadedDevice(meta: DeviceMeta(), active: meta.replica, replicas: [])
+    device.add(meta)
+    device.writes.append(.device(DeviceMeta(), active: meta.replica))
+    return device
   }
 
   public func replica(_ id: String) -> LoadedReplica? {
@@ -310,8 +337,8 @@ public struct LoadedDevice: Sendable {
     replicas.first { $0.meta.state == .dormant && $0.meta.account?.utf8.elementsEqual(account.utf8) == true }
   }
 
-  // Runs a replica planner on one replica; its writes and events join the device's in order. A re-identify inside
-  // it keeps the device's active replica pointing at it.
+  // Runs a replica planner on one replica; its writes and events join the device's in order. A re-identify inside it
+  // keeps the device's active replica pointing at it: the store names the active replica by its handle (§2.5).
   @discardableResult
   public mutating func modify<T>(_ id: String, _ body: (inout LoadedReplica) throws -> T) rethrows -> T {
     guard let index = replicas.firstIndex(where: { $0.id.utf8.elementsEqual(id.utf8) }) else { preconditionFailure("no replica \(id)") }
@@ -320,16 +347,21 @@ public struct LoadedDevice: Sendable {
       writes += batch.writes
       events += batch.events
       change.merge(batch.change)
-      let renamed = replicas[index].id
-      if active.utf8.elementsEqual(id.utf8) && !renamed.utf8.elementsEqual(id.utf8) { setMeta(meta, active: renamed) }
+      if replicas[index].isActive { active = replicas[index].id }
     }
     return try body(&replicas[index])
   }
 
   public var batch: ReplicaBatch { ReplicaBatch(writes: writes, events: events, change: change) }
 
+  // A change of the active replica is announced (§7.12).
   public mutating func setMeta(_ meta: DeviceMeta, active: String) {
     guard meta != self.meta || !active.utf8.elementsEqual(self.active.utf8) else { return }
+    if !active.utf8.elementsEqual(self.active.utf8) {
+      events.append(.activeReplicaChanged(previous: self.active, replica: active))
+      change.seat = true
+      for index in replicas.indices { replicas[index].isActive = replicas[index].id.utf8.elementsEqual(active.utf8) }
+    }
     self.meta = meta
     self.active = active
     writes.append(.device(meta, active: active))
@@ -338,7 +370,9 @@ public struct LoadedDevice: Sendable {
 
   public mutating func add(_ meta: ReplicaMeta) {
     writes.append(.createReplica(meta))
-    replicas.append(.fresh(meta))
+    var fresh = LoadedReplica.fresh(meta)
+    fresh.isActive = meta.replica.utf8.elementsEqual(active.utf8)
+    replicas.append(fresh)
     change.replicas = true
   }
 
@@ -346,6 +380,7 @@ public struct LoadedDevice: Sendable {
     writes.append(.deleteReplica(id))
     replicas.removeAll { $0.id.utf8.elementsEqual(id.utf8) }
     change.replicas = true
+    change.released = true
   }
 
   public mutating func record(_ event: EngineEvent) {

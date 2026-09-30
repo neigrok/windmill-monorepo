@@ -119,7 +119,7 @@ struct LaunchSettings {
   }
 }
 
-// Every event the engine publishes from launch on, in order: terminal outcomes and telemetry.
+// Every event the engine publishes from launch on, in order: terminal outcomes, telemetry and changes of the active replica.
 final class EventRecorder {
   private(set) var events: [JSON] = []
 

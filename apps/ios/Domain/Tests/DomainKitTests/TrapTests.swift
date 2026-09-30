@@ -197,6 +197,7 @@ enum Kit {
   struct Context: CommitContext {
     let records: [Record]
     var now: Int64 { Kit.moment.now.ms }
+    var replica: String { "rp_00000000000000000000000000000001" }
     func drawn(_ type: String, _ id: RecordID) throws -> Record? { records.first { $0.type == type && $0.id == id } }
     func stored(_ type: String, _ id: RecordID) throws -> Record? { try drawn(type, id) }
     func drawn(_ type: String) throws -> [Record] { records.filter { $0.type == type } }

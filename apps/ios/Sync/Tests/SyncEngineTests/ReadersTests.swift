@@ -45,6 +45,18 @@ struct ReadersTests {
 
   static func ids(_ records: [Record]) -> [String] { records.map(\.id.description) }
 
+  // §7.12: a read-and-commit body is given the id of the replica its commit writes to, the active one as it stands at
+  // that commit: after a re-identify, the new id.
+  @Test func aReadAndCommitBodyIsGivenTheIdOfTheReplicaItWritesTo() throws {
+    let rig = try Rig(account: "A")
+    let before = try rig.engine.commit(Rig.scope) { context in (nil as Gesture?, context.replica) }.value
+    #expect(before == (try rig.meta().replica))
+    _ = try rig.engine.write { store, instance in try store.reidentify(instance: &instance, identities: rig.engine.identities) }
+    let after = try rig.engine.commit(Rig.scope) { context in (Gesture(changes: [Rig.card("card0001", "One")]), context.replica) }.value
+    #expect(after == (try rig.meta().replica))
+    #expect(after != before)
+  }
+
   // A reader a `read` or a commit passed, used after that call returned, is malformed, a mint included; so is a commit
   // whose body reads through such a reader and lets its error out.
   @Test func aReaderUsedAfterItsCallIsMalformed() throws {

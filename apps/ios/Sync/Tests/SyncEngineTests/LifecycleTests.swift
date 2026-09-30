@@ -178,7 +178,9 @@ struct LifecycleTests {
     #expect(JSON.array(returns) == (try expect.member("returns")), "\(vector)")
     let held = try Self.withoutOffsets(store.read { try $0.device(rows: true).json }, forkGuard: forkGuard)
     #expect(held == (try Self.withoutOffsets(expect.member("device"), forkGuard: forkGuard)), "\(vector)")
-    #expect(JSON.array(ended.events.filter { !$0.isTelemetry }.map(\.json)) == (try expect.member("ended")), "\(vector)")
+    #expect(JSON.array(ended.events.filter(\.isEnded).map(\.json)) == (try expect.member("ended")), "\(vector)")
+    let announced = ended.events.filter { if case .activeReplicaChanged = $0 { true } else { false } }
+    #expect(JSON.array(announced.map(\.json)) == (expect["events"] ?? []), "\(vector)")
   }
 
   static func lineageVectors() throws -> [CorpusVector] {
@@ -387,7 +389,7 @@ struct LifecycleTests {
   // The flush runs for at most SIGNOUT_FLUSH_MS; then the sender holds the replica, so nothing more is numbered and the
   // count stays true. The push still in flight is abandoned: its answer, when it comes, is recorded. Keep leaves the
   // unsent dormant, and the account's token leaves the device.
-  @Test func signOutFlushesForItsWindowThenHoldsTheReplica() async throws {
+  @Test(.timeLimit(.minutes(1))) func signOutFlushesForItsWindowThenHoldsTheReplica() async throws {
     let rig = try Rig(account: "A")
     let before = try rig.replicaIDs()
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
@@ -436,7 +438,7 @@ struct LifecycleTests {
   // A Discard covers exactly the entries the confirmation counted, and is asked again when they differ at the answer:
   // here the push in flight lands, so the entry counted is no longer unsent, and nothing is signed out. Keep covers every
   // entry, counted or not, so work committed while the confirmation is up goes dormant with it.
-  @Test func aDiscardIsAskedAgainWhenTheEntriesItCountedChanged() async throws {
+  @Test(.timeLimit(.minutes(1))) func aDiscardIsAskedAgainWhenTheEntriesItCountedChanged() async throws {
     let rig = try Rig(account: "A")
     try rig.commit(Gesture(changes: [Rig.card("card0001", "One")], gestureId: "g1"))
     let gate = Gate()
@@ -501,6 +503,71 @@ struct LifecycleTests {
     try await signingOut.finish(.keep)
     #expect(seats.count == 5)
     #expect(try rig.replicas() == ["anon active entries: 0 new id", "dormant(A) entries: 1 new id"])
+  }
+
+  // MARK: The active replica (§7.12)
+
+  // `activeReplica()` answers the id the engine acts on, and each change of it is announced once, after its transaction,
+  // naming the id it replaced: a sign-in into a new replica, a conflict's re-identify, an epoch change, a sign-out, and a
+  // sign-in that binds the dormant replica again. A first launch announces nothing.
+  @Test func everyChangeOfTheActiveReplicaIsAnnouncedOnceNamingTheIdItReplaced() async throws {
+    let rig = try Rig()
+    let anon = try rig.engine.activeReplica()
+    #expect(rig.announced == [])
+    _ = try await rig.signIn("A", holds: ["probe": false])
+    let bound = try rig.engine.activeReplica()
+    try rig.commit(Gesture(changes: [Rig.card("card0001", "One")]))
+    rig.transport.willAnswerPush(409, Rig.failure("gap"))
+    #expect(await rig.engine.sender.step() == .again)
+    let reidentified = try rig.engine.activeReplica()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.admitted(1, seq: 1)], epoch: "ep-2"))
+    #expect(await rig.engine.sender.step() == .again)
+    let changedEpoch = try rig.engine.activeReplica()
+    rig.connectivity.set(online: false)
+    try await rig.engine.signOut().finish(.keep)
+    #expect(try rig.engine.activeReplica() == anon)
+    _ = try await rig.signIn("A", holds: ["probe": true])
+    #expect(try rig.engine.activeReplica() == changedEpoch)
+    #expect(Set([anon, bound, reidentified, changedEpoch]).count == 4)
+    #expect(rig.announced == [
+      "\(anon) -> \(bound)", "\(bound) -> \(reidentified)", "\(reidentified) -> \(changedEpoch)", "\(changedEpoch) -> \(anon)",
+      "\(anon) -> \(changedEpoch)",
+    ])
+  }
+
+  // A sign-in that binds the anon replica in place keeps its id and announces nothing, though it is a new seat: the next
+  // round ends every doubt and pulls every scope. A re-identify of a replica that is not active announces nothing either:
+  // here the dormant replica whose push, in flight at its sign-out, is answered replica-forked.
+  @Test(.timeLimit(.minutes(1))) func aChangeThatLeavesTheActiveIdAsItWasAnnouncesNothing() async throws {
+    let rig = try Rig()
+    let tree = ScopeRef.tree("b_00000001")
+    try rig.commit(Gesture(changes: [.create("board", id: .given("b_00000001"))]))
+    try rig.engine.subscribe(tree)
+    await rig.engine.puller.enqueue(.notFound(tree, servedAs: nil), for: try rig.engine.activeReplica())
+    #expect(await rig.engine.puller.step() == .frame(tree, .ignored))
+    #expect(rig.engine.doubts.inDoubt(tree))
+    let anon = try rig.engine.activeReplica()
+    _ = try await rig.signIn("A", holds: ["probe": false])
+    #expect(try rig.engine.activeReplica() == anon)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    #expect(!rig.engine.doubts.inDoubt(tree))
+    #expect(rig.announced == [])
+
+    let gate = Gate()
+    rig.transport.willAnswerPush(409, Rig.failure("replica-forked"), after: gate)
+    async let signingOut = rig.engine.signOut()
+    await gate.arrival()
+    await rig.clock.asleep(until: Constants.signoutFlushMs)
+    rig.clock.advance(ms: Constants.signoutFlushMs)
+    try await signingOut.finish(.keep)
+    let signedOut = try rig.engine.activeReplica()
+    gate.open()
+    #expect(await rig.engine.sender.step() == .idle)
+    #expect(try !rig.replicaIDs().contains(anon))
+    #expect(rig.announced == ["\(anon) -> \(signedOut)"])
   }
 
   // Accounts are the same only byte for byte (§9.1).

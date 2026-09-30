@@ -16,7 +16,7 @@ struct RepositoriesTests {
     let lap = Row(key: RecordKey("lap", "lap00001"),
                   lattice: Lattice(life: Life(.alive, stamp), born: stamp, fields: ["runId": Register("run\u{E9}", stamp)]), seq: 5)
     _ = try store.write(.pullPage) { _ in Planned((), ReplicaBatch(writes: [.replica(replica, .putRow(.product("probe"), lap))])) }
-    try store.writer.write { db in try db.execute(sql: "UPDATE confirmed_ref SET target = ?", arguments: [RecordID("rune\u{301}").text]) }
+    try store.writer.write { db in try db.execute(sql: "UPDATE set_ref SET target = ?", arguments: [RecordID("rune\u{301}").text]) }
     let index = try store.read { try $0.refIndex() }
     #expect(index.stored != index.expected)
   }

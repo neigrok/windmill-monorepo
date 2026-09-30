@@ -43,17 +43,31 @@ public final class Store: Sendable {
     }
   }
 
-  // One Action: load and plan inside the transaction, write the batch, and commit. A crash point before the commit
-  // rolls the transaction back; one after it stands for death between transactions.
+  // One Action: load and plan inside the transaction, write the batch, and commit.
   public func write<Value>(_ tx: TxName, _ body: (StoreTransaction) throws -> Planned<Value>) throws -> Written<Value> {
-    let written = try writer.write { db in
+    try transaction(tx) { db in
       let planned = try body(StoreTransaction(db: db, registry: registry))
       try BatchWriter(db: db, registry: registry).apply(planned.batch)
-      try crashPoints.hit(.beforeCommit(tx))
       return Written(value: planned.value, events: planned.batch.events, change: planned.batch.change)
     }
+  }
+
+  // §2.5 the deferred deletion, one transaction: up to `limit` rows no view reads any more. True while any are left.
+  public func sweep(limit: Int = 512) throws -> Written<Bool> {
+    try transaction(.sweep) { db in
+      Written(value: try BatchWriter(db: db, registry: registry).sweep(limit: limit), events: [], change: StoreChange())
+    }
+  }
+
+  // A crash point before the commit rolls the transaction back; one after it stands for death between transactions.
+  func transaction<Value>(_ tx: TxName, _ body: (Database) throws -> Value) throws -> Value {
+    let value = try writer.write { db in
+      let value = try body(db)
+      try crashPoints.hit(.beforeCommit(tx))
+      return value
+    }
     try crashPoints.hit(.afterCommit(tx))
-    return written
+    return value
   }
 
   // A consistent snapshot.
@@ -87,9 +101,9 @@ public struct Written<Value> {
 
 // The transactions of the design's §3.5 table, by name.
 public enum TxName: String, Sendable, Hashable, CaseIterable {
-  case firstLaunch, commit, undo, release, engineStart, number, offset, result, ack, localRefusal, authPause, authResume, reidentify
+  case firstLaunch, commit, undo, release, engineStart, number, offset, results, localRefusal, authPause, authResume, reidentify
   case epochChange, pullPage, liveFrame, subscriptions, signInBegin, signInComplete, signOutRelease, signOutCount
-  case signOutFinish, discardDormant, dismissNotice
+  case signOutFinish, discardDormant, dismissNotice, sweep
 }
 
 public enum CrashPoint: Sendable, Hashable {

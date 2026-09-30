@@ -112,10 +112,11 @@ package struct VectorRecords: Sendable {
 
 // A reader over a vector's records: the folded record by id visible or not, and the visible records of a type in id
 // order, as the engine's readers answer (ER-3, ER-12). Given a scope, it refuses a type of another scope as they do. It
-// mints the ids the vector lists, in order, and no other.
+// mints the ids the vector lists, in order, and no other; the replica it writes to is one no vector names.
 package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
+  package let replica = "rp_00000000000000000000000000000001"
   var ids: [RecordID]
   let pulled: Bool
   let scope: (ref: ScopeRef, registry: Registry)?

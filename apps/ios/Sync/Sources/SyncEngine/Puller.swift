@@ -6,15 +6,16 @@ import Synchronization
 
 // §7.5 the puller: one per device, for the active replica. Each step applies one live frame from its queue, or pulls
 // the scopes wanted in one request and records the answer as its ordered transactions (the offset sample, the epoch,
-// then one per page), each revalidating the replica it was asked for and the scope's subscription. Each trigger wants
-// its own scopes: engine start, foreground, a live reconnect and the fallback timer want every subscribed scope; a new
+// then each page, a rows page chunk by chunk), each revalidating the replica it was asked for and the scope's place in
+// the subscription set. Each trigger wants its own scopes: engine start, foreground, a live reconnect, the fallback
+// timer and a sign-in, a sign-out or a re-identify of the active replica (§7.12) want every subscribed scope; a new
 // subscription, and a frame that is not admitted (a live gap), want their own; a page that stops short of the head
-// wants its scope again, and a not-found ignored for a scope that has not booted wants it again as its re-pull backoff
-// allows (§7.9). A new seat wants every scope again. Steps are single-flight whoever runs them, so a frame and a page
-// never race on a cursor.
+// wants its scope again; a scope in doubt is pulled again as its re-pull backoff draws (§7.9). Steps are single-flight
+// whoever runs them, so one pull is in flight at a time, a trigger meanwhile only marks its scopes, and a frame and a
+// page never race on a cursor.
 
 package enum PullerStep: Sendable, Hashable {
-  // A queued frame: its scope, and its outcome, nil when it was dropped (its replica or subscription gone).
+  // A queued frame: its scope, and its outcome, nil when it was dropped (its replica no longer active).
   case frame(ScopeRef, FrameOutcome?)
   // One request answered: each page's scope and outcome, in the answer's order.
   case pulled([PageReport])
@@ -52,7 +53,8 @@ package struct PageReport: Sendable, Hashable {
 // its scopes before it reads the outbox, so a create's result landing while it reads is never missed.
 package final class PullWants: Sendable {
   struct State {
-    var all = false
+    // A process starts wanting every subscribed scope.
+    var all = true
     var scopes: Set<ScopeRef> = []
     var waiting: Set<ScopeRef> = []
   }
@@ -95,75 +97,20 @@ package final class PullWants: Sendable {
   }
 }
 
-// §7.9 re-pulls after an ignored not-found: the first at once, each further one on the scope's own live reopen backoff.
-package struct Repulls: Sendable {
-  struct Asked {
-    var backoff = Backoff()
-    var due: Int64?
-  }
-
-  var scopes: [ScopeRef: Asked] = [:]
-
-  package init() {}
-
-  // An ignored not-found asks `scope` pulled again at `now`; one asked while its re-pull is ahead asks that re-pull.
-  package mutating func ask(_ scope: ScopeRef, at now: Int64, random: any RandomSource) {
-    guard var asked = scopes[scope] else {
-      scopes[scope] = Asked(due: now)
-      return
-    }
-    guard asked.due == nil else { return }
-    asked.due = now + asked.backoff.next(ceilingMs: LiveChannel.reopenCeilingMs, floorMs: 0, random: random)
-    scopes[scope] = asked
-  }
-
-  // The scopes whose re-pull is due by `now`, taken: each is asked again only by its next ignored not-found.
-  package mutating func take(dueBy now: Int64) -> Set<ScopeRef> {
-    let due = Set(scopes.filter { $0.value.due.map { $0 <= now } == true }.keys)
-    for scope in due { scopes[scope]?.due = nil }
-    return due
-  }
-
-  // When the earliest re-pull ahead is due; nil when none is.
-  package var nextDue: Int64? { scopes.values.compactMap(\.due).min() }
-
-  // A page booted `scope`: its backoff ends, and a re-pull still ahead with it.
-  package mutating func booted(_ scope: ScopeRef) {
-    scopes[scope] = nil
-  }
-
-  // A scope no longer followed (closed, or known gone or not found) loses its backoff: followed again, it starts afresh.
-  package mutating func keep(_ followed: Set<ScopeRef>) {
-    scopes = scopes.filter { followed.contains($0.key) }
-  }
-}
-
 package actor Puller {
-  // The seat a round pulls for. Another replica (a re-identify, whether an epoch change's or a 409's, or a sign-in or
-  // out) or another account wants every scope again.
-  struct Seat: Equatable {
-    let replica: [UInt8]
-    let state: ReplicaMeta.State
-    let account: [UInt8]?
-
-    init(_ meta: ReplicaMeta) {
-      replica = Array(meta.replica.utf8)
-      state = meta.state
-      account = meta.account.map { Array($0.utf8) }
-    }
-  }
-
   let core: EngineCore
   let transport: any SyncTransport
   let pages: PageApplier
   package nonisolated let turns = Turns()
   var frames: [(frame: LiveFrame, replica: String)] = []
   var backoff = Backoff()
-  var repulls = Repulls()
+  // The re-pulls a round took as due whose pull has not ended.
+  var repulling: Set<ScopeRef> = []
+  // The subscription set as the last round read it: a scope that joins it since is pulled, as a subscribe's is (§7.9).
+  var joined: Set<ScopeRef> = []
   var kicksSeen: UInt64 = 0
   var serverAskEnd: Int64?
   var fallbackDue: Int64?
-  var seat: Seat?
 
   init(core: EngineCore, transport: any SyncTransport) {
     self.core = core
@@ -194,16 +141,16 @@ package actor Puller {
   }
 
   // One frame or one request, once the step in flight has ended. A round with nothing to pull in the foreground waits for
-  // the fallback pull, or for a re-pull backing off when that is due first, which a later round takes when it is due,
-  // whether it pulls or not.
+  // the fallback pull, or for a re-pull when that is due first; in the background it waits for a trigger, and a round
+  // then takes the re-pulls already due (§7.9 Timers).
   package func step() async -> PullerStep {
     guard await turns.take() else { return .idle }
     defer { turns.pass() }
     guard frames.isEmpty else { return apply(frames.removeFirst()) }
     let pulled = await round()
     guard pulled == .idle, core.isForeground else { return pulled }
-    let mono = core.clock.wall.reading().mono
-    if let repull = repulls.nextDue, repull < fallbackDue ?? .max { return .repull(ms: max(0, repull - mono)) }
+    let mono = now()
+    if let repull = core.doubts.withLock(\.nextDue), repull < fallbackDue ?? .max { return .repull(ms: max(0, repull - mono)) }
     guard let fallbackDue else { return .idle }
     return .fallback(ms: max(0, fallbackDue - mono))
   }
@@ -211,21 +158,20 @@ package actor Puller {
   // MARK: Frames
 
   // §7.5 step 3 in one transaction; a frame that is not admitted, whose digest check reset the cursor, or a not-found
-  // ignored for a tree that waits wants its scope pulled, one ignored for a tree that has not booted asks its re-pull, and
-  // one whose alive governing row brought a tree back wants the tree's scopes (§7.9). One that forgot its scope, ended one
-  // it ignores, paused the replica, or brought scopes back has the live channel look again at what it follows, so it
-  // stops following an ended scope, and follows a waiting, returning or ignored one once it is pulled.
+  // ignored for a tree that waits wants its scope pulled, and one whose alive governing row brought a tree back wants the
+  // tree's scopes (§7.9). An ignored end puts its scope in doubt. One that forgot its scope, ended one it ignores, paused
+  // the replica, fell outside the set, or brought scopes back has the live channel look again at what it follows.
   func apply(_ queued: (frame: LiveFrame, replica: String)) -> PullerStep {
     guard let scope = queued.frame.scope else { return .again }
     do {
       let applied = try core.write { store, instance in
-        let subscribed = try core.seat().map { core.subscriptions(of: $0) } ?? []
-        return try store.apply(queued.frame, replica: queued.replica, subscribed: Set(subscribed), instance: instance)
+        try store.apply(queued.frame, replica: queued.replica, subscribed: core.subscriptions(), instance: instance)
       }
       guard let applied else { return .frame(scope, nil) }
-      schedule(applied.next, of: scope)
-      let brought = applied.next.scopes.contains { $0 != scope }
-      if brought || [.gone, .notFound, .ignored, .paused].contains(applied.outcome) { core.wakes.live.kick() }
+      wants.add(applied.next)
+      if applied.outcome == .ignored { core.doubts.withLock { $0.end(scope, at: now(), random: core.random) } }
+      let brought = applied.next.contains { $0 != scope }
+      if brought || [.gone, .notFound, .ignored, .paused, .outside].contains(applied.outcome) { core.wakes.live.kick() }
       return .frame(scope, applied.outcome)
     } catch {
       wants.add([scope])
@@ -235,13 +181,14 @@ package actor Puller {
 
   // MARK: One request
 
-  // One request: its scopes, the wanted subscribed ones in subscription order, less those that wait for their governing
-  // record's create, which stay wanted and marked; a round left with none sends nothing. A re-pull that is due is wanted
-  // from then on. The subscriptions are reconciled first, so an entry acked in a scope no longer followed resolves
-  // (§7.9). The wants are taken before the subscriptions are read, since a subscribe opens its scope before it wants it:
-  // a scope wanted is subscribed, and a subscribe that lands later leaves its want for the next round.
+  // One request: its scopes, the wanted ones of the subscription set in its order, less those that wait for their
+  // governing record's create, which stay wanted and marked; a round left with none sends nothing. The re-pulls due are
+  // wanted from then on, and a scope that joined the set since the last round is wanted. The subscription set is
+  // reconciled first, so an entry acked in a scope no longer followed resolves (§7.9). The wants are taken after the
+  // set is read, and a subscribe opens its scope before it wants it, so a scope wanted is in the set, and a subscribe
+  // that lands later leaves its want for the next round.
   func round() async -> PullerStep {
-    let mono = core.clock.wall.reading().mono
+    let mono = now()
     if wake.kicks != kicksSeen {
       kicksSeen = wake.kicks
       backoff.reset()
@@ -251,7 +198,9 @@ package actor Puller {
       self.fallbackDue = nil
       wants.all()
     }
-    wants.add(repulls.take(dueBy: mono))
+    let due = core.doubts.withLock { $0.due(by: mono) }
+    wants.add(due)
+    repulling.formUnion(due)
     if let serverAskEnd, serverAskEnd > mono { return .backoff(ms: serverAskEnd - mono) }
     guard core.connectivity.isOnline else { return .idle }
     var taken: [ScopeRef] = []
@@ -263,16 +212,14 @@ package actor Puller {
         guard let found = core.tokens.token(for: account) else { return try core.pauseAuth(meta.replica, sentUnder: nil) ? .paused : .again }
         token = found
       }
-      if Seat(meta) != seat {
-        seat = Seat(meta)
-        repulls = Repulls()
-        wants.all()
-      }
-      repulls.keep(try core.reconcileSubscriptions())
+      let set = try core.reconcileSubscriptions()
+      core.doubts.withLock { $0.keep(Set(set)) }
+      repulling.formIntersection(set)
+      wants.add(Set(set).subtracting(joined))
+      joined = Set(set)
       let wanted = wants.take()
-      let subscribed = core.subscriptions(of: meta)
-      taken = wanted.all ? subscribed : subscribed.filter(wanted.scopes.contains)
-      if wanted.all { fallbackDue = subscribed.isEmpty ? nil : mono + Constants.pullFallbackMs }
+      taken = wanted.all ? set : set.filter(wanted.scopes.contains)
+      if wanted.all { fallbackDue = set.isEmpty ? nil : mono + Constants.pullFallbackMs }
       wants.reading(taken)
       guard let planned = try core.store.pullPlan(taken, replica: meta.replica) else {
         wants.add(taken)
@@ -282,7 +229,7 @@ package actor Puller {
       wants.read(wanted.scopes.union(taken), waiting: planned.waiting)
       guard let request = planned.request else { return .idle }
       let send = core.clock.wall.reading()
-      let reply = await transport.pull(request, token: token)
+      let reply = await core.answered { [transport, token] in await transport.pull(request, token: token) }
       return try record(reply, to: request, for: meta, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
     } catch {
       wants.add(taken)
@@ -290,17 +237,18 @@ package actor Puller {
     }
   }
 
-  // The answer's transactions in order (§7.5 steps 1–2): the offset sample, the epoch, then one per page; or a failure's
-  // sample. An answer handled as a 401 (§9.1: a 401, or a 200 served as anyone but the replica's account) applies
-  // nothing past its sample: it pauses while `token` is still the account's, and its scopes are asked again once the
-  // account re-authenticates. A page wants the scopes it leaves short of the head or brings back, and asks the re-pull of
-  // a scope whose not-found it ignored before the scope booted; an epoch change re-identified the replica and nulled every
-  // cursor, so every scope is wanted; a replica no longer active, or no longer of the account the request was built as,
-  // drops the rest, which says nothing of the replica as it now stands. The live channel then looks again at what it
-  // follows.
+  // The answer's transactions in order (§7.5 steps 1–2): the offset sample, the epoch, then each page's chunks; or a
+  // failure's sample. An answer handled as a 401 (§9.1: a 401, or a 200 served as anyone but the replica's account)
+  // applies nothing past its sample: it pauses while `token` is still the account's, and its scopes are asked again
+  // once the account re-authenticates. A chunk that finds its scope stale or outside the set ends its page there. A
+  // page wants the scopes it leaves short of the head or brings back; an ignored end puts its scope in doubt, and an
+  // applied rows page ends one; the steps after an epoch change's re-identify go to the replica's new id; a replica no
+  // longer active, or no longer of the account the request was built as, drops the rest, which says nothing of the
+  // replica as it now stands. Each re-pull the request carried has ended, and the live channel looks again.
   func record(_ reply: Reply<PullResponse>, to request: PullRequest, for meta: ReplicaMeta, under token: SessionToken?,
               timing: Timing) throws -> PullerStep {
     let scopes = request.scopes.map(\.scope)
+    defer { endRepulls(scopes) }
     guard case .answered(let answer) = reply else {
       wants.add(scopes)
       return .backoff(ms: nextBackoff(floorMs: 0))
@@ -308,24 +256,26 @@ package actor Puller {
     defer { core.wakes.live.kick() }
     var replica = meta.replica
     var reports: [PageReport] = []
-    for step in pages.steps(for: answer, to: request, account: meta.account) {
+    var ended: Set<ScopeRef> = []
+    for step in pages.steps(for: answer, to: request, account: meta.account, chunkRows: core.store.limits.chunkRows) {
       if step == .pauseAuth {
         wants.add(scopes)
         return try unauthenticated(replica, under: token)
       }
+      if case .page(let page, _, _) = step, ended.contains(page.scope) { continue }
       let asked = replica
       let applied = try core.write { store, instance in
-        try store.apply(step, replica: asked, account: meta.account, subscribed: Set(core.subscriptions(of: meta)),
-                        instance: &instance, timing: timing, identities: core.identities)
+        try store.apply(step, replica: asked, account: meta.account, subscribed: core.subscriptions(), instance: &instance,
+                        timing: timing, identities: core.identities)
       }
       guard let applied else { return .again }
-      if !applied.replica.utf8.elementsEqual(asked.utf8) {
-        replica = applied.replica
-        wants.all()
-      }
-      guard case .page(let page, _) = step, let outcome = applied.outcome else { continue }
+      replica = applied.replica
+      guard case .page(let page, _, let chunk) = step else { continue }
+      wants.add(applied.next)
+      guard let outcome = applied.outcome else { continue }
+      if !chunk.isLast { ended.insert(page.scope) }
       reports.append(PageReport(scope: page.scope, outcome: outcome))
-      schedule(applied.next, of: page.scope)
+      doubt(page, outcome)
     }
     switch answer {
     case .ok:
@@ -337,11 +287,23 @@ package actor Puller {
     }
   }
 
-  // What a page or frame of `scope` left to pull: its scopes at once, and its own re-pull on the scope's backoff.
-  func schedule(_ next: PullNext, of scope: ScopeRef) {
-    wants.add(next.scopes)
-    if next.boots { repulls.booted(scope) }
-    if next.pullsAgain { repulls.ask(scope, at: core.clock.wall.reading().mono, random: core.random) }
+  // §7.9: an ignored end puts its scope in doubt; an applied rows page ends the doubt.
+  func doubt(_ page: PullPage, _ outcome: PageOutcome) {
+    switch (outcome, page.body) {
+    case (.ignored, _): core.doubts.withLock { $0.end(page.scope, at: now(), random: core.random) }
+    case (.applied, .rows): core.doubts.withLock { $0.rows(page.scope) }
+    default: break
+    }
+  }
+
+  // The re-pulls among `scopes` have ended: each scope still in doubt draws its next.
+  func endRepulls(_ scopes: [ScopeRef]) {
+    let ended = repulling.intersection(scopes)
+    repulling.subtract(ended)
+    let mono = now()
+    core.doubts.withLock { doubts in
+      for scope in ended.sorted() { doubts.repulled(scope, at: mono, random: core.random) }
+    }
   }
 
   // Design §6.3's puller column for an answer handled as a 401: it paused the replica, unless the token changed while the
@@ -361,7 +323,7 @@ package actor Puller {
       return .stopped
     case 503:
       let asked = failure.retryAfterMs ?? 0
-      serverAskEnd = core.clock.wall.reading().mono + asked
+      serverAskEnd = now() + asked
       return .backoff(ms: nextBackoff(floorMs: asked))
     default:
       return .backoff(ms: nextBackoff(floorMs: 0))
@@ -370,5 +332,9 @@ package actor Puller {
 
   func nextBackoff(floorMs: Int64) -> Int64 {
     backoff.next(ceilingMs: core.backoffCeilingMs(), floorMs: floorMs, random: core.random)
+  }
+
+  func now() -> Int64 {
+    core.clock.wall.reading().mono
   }
 }

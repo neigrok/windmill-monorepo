@@ -21,6 +21,8 @@ struct Rig {
   let connectivity: SwitchedConnectivity
   let store: Store
   let engine: SyncEngine
+  // Every event the engine publishes, in order.
+  let events = EventLog()
 
   // `account`: a replica bound to it before the engine starts, whose token is `token`.
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
@@ -39,22 +41,30 @@ struct Rig {
       _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     }
     engine = try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens,
-                            forkGuard: forkGuard, connectivity: connectivity, drivesLoops: drivesLoops, bindings: bindings)
+                            forkGuard: forkGuard, connectivity: connectivity, drivesLoops: drivesLoops, bindings: bindings, events: events)
   }
 
   // Another process over the same store: the engine as a relaunch builds it.
   func relaunch() throws -> SyncEngine {
     try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens, forkGuard: forkGuard,
-                   connectivity: connectivity, drivesLoops: false, bindings: [])
+                   connectivity: connectivity, drivesLoops: false, bindings: [], events: events)
   }
 
   static func engine(over store: Store, clock: SimClock, random: QueuedRandom, transport: ScriptedTransport,
                      tokens: InMemoryTokenStore, forkGuard: InMemoryForkGuardStore, connectivity: SwitchedConnectivity,
-                     drivesLoops: Bool, bindings: [any ProductBinding]) throws -> SyncEngine {
+                     drivesLoops: Bool, bindings: [any ProductBinding], events: EventLog) throws -> SyncEngine {
     try SyncEngine(
       config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), bindings: bindings, store: store,
       transport: transport, tokens: tokens, forkGuard: forkGuard, clock: clock.engineClock, random: random,
-      connectivity: connectivity)
+      identities: Identities(random: random), connectivity: connectivity, tap: { events.append($0) })
+  }
+
+  // The changes of the active replica announced so far (§7.12), each as "previous -> replica".
+  var announced: [String] {
+    events.events.compactMap { event in
+      guard case .activeReplicaChanged(let previous, let replica) = event else { return nil }
+      return "\(previous) -> \(replica)"
+    }
   }
 
   // MARK: The store as it stands
