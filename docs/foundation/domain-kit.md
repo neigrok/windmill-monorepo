@@ -1700,8 +1700,7 @@ makes expressible, where the product still has to use what the kit gives:
 
 The kit binds to the Swift engine's public API (Swift engine §5.2) and requires the following of it,
 and the same of the Kotlin engine. The engine API owner accepted ER-1 to ER-9 and ER-11 to ER-18 as
-stated here, except ER-12's observable view, which the Swift engine owes; ER-10 is the Kotlin engine
-owner's.
+stated here; ER-10 is the Kotlin engine owner's.
 
 | ER | Requirement | Engine text it relies on |
 |---|---|---|

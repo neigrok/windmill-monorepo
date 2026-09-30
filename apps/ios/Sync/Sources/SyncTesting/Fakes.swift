@@ -301,7 +301,9 @@ public final class Killer: Sendable {
   public var isDead: Bool { state.withLock(\.dead) }
   public var recorded: (points: [CrashPoint], states: [JSON]) { state.withLock { ($0.points, $0.states) } }
 
+  // A process dies between transactions, so a read is no point of death.
   public func hit(_ point: CrashPoint) throws {
+    guard point != .read else { return }
     let (kill, recording) = state.withLock { state -> (Bool, Store?) in
       guard let store = state.store else { return (false, nil) }
       if state.dead { return (true, nil) }

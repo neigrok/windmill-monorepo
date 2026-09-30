@@ -6,8 +6,10 @@ import SyncStore
 import Synchronization
 
 // The observation pipeline (design §4.5): each committed transaction's `StoreChange` goes, in commit order, to one
-// main-actor loop that refreshes the live views from SQLite, and its events go to every subscriber. Views refresh per
-// touched record, or whole when a change reaches a whole scope or the replicas themselves.
+// main-actor loop that refreshes the live views from SQLite, and its events go to every subscriber. Every read of a
+// records view runs off the main actor, which only shows what the read made. A records view is loaded whole once it is
+// made, by a lane of first loads beside the loop, and again after a change that reaches its whole scope or the
+// replicas themselves; any other change reads only the records of its type the change touched.
 
 // MARK: - Publishing
 
@@ -47,6 +49,15 @@ final class Publisher: Sendable {
     state.withLock { $0.taps.append(tap) }
   }
 
+  // An empty change: the views take a turn with nothing new, in which each reads what it owes (after a first load landed,
+  // or at a retry).
+  func nudge() {
+    state.withLock { state in
+      state.sequence += 1
+      feed.yield((state.sequence, StoreChange()))
+    }
+  }
+
   // The sequence of the last change sent to the views.
   var published: UInt64 { state.withLock(\.sequence) }
 
@@ -79,8 +90,21 @@ final class ViewHub {
     weak var view: View?
   }
 
+  // A records view's read that failed is tried again after the first of these, and after the next each time it fails
+  // again.
+  static let retryMs: [Int64] = [100, 200, 400, 800, 1_600, 3_200]
+  // How many of the records views asked for last the hub holds, so a UI that asks again without keeping its view (a
+  // SwiftUI body) finds it live and loaded.
+  static let heldRecent = 8
+
   let core: EngineCore
   var liveRecords: [RecordsView.Key: Weak<RecordsView>] = [:]
+  // The records views asked for last, the most recent last.
+  var recent: [RecordsView] = []
+  // The lane of first loads, while a view waits for its first load.
+  var firstLoads: Task<Void, Never>?
+  // The retry of the records views' failed reads, while one is due.
+  var retry: Task<Void, Never>?
   // Keyed by the product's bytes, so products that differ only by canonical equivalence are two views.
   var liveNotices: [[UInt8]: Weak<NoticesView>] = [:]
   var offersView: UndoOffers?
@@ -90,7 +114,7 @@ final class ViewHub {
   var beginning: [(sequence: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
   var settling: [(through: UInt64, continuation: CheckedContinuation<Void, Never>)] = []
 
-  // Built beside the engine; each view is made on first use, loaded as the store stands.
+  // Built beside the engine; each view is made on first use.
   nonisolated init(core: EngineCore) {
     self.core = core
   }
@@ -122,9 +146,23 @@ final class ViewHub {
   }
 
   // Returns once every change up to `sequence` is applied.
-  func settle(through sequence: UInt64) async {
+  func applied(through sequence: UInt64) async {
     guard applied < sequence else { return }
     await withCheckedContinuation { settling.append((sequence, $0)) }
+  }
+
+  // Returns once every change published before the call is applied and no view waits for its first load, but for a view
+  // waiting to retry a read that failed.
+  func settle() async {
+    while true {
+      if let firstLoads {
+        await firstLoads.value
+        continue
+      }
+      let published = core.publisher.published
+      guard applied < published else { return }
+      await applied(through: published)
+    }
   }
 
   // The views are pruned of released ones before any load, so a view made again while a load is awaited stays live.
@@ -132,32 +170,83 @@ final class ViewHub {
     let everything = change.replicas
     liveRecords = liveRecords.filter { $0.value.view != nil }
     liveNotices = liveNotices.filter { $0.value.view != nil }
-    for (key, entry) in liveRecords {
-      guard let view = entry.view else { continue }
-      let touched = change.records[key.scope].map { Set($0.filter { $0.type.utf8.elementsEqual(key.type.utf8) }) } ?? []
-      if everything || change.scopes.contains(key.scope) || !view.isWhole {
-        guard let loaded = await load({ [core] tx in try Self.loadRecords(tx, key, core: core) }) else { continue }
-        view.replace(loaded.records, firstPullComplete: loaded.firstPullComplete)
-      } else if !touched.isEmpty || change.status {
-        guard let loaded = await load({ [core] tx in try Self.loadRecords(tx, key, only: touched, core: core) }) else { continue }
-        view.update(loaded.records, of: touched, firstPullComplete: loaded.firstPullComplete)
-      }
-    }
+    await refreshRecords(owing: change)
     if everything || change.notices {
       for entry in liveNotices.values {
         guard let view = entry.view else { continue }
         let product = view.product
-        if let loaded = await load({ tx in try Self.loadNotices(tx, of: product) }) { view.notices = loaded }
+        if let loaded = try? await load({ tx in try Self.loadNotices(tx, of: product) }) { view.notices = loaded }
       }
     }
     if let offersView, everything || change.outbox {
       let deviceNow = core.clock.wall.nowMs()
-      if let offers = await load({ tx in try Self.loadOffers(tx, deviceNow: deviceNow) }), offers != offersView.offers {
+      if let offers = try? await load({ tx in try Self.loadOffers(tx, deviceNow: deviceNow) }), offers != offersView.offers {
         offersView.offers = offers
       }
     }
     if let statusView, everything || change.outbox || change.status {
-      if let snapshot = await load({ [core] tx in try Self.loadStatus(tx, core: core) }) { statusView.apply(snapshot) }
+      if let snapshot = try? await load({ [core] tx in try Self.loadStatus(tx, core: core) }) { statusView.apply(snapshot) }
+    }
+  }
+
+  // Every records view owes `change` until a read of it lands. One not yet loaded owes it to its first load, and one
+  // waiting to retry a read to the retry; any other reads now what may have changed of what it shows. A scope's first
+  // pull is read once in the turn, and only when the changes may have moved it.
+  func refreshRecords(owing change: StoreChange) async {
+    let views = liveRecords.values.compactMap(\.view)
+    for view in views { view.owed.merge(change) }
+    var firstPulls: [ScopeRef: Bool] = [:]
+    for view in views {
+      guard case .loaded(let shown) = view.state, !view.waitsForRetry else { continue }
+      let (key, owed) = (view.key, view.beginRead())
+      do {
+        if core.movesFirstPulls(owed), firstPulls[key.scope] == nil {
+          firstPulls[key.scope] = try await load { [core] tx in try core.firstPullComplete(tx, of: key.scope, in: tx.activeReplica()) }
+        }
+        switch view.refresh(of: shown, owing: owed, firstPullComplete: firstPulls[key.scope]) {
+        case .none: view.land(nil)
+        case .show(let next): view.land(next)
+        case .read(let read): view.land(try await load { [core] tx in try Self.loadRecords(tx, key, read, core: core) })
+        }
+      } catch {
+        fail(view, owing: owed)
+      }
+    }
+  }
+
+  // The lane of first loads: one view at a time, in a task of its own, so no refresh waits behind a first load and the
+  // first loads take one of the store's readers at most. What is applied while a view loads stays owed, and is read in
+  // the turn its landing asks for.
+  func loadFirst() {
+    guard firstLoads == nil, liveRecords.values.contains(where: { $0.view?.awaitsFirstLoad == true }) else { return }
+    firstLoads = Task { [weak self] in
+      while let hub = self, let view = hub.liveRecords.values.lazy.compactMap(\.view).first(where: \.awaitsFirstLoad) {
+        let (key, owed, core) = (view.key, view.beginRead(), hub.core)
+        do {
+          view.land(try await hub.load { tx in try Self.loadRecords(tx, key, .whole(shown: nil), core: core) })
+        } catch {
+          hub.fail(view, owing: owed)
+        }
+        core.publisher.nudge()
+      }
+      self?.firstLoads = nil
+    }
+  }
+
+  // A read for `view` failed: it owes again what the read was to read, and waits for the retry, which is due after the
+  // backoff of the reads the view failed in a row unless one is due already. At the retry every waiting view reads again,
+  // one not loaded in the lane of first loads.
+  func fail(_ view: RecordsView, owing owed: StoreChange) {
+    view.fail(owing: owed)
+    guard retry == nil else { return }
+    let ms = Self.retryMs[min(view.failures, Self.retryMs.count) - 1]
+    retry = Task { [weak self, sleeper = core.clock.sleeper] in
+      try? await sleeper.sleep(for: .milliseconds(ms))
+      guard let self else { return }
+      retry = nil
+      for view in liveRecords.values.compactMap(\.view) { view.waitsForRetry = false }
+      loadFirst()
+      core.publisher.nudge()
     }
   }
 
@@ -176,11 +265,15 @@ final class ViewHub {
     return view
   }
 
+  // The live view of `key`, or one made `.loading`, which the lane of first loads loads. The last views asked for stay
+  // held.
   func records(_ key: RecordsView.Key) -> RecordsView {
-    if let view = liveRecords[key]?.view { return view }
-    let loaded = try? core.store.read { try Self.loadRecords($0, key, core: core) }
-    let view = RecordsView(key: key, records: loaded?.records, firstPullComplete: loaded?.firstPullComplete ?? false)
+    let view = liveRecords[key]?.view ?? RecordsView(key: key)
     liveRecords[key] = Weak(view: view)
+    recent.removeAll { $0 === view }
+    recent.append(view)
+    if recent.count > Self.heldRecent { recent.removeFirst() }
+    loadFirst()
     return view
   }
 
@@ -193,21 +286,24 @@ final class ViewHub {
 
   // MARK: Loads
 
-  // A new view loads once on the main actor, so it shows the store at once; every refresh reads on the concurrent
-  // executor, and a read that fails leaves the views as they are until the next change.
-  @concurrent nonisolated func load<Value: Sendable>(_ read: @Sendable (StoreTransaction) throws -> Value) async -> Value? {
-    try? core.store.read(read)
+  // Every read of a records view runs on the concurrent executor; a notices view, the Undo offers and the status, each
+  // a small read, load on the main actor when first asked for, and one whose read fails keeps what it shows until the
+  // next change.
+  @concurrent nonisolated func load<Value: Sendable>(_ read: @Sendable (StoreTransaction) throws -> Value) async throws -> Value {
+    try core.store.read(read)
   }
 
-  nonisolated static func loadRecords(_ tx: StoreTransaction, _ key: RecordsView.Key, only keys: Set<RecordKey>? = nil,
-                                  core: EngineCore) throws -> (records: [RecordKey: Record], firstPullComplete: Bool) {
+  // What `read` makes of the view `key`: the snapshot to show, or nil when the view shows it already.
+  nonisolated static func loadRecords(_ tx: StoreTransaction, _ key: RecordsView.Key, _ read: RecordsView.Read,
+                                      core: EngineCore) throws -> RecordsView.Snapshot? {
     let reader = try TransactionReader(tx, core: core, scope: key.scope, deviceNow: core.clock.wall.nowMs())
-    let firstPullComplete = try reader.firstPullComplete()
-    guard let keys else {
-      let records = try reader.records(ofType: key.type, key.mode)
-      return (Dictionary(uniqueKeysWithValues: records.map { (RecordKey($0.type, $0.id), $0) }), firstPullComplete)
+    switch read {
+    case .whole(let shown):
+      let loaded = RecordsView.Snapshot(records: try reader.records(key.listing), firstPullComplete: try reader.firstPullComplete())
+      return loaded == shown ? nil : loaded
+    case .records(let touched, let shown, let firstPullComplete):
+      return shown.updating(touched, to: try reader.records(touched, in: key.listing), firstPullComplete: firstPullComplete)
     }
-    return (try reader.records(keys, key.mode), firstPullComplete)
   }
 
   nonisolated static func loadNotices(_ tx: StoreTransaction, of product: String) throws -> [Notice] {
@@ -239,48 +335,136 @@ final class ViewHub {
 
 // MARK: - Views
 
-// The visible records of one type of one scope, drawn or stored, as the store holds them after every applied change.
+// The visible records of one type of one scope, drawn or stored, every one or only those whose top-level ref field names
+// an id (ER-12), as the store holds them after every applied change. The view is `.loading` until its first load, read
+// off the main actor, lands. A change then reads again only the records of its type it touched: a change to one the
+// view does not list costs it one read of that record, and a change that touches none of its type costs it no read, but
+// the one read of its scope's first pull all the scope's views share when the change may have moved it.
 @MainActor @Observable
 public final class RecordsView {
   struct Key: Hashable, Sendable {
     let scope: ScopeRef
-    let type: String
-    let mode: ViewMode
+    let listing: Listing
   }
 
-  public let scope: ScopeRef
-  public let type: String
-  public let mode: ViewMode
-  public private(set) var records: [RecordID: Record]
-  public private(set) var firstPullComplete: Bool
-  // False while the view holds less than its whole type: its first load failed, so the next change reloads it whole.
-  @ObservationIgnored var isWhole: Bool
-
-  // `records` nil: the store could not be read yet.
-  init(key: Key, records: [RecordKey: Record]?, firstPullComplete: Bool) {
-    scope = key.scope
-    type = key.type
-    mode = key.mode
-    self.records = Dictionary(uniqueKeysWithValues: (records ?? [:]).values.filter(\.isVisible).map { ($0.id, $0) })
-    self.firstPullComplete = firstPullComplete
-    isWhole = records != nil
+  public enum State: Sendable, Equatable {
+    case loading
+    case loaded(Snapshot)
   }
 
-  func replace(_ loaded: [RecordKey: Record], firstPullComplete: Bool) {
-    let visible = Dictionary(uniqueKeysWithValues: loaded.values.filter(\.isVisible).map { ($0.id, $0) })
-    if visible != records { records = visible }
-    if firstPullComplete != self.firstPullComplete { self.firstPullComplete = firstPullComplete }
-    isWhole = true
-  }
+  // What a loaded view lists: its records in id-byte order, as the one-shot read of the same list returns them, and
+  // whether the scope's first pull is complete (§7.9).
+  public struct Snapshot: Sendable, Equatable {
+    public let records: [Record]
+    public let firstPullComplete: Bool
 
-  // The touched records as loaded: a visible one is set, any other removed.
-  func update(_ loaded: [RecordKey: Record], of touched: Set<RecordKey>, firstPullComplete: Bool) {
-    var next = records
-    for key in touched {
-      next[key.id] = loaded[key].flatMap { $0.isVisible ? $0 : nil }
+    public init(records: [Record], firstPullComplete: Bool) {
+      self.records = records
+      self.firstPullComplete = firstPullComplete
     }
-    if next != records { records = next }
-    if firstPullComplete != self.firstPullComplete { self.firstPullComplete = firstPullComplete }
+
+    // The record of `id`, found by its bytes, which order the records.
+    public func record(_ id: RecordID) -> Record? {
+      let index = position(of: id)
+      return index < records.count && records[index].id == id ? records[index] : nil
+    }
+
+    // Where `id` is or would go: the first record whose id is not below it.
+    func position(of id: RecordID) -> Int {
+      var (low, high) = (0, records.count)
+      while low < high {
+        let middle = (low + high) / 2
+        if records[middle].id < id { low = middle + 1 } else { high = middle }
+      }
+      return low
+    }
+
+    // The snapshot once the records `touched` were read again: each one `held`, which the list still holds, in its place
+    // as read, the other touched ones gone, and the records between them as they were; nil when nothing shown changes.
+    func updating(_ touched: Set<RecordKey>, to held: [RecordKey: Record], firstPullComplete: Bool) -> Snapshot? {
+      let unchanged = firstPullComplete == self.firstPullComplete && touched.allSatisfy { record($0.id) == held[$0] }
+      guard !unchanged else { return nil }
+      var next: [Record] = []
+      next.reserveCapacity(records.count + held.count)
+      var kept = 0
+      for key in touched.sorted(by: { $0.id < $1.id }) {
+        let index = position(of: key.id)
+        next += records[kept..<index]
+        if let record = held[key] { next.append(record) }
+        kept = index < records.count && records[index].id == key.id ? index + 1 : index
+      }
+      next += records[kept...]
+      return Snapshot(records: next, firstPullComplete: firstPullComplete)
+    }
+  }
+
+  // A read a view needs: the records of its type some changes touched, the others kept as `shown` has them, beside its
+  // scope's first pull; or every record and the first pull, to replace what it shows, nil before its first load.
+  enum Read: Sendable {
+    case records(Set<RecordKey>, shown: Snapshot, firstPullComplete: Bool)
+    case whole(shown: Snapshot?)
+  }
+
+  // What the changes a view owes ask of it: nothing, a snapshot shown at once, or a read.
+  enum Refresh: Sendable {
+    case none
+    case show(Snapshot)
+    case read(Read)
+  }
+
+  let key: Key
+  public private(set) var state = State.loading
+  // What was applied since the view's read in flight, or its last read, began: its next read reads it again.
+  @ObservationIgnored var owed = StoreChange()
+  // The view's reads that failed in a row; after one, it reads nothing until the hub's retry.
+  @ObservationIgnored var failures = 0
+  @ObservationIgnored var waitsForRetry = false
+
+  init(key: Key) {
+    self.key = key
+  }
+
+  public var scope: ScopeRef { key.scope }
+  public var type: String { key.listing.type }
+  public var mode: ViewMode { key.listing.mode }
+
+  var awaitsFirstLoad: Bool {
+    guard case .loading = state else { return false }
+    return !waitsForRetry
+  }
+
+  // What the changes `owed` ask of the view showing `shown`, `firstPullComplete` being its scope's first pull read again
+  // in this turn: every record read again after a change to its whole scope or to the replicas; else the records of its
+  // type the changes touched; else the first pull alone, shown at once when it moved; else nothing.
+  func refresh(of shown: Snapshot, owing owed: StoreChange, firstPullComplete: Bool?) -> Refresh {
+    if owed.replicas || owed.scopes.contains(key.scope) { return .read(.whole(shown: shown)) }
+    let type = key.listing.type
+    let touched: Set<RecordKey> = owed.records[key.scope]?.filter { $0.type.utf8.elementsEqual(type.utf8) } ?? []
+    let firstPull = firstPullComplete ?? shown.firstPullComplete
+    if !touched.isEmpty { return .read(.records(touched, shown: shown, firstPullComplete: firstPull)) }
+    guard firstPull != shown.firstPullComplete else { return .none }
+    return .show(Snapshot(records: shown.records, firstPullComplete: firstPull))
+  }
+
+  // A read begins: it takes what the view owes, and the view owes afresh what is applied while it runs.
+  func beginRead() -> StoreChange {
+    defer { owed = StoreChange() }
+    return owed
+  }
+
+  // A read for the view landed: `next` is shown, unless the view shows it already.
+  func land(_ next: Snapshot?) {
+    if let next { state = .loaded(next) }
+    failures = 0
+  }
+
+  // A read for the view failed: it owes again what the read was to read, and waits for the hub's retry.
+  func fail(owing read: StoreChange) {
+    var owing = read
+    owing.merge(owed)
+    owed = owing
+    failures += 1
+    waitsForRetry = true
   }
 }
 

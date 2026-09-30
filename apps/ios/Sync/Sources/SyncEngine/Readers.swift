@@ -3,6 +3,38 @@ import SyncCore
 import SyncReplica
 import SyncStore
 
+// What a list read and a `RecordsView` list (§7.6, ER-12): the visible records of one type, drawn or stored, every one or
+// those whose top-level ref field names an id, in id-byte order.
+struct Listing: Hashable, Sendable {
+  struct Narrowing: Hashable, Sendable {
+    let field: String
+    let id: RecordID
+  }
+
+  let type: String
+  let mode: ViewMode
+  let narrowing: Narrowing?
+
+  // A type that is no type of `scope`, then a narrowing by a field that is no top-level ref of the type, is malformed,
+  // as every misuse of a reader is.
+  init(_ type: String, _ mode: ViewMode, where narrowing: Narrowing? = nil, in scope: ScopeRef, registry: Registry) throws {
+    guard registry.lives(type, in: scope) else { throw CommitFailure.malformed("\(type) is no type of \(scope)") }
+    if let narrowing, registry.type(type)?.field(narrowing.field)?.ref == nil {
+      throw CommitFailure.malformed("\(type).\(narrowing.field) is not a top-level ref field")
+    }
+    self.type = type
+    self.mode = mode
+    self.narrowing = narrowing
+  }
+
+  // Whether the list holds `record` as `view` folds it: visible, and where narrowed, its field naming the id.
+  func holds(_ record: ViewRecord, in view: ScopeView) -> Bool {
+    guard view.isVisible(record) else { return false }
+    guard let narrowing else { return true }
+    return record.value(narrowing.field) == narrowing.id.json
+  }
+}
+
 // One scope of the active replica, read inside one open transaction: the `ScopeReader` a `read` passes and the
 // `CommitContext` a commit's body decides through (§7.1, §7.6), and the loads the views refresh from. Each read folds the
 // rows it names with the pending entries that touch them. A misuse of the reader (a scope the registry does not hold, a type
@@ -64,15 +96,15 @@ final class TransactionReader: CommitContext {
 
   func drawn(_ type: String, _ id: RecordID) throws -> Record? { try reading { try record(RecordKey(type, id), .drawn) } }
   func stored(_ type: String, _ id: RecordID) throws -> Record? { try reading { try record(RecordKey(type, id), .stored) } }
-  func drawn(_ type: String) throws -> [Record] { try reading { try records(ofType: type, .drawn) } }
-  func stored(_ type: String) throws -> [Record] { try reading { try records(ofType: type, .stored) } }
+  func drawn(_ type: String) throws -> [Record] { try reading { try records(Listing(type, .drawn, in: scope, registry: registry)) } }
+  func stored(_ type: String) throws -> [Record] { try reading { try records(Listing(type, .stored, in: scope, registry: registry)) } }
 
   func drawn(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    try reading { try records(ofType: type, where: field, is: id, .drawn) }
+    try reading { try records(Listing(type, .drawn, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
 
   func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] {
-    try reading { try records(ofType: type, where: field, is: id, .stored) }
+    try reading { try records(Listing(type, .stored, where: Listing.Narrowing(field: field, id: id), in: scope, registry: registry)) }
   }
 
   // Found by the key's bytes, as the store compares text.
@@ -87,12 +119,7 @@ final class TransactionReader: CommitContext {
   func firstPullComplete() throws -> Bool {
     try reading {
       guard isOpen else { throw TransactionReader.ended }
-      let lifecycle = ReplicaLifecycle(registry: registry)
-      let subscriptions = core.subscriptions()
-      guard let replica = try tx.replica(meta.replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection()) else {
-        throw StoreError.noReplica(meta.replica)
-      }
-      return lifecycle.firstPullComplete(scope, in: replica, subscribed: Set(try lifecycle.subscriptionSet(of: replica, subscriptions)))
+      return try core.firstPullComplete(tx, of: scope, in: meta.replica)
     }
   }
 
@@ -134,30 +161,36 @@ final class TransactionReader: CommitContext {
     return records
   }
 
-  // The visible records of a type, in id order.
-  func records(ofType type: String, _ mode: ViewMode) throws -> [Record] {
-    try checkLives(type)
-    let replica = try load(RowSelection(types: [type]))
-    let view = try ScopeView(replica, scope, mode, registry: registry)
-    return view.records(ofType: type).filter(view.isVisible).map { shaped($0, in: view, of: replica) }
-  }
-
-  // ER-12: the confirmed records the ref index names, and every record of the type a pending entry of the view touches,
-  // each folded; the visible ones whose folded field names `id`, in id order. A pending write that moves a reference
-  // is so seen on both sides.
-  func records(ofType type: String, where field: String, is id: RecordID, _ mode: ViewMode) throws -> [Record] {
-    try checkLives(type)
-    guard registry.type(type)?.field(field)?.ref != nil else {
-      throw CommitFailure.malformed("\(type).\(field) is not a top-level ref field")
+  // A list's records, folded, in id order. A narrowed list (ER-12) folds the confirmed records the ref index names and
+  // every record of the type a pending entry of the view touches, so its cost follows the list and the outbox, not the
+  // type, and a pending write that moves a reference is seen on both sides.
+  func records(_ listing: Listing) throws -> [Record] {
+    guard isOpen else { throw TransactionReader.ended }
+    guard let narrowing = listing.narrowing else {
+      let replica = try load(RowSelection(types: [listing.type]))
+      let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+      return view.records(ofType: listing.type).filter { listing.holds($0, in: view) }
+        .map { shaped($0, in: view, of: replica) }
     }
-    let indexed = try tx.referencing(meta.replica, in: scope, type: type, field: field, target: id)
-    let pending = try tx.touched(meta.replica, in: scope, type: type, withHeld: mode == .drawn)
+    let indexed = try tx.referencing(meta.replica, in: scope, type: listing.type, field: narrowing.field, target: narrowing.id)
+    let pending = try tx.touched(meta.replica, in: scope, type: listing.type, withHeld: listing.mode == .drawn)
     let candidates = Set(indexed).union(pending)
     let replica = try load(RowSelection(keys: candidates))
-    let view = try ScopeView(replica, scope, mode, registry: registry)
-    return candidates.sorted().compactMap { view.record($0) }
-      .filter { view.isVisible($0) && $0.value(field) == id.json }
+    let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    return candidates.sorted().compactMap { view.record($0) }.filter { listing.holds($0, in: view) }
       .map { shaped($0, in: view, of: replica) }
+  }
+
+  // The records of `keys` a list holds, each folded again, as a view refreshes them (design §4.5); a key the list does
+  // not hold is absent.
+  func records(_ keys: Set<RecordKey>, in listing: Listing) throws -> [RecordKey: Record] {
+    let replica = try load(RowSelection(keys: keys))
+    let view = try ScopeView(replica, scope, listing.mode, registry: registry)
+    var held: [RecordKey: Record] = [:]
+    for key in keys {
+      if let record = view.record(key), listing.holds(record, in: view) { held[key] = shaped(record, in: view, of: replica) }
+    }
+    return held
   }
 
   // The rows `selection` names, with the entries that touch them.

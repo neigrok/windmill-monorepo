@@ -41,15 +41,18 @@ public enum StoreWrite: Sendable, Hashable {
 }
 
 // What one transaction's writes changed, for views to refresh: records per scope and scopes to reload whole; the
-// outbox (holds, unsent counts, Undo); the notices; a replica's status (its meta, cursors, known scopes, device rows);
-// and the replicas themselves (one created, deleted, renamed or purged, or another made active), which reloads
-// everything.
+// outbox (holds, unsent counts, Undo); the notices; a replica's status (its meta, cursors, known scopes, device rows)
+// and, among them, what may move a scope's first pull; and the replicas themselves (one created, deleted, renamed or
+// purged, or another made active), which reloads everything.
 public struct StoreChange: Sendable, Hashable {
   public var records: [ScopeRef: Set<RecordKey>] = [:]
   public var scopes: Set<ScopeRef> = []
   public var outbox = false
   public var notices = false
   public var status = false
+  // A cursor, a known scope or the replica's state changed, so a scope's first pull may have completed or begun again
+  // (§7.9).
+  public var firstPulls = false
   public var replicas = false
   // Rows left every view, for the sweep to delete (§2.5).
   public var released = false
@@ -70,6 +73,7 @@ public struct StoreChange: Sendable, Hashable {
     outbox = outbox || other.outbox
     notices = notices || other.notices
     status = status || other.status
+    firstPulls = firstPulls || other.firstPulls
     replicas = replicas || other.replicas
     released = released || other.released
     seat = seat || other.seat

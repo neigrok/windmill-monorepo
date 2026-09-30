@@ -11,6 +11,22 @@ import Synchronization
 struct Rig {
   static let probe = try! Corpus.probeRegistry()
   static let scope = ScopeRef.product("probe")
+
+  // A product whose items name their list by an lww ref, so a pending write can move a reference.
+  static let shelf = try! Registry(json: JSON(parsing: """
+    {"registry": "shelf", "version": 1, "minVersion": 1, "products": {"shelf": {"surfaces": ["ios"]}}, "commands": [],
+     "types": [
+       {"type": "list", "scope": "product:shelf", "identity": "minted", "idSpace": "global", "idPattern": "^l_[a-z]{4}$",
+        "mint": {"prefix": "l_", "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 4}, "life": true, "revivable": false,
+        "deadRows": "spent", "origins": ["replica"], "primary": true, "fields": {}},
+       {"type": "item", "scope": "product:shelf", "identity": "minted", "idSpace": "global", "idPattern": "^i_[a-z]{4}$",
+        "mint": {"prefix": "i_", "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 4}, "life": true, "revivable": false,
+        "deadRows": "spent", "origins": ["replica"], "primary": true,
+        "fields": {"listId": {"kind": "lww", "writer": "client", "ref": "list", "domain": {"type": "string"}},
+                   "name": {"kind": "lww", "writer": "client", "unit": "chars", "max": 12, "domain": {"type": "string"}}}}
+     ]}
+    """))
+
   static let startMs: Int64 = 1_700_000_000_000
 
   let clock: SimClock
@@ -24,17 +40,19 @@ struct Rig {
   // Every event the engine publishes, in order.
   let events = EventLog()
 
-  // `account`: a replica bound to it before the engine starts, whose token is `token`.
+  // `account`: a replica bound to it before the engine starts, whose token is `token`. `path`: a file store there, whose
+  // reads run beside its writes, instead of one in memory.
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
        limits: Limits = Limits(), drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
-       crashPoints: CrashPoints = .none) throws {
+       crashPoints: CrashPoints = .none, path: String? = nil) throws {
     clock = SimClock(wallMs: Self.startMs)
     random = QueuedRandom(seed: 7)
     transport = ScriptedTransport()
     tokens = InMemoryTokenStore(account.flatMap { account in token.map { [account: $0] } } ?? [:])
     forkGuard = InMemoryForkGuardStore()
     connectivity = SwitchedConnectivity()
-    store = try Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints)
+    store = try path.map { try Store(path: $0, registry: registry, limits: limits, crashPoints: crashPoints) }
+      ?? Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints)
     if let account {
       let identities = Identities(random: SeededRandomSource(seed: 11))
       _ = try store.firstLaunch(identities: identities)

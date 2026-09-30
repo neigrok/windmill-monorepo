@@ -1,11 +1,13 @@
 import SyncAPI
 import SyncCore
+import SyncEngine
 import SyncTesting
 import Testing
 
 // Two devices of one account on one model server, driven from another package through `SyncTesting`'s public surface
 // alone, as the domain kit's `Harness` drives them (kit §14.2, ER-9): commits and reads through each device's replica,
-// `sync()`, holds on the harness clock, `leave()`, a failed commit, and a refusal scripted on the server.
+// `sync()`, holds on the harness clock, `leave()`, a failed commit, a refusal scripted on the server, and the views a UI
+// module observes, narrowed reads and views included (ER-12).
 
 // A product with no server rules of its own, as the kit declares one.
 struct NoServerRules: ServerRules {}
@@ -43,6 +45,34 @@ struct TwoDevicesTests {
     #expect(try Self.titles(phone) == ["Pull"])
     #expect(try phone.stored(Self.probe, "card").map { $0.values["title"] } == ["Pull"])
     #expect(phone.server.rows(Self.probe, of: "acct-1").map(\.key) == [RecordKey("card", "card0001")])
+  }
+
+  // ER-12: the laps of one run, narrowed by their `runId`, as a read and as a view, which is loading until its views
+  // settle, and holds the tablet's laps of that run once the phone has pulled them; a field that is no ref, and a type
+  // of another scope, are malformed.
+  @MainActor @Test func aNarrowedViewListsTheOtherDevicesWorkOnceTheViewsSettle() async throws {
+    let phone = try Self.phone()
+    let tablet = phone.device()
+    let laps = try phone.records(Self.probe, "lap", where: "runId", is: "run00000001")
+    #expect(laps.state == .loading)
+    await phone.settleViews()
+    #expect(laps.state == .loaded(RecordsView.Snapshot(records: [], firstPullComplete: false)))
+    try Self.commit(Gesture(changes: [
+      .create("run", id: .given("run00000001"), ["startedAt": 1]), .create("run", id: .given("run00000002"), ["startedAt": 1]),
+      .create("lap", id: .given("lap0000000b"), ["runId": "run00000001", "weight": 2]),
+      .create("lap", id: .given("lap0000000a"), ["runId": "run00000001", "weight": 1]),
+      .create("lap", id: .given("lap0000000c"), ["runId": "run00000002", "weight": 3]),
+    ]), on: tablet)
+    tablet.sync()
+    await phone.settleViews()
+    let listed = try phone.drawn(Self.probe, "lap", where: "runId", is: "run00000001")
+    #expect(listed.map(\.id) == ["lap0000000a", "lap0000000b"])
+    #expect(try phone.stored(Self.probe, "lap", where: "runId", is: "run00000001") == listed)
+    #expect(laps.state == .loaded(RecordsView.Snapshot(records: listed, firstPullComplete: true)))
+    #expect(throws: CommitFailure.malformed("lap.weight is not a top-level ref field")) {
+      try phone.records(Self.probe, "lap", where: "weight", is: "run00000001")
+    }
+    #expect(throws: CommitFailure.malformed("tag is no type of self/probe")) { try phone.records(Self.probe, "tag") }
   }
 
   @Test func aHoldIsOfferedForUndoUntilTheClockPassesIt() throws {

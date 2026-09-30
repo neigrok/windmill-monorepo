@@ -183,11 +183,12 @@ struct StoreTests {
 }
 
 extension CrashPoints {
-  // Kills at the `point`-th crash point the store reaches, counting from 0: before a commit at even points, after it
-  // at odd ones, one transaction per step.
+  // Kills at the `point`-th crash point of a commit the store reaches, counting from 0: before a commit at even points,
+  // after it at odd ones, one transaction per step.
   static func killing(at point: Int) -> CrashPoints {
     let reached = Mutex(-1)
-    return CrashPoints { _ in
+    return CrashPoints { reachedPoint in
+      guard reachedPoint != .read else { return }
       let count = reached.withLock { count in
         count += 1
         return count

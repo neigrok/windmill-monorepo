@@ -125,6 +125,15 @@ public final class SteppedEngine: Sendable {
     try engine.read(scope) { try $0.stored(type) }
   }
 
+  // ER-12: the records of `type` whose top-level ref `field` names `id`.
+  public func drawn(_ scope: ScopeRef, _ type: String, where field: String, is id: RecordID) throws -> [Record] {
+    try engine.read(scope) { try $0.drawn(type, where: field, is: id) }
+  }
+
+  public func stored(_ scope: ScopeRef, _ type: String, where field: String, is id: RecordID) throws -> [Record] {
+    try engine.read(scope) { try $0.stored(type, where: field, is: id) }
+  }
+
   // The refusals of `product` not dismissed, in the order they were written (D-17).
   public func notices(_ product: String) throws -> [Notice] {
     try engine.currentNotices(product)
@@ -133,6 +142,24 @@ public final class SteppedEngine: Sendable {
   // The held gestures Undo can still remove, by the device clock (§7.3).
   public func undoOffers() -> [UndoOffer] {
     Self.surely("read its undo offers") { try engine.currentUndoOffers() }
+  }
+
+  // MARK: Observing what the person sees
+
+  // The views a UI module observes (design §4.5), over the engine the device runs now. Each is `.loading` until the views
+  // settle.
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) throws -> RecordsView {
+    try engine.records(scope, type, mode)
+  }
+
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, where field: String, is id: RecordID,
+                                 _ mode: ViewMode = .drawn) throws -> RecordsView {
+    try engine.records(scope, type, where: field, is: id, mode)
+  }
+
+  // Returns once every view shows each change committed before the call, and each view made before it has loaded.
+  @MainActor public func settleViews() async {
+    await engine.settle()
   }
 
   // MARK: A simulation's device

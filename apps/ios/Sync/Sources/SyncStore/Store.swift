@@ -70,9 +70,13 @@ public final class Store: Sendable {
     return value
   }
 
-  // A consistent snapshot.
+  // A consistent snapshot. Its read point comes once the body has read, while the read still holds its connection.
   public func read<Value>(_ body: (StoreTransaction) throws -> Value) throws -> Value {
-    try writer.read { db in try body(StoreTransaction(db: db, registry: registry)) }
+    try writer.read { db in
+      let value = try body(StoreTransaction(db: db, registry: registry))
+      try crashPoints.hit(.read)
+      return value
+    }
   }
 
   // A connection setting as SQLite reports it.
@@ -109,9 +113,11 @@ public enum TxName: String, Sendable, Hashable, CaseIterable {
 public enum CrashPoint: Sendable, Hashable {
   case beforeCommit(TxName)
   case afterCommit(TxName)
+  case read
 }
 
-// The kill-at-every-step hook: a no-op in production; a test throws at the point it kills.
+// The store's fault hook, a no-op in production: a test throws at a commit's point to kill the process there, and at a
+// read's to fail that read as a damaged page would, or holds the read there.
 public struct CrashPoints: Sendable {
   let hit: @Sendable (CrashPoint) throws -> Void
 

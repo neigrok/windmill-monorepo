@@ -1,5 +1,7 @@
 import Foundation
+import Observation
 import SyncCore
+import SyncEngine
 import SyncStore
 import Synchronization
 import Testing
@@ -109,6 +111,44 @@ struct Samples {
       ("n", "\(ms.count)"), ("p50", Bench.format(percentile(50))), ("p95", Bench.format(p95)), ("p99", Bench.format(percentile(99))),
       ("max", Bench.format(ms.max() ?? .nan)),
     ], budget: budget.map { "p95 ≤ \(Bench.format($0))" }, over: budget.map { p95 > $0 })
+  }
+}
+
+// What the views cost the main actor, as a UI module observes them: a view's observers are told on the main actor, in the
+// turn that changes its state, and the view shows the change once the main actor runs again.
+@MainActor
+enum ViewTimes {
+  // From the moment `act` answers to the moment the view's observers are told.
+  static func untilNotified(_ view: RecordsView, after act: () async throws -> ContinuousClock.Instant) async throws -> Duration {
+    let told = notification(of: view)
+    let from = try await act()
+    return try await told() - from
+  }
+
+  // A view's first load, from the call that makes it: the main actor's share (the call, and the turn that shows the load,
+  // from the observers being told to the caller running again), and the whole wait until the observers are told.
+  static func firstLoad(_ make: () throws -> RecordsView) async throws -> (view: RecordsView, onMain: Duration, total: Duration) {
+    let began = ContinuousClock.now
+    let view = try make()
+    let made = ContinuousClock.now
+    let told = try await notification(of: view)()
+    let resumed = ContinuousClock.now
+    guard case .loaded = view.state else { throw BenchError("the view was told of a change but not loaded") }
+    return (view, (made - began) + (resumed - told), told - began)
+  }
+
+  // Waits for the next time the view's observers are told, and answers when that was.
+  static func notification(of view: RecordsView) -> () async throws -> ContinuousClock.Instant {
+    let (told, tell) = AsyncStream<ContinuousClock.Instant>.makeStream()
+    withObservationTracking { _ = view.state } onChange: {
+      tell.yield(ContinuousClock.now)
+      tell.finish()
+    }
+    return {
+      var iterator = told.makeAsyncIterator()
+      guard let at = await iterator.next() else { throw BenchError("the view was never told") }
+      return at
+    }
   }
 }
 

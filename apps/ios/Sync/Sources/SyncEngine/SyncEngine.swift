@@ -56,7 +56,7 @@ public final class SyncEngine: Replica {
     loops.withLock { $0.tasks.append(Task { @MainActor in await hub.run(changes) }) }
     connectivity.onChange { [weak core] _ in
       core?.wakes.kickAll()
-      core?.publishStatus()
+      core?.publish(\.status)
     }
   }
 
@@ -175,9 +175,20 @@ public final class SyncEngine: Replica {
 
   // MARK: Observing (UI modules)
 
-  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) -> RecordsView {
-    precondition(core.registry.lives(type, in: scope), "\(type) is no type of \(scope)")
-    return hub.records(RecordsView.Key(scope: scope, type: type, mode: mode))
+  // Each view is made `.loading` and loads off the main actor. Asking again for the same list answers the view already
+  // live: one the UI holds, or one of the last views asked for, which the engine holds for a body that does not keep
+  // its view. A type of another scope throws malformed, as the one-shot read does.
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, _ mode: ViewMode = .drawn) throws -> RecordsView {
+    hub.records(RecordsView.Key(scope: scope, listing: try Listing(type, mode, in: scope, registry: core.registry)))
+  }
+
+  // ER-12: the records of `type` whose top-level ref `field` names `id`, the list `drawn(type, where:is:)` or
+  // `stored(type, where:is:)` reads. A type of another scope, or a field that is no top-level ref of the type, throws
+  // malformed, as that read does.
+  @MainActor public func records(_ scope: ScopeRef, _ type: String, where field: String, is id: RecordID,
+                                 _ mode: ViewMode = .drawn) throws -> RecordsView {
+    let narrowing = Listing.Narrowing(field: field, id: id)
+    return hub.records(RecordsView.Key(scope: scope, listing: try Listing(type, mode, where: narrowing, in: scope, registry: core.registry)))
   }
 
   @MainActor public func notices(_ product: String) -> NoticesView {
@@ -196,9 +207,10 @@ public final class SyncEngine: Replica {
     try core.write { store, _ in try store.dismissNotice(id) }
   }
 
-  // Returns once the views have applied every change committed before the call.
+  // Returns once the views have applied every change committed before the call, and each view made before it has loaded,
+  // but for a view waiting to retry a read that failed.
   package func settle() async {
-    await hub.settle(through: core.publisher.published)
+    await hub.settle()
   }
 
   // MARK: Subscriptions (§7.9)
@@ -215,6 +227,7 @@ public final class SyncEngine: Replica {
     core.opened.withLock { opened in
       if !opened.contains(scope) { opened.append(scope) }
     }
+    core.publish(\.firstPulls)
     core.pullWants.add([scope])
     core.wakes.puller.kick()
     core.wakes.live.kick()
@@ -368,6 +381,22 @@ final class EngineCore: Sendable {
     return !change.scopes.isEmpty || change.records.values.contains { $0.contains { $0.type.utf8.elementsEqual(governing.utf8) } }
   }
 
+  // §7.9: a scope's first pull is complete once its cursor is booted, or while the subscription set does not hold it, so
+  // it moves with a cursor, a known scope, the replica's state, the governing records and the scopes opened by hand.
+  func movesFirstPulls(_ change: StoreChange) -> Bool {
+    change.firstPulls || change.replicas || touchesGoverningRecords(change)
+  }
+
+  // Whether `scope`'s first pull is complete in `replica`, or the replica does not pull it (§7.9).
+  func firstPullComplete(_ tx: StoreTransaction, of scope: ScopeRef, in replica: String) throws -> Bool {
+    let lifecycle = ReplicaLifecycle(registry: registry)
+    let subscriptions = subscriptions()
+    guard let loaded = try tx.replica(replica, reads: lifecycle.reads(of: subscriptions), entries: EntrySelection()) else {
+      throw StoreError.noReplica(replica)
+    }
+    return lifecycle.firstPullComplete(scope, in: loaded, subscribed: Set(try lifecycle.subscriptionSet(of: loaded, subscriptions)))
+  }
+
   // §7.4, §7.5: no answer in REQUEST_TIMEOUT_MS is a transport error; cancelling the caller cancels the call too.
   func answered<Body: Sendable>(_ call: @escaping @Sendable () async -> Reply<Body>) async -> Reply<Body> {
     await withTaskGroup(of: RequestRace<Body>.self) { group in
@@ -457,14 +486,15 @@ final class EngineCore: Sendable {
 
   func requireUpgrade() {
     upgrade.store(true, ordering: .relaxed)
-    publishStatus()
+    publish(\.status)
     wakes.live.kick()
   }
 
-  // What the store does not hold changed the status: connectivity, or an upgrade required.
-  func publishStatus() {
+  // What the store does not hold changed: the status (connectivity, an upgrade required), or the first pulls (the
+  // scopes opened by hand).
+  func publish(_ changed: WritableKeyPath<StoreChange, Bool>) {
     var change = StoreChange()
-    change.status = true
+    change[keyPath: changed] = true
     publisher.publish(change, [])
   }
 

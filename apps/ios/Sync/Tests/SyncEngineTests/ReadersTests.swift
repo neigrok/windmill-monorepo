@@ -11,20 +11,6 @@ import Testing
 // malformed (§7.1) wherever it surfaces.
 
 struct ReadersTests {
-  // A product whose items name their list by an lww ref, so a pending write can move a reference.
-  static let shelf = try! Registry(json: JSON(parsing: """
-    {"registry": "shelf", "version": 1, "minVersion": 1, "products": {"shelf": {"surfaces": ["ios"]}}, "commands": [],
-     "types": [
-       {"type": "list", "scope": "product:shelf", "identity": "minted", "idSpace": "global", "idPattern": "^l_[a-z]{4}$",
-        "mint": {"prefix": "l_", "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 4}, "life": true, "revivable": false,
-        "deadRows": "spent", "origins": ["replica"], "primary": true, "fields": {}},
-       {"type": "item", "scope": "product:shelf", "identity": "minted", "idSpace": "global", "idPattern": "^i_[a-z]{4}$",
-        "mint": {"prefix": "i_", "alphabet": "abcdefghijklmnopqrstuvwxyz", "length": 4}, "life": true, "revivable": false,
-        "deadRows": "spent", "origins": ["replica"], "primary": true,
-        "fields": {"listId": {"kind": "lww", "writer": "client", "ref": "list", "domain": {"type": "string"}},
-                   "name": {"kind": "lww", "writer": "client", "unit": "chars", "max": 12, "domain": {"type": "string"}}}}
-     ]}
-    """))
   static let scope = ScopeRef.product("shelf")
   static let seeded = try! Stamp("1:0:r_seed")
 
@@ -60,7 +46,7 @@ struct ReadersTests {
   // A reader a `read` or a commit passed, used after that call returned, is malformed, a mint included; so is a commit
   // whose body reads through such a reader and lets its error out.
   @Test func aReaderUsedAfterItsCallIsMalformed() throws {
-    let rig = try Rig(registry: Self.shelf)
+    let rig = try Rig(registry: Rig.shelf)
     let ended = CommitFailure(.malformed, "a reader serves only inside the call that passed it")
     var kept: (any ScopeReader)?
     _ = try rig.engine.read(Self.scope) { reader in
@@ -82,13 +68,15 @@ struct ReadersTests {
 
   // §7.1: a read of a type outside the reader's scope, or by a field that is no ref, and a reader of a scope the
   // registry does not hold, are malformed wherever they surface: through `read`, and inside a commit whether its body
-  // lets the error out or swallows it. A commit that met one writes nothing.
+  // lets the error out or swallows it. A narrowed read checks its type before its field. A commit that met one writes
+  // nothing.
   @Test func aMisuseOfAReaderIsMalformedThroughReadAndInsideACommit() throws {
     let rig = try Rig()
     let before = try rig.store.read { try $0.device(rows: true).json }
     let misuses: [(scope: ScopeRef, failure: CommitFailure, use: (any ScopeReader) throws -> Void)] = [
       (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag") }),
       (Rig.scope, CommitFailure(.malformed, "card.title is not a top-level ref field"), { _ = try $0.stored("card", where: "title", is: "card0001") }),
+      (Rig.scope, CommitFailure(.malformed, "tag is no type of self/probe"), { _ = try $0.drawn("tag", where: "label", is: "tag0001") }),
       (.device("probe"), CommitFailure(.malformed, "device/probe is no product, tree or overlay scope of the registry"), { _ = try $0.drawn("card") }),
     ]
     for (scope, failure, use) in misuses {
@@ -105,7 +93,7 @@ struct ReadersTests {
   }
 
   @Test func aHeldDeleteIsGoneFromDrawnAndStillInStored() throws {
-    let rig = try Rig(registry: Self.shelf)
+    let rig = try Rig(registry: Rig.shelf)
     try Self.seed(rig, items: [("i_aaaa", "l_one")])
     let receipt = try rig.commit(Gesture(changes: [.delete("item", "i_aaaa")], hold: true), in: Self.scope)
     let alive = Life(.alive, Self.seeded)
@@ -124,7 +112,7 @@ struct ReadersTests {
 
   // ER-12: the index names the confirmed side; a pending write that moves a reference is seen leaving and arriving.
   @Test func theIndexedReadSeesAPendingMoveOnBothSides() throws {
-    let rig = try Rig(registry: Self.shelf)
+    let rig = try Rig(registry: Rig.shelf)
     try Self.seed(rig, items: [("i_aaaa", "l_one"), ("i_bbbb", "l_one"), ("i_cccc", "l_two")])
     try rig.commit(Gesture(changes: [.update("item", "i_aaaa", ["listId": "l_two"])]), in: Self.scope)
     try rig.commit(Gesture(changes: [.create("item", id: .given("i_dddd"), ["listId": "l_one", "name": "new"])]), in: Self.scope)

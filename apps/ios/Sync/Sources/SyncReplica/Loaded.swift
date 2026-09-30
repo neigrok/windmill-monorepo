@@ -261,8 +261,12 @@ public struct LoadedReplica: Sendable {
     switch write {
     case .meta(let meta):
       change.status = true
+      change.firstPulls = change.firstPulls || meta.state != self.meta.state
       change.seat = change.seat || isActive && meta.state != self.meta.state
-    case .putKnown, .deleteKnown, .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows, .putCursor:
+    case .putKnown, .deleteKnown, .putCursor:
+      change.status = true
+      change.firstPulls = true
+    case .putDeviceRow, .deleteDeviceRow, .deleteDeviceRows:
       change.status = true
     case .rename:
       change.replicas = true
