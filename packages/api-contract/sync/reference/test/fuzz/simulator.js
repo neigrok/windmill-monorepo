@@ -3,9 +3,9 @@
 // clock error and device clock jumps, holds, undo and retire, two tabs, sign-in and sign-out, credentials
 // that expire (401), are dropped on the way (served as anonymous) or are another account's (served as
 // it), 400 and 413 envelopes, poison, epoch change, restored or cloned stores behind fork guards, pull
-// pages short of the head, and a process death between two chunks of a pull page or two batches of a
-// push answer's results. Each step checks that every change of a device's active replica id was
-// announced (§7.12); `check()` states the invariants after quiescence.
+// pages short of the head, and a process death between two chunks of a pull page, two settling slices
+// of its cursor, or two batches of a push answer's results. Each step checks that every change of a
+// device's active replica id was announced (§7.12); `check()` states the invariants after quiescence.
 
 import { fileURLToPath } from 'node:url';
 import { CONSTANTS } from '../../core/constants.js';
@@ -154,9 +154,10 @@ export class World {
     this.seed = seed;
     this.steps = steps;
     this.faults = faults;
-    // Process deaths between two chunks of a pull page or two batches of a push answer's results: during
-    // the faults, and in quiescence's first round, where the long pages and answers are. They draw from
-    // their own generator, so the other faults each seed draws stay as they were.
+    // Process deaths between two chunks of a pull page, two settling slices or two batches of a push
+    // answer's results: during the faults, and in quiescence's first round, where the long pages and
+    // answers are. They draw from their own generator, so the other faults each seed draws stay as they
+    // were. Meanwhile a settling slice resolves one covered entry.
     this.midDeaths = faults;
     this.deathRng = new Rng(seed ^ 0x5eed5);
     // A server whose pull pages hold a few hundred bytes answers most pulls short of the head, so frames
@@ -244,7 +245,10 @@ export class World {
     if (roll < 0.74) return this.deliver();
     if (roll < 0.77) return releaseDue(device.replica, this.registry, device.ended, device.ctx().deviceNow);
     if (roll < 0.79) return this.undoSome(device);
-    if (roll < 0.8) return releaseAll(device.replica, this.registry, device.ended);
+    if (roll < 0.8) {
+      this.count('left the app');
+      return releaseAll(device.replica, this.registry, device.ended);
+    }
     if (!this.faults) return undefined;
     if (roll < 0.83) return this.processDeath(device);
     if (roll < 0.85) return this.signOutOrIn(device);
@@ -254,7 +258,10 @@ export class World {
     if (roll < 0.9) return this.deviceRestore(device);
     if (roll < 0.905) return this.clone(device);
     if (roll < 0.92) return this.setVisibility();
-    if (roll < 0.94) device.skew = this.rng.int(1_200_000) - 600_000;
+    if (roll < 0.94) {
+      device.skew = this.rng.int(1_200_000) - 600_000;
+      this.count('device clock jumped');
+    }
     return undefined;
   }
 
@@ -268,6 +275,7 @@ export class World {
     const alive = (t) => [...view.values()].filter((record) => record.t === t && isAlive(record));
     const record = (outcome) => {
       if (outcome.localIds) device.committed.push(...outcome.localIds);
+      if (outcome.localIds && tab > 0) this.count('second tab commit');
       if (outcome.retired?.length) this.count('retired');
       return outcome;
     };
@@ -438,6 +446,7 @@ export class World {
   deliver(index) {
     if (this.network.length === 0) return;
     const at = index ?? (this.faults ? this.rng.int(this.network.length) : 0);
+    if (at > 0) this.count('delivered out of order');
     const [message] = this.network.splice(at, 1);
     if (this.faults && this.rng.chance(0.06)) return this.lose(message);
     if (message.phase === 'request') return this.serve(message);
@@ -447,6 +456,7 @@ export class World {
 
   lose(message) {
     const { device } = message;
+    this.count(`${message.phase} lost`);
     if (message.phase === 'frame') {
       device.wantsPull = true;
       return;
@@ -474,7 +484,10 @@ export class World {
       if (out.response.body.retry) this.count('retry');
       this.watchDeaths();
       for (const event of out.live) this.broadcast(event);
-      if (this.faults && this.rng.chance(0.05)) this.network.push({ ...message, phase: 'request' });
+      if (this.faults && this.rng.chance(0.05)) {
+        this.network.push({ ...message, phase: 'request' });
+        this.count('push request duplicated');
+      }
       this.network.push({ ...message, phase: 'reply', response: out.response, tRecvServer: this.now });
       return;
     }
@@ -497,10 +510,12 @@ export class World {
       if (replica !== message.replica || replica.id !== message.replicaId) return;
       const before = this.contentsOf(device, message.response);
       const from = device.ended.length;
+      const epoch = replica.meta.serverEpoch;
       const results = message.response.status === 200 ? message.response.body.results.length : 0;
       const dieAfter = this.midDeaths && results > 1 && this.deathRng.chance(0.2) ? this.deathRng.int(results) : Infinity;
       device.pushLimit = onPushResponse(replica, device.ctx(), message.request, message.response, timing, { dieAfter })?.limit;
       this.checkRefusals(device, before, from);
+      if (epoch !== null && replica.meta.serverEpoch !== epoch) this.count('epoch change');
       if (dieAfter !== Infinity) {
         this.count('death between result batches');
         this.processDeath(device);
@@ -511,21 +526,27 @@ export class World {
     device.pulling = null;
     if (replica !== message.replica) return;
     const before = pulledState(replica);
+    const epoch = replica.meta.serverEpoch;
     const chunkRows = this.midDeaths ? 1 + this.deathRng.int(2) : Infinity;
     const dieAfter = this.midDeaths && this.deathRng.chance(0.3) ? 1 + this.deathRng.int(4) : Infinity;
+    const settle = this.midDeaths ? 1 : Infinity;
     const subscribed = device.subscriptions();
     const inSet = (scope) => subscribed.includes(scope);
-    const outcomes = onPullResponse(replica, device.ctx(), message.request, message.response, timing, { chunkRows, dieAfter, inSet });
+    const outcomes = onPullResponse(replica, device.ctx(), message.request, message.response, timing, { chunkRows, settle, dieAfter, inSet });
     this.checkServedAs(device, message.response.body?.as, before);
+    if (epoch !== null && replica.meta.serverEpoch !== epoch) this.count('epoch change');
     const answered = message.response.status === 200 && !replica.isUnauthenticated(message.response);
     const cut = outcomes.some((page) => page.outcome === 'partial');
-    if (dieAfter !== Infinity && answered && (cut || outcomes.length < message.response.body.pages.length)) {
+    const unsettled = outcomes.some((page) => page.outcome === 'unsettled');
+    if (dieAfter !== Infinity && answered && (cut || unsettled || outcomes.length < message.response.body.pages.length)) {
       if (cut) this.count('death between page chunks');
+      if (unsettled) this.count('death between settling slices');
       this.processDeath(device);
       return;
     }
     if (outcomes.length === 0) return;
     if (outcomes.some((page) => page.outcome === 'outside')) this.count('page outside the subscription set');
+    if (message.response.body.pages.some((page, k) => page.more && outcomes[k]?.outcome === 'applied')) this.count('page short of its head');
     const again = (page) => page.outcome !== 'applied' && page.outcome !== 'outside';
     if (outcomes.some(again) || message.response.body.pages.some((page, k) => page.more && outcomes[k]?.outcome === 'applied')) device.wantsPull = true;
   }
@@ -553,15 +574,20 @@ export class World {
     const outcome = onFrame(device.replica, device.ctx(), frame, (scope) => subscribed.includes(scope));
     this.checkServedAs(device, frame.as, before);
     if (outcome === 'pull') device.wantsPull = true;
+    if (outcome === 'applied' || outcome === 'pull') this.count(`frame ${outcome === 'applied' ? 'applied inline' : 'answered pull'}`);
     if (outcome === 'paused') this.count(frame.as === null ? 'frame served as anonymous' : 'frame served as another account');
   }
 
   processDeath(device) {
     this.note(`${device.name} dies`);
+    this.count('process death');
     this.network = this.network.filter((message) => message.device !== device || message.phase === 'request');
     device.pushing = null;
     device.pulling = null;
-    if (this.rng.chance(0.3)) device.reboot();
+    if (this.rng.chance(0.3)) {
+      device.reboot();
+      this.count('reboot');
+    }
     device.start();
   }
 
@@ -580,6 +606,7 @@ export class World {
       const choice = this.rng.chance(0.8) ? 'keep' : 'discard';
       if (choice === 'discard') device.discardedNotices.push(...replica.notices.map((notice) => notice.id));
       signOut(device.store, device.ctx(), { choice });
+      this.count(`sign-out ${choice}`);
       device.pushing = null;
       device.pulling = null;
       return;
@@ -588,6 +615,7 @@ export class World {
     const decisions = this.rng.chance(0.2) ? {} : { probe: this.rng.chance(0.8) ? 'add' : 'discard' };
     const outcome = signIn(device.store, device.ctx(), { account: device.account, holdsRecords: holds, decisions });
     this.note(`${device.name} signs in: ${outcome.complete ? 'complete' : 'incomplete'}`);
+    this.count(`sign-in ${outcome.complete ? 'complete' : 'incomplete'}`);
     device.wantsPull = true;
   }
 
@@ -618,6 +646,7 @@ export class World {
     this.server = new ServerState({ ...structuredClone(snapshot.state), epoch: `ep-${this.epochs}` });
     this.deadForever = new Set(snapshot.dead);
     this.note(`server restored to a snapshot, epoch ep-${this.epochs}`);
+    this.count('server restored');
   }
 
   deviceRestore(device) {
@@ -627,6 +656,7 @@ export class World {
       return;
     }
     this.note(`${device.name} store restored from a snapshot`);
+    this.count('store restored');
     device.restore(saved);
     this.network = this.network.filter((message) => message.device !== device || message.phase === 'request');
     device.start();
@@ -641,6 +671,7 @@ export class World {
     copy.start();
     this.devices.push(copy);
     this.note(`${device.name} cloned as ${copy.name}`);
+    this.count('store cloned');
   }
 
   setVisibility() {

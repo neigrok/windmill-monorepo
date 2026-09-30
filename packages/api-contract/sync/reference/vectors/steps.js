@@ -161,6 +161,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
           answer(onPullResponse(replica, ctx, lastPull, step.response, timing, {
             ...dieAfter(step),
             ...(step.chunk === undefined ? {} : { chunkRows: step.chunk }),
+            ...(step.settle === undefined ? {} : { settle: step.settle }),
             ...(reconciled === null ? {} : { inSet: (scope) => reconciled.includes(scope) }),
           }));
           break;

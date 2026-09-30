@@ -14,7 +14,7 @@ corpus for its role.
 
 ## Commands
 
-Run from this directory.
+Run from this directory. `.github/workflows/contract.yml` runs the last three on every change here.
 
 ```sh
 node reference/generate.mjs           # regenerate corpus/
@@ -74,8 +74,9 @@ single-threaded run can observe, nor the HTTP envelope:
   doubt may be pulled again and subscribed, from the answers and socket events its caller reports;
 - the sender's sleeping (§7.4); `SenderWait` models only when it may push again, the 503 and `retry`
   waits included;
-- the store's writer and its latency intent (§2.5): a page's chunks and a push answer's result batches
-  run back to back, and a process death between two of them is a step's `dieAfter`;
+- the store's writer and its latency intent (§2.5): a page's chunks and settling slices, and a push
+  answer's result batches, run back to back, and a process death between two of them is a step's
+  `dieAfter`;
 - the sign-out flush bound (`SIGNOUT_FLUSH_MS`, §7.10: a runner's I/O before the sign-out step), and
   stored credentials (§7.10);
 - web tab leadership (§7.8).

@@ -8,7 +8,7 @@ import { stampsOf } from '../core/rows.js';
 import { bodyBytes, intentDigest } from '../core/wire.js';
 import { Dependents, deltasOf, scopedKey } from './dependents.js';
 import { epochChange, reidentify, renewActor } from './lifecycle.js';
-import { resolveCovered } from './puller.js';
+import { resolveIfCovered } from './puller.js';
 import { applyWriteMap, onRefused, refuseOutgrown } from './refusal.js';
 
 // §7.4 held back: the ready entries that depend (§7.7 step 3) on a held or held-back entry or on an
@@ -82,12 +82,15 @@ function pushRequest(meta, intents) {
   return { replica: meta.replica, account: meta.account, ackThrough: meta.ackThrough, intents };
 }
 
-// A push response, its results in ascending n, in batches of any size (each result here). After a 400 or
-// 413 on several intents it answers {limit}, ⌈count/2⌉, which the caller's next nextPush passes to resend
-// the first half by n; otherwise nothing. Every 400 emits sync-push-malformed. After a 409 or an epoch
-// change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone but the
-// replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies once
-// that many results are recorded: the rest stay sent, and ackThrough and the epoch are left as they were.
+// A push response, its results in ascending n, in batches of any size (each result here). A replica that
+// holds no epoch takes the answer's in its first batch (with no result, in the one that sets
+// ackThrough), so no entry is acked under a null serverEpoch.
+// After a 400 or 413 on several intents it answers {limit}, ⌈count/2⌉, which the caller's next nextPush
+// passes to resend the first half by n; otherwise nothing. Every 400 emits sync-push-malformed. After a
+// 409 or an epoch change the instance takes a new actor (§7.11). A 401, or a 200 or 409 served as anyone
+// but the replica's account, pauses sync with nothing applied (§9.1). With `dieAfter`, the process dies
+// once that many results are recorded: the rest stay sent, and ackThrough and any epoch change are left
+// as they were.
 export function onPushResponse(replica, ctx, request, response, timing, { dieAfter = Infinity } = {}) {
   const { meta } = replica;
   const { status, body } = response;
@@ -114,13 +117,13 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
   }
   if (status !== 200) return undefined;
 
-  meta.serverEpoch ??= body.epoch;
   let left = dieAfter;
   for (const result of [...body.results].sort((a, b) => a.n - b.n)) {
     const entry = replica.entries().find((candidate) => candidate.state === 'sent' && candidate.n === result.n);
     if (!entry) continue;
     if (left <= 0) return undefined;
     left -= 1;
+    meta.serverEpoch ??= body.epoch;
     if (result.s === 'refused') {
       onRefused(replica, ctx, entry, result, body);
       continue;
@@ -130,8 +133,9 @@ export function onPushResponse(replica, ctx, request, response, timing, { dieAft
     entry.resultEpoch = body.epoch;
     replica.raiseAdmittedHigh((entry.intent.d ?? []).flatMap(stampsOf));
     if (result.write) applyWriteMap(replica, ctx, entry, result.write);
-    resolveCovered(replica, ctx, entry.scope);
+    resolveIfCovered(replica, ctx, entry);
   }
+  meta.serverEpoch ??= body.epoch;
   meta.ackThrough = body.lastN;
   if (body.epoch !== meta.serverEpoch) epochChange(replica, ctx, body.epoch);
   return undefined;

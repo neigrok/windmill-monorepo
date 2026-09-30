@@ -67,12 +67,13 @@ Raw design tokens are mirrored in `web/src/styles/tokens/` and
 
 | Workflow | Responsibility |
 |---|---|
-| `backend.yml` | build and run C++ tests in Docker, then the Postgres cases and the pattern fuzz in that image against a Postgres service; publish server and embedder images |
+| `backend.yml` | build and run C++ tests in Docker, then the Postgres cases, the pattern fuzz and the sync deployment conformance (directly and through the production Caddyfile) in that image against a Postgres service; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
 | `ios.yml` | `swift test` of the Sync, Domain and SyncTestingSurface packages on macOS; simulator builds of the engine and the SyncProbe app |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |
+| `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
 | `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger

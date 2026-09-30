@@ -1,7 +1,7 @@
 // pull/pages.json (§7.5, client): pull responses and live frames applied to a replica: boots straight in
-// or through staging, stale pages, reset, gone and not-found, replace by seq, the resolution of acked
-// entries, the digest check, frames, the epoch change, and pages applied in chunks with a process death
-// between two of them. Responses come from the reference server,
+// or through staging, stale pages, reset, gone and not-found, replace by seq, the settling of acked
+// entries, the digest check, frames, the epoch change, and pages applied in chunks and settled in slices
+// with a process death between two of them. Responses come from the reference server,
 // except the few edge cases no correct server produces (an older row, a wrong digest).
 
 import { CONSTANTS } from '../core/constants.js';
@@ -76,19 +76,27 @@ class PullScript {
 
   // Answers the last pull, served as `account` (§9.1): null for a request that arrives with no credential,
   // or, with `credential: 'unresolved'`, one whose credential resolves to no account. `chunk` applies its
-  // rows pages in chunks of that many rows, and `dieAfter` ends the process after that many page
-  // transactions (§7.5 step 2).
-  respond({ serverNow, limits = CONSTANTS, edit = (response) => response, account = 'A', credential, chunk, dieAfter }) {
+  // rows pages in chunks of that many rows, `settle` resolves that many covered entries a settling
+  // transaction, and `dieAfter` ends the process after that many page transactions (§7.5 step 2).
+  respond({ serverNow, limits = CONSTANTS, edit = (response) => response, account = 'A', credential, chunk, settle, dieAfter }) {
     const { index, request } = this.lastRequest('pull');
     const pulled = pull({ state: this.server, registry, product, account, credential, request, serverNow, limits });
     this.server = pulled.state;
     const response = edit(pulled.response);
-    const cut = { ...(chunk === undefined ? {} : { chunk }), ...(dieAfter === undefined ? {} : { dieAfter }) };
+    const cut = { ...(chunk === undefined ? {} : { chunk }), ...(settle === undefined ? {} : { settle }), ...(dieAfter === undefined ? {} : { dieAfter }) };
     return this.add({ op: 'pullResponse', response, tSend: this.input.steps[index].deviceNow, tRecv: serverNow, deviceNow: serverNow, ...cut });
   }
 
-  pullRound(scopes, { serverNow, limits, edit, account, credential, chunk, dieAfter }) {
-    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit, account, credential, chunk, dieAfter });
+  pullRound(scopes, { serverNow, limits, edit, account, credential, chunk, settle, dieAfter }) {
+    return this.pull(scopes, serverNow).respond({ serverNow, limits, edit, account, credential, chunk, settle, dieAfter });
+  }
+
+  // A push the server admits whose answer never reaches the device.
+  pushLost(deviceNow) {
+    this.add({ op: 'push', deviceNow });
+    const { request } = this.lastRequest('push');
+    this.server = push({ state: this.server, registry, product, account: 'A', request, serverNow: deviceNow }).state;
+    return this;
   }
 
   // A push whose own change frame reaches the device before the response does.
@@ -506,6 +514,46 @@ function chunks() {
   ];
 }
 
+// §7.5 step 2 settling: the entries a stored cursor covers resolve, in commit order, in the transaction
+// that stores it and in settling slices after it, so a process death between two slices leaves the rest
+// acked and drawn until the scope's next page settles them; an `ok` the cursor covers settles its own
+// entry alone. Three puts are acked, and another device deletes the last one's day.
+function settling() {
+  const C = 'r_cccccccccccc';
+  const put = (id, score, deviceNow) => ({ op: 'commit', scope: 'self/probe', changes: [{ op: 'put', t: 'day', id, f: { score } }], deviceNow });
+  const deleted = { scope: 'self/probe', d: [{ t: 'day', id: '2026-01-01', life: ['dead', st(5003, 0, C)] }] };
+  const view = (deviceNow) => ({ op: 'view', scope: 'self/probe', withHeld: true, deviceNow });
+  const threeAcked = () => {
+    const script = bootedOnProbe()
+      .add(put('2026-01-02', 2, 5001), put('2026-01-03', 3, 5001), put('2026-01-01', 1, 5001))
+      .pushRound(5002)
+      .elsewhere([deleted], 5003);
+    script.input.actors = ['r_dddddddddddd'];
+    return script;
+  };
+  const resentAfterDeath = bootedOnProbe()
+    .add(put('2026-01-02', 2, 5001), put('2026-01-03', 3, 5001))
+    .pushRound(5002)
+    .add(put('2026-01-01', 1, 5003))
+    .pushLost(5003);
+  resentAfterDeath.input.actors = ['r_dddddddddddd'];
+  return [
+    threeAcked().pullRound(['self/probe'], { serverNow: 5004, settle: 1 }).add(view(5005))
+      .vector('a page that settles one covered entry a transaction resolves them in commit order and ends as a page settled whole'),
+    threeAcked().pull(['self/probe'], 5004).respond({ serverNow: 5004, settle: 1, dieAfter: 1 }).add(view(5005))
+      .vector('a process death between settling slices keeps the page and the first resolution; the covered entries left stay acked and pending, so the day another device deleted is drawn as the acked put wrote it'),
+    threeAcked().pull(['self/probe'], 5004).respond({ serverNow: 5004, settle: 1, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5005 })
+      .pullRound(['self/probe'], { serverNow: 5006 })
+      .add(view(5007))
+      .vector('the covered entries a death left acked settle in the scope\'s next page, empty at its head, and the deleted day is gone'),
+    resentAfterDeath.pull(['self/probe'], 5004).respond({ serverNow: 5004, settle: 1, dieAfter: 1 })
+      .add({ op: 'engineStart', deviceNow: 5005 })
+      .pushRound(5006)
+      .vector('after a death between settling slices, a resent entry\'s ok that the cursor covers resolves its own entry and no other: the entry the death left stays acked for the next page'),
+  ];
+}
+
 // §7.5 step 2 a page for a scope outside the subscription set applies nothing and pulls nothing again:
 // the tree's board dies in a frame while the tree's first pull is in flight, so the tree is known gone
 // when its rows page lands, requested with a null cursor that the forgotten scope still matches.
@@ -546,5 +594,5 @@ function seats() {
 }
 
 export function files() {
-  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs(), ...chunks(), ...outside(), ...heldWindow(), ...seats()] };
+  return { 'pull/pages.json': [...boots(), ...answers(), ...lives(), ...digests(), ...frames(), ...principals(), ...revivals(), ...epochs(), ...chunks(), ...settling(), ...outside(), ...heldWindow(), ...seats()] };
 }
