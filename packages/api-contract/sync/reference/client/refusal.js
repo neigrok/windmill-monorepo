@@ -1,5 +1,6 @@
 // §7.7 refusal, recovery and write maps. The restamp rule is one primitive, `moveRegister`; what moves
 // with a register (borns, carried lives, guards) reaches later sent entries too, which recover alike.
+// Clock-skew recovery also lowers the stamps no unacked entry is the source of (step 1.5).
 
 import { Clock, maxPair } from '../core/clock.js';
 import { sameJson } from '../core/jcs.js';
@@ -54,11 +55,37 @@ function ownRegisters(entry) {
   return own;
 }
 
+const lifeKey = (t, id, stamp) => `${t}|${JSON.stringify(id)}|${stamp}`;
+
+// The borns and carried life registers of queued entries above admittedHigh whose source no unacked
+// entry holds: no held, ready or sent entry wrote that life register, by a delta or a prediction. Such a
+// stamp is a prediction whose command's `ok` gave it no stamp (§7.7 write map): no server checked it.
+function unsourced(replica) {
+  const unadmitted = (stamp) => Stamp.less(replica.meta.admittedHigh, stamp);
+  const written = new Set();
+  for (const entry of replica.entries().filter((other) => isQueued(other) || other.state === 'sent')) {
+    for (const [delta, register] of ownRegisters(entry)) if (register === 'life') written.add(lifeKey(delta.t, delta.id, delta.life[1]));
+    for (const delta of entry.predict ?? []) if (delta.life) written.add(lifeKey(delta.t, delta.id, delta.life[1]));
+  }
+  const carried = [];
+  for (const entry of replica.entries().filter(isQueued)) {
+    for (const delta of entry.intent.d ?? []) {
+      const creates = delta.life?.[0] === 'alive' && delta.life[1] === delta.born;
+      if (delta.born !== undefined && !creates && unadmitted(delta.born) && !written.has(lifeKey(delta.t, delta.id, delta.born))) carried.push({ delta, key: 'born' });
+      if (delta.life && Stamp.less(delta.life[1], entry.stamp) && unadmitted(delta.life[1]) && !written.has(lifeKey(delta.t, delta.id, delta.life[1]))) {
+        carried.push({ delta, key: 'life' });
+      }
+    }
+  }
+  return carried;
+}
+
 // §7.7 step 1 for clock-skew. The caller has already taken the response's offset sample.
 function recoverSkew(replica, ctx, refused, lastN) {
   const { meta } = replica;
   const physNow = ctx.deviceNow + meta.serverOffsetMs;
   meta.hlc = maxPair({ ms: physNow, counter: 0 }, Stamp.pairOf(meta.admittedHigh));
+  const floor = Stamp.encode({ ...meta.hlc, actor: ctx.actor });
   for (const entry of replica.entries()) {
     if (entry !== refused && entry.state === 'sent' && entry.n > lastN) moveEntry(replica, ctx.ended, entry, 'skew-return');
   }
@@ -67,11 +94,17 @@ function recoverSkew(replica, ctx, refused, lastN) {
   const clock = new Clock(meta.hlc, ctx.actor, () => physNow);
   let high = meta.admittedHigh;
   const plan = replica.entries().filter(isQueued).map((entry) => ({ entry, own: ownRegisters(entry) }));
+  const lowered = unsourced(replica);
   for (const { entry, own } of plan) {
     const n = clock.tick();
     for (const [delta, register] of own) moveRegister(replica, entry, delta, register, n);
     entry.stamp = n;
     high = Stamp.max(high, n);
+  }
+  // Step 1.5: each takes the lesser of its stamp and the recovered clock's reading, which passes.
+  for (const { delta, key } of lowered) {
+    if (key === 'born') delta.born = Stamp.min(delta.born, floor);
+    else delta.life = [delta.life[0], Stamp.min(delta.life[1], floor)];
   }
   meta.hlc = Stamp.pairOf(high);
   meta.hlcHigh = high;

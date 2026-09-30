@@ -85,7 +85,6 @@ function drive({ subAnswer, pullAnswer, draw, span = 60_000, rtt = 50 }) {
         followed = true;
         doubts.followed(scope, now);
       } else {
-        doubts.unfollowed(scope);
         doubts.end(scope, now, draw);
       }
     } else if (pullAnswer === 'rows') {
@@ -124,6 +123,37 @@ test('§7.9: k returns to 0 once the scope stayed followed, not in doubt, for 30
   };
   assert.equal(settle(29_999), 2000);
   assert.equal(settle(30_000), 1000);
+});
+
+// A scope put in doubt at 0 and pulled at 1000 with rows, so k is 1 and it is followed from 1000.
+function followedAfterDoubt() {
+  const doubts = new Doubts();
+  doubts.end('tree/t', 0, longest);
+  doubts.due(1000);
+  doubts.rows('tree/t');
+  doubts.followed('tree/t', 1000);
+  return doubts;
+}
+
+test('§7.9: a stretch of 30 s ended by the socket\'s close returns k to 0, though a shorter stretch follows before the next doubt', () => {
+  const settled = followedAfterDoubt();
+  settled.unfollowed('tree/t', 31_000);
+  settled.followed('tree/t', 50_000);
+  settled.followed('tree/t', 52_000);
+  settled.end('tree/t', 55_000, longest);
+  assert.deepEqual(settled.of('tree/t'), { k: 1, doubt: true, due: 56_000, followedSince: null });
+  const short = followedAfterDoubt();
+  short.unfollowed('tree/t', 30_999);
+  short.followed('tree/t', 50_000);
+  short.end('tree/t', 55_000, longest);
+  assert.deepEqual(short.of('tree/t'), { k: 2, doubt: true, due: 57_000, followedSince: null });
+});
+
+test('§7.9: a stretch of 30 s ended by the gone or not-found frame itself returns k to 0, though the socket unfollowed as the frame arrived and the ignored end is handled after', () => {
+  const doubts = followedAfterDoubt();
+  doubts.unfollowed('tree/t', 31_000);
+  doubts.end('tree/t', 31_050, longest);
+  assert.deepEqual(doubts.of('tree/t'), { k: 1, doubt: true, due: 32_050, followedSince: null });
 });
 
 test('§7.9: a pull of another trigger answered by an ignored end leaves the scheduled re-pull and k as they are', () => {

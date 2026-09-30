@@ -1,0 +1,50 @@
+name: Contract CI
+
+# The sync engine's JS reference (packages/api-contract/sync): the corpus it generates is current, its unit,
+# property and replay tests pass (the replay fuzz at engine.md §11.3's first coverage tier), and the replay fuzz
+# holds at the second tier's size for a fixed seed. The C++ and Swift runners replay the same corpus in backend.yml
+# and ios.yml.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'packages/api-contract/sync/**'
+      - '.github/workflows/contract.yml'
+      - '!packages/api-contract/sync/**/*.md'
+  pull_request:
+    paths:
+      - 'packages/api-contract/sync/**'
+      - '.github/workflows/contract.yml'
+      - '!packages/api-contract/sync/**/*.md'
+  workflow_dispatch:
+
+concurrency:
+  group: contract-ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sync-reference:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: packages/api-contract/sync
+    steps:
+      - uses: actions/checkout@v5
+
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "20"
+
+      - name: The corpus is what the reference generates
+        run: npm run check
+
+      - name: Unit, property and replay tests
+        run: npm test
+
+      - name: Replay fuzz at the second coverage tier
+        run: node --test reference/test/fuzz/
+        env:
+          FUZZ_N: "500"
+          FUZZ_SEED: "1"
+          FUZZ_STEPS: "300"

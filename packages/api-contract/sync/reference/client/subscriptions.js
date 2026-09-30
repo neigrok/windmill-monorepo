@@ -50,8 +50,8 @@ export function firstPullComplete(replica, scope, scopes) {
   return replica.cursors[scope]?.booted === true;
 }
 
-// Appendix B's re-pull backoff: base, ceiling, and how long a scope stays followed, not in doubt, before
-// its k returns to 0.
+// Appendix B's re-pull backoff: base, ceiling, and how long one unbroken stretch of following, not in
+// doubt, must last to return the scope's k to 0.
 export const REPULL = Object.freeze({ baseMs: 1000, ceilingMs: 30_000, settledMs: 30_000 });
 
 // §7.9 scopes in doubt: when a scope an ignored end put in doubt is pulled again, and whether the live
@@ -70,23 +70,31 @@ export class Doubts {
   }
 
   // The socket follows `scope` from `now`, not in doubt: a sub was sent, or a doubt ended while the scope
-  // stayed followed (an ignored end in a page leaves the server's subscription as it was).
+  // stayed followed (an ignored end in a page leaves the server's subscription as it was). A stretch of
+  // following already under way goes on from where it began.
   followed(scope, now) {
     const state = this.of(scope);
-    if (!state.doubt) state.followedSince = now;
+    if (!state.doubt && state.followedSince === null) state.followedSince = now;
   }
 
-  // A frame's end, applied or ignored, ended the socket's following of `scope` (§6.8).
-  unfollowed(scope) {
-    this.of(scope).followedSince = null;
-  }
-
-  // An ignored end (§7.5 step 2) at `now`. A scope that stayed followed, not in doubt, for settledMs has
-  // its k back at 0. A scope not yet in doubt comes into doubt, and its first re-pull is scheduled.
-  end(scope, now, draw) {
-    const state = this.of(scope);
+  // A stretch of following, not in doubt, ends at `now`; one that lasted settledMs returns k to 0.
+  endStretch(state, now) {
     if (state.followedSince !== null && now - state.followedSince >= this.limits.settledMs) state.k = 0;
     state.followedSince = null;
+  }
+
+  // The socket stopped following `scope` at `now`: an unsub, the socket's close, or a `gone` or
+  // `not-found` frame as it arrives (§6.8), which ends the stretch before the end is handled.
+  unfollowed(scope, now) {
+    this.endStretch(this.of(scope), now);
+  }
+
+  // An ignored end (§7.5 step 2) at `now`. It ends any stretch still under way, returning k to 0 if that
+  // stretch lasted settledMs. A scope not yet in doubt comes into doubt, and its first re-pull is
+  // scheduled.
+  end(scope, now, draw) {
+    const state = this.of(scope);
+    this.endStretch(state, now);
     if (state.doubt) return;
     state.doubt = true;
     this.schedule(state, now, draw);

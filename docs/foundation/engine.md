@@ -440,9 +440,11 @@ latency intent, not a conformance item (§11):
 - Each of them SHOULD hold the writer at most `WRITER_SLICE_MS` as the M11 benches measure it, on an
   M3 Pro Mac and the iOS 26.3 simulator (the oldest supported iPhone is estimated 3–4× slower), and
   a commit waiting for the writer SHOULD take it before the engine's next transaction.
-- Two steps may take several transactions for this: a pull page applies in chunks (§7.5 step 2), and
-  a push answer's results in batches (§7.4). Every other step stays one transaction, an epoch change
-  (§7.5 step 1), a staging swap and the transactions of §7.10 and §7.11 among them.
+- Three steps may take several transactions for this: a pull page applies in chunks, the entries its
+  cursor covers settle in slices (§7.5 step 2), and a push answer's results apply in batches (§7.4).
+  Every other step stays one transaction, an epoch change (§7.5 step 1), a staging swap and the
+  transactions of §7.10 and §7.11 among them. The rule bounds a transaction's time, not its rows: how
+  many rows a chunk takes, or entries a slice or batch, is the implementation's.
 - Rows that a transaction takes out of every view MAY be deleted from storage afterwards, in
   transactions of their own:
   a dropped staging, the confirmed rows a staging swap replaces, a forgotten scope's rows (§7.5 step 2,
@@ -575,7 +577,8 @@ through:
 - **Keyed.** A replayed put carries its original life stamp. The deleting replica had observed the
   record it deleted, so by INV-1 the delete out-stamps that put. A put that does not change presence
   carries the drawn life register unchanged (§7.1 step 4), and a restamp moves such a carried
-  register only with its source (§7.7). A put of a `wholePut` type asserts presence at its own
+  register only with its source, or lowers it when no unacked entry is its source (§7.7 step 1.5),
+  which never lets it out-stamp a delete. A put of a `wholePut` type asserts presence at its own
   stamp: it makes the record alive again only when its stamp follows the delete's, the newer save the
   statement admits; a replay keeps its stamp, and a delete that out-stamps it stands. Stamp order, not
   wall-clock order, decides: a clock-skew recovery restamps a whole put to the recovery moment
@@ -602,7 +605,10 @@ deletion of script-writable storage after 7 days without interaction.
   `retry` never end an intent (§7.4).
 - The server stores one result per `(replica, n)`, in the transaction that sets `last_n` (§6.2).
   Poison ends in a stored `internal` result (§6.6).
-- After a restore, acked entries return to `ready` (§7.5).
+- After a restore, acked entries return to `ready` (§7.5): a replica with an acked entry holds an
+  epoch (§7.4), so the restore's epoch changes it.
+- An acked entry resolves once its scope's stored cursor covers it. A death between settling slices
+  leaves it covered, and the scope's next stored cursor settles it (§7.5 step 2).
 - A refusal folds its dependents into the same notice: the removed content of held and ready
   entries, and the whole content of orphans, the sent entries with a dependent part. An orphan's
   refusal folds its own dependents into it too (§7.7).
@@ -731,7 +737,10 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
   - Every other stamp an unacked entry carries is a born or a carried life register. Its source is
     an earlier unacked entry, whose restamp moves it (§7.7 restamp rule); a command's prediction,
     which the write map moves before any entry behind the command is numbered (§7.4, §7.7); or an
-    admitted stamp.
+    admitted stamp. A predicted register the map gives no stamp belongs to no unacked entry once its
+    command has its result: a stamp it leaves above `admittedHigh` in a later entry is unsourced,
+    and that entry's recovery lowers it to the recovered clock's reading, which passes (§7.7
+    step 1.5).
   - No source leaves the outbox unadmitted with a dependent behind it. An undo and a retire fold
     their dependents silently (§7.3), none of which is numbered while its source is held (§7.4).
     A refusal folds the queued dependents and orphans the sent ones. An orphan's whole content is a
@@ -781,13 +790,14 @@ re-pulled at most once per backoff draw, and subscribed again only after a rows 
   in doubt, which only an applied rows page ends. So between two ends of a scope's following stands a
   person's subscribe, a governing row the server committed, or a pull of the scope that brought rows.
 - **No fast pull.** Re-pulls come one at a time, each `random(0, min(30 s, 1 s · 2^k))` after its
-  cause, `k` rising by one each; `k` returns to 0 only after the scope stayed followed, not in doubt,
-  for 30 s, when it leaves the set, or at a sign-in, a sign-out or a re-identify of the active
-  replica. Every other pull has a cause the server's answers do not drive: a person's act
-  (foreground, a subscribe), a launch, a socket reopen, which backs off on its own (§7.5), the
-  fallback interval, a change the server committed (a live gap), a re-authentication, or a sign-in, a
-  sign-out or a re-identify. A stale page and a page short of its head (`more`) pull again only after
-  a cursor moved, and a scope has one pull in flight at a time (§7.5).
+  cause, `k` rising by one each; `k` returns to 0 only after the scope stayed followed, not in
+  doubt, for 30 s in one stretch, when it leaves the set, or at a sign-in, a sign-out or a
+  re-identify of the active replica. Every other pull has a cause the server's answers
+  do not drive: a person's act (foreground, a subscribe), a launch, a socket reopen, which backs off
+  on its own (§7.5), the fallback interval, a change the server committed (a live gap), a
+  re-authentication, or a sign-in, a sign-out or a re-identify. A stale page and a page short of its
+  head (`more`) pull again only after a cursor moved, and a scope has one pull in flight at a time
+  (§7.5).
 - So a loop of answers — a `sub` or a pull answered `not-found` while the client holds the governing
   record alive — turns at most once per re-pull draw, whose bound doubles to 30 s, never at the
   socket's round-trip speed. It lasts while the contradiction does: a rows page ends it, and so does
@@ -1396,6 +1406,8 @@ loop while state = bound ∧ ¬authPaused ∧ online:
   every 400                     → also emit the telemetry event sync-push-malformed, with no intent
                                   content
   replica-forked | replica-foreign | gap → re-identify (§7.11)
+  in the first batch, before its first result: if serverEpoch is null → serverEpoch := the response
+      epoch (an answer with no result takes it in the transaction that sets ackThrough)
   each result, in ascending n, in batches (below):
     ok      → acked, resultSeq := seq, resultEpoch := the response epoch; apply the write map (§7.7)
     refused → §7.7; after a `clock-skew` recovery, back off before the next push
@@ -1423,6 +1435,12 @@ batches keeps the batches recorded and loses the rest: their entries stay `sent`
 not moved, and the next push resends them. The server answers them from its stored results (§6.2
 step 4), or `replica-forked` for an entry an earlier batch's `clock-skew` recovery rewrote, which
 re-identifies with nothing lost (§7.7).
+
+A null `serverEpoch` takes the answer's epoch in the first batch, so no entry is ever acked while
+`serverEpoch` is null. Were it taken later, a death before the take would leave entries acked in an
+epoch the replica never held. A null `serverEpoch` takes any answer's epoch silently, with no epoch
+change (§7.5 step 1), so after a restore those entries would neither resolve (their `resultEpoch` is
+not `serverEpoch`) nor return to `ready`.
 
 ### §7.5 Puller, reset and epoch change
 
@@ -1453,8 +1471,9 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
 `k := 0`. A `426` from any request stops sync until the app is upgraded (§9.6), on every tab (§7.8).
 
 1. Update the offset (§10.4) before observing any stamp. A null `serverEpoch` takes the response
-   epoch. A response epoch ≠ a non-null `serverEpoch` triggers an **epoch change** first. In one
-   transaction:
+   epoch, with no epoch change: a replica holds no acked entry while its `serverEpoch` is null (§7.4),
+   so none is passed over. A response epoch ≠ a non-null `serverEpoch` triggers an **epoch change**
+   first. In one transaction:
    1. `serverEpoch := epoch`.
    2. Every cursor becomes `null`, and every staging is dropped.
    3. Every `acked` entry with `resultEpoch ≠ epoch` returns to `ready` at its commit position.
@@ -1492,7 +1511,8 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
      live):
      - staging replaces the scope's confirmed rows, and its digest replaces theirs;
      - `booted := true`;
-     - acked entries of the scope with `resultEpoch = serverEpoch` and `resultSeq ≤ asOf` resolve.
+     - the cursor it stores, live at `asOf`, covers the acked entries of the scope with
+       `resultSeq ≤ asOf`, which settle (**Settling**, below).
    - **Live rows** replace confirmed rows by §3.4; a dead row deletes it, a dead derived row also
      adds a `SpentId`, and a dead row of a governing type records its `tree/<id>` and
      `self/overlay/<id>` as known `gone` (`KnownScope`).
@@ -1521,15 +1541,11 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
      the cursor.
    - Every chunk before the last sets `CursorRec.behind`. The last sets it when the page's `more` is
      true, and clears it otherwise.
-   - The last chunk resolves acked entries whose `resultSeq ≤ cleanSeq` in the same epoch.
-     - Live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key.
-     - While booting: `cleanSeq = −∞`.
-
-   An `ok` whose `resultSeq` the scope's `cleanSeq` already covers, in the same epoch, resolves its
-   entry in its result's batch (§7.4).
+   - The last chunk settles the acked entries its cursor covers (**Settling**, below), and then runs
+     the digest check (step 4).
 
    **Between chunks.** Only a page's last chunk does what its cursor decides: it stores the cursor,
-   ends a boot (the swap, `booted`, its resolutions), resolves by `cleanSeq`, and runs the digest
+   ends a boot (the swap and `booted`), settles the entries the cursor covers, and runs the digest
    check (step 4). So a reader between two chunks sees what it would see had the server ended the page
    at the last row applied, except that none of those has happened; no record is torn, since chunks
    take whole rows. A process death between chunks keeps the chunks committed and loses the rest, and
@@ -1551,10 +1567,39 @@ closes the socket. A re-authentication that clears `authPaused` opens the socket
    a record can arrive before one it references (a roadmap `edge` before its `node`). The pages of a
    multi-page boot show the same, at a coarser grain. A product that must not draw a partly booted
    scope waits for `firstPullComplete` (§7.9; the domain kit's ER-3).
-3. **Live frames.** A frame applies in one local transaction. A `change` frame is applied as a live
-   page iff the cursor is live without a key, the scope is not `behind`, `epoch` matches,
-   `seq = cursor.seq + 1`, and `rows` is present. Otherwise pull. A `gone` or `not-found` frame is
-   handled as that page kind (step 2: applied, ignored, or outside the set). A scope `behind`
+
+   **Settling.** A scope's stored cursor *covers* an acked entry of the scope whose `resultEpoch` is
+   `serverEpoch` and whose `resultSeq ≤ cleanSeq`:
+   - live cursor: `cleanSeq = cursor.seq`, or `cursor.seq − 1` while the cursor carries a key;
+   - booting, or no cursor: `cleanSeq = −∞`.
+
+   A covered entry resolves. The transaction that stores a cursor (a page's last chunk, a frame
+   applied inline) settles the entries it covers: it resolves them all, or a first part in commit
+   order and leaves the rest to *settling slices*, transactions of their own that follow it, sized by
+   §2.5's writer rule. Slices resolve the rest in commit order, each only entries the scope's stored
+   cursor covers when the slice runs: after a digest mismatch, a reset or an epoch change, a slice
+   resolves nothing more. An `ok` whose `resultSeq` the stored cursor already covers resolves in its
+   result's batch (§7.4): its own entry, and no other.
+   - **Readers.** Between two slices, a reader sees the covered entries not yet resolved still
+     pending, as before their cursor covered them: their deltas and predictions fold into `drawn` and
+     `stored` (§7.6) over the newer confirmed rows. A lattice register reads the confirmed value, of
+     which the entry's write is already part; a text field reads the newest pending text, which may
+     be the entry's; a record the page deleted reads as the entry wrote it.
+   - **Death.** A process death between slices keeps the resolutions committed, and the entries left
+     stay `acked`, covered and pending. The next transaction that stores the scope's cursor settles
+     them: the scope's next pull, which a launch makes, stores a cursor at least as far on. A result
+     settles no entry but its own. A reconcile that finds the scope outside the set (§7.9), a `gone`
+     or `not-found` applied to it, and a sign-out (§7.10) resolve them as they resolve every acked
+     entry, and an epoch change returns them to `ready` as it returns every acked entry of another
+     epoch.
+   - **What a slice leaves alone.** A slice changes no row, digest, cursor, stamp or `behind`. The
+     digest check (step 4) runs in the transaction that stores the cursor, and INV-15 speaks of that
+     transaction, so neither depends on how far settling got.
+3. **Live frames.** A frame applies in one local transaction, and its settling may go on in slices
+   (step 2). A `change` frame is applied as a live page iff the cursor is live without a key, the
+   scope is not `behind`, `epoch` matches, `seq = cursor.seq + 1`, and `rows` is present. Otherwise
+   pull. A `gone` or `not-found` frame is handled as that page kind (step 2: applied, ignored, or
+   outside the set). A scope `behind`
    may hold a row older than its state at the cursor's seq (changed below the cursor and again above
    it, so a page short of the head skipped it), or rows past the cursor (chunks a death cut short). A
    `change` frame, which may arrive late on any socket, would then check its digest against rows that
@@ -1605,7 +1650,15 @@ notice of its own, as step 3 states):
         `nextN := lastN + 1` (the server never processed those numbers).
      4. Restamp `e`, and every held and ready entry, in commit order, by the restamp rule below.
         Predictions are not restamped.
-     5. `meta.hlc` and `hlcHigh` become `max(admittedHigh, the new stamps)`, shared by every tab.
+     5. Every *unsourced* stamp of a held or ready entry takes the lesser of itself and the
+        recovered clock's reading: step 2's pair with the recovering instance's actor. A stamp is
+        unsourced when it is a born, or a life register the entry carries unchanged, that exceeds
+        `admittedHigh` and that no held, ready or sent entry wrote, by a delta or a prediction, all
+        as they stood before step 4. Its source is a command's prediction whose `ok` gave that
+        register no stamp (the write map, below): no server checked it, and no restamp moves it.
+        Lowered, it passes §6.1 step 2, and a carried life register out-stamps nothing it did not
+        out-stamp before.
+     6. `meta.hlc` and `hlcHigh` become `max(admittedHigh, the new stamps)`, shared by every tab.
    - `base-unknown`: every text delta of `e` switches to `base: {text: baseTexts[…]}`.
 2. **Remove `e`.**
 3. **Fold dependents.** A *dependent* is a delta or command of a later entry that touches, or whose
@@ -1646,8 +1699,11 @@ entry `w`, then step 3 once for the map:
    it is not rewritten, and is refused `target-merged` by steps 2–4 above.
 2. The command's own `predict` is restamped by the restamp rule, with `n` given by the map:
    `w.f[f]` for each field, and `w.born` for the life of a record it created or resolved to. Later
-   borns and guards naming the stamps its predicted registers carry follow. The predict stays
-   drawn until the cursor covers `resultSeq`.
+   borns and guards naming the stamps its predicted registers carry follow. A predicted register
+   the map gives no stamp keeps its predicted one: the command wrote nothing for it, as a replay by
+   receipt of a record that is gone writes nothing (A.2). A later entry that carries it as a born or
+   a life is lowered by step 1.5 if the server refuses it `clock-skew`. The predict stays drawn
+   until its entry resolves, once the cursor covers `resultSeq` (§7.5 step 2).
 3. The client observes every stamp in the map and raises `admittedHigh` to them. Then it restamps,
    by the restamp rule with fresh ticks, the registers the map names (a field in `w.f`, or the life
    of a `w` with `born`) in every held or ready entry that writes them. A later local write
@@ -1657,7 +1713,8 @@ No entry is `sent` behind a command (§7.4), so every reference, born and guard 
 
 **Restamp rule.** Used by `clock-skew` recovery and by the write map (steps 2 and 3). It moves only
 registers an entry wrote, which carry a stamp at or after the entry's `stamp`. A register an entry
-carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source. The registers
+carries unchanged (a keyed put's drawn life, §7.1 step 4) moves only with its source, or, unsourced,
+by recovery's lowering (step 1.5). The registers
 each entry wrote are determined for every entry before any register moves in a pass. Each restamped
 entry takes one new stamp `n`: a fresh tick of the recovering instance's clock, in commit order, or
 the stamp a write map gives. In `clock-skew` recovery `n` becomes the entry's `stamp`; a write-map
@@ -1741,10 +1798,18 @@ scheduled re-pull. While a scope is in doubt:
 - the pulls of every other trigger (§7.5) take the scope as they take any subscribed scope, and leave
   its re-pull and its `k` as they are.
 
-The scope's `k` returns to 0 once it has stayed followed, not in doubt, for 30 s. A scope that leaves
-the subscription set loses its doubt and its `k`, and a sign-in, a sign-out or a re-identify of the
-active replica (§7.12) ends every doubt and returns every `k` to 0, whether or not its id changed. Doubts and `k`s are not stored: a process starts with none. INV-16
-bounds what they cost.
+The scope's `k` returns to 0 once the scope has been followed, and not in doubt, for 30 s in one
+unbroken *stretch*. A stretch begins at the later of the `sub` that began the current following and
+the end of the scope's last doubt. It ends when the following ends (an `unsub`, the socket's close,
+a `gone` or `not-found` frame as it arrives) or when a doubt starts. The reset is checked when a
+stretch ends, however it ends, and again at the ignored end that starts a doubt, before its first
+draw: a stretch that lasted 30 s or more returns `k` to 0. Stretches are measured on the monotonic
+clock, as the puller's timers are; a device clock jump neither lengthens nor cuts one. So a stretch
+of 30 s since the last doubt counts even when a close ended it before the next doubt; time in doubt
+or unfollowed never counts. A scope that leaves the subscription set loses its doubt and its `k`, and
+a sign-in, a sign-out or a re-identify of the active replica (§7.12) ends every doubt and returns
+every `k` to 0, whether or not its id changed. Doubts and `k`s are not stored: a process starts with none. INV-16 bounds what they
+cost.
 
 **Timers.** The puller's timers, `PULL_FALLBACK_MS` and every scheduled re-pull, run only while the
 app is in the foreground (§7.3 defines leaving). A re-pull whose time comes in the background is due:
@@ -1899,7 +1964,7 @@ doubt (§7.9), whether or not its id changed.
 | `sent` | transport error, 401, 503, `retry`; a 400 or 413 on a several-intent request (halved, §7.4) | `sent` |
 | `sent` | re-identify (fork guard, `replica-forked`, `replica-foreign`, `gap`, epoch change) | `ready` |
 | `sent`, unprocessed | an earlier entry's `clock-skew` recovery (§7.7 step 1); a 400 or 413 on a one-intent request at a lower `n` (§7.4) | `ready` (restamped after a skew) |
-| `acked` | `cleanSeq ≥ resultSeq` in the same epoch, checked by every page's last chunk, every frame and the `ok` itself (§7.5); boot complete with `asOf ≥ resultSeq`; scope `gone` or `not-found`; the scope leaves the subscription set (§7.9); sign-out (§7.10) | `resolved` |
+| `acked` | its scope's stored cursor covers it (`cleanSeq ≥ resultSeq` in the same epoch; a boot's end at `asOf`), settled by the transaction that stores the cursor, a settling slice after it, or the `ok` itself (§7.5 step 2); scope `gone` or `not-found`; the scope leaves the subscription set (§7.9); sign-out (§7.10) | `resolved` |
 | `acked` | epoch change, when `resultEpoch ≠ epoch` | `ready` |
 | any non-terminal | discarded by the person (§7.10) | `discarded` |
 
@@ -2285,8 +2350,8 @@ run, and against the real server and Postgres nightly.
 **Faults:**
 - drop, duplicate, delay and reorder;
 - lost replies;
-- process death between local transactions, two chunks of a pull page (§7.5 step 2) and two batches
-  of a push answer's results (§7.4) among them;
+- process death between local transactions, two chunks of a pull page and two of its settling slices
+  (§7.5 step 2) and two batches of a push answer's results (§7.4) among them;
 - pull pages that end short of the head (`more`), with frames arriving between them;
 - clock error of ±10 min, and device clock jumps;
 - holds, undo, retire, leaving the app, and activity or scene recreation;
@@ -2314,6 +2379,12 @@ id was announced by one `activeReplicaChanged` naming the id it replaced (§7.12
 - INV-15: every digest check matches.
 - No bound replica holds a `not-found` record for a scope of an alive tree its account owns (§7.9).
 - Every outbox is empty.
+
+**Coverage floor.** Each simulator counts the events of its coverage list, which names at least one
+event for each fault above that it injects, and a fuzz (one run of the simulator over its seeds) fails
+when a listed event never occurred in it. Each event is listed with a fuzz size, seeds × steps, at
+which ten or more of its seeds, on average, produce the event, and no first seed misses it. The corpus
+README states the rule and the reference's sizes.
 
 ---
 
@@ -2427,7 +2498,7 @@ writer of `closedBy = stale`.
 
   Predicts the session `{id, born, startedAt, routineId}`, with `plan` composed from the drawn
   routine. A replay whose receipt names a dead session writes nothing; the predicted session stays
-  drawn until the cursor covers it.
+  drawn until its entry resolves (§7.5 step 2).
 - **`gym.importSession {id: ref<session>, routineId?, startedAt: instant, finishedAt: instant, sets}`.**
   Creates a finished session (`closedBy = finish`) and its sets, with no join. `sets` holds at most
   200 sets, each `{id, exerciseId, weightKg, reps, kind?, rpe?, note?, completedAt}`, with a set's
@@ -2530,7 +2601,7 @@ an open session), `session-overlap` (`gym.importSession`, `gym.correctSession`),
 | `LIVE_PING_MS` | 25 000: the client sends `ping` after this long with no frame or `pong` received |
 | `LIVE_PONG_MS` | 10 000: a `ping` unanswered for this long fails the socket (§7.5) |
 | `REQUEST_TIMEOUT_MS` | 60 000: a pull or push with no answer by then is a transport error |
-| Re-pull backoff (§7.9) | base 1000 ms; ceiling 30 000 ms; full jitter; per scope; `k` resets after 30 000 ms followed and not in doubt, when the scope leaves the subscription set, and at a sign-in, a sign-out or a re-identify of the active replica |
+| Re-pull backoff (§7.9) | base 1000 ms; ceiling 30 000 ms; full jitter; per scope; `k` resets after one unbroken stretch of 30 000 ms (on the monotonic clock) followed and not in doubt, checked when the stretch ends and at the ignored end that starts a doubt, when the scope leaves the subscription set, and at a sign-in, a sign-out or a re-identify of the active replica |
 | `WRITER_SLICE_MS` | 25: how long, at most, an engine transaction other than a commit should hold the store's writer (§2.5, a latency intent) |
 | `OFFSET_SAMPLES` | 8 |
 | `CLOCK_JUMP_MS` | 1000 |

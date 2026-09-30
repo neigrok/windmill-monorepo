@@ -1,5 +1,5 @@
 // §7.5 the puller: pages, in one local transaction or in chunks, and frames, in one each; boots into
-// staging, resolution and the digest check. The client reads its cursors' mode, key and seq, which §7.5
+// staging, settling and the digest check. The client reads its cursors' mode, key and seq, which §7.5
 // needs.
 
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
@@ -52,24 +52,28 @@ export function pullRequest(replica, registry, scopes) {
   return { scopes: pulled.map((scope) => ({ scope, cursor: replica.cursorOf(scope).cursor })) };
 }
 
-function resolveAcked(replica, ctx, scope, cleanSeq) {
-  for (const entry of replica.entries(scope)) {
-    if (entry.state === 'acked' && entry.resultEpoch === replica.meta.serverEpoch && entry.resultSeq <= cleanSeq) {
-      moveEntry(replica, ctx.ended, entry, 'resolve');
-    }
-  }
+// §7.5 step 2: the scope's stored cursor covers an acked entry of the same epoch whose seq it has received
+// whole, cleanSeq: the cursor's seq, one less while it carries a key, and none while booting or without
+// a cursor.
+function covers(replica, entry) {
+  const cursor = Cursor.decode(replica.cursorOf(entry.scope).cursor);
+  if (cursor === null || cursor.m !== 'live') return false;
+  const cleanSeq = cursor.k === undefined ? cursor.s : cursor.s - 1;
+  return entry.state === 'acked' && entry.resultEpoch === replica.meta.serverEpoch && entry.resultSeq <= cleanSeq;
 }
 
-// cleanSeq (§7.5): the seqs a live cursor has received whole; none while booting or without a cursor.
-function cleanSeqOf(cursor) {
-  if (cursor === null || cursor.m !== 'live') return -Infinity;
-  return cursor.k === undefined ? cursor.s : cursor.s - 1;
+// One settling transaction of `scope` (§7.5 step 2): the first `count` of the acked entries its stored
+// cursor covers now resolve, in commit order. Answers whether covered entries are left.
+function settle(replica, ctx, scope, count) {
+  const covered = replica.entries(scope).filter((entry) => covers(replica, entry));
+  for (const entry of covered.slice(0, count)) moveEntry(replica, ctx.ended, entry, 'resolve');
+  return covered.length > count;
 }
 
-// Resolves the scope's acked entries its stored cursor already covers: an `ok` that arrives after the
-// page or frame holding its seq resolves in its own transaction (§7.5).
-export function resolveCovered(replica, ctx, scope) {
-  resolveAcked(replica, ctx, scope, cleanSeqOf(Cursor.decode(replica.cursorOf(scope).cursor)));
+// An `ok` whose seq the scope's stored cursor already covers resolves in its result's batch: its own
+// entry, and no other (§7.5 step 2).
+export function resolveIfCovered(replica, ctx, entry) {
+  if (covers(replica, entry)) moveEntry(replica, ctx.ended, entry, 'resolve');
 }
 
 function observeRows(replica, rows) {
@@ -150,8 +154,9 @@ function applyChunk(replica, ctx, requested, page, rows, first) {
   observeRows(replica, rows);
 }
 
-// A page applied whole, as one transaction: a frame's, or a page no process death interrupts.
-const WHOLE = { chunkRows: Infinity, left: Infinity };
+// A page applied whole, as one transaction with all its settling: a frame's, or a page no process death
+// interrupts.
+const WHOLE = { chunkRows: Infinity, settle: Infinity, left: Infinity };
 
 // The subscription set as a page's handling reads it when its caller gives none: a known scope is outside
 // it (§7.9).
@@ -159,10 +164,13 @@ const notKnown = (replica) => (scope) => !replica.known[scope];
 
 // One page, requested with `requested` (the cursor text sent, or null). Answers 'outside' when its scope
 // is outside the subscription set `inSet` (§7.5 step 2), which applies nothing and pulls nothing again,
-// and 'stale' when the scope's cursor moved since the request, so the scope is pulled again. A rows page applies in chunks of
-// `budget.chunkRows` rows (§7.5 step 2); `budget.left` counts the transactions that commit before the
-// process dies (each chunk, and each reset or applied end), and a page it cuts short answers 'partial'.
-// Nothing runs between two chunks here, so the stale check the first chunk makes holds for every chunk.
+// and 'stale' when the scope's cursor moved since the request, so the scope is pulled again. A rows page
+// applies in chunks of `budget.chunkRows` rows, and its last chunk and each settling slice after it
+// resolve `budget.settle` of the entries its cursor covers (§7.5 step 2). `budget.left` counts the
+// transactions that commit before the process dies (each chunk and settling slice, and each reset or
+// applied end): a page it cuts short answers 'partial', and one whose settling it cuts short
+// 'unsettled'. Nothing runs between two chunks here, so the stale check the first chunk makes holds for
+// every chunk.
 export function applyPage(replica, ctx, requested, page, budget = { ...WHOLE }, inSet = notKnown(replica)) {
   const { scope } = page;
   if (!inSet(scope)) return 'outside';
@@ -190,15 +198,21 @@ export function applyPage(replica, ctx, requested, page, budget = { ...WHOLE }, 
   }
   if (budget.left <= 0) return 'partial';
   applyChunk(replica, ctx, requested, page, page.rows.slice(from), from === 0);
-  finishPage(replica, ctx, requested, page);
+  let unsettled = finishPage(replica, ctx, requested, page, budget.settle);
   budget.left -= 1;
+  while (unsettled) {
+    if (budget.left <= 0) return 'unsettled';
+    unsettled = settle(replica, ctx, scope, budget.settle);
+    budget.left -= 1;
+  }
   return 'applied';
 }
 
 // The page's last chunk goes on with what the cursor decides: it stores the cursor, ends a boot (the
-// staging swap, booted, its resolutions), resolves by cleanSeq and checks the digest. A page short of
-// its head leaves the scope behind, and one at its head clears it (§2.5 CursorRec.behind).
-function finishPage(replica, ctx, requested, page) {
+// staging swap, booted), settles the first `count` entries the cursor covers and checks the digest.
+// A page short of its head leaves the scope behind, and one at its head clears it (§2.5
+// CursorRec.behind). Answers whether covered entries are left for settling slices.
+function finishPage(replica, ctx, requested, page, count) {
   const { scope } = page;
   const record = replica.cursors[scope];
   const cursor = Cursor.decode(page.cursor);
@@ -215,19 +229,20 @@ function finishPage(replica, ctx, requested, page) {
       delete replica.staging[scope];
     }
     record.booted = true;
-    resolveAcked(replica, ctx, scope, cursor.s);
   }
-  resolveAcked(replica, ctx, scope, cleanSeqOf(cursor));
+  const unsettled = settle(replica, ctx, scope, count);
   if (cursor.m === 'live' && cursor.k === undefined && cursor.s === page.seq && !replica.staging[scope]) {
     checkDigest(replica, ctx, scope, page.digest, page.seq);
   }
+  return unsettled;
 }
 
 // A 401, or a 200 served as anyone but the replica's account, pauses sync and applies nothing (§9.1).
-// Rows pages apply in chunks of `chunkRows` rows; with `dieAfter`, the process dies once that many page
-// transactions have committed, and the pages after the one it cuts short are not applied. `inSet` tells
-// the scopes of the subscription set (§7.9), a known scope never among them.
-export function onPullResponse(replica, ctx, request, response, timing, { chunkRows = Infinity, dieAfter = Infinity, inSet } = {}) {
+// Rows pages apply in chunks of `chunkRows` rows, and settle `settle` covered entries a transaction; with
+// `dieAfter`, the process dies once that many page transactions have committed, and the pages after the
+// one it cuts short are not applied. `inSet` tells the scopes of the subscription set (§7.9), a known
+// scope never among them.
+export function onPullResponse(replica, ctx, request, response, timing, { chunkRows = Infinity, settle: perSlice = Infinity, dieAfter = Infinity, inSet } = {}) {
   const { body } = response;
   if (body?.serverTime !== undefined) replica.takeOffsetSample(body.serverTime, timing, ctx.limits);
   if (replica.isUnauthenticated(response)) {
@@ -237,7 +252,7 @@ export function onPullResponse(replica, ctx, request, response, timing, { chunkR
   if (response.status !== 200) return [];
   if (replica.meta.serverEpoch === null) replica.meta.serverEpoch = body.epoch;
   else if (body.epoch !== replica.meta.serverEpoch) epochChange(replica, ctx, body.epoch);
-  const budget = { chunkRows, left: dieAfter };
+  const budget = { chunkRows, settle: perSlice, left: dieAfter };
   const subscribed = (scope) => notKnown(replica)(scope) && (inSet === undefined || inSet(scope));
   const outcomes = [];
   for (const page of body.pages) {

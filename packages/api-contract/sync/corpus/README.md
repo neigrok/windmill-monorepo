@@ -680,14 +680,19 @@ Input: `{device, ids?, actors?, forkGuards?, draws?, actor?, limits?, steps}`.
     `tSend` and `tRecv` (default `deviceNow`), which stand for `{wall: tSend, mono: tSend, boot:
     'boot-1'}` and `{wall: tRecv, mono: tRecv, boot: 'boot-1'}`.
   - `pullResponse` may carry `chunk`, the rows of a page each chunk takes (§7.5 step 2; absent, a
-    page applies in one transaction), and `dieAfter`: the process dies once that many page
-    transactions have committed, each chunk and each `reset` or applied `gone` or `not-found` page
-    counting one (a stale page and an ignored end write nothing and count none). Nothing after them
-    applies, and the pages after the one cut short are not reported. `pushResponse` may carry
+    page applies in one transaction); `settle`, the covered entries each settling transaction
+    resolves, in commit order: the page's last chunk resolves the first `settle` of them, and each
+    settling slice after it the next `settle` (absent, the last chunk resolves them all); and
+    `dieAfter`: the process dies once that many page transactions have committed, each chunk, each
+    settling slice and each `reset` or applied `gone` or `not-found` page counting one (a stale page
+    and an ignored end write nothing and count none). A page's chunks, then its settling slices, come
+    before the next page. Nothing after them applies, and the pages after the one cut short are not
+    reported. `pushResponse` may carry
     `dieAfter`: the process dies once that many results are recorded, in ascending `n` (§7.4), and
     `ackThrough` and any epoch change wait for the last. The offset sample and an epoch change the
-    answer carries come before any page (§7.5 step 1). A runner whose engine sizes its own chunks
-    takes `chunk` as that size.
+    answer carries come before any page (§7.5 step 1), and a `serverEpoch` that was null takes the
+    answer's epoch with the first result recorded (§7.4). A runner whose engine sizes its own chunks
+    and slices takes `chunk` and `settle` as those sizes.
   - `physNow` is `deviceNow + meta.serverOffsetMs`.
 
 Expect: `{returns, device, ended, telemetry?, events?}`.
@@ -719,7 +724,7 @@ Expect: `{returns, device, ended, telemetry?, events?}`.
 | `hello` | `response` | §10.4 offset sample; a 401, or an `as` other than the replica's account, sets `authPaused` | `null` |
 | `engineStart` | `backupGuard?` | §7.3, §7.11, D-2 | `{actor, reidentified, pendingSignIn?}` |
 | `pull` | `scopes` | request with the stored cursors, leaving out a tree or overlay scope whose governing record's create is still in the outbox (§7.9) | the PullRequest, or `null` when no scope is left |
-| `pullResponse` | `response`, `chunk?`, `dieAfter?` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `partial` (a page `dieAfter` cut short), `outside` (a page for a scope outside the subscription set, which applies nothing and pulls nothing again: a known scope, or one the last `reconcile` left out), `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1); `null` when the replica the last `pull` was made for is no longer the active one, and nothing applies (§7.12) |
+| `pullResponse` | `response`, `chunk?`, `settle?`, `dieAfter?` | §7.5, for the last `pull` | `[{scope, outcome}]`: `applied`, `partial` (a page `dieAfter` cut short), `unsettled` (a page applied whose settling `dieAfter` cut short), `outside` (a page for a scope outside the subscription set, which applies nothing and pulls nothing again: a known scope, or one the last `reconcile` left out), `stale`, `reset`, `gone`, `not-found`, or `ignored` (any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included, §7.9); `[]` for a 401, or a 200 whose `as` is not the replica's account, which sets `authPaused` (§9.1); `null` when the replica the last `pull` was made for is no longer the active one, and nothing applies (§7.12) |
 | `frame` | `frame` | §7.5 step 3 | `applied`, `pull`, `gone`, `not-found`, `outside` (a frame for a scope outside the subscription set, as `pullResponse` defines it, which applies nothing), `ignored` (an unknown op, any end of a product scope, or a `not-found` for a tree or overlay scope waiting for its governing record's create or whose governing record is alive in `drawn` or in `stored`, a held delete's window included), or `paused` (a frame whose `as` is not the replica's account sets `authPaused` and applies nothing, §9.1) |
 | `reconcile` | `scopes?` | §7.9: unsubscribe scopes outside `scopes`, which is the subscription set from then on, with the scopes later `subscribe` steps add. Without `scopes`, the set is the replica's own: `self/probe` and, per `board` alive in `drawn` or in `stored`, its tree and overlay, less known scopes (empty unless the replica is bound). Before any `reconcile`, every scope a vector pulls or a frame names is in the set unless the replica knows it | `null` |
 | `signIn` | `account, holdsRecords, decisions?, counted?` | §7.10 | `{complete, due: [{kind, product, count, counted}]}` |
@@ -815,8 +820,9 @@ one-intent body, at the `n` it would take and the current `ackThrough`, exceeds 
 grew after commit) is not numbered: it ends `refused` `too-large` (event `outgrown`) with its notice,
 an orphan with none of its own, its dependents fold, and numbering goes on with the next entry, what
 it held back included. An `ok` whose
-`seq` the scope's cursor already covers (`cleanSeq`, §7.5), in the same epoch, resolves its entry at
-once (event `resolve`).
+`seq` the scope's cursor already covers (`cleanSeq`, §7.5), in the same epoch, resolves its own entry
+at once (event `resolve`), and no other: covered entries a death left acked wait for the scope's next
+page. A replica whose `serverEpoch` is null takes the answer's epoch with its first result.
 
 **Offsets.** A sample is `offset = serverTime − floor((send.wall + recv.wall) / 2)` with
 `rtt = recv.mono − send.mono`. The replica keeps the last `OFFSET_SAMPLES` samples, and
@@ -886,8 +892,11 @@ write-map stamps.
 server.
 `transport.json` covers one-intent 400 and 413, a halving 413, the 401 and 409 offset samples, a 409
 `account-mismatch`, a 200, 409 or hello served as another principal, hello, re-identify, an epoch
-change, and a process death between two result batches: the results recorded stand, the rest stay
-`sent` with `ackThrough` unmoved, and their resend is answered from the stored results.
+change, and process deaths between two result batches: the results recorded stand, the rest stay
+`sent` with `ackThrough` unmoved, and their resend is answered from the stored results. A replica that
+has never heard the server's epoch takes it with the first result, so after such a death a pull from a
+server restored under another epoch changes epoch, and the entry acked before the restore returns to
+ready and is sent again.
 - A record is `(scope, t, id)`. A ref names a record in the scope its type lives in, relative to the
   referencing scope's tree: a tree type → `tree/<T>`, an overlay type → `self/overlay/<T>`, a product
   type → `self/<product>`. Dependents and `anonCount` key records this way.
@@ -915,9 +924,16 @@ change, and a process death between two result batches: the results recorded sta
   only the write map restamps.
 - A restamp tick is a fresh tick of the recovering instance's clock, in its actor, whichever instance
   wrote the entry (§7.7's restamp rule).
+- Unsourced stamps (§7.7 step 1.5): a born, or a life register carried unchanged, in a held or ready
+  entry, above `admittedHigh`, that no held, ready or sent entry wrote by a delta or a prediction
+  (judged before the restamp) takes the lesser of itself and the recovered clock's reading, the
+  clock's starting pair in the recovering instance's actor. `restamp.json` shows it with a start
+  replayed onto a run that is gone, whose `ok` writes nothing: a queued delete lands, a queued update
+  is refused `unknown-record`, and a born whose source is a sent start, or at or below
+  `admittedHigh`, stays.
 - A restamp moves only the registers the entry wrote: those stamped at or after `entry.stamp`, chosen
   before any register of the pass moves. A keyed put's life register carried unchanged from drawn is
-  older and stays.
+  older and stays, unless it is unsourced and recovery lowers it (above).
 - When a register moves from `o` to `n`: a create's life carries its born, and every later delta on
   the record whose born is `o` takes `n`; every later delta carrying that life register at `o` takes
   `n`; every later guard naming `o` on that field register takes `n`. "Later" covers held, ready and
@@ -977,11 +993,17 @@ part through a write map. The reference does rewrite them.
   records, and observes their stamps; the first chunk of the page requested with the `null` cursor
   starts a boot's staging afresh, and a later boot page's chunks join it; every chunk but the last
   sets `behind`; only the last stores the cursor, ends a boot
-  (the swap, `booted`, its resolutions), resolves by `cleanSeq`, sets `behind` by the page's `more`
+  (the swap and `booted`), settles the entries its cursor covers, sets `behind` by the page's `more`
   and checks the digest. A page applied in chunks ends as the page applied
   whole. After a death between chunks the cursor is where it was, the acked entries the page covers
   stay acked, and a view shows the rows applied; the page pulled again applies to the same end. A boot
   from a `null` cursor finds the rows a straight-in chunk left and goes into staging.
+- Settling (§7.5 step 2): the stored cursor covers the acked entries of its epoch with
+  `resultSeq ≤ cleanSeq`. The last chunk resolves the first `settle` of them in commit order, and each
+  settling slice the next `settle`, reading the stored cursor again; settled in slices, a page ends as
+  settled whole. After a death between slices, the entries left stay acked and pending: a `view`
+  draws a day another device deleted as the acked put wrote it, the scope's next page, empty at its
+  head, settles them, and a resent entry's covered `ok` resolves its own entry only.
 - A page that arrives after the replica it was pulled for stopped being active (a sign-out between
   the pull and its answer) applies nothing, and `pullResponse` answers `null`.
 - A page for a scope outside the subscription set applies nothing, whatever cursor it was requested
@@ -991,3 +1013,47 @@ part through a write map. The reference does rewrite them.
 - A scope `behind` (a live page short of its head, or chunks a death cut short) answers the next
   seq's `change` frame `pull`: its rows are not the server's at that seq, so the frame's digest check
   would fail on a correct replica.
+
+## Replay coverage (§11.3)
+
+Every replay simulator, the reference's and each engine's own, follows one coverage rule. A *fuzz* is
+one invocation: some number of seeds, each run for some number of steps.
+
+- **A floor.** The simulator counts, for each event of its coverage list, the seeds that produce it,
+  and a fuzz fails when no seed produced a listed event, as it fails on a broken invariant.
+- **Every fault.** The list names at least one event for each §11.3 fault the simulator injects, and
+  the engine paths the table below lists.
+- **No first seed misses an event.** Each event is listed with a size, seeds × steps, and every fuzz
+  of at least that size checks it, whatever its first seed; a smaller fuzz does not. The size is one
+  at which ten or more of the fuzz's seeds, on average, produce the event at least once: a fuzz misses
+  an event only when no seed produces it, so the seeds that do, not the event count, set the odds,
+  near e^−10 at ten. A survey shows it: at least 30 fuzzes of that size, from first seeds 1, 1001,
+  2001, …, with a mean of ten or more seeds and no miss.
+- **A miss is the simulator's defect.** An event that a fuzz of its size misses, from any first seed,
+  is made more frequent or listed at a larger size. It never leaves the list for that, and no fuzz
+  chooses its first seed to pass.
+
+The reference's list, in `reference/test/fuzz/replay.test.js`, surveyed over 60 fuzzes of 60×160 and
+30 of 500×300; every event in the 60 × 160 column is produced by 10 or more seeds a fuzz on average,
+and every one in the 500 × 300 column by far more. The default `node --test` fuzz is 60×160, the
+gate fuzz 500×300. Each engine's list
+names its own events for the same faults and paths, at the sizes its own survey shows.
+
+| §11.3 fault or engine path | 60 × 160 | 500 × 300 |
+|---|---|---|
+| drop, duplicate, delay and reorder | `request lost`, `delivered out of order` | `push request duplicated`, `frame lost` |
+| lost replies | `reply lost` | |
+| process death: at a step, between two chunks, two settling slices or two result batches | `process death`, `death between page chunks`, `death between settling slices`, `death between result batches` | |
+| pages short of the head, frames between them | `page short of its head`, `frame answered pull` | |
+| clock error and device clock jumps | `refused clock-skew`, `device clock jumped`, `reboot` | |
+| holds, undo, retire, leaving the app | `retired`, `left the app` | `ended undone by undo` |
+| multiple tabs | `second tab commit` | |
+| sign-in and sign-out | `sign-in complete`, `sign-out keep`, `sign-out discard`, `ended discarded by discard` | `sign-in incomplete` |
+| credentials expired, lost or another account's | `http 401 unauthenticated` | `pull served as anonymous`, `pull served as another account`, `frame served as anonymous`, `frame served as another account`, `http 409 account-mismatch` |
+| poison | | `refused internal` |
+| epoch change | `server restored`, `epoch change` | |
+| a store restored or cloned | `store restored`, `store cloned` | `http 409 gap`, `http 409 replica-forked` |
+| engine paths | `activeReplicaChanged announced`, `ok with a joining write map`, `refused cap`, `http 413 request-too-large`, `retry` | `ended refused by target-merged`, `http 400 malformed` |
+
+The simulator reports its other counts, the other refusal codes and `page outside the subscription
+set` among them, without listing them.

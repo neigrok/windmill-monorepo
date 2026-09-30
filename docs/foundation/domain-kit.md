@@ -1000,8 +1000,9 @@ public struct Prediction: Sendable {
   throws, which decide refuses. `RegistryCheck.command` requires, for every `string` argument path,
   a `TextSpec` or `ChoiceSpec` in `specs` and in the book (§3.4 step 10).
 - Predictions are the values the product expects the command to write, server-written fields
-  included, unvalidated. The engine draws them until the cursor covers the command's result, and
-  restamps or rewrites them through the write map (engine §7.7).
+  included, unvalidated. The engine draws them until the command's entry resolves, once the cursor
+  covers its result (engine §7.5 step 2), and restamps or rewrites them through the write map (engine
+  §7.7).
 - A product holds no predicted id across the result; it reads the record again from a view.
 - A command's refusal codes are declared in the rule book.
 

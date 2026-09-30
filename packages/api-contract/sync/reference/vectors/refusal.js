@@ -338,6 +338,60 @@ function restamps() {
       .vector('a clock-skew restamp gives every entry, another instance\'s included, a fresh tick of the recovering instance'),
     returnedCommand(),
     carriedLife(),
+    ...unmovedPredictions(),
+  ];
+}
+
+// §7.7 step 1.5: a born no unacked entry wrote and no server checked. A start whose receipt names a run
+// that is gone is replayed: its `ok` writes nothing, so its map leaves the prediction's born, from a clock
+// SKEW fast, in a queued write of the run. Its clock-skew recovery lowers that born to the recovered
+// clock's reading, and the write lands on the server's merits. A born whose source is a sent command's
+// prediction, or which is at or below admittedHigh, stays.
+function unmovedPredictions() {
+  const start = (id, deviceNow) => commitStep('self/probe', [], {
+    cmd: { name: 'probe.start', args: { id, startedAt: deviceNow, join: true } },
+    predict: [{ op: 'create', t: 'run', id, f: { startedAt: deviceNow } }],
+  }, deviceNow);
+  const replayed = () => new ServerScript({
+    device: device(CLIENT_PROBE),
+    server: serverState({
+      scopes: { 'acct:A/probe': productScope('A') },
+      rows: { 'acct:A/probe': CLIENT_PROBE['self/probe'] },
+      productState: { receipts: { 'acct:A/probe': { run00009: 'run00009' } } },
+    }),
+  });
+  const afterReplay = (change) => replayed()
+    .add(start('run00009', skewed(5000)))
+    .push(skewed(5000))
+    .add(commitStep('self/probe', [change], undefined, skewed(5001)))
+    .respond({ serverNow: 5000, tRecv: skewed(5002) })
+    .pushRound({ deviceNow: skewed(5003), serverNow: 5010, tRecv: skewed(5004) })
+    .pushRound({ deviceNow: skewed(5005), serverNow: 5020, tRecv: skewed(5006) });
+  const srv = st(5003, 0, 'srv');
+  const run = row({ t: 'run', id: 'run00009', life: ['alive', srv], born: srv, f: { startedAt: [5003, srv] }, seq: 5 });
+  const withRun = { 'self/probe': [...CLIENT_PROBE['self/probe'], run] };
+  return [
+    afterReplay({ op: 'delete', t: 'run', id: 'run00009' })
+      .vector('a start replayed onto a run that is gone writes nothing, leaving its skewed predicted born in a queued delete: the delete\'s clock-skew recovery lowers that born to the recovered clock, and the delete lands'),
+    afterReplay({ op: 'update', t: 'run', id: 'run00009', f: { label: 'Late' } })
+      .vector('an update left with a replayed start\'s skewed born recovers the same way, then is refused unknown-record with its notice'),
+    new ServerScript({ device: device(CLIENT_PROBE), server: server() })
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Skewed' } }], undefined, skewed(5000)))
+      .add(start('run00009', skewed(5000)))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Mine' } }], undefined, skewed(5001)))
+      .push(skewed(5002))
+      .respond({ serverNow: 5000, tRecv: skewed(5003) })
+      .pushRound({ deviceNow: skewed(5004), serverNow: 5010, tRecv: skewed(5005) })
+      .vector('recovery leaves a born whose source is a sent command\'s prediction: the start\'s map then moves it to the server\'s born, and the update of the run lands'),
+    new ServerScript({
+      device: device(withRun, { admittedHigh: srv, hlc: { ms: 5003, counter: 0 } }),
+      server: serverState({ scopes: { 'acct:A/probe': productScope('A') }, rows: { 'acct:A/probe': withRun['self/probe'] } }),
+    })
+      .add(commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0001', f: { title: 'Skewed' } }], undefined, skewed(5000)))
+      .add(commitStep('self/probe', [{ op: 'update', t: 'run', id: 'run00009', f: { label: 'Mine' } }], undefined, skewed(5000)))
+      .pushRound({ deviceNow: skewed(5001), serverNow: 5000, tRecv: skewed(5002) })
+      .pushRound({ deviceNow: skewed(5003), serverNow: 5010, tRecv: skewed(5004) })
+      .vector('recovery leaves a born at or below admittedHigh: the update of a confirmed run keeps the server\'s born though the recovered clock reads the same pair, and lands'),
   ];
 }
 
@@ -424,8 +478,8 @@ function baseUnknowns() {
   ];
 }
 
-// Transport outcomes of §7.4 and §7.5: status codes on push, offsets from every response, re-identify
-// and an epoch change.
+// Transport outcomes of §7.4 and §7.5: status codes on push, offsets from every response, re-identify,
+// an epoch change, and process deaths between result batches.
 function transports() {
   const at = (serverTime) => ({ serverTime, epoch: 'ep-1', as: 'A' });
   const rename = (id, title, deviceNow) => commitStep('self/probe', [{ op: 'update', t: 'card', id, f: { title } }], undefined, deviceNow);
@@ -433,6 +487,17 @@ function transports() {
   const base = () => device(CLIENT_PROBE);
   const reading = (wall, mono, boot = 'boot-1') => ({ wall, mono, boot });
   const hello = (deviceNow, send, recv, serverTime) => ({ op: 'hello', deviceNow, send, recv, response: { status: 200, body: { ...at(serverTime), schema: 2, minSchema: 2 } } });
+  // A replica that has never heard the server's epoch pushes three creates, and dies after the first
+  // result; the server is then restored from a backup taken before the push, under a new epoch.
+  const empty = (epoch) => serverState({ epoch, scopes: { 'acct:A/probe': productScope('A') } });
+  const unknownEpoch = new ServerScript({ device: device(), server: empty('ep-1') })
+    .withIds(['rp_00000000000000000000000000000002'])
+    .withActors(['r_cccccccccccc', 'r_dddddddddddd'])
+    .add(...['card0001', 'card0002', 'card0003'].map((id, k) => commitStep('self/probe', [newCard(id)], undefined, 5000 + k)))
+    .push(5003)
+    .respond({ serverNow: 5010, dieAfter: 1 })
+    .add({ op: 'engineStart', deviceNow: 5020 });
+  unknownEpoch.server = new ServerState(empty('ep-2'));
   return [
     stepsVector('a one-intent 400 refuses the entry invalid with a notice, rewinds nextN to its n and emits sync-push-malformed', {
       device: base(),
@@ -541,6 +606,9 @@ function transports() {
       .add({ op: 'engineStart', deviceNow: 5020 })
       .pushRound({ deviceNow: 5030 })
       .vector('a process death between result batches keeps the results recorded; the rest stay sent and ackThrough holds, and the resend is answered from the stored results'),
+    unknownEpoch.pullRound({ deviceNow: 5030, scopes: ['self/probe'] })
+      .pushRound({ deviceNow: 5040 })
+      .vector('a replica with no epoch takes the answer\'s in its first result batch: after a death between batches, a pull from a restored server of another epoch changes epoch, and the entry acked before the restore returns to ready and is sent again'),
     stepsVector('an epoch change nulls every cursor, returns acked entries of another epoch to ready and re-identifies, and the instance takes a new actor', {
       device: base(),
       ids: ['rp_00000000000000000000000000000002'],
