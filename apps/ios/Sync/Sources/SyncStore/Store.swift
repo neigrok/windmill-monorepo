@@ -103,7 +103,7 @@ public struct Written<Value> {
 public enum TxName: String, Sendable, Hashable, CaseIterable {
   case firstLaunch, commit, undo, release, engineStart, number, offset, results, localRefusal, authPause, authResume, reidentify
   case epochChange, pullPage, liveFrame, subscriptions, signInBegin, signInComplete, signOutRelease, signOutCount
-  case signOutFinish, discardDormant, dismissNotice, sweep
+  case signOutFinish, discardDormant, dismissNotice, sweep, settle
 }
 
 public enum CrashPoint: Sendable, Hashable {

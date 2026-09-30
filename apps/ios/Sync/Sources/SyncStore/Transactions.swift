@@ -126,13 +126,10 @@ extension Store {
     }
   }
 
-  // One step of a pull answer, for the replica the request was built in and the account it was built as: a page's
-  // outcome (nil for a chunk before the last, or a step of no page), what it leaves to pull, and the replica's id after
-  // the step, which an epoch change re-identifies. A replica no longer active, or no longer of that account (a sign-in
-  // binds the `anon` replica in place), drops the step and answers nil, since the answer says nothing of the replica as it
-  // now stands (§7.12). A page is checked against the subscription set as this transaction reads it (§7.9).
+  // One pull answer step, nil once its replica is not active or not of `account` (§7.12); a page checked against the set (§7.9).
   public func apply(_ step: PullStep, replica id: String, account: String?, subscribed: SubscriptionSet, instance: inout Instance,
-                    timing: Timing, identities: IdentitySource) throws -> Written<(outcome: PageOutcome?, next: [ScopeRef], replica: String)?> {
+                    timing: Timing, identities: IdentitySource)
+    throws -> Written<(outcome: PageOutcome?, unsettled: Bool, next: [ScopeRef], replica: String)?> {
     try write(step.transaction) { tx in
       let page: (page: PullPage, chunk: PageChunk)? = if case .page(let page, _, let chunk) = step { (page, chunk) } else { nil }
       let reads = planners.pages.reads(of: step).merging(page == nil ? [:] : planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
@@ -142,17 +139,16 @@ extension Store {
       else { return Planned(nil, ReplicaBatch()) }
       let set = page == nil ? [] : Set(try planners.lifecycle.subscriptionSet(of: replica, subscribed))
       let before = replica
-      let outcome = try planners.pages.apply(step, to: &replica, subscribed: set, instance: &instance, timing: timing, identities: identities)
-      guard let page else { return Planned((outcome, [], replica.id), replica.batch) }
-      let next = planners.pages.next(after: page.page, chunk: page.chunk, outcome, from: before, in: replica)
-      return Planned((outcome, next, replica.id), replica.batch)
+      let applied = try planners.pages.apply(step, to: &replica, subscribed: set, instance: &instance, timing: timing, identities: identities)
+      guard let page else { return Planned((applied.outcome, applied.unsettled, [], replica.id), replica.batch) }
+      let next = planners.pages.next(after: page.page, chunk: page.chunk, applied.outcome, from: before, in: replica)
+      return Planned((applied.outcome, applied.unsettled, next, replica.id), replica.batch)
     }
   }
 
-  // A live frame received for `replica`, checked against the subscription set as this transaction reads it: its outcome,
-  // and what it leaves to pull. A replica no longer active drops the frame and answers nil (§7.12).
-  public func apply(_ frame: LiveFrame, replica id: String, subscribed: SubscriptionSet,
-                    instance: Instance) throws -> Written<(outcome: FrameOutcome, next: [ScopeRef])?> {
+  // A live frame for `replica`, checked against the subscription set as read; nil once the replica is not active (§7.12).
+  public func apply(_ frame: LiveFrame, replica id: String, subscribed: SubscriptionSet, settling count: Int,
+                    instance: Instance) throws -> Written<(outcome: FrameOutcome, unsettled: Bool, next: [ScopeRef])?> {
     try write(.liveFrame) { tx in
       let reads = planners.pages.reads(of: frame).merging(planners.lifecycle.reads(of: subscribed)) { $0.union($1) }
       guard try tx.activeReplica().utf8.elementsEqual(id.utf8), var replica = try tx.replica(id, reads: reads) else {
@@ -160,8 +156,22 @@ extension Store {
       }
       let set = Set(try planners.lifecycle.subscriptionSet(of: replica, subscribed))
       let before = replica
-      let outcome = try planners.pages.apply(frame, to: &replica, subscribed: set, instance: instance)
-      return Planned((outcome, planners.pages.next(after: frame, outcome, from: before, in: replica)), replica.batch)
+      let applied = try planners.pages.apply(frame, to: &replica, subscribed: set, settling: count, instance: instance)
+      let next = planners.pages.next(after: frame, applied.outcome, from: before, in: replica)
+      return Planned((applied.outcome, applied.unsettled, next), replica.batch)
+    }
+  }
+
+  // §7.5 step 2 one settling slice of `scope` in `replica`: true while covered entries are left, nil once it is not active.
+  public func settle(_ scope: ScopeRef, replica id: String, count: Int) throws -> Written<Bool?> {
+    try write(.settle) { tx in
+      guard try tx.activeReplica().utf8.elementsEqual(id.utf8), let cursors = try tx.replica(id, entries: EntrySelection()) else {
+        return Planned(nil, ReplicaBatch())
+      }
+      let entries = planners.pages.entries(settling: scope, count: count, in: cursors)
+      guard entries.covered != nil, var replica = try tx.replica(id, entries: entries) else { return Planned(false, ReplicaBatch()) }
+      let left = try planners.pages.settle(scope, count: count, in: &replica)
+      return Planned(left, replica.batch)
     }
   }
 

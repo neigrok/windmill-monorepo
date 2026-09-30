@@ -598,16 +598,23 @@ struct StoredDevice: ClientDevice {
   mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest? { try store.pullPlan(scopes, replica: active())!.request }
 
   mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
-                      identities: IdentitySource) throws -> PageOutcome? {
+                      identities: IdentitySource) throws -> (outcome: PageOutcome?, unsettled: Bool) {
     let replica = try activeReplica().meta
     let applied = take(try store.apply(step, replica: replica.replica, account: replica.account, subscribed: .given(subscribed),
                                        instance: &instance, timing: timing, identities: identities))
     guard let applied else { throw VectorError("the store dropped a step of the active replica") }
-    return applied.outcome
+    return (applied.outcome, applied.unsettled)
+  }
+
+  mutating func settle(_ scope: ScopeRef, count: Int) throws -> Bool {
+    guard let left = take(try store.settle(scope, replica: active(), count: count)) else {
+      throw VectorError("the store dropped a slice of the active replica")
+    }
+    return left
   }
 
   mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {
-    take(try store.apply(frame, replica: active(), subscribed: .given(subscribed), instance: instance))!.outcome
+    take(try store.apply(frame, replica: active(), subscribed: .given(subscribed), settling: .max, instance: instance))!.outcome
   }
 
   mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome { take(try store.subscribe(scope)) }

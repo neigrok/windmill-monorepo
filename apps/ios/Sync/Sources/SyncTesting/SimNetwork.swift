@@ -249,9 +249,11 @@ public final class SimNetwork: SyncTransport {
 
   // The last answer the server made to a call of one kind: whom it was served as, an account or null, and the scopes a
   // pull asked; nil for any other call, whose answer may touch every scope.
+  // `short`: a page of it stops short of its head (`more`).
   struct Answered: Sendable {
     let servedAs: JSON
     let scopes: Set<ScopeRef>?
+    let short: Bool
   }
 
   // One push served: the request, and the server's answer, which its sender may never see.
@@ -422,7 +424,8 @@ public final class SimNetwork: SyncTransport {
 
   // An answer the server made to a call of `call`'s kind, kept as whom it was served as and the scopes it answers.
   func served(_ call: Call, _ answered: (status: Int, body: JSON), scopes: Set<ScopeRef>? = nil) -> (status: Int, body: JSON) {
-    wire.withLock { $0.answered[call] = Answered(servedAs: answered.body["as"] ?? .null, scopes: scopes) }
+    let short = ((try? answered.body["pages"]?.asArray()) ?? []).contains { $0["more"] == true }
+    wire.withLock { $0.answered[call] = Answered(servedAs: answered.body["as"] ?? .null, scopes: scopes, short: short) }
     return answered
   }
 

@@ -23,7 +23,7 @@ package struct Backoff: Sendable {
   }
 }
 
-// §7.9 the scopes in doubt, which the puller and the live socket share; not stored, so a process starts with none.
+// §7.9 the scopes in doubt, which the puller and the live socket share, on the monotonic clock; a process starts with none.
 package struct Doubts: Sendable {
   // Appendix B's re-pull backoff: its ceiling, and how long a scope stays followed, not in doubt, before `k` resets.
   static let ceilingMs: Int64 = 30_000
@@ -33,6 +33,7 @@ package struct Doubts: Sendable {
     var backoff = Backoff()
     var inDoubt = false
     var due: Int64?
+    var followed = false
     var followedSince: Int64?
 
     // One unbroken stretch followed, not in doubt, of `settledMs` or more returns `k` to 0, however the stretch ends.
@@ -50,7 +51,8 @@ package struct Doubts: Sendable {
     for scope in Set(scopes.keys).union(followed) {
       var state = scopes[scope] ?? Scope()
       state.settle(at: now)
-      if !followed.contains(scope) {
+      state.followed = followed.contains(scope)
+      if !state.followed {
         state.followedSince = nil
       } else if state.followedSince == nil && !state.inDoubt {
         state.followedSince = now
@@ -85,10 +87,13 @@ package struct Doubts: Sendable {
     scopes[scope] = state
   }
 
-  // An applied rows page of `scope` ends its doubt and drops its scheduled re-pull.
-  package mutating func rows(_ scope: ScopeRef) {
-    scopes[scope]?.inDoubt = false
-    scopes[scope]?.due = nil
+  // An applied rows page at `now` ends the scope's doubt and re-pull; a scope still followed starts a stretch.
+  package mutating func rows(_ scope: ScopeRef, at now: Int64) {
+    guard var state = scopes[scope], state.inDoubt else { return }
+    state.inDoubt = false
+    state.due = nil
+    if state.followed { state.followedSince = now }
+    scopes[scope] = state
   }
 
   package func inDoubt(_ scope: ScopeRef) -> Bool {

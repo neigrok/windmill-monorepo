@@ -157,17 +157,16 @@ package actor Puller {
 
   // MARK: Frames
 
-  // §7.5 step 3 in one transaction; a frame that is not admitted, whose digest check reset the cursor, or a not-found
-  // ignored for a tree that waits wants its scope pulled, and one whose alive governing row brought a tree back wants the
-  // tree's scopes (§7.9). An ignored end puts its scope in doubt. One that forgot its scope, ended one it ignores, paused
-  // the replica, fell outside the set, or brought scopes back has the live channel look again at what it follows.
+  // §7.5 step 3: a frame's transaction, then its settling slices; it wants what it leaves to pull, and may wake the channel.
   func apply(_ queued: (frame: LiveFrame, replica: String)) -> PullerStep {
     guard let scope = queued.frame.scope else { return .again }
     do {
       let applied = try core.write { store, instance in
-        try store.apply(queued.frame, replica: queued.replica, subscribed: core.subscriptions(), instance: instance)
+        try store.apply(queued.frame, replica: queued.replica, subscribed: core.subscriptions(),
+                        settling: core.store.limits.settleEntries, instance: instance)
       }
       guard let applied else { return .frame(scope, nil) }
+      if applied.unsettled { _ = try settle(scope, in: queued.replica) }
       wants.add(applied.next)
       if applied.outcome == .ignored { core.doubts.withLock { $0.end(scope, at: now(), random: core.random) } }
       let brought = applied.next.contains { $0 != scope }
@@ -237,14 +236,7 @@ package actor Puller {
     }
   }
 
-  // The answer's transactions in order (§7.5 steps 1–2): the offset sample, the epoch, then each page's chunks; or a
-  // failure's sample. An answer handled as a 401 (§9.1: a 401, or a 200 served as anyone but the replica's account)
-  // applies nothing past its sample: it pauses while `token` is still the account's, and its scopes are asked again
-  // once the account re-authenticates. A chunk that finds its scope stale or outside the set ends its page there. A
-  // page wants the scopes it leaves short of the head or brings back; an ignored end puts its scope in doubt, and an
-  // applied rows page ends one; the steps after an epoch change's re-identify go to the replica's new id; a replica no
-  // longer active, or no longer of the account the request was built as, drops the rest, which says nothing of the
-  // replica as it now stands. Each re-pull the request carried has ended, and the live channel looks again.
+  // §7.5 steps 1–2: the answer's transactions in order, each page's settling slices after its last chunk; a 401 pauses (§9.1).
   func record(_ reply: Reply<PullResponse>, to request: PullRequest, for meta: ReplicaMeta, under token: SessionToken?,
               timing: Timing) throws -> PullerStep {
     let scopes = request.scopes.map(\.scope)
@@ -257,7 +249,8 @@ package actor Puller {
     var replica = meta.replica
     var reports: [PageReport] = []
     var ended: Set<ScopeRef> = []
-    for step in pages.steps(for: answer, to: request, account: meta.account, chunkRows: core.store.limits.chunkRows) {
+    let (chunkRows, settles) = (core.store.limits.chunkRows, core.store.limits.settleEntries)
+    for step in pages.steps(for: answer, to: request, account: meta.account, chunkRows: chunkRows, settles: settles) {
       if step == .pauseAuth {
         wants.add(scopes)
         return try unauthenticated(replica, under: token)
@@ -276,6 +269,7 @@ package actor Puller {
       if !chunk.isLast { ended.insert(page.scope) }
       reports.append(PageReport(scope: page.scope, outcome: outcome))
       doubt(page, outcome)
+      if applied.unsettled, try !settle(page.scope, in: replica) { return .again }
     }
     switch answer {
     case .ok:
@@ -287,11 +281,20 @@ package actor Puller {
     }
   }
 
+  // §7.5 step 2 the settling slices after `scope`'s cursor is stored, until none is left; false once `replica` is gone.
+  func settle(_ scope: ScopeRef, in replica: String) throws -> Bool {
+    let count = core.store.limits.settleEntries
+    while true {
+      guard let left = try core.write({ store, _ in try store.settle(scope, replica: replica, count: count) }) else { return false }
+      guard left else { return true }
+    }
+  }
+
   // §7.9: an ignored end puts its scope in doubt; an applied rows page ends the doubt.
   func doubt(_ page: PullPage, _ outcome: PageOutcome) {
     switch (outcome, page.body) {
     case (.ignored, _): core.doubts.withLock { $0.end(page.scope, at: now(), random: core.random) }
-    case (.applied, .rows): core.doubts.withLock { $0.rows(page.scope) }
+    case (.applied, .rows): core.doubts.withLock { $0.rows(page.scope, at: now()) }
     default: break
     }
   }

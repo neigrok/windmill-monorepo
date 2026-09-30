@@ -271,6 +271,9 @@ public struct CursorRecord: Sendable, Hashable {
       mismatchReset: try json["mismatchReset"]?.asBool() ?? false, digestStop: try json["digestStop"]?.asString())
   }
 
+  // §7.5 the last seq the stored cursor has received whole; nil while booting or without a cursor.
+  public var cleanSeq: Int64? { cursor.flatMap(Cursor.init(decoding:))?.cleanSeq }
+
   public var json: JSON {
     var object: JSON.Object = ["cursor": cursor.map { .string($0) } ?? .null, "digest": .string(digest.hex), "booted": .bool(booted)]
     object["behind"] = behind ? true : nil
@@ -421,19 +424,37 @@ public struct RowSelection: Sendable, Hashable {
 }
 
 // What a planner reads of one replica's outbox, so its Action loads exactly that: every entry, or the entries that touch
-// a record its row reads cover, with every entry of the held gestures and the sent entries of some numbers.
+// a record its row reads cover, with every entry of the held gestures, the sent entries of some numbers, and the first
+// entries a cursor covers.
 public struct EntrySelection: Sendable, Hashable {
   public var all: Bool
   public var heldGestures: Bool
   public var numbered: Set<Int64>
+  public var covered: CoveredEntries?
 
-  public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = []) {
+  public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil) {
     self.all = all
     self.heldGestures = heldGestures
     self.numbered = numbered
+    self.covered = covered
   }
 
   public static let every = EntrySelection(all: true)
+}
+
+// §7.5 step 2 the acked entries of `scope` a cursor live at `cleanSeq` covers in `epoch`, the first `limit` of them.
+public struct CoveredEntries: Sendable, Hashable {
+  public let scope: ScopeRef
+  public let epoch: String
+  public let cleanSeq: Int64
+  public let limit: Int
+
+  public init(scope: ScopeRef, epoch: String, cleanSeq: Int64, limit: Int) {
+    self.scope = scope
+    self.epoch = epoch
+    self.cleanSeq = cleanSeq
+    self.limit = limit
+  }
 }
 
 // MARK: - Events
@@ -528,21 +549,23 @@ extension Notice {
 
 // MARK: - What planners are given
 
-// A planner's bounds; `chunkRows` and `resultsPerBatch` size a page's chunks and a push answer's batches (§2.5 the writer).
+// A planner's bounds; `chunkRows`, `settleEntries` and `resultsPerBatch` size the writer's slices, one at least (§2.5).
 public struct Limits: Sendable, Hashable {
-  public var holdMs: Int64
-  public var pushMaxIntents: Int
-  public var pushMaxBytes: Int
-  public var chunkRows: Int
-  public var resultsPerBatch: Int
+  public let holdMs: Int64
+  public let pushMaxIntents: Int
+  public let pushMaxBytes: Int
+  public let chunkRows: Int
+  public let settleEntries: Int
+  public let resultsPerBatch: Int
 
   public init(holdMs: Int64 = Constants.holdMs, pushMaxIntents: Int = Constants.pushMaxIntents,
-              pushMaxBytes: Int = Constants.pushMaxBytes, chunkRows: Int = 100, resultsPerBatch: Int = 16) {
+              pushMaxBytes: Int = Constants.pushMaxBytes, chunkRows: Int = 64, settleEntries: Int = 32, resultsPerBatch: Int = 16) {
     self.holdMs = holdMs
     self.pushMaxIntents = pushMaxIntents
     self.pushMaxBytes = pushMaxBytes
-    self.chunkRows = chunkRows
-    self.resultsPerBatch = resultsPerBatch
+    self.chunkRows = max(1, chunkRows)
+    self.settleEntries = max(1, settleEntries)
+    self.resultsPerBatch = max(1, resultsPerBatch)
   }
 }
 

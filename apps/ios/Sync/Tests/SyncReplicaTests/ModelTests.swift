@@ -127,4 +127,9 @@ struct ModelTests {
     #expect(replica.rows(.product("probe")).row(row.key) == row)
     #expect(replica.rows(.product("probe")).row(RecordKey("card", "card0002")) == nil)
   }
+
+  // A slice holds one at least, so a limit of none, which would slice forever, slices one at a time.
+  @Test func aSliceLimitBelowOneIsOne() {
+    #expect(Limits(chunkRows: 0, settleEntries: 0, resultsPerBatch: -1) == Limits(chunkRows: 1, settleEntries: 1, resultsPerBatch: 1))
+  }
 }

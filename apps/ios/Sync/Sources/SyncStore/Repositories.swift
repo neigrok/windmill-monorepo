@@ -116,8 +116,8 @@ public struct StoreTransaction {
   }
 
   // The entries `selection` names: every one, or those that touch a record `reads` covers, every entry of the held
-  // gestures and the sent entries numbered, each found through an index; with the highest commit order among the entries
-  // left unread, which only the orders above every entry read can hold.
+  // gestures, the sent entries numbered and the first a cursor covers, each found through an index; with the highest
+  // commit order among the entries left unread, which only the orders above every entry read can hold.
   func outbox(of handle: ReplicaHandle, _ selection: EntrySelection,
               touching reads: [ScopeRef: RowSelection]) throws -> (read: [OutboxEntry], unreadCommitOrder: Int64) {
     if selection.all { return (try outbox(of: handle), 0) }
@@ -145,6 +145,12 @@ public struct StoreTransaction {
     }
     for n in selection.numbered {
       queries.append(("SELECT * FROM outbox WHERE replica = ? AND state = 'sent' AND n = ?", [handle.value, n]))
+    }
+    if let covered = selection.covered {
+      queries.append(("""
+        SELECT * FROM outbox WHERE replica = ? AND scope = ? AND state = 'acked' AND result_epoch = ? AND result_seq <= ?
+        ORDER BY commit_order LIMIT ?
+        """, [handle.value, covered.scope.text, covered.epoch, covered.cleanSeq, covered.limit]))
     }
     var read: [[UInt8]: GRDB.Row] = [:]
     for query in queries {

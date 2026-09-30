@@ -19,6 +19,24 @@ struct CorpusTests {
     #expect(answer == vector.expect, "\(vector)")
   }
 
+  // The runner counts each settling slice toward `dieAfter`: the vector that dies right after the last chunk, dying one
+  // transaction later, leaves one covered entry fewer acked.
+  @Test func dieAfterCountsEachSettlingSlice() throws {
+    let file = try #require(try Corpus.files().first { $0.path == "pull/pages.json" })
+    let vector = try #require(try Corpus.vectors(in: file).first { $0.name.hasPrefix("a process death between settling slices keeps") })
+    var input = try vector.input.asObject()
+    var steps = try input.member("steps").asArray()
+    let index = try #require(steps.firstIndex { $0["dieAfter"] == 1 })
+    var step = try steps[index].asObject()
+    step["dieAfter"] = 2
+    steps[index] = .object(step)
+    input["steps"] = .array(steps)
+    let answer = try ClientSteps.run(.object(input), registry: Handlers.probe) { PlannedDevice($0, registry: Handlers.probe, limits: $1) }
+    #expect(try answer.member("returns").asArray()[index] == [["scope": "self/probe", "outcome": "unsettled"]])
+    let outbox = try answer.member("device").member("replicas").asArray()[0].member("outbox").asArray()
+    #expect(try outbox.map { "\(try $0.member("localId").asString()) \(try $0.member("state").asString())" } == ["g3/0 acked"])
+  }
+
   @Test func everyCorpusFileHasAHandler() throws {
     #expect(try Corpus.files().filter { Handlers.table[$0.path] == nil }.map(\.path) == [])
   }

@@ -25,7 +25,8 @@ struct PullTests {
       wholeScopes: true)
     let page = PullPage(scope: Self.product, body: .reset)
     let outcome = try PageApplier(registry: Self.probe).apply(
-      page, requestedUnder: "ce\u{301}", chunk: .whole(page), to: &replica, subscribed: Self.everyScope, instance: Self.instance)
+      page, requestedUnder: "ce\u{301}", chunk: .whole(page, settles: .max), to: &replica, subscribed: Self.everyScope,
+      instance: Self.instance).outcome
     #expect(outcome == .stale)
     #expect(replica.writes == [])
   }
@@ -40,7 +41,7 @@ struct PullTests {
       "op": "change", "as": "A", "scope": "self/probe", "epoch": "ep-e\u{301}", "seq": 2,
       "digest": .string(String(repeating: "0", count: 64)), "rows": [],
     ])
-    #expect(try PageApplier(registry: Self.probe).apply(frame, to: &replica, subscribed: Self.everyScope, instance: Self.instance) == .pull)
+    #expect(try PageApplier(registry: Self.probe).apply(frame, to: &replica, subscribed: Self.everyScope, settling: .max, instance: Self.instance).outcome == .pull)
     #expect(replica.writes == [])
   }
 
@@ -104,25 +105,54 @@ struct PullTests {
     let applier = PageApplier(registry: Self.probe)
     var replica = try Self.replica(product: Self.booted(seq: 0))
     let requested = replica.cursors[Self.product]?.cursor
-    let chunks = PageChunk.of(page, size: 1)
+    let chunks = PageChunk.of(page, size: 1, settles: .max)
     #expect(try applier.apply(page, requestedUnder: requested, chunk: chunks[0], to: &replica, subscribed: Self.everyScope,
-                              instance: Self.instance) == nil)
+                              instance: Self.instance).outcome == nil)
     let applied = replica
     #expect(try applier.apply(page, requestedUnder: requested, chunk: chunks[1], to: &replica, subscribed: [Self.tree],
-                              instance: Self.instance) == .outside)
+                              instance: Self.instance).outcome == .outside)
     replica.apply(.putCursor(Self.product, Self.booted(seq: 1)))
     let moved = replica
     #expect(try applier.apply(page, requestedUnder: requested, chunk: chunks[1], to: &replica, subscribed: Self.everyScope,
-                              instance: Self.instance) == .stale)
+                              instance: Self.instance).outcome == .stale)
     #expect(replica.json == moved.json)
     #expect(applied.rows(Self.product).all.map(\.key) == [RecordKey("card", "card0001")])
+  }
+
+  // §7.5 step 2: the last chunk settles its first part, then checks the digest; a mismatch resets the cursor, so the
+  // slices after it resolve nothing, and the entries left wait for the boot the reset starts.
+  @Test func theLastChunkSettlesItsFirstPartThenChecksTheDigest() throws {
+    var replica = try Self.replica(board: false, product: Self.booted(seq: 0))
+    let days = (1...3).map { Change.put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }
+    _ = try CommitPlanner(registry: Self.probe).commit(Gesture(changes: days, gestureId: "g1"), in: Self.product, to: &replica,
+                                                         as: Self.instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    let pushes = PushPlanner(registry: Self.probe)
+    let request = try #require(try pushes.number(&replica, at: 1_000))
+    let answer = try PushResponse(json: [
+      "serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 3, "results": .array((1...3).map { ["n": JSON($0), "s": "ok", "seq": JSON($0)] }),
+    ])
+    var instance = Self.instance
+    for step in pushes.steps(for: .ok(answer), to: request, resultsPerBatch: 3) {
+      try pushes.apply(step, to: &replica, instance: &instance, timing: .steady(send: 1_000, recv: 1_000), identities: try QueuedIdentities([:]))
+    }
+    let applier = PageApplier(registry: Self.probe)
+    let page = Self.rows([], at: 3, digestOf: [try Self.card("card0001", seq: 1)])
+    let applied = try applier.apply(page, requestedUnder: Self.booted(seq: 0).cursor, chunk: .whole(page, settles: 1), to: &replica,
+                                    subscribed: Self.everyScope, instance: Self.instance)
+    #expect(applied.outcome == .applied && applied.unsettled)
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["g1/1 acked", "g1/2 acked"])
+    #expect(replica.cursors[Self.product] == CursorRecord(booted: true, mismatchReset: true))
+    #expect(try applier.settle(Self.product, count: 1, in: &replica) == false)
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["g1/1 acked", "g1/2 acked"])
   }
 
   @Test(arguments: [(3, [0..<3]), (1, [0..<1, 1..<2, 2..<3]), (2, [0..<2, 2..<3]), (5, [0..<3])])
   func aPageIsCutIntoChunksOfWholeRowsInPageOrder(_ size: Int, _ ranges: [Range<Int>]) throws {
     let page = Self.rows(try (1...3).map { try Self.card("card000\($0)", seq: Int64($0)) }, at: 3)
-    #expect(PageChunk.of(page, size: size) == ranges.enumerated().map { PageChunk(rows: $1, isLast: $0 == ranges.count - 1) })
-    #expect(PageChunk.of(PullPage(scope: Self.product, body: .reset), size: 1) == [PageChunk(rows: 0..<0, isLast: true)])
+    #expect(PageChunk.of(page, size: size, settles: 4)
+      == ranges.enumerated().map { PageChunk(rows: $1, isLast: $0 == ranges.count - 1, settles: 4) })
+    #expect(PageChunk.of(PullPage(scope: Self.product, body: .reset), size: 1, settles: 4)
+      == [PageChunk(rows: 0..<0, isLast: true, settles: 4)])
   }
 
   // MARK: Frames and the subscription set
@@ -133,7 +163,7 @@ struct PullTests {
     record.behind = true
     var replica = try Self.replica(product: record)
     let frame = try Self.change(Self.product, seq: 2, rows: [try Self.card("card0001", seq: 2)])
-    #expect(try PageApplier(registry: Self.probe).apply(frame, to: &replica, subscribed: Self.everyScope, instance: Self.instance) == .pull)
+    #expect(try PageApplier(registry: Self.probe).apply(frame, to: &replica, subscribed: Self.everyScope, settling: .max, instance: Self.instance).outcome == .pull)
     #expect(replica.writes == [])
   }
 
@@ -150,9 +180,11 @@ struct PullTests {
         try PageApplier(registry: Self.probe).apply(
           PullPage(scope: scope, body: .rows(RowsPage(rows: [meta], cursor: Cursor(epoch: "ep-1", mode: .live, seq: 1).text, more: false,
                                                       seq: 1, digest: ScopeDigest(rows: [meta.json])))),
-          requestedUnder: nil, chunk: PageChunk(rows: 0..<1, isLast: true), to: &replica, subscribed: set, instance: Self.instance)?.rawValue ?? "nil"
+          requestedUnder: nil, chunk: PageChunk(rows: 0..<1, isLast: true), to: &replica, subscribed: set, instance: Self.instance
+        ).outcome?.rawValue ?? "nil"
       case .frame:
-        try PageApplier(registry: Self.probe).apply(.gone(scope, servedAs: "A"), to: &replica, subscribed: set, instance: Self.instance).rawValue
+        try PageApplier(registry: Self.probe).apply(.gone(scope, servedAs: "A"), to: &replica, subscribed: set, settling: .max,
+                                                    instance: Self.instance).outcome.rawValue
       }
       #expect(outcome == "outside")
     }
@@ -299,8 +331,8 @@ struct PullTests {
     let applier = PageApplier(registry: probe)
     let asked = requested ?? replica.cursors[page.scope]?.cursor
     var after = replica
-    return try PageChunk.of(page, size: size).map { chunk in
-      let outcome = try applier.apply(page, requestedUnder: asked, chunk: chunk, to: &after, subscribed: everyScope, instance: instance)
+    return try PageChunk.of(page, size: size, settles: .max).map { chunk in
+      let outcome = try applier.apply(page, requestedUnder: asked, chunk: chunk, to: &after, subscribed: everyScope, instance: instance).outcome
       return (after, outcome)
     }
   }
@@ -317,15 +349,16 @@ struct PullTests {
   static func land(_ page: PullPage, on replica: LoadedReplica) throws -> (String, [ScopeRef]) {
     let applier = PageApplier(registry: probe)
     var after = replica
-    let outcome = try applier.apply(page, requestedUnder: replica.cursors[page.scope]?.cursor, chunk: .whole(page), to: &after,
-                                    subscribed: everyScope, instance: instance)
-    return (outcome?.rawValue ?? "nil", applier.next(after: page, chunk: .whole(page), outcome, from: replica, in: after))
+    let whole = PageChunk.whole(page, settles: .max)
+    let outcome = try applier.apply(page, requestedUnder: replica.cursors[page.scope]?.cursor, chunk: whole, to: &after,
+                                    subscribed: everyScope, instance: instance).outcome
+    return (outcome?.rawValue ?? "nil", applier.next(after: page, chunk: whole, outcome, from: replica, in: after))
   }
 
   static func land(_ frame: LiveFrame, on replica: LoadedReplica) throws -> (String, [ScopeRef]) {
     let applier = PageApplier(registry: probe)
     var after = replica
-    let outcome = try applier.apply(frame, to: &after, subscribed: everyScope, instance: instance)
+    let outcome = try applier.apply(frame, to: &after, subscribed: everyScope, settling: .max, instance: instance).outcome
     return (outcome.rawValue, applier.next(after: frame, outcome, from: replica, in: after))
   }
 }

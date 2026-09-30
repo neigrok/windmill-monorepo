@@ -9,33 +9,50 @@ import Testing
 
 // §11.3 the replay fuzz and §11.2 property 3, through the simulator; and that its checks see what they check.
 struct SimulatorTests {
-  // SYNC_SIM_SEEDS seeds from SYNC_SEED (64 from 1 by default), each SYNC_SIM_ACTIONS actions (300) before quiescence.
+  // SYNC_SIM_SEEDS seeds from SYNC_SEED (128 from 1 by default), each SYNC_SIM_ACTIONS actions (300) before quiescence.
   static let firstSeed = UInt64(ProcessInfo.processInfo.environment["SYNC_SEED"] ?? "") ?? 1
-  static let seeds = UInt64(ProcessInfo.processInfo.environment["SYNC_SIM_SEEDS"] ?? "") ?? 64
+  static let seeds = UInt64(ProcessInfo.processInfo.environment["SYNC_SIM_SEEDS"] ?? "") ?? 128
   static let actions = Int(ProcessInfo.processInfo.environment["SYNC_SIM_ACTIONS"] ?? "") ?? 300
 
-  // Paths a run of 64 seeds or more must take, so the fuzz cannot stop exercising one unnoticed.
+  // §11.3's coverage floor for a fuzz of 128 × 300 or more: each event from ten or more seeds on average (coverage-survey.sh).
+  static let floor = (seeds: 128, actions: 300)
   static let exercised = [
-    "ended undone by undo", "ended undone by retire", "ended refused by refuse", "ended refused by fold", "ended refused by target-merged",
-    "ended discarded by discard", "ended resolved by resolve", "ok with a joining write map", "refused clock-skew", "refused cap",
-    "refused internal", "refused stale", "commit refused cap", "commit refused scope-dead", "http 401 unauthenticated", "http 409 gap",
-    "http 409 replica-forked", "http 503 unavailable", "retry", "wire push answer(status: 400)", "wire push answer(status: 413)",
-    "wire push delay", "wire push duplicate", "wire push loseReply", "wire pull loseReply", "delayed push admitted", "frame frame",
-    "frame dropped", "frame duplicated", "frame overtook", "live open", "sign-in add", "sign-in discard", "sign-in left pending",
-    "sign-out keep", "sign-out discard", "sign-out cancelled", "dormant discarded", "server restored", "epoch change", "store cloned",
-    "store restored from a backup", "store rolled back in place", "reboot", "clock jumped", "poisoned", "visibility set",
-    "read-and-commit decided nothing", "gesture tag revive", "gesture probe.copy", "notice dismissed", "scope closed",
-    "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete", "session of another account",
-    "http 409 account-mismatch", "wire push loseCredential", "wire pull loseCredential", "wire live loseCredential",
-    "wire hello loseCredential", "push served as anonymous", "push served as another account", "pull served as anonymous",
-    "pull served as another account", "frame served as anonymous", "death after a pullPage transaction",
-    "death after a results transaction", "active replica change announced", "rows swept",
+    // drop, duplicate, delay and reorder; lost replies
+    "wire push drop", "wire pull drop", "wire push duplicate", "frame duplicated", "wire push delay", "delayed push admitted",
+    "frame overtook", "frame dropped", "wire push loseReply", "wire pull loseReply",
+    // process death: at a step, between two chunks, two settling slices or two result batches
+    "relaunch", "reboot", "death after a pullPage transaction", "death after a settle transaction", "death after a results transaction",
+    // pages short of the head, frames between them
+    "page short of its head", "frame frame", "live open",
+    // clock error and device clock jumps; a born a receipt replay left unsourced, which recovery lowers (§7.7 step 1.5)
+    "refused clock-skew", "clock jumped", "unsourced stamp lowered",
+    // holds, undo, retire, leaving the app
+    "ended undone by undo", "ended undone by retire", "leave",
+    // sign-in and sign-out
+    "sign-in add", "sign-in discard", "sign-in left pending", "sign-out keep", "sign-out discard", "sign-out cancelled",
+    "dormant discarded", "ended discarded by discard",
+    // credentials expired, lost or another account's
+    "http 401 unauthenticated", "session of another account", "http 409 account-mismatch", "wire push loseCredential",
+    "wire pull loseCredential", "wire live loseCredential", "wire hello loseCredential", "push served as anonymous",
+    "push served as another account", "pull served as anonymous", "pull served as another account", "frame served as anonymous",
+    // poison
+    "poisoned", "refused internal",
+    // epoch change; a store restored or cloned
+    "server restored", "epoch change", "store restored from a backup", "store rolled back in place", "store cloned", "http 409 gap",
+    "http 409 replica-forked",
+    // engine paths
+    "active replica change announced", "ok with a joining write map", "refused cap", "wire push answer(status: 413)", "retry",
+    "ended refused by target-merged", "wire push answer(status: 400)", "ended refused by refuse", "ended refused by fold",
+    "ended resolved by resolve", "refused stale", "commit refused cap", "commit refused scope-dead", "http 503 unavailable",
+    "visibility set", "read-and-commit decided nothing", "gesture tag revive", "gesture probe.copy", "notice dismissed",
+    "scope closed", "tree opened", "foreign tree opened", "gesture fact save", "gesture fact save retiring its delete", "rows swept",
   ]
 
   @Test func everySeedHoldsEveryInvariantAfterQuiescence() async throws {
     let registry = try Corpus.probeRegistry()
     let seeds = Array(Self.firstSeed..<(Self.firstSeed + Self.seeds))
     var coverage: [String: Int] = [:]
+    var producing: [String: Int] = [:]
     await withTaskGroup(of: Simulator.Report.self) { group in
       var next = seeds.makeIterator()
       for _ in 0..<ProcessInfo.processInfo.activeProcessorCount {
@@ -45,13 +62,36 @@ struct SimulatorTests {
       for await report in group {
         #expect(report.violations == [], "seed \(report.seed): \(report.violations.prefix(5))\nlast actions: \(report.log.suffix(12))")
         coverage.merge(report.coverage) { $0 + $1 }
+        for (event, count) in report.coverage where count > 0 { producing[event, default: 0] += 1 }
         if let seed = next.next() { group.addTask { await Simulator(seed: seed, registry: registry).run(actions: Self.actions) } }
       }
     }
     print("simulated \(seeds.count) seeds from \(Self.firstSeed), \(Self.actions) actions each: \(coverage["checked rows"] ?? 0) rows, "
       + "\(coverage["checked entries"] ?? 0) entries checked")
-    guard seeds.count >= 64 else { return }
-    #expect(Self.exercised.filter { (coverage[$0] ?? 0) == 0 } == [])
+    print("seeds producing: " + producing.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "|"))
+    print("events: " + coverage.sorted { $0.key < $1.key }.map { "\($0.key)=\($0.value)" }.joined(separator: "|"))
+    guard seeds.count >= Self.floor.seeds && Self.actions >= Self.floor.actions else { return }
+    #expect(Self.exercised.filter { producing[$0] == nil } == [])
+  }
+
+  // §7.7 step 1.5: a clone 900 s fast replays a start by receipt, so its delete's born is unsourced, refused once, lowered.
+  @Test func aReceiptReplayUnderSkewRecoversByLoweringTheSkewedBorn() async throws {
+    let probe = ScopeRef.product("probe")
+    let simulator = await Simulator(seed: 1, registry: try Corpus.probeRegistry(), phones: [.init("pb", account: "A", signedIn: true)],
+                                    faults: false)
+    let run = RecordID("run000000000000r")
+    let start = Gesture(changes: [], command: Command(name: "probe.start", args: ["id": "run000000000000r", "startedAt": 1, "join": true]),
+                        predict: [.create("run", id: .given(run), ["startedAt": 1])])
+    let send = Simulator.Action.send(.deliver, PushFaults())
+    let steps: [(Simulator.Action, Int)] = [
+      (.pull(.deliver), 0), (.skew(ms: 900_000), 0), (.commit(probe, start), 0), (.commit(probe, Gesture(changes: [.delete("run", run)])), 0),
+      (.clone, 0), (send, 0), (.pull(.deliver), 0), (send, 0), (.pull(.deliver), 0), (send, 1), (send, 1), (send, 1), (send, 1),
+    ]
+    for (action, phone) in steps { await simulator.perform(action, on: phone) }
+    await simulator.quiesce()
+    let report = simulator.report()
+    #expect(report.violations == [])
+    #expect(report.coverage["unsourced stamp lowered"] == 1)
   }
 
   @Test func aRunIsAPureFunctionOfItsSeed() async throws {

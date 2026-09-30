@@ -78,7 +78,7 @@ struct KillEveryStepTests {
 enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
   case holdUndoRelease, leaveFlush, refusalFold, joiningWriteMap, clockSkew, epochChange, digestMismatch, signInAdd
   case signInDiscard, signOutKeep, signOutDiscard, dormantDiscard, forkGuard, replicaForked, localRefusals, authPause
-  case liveFrame, subscriptions, launch
+  case liveFrame, subscriptions, launch, settling
 
   typealias Step = (action: Simulator.Action, phone: Int)
 
@@ -198,6 +198,9 @@ enum KillScenario: String, CaseIterable, CustomTestStringConvertible {
     case .launch:
       return [(.relaunch(reboot: true), Self.phone), (Self.card("card0001", "Launched"), Self.phone), (Self.send, Self.phone),
               (Self.pull, Self.phone)]
+    case .settling:
+      return [(Self.card("card0001", "One"), Self.phone), (Self.card("card0002", "Two"), Self.phone), (Self.send, Self.phone),
+              (.foreground, Self.phone), (Self.pull, Self.phone)]
     }
   }
 }

@@ -261,7 +261,8 @@ public final class CommitFaults: Sendable {
 }
 
 // The kill-at-every-step hook (design §9.5) over one store. Once begun, the crash points the store reaches are counted
-// from 0; the one armed kills the process, and so does every later one, since a dead process commits nothing more.
+// from 0; the one armed kills the process (by its count, or as the first commit of a kind), and so does every later one,
+// since a dead process commits nothing more.
 // Begun unarmed, it records the store after every commit, the store as it was begun first, so a kill at point `k` must
 // leave the store as `recorded.states[(k + 1) / 2]` holds it: every commit before the point, and none after.
 public final class Killer: Sendable {
@@ -270,6 +271,7 @@ public final class Killer: Sendable {
   struct State {
     var store: Store?
     var armed: Int?
+    var armedAfter: TxName?
     var dead = false
     var points: [CrashPoint] = []
     var states: [JSON] = []
@@ -286,6 +288,12 @@ public final class Killer: Sendable {
     state.withLock { $0 = State(store: store, armed: point, states: [now]) }
   }
 
+  // Armed to kill the process once the first `tx` has committed.
+  public func begin(killingAfter tx: TxName, store: Store) {
+    let now = Self.dump(store)
+    state.withLock { $0 = State(store: store, armedAfter: tx, states: [now]) }
+  }
+
   public func end() {
     state.withLock { $0 = State() }
   }
@@ -298,11 +306,11 @@ public final class Killer: Sendable {
       guard let store = state.store else { return (false, nil) }
       if state.dead { return (true, nil) }
       state.points.append(point)
-      if state.armed == state.points.count - 1 {
+      if state.armed == state.points.count - 1 || state.armedAfter.map({ point == .afterCommit($0) }) == true {
         state.dead = true
         return (true, nil)
       }
-      guard state.armed == nil, case .afterCommit = point else { return (false, nil) }
+      guard state.armed == nil, state.armedAfter == nil, case .afterCommit = point else { return (false, nil) }
       return (false, store)
     }
     if kill { throw Killed() }

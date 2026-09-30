@@ -102,7 +102,7 @@ struct StoreTests {
       pull(.epoch("ep-2"), "rp_1"),
       pull(.page(first, requested: nil, chunk: PageChunk(rows: 0..<1, isLast: false)), "rp_2"),
       pull(.page(first, requested: nil, chunk: PageChunk(rows: 1..<2, isLast: true)), "rp_2"),
-      pull(.page(last, requested: bootCursor, chunk: .whole(last)), "rp_2"),
+      pull(.page(last, requested: bootCursor, chunk: .whole(last, settles: .max)), "rp_2"),
       Step(name: "sweep") { store in _ = try store.sweep(limit: 1) },
     ]
   }

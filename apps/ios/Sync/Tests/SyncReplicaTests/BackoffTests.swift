@@ -32,7 +32,7 @@ struct BackoffTests {
       #expect(doubts.due(by: now) == [Self.tree])
     }
     #expect(dues == [3_000, 7_000, 15_000, 31_000, 61_000, 91_000])
-    doubts.rows(Self.tree)
+    doubts.rows(Self.tree, at: now)
     doubts.repulled(Self.tree, at: now, random: Highest())
     #expect(!doubts.inDoubt(Self.tree) && doubts.nextDue == nil && doubts.k(Self.tree) == 7)
   }
@@ -42,11 +42,11 @@ struct BackoffTests {
   @Test func aScopesKReturnsToZeroAfterThirtySecondsFollowedOnLeavingTheSetAndAtANewSeat() {
     var doubts = Doubts()
     doubts.end(Self.tree, at: 0, random: Highest())
-    doubts.rows(Self.tree)
+    doubts.rows(Self.tree, at: 0)
     doubts.follow([Self.tree], at: 1_000)
     doubts.end(Self.tree, at: 30_999, random: Highest())
     #expect(doubts.k(Self.tree) == 2 && doubts.nextDue == 32_999)
-    doubts.rows(Self.tree)
+    doubts.rows(Self.tree, at: 31_000)
     doubts.follow([Self.tree], at: 40_000)
     doubts.follow([], at: 50_000)
     doubts.follow([Self.tree], at: 60_000)
@@ -65,7 +65,7 @@ struct BackoffTests {
     doubts.end(Self.tree, at: 0, random: Highest())
     #expect(doubts.due(by: 1_000) == [Self.tree])
     doubts.repulled(Self.tree, at: 1_000, random: Highest())
-    doubts.rows(Self.tree)
+    doubts.rows(Self.tree, at: 2_000)
     #expect(doubts.k(Self.tree) == 2)
     doubts.follow([Self.tree], at: 10_000)
     doubts.follow([], at: 49_000)
@@ -73,22 +73,36 @@ struct BackoffTests {
     #expect(doubts.k(Self.tree) == 1 && doubts.nextDue == 61_000)
   }
 
-  // Time followed while in doubt counts for nothing: the stretch starts at the first follow after the doubt ended.
+  // Time followed while in doubt counts for nothing: 40 s followed in doubt, then another ignored end, leaves k as the
+  // doubt's re-pulls drew it.
   @Test func timeFollowedInDoubtCountsForNothing() {
     var doubts = Doubts()
     doubts.end(Self.tree, at: 0, random: Highest())
     doubts.follow([Self.tree], at: 1_000)
-    doubts.rows(Self.tree)
-    doubts.follow([Self.tree], at: 5_000)
-    doubts.end(Self.tree, at: 34_000, random: Highest())
-    #expect(doubts.k(Self.tree) == 2 && doubts.nextDue == 36_000)
+    #expect(doubts.due(by: 1_000) == [Self.tree])
+    doubts.end(Self.tree, at: 41_000, random: Highest())
+    doubts.repulled(Self.tree, at: 41_000, random: Highest())
+    #expect(doubts.k(Self.tree) == 2 && doubts.nextDue == 43_000)
+  }
+
+  // A stretch begins when the doubt of a scope still followed ends: 30 s from the rows page returns k to 0.
+  @Test func aStretchBeginsWhenTheDoubtOfAFollowedScopeEnds() {
+    var doubts = Doubts()
+    doubts.follow([Self.tree], at: 0)
+    doubts.end(Self.tree, at: 5_000, random: Highest())
+    doubts.rows(Self.tree, at: 10_000)
+    doubts.end(Self.tree, at: 39_999, random: Highest())
+    #expect(doubts.k(Self.tree) == 2 && doubts.nextDue == 41_999)
+    doubts.rows(Self.tree, at: 40_000)
+    doubts.end(Self.tree, at: 70_000, random: Highest())
+    #expect(doubts.k(Self.tree) == 1 && doubts.nextDue == 71_000)
   }
 
   // Time unfollowed counts for nothing: two stretches of 10 s and 5 s are not one of 30 s.
   @Test func timeUnfollowedCountsForNothing() {
     var doubts = Doubts()
     doubts.end(Self.tree, at: 0, random: Highest())
-    doubts.rows(Self.tree)
+    doubts.rows(Self.tree, at: 0)
     doubts.follow([Self.tree], at: 1_000)
     doubts.follow([], at: 11_000)
     doubts.follow([Self.tree], at: 40_000)

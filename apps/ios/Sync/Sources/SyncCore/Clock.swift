@@ -32,6 +32,11 @@ public struct HLC: Sendable, Hashable {
     return Stamp(ms: ms, counter: counter, validActor: actor.text)
   }
 
+  // The clock's reading in `actor`: its pair as it stands, taken by no tick (§7.7 step 1.5).
+  public func reading(actor: Stamp.Actor) -> Stamp {
+    Stamp(ms: ms, counter: counter, validActor: actor.text)
+  }
+
   public mutating func observe(_ stamp: Stamp) {
     guard (stamp.ms, stamp.counter) > (ms, counter) else { return }
     ms = stamp.ms

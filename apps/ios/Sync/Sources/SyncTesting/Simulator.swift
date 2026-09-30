@@ -6,6 +6,7 @@ import struct SyncModelServer.ProbeServerRules
 import struct SyncModelServer.PushFaults
 import struct SyncModelServer.ScopeKey
 import struct SyncModelServer.ServerCall
+import struct SyncModelServer.ServerLimits
 import struct SyncModelServer.ServerState
 import SyncReplica
 import SyncStore
@@ -58,8 +59,9 @@ package final class Simulator {
     case release, undo, foreground
     case leave(flushing: Bool)
     case relaunch(reboot: Bool)
-    // The process dies once `commits` transactions of a pull's or a push's answer have committed.
+    // The process dies once `commits` transactions of a pull's or a push's answer have committed, or its first slice.
     case die(afterCommits: Int, pulling: Bool)
+    case dieSettling
     case loseForkGuardCopy
     case corruptDigest
     case signIn(LineageAnswer?)
@@ -70,11 +72,16 @@ package final class Simulator {
     case refuse(RefusalCode)
     case backupServer, restoreServer, changeEpoch
     case backupPhone, restorePhone(keepingForkGuardCopy: Bool)
+    // §7.11: a backup, a gesture pushed, the store rolled back in place: the next entry numbered takes a forked n.
+    case rollBackPastPush
     case clone
     case skew(ms: Int64), jump(ms: Int64)
     case advance(ms: Int64)
     case setVisibility, admitDelayed, dismissNotice, subscribe, unsubscribe
     case sweep
+    case openForeignTree, deadTreeGesture
+    // §7.7 step 1.5: a start replayed by receipt onto a dead run, on a phone whose clock reads `aheadMs` ahead of the server's.
+    case replayUnderSkew(aheadMs: Int64)
   }
 
   // One phone of the run, and what the checks hold it to: every entry its commits returned (INV-3) and what each last
@@ -95,6 +102,7 @@ package final class Simulator {
     let device: SteppedEngine
     var committed: [String] = []
     let contents = ContentLedger()
+    let lowerings = Lowerings()
     var ended: [EngineEvent] = []
     // Entries that ended in a transaction the phone's process died after, whose events died with it.
     var endedUnseen: Set<String> = []
@@ -109,16 +117,16 @@ package final class Simulator {
     // The active replica's id as the phone's announcements left it (§7.12); nil before the first is seen.
     var announcedActive: String?
 
-    // What every entry the phone holds writes is read after each transaction its store commits, so an entry's content is
-    // known as it stood when a later transaction refused it, a joining write map's rewrite of its keys included.
+    // After each transaction its store commits, the phone's entries are read: what each writes, and its unsourced stamps.
     init(name: String, account: String, device: SteppedEngine) {
       self.name = name
       self.account = account
       self.device = device
-      let contents = contents
+      let (contents, lowerings) = (contents, lowerings)
       device.commits.observe { [weak device] in
-        guard let outbox = try? device?.store.read({ try $0.device().replicas.flatMap(\.outbox) }) else { return }
-        contents.record(outbox)
+        guard let replicas = try? device?.store.read({ try $0.device().replicas }) else { return }
+        contents.record(replicas.flatMap(\.outbox))
+        lowerings.record(replicas)
       }
     }
 
@@ -140,8 +148,14 @@ package final class Simulator {
 
   static let startMs: Int64 = 1_800_000_000_000
   static let maxPhones = 5
-  // Pages apply two rows a chunk and push answers one result a batch, so deaths fall between them (§11.3).
-  static let limits = Limits(chunkRows: 2, resultsPerBatch: 1)
+  // Two rows a chunk, one entry a settling slice and one result a batch, so deaths fall between them (§11.3).
+  static let limits = Limits(chunkRows: 2, settleEntries: 1, resultsPerBatch: 1)
+  // Pages of a few rows, so a pull often stops short of its head and frames come between its pages (§11.3).
+  static let serverLimits = { () -> ServerLimits in
+    var limits = ServerLimits()
+    limits.pullPageBytes = 1_024
+    return limits
+  }()
 
   package let seed: UInt64
   let registry: Registry
@@ -179,7 +193,8 @@ package final class Simulator {
     self.rng = rng ?? SeededRandom(seed: seed)
     world = SimClock(wallMs: Self.startMs)
     let server = ModelServerHandle(
-      ModelServer(registry: registry, rules: ProbeServerRules(), state: ServerState(epoch: "ep-0", accounts: ["A": "Ann", "B": "Bob"])),
+      ModelServer(registry: registry, rules: ProbeServerRules(), state: ServerState(epoch: "ep-0", accounts: ["A": "Ann", "B": "Bob"]),
+                  limits: Self.serverLimits),
       clock: world)
     fleet = Fleet(registry: registry, network: SimNetwork(server: server), seed: seed, limits: Self.limits)
     rowsSeen = server.rowsVersion
@@ -230,11 +245,11 @@ package final class Simulator {
     return Report(seed: seed, violations: violations, coverage: coverage(), log: log, server: server.state.json)
   }
 
-  // Time moves up to 4 s, then one phone takes one action the schedule draws; the faults only while faults are on.
+  // Time moves up to 4 s, then one phone takes an action the schedule draws, each as likely as its case is wide; faults if on.
   func step() async {
     advance(ms: Int64(rng.below(4_000)))
     let phone = rng.below(phones.count)
-    let roll = rng.below(1_000)
+    let roll = rng.below(1_065)
     let action: Action? = switch roll {
     case ..<300: .gesture
     case ..<410: .send(faults ? pushFate() : .deliver, faults ? serverFaults() : PushFaults())
@@ -249,28 +264,34 @@ package final class Simulator {
     case ..<690: .dismissNotice
     case ..<705: rng.chance(0.7) ? .subscribe : .unsubscribe
     case _ where !faults: nil
-    case ..<720: .frameFault
-    case ..<740: .relaunch(reboot: rng.chance(0.3))
-    case ..<752: .signIn(rng.chance(0.2) ? nil : rng.chance(0.5) ? .add : .discard)
-    case ..<762: .signOut(rng.chance(0.2) ? nil : rng.chance(0.8) ? .keep : .discard)
-    case ..<767: .discardDormant
-    case ..<771: .revokeSession
-    case ..<775: .foreignSession
-    case ..<780: .reauthenticate
-    case ..<795: .online(rng.chance(0.5))
-    case ..<802: .poison
-    case ..<808: .refuse(rng.pick([RefusalCode.invalid, .stale, .internal]))
-    case ..<818: serverBackups.isEmpty || rng.chance(0.5) ? .backupServer : .restoreServer
-    case ..<822: .changeEpoch
-    case ..<834: phones[phone].backup == nil || rng.chance(0.5) ? .backupPhone : .restorePhone(keepingForkGuardCopy: rng.chance(0.2))
-    case ..<838: .clone
-    case ..<860: .skew(ms: Int64(rng.below(1_200_000) - 600_000))
-    case ..<878: .jump(ms: Int64(rng.below(1_200_000) - 600_000))
-    case ..<888: .setVisibility
-    case ..<900: .admitDelayed
-    case ..<904: .die(afterCommits: 3 + rng.below(4), pulling: true)
-    case ..<910: .die(afterCommits: 3 + rng.below(2), pulling: false)
-    case ..<918: .sweep
+    case ..<737: .frameFault
+    case ..<757: .relaunch(reboot: rng.chance(0.3))
+    case ..<769: .signIn(rng.chance(0.2) ? nil : rng.chance(0.5) ? .add : .discard)
+    case ..<772: .signIn(nil)
+    case ..<782: .signOut(rng.chance(0.2) ? nil : rng.chance(0.8) ? .keep : .discard)
+    case ..<787: .discardDormant
+    case ..<791: .revokeSession
+    case ..<795: .foreignSession
+    case ..<800: .reauthenticate
+    case ..<815: .online(rng.chance(0.5))
+    case ..<822: .poison
+    case ..<828: .refuse(rng.pick([RefusalCode.invalid, .stale, .internal]))
+    case ..<838: serverBackups.isEmpty || rng.chance(0.5) ? .backupServer : .restoreServer
+    case ..<842: .changeEpoch
+    case ..<854: phones[phone].backup == nil || rng.chance(0.5) ? .backupPhone : .restorePhone(keepingForkGuardCopy: rng.chance(0.2))
+    case ..<858: .rollBackPastPush
+    case ..<862: .clone
+    case ..<884: .skew(ms: Int64(rng.below(1_200_000) - 600_000))
+    case ..<902: .jump(ms: Int64(rng.below(1_200_000) - 600_000))
+    case ..<912: .setVisibility
+    case ..<924: .admitDelayed
+    case ..<928: .die(afterCommits: 3 + rng.below(4), pulling: true)
+    case ..<934: .die(afterCommits: 3 + rng.below(2), pulling: false)
+    case ..<950: .dieSettling
+    case ..<966: .sweep
+    case ..<978: .openForeignTree
+    case ..<980: .deadTreeGesture
+    case ..<983: .replayUnderSkew(aheadMs: 450_000 + Int64(rng.below(150_000)))
     default: .advance(ms: Int64(rng.below(60_000)))
     }
     guard let action else { return }
@@ -280,14 +301,14 @@ package final class Simulator {
   // What the wire does to a push: mostly it arrives.
   func pushFate() -> SimNetwork.Fate {
     switch rng.below(100) {
-    case ..<70: .deliver
-    case ..<72: .loseCredential
-    case ..<78: .drop
-    case ..<84: .loseReply
-    case ..<88: .duplicate
-    case ..<92: .delay
-    case ..<94: .answer(status: 400)
-    case ..<96: .answer(status: 413)
+    case ..<67: .deliver
+    case ..<69: .loseCredential
+    case ..<75: .drop
+    case ..<81: .loseReply
+    case ..<85: .duplicate
+    case ..<89: .delay
+    case ..<92: .answer(status: 400)
+    case ..<95: .answer(status: 413)
     default: .answer(status: 503)
     }
   }
@@ -424,7 +445,9 @@ package final class Simulator {
     case .foreground:
       phone.engine.foreground()
     case .relaunch(let reboot): await relaunch(phone, rebooting: reboot)
-    case .die(let commits, let pulling): await die(phone, index: index, afterCommits: commits, pulling: pulling)
+    case .die(let commits, let pulling):
+      await die(phone, index: index, pulling: pulling) { $0.begin(killingAt: 2 * commits - 1, store: $1) }
+    case .dieSettling: await die(phone, index: index, pulling: true) { $0.begin(killingAfter: .settle, store: $1) }
     case .loseForkGuardCopy:
       phone.device.loseForkGuardCopy()
       count("fork guard copy lost")
@@ -455,12 +478,15 @@ package final class Simulator {
       count("epoch change")
     case .backupPhone: backUp(phone)
     case .restorePhone(let kept): await restore(phone, keepingForkGuardCopy: kept)
+    case .rollBackPastPush: await rollBackPastPush(phone)
     case .clone: await clone(phone)
     case .skew(let ms):
       phone.device.clock.skew(ms: ms)
+      pushes.forgiveSkews(of: phone.name)
       count("clock skewed")
     case .jump(let ms):
       phone.device.clock.jump(ms: ms)
+      pushes.forgiveSkews(of: phone.name)
       count("clock jumped")
     case .advance(let ms): advance(ms: ms)
     case .setVisibility: setVisibility()
@@ -472,6 +498,9 @@ package final class Simulator {
     case .subscribe: subscribe(phone)
     case .unsubscribe: unsubscribe(phone)
     case .sweep: sweep(phone)
+    case .openForeignTree: openForeignTree(on: phone)
+    case .deadTreeGesture: await deadTreeGesture(on: phone)
+    case .replayUnderSkew(let aheadMs): await replayUnderSkew(on: phone, aheadMs: aheadMs)
     }
     settleAccounts()
   }
@@ -541,6 +570,7 @@ package final class Simulator {
     if rng.chance(0.7) { phone.engine.puller.wants.all() }
     let before = activeReplica(on: phone)
     let step = await phone.engine.puller.step()
+    if network.lastAnswer(to: .pull)?.short == true { count("page short of its head") }
     checkServed(network.lastAnswer(to: .pull), "pull", on: phone, from: before, to: activeReplica(on: phone))
     if !network.disarm(), fate != .deliver { count("wire pull \(fate)") }
     count("puller \(Self.caseName(step))")
@@ -567,7 +597,7 @@ package final class Simulator {
     let step = await phone.engine.puller.step()
     if let frame, frame.scope != nil {
       let after = if case .frame = step { activeReplica(on: phone) } else { received }
-      let answered = SimNetwork.Answered(servedAs: frame.servedAs.map(JSON.string) ?? .null, scopes: nil)
+      let answered = SimNetwork.Answered(servedAs: frame.servedAs.map(JSON.string) ?? .null, scopes: nil, short: false)
       checkServed(answered, "frame", on: phone, from: before, to: after)
     }
     count("frame \(Self.caseName(step))")
@@ -674,10 +704,10 @@ package final class Simulator {
     if !network.disarm(), fate != .deliver { count("wire hello \(fate)") }
   }
 
-  // §11.3 the process dies inside a pull's or push's answer after `commits` of its transactions, and another launches.
-  func die(_ phone: Phone, index: Int, afterCommits commits: Int, pulling: Bool) async {
+  // §11.3 the process dies inside a pull's or push's answer, where `arm` arms the killer, and another launches.
+  func die(_ phone: Phone, index: Int, pulling: Bool, arm: (Killer, Store) -> Void) async {
     guard let killer = phone.device.killer else { return }
-    killer.begin(killingAt: 2 * commits - 1, store: phone.device.store)
+    arm(killer, phone.device.store)
     if pulling {
       phone.engine.puller.wants.all()
       _ = await phone.engine.puller.step()
@@ -687,7 +717,7 @@ package final class Simulator {
     let (points, died) = (killer.recorded.points, killer.isDead)
     killer.end()
     guard died else { return }
-    if case .afterCommit(let tx)? = points.last, tx == .pullPage || tx == .results { count("death after a \(tx.rawValue) transaction") }
+    if case .afterCommit(let tx)? = points.last, [.pullPage, .settle, .results].contains(tx) { count("death after a \(tx.rawValue) transaction") }
     if !pulling { pushes.forgetUnrecorded(after: points.filter { $0 == .afterCommit(.results) }.count, of: phone.name) }
     let events = phone.device.events.drain()
     phone.ended += events
@@ -813,12 +843,22 @@ package final class Simulator {
     }
     phone.committed = backup.committed
     phone.contents.replace(with: backup.contents)
+    phone.lowerings.forget()
     phone.ended = backup.ended
     phone.endedUnseen = backup.endedUnseen
     phone.discardedNotices = backup.discardedNotices
     pushes.restoreSkewed(backup.skewed, of: phone.name)
     phone.opened = []
     count(kept ? "store rolled back in place" : "store restored from a backup")
+  }
+
+  func rollBackPastPush(_ phone: Phone) async {
+    guard canPush(phone) else { return }
+    backUp(phone)
+    await gesture(on: phone)
+    await flush(phone)
+    settleAccounts()
+    await restore(phone, keepingForkGuardCopy: true)
   }
 
   // Another phone holding a copy of this one's store, and so held to the same ledger.
@@ -875,10 +915,8 @@ package final class Simulator {
     count("notice dismissed")
   }
 
-  // The person opens a board: its tree, and while signed in its overlay, are followed. A third of the time it is a tree
-  // of another account the owner made open to read, whose rows must leave the phone once it is closed to it (INV-7).
+  // The person opens a board: its tree, and while signed in its overlay, are followed.
   func subscribe(_ phone: Phone) {
-    if rng.chance(0.33) { return openForeignTree(on: phone) }
     guard let boards = try? phone.engine.read(.product("probe"), { try $0.drawn("board") }), !boards.isEmpty,
           let board = rng.pick(boards).id.string else { return }
     let bound = (try? phone.active().meta.state) == .bound
@@ -889,6 +927,68 @@ package final class Simulator {
     count("tree opened")
   }
 
+  // A board the phone makes, follows the tree of, deletes and pulls gone: its gesture into the dead tree is refused.
+  func deadTreeGesture(on phone: Phone) async {
+    guard canPush(phone) else { return }
+    let board = rng.boardID()
+    guard let name = board.string else { return }
+    await commit(PlannedGesture("board create", in: .product("probe"), Gesture(changes: [.create("board", id: .given(board))])), on: phone)
+    await flush(phone)
+    guard (try? phone.engine.read(.product("probe")) { try $0.drawn("board", board) }) != nil else { return }
+    for scope in [ScopeRef.tree(name), .overlay(name)] where !phone.opened.contains(scope) {
+      guard (try? phone.engine.subscribe(scope)) == .subscribed else { return }
+      phone.opened.append(scope)
+    }
+    await commit(PlannedGesture("board delete", in: .product("probe"), Gesture(changes: [.delete("board", board)])), on: phone)
+    await flush(phone)
+    phone.engine.puller.wants.all()
+    await pull(on: phone, .deliver)
+    guard let view = probeView(of: phone), view.deadTrees.contains(board) else { return }
+    var rng = rng
+    let planned = rng.treeGesture(in: board, tree(of: board, on: phone), bound: view.bound)
+    self.rng = rng
+    guard let planned else { return }
+    await commit(planned, on: phone)
+  }
+
+  // §7.7 step 1.5: a tool call of the account starts and deletes a run; the phone, `aheadMs` fast, starts it again, replayed
+  // by receipt onto the dead run, so the delete it then queues carries a born no entry sources, refused and lowered.
+  func replayUnderSkew(on phone: Phone, aheadMs: Int64) async {
+    guard canPush(phone), let scope = ScopeKey(.product("probe"), account: phone.account) else { return }
+    let run = rng.recordID()
+    let start = { (at: Int64) in Command(name: "probe.start", args: ["id": run.json, "startedAt": JSON(at), "join": true]) }
+    let call = { (intent: JSON) in
+      _ = self.network.call(ServerCall(account: phone.account, requestId: nil, tool: "probe.run", args: .null, intents: [intent]))
+      return self.server.state.idState(of: RecordKey("run", run), in: scope, registry: self.registry)
+    }
+    guard case .alive(let row) = call(["scope": "self/probe", "cmd": start(world.nowMs()).json]), let born = row.lattice.born,
+          case .dead = call(["scope": "self/probe", "d": [["t": "run", "id": run.json, "born": born.json, "life": ["dead", .null]]]]),
+          let meta = try? phone.active().meta else { return }
+    phone.device.clock.jump(ms: world.nowMs() + aheadMs - meta.physNow(deviceNow: phone.device.clock.nowMs()))
+    pushes.forgiveSkews(of: phone.name)
+    let at = phone.device.clock.nowMs()
+    let predicted = Gesture(changes: [], command: start(at), predict: [.create("run", id: .given(run), ["startedAt": JSON(at)])])
+    await commit(PlannedGesture("probe.start", in: .product("probe"), predicted), on: phone)
+    guard (try? phone.engine.read(.product("probe")) { try $0.drawn("run", run) }) != nil else { return }
+    await commit(PlannedGesture("run delete", in: .product("probe"), Gesture(changes: [.delete("run", run)])), on: phone)
+    await flush(phone)
+    count("receipt replayed under skew")
+  }
+
+  // Whether the phone pushes now: online, its active replica bound and not paused for its credential.
+  func canPush(_ phone: Phone) -> Bool {
+    phone.device.connectivity.isOnline && (try? phone.active().meta).map { $0.state == .bound && !$0.authPaused } == true
+  }
+
+  // The phone pushes, time passing its backoff, until its outbox holds none unsent: four pushes at most.
+  func flush(_ phone: Phone) async {
+    for _ in 0..<4 where (try? phone.active().outbox.contains { $0.state == .ready || $0.state == .sent }) == true {
+      await send(on: phone, .deliver, PushFaults())
+      advance(ms: Constants.backoffCeilingMs / 10)
+    }
+  }
+
+  // A tree of another account its owner made open to read, whose rows must leave the phone once it is closed to it (INV-7).
   func openForeignTree(on phone: Phone) {
     let state = server.state
     let open = state.scopes.filter { key, scope in
@@ -1234,6 +1334,7 @@ package final class Simulator {
     var coverage = tally.merging(pushes.tally) { $0 + $1 }
     for phone in phones {
       for case .ended(_, let outcome, let by, _) in phone.ended { coverage["ended \(outcome.rawValue) by \(by.rawValue)", default: 0] += 1 }
+      if phone.lowerings.count > 0 { coverage["unsourced stamp lowered", default: 0] += phone.lowerings.count }
     }
     return coverage
   }
@@ -1265,6 +1366,38 @@ final class ContentLedger: Sendable {
 
   func replace(with contents: [String: EntryContent]) {
     self.contents.withLock { $0 = contents }
+  }
+}
+
+// §7.7 step 1.5 over a phone's commits: its unsourced stamps, and each one the next commit holds lower, as only recovery does.
+final class Lowerings: Sendable {
+  struct State {
+    var watched: [Restamp.Carried: Stamp] = [:]
+    var count = 0
+  }
+
+  let state = Mutex(State())
+
+  var count: Int { state.withLock(\.count) }
+
+  func record(_ replicas: [LoadedReplica]) {
+    state.withLock { state in
+      let now = Dictionary(replicas.flatMap { replica in
+        Restamp.unsourced(in: replica) { $0.isQueued || $0.state == .sent }.compactMap { carried in
+          carried.stamp(in: replica).map { (carried, $0) }
+        }
+      }) { first, _ in first }
+      for (carried, was) in state.watched {
+        guard let stamp = replicas.lazy.compactMap({ carried.stamp(in: $0) }).first, stamp < was else { continue }
+        state.count += 1
+      }
+      state.watched = now
+    }
+  }
+
+  // The store was replaced whole (a restore from a backup): what it held before says nothing of it.
+  func forget() {
+    state.withLock { $0.watched = [:] }
   }
 }
 
@@ -1310,6 +1443,13 @@ final class PushLedger: Sendable {
       let results = ((try? served.body["results"]?.asArray()) ?? []).sorted { n($0) < n($1) }
       let unrecorded = Set(results.dropFirst(recorded).filter { $0["code"] == "clock-skew" }.map { "\(served.request.replica) \(n($0))" })
       for key in state.skewed.keys where key.hasPrefix("\(device) ") { state.skewed[key]?.subtract(unrecorded) }
+    }
+  }
+
+  // A skew or jump of `device`'s clock: each of its entries may be refused clock-skew once more (INV-14, per clock error).
+  func forgiveSkews(of device: String) {
+    state.withLock { state in
+      for key in state.skewed.keys where key.hasPrefix("\(device) ") { state.skewed[key] = [] }
     }
   }
 

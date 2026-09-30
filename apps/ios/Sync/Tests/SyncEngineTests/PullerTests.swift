@@ -215,6 +215,75 @@ struct PullerTests {
     #expect(try Self.cursor(rig, Self.tree) == nil)
   }
 
+  // Five days put in one gesture, pushed and acked at seqs 1 to 5: acked entries a page at seq 5 covers.
+  static func ackedDays(_ rig: Rig) async throws {
+    try rig.commit(Gesture(changes: (1...5).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 5, (1...5).map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .again)
+  }
+
+  // §7.5 step 2: a page's last chunk settles the first entries its cursor covers, and settling slices the rest, each
+  // its own transaction, in commit order, before the next page.
+  @Test func aPagesCoveredEntriesSettleInSlicesAfterItsLastChunk() async throws {
+    let settled = Mutex<[String]>([])
+    let store = Mutex<Store?>(nil)
+    let rig = try Rig(account: "A", limits: Limits(settleEntries: 2), crashPoints: CrashPoints { point in
+      guard case .afterCommit(let tx) = point, tx == .pullPage || tx == .settle, let store = store.withLock({ $0 }) else { return }
+      let left = try store.read { tx in try tx.replica(tx.activeReplica())!.outbox.map(\.localId) }
+      settled.withLock { $0.append("\(tx.rawValue) \(left)") }
+    })
+    try await Self.ackedDays(rig)
+    store.withLock { $0 = rig.store }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 5), Rig.rows(in: Self.tree, seq: 0)]))
+    try rig.engine.subscribe(Self.tree)
+    rig.engine.puller.wants.all()
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
+    #expect(settled.withLock { $0 } == [
+      "pullPage [\"g1/2\", \"g1/3\", \"g1/4\"]", "settle [\"g1/4\"]", "settle []", "pullPage []",
+    ])
+  }
+
+  // A death between two settling slices keeps what the slices resolved; the entries left stay acked, and the scope's
+  // next page, empty at its head, settles them.
+  @Test func aDeathBetweenSlicesLeavesTheRestAckedUntilTheNextPage() async throws {
+    let dead = Mutex(false)
+    let rig = try Rig(account: "A", limits: Limits(settleEntries: 2), crashPoints: CrashPoints { point in
+      guard point == .afterCommit(.settle), !dead.withLock({ $0 }) else { return }
+      dead.withLock { $0 = true }
+      throw RigError("the process died")
+    })
+    try await Self.ackedDays(rig)
+    rig.random.queue(raw: .max, count: 1)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 5)]))
+    rig.engine.puller.wants.all()
+    #expect(await rig.engine.puller.step() == .backoff(ms: 1_000))
+    #expect(try rig.outbox() == ["g1/4 acked 5"])
+    let relaunched = try rig.relaunch()
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 5, digestOf: [])]))
+    relaunched.puller.wants.all()
+    #expect(await relaunched.puller.step() == Self.applied(Rig.scope))
+    #expect(rig.transport.pulls.last?.scopes == [Self.pulled(Rig.scope, Self.live(5))])
+    #expect(try rig.outbox() == [])
+  }
+
+  // A frame applied inline settles its first covered entries in its own transaction, and slices the rest.
+  @Test func aFrameAppliedInlineSettlesInSlices() async throws {
+    let order = Mutex<[TxName]>([])
+    let rig = try Rig(account: "A", limits: Limits(settleEntries: 1), crashPoints: CrashPoints { point in
+      guard case .afterCommit(let tx) = point, tx == .liveFrame || tx == .settle else { return }
+      order.withLock { $0.append(tx) }
+    })
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    try rig.commit(Gesture(changes: (1...3).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 3, (1...3).map { Rig.admitted($0, seq: 1) }))
+    #expect(await rig.engine.sender.step() == .again)
+    await rig.engine.puller.enqueue(try Rig.change(rows: [], seq: 1, digestOf: []), for: try rig.meta().replica)
+    #expect(await rig.engine.puller.step() == .frame(Rig.scope, .applied))
+    #expect(order.withLock { $0 } == [.liveFrame, .settle, .settle])
+    #expect(try rig.outbox() == [])
+  }
+
   // §2.5: the confirmed rows a staging swap replaced leave every view at once; the swap wakes the sweep, which deletes
   // them afterwards.
   @Test func aSwapLeavesTheRowsItReplacedToTheSweep() async throws {

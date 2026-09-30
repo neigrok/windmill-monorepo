@@ -144,10 +144,10 @@ final class TransactionTimes: Sendable {
 
   // One line for each kind of transaction but commits since the last reset. The first of a loop's run is timed from
   // whatever committed before it, the network's wait included, so a kind's max may overstate its hold. The kinds a loop
-  // runs back to back (a page's chunks, a push answer's result batches, the epoch change after either, the sweep) carry
-  // §2.5's WRITER_SLICE_MS as their budget.
+  // runs back to back (a page's chunks and settling slices, a push answer's result batches, the epoch change after
+  // either, the sweep) carry §2.5's WRITER_SLICE_MS as their budget.
   func reportEachKind(_ context: String) {
-    let sliced: [TxName] = [.pullPage, .results, .epochChange, .sweep]
+    let sliced: [TxName] = [.pullPage, .settle, .results, .epochChange, .sweep]
     for tx in TxName.allCases where tx != .commit {
       let samples = durations(of: tx, as: "transaction · \(tx.rawValue) \(context)")
       if !samples.ms.isEmpty { samples.report(p95Budget: sliced.contains(tx) ? Double(Constants.writerSliceMs) : nil) }

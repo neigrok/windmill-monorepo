@@ -24,9 +24,12 @@ public protocol ClientDevice {
   mutating func start(backup: BackupCopy, instance: inout Instance, identities: IdentitySource) throws -> EngineStart
   // Nil when no scope asked is pulled, so nothing is sent.
   mutating func pullRequest(_ scopes: [ScopeRef]) throws -> PullRequest?
-  // One transaction of a pull answer on the active replica, against `subscribed`: a page's outcome, otherwise nil.
+  // One transaction of a pull answer on the active replica, against `subscribed`: a page's outcome, and slices to follow.
   mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
-                      identities: IdentitySource) throws -> PageOutcome?
+                      identities: IdentitySource) throws -> (outcome: PageOutcome?, unsettled: Bool)
+  // One settling slice of `scope` on the active replica: true while covered entries are left.
+  mutating func settle(_ scope: ScopeRef, count: Int) throws -> Bool
+  // A frame and all its settling, in one transaction.
   mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome
   mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome
   // Unsubscribes what `set` leaves out; the set it read.
@@ -120,14 +123,20 @@ public struct PlannedDevice: ClientDevice {
   }
 
   public mutating func apply(_ step: PullStep, subscribed: [ScopeRef], instance: inout Instance, timing: Timing,
-                             identities: IdentitySource) throws -> PageOutcome? {
+                             identities: IdentitySource) throws -> (outcome: PageOutcome?, unsettled: Bool) {
     try device.modify(device.active) {
       try pages.apply(step, to: &$0, subscribed: Set(subscribed), instance: &instance, timing: timing, identities: identities)
     }
   }
 
+  public mutating func settle(_ scope: ScopeRef, count: Int) throws -> Bool {
+    try device.modify(device.active) { try pages.settle(scope, count: count, in: &$0) }
+  }
+
   public mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {
-    try device.modify(device.active) { try pages.apply(frame, to: &$0, subscribed: Set(subscribed), instance: instance) }
+    try device.modify(device.active) {
+      try pages.apply(frame, to: &$0, subscribed: Set(subscribed), settling: .max, instance: instance).outcome
+    }
   }
 
   public mutating func subscribe(_ scope: ScopeRef) throws -> SubscribeOutcome {
@@ -272,7 +281,8 @@ public enum ClientSteps {
       guard let (asked, pulledFor) = context.lastPull, let request = asked else { throw VectorError("pullResponse without a pull") }
       guard try device.activeReplica().id.utf8.elementsEqual(pulledFor.utf8) else { return .null }
       return try receive(try answer(step, PullResponse.init(json:)), to: request, chunkRows: try step["chunk"].map { Int(try $0.asInteger()) },
-                         dieAfter: try step["dieAfter"]?.asInteger(), on: &device, instance: &instance, timing: timing, context: context)
+                         settles: try step["settle"].map { Int(try $0.asInteger()) }, dieAfter: try step["dieAfter"]?.asInteger(),
+                         on: &device, instance: &instance, timing: timing, context: context)
     case "frame":
       let frame = try LiveFrame(json: step.member("frame"))
       let subscribed = context.subscribed ?? frame.scope.map { [$0] } ?? []
@@ -354,16 +364,18 @@ public enum ClientSteps {
     return limit
   }
 
-  // A pull answer in chunks of `chunkRows`, dying after `dieAfter` page transactions (a cut page `partial`).
-  static func receive<Device: ClientDevice>(_ answer: Answer<PullResponse>, to request: PullRequest, chunkRows: Int?,
+  // A pull answer, each page in chunks then settling slices, dying after `dieAfter` of them (`partial`, `unsettled`).
+  static func receive<Device: ClientDevice>(_ answer: Answer<PullResponse>, to request: PullRequest, chunkRows: Int?, settles: Int?,
                                             dieAfter: Int64?, on device: inout Device, instance: inout Instance, timing: Timing,
                                             context: StepContext) throws -> JSON {
     let account = try device.activeReplica().meta.account
     let subscribed = context.subscribed ?? request.scopes.map(\.scope)
+    let settles = settles ?? .max
     var left = dieAfter ?? .max
     var outcomes: [JSON] = []
     var ended: Set<ScopeRef> = []
-    let steps = PageApplier(registry: context.registry).steps(for: answer, to: request, account: account, chunkRows: chunkRows ?? .max)
+    let steps = PageApplier(registry: context.registry).steps(for: answer, to: request, account: account, chunkRows: chunkRows ?? .max,
+                                                             settles: settles)
     for step in steps {
       if case .page(let page, _, let chunk) = step {
         if ended.contains(page.scope) { continue }
@@ -372,14 +384,20 @@ public enum ClientSteps {
           break
         }
       }
-      let outcome = try device.apply(step, subscribed: subscribed, instance: &instance, timing: timing, identities: context.identities)
+      let applied = try device.apply(step, subscribed: subscribed, instance: &instance, timing: timing, identities: context.identities)
       guard case .page(let page, _, let chunk) = step else { continue }
-      guard let outcome else {
+      guard let outcome = applied.outcome else {
         left -= 1
         continue
       }
       if [.applied, .reset, .gone, .notFound].contains(outcome) { left -= 1 }
       if !chunk.isLast { ended.insert(page.scope) }
+      var unsettled = applied.unsettled
+      while unsettled {
+        guard left > 0 else { return .array(outcomes + [["scope": page.scope.json, "outcome": "unsettled"]]) }
+        unsettled = try device.settle(page.scope, count: settles)
+        left -= 1
+      }
       outcomes.append(["scope": page.scope.json, "outcome": .string(outcome.rawValue)])
     }
     return .array(outcomes)

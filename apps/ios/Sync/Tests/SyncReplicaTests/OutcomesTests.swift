@@ -97,6 +97,95 @@ struct OutcomesTests {
     #expect(replica.meta.serverEpoch == "ep-2")
   }
 
+  // §7.7 step 1.5 on the model server: a receipt replay leaves a born 400 s fast that the delete's skew recovery lowers.
+  @Test func aReceiptReplayLeavesASkewedBornThatTheDeletesRecoveryLowers() throws {
+    var state = ServerState(epoch: "ep-1")
+    state.product = ["receipts": ["acct:A/probe": ["run00009": "run00009"]]]
+    var server = ModelServer(registry: Self.probe, rules: ProbeServerRules(), state: state)
+    var serverNow: Int64 = 5_000
+    let deviceNow = serverNow + 400_000
+    var instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: deviceNow, appVersion: "1")
+    let identities = try QueuedIdentities([:])
+    let commits = CommitPlanner(registry: Self.probe)
+    let pushes = PushPlanner(registry: Self.probe)
+    var replica = LoadedReplica.fresh(ReplicaMeta(replica: "rp_00000000000000000000000000000001", state: .bound, account: "A"))
+    var refusals: [String] = []
+    let round = { (replica: inout LoadedReplica, instance: inout Instance) throws in
+      guard let request = try pushes.number(&replica, at: instance.deviceNow) else { return }
+      serverNow += 10
+      let reply = server.push(request.json, credential: .account("A"), at: serverNow)
+      let answer: Answer<PushResponse> = reply.status == 200
+        ? .ok(try PushResponse(json: reply.body)) : .failed(try HTTPFailure(status: reply.status, body: reply.body))
+      if case .ok(let response) = answer {
+        for result in response.results where result.verdict == .refused(.clockSkew) {
+          refusals += replica.outbox.filter { $0.state == .sent && $0.n == result.n }.map(\.gestureId)
+        }
+      }
+      try Self.receive(answer, to: request, by: pushes, in: &replica, instance: &instance,
+                       timing: .steady(send: instance.deviceNow, recv: instance.deviceNow), identities: identities)
+    }
+    let start = Gesture(
+      changes: [], command: Command(name: "probe.start", args: ["id": "run00009", "startedAt": JSON(deviceNow), "join": true]),
+      predict: [.create("run", id: .given("run00009"), ["startedAt": JSON(deviceNow)])], gestureId: "start")
+    _ = try commits.commit(start, in: .product("probe"), to: &replica, as: instance, identities: identities, gestureIdTaken: false)
+    for _ in 0..<2 { try round(&replica, &instance) }
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["start/0 acked"])
+    let predicted = try #require(replica.outbox.first?.predict.first?.lattice.born)
+    #expect(predicted == (try Stamp("405000:0:r_aaaaaaaaaaaa")))
+    let delete = Gesture(changes: [.delete("run", "run00009")], gestureId: "delete")
+    _ = try commits.commit(delete, in: .product("probe"), to: &replica, as: instance, identities: identities, gestureIdTaken: false)
+    #expect(replica.outbox.last?.intent.deltas.first?.lattice.born == predicted)
+    for _ in 0..<4 { try round(&replica, &instance) }
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["start/0 acked", "delete/0 acked"])
+    #expect(refusals == ["delete"])
+    #expect(replica.outbox.last?.intent.deltas.first?.lattice
+      == Lattice(life: Life(.dead, try Stamp("5020:1:r_aaaaaaaaaaaa")), born: try Stamp("5020:0:r_aaaaaaaaaaaa")))
+  }
+
+  // §7.4: a replica with no epoch takes the answer's with the first result it records; a batch that records none takes none.
+  @Test func aBatchThatRecordsNoResultTakesNoEpoch() throws {
+    let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"), wholeScopes: true)
+    _ = try CommitPlanner(registry: Self.probe).commit(
+      Gesture(changes: [.put("day", RecordID("2026-09-01"), present: true, ["score": JSON(1)])], gestureId: "g1"), in: .product("probe"),
+      to: &replica, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    replica.update { $0.nextN = 2 }
+    let planner = PushPlanner(registry: Self.probe)
+    let request = try #require(try planner.number(&replica, at: 5000))
+    let answer = try PushResponse(json: [
+      "serverTime": 5010, "epoch": "ep-7", "as": "A", "lastN": 2, "results": [["n": 1, "s": "ok", "seq": 1], ["n": 2, "s": "ok", "seq": 2]],
+    ])
+    var receiving = instance
+    var epochs: [String?] = []
+    for step in planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+      try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+      if case .results = step { epochs.append(replica.meta.serverEpoch) }
+    }
+    #expect(epochs == [nil, "ep-7"])
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-7"])
+  }
+
+  // §7.5 step 2: a stored cursor covers only its own epoch's results, so an ok from a restored epoch at a lower seq stays acked.
+  @Test func anOkFromARestoredEpochBelowTheStoredCursorStaysAcked() throws {
+    let instance = Instance(actor: try Stamp.Actor("r_aaaaaaaaaaaa"), deviceNow: 5000, appVersion: "1")
+    var replica = LoadedReplica(
+      meta: ReplicaMeta(replica: "rp_1", state: .bound, account: "A"),
+      cursors: [.product("probe"): CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: 10).text, booted: true)], wholeScopes: true)
+    replica.update { $0.serverEpoch = "ep-1" }
+    _ = try CommitPlanner(registry: Self.probe).commit(
+      Gesture(changes: [.put("day", RecordID("2026-09-01"), present: true, ["score": JSON(1)])], gestureId: "g1"), in: .product("probe"),
+      to: &replica, as: instance, identities: try QueuedIdentities([:]), gestureIdTaken: false)
+    let planner = PushPlanner(registry: Self.probe)
+    let request = try #require(try planner.number(&replica, at: 5000))
+    let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-2", "as": "A", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 3]]])
+    var receiving = instance
+    for step in planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+      if case .epoch = step { break }
+      try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
+    }
+    #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue) \($0.resultEpoch ?? "-")" } == ["g1/0 acked ep-2"])
+  }
+
   // §7.4: an answer with no results is one batch, the last, which still moves ackThrough to the answer's lastN.
   @Test func anAnswerWithNoResultsStillMovesAckThrough() throws {
     var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")

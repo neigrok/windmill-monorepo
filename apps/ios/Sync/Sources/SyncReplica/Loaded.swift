@@ -87,6 +87,19 @@ public struct LoadedReplica: Sendable {
     return loadedEntries.filter { entry in held.contains { $0.utf8.elementsEqual(entry.gestureId.utf8) } }
   }
 
+  // §7.5 step 2: the scope's stored cursor covers an acked entry of the replica's epoch whose seq it has received whole.
+  public func covers(_ entry: OutboxEntry) -> Bool {
+    guard entry.state == .acked, let cleanSeq = cursors[entry.scope]?.cleanSeq, let seq = entry.resultSeq,
+          let epoch = entry.resultEpoch else { return false }
+    return seq <= cleanSeq && meta.serverEpoch?.utf8.elementsEqual(epoch.utf8) == true
+  }
+
+  // The entries of `scope` its stored cursor covers, in commit order; a partial load reads its covered selection.
+  public func covered(in scope: ScopeRef) -> [OutboxEntry] {
+    precondition(entrySelection.all || entrySelection.covered?.scope == scope, "the covered entries of \(scope) were read but not loaded")
+    return loadedEntries.filter { $0.scope == scope && covers($0) }
+  }
+
   // The sent entry numbered `n`, which a push result answers.
   public func sentEntry(numbered n: Int64) -> OutboxEntry? {
     precondition(entrySelection.all || entrySelection.numbered.contains(n), "the sent entry \(n) was read but not loaded")

@@ -182,10 +182,9 @@ public struct PushPlanner: Sendable {
     switch answer {
     case .ok(let response):
       let results = response.results
-      let size = max(1, resultsPerBatch)
-      let starts = results.isEmpty ? [0] : Array(stride(from: 0, to: results.count, by: size))
+      let starts = results.isEmpty ? [0] : Array(stride(from: 0, to: results.count, by: resultsPerBatch))
       let batches = starts.map { start in
-        let end = min(start + size, results.count)
+        let end = min(start + resultsPerBatch, results.count)
         return PushStep.results(ResultBatch(
           results: Array(results[start..<end]), lastN: response.lastN, epoch: response.epoch, isLast: end == results.count))
       }
@@ -222,8 +221,9 @@ public struct PushPlanner: Sendable {
       for later in replica.outbox where later.state == .sent && later.n! > n { try replica.move(later.localId, .rewind) }
       try refuse(entry.localId, code: malformed ? .invalid : .tooLarge, detail: nil, lastN: n - 1, in: &replica, instance: instance)
     case .results(let batch):
-      // A replica with no epoch takes the answer's first, so no result is recorded in an epoch it never took.
-      if replica.meta.serverEpoch == nil { replica.update { $0.serverEpoch = batch.epoch } }
+      // A replica with no epoch takes the answer's with its first result, or with ackThrough (§7.4).
+      let records = batch.results.contains { replica.sentEntry(numbered: $0.n) != nil }
+      if replica.meta.serverEpoch == nil && (records || batch.isLast) { replica.update { $0.serverEpoch = batch.epoch } }
       for result in batch.results { try apply(result, lastN: batch.lastN, epoch: batch.epoch, to: &replica, instance: instance) }
       if batch.isLast { replica.update { $0.ackThrough = batch.lastN } }
     case .epoch(let epoch):
@@ -234,7 +234,8 @@ public struct PushPlanner: Sendable {
   // MARK: Results
 
   // A result applies only to the entry still sent with its n; any other entry moved on since the request. An `ok` whose
-  // seq its scope's cursor already covers in the same epoch (its own page or frame came first) resolves at once (§7.5).
+  // seq its scope's stored cursor already covers (its own page or frame came first) resolves its own entry, and no other
+  // (§7.5 step 2).
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.sentEntry(numbered: result.n) else { return }
     switch result.verdict {
@@ -247,10 +248,7 @@ public struct PushPlanner: Sendable {
       }
       replica.update { $0.admit(entry.intent.deltas.flatMap(\.lattice.stamps)) }
       if let write { try applyWriteMap(write, of: entry.localId, in: &replica, instance: instance) }
-      let cleanSeq = replica.cursors[entry.scope]?.cursor.flatMap(Cursor.init(decoding:))?.cleanSeq
-      if let cleanSeq, seq <= cleanSeq, replica.meta.serverEpoch.map(JSON.string) == .string(epoch) {
-        try replica.move(entry.localId, .resolve)
-      }
+      if let acked = replica.entry(entry.localId), replica.covers(acked) { try replica.move(entry.localId, .resolve) }
     }
   }
 
@@ -339,7 +337,8 @@ public struct PushPlanner: Sendable {
   // §7.7 step 1 for clock-skew, after the answer's sample: the clock restarts from the pair maximum of (physNow, 0) and
   // admittedHigh; unprocessed sent entries return to ready; the refused entry and every held and ready entry take one
   // fresh tick each of this instance's clock, in its actor whichever instance wrote the entry, in commit order, which
-  // becomes their stamp.
+  // becomes their stamp; and every unsourced stamp, judged before the restamp, takes the lesser of itself and the
+  // clock's reading as it restarted (step 1.5).
   func recoverSkew(_ localId: String, lastN: Int64, in replica: inout LoadedReplica, instance: Instance) throws {
     let physNow = replica.meta.physNow(deviceNow: instance.deviceNow)
     replica.update { meta in meta.hlc = HLC.pairMaximum(HLC(ms: physNow), HLC(pairOf: meta.admittedHigh)) }
@@ -351,12 +350,15 @@ public struct PushPlanner: Sendable {
     var clock = replica.meta.hlc
     var high = replica.meta.admittedHigh
     let plan = replica.outbox.filter(\.isQueued).map { (localId: $0.localId, own: Restamp.ownRegisters(of: $0)) }
+    let unsourced = Restamp.unsourced(in: replica)
     for (entryId, own) in plan {
       let n = clock.tick(physNow: physNow, actor: instance.actor)
       for register in own { Restamp.move(register, of: entryId, to: n, in: &replica) }
       replica.update(entry: entryId) { $0.stamp = n }
       high = max(high, n)
     }
+    let reading = replica.meta.hlc.reading(actor: instance.actor)
+    for stamp in unsourced { Restamp.lower(stamp, to: reading, in: &replica) }
     replica.update { meta in
       meta.hlc = HLC(pairOf: high)
       meta.hlcHigh = high
@@ -478,7 +480,7 @@ public struct PushPlanner: Sendable {
 
 // One primitive, `move`: a register an entry wrote takes a new stamp, and borns, carried lives and guards that named
 // its old stamp follow it in every later held, ready or sent entry.
-enum Restamp {
+package enum Restamp {
   struct Register: Hashable {
     enum Part: Hashable {
       case intent(Int)
@@ -566,6 +568,63 @@ enum Restamp {
           }
         }
       }
+    }
+  }
+
+  // §7.7 step 1.5 a born, or a life a delta carries unchanged, in a held or ready entry.
+  package struct Carried: Hashable {
+    enum Part: Hashable {
+      case born
+      case life
+    }
+
+    let localId: String
+    let delta: Int
+    let part: Part
+
+    // The stamp as `replica` holds it; nil once its entry is gone.
+    package func stamp(in replica: LoadedReplica) -> Stamp? {
+      guard let entry = replica.entry(localId), entry.intent.deltas.indices.contains(delta) else { return nil }
+      let lattice = entry.intent.deltas[delta].lattice
+      return part == .born ? lattice.born : lattice.life?.stamp
+    }
+  }
+
+  // §7.7 step 1.5: the borns and carried lives above admittedHigh, in `judged` entries, that no unacked entry sources.
+  package static func unsourced(in replica: LoadedReplica, judged: (OutboxEntry) -> Bool = \.isQueued) -> [Carried] {
+    let written = Set(replica.outbox.filter { $0.isQueued || $0.state == .sent }.flatMap { entry in
+      let own = ownRegisters(of: entry).filter { $0.register == .life }.map { delta($0.part, of: entry) } + entry.predict
+      return own.compactMap { delta in delta.lattice.life.map { WrittenLife(key: delta.key, stamp: $0.stamp) } }
+    })
+    let unsourced = { (key: RecordKey, stamp: Stamp) in
+      stamp > replica.meta.admittedHigh && !written.contains(WrittenLife(key: key, stamp: stamp))
+    }
+    return replica.outbox.filter(judged).flatMap { entry in
+      entry.intent.deltas.enumerated().flatMap { index, delta -> [Carried] in
+        let creates = delta.lattice.life.map { $0.isAlive && $0.stamp == delta.lattice.born } ?? false
+        let born = delta.lattice.born.map { !creates && unsourced(delta.key, $0) } ?? false
+        let life = delta.lattice.life.map { $0.stamp < entry.stamp && unsourced(delta.key, $0.stamp) } ?? false
+        return [born ? Carried.Part.born : nil, life ? .life : nil].compactMap { $0 }
+          .map { Carried(localId: entry.localId, delta: index, part: $0) }
+      }
+    }
+  }
+
+  // The life register of a record, as a delta writes it.
+  struct WrittenLife: Hashable {
+    let key: RecordKey
+    let stamp: Stamp
+  }
+
+  // The carried stamp takes the lesser of itself and `reading`.
+  static func lower(_ carried: Carried, to reading: Stamp, in replica: inout LoadedReplica) {
+    replica.update(entry: carried.localId) { entry in
+      var lattice = entry.intent.deltas[carried.delta].lattice
+      switch carried.part {
+      case .born: lattice.born = lattice.born.map { min($0, reading) }
+      case .life: lattice.life = lattice.life.map { Life($0.state, min($0.stamp, reading)) }
+      }
+      entry.intent.deltas[carried.delta].lattice = lattice
     }
   }
 
