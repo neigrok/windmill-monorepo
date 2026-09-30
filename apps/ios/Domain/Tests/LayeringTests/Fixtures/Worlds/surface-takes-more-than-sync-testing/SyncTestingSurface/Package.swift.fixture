@@ -1,0 +1,16 @@
+// swift-tools-version: 6.2
+import PackageDescription
+
+let package = Package(
+  name: "SyncTestingSurface",
+  platforms: [.iOS(.v18), .macOS(.v15)],
+  dependencies: [.package(path: "../Sync"), .package(path: "../Domain")],
+  targets: [
+    .testTarget(
+      name: "SyncTestingSurfaceTests",
+      dependencies: [
+        .product(name: "SyncTesting", package: "Sync"), .product(name: "SyncEngine", package: "Sync"), .product(name: "DomainKit", package: "Domain"),
+      ]),
+  ],
+  swiftLanguageModes: [.v6]
+)

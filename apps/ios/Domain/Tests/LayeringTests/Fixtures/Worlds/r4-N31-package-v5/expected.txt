@@ -1,0 +1,1 @@
+Domain/Package.swift: language-modes [5], not [6]

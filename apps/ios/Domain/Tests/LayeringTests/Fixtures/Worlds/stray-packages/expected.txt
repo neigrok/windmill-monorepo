@@ -1,0 +1,2 @@
+Domain/Vendor/Package.swift: nested-package
+Tools/Package.swift: unknown-package

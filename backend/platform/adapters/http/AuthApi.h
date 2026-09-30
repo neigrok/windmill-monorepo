@@ -23,7 +23,7 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class AuthApi {
 public:
   AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
-          std::string cookieDomain, std::shared_ptr<GoogleOAuthClient> google = nullptr,
+          SessionCookieScopes cookieScopes, std::shared_ptr<GoogleOAuthClient> google = nullptr,
           std::string appUrl = "", std::shared_ptr<AppleOAuthClient> apple = nullptr);
 
   void requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST   /v1/auth/magic-link
@@ -51,7 +51,7 @@ private:
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<SignupFork> signupFork_;  // null on a deploy with no forkable product — both fork steps no-op
   bool secureCookies_;
-  std::string cookieDomain_;
+  SessionCookieScopes cookieScopes_;
   std::shared_ptr<GoogleOAuthClient> google_;  // null when Google sign-in is unconfigured
   std::string appUrl_;                         // where the Google callback lands the browser
   std::shared_ptr<AppleOAuthClient> apple_;    // null when Apple sign-in is unconfigured

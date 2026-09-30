@@ -1,0 +1,3 @@
+Domain/Sources/DomainKitTesting/Preview.swift:1: import SwiftUI
+Sync/Sources/SyncEngine/Direct.swift:1: import SQLite3
+Sync/Sources/SyncEngine/Preview.swift:1: import SwiftUI

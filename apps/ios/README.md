@@ -1,150 +1,127 @@
 # Windmill iOS
 
-One SwiftUI app for journal and gym, with a roadmap link to the web. Product libraries depend on
-`WindmillPlatform`; the app composes them under one account.
+`apps/ios` holds the SwiftPM package `WindmillSync` in `Sync/`, the client of the sync engine
+([engine.md](../../docs/foundation/engine.md)); `WindmillDomain` in `Domain/`, the domain kit every feature's
+logic is declared on ([domain-kit.md](../../docs/foundation/domain-kit.md)); and `SyncTestingSurface/`, a package of
+tests only, which proves from outside `WindmillSync` that its test harness is enough for the domain kit. The one
+product domains so far are gym Notes and Bodyweight (`Domain/Sources/GymDomain`); the `domain-feature` skill
+(`.claude/skills/domain-feature/`) teaches building the next one from it. The one app is `SyncProbe/`, the engine's dev
+and test host over the probe product, which never ships; there is no product app target yet.
 
 ## Layout
 
 | Path | Responsibility |
 |---|---|
-| `project.yml` | XcodeGen app/test configuration; `Windmill.xcodeproj` is generated. |
-| `App/` | App composition, assets and dedicated Sentry configuration/privacy filtering. |
-| `Tests/App/`, `UITests/` | App integration tests and simulator UI tests. |
-| `WindmillKit/Sources/WindmillPlatform/` | Account, transport, session, product interface, tokens and shell. |
-| `WindmillKit/Sources/WindmillJournal/` | Journal's daily canvas. |
-| `WindmillKit/Sources/WindmillGym/` | Training log, routines and Coach. |
-| `WindmillKit/Sources/WindmillRoadmap/` | Link to the web product. |
-| `WindmillKit/Tests/` | Package tests, mirroring Sources. |
+| `Sync/Sources/SyncCore/` | Pure primitives every role shares: JSON and its JCS bytes, stamps and the HLC, lattice joins, the registry, id making, fractional keys, the scope digest, constants, and the wire (§9): ids and scope references, rows, deltas, intents, cursors, and the push, pull and live messages. It imports CryptoKit in its digest file and nothing else. |
+| `Sync/Sources/SyncAPI/` | What a product domain or the domain kit names: the values (`Change`, `Gesture`, `CommitOutcome`, `Record`, `Notice`, …) and the `Replica` port with its readers. It imports only `SyncCore`. |
+| `Sync/Sources/SyncReplica/` | The client algorithms (§7, §8) as pure planners. An Action loads a working copy (`LoadedReplica`, `LoadedDevice`), a planner changes it, and every change is a recorded write, so the copy's writes are the whole batch the store commits. Beside them, the retry backoff and the scopes in doubt with their re-pulls (§7.4, §7.9), which the engine's loops keep in memory. No SQLite, networking or UI. |
+| `Sync/Sources/SyncStore/` | The local store (§2.5): SQLite through GRDB, WAL with `synchronous=FULL`. Every table names a replica by a handle, so a re-identify changes the one row holding its id (§7.11). A scope's confirmed rows and a boot's staging are each a row set: a swap, a dropped staging, a forgotten scope and a purge only move which set holds which role, and `Store.sweep` deletes the rows of sets no view reads, a slice a transaction. `StoreTransaction` loads only the rows a planner's read set names, and of the outbox every entry or only those its entry selection names: the entries that touch those rows, the held gestures, a sent entry by number, the first entries a cursor covers; `BatchWriter` applies a batch and keeps the ref index and the outbox's touch index in step; `Transactions.swift` holds one Action per transaction, each one load → plan → batch; a commit that mints ids its load did not cover loads them all and plans again, and draws a gesture id again while the device carries it. The only target that imports GRDB. |
+| `Sync/Sources/SyncEngine/` | The runtime. `SyncEngine` is what products commit and read through (it conforms to the `Replica` port); it runs engine start and the hello, releases holds on its timer, sends through the `Sender` (§7.4: a push answer's results in batches), pulls through the `Puller` (§7.5: a page in chunks of rows and the entries its cursor covers settled in slices, boot, staging, reset, epoch change, the digest check, live frames; §7.9: the scopes in doubt and their re-pulls), follows the subscription set on the `LiveChannel` (§9.5: follow, heartbeat, reconnect), and deletes the rows no view reads through the `Sweeper` (§2.5). Every write takes the store's writer in the order it asked for it, and a pull or push unanswered for `REQUEST_TIMEOUT_MS` is a transport error. Each worker is one loop over a step function, single-flight, over the `SyncTransport` port, whose `HTTPTransport` speaks §9 over `URLSession`, the live socket over `URLSessionWebSocketTask`. `activeReplica()` reads the id of the replica it acts on, and `events()` announces each change of it (§7.12). UI modules observe `RecordsView`, `NoticesView`, `UndoOffers` and `SyncStatus`, refreshed from SQLite in commit order. A `RecordsView` lists one type, every record or those whose top-level ref field names an id (ER-12), as the one-shot read of the same list does, and asking for a type of another scope or a field that is no ref throws malformed, as that read does. A view is `.loading` until its first load lands; first loads run one at a time in a lane of their own, so no refresh waits behind one, and every read runs off the main actor. A change reads again only the records of a view's type it touched, and a scope's first pull once, when the change may have moved it; a read that fails is retried after a backoff. The engine holds the last views asked for, so a SwiftUI body that does not keep its view finds it loaded. Clocks, randomness, the session token, the fork guard's copy, connectivity and product bindings are ports. `Lifecycle.swift` holds engine start with the fork guard, and the replica lifecycle the app drives (§7.10): `signIn` answers a `SignInSession` holding the signed-out decisions due, which the app answers and `complete`s (an answer counts only for the work it was shown), and `resumeSignIn` picks up a sign-in left pending; `signOut` flushes for at most `SIGNOUT_FLUSH_MS`, holds the replica from the sender, and answers a `SignOutSession` counting what is unsent, which the app `finish`es once with Keep or Discard (Discard deletes only the entries it counted) or `cancel`s; `dormantReplicas` and `discardDormant` cover what Keep left behind. |
+| `Sync/Sources/SyncIOS/` | The iOS adapters. `AppLifecycle` turns leaving the app (the last foreground scene going to the background) into `leave()` and a flush inside the background time `BackgroundActivity` borrows, handed back exactly once, and coming back into `foreground()`; `KeychainTokenStore` keeps each account's session token in the Keychain, readable after the first unlock and never leaving the device; `ProtectedStorage` holds the database in a directory protected until the first unlock, beside the fork guard's copy in a file excluded from backup. The Keychain and UIKit halves compile on iOS only. |
+| `Sync/Sources/SyncModelServer/` | The server half of the engine over in-memory tables, from the spec: the credentials a request's raw headers send and what they resolve to (§9.1), hello, push with §6.1 admission, faults and poison, server-origin calls, pull, the live channel, text merge, epoch and restore. One value is one server process, whose `physNow()` never steps back (§10.2). Product rules plug in through `ServerRules`, which a product with no rules of its own conforms to with an empty body; `ProbeServerRules` binds the corpus's probe product. It imports only `SyncCore`. |
+| `Sync/Sources/SyncTesting/` | Test support. `SteppedEngine` is the step-mode harness the domain kit's `Harness` wraps (kit §14.2, ER-9): a real `SyncEngine` whose loops never start, over an in-memory store, on a `SimClock` and a seeded random source, into one model server its devices share; each public call runs the engine's step functions on the calling thread to their end (`sync()`, `advance(ms:)`, `leave()`, `device()`, `failNextCommit()`, and the reads of `drawn` and `stored`, whole or narrowed by a ref field, notices and Undo offers); on the main actor it hands the `RecordsView`s a UI module observes, and `settleViews()` waits until they show every change and first load. `ModelServerHandle` is that server process, with its sessions, which read each call's token as the `Authorization: Bearer` header the transport sends, whose revocation closes the sockets opened under them, and its scripted refusals; `SimNetwork` carries each device's calls to it, with the faults a simulation arms: requests dropped, delayed or served twice, replies lost, credentials lost on the way, answers a proxy makes, poisoned intents. `Simulator` is §11.3's replay simulator: phones on clocks of their own under a seeded schedule of gestures, holds, Undo, process death (between transactions, between a page's chunks, between its settling slices and between a push answer's result batches), the sweep, sign-in and sign-out, revoked sessions and another account's session held as the phone's own, going offline, clock skew and jumps, epoch changes and restores, restored and cloned stores, with a check at every answer and frame served as anyone but the replica's account that nothing it pulled changed, and at every step that each change of a phone's active replica was announced once; then quiescence and the invariant checks, and §11.2 property 3. Beside them: the golden-corpus reader, the client-step language that drives a device through the corpus, the transcript runner that drives real engines through `protocol/*.jsonl`, the seeded generators for property tests and simulation gestures, doubles of the engine's ports (`SimClock`, a seeded random source, in-memory token and fork-guard stores, a connectivity switch, `CommitFaults` to fail the next commit, `Killer` to kill at a crash point), and the wire doubles `ScriptedTransport`, `TranscriptTransport` and `FakeLiveConnection`. |
+| `Sync/Tests/SyncCoreTests/` | Unit and property tests, one file per `SyncCore` file they test, and the layering check over every target. |
+| `Sync/Tests/SyncAPITests/` | The product-facing values: each is equal only when its identifiers and texts are, byte for byte. |
+| `Sync/Tests/SyncReplicaTests/` | Planner properties: Undo restores, a commit over its read set decides as one over every row, partial loads trap on rows and outbox entries they did not load, clock-skew recovery terminates against `SyncModelServer` (engine §11.2 property 8) and lowers a born a receipt replay left unsourced (§7.7 step 1.5), and each doubt's re-pulls draw on the scope's own `k`, which one stretch of 30 s followed returns to 0. |
+| `Sync/Tests/SyncStoreTests/` | The whole client corpus through SQLite; the store's Actions over their partial loads deciding as the planners over the whole replica, step by step (commits that mint, retire and carry held removals, numbering, results, acks, Undo); minted gesture ids another gesture holds drawn again; schema constraints, the ref-index and touch-index properties, the statements a commit and a push result read with their query plans, and kill-at-every-step crash tests. |
+| `Sync/Tests/SyncEngineTests/` | The engine over an in-memory store and scripted doubles, its loops in step mode: commits and their contract, holds, Undo and retire on the release timer, the readers, observation order, the records views (whole and narrowed; first loads in their lane, beside refreshes and many at once; the reads each change costs; retries after a failed read; and each view equal to its one-shot read, and each narrowed read to the whole read it narrows, after every step of a random history over two devices that boots again every 25 steps), every push outcome of the sender, every pull outcome of the puller with live frame admission, a page's chunks and a push answer's result batches with a death between two, the scopes in doubt, the live channel's socket, heartbeat and reconnects, the order the writer passes in, two devices over one `SimNetwork` stepped and with their loops running, the replica lifecycle (every §8.2 row, the lineage vectors through the engine with their announcements of the active replica, two devices meeting at a sign-in, and a kill at every step of sign-in, sign-out and the fork guard), `HTTPTransport` against a stubbed URL loader, its live socket against WebSocket and refusing servers on the loopback, and what a phone Coach needs of the engine (Coach §11) over the gym registry: the first pull of history, one commit that reads, mints and writes, a read that sees it at once, and every seat change announced while the old seat stands. |
+| `Sync/Tests/SyncIOSTests/` | Leaving the app through the lifecycle's notifications on a real engine (the flush inside lent background time, handed back once, cancelled when the time runs out), and the storage directory over real files: the fork guard's copy is excluded from backup, so a store restored from a backup re-identifies and the original keeps its replica. |
+| `Sync/Tests/SyncModelServerTests/` | Model-server properties the corpus pins only by example: credentials past the corpus's headers, admission's digest, counters and rollback, paging and live frames end to end, text merge, the push and pull envelopes over the body as received, push and call bookkeeping, and the clock. |
+| `Sync/Tests/SyncConformanceTests/` | The corpus runner: one test case per vector, one handler per corpus file. Each `protocol/*.jsonl` transcript runs its client half through real engines and its server half through `SyncModelServer`. |
+| `Sync/Tests/SyncTestingTests/` | The step-mode harness's surface; the replay fuzz over many seeds, with the coverage floor every fuzz of 128 × 300 must hold, and a run's determinism by its seed; property 3; that the checks see what they check (a phone the server disagrees with, a record alive again, a notice that lost what it held, rows of a tree the phone may not read) and that a finished run frees its server; and a kill at every step of scenarios that between them reach every transaction of design §3.5 on both sides of its commit. |
+| `Sync/Tests/SyncBenchmarks/` | The engine's budgets (design §11 M11), measured on a store on disk: commit latency online, offline, and beside a re-boot's pull pages and a push answer's results; boot, cold start and memory with a 10 000-set gym history made through the engine on a model server in the process, each view's first load timed as its share of the main actor and as its whole wait; view refresh after a commit (a session's narrowed view, alone and beside the first load of every set; a set logged in another session, alone and beside six views of other types; the whole-type view of every set) and after a pull page; and a boot from the probe server over HTTP. They run only under `SYNC_BENCH=1`, one at a time, and print each measure as a `bench` line beside its budget; `Sync/bench.sh` runs them on the Mac or in a simulator. |
+| `SyncProbe/` | The probe host app (XcodeGen, `project.yml`): the real engine and every `SyncIOS` adapter over the probe product alone, the registry `windmill_server_probe` serves, through `FaultInjectingTransport` (offline, forced 401 and 503) and a skewable device clock, with a log of every exchange, live frame and lease of background time. With `-scenario <name> -report <path>` it runs one scenario of `Scenarios.swift` headless and writes a JSON report; otherwise it shows its screens, one file each under `Sources/Screens/`. `e2e.sh` builds it, boots two simulators of its own, runs every scenario against the local probe server and checks the server's side. |
+| `SyncTestingSurface/` | A package that depends only on `WindmillSync`'s `SyncTesting` product. Its tests drive two devices through `SteppedEngine`'s public surface, its narrowed reads and views included, and declare their own server-rules double, as the domain kit's `Harness` does. |
+| `Domain/Sources/DomainKitNFC/` | One function, `nfc(_:)`, the only Foundation the kit reaches; `LayeringTests` pins its text (kit §2.3). |
+| `Domain/Sources/DomainKit/` | The kit (kit §3–§12), pure logic over `SyncCore` and `SyncAPI`: the entity protocols, typed ids and `Fields`; value objects and the text, number, choice and count specs; `Valid` and checks; local days and zones; the rule book; the reader, repositories and capacity; plans and their translation to one gesture; actions and `ActionRunner`, the only holder of the `Replica` port; drafts and their save; the standard `SaveDraft`, `Remove` and `Move`; refusals and notices. It names no product. |
+| `Domain/Sources/DomainKitTesting/` | What a product's tests use (kit §14): `Harness` over `SyncTesting`'s `SteppedEngine`; `RegistryCheck`, `RuleBookCheck` and `RuleBookParity`; `ProductCorpus`, which runs a product's value and action vectors from `packages/api-contract/<product>/domain/`; and `Contract`, which reads `packages/api-contract/` and gives the kit's values their vector JSON forms. |
+| `Domain/Sources/GymDomain/` | Gym's feature domains on the kit: Notes (the `Note` entity and its specs, positions, the Coach's `save_note` call) and Bodyweight (a weigh-in per local day, saved whole, with its day rules and derived reads); the gym refusal type and rule book. Their vectors live in `packages/api-contract/gym/domain/` and `packages/api-contract/gym/rules/`. |
+| `Domain/Tests/DomainKitTests/` | The kit's traps, each in a process of its own; `Valid`'s refusal of a U+0000 no check caught; and the compile attacks: every file under `Attacks/` compiles to SIL against this build's modules, as product-domain code or as UI code (main actor by default, warnings as errors), and a `fail` attack must fail with the error its first line names. |
+| `Domain/Tests/DomainKitTestingTests/` | The runner of the kit's shared vectors, `packages/api-contract/domain-kit/`, over the probe declarations its README lists (a trap a vector expects runs in a process of its own); the harness over the real engine and model server; and the three checks against a registry built for them. |
+| `Domain/Tests/LayeringTests/` | Kit §2.4: the closed world of the four packages read from `swift package dump-package`, their constant-data manifests and settings, §2.2's edges and closures, §2.3's source rules over swift-syntax's parser, the CI workflows, and each app project that exists, `SyncProbe/project.yml` among them; with one fixture per rule under `Fixtures/`. |
 
-`Package.swift` enforces product dependencies on platform, never on another product.
-See [repository structure](../../STRUCTURE.md) and [design canon](../../docs/design/readme.md).
+The package is written in the Swift 6 language mode with strict concurrency, for iOS 18 and macOS 15.
+`SyncCore` and `SyncAPI`, which other packages compile against, enable `MemberImportVisibility` and
+follow the domain kit's source rules: no import attributes, no access-modified imports, no `#if`.
 
 ## Build and test
 
-```sh
-brew install xcodegen
-cd apps/ios
-xcodegen generate       # repeat after project.yml changes
-open Windmill.xcodeproj
-```
-
-Choose an installed iPhone simulator (`xcrun simctl list devices available`). For example:
+Everything runs on a Mac without a simulator. `swift test` needs Xcode's toolchain, because the
+Command Line Tools ship no Swift Testing. Every build runs the explicit import check, so a module
+imports only what its target declares:
 
 ```sh
-xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
-  -destination 'platform=iOS Simulator,name=iPhone 17'
-
-(cd WindmillKit && xcodebuild test -scheme WindmillKit-Package \
-  -destination 'platform=iOS Simulator,name=iPhone 17')
-
-# App tests, including UITests on a booted simulator
-xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-  -destination 'platform=iOS Simulator,name=iPhone 17'
+cd apps/ios/Sync
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer \
+  xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
 ```
 
-The package targets iOS 17+; use a simulator instead of `swift build`. Set
-`DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer` if the selected toolchain cannot find
-Xcode. Keep the full monorepo: gym tests read `packages/api-contract/gym-ladder.json` directly.
-`WMApiBaseURL` in `project.yml` defaults to production; `http://localhost:8088` uses the local
-backend with the declared ATS local-networking exception.
+Keep the full monorepo: the corpus runner finds `packages/api-contract/sync/corpus/` by walking up from
+its own file. `WINDMILL_SYNC_CORPUS=<path>` points it elsewhere.
 
-[CI](../../.github/workflows/ios.yml) chooses an available iPhone simulator, builds the app,
-runs crash-report tests and tests WindmillKit. The full UI suite requires a separate run.
-
-## Crash reports and releases
-
-The app bundle owns Sentry Cocoa; product packages do not depend on it. `IOS_SENTRY_DSN` targets
-the dedicated iOS project and is required for Release. Debug without it sends no crash reports;
-CI supplies the repository secret only on trusted runs.
+**Simulation.** The replay fuzz runs 128 seeds from 1 in every `swift test`, each 300 actions before quiescence.
+`SYNC_SIM_SEEDS=<n>` runs more, `SYNC_SEED=<s>` starts elsewhere, and `SYNC_SIM_ACTIONS=<n>` lengthens each run. A
+failure names its seed and the last actions; `SYNC_SEED=<s> SYNC_SIM_SEEDS=1` runs that seed alone:
 
 ```sh
-xcodebuild build -project Windmill.xcodeproj -scheme Windmill -configuration Release \
-  -destination 'platform=iOS Simulator,name=iPhone 17' IOS_SENTRY_DSN="$IOS_SENTRY_DSN"
-
-xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-  -destination 'platform=iOS Simulator,name=iPhone 17' -only-testing:WindmillCrashReportTests
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer SYNC_SIM_SEEDS=1000 \
+  swift test --explicit-target-dependency-import-check error --filter SimulatorTests/everySeed
 ```
 
-Reports retain exception types/stacks and release/build/device diagnostics. Messages, mechanism
-data, identity, requests, breadcrumbs, extras and custom contexts are removed. Memory inspection,
-screenshots, view hierarchies, network tracking, replay, tracing and automatic session tracking
-are disabled. Neither CI nor release uploads dSYMs; upload matching release dSYMs to the iOS
-Sentry project for symbolication.
+A fuzz of 128 × 300 or more also holds the coverage floor (engine §11.3, corpus README "Replay coverage"): it fails when
+an event `SimulatorTests` lists came from none of its seeds. Each listed event comes, on average, from ten or more of a
+fuzz's seeds at that size, whatever the first seed; `coverage-survey.sh [fuzzes] [first seed]` shows it over fuzzes
+1000 seeds apart (30 from seed 1 by default), names each fuzz that failed and then exits 1, and runs again whenever the
+list or the simulator's rates change.
 
-[iOS release](../../.github/workflows/ios-release.yml) archives the main-push commit that passed
-CI and uploads it to App Store Connect. Manual dispatch: `gh workflow run ios-release.yml`.
-Build number is the release workflow run number; bump `MARKETING_VERSION` in `project.yml` by
-hand. Automatic signing uses repository secrets `APPLE_TEAM_ID`, `ASC_KEY_ID`, `ASC_ISSUER_ID`,
-`ASC_KEY_P8_BASE64` and `IOS_SENTRY_DSN`; the archive is signed for development, so the team needs
-one registered device. TestFlight availability requires successful signing,
-upload and App Store Connect processing.
+**Benchmarks.** `bench.sh` runs `SyncBenchmarks` in release, on the Mac or inside an iOS simulator it makes and
+deletes (`SIM=<udid>` uses a booted one), in about five minutes, most of them making the history. Each measure prints one
+`bench` line beside its budget; `SYNC_BENCH_REPORT=<path>` also appends each as a JSON line, and
+`SYNC_BENCH_PROBE_URL=http://127.0.0.1:<port>` adds the boot from a probe server (`backend/RUNNING.md`) on a throwaway
+database:
 
-## Product, account and storage boundaries
-
-Manual writing and training work signed out. Journal uses versioned page files; gym uses a shelf,
-set queue and bodyweight store. Each is keyed by account with a separate anonymous store.
-Anonymous work is claimed on verified sign-in. Legacy files are attributed to the stored session
-or quarantined. Unverified accounts keep their own local room; only confirmed 401 responses sign
-out. Foreground retries verification, and rooms reconnect on account/verification changes.
-
-Gym's `TrainingStore.start` owns all workout starts. Offline starts retain their ids and timestamps;
-sets drain before and after claims. Queue refusals use machine codes. The finish sheet appears
-after persistence and its dismissal writes nothing. Workout clocks use saved timestamps and freeze
-at finish. Live rack entry and routine targets have separate validation bands. Bundled movement
-ids let signed-out workouts use the backend catalogue's identities.
-
-Coach persists account-scoped questions, request/attachment ids and partial replies. Retries retain
-identity; Stop preserves partial text and completed actions. The native picker retains one image,
-normalized to JPEG within 4096 pixels per edge and 5 MiB, through upload retries. Retained images
-use authenticated storage. See [gym data rules](../../backend/products/gym/ARCHITECTURE.md) and
-[Coach's conversation contract](../../docs/gym-coach-contract.md).
-
-Email sign-in accepts a six-digit code or pasted magic link. Apple sign-in is configuration-gated;
-see [activation](../../backend/AUTH.md#apple-sign-in-activation) and
-[account linking](../../backend/AUTH.md).
-
-## Shell
-
-`ProductModule` supplies room, hub line, entry wording and device holdings. The shell owns the hub,
-capsule, account and appearance; products own navigation and palettes. `hostsTopChrome` places
-`CapsuleButton` and `YouSeat` inside the product toolbar; other rooms receive a safe-area inset.
-`roomDepth` reserves the home edge gesture for a root view. Launch restores the last room; first-use
-state is device-local in `FirstRun.swift`. Appearance supplies both window and room overrides.
-
-## Universal links
-
-The app declares `applinks:windmill.works` and routes `onOpenURL` through `AuthStore.arrived`.
-`MagicLink.token(in:)` reads the fragment of `https://windmill.works/#/auth?token=<secret>`.
-`WMUniversalLinksEnabled` is false; the repository contains no domain association file.
-
-Activation requires a paid Apple Developer team with Associated Domains enabled for
-`works.windmill.app`, plus `https://windmill.works/.well-known/apple-app-site-association`, served
-as JSON over HTTPS without redirects or authentication:
-
-```json
-{ "applinks": { "details": [
-    { "appIDs": ["TEAMID.works.windmill.app"],
-      "components": [ { "/": "/", "#": "/auth?token=*" } ] } ] } }
+```sh
+bash apps/ios/Sync/bench.sh              # or: bash apps/ios/Sync/bench.sh simulator
 ```
 
-Keep the fragment condition: a root-path-only claim would also open unrelated site links in the
-app. The `?` glob matches any single character. After deployment, set `WMUniversalLinksEnabled`
-true in `project.yml`; it records configuration state and is not read by app code. Token parsing
-and arrival handling have package tests; routing needs a signed build and deployed association.
+**The domain kit.** `WindmillDomain` builds `WindmillSync` as a dependency. Its compile attacks run the Xcode
+toolchain's `swiftc` against the modules the build made; its layering tests run `swift package dump-package` on every
+package, and `xcodegen` and `xcodebuild` on the app fixtures and on `SyncProbe/project.yml` when `xcodegen` is installed:
 
-## Known gaps
+```sh
+cd apps/ios/Domain
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+```
 
-- Journal lacks search, voice, Echoes, nudges and week view. Day markers are inline; pinning them
-  to the current scroll bounds places them behind the status bar.
-- Apple sign-in and universal-link activation are disabled in `project.yml`.
-- `ProductModule` has no settings slot, so gym settings live under Routines. `ShellActions` cannot
-  open sign-in directly; Coach's sign-in action opens You first. The plan meter and hub summaries
-  are incomplete, and there is no launch asset.
-- Gym renders kilograms even when the account prefers lb. Clocks count up; there are no rest
-  notifications. Settings preserve server `restSeconds` and `restSound` without using them.
-- Connected-log grants are created/revoked on web; iOS displays connection state and web links.
-- Native gesture acceptance remains incomplete for routine reorder, jump-sheet drop and refusal
-  dismissal. Dynamic Type support is partial; the routine editor still uses fixed sizes. Tab
-  selection contrast and accessibility require native acceptance.
-- Quarantined pages and workouts have no recovery UI. Device files use default data protection
-  and remain included in iCloud/iTunes backup.
+**The harness from outside.** `SyncTestingSurface` builds `WindmillSync` as a dependency:
+
+```sh
+cd apps/ios/SyncTestingSurface
+DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer swift test --explicit-target-dependency-import-check error
+```
+
+**The probe app end to end.** `e2e.sh` needs XcodeGen, a free simulator runtime, and `windmill_server_probe` on a
+throwaway database with its dev endpoints (`backend/RUNNING.md`, the probe server); dev sign-in, a revoked session and a
+regenerated epoch come from there. It builds the app, makes and boots two simulators, runs each scenario (the probe's
+launch arguments, leave flush, relaunch release, live convergence, fork guard, 401 and re-authentication, a pull under a
+revoked session, a live socket under a revoked session, another account's credential held as the account's, clock skew,
+a clock jump across a kill, epoch change, sign-in lineage) and deletes the simulators; `SIM_A`, `SIM_B` and `PROBE_APP`
+reuse booted simulators and a built app:
+
+```sh
+cd backend && DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" PORT=8089 ./build/windmill_server_probe &
+WM_E2E_DB=wm_sync_test bash apps/ios/SyncProbe/e2e.sh           # or name scenarios: e2e.sh live fork-guard
+```
+
+**Corpus.** Each vector of a corpus file with a handler in `SyncConformanceTests/Handlers.swift` is one
+test case, compared with its `expect` by JCS bytes. A corpus file without a handler fails the run, and so
+does one the role table in `SyncTesting/Corpus.swift` does not classify. The client-step files also run
+through the SQLite store, in `SyncStoreTests`.
+
+**Property tests** draw a fresh seed on every run and name it in any failure. Replay one with
+`SYNC_SEED=<seed> swift test --filter <test>`.
+
+[CI](../../.github/workflows/ios.yml) checks the generated registry, runs `WindmillSync`'s `swift test` on macOS, builds
+that package and the `SyncProbe` app for the iOS simulator, and runs the tests of `WindmillDomain` and
+`SyncTestingSurface`. It does not run `e2e.sh`, which needs the local backend.

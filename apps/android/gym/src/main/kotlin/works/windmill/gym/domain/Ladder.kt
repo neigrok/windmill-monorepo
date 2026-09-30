@@ -5,7 +5,7 @@ import kotlin.math.floor
 import kotlin.math.max
 import kotlin.math.sign
 
-// One of three copies of this rule (apps/ios Ladder.swift, web/.../logger/ladder.js), pinned by
+// One of two copies of this rule (the other is web/.../logger/ladder.js), pinned by
 // packages/api-contract/gym-ladder.json — every copy reads that file as a test. Bands are read off the
 // MAGNITUDE, and the step buttons do not clamp; only typed entry is bounded.
 

@@ -1,0 +1,1408 @@
+[
+  {
+    "name": "unchanged: an untouched draft of a stored card writes nothing and exists",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Alpha", "body": "x"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {}, "exists": true}}}}
+  },
+  {
+    "name": "unchanged: an untouched draft of a card another device deleted writes nothing and does not exist",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Alpha", "body": "x"},
+        "isNew": false
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {}, "exists": false}}}}
+  },
+  {
+    "name": "unchanged: an untouched new keyed draft writes nothing",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {}, "current": {}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {}, "exists": false}}}}
+  },
+  {
+    "name": "unchanged: an untouched new keyed draft over its own delete window writes nothing and exists",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {}, "current": {}, "isNew": true},
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {}, "exists": true}}}}
+  },
+  {
+    "name": "an untouched new minted draft is not unchanged: its blank refuses on its checks",
+    "input": {
+      "draft": {"t": "card", "id": "cardN001", "base": {}, "current": {}, "isNew": true, "placement": "bottom"},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "anchor": "cardA001"
+    },
+    "expect": {"decision": {"refuse": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}}}
+  },
+  {
+    "name": "gone: an edited card absent from drawn and stored",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha"},
+        "current": {"title": "Beta"},
+        "isNew": false
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: an edited card inside this device's delete window, since a minted record is not present again",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha"},
+        "current": {"title": "Beta"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: a new card draft whose id stored holds and drawn does not",
+    "input": {
+      "draft": {"t": "card", "id": "cardA001", "base": {}, "current": {"title": "Beta"}, "isNew": true},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: an edited day that another device deleted",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {"score": 5}, "current": {"score": 6}, "isNew": false},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "day", "id": "2027-01-10"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "create: a prefilled new card is inserted with every field, validated, below the anchor",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardN001",
+        "base": {},
+        "current": {"title": "  Plan  ", "size": 1.005},
+        "isNew": true,
+        "placement": "bottom"
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "anchor": "cardA001"
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardN001",
+                "f": {"title": "Plan", "body": "", "size": 1, "claim": null, "tier": "draft"},
+                "anchor": {"field": "ord", "below": "cardA001"}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {
+            "values": {"title": "Plan", "body": "", "size": 1, "claim": null, "tier": "draft"},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "create: a new card with no anchor is inserted below nothing",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardN001",
+        "base": {},
+        "current": {"title": "Plan"},
+        "isNew": true,
+        "placement": "top"
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardN001",
+                "f": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+                "anchor": {"field": "ord", "below": null}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {
+            "values": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "create: a prefill that breaks a check refuses",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardN001",
+        "base": {},
+        "current": {"title": "Plan", "body": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+        "isNew": true
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "violation": {
+            "rule": "card.body",
+            "path": "body",
+            "reason": "tooLong",
+            "max": 24,
+            "unit": "bytes",
+            "measured": 25
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "create: a new card whose id is dead in both views is created, and the server decides",
+    "input": {
+      "draft": {"t": "card", "id": "cardN001", "base": {}, "current": {"title": "Plan"}, "isNew": true},
+      "drawn": [
+        {"t": "card", "id": "cardN001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Old", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardN001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Old", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardN001",
+                "f": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+                "anchor": {"field": "ord", "below": null}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {
+            "values": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: a new day draft puts its touched fields and retires its held removal",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {}, "current": {"score": 7}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": true, "f": {"score": 7}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "day", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"score": 7}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: a new day after today is refused by its key check",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-16", "base": {}, "current": {"score": 7}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "refuse": {"violation": {"rule": "day.notFuture", "path": "id", "reason": "custom", "custom": "future"}}
+      }
+    }
+  },
+  {
+    "name": "present again: the key check reads today in the moment zone",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-16", "base": {}, "current": {"score": 7}, "isNew": true},
+      "drawn": [],
+      "stored": [],
+      "now": 1800050400000,
+      "offsetSeconds": 7200
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "put", "t": "day", "id": "2027-01-16", "present": true, "f": {"score": 7}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "day", "id": "2027-01-16"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"score": 7}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: an edited day inside this device's delete window puts its touched field, never compared with stored",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {"score": 4}, "current": {"score": 5}, "isNew": false},
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": true, "f": {"score": 5}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "day", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"score": 5}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: a new mark over an invisible stored mark writes its touched field and takes the untouched one from the record",
+    "input": {
+      "draft": {"t": "mark", "id": "oak", "base": {}, "current": {"done": true}, "isNew": true},
+      "drawn": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ],
+      "stored": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "mark", "id": "oak", "f": {"done": true}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"done": true, "memo": ""}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: an edited mark that another device cleared takes its untouched field from the invisible record",
+    "input": {
+      "draft": {
+        "t": "mark",
+        "id": "oak",
+        "base": {"done": true, "memo": ""},
+        "current": {"done": true, "memo": "note"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ],
+      "stored": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "mark", "id": "oak", "x": {"memo": {"text": "note", "from": ""}}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"done": null, "memo": "note"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: a new mark with no record edits its text from the empty text and takes the blank for the rest",
+    "input": {
+      "draft": {"t": "mark", "id": "oak", "base": {}, "current": {"memo": "hello"}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "mark", "id": "oak", "x": {"memo": {"text": "hello", "from": ""}}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"done": null, "memo": "hello"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: a new singleton with no row writes its touched field, validated",
+    "input": {
+      "draft": {"t": "meta", "id": "meta", "base": {}, "current": {"title": " Plan "}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"title": "Plan"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: an edited card writes its changed field, validated and guarded",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "  Beta  ", "body": "x"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Beta"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [{"t": "card", "id": "cardA001", "field": "title"}],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"title": "Beta"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: a guarded update names and guards its changed fields in UTF-8 order",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x", "tier": "draft"},
+        "current": {"title": "Beta", "body": "y", "tier": "review"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "update", "t": "card", "id": "cardA001", "f": {"body": "y", "tier": "review", "title": "Beta"}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [
+              {"t": "card", "id": "cardA001", "field": "body"},
+              {"t": "card", "id": "cardA001", "field": "tier"},
+              {"t": "card", "id": "cardA001", "field": "title"}
+            ],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"body": "y", "tier": "review", "title": "Beta"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: a touched field the store already holds is not written, and is not stale",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Beta", "body": "y"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"body": "y"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [{"t": "card", "id": "cardA001", "field": "body"}],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"title": "Beta", "body": "y"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: every touched field already stored is unchanged, and exists",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha"},
+        "current": {"title": "Beta"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {"title": "Beta"}, "exists": true}}}}
+  },
+  {
+    "name": "update: a quantum field is taken rounded, and equals the stored value",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x", "size": 2},
+        "current": {"title": "Alpha", "body": "x", "size": 1.004},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [1, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [1, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {"decision": {"unchanged": {"result": {"values": {"size": 1}, "exists": true}}}}
+  },
+  {
+    "name": "update: a quantum field is written rounded",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x", "size": 2},
+        "current": {"title": "Alpha", "body": "x", "size": 82.506},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [2, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [2, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"size": 82.51}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [{"t": "card", "id": "cardA001", "field": "size"}],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"size": 82.51}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "stale: a changed field that another device changed since the base",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Beta", "body": "x"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Gamma", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Gamma", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {"code": "stale", "subject": {"t": "card", "id": "cardA001"}, "detail": null, "path": "predicted"}
+        }
+      }
+    }
+  },
+  {
+    "name": "stale: one moved field refuses the whole save",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Beta", "body": "y"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["z", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["z", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {"code": "stale", "subject": {"t": "card", "id": "cardA001"}, "detail": null, "path": "predicted"}
+        }
+      }
+    }
+  },
+  {
+    "name": "not stale: another device changed only an untouched field",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Alpha", "body": "y"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Gamma", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Gamma", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"body": "y"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [{"t": "card", "id": "cardA001", "field": "body"}],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"body": "y"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "not stale: a type whose saves are not guarded writes over another device's change",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-10", "base": {"score": 5}, "current": {"score": 6}, "isNew": false},
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [8, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [8, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "present": null, "f": {"score": 6}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"score": 6}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: an untouched stored value that the checks would refuse does not block an edit of another field",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "   ", "body": "x"},
+        "current": {"title": "   ", "body": "note"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["   ", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["   ", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "update", "t": "card", "id": "cardA001", "f": {"body": "note"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [{"t": "card", "id": "cardA001", "field": "body"}],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"body": "note"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: a touched field that breaks its check refuses",
+    "input": {
+      "draft": {
+        "t": "card",
+        "id": "cardA001",
+        "base": {"title": "Alpha", "body": "x"},
+        "current": {"title": "Alpha", "body": "xxxxxxxxxxxxxxxxxxxxxxxxx"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "violation": {
+            "rule": "card.body",
+            "path": "body",
+            "reason": "tooLong",
+            "max": 24,
+            "unit": "bytes",
+            "measured": 25
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "update: the key check runs on every write of the record",
+    "input": {
+      "draft": {"t": "day", "id": "2027-01-16", "base": {"score": 5}, "current": {"score": 6}, "isNew": false},
+      "drawn": [
+        {"t": "day", "id": "2027-01-16", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-16", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {"violation": {"rule": "day.notFuture", "path": "id", "reason": "custom", "custom": "future"}}
+      }
+    }
+  },
+  {
+    "name": "update: a text field is edited from the base text, not from the stored text",
+    "input": {
+      "draft": {
+        "t": "mark",
+        "id": "oak",
+        "base": {"done": true, "memo": "hello"},
+        "current": {"done": true, "memo": "hello world"},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [true, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "hello there", "rev": 1, "merged": false}}}
+      ],
+      "stored": [
+        {"t": "mark", "id": "oak", "seq": 1, "f": {"done": [true, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "hello there", "rev": 1, "merged": false}}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "write", "t": "mark", "id": "oak", "x": {"memo": {"text": "hello world", "from": "hello"}}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"memo": "hello world"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "update: a singleton writes its changed field",
+    "input": {
+      "draft": {"t": "meta", "id": "meta", "base": {"title": "Plan"}, "current": {"title": "Plan B"}, "isNew": false},
+      "drawn": [{"t": "meta", "id": "meta", "seq": 1, "f": {"title": ["Plan", "1000:0:r_aaaaaaaaaaaa"]}}],
+      "stored": [{"t": "meta", "id": "meta", "seq": 1, "f": {"title": ["Plan", "1000:0:r_aaaaaaaaaaaa"]}}]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "meta", "id": "meta", "f": {"title": "Plan B"}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"title": "Plan B"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "creating inserts a new card with every field below the anchor",
+    "input": {
+      "creating": {"t": "card", "id": "cardN001", "f": {"title": " Note "}, "placement": "bottom"},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "anchor": "cardA001"
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardN001",
+                "f": {"title": "Note", "body": "", "size": null, "claim": null, "tier": "draft"},
+                "anchor": {"field": "ord", "below": "cardA001"}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {
+            "values": {"title": "Note", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "creating refuses id-taken over a drawn record",
+    "input": {
+      "creating": {"t": "card", "id": "cardA001", "f": {"title": "Note"}},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "id-taken",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "creating refuses id-taken over a record inside this device's delete window",
+    "input": {
+      "creating": {"t": "card", "id": "cardA001", "f": {"title": "Note"}},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "refused": {
+            "code": "id-taken",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "creating over an id dead in both views writes the create, and the server decides",
+    "input": {
+      "creating": {"t": "card", "id": "cardA001", "f": {"title": "Note"}},
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "tier": ["draft", "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "create",
+                "t": "card",
+                "id": "cardA001",
+                "f": {"title": "Note", "body": "", "size": null, "claim": null, "tier": "draft"},
+                "anchor": {"field": "ord", "below": null}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {
+            "values": {"title": "Note", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "exists": true
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "creating a blank refuses on its checks",
+    "input": {"creating": {"t": "card", "id": "cardN001", "f": {}}, "drawn": [], "stored": []},
+    "expect": {"decision": {"refuse": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}}}
+  },
+  {
+    "name": "present again: a new draft validates every field, an untouched one included",
+    "input": {
+      "draft": {
+        "t": "mark",
+        "id": "pine",
+        "isNew": true,
+        "base": {"memo": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+        "current": {"memo": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "done": true}
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "refuse": {
+          "violation": {
+            "rule": "mark.memo",
+            "path": "memo",
+            "reason": "tooLong",
+            "max": 40,
+            "unit": "bytes",
+            "measured": 41
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: an edited draft validates only its touched fields",
+    "input": {
+      "draft": {
+        "t": "mark",
+        "id": "pine",
+        "isNew": false,
+        "base": {"memo": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"},
+        "current": {"memo": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx", "done": true}
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [{"op": "write", "t": "mark", "id": "pine", "f": {"done": true}}],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"done": true, "memo": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "present again: an edited mark another device cleared edits its text from the base",
+    "input": {
+      "draft": {
+        "t": "mark",
+        "id": "pine",
+        "isNew": false,
+        "base": {"memo": "Some text"},
+        "current": {"memo": "Some text, more"}
+      },
+      "drawn": [
+        {"t": "mark", "id": "pine", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ],
+      "stored": [
+        {"t": "mark", "id": "pine", "seq": 1, "f": {"done": [null, "1000:0:r_aaaaaaaaaaaa"]}, "x": {"memo": {"text": "", "rev": 1, "merged": false}}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {
+                "op": "write",
+                "t": "mark",
+                "id": "pine",
+                "x": {"memo": {"text": "Some text, more", "from": "Some text"}}
+              }
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"done": null, "memo": "Some text, more"}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: a new draft of a fact writes every field and presence, its timestamp at the save's now, not the editor's",
+    "input": {
+      "draft": {"t": "fact", "id": "2027-01-10", "base": {}, "current": {"value": 80.04, "at": 5}, "isNew": true},
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 80, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 80, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: an untouched draft of a stored fact writes every field again, never unchanged",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 81, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 81, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 81, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: an edit of one field writes every field, the untouched one at the draft's value",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 82, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [83, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [83, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: a draft of a fact another device deleted writes it again, never gone",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 82, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [],
+      "stored": []
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: a new draft inside this device's delete window writes every field and retires the removal",
+    "input": {
+      "draft": {"t": "fact", "id": "2027-01-10", "base": {}, "current": {"value": 82}, "isNew": true},
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {
+        "write": {
+          "gesture": {
+            "changes": [
+              {"op": "put", "t": "fact", "id": "2027-01-10", "present": true, "f": {"value": 82, "at": 1800000000000}}
+            ],
+            "atomic": false,
+            "hold": false,
+            "guards": [],
+            "retire": [{"t": "fact", "id": "2027-01-10"}],
+            "cmd": null,
+            "predict": [],
+            "local": []
+          },
+          "result": {"values": {"value": 82, "at": 1800000000000}, "exists": true}
+        }
+      }
+    }
+  },
+  {
+    "name": "whole: every field is validated, and a value beyond its spec writes nothing",
+    "input": {
+      "draft": {
+        "t": "fact",
+        "id": "2027-01-10",
+        "base": {"value": 81, "at": 1799990000000},
+        "current": {"value": 500.06, "at": 1799990000000},
+        "isNew": false
+      },
+      "drawn": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "fact", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"value": [81, "1000:0:r_aaaaaaaaaaaa"], "at": [1799990000000, "1000:0:r_aaaaaaaaaaaa"]}}
+      ]
+    },
+    "expect": {
+      "decision": {"refuse": {"violation": {"rule": "fact.value", "path": "value", "reason": "above", "max": 500}}}
+    }
+  }
+]

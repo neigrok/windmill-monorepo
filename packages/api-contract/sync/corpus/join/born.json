@@ -1,0 +1,52 @@
+[
+  {
+    "name": "both absent",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "join": null
+    }
+  },
+  {
+    "name": "absent contributes nothing",
+    "input": {
+      "a": null,
+      "b": "5:0:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "join": "5:0:r_aaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "the smaller stamp wins",
+    "input": {
+      "a": "6:0:r_aaaaaaaaaaaa",
+      "b": "5:0:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "join": "5:0:r_aaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "the actor breaks a pair tie",
+    "input": {
+      "a": "5:0:r_bbbbbbbbbbbb",
+      "b": "5:0:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "join": "5:0:r_aaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "equal borns",
+    "input": {
+      "a": "5:0:r_aaaaaaaaaaaa",
+      "b": "5:0:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "join": "5:0:r_aaaaaaaaaaaa"
+    }
+  }
+]

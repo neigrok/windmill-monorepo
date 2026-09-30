@@ -36,8 +36,6 @@ public:
                        const std::string& clientId);
 
 private:
-  std::optional<UserId> callerOf(const drogon::HttpRequestPtr& req) const;
-
   std::shared_ptr<OAuthService> oauth_;
   std::shared_ptr<AuthService> auth_;
   std::string issuerUrl_;    // this AS's public base, e.g. https://api.windmill.works

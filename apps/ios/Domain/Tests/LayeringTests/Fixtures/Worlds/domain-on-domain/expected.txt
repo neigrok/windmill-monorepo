@@ -1,0 +1,2 @@
+Domain/Package.swift: closure GymDomain reaches JournalDomain
+Domain/Package.swift: layer GymDomain (product domain) may not depend on JournalDomain (product domain)

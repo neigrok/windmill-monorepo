@@ -1,0 +1,2 @@
+Sync/Package.swift: dependency-use SyncEngine uses grdb.swift's GRDB
+Sync/Package.swift: layer SyncEngine may not depend on GRDB (SyncStore only)

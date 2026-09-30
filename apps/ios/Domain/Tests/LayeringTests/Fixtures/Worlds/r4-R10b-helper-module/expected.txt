@@ -1,0 +1,8 @@
+Domain/Package.swift: closure GymDomain reaches GRDB
+Domain/Package.swift: closure GymDomain reaches Helpers
+Domain/Package.swift: closure GymDomain reaches SyncEngine
+Domain/Package.swift: closure GymDomain reaches SyncReplica
+Domain/Package.swift: closure GymDomain reaches SyncStore
+Domain/Package.swift: layer GymDomain (product domain) may not depend on Helpers (no row)
+Domain/Package.swift: layer Helpers is in no row
+Domain/Package.swift: module Helpers is not §2.1's for WindmillDomain

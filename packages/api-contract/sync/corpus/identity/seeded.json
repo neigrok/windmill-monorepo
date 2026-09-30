@@ -1,0 +1,196 @@
+[
+  {
+    "name": "a seed and an ordinal",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "abcdefgh",
+      "n": 1
+    },
+    "expect": {
+      "id": "abcdefgh-1"
+    }
+  },
+  {
+    "name": "a 58-character seed takes the largest ordinal within 64",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "n": 99999
+    },
+    "expect": {
+      "id": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS-99999"
+    }
+  },
+  {
+    "name": "a seed holding dashes",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "ab-cd-ef-1",
+      "n": 2
+    },
+    "expect": {
+      "id": "ab-cd-ef-1-2"
+    }
+  },
+  {
+    "name": "a seed over seedMax is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "SSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSSS",
+      "n": 1
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a seed outside the id pattern is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "abc.defgh",
+      "n": 1
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a seed shorter than the id pattern allows is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "short",
+      "n": 1
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "ordinal 0 is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "abcdefgh",
+      "n": 0
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "an ordinal over ordinalMax is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "abcdefgh",
+      "n": 100000
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a fractional ordinal is refused",
+    "input": {
+      "op": "make",
+      "type": "lap",
+      "seed": "abcdefgh",
+      "n": 1.5
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "seed and ordinal split at the last dash",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh-1"
+    },
+    "expect": {
+      "parsed": {
+        "seed": "abcdefgh",
+        "n": 1
+      }
+    }
+  },
+  {
+    "name": "a seed holding dashes keeps them",
+    "input": {
+      "op": "parse",
+      "id": "ab-cd-ef-12"
+    },
+    "expect": {
+      "parsed": {
+        "seed": "ab-cd-ef",
+        "n": 12
+      }
+    }
+  },
+  {
+    "name": "no dash is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh"
+    },
+    "expect": {
+      "parsed": null
+    }
+  },
+  {
+    "name": "an empty ordinal is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh-"
+    },
+    "expect": {
+      "parsed": null
+    }
+  },
+  {
+    "name": "an ordinal with a leading zero is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh-01"
+    },
+    "expect": {
+      "parsed": null
+    }
+  },
+  {
+    "name": "ordinal 0 is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh-0"
+    },
+    "expect": {
+      "parsed": null
+    }
+  },
+  {
+    "name": "an empty seed is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "-5"
+    },
+    "expect": {
+      "parsed": null
+    }
+  },
+  {
+    "name": "a non-decimal ordinal is not seeded",
+    "input": {
+      "op": "parse",
+      "id": "abcdefgh-1a"
+    },
+    "expect": {
+      "parsed": null
+    }
+  }
+]

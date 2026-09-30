@@ -13,5 +13,7 @@ cmake-build-*/
 .idea/
 .claude/
 uploads/
-deploy/
+# The Caddyfile alone comes in, for the test that it forwards every credential line untouched.
+deploy/*
+!deploy/Caddyfile
 *.md

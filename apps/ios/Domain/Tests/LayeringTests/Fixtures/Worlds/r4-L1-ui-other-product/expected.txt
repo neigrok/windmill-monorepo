@@ -1,0 +1,1 @@
+WindmillKit/Package.swift: layer WindmillGym may not depend on another product's JournalDomain

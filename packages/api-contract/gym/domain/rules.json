@@ -1,0 +1,26 @@
+{
+  "entities": [
+    {"type": "note", "removable": true, "held": true, "ordered": true, "guarded": true},
+    {"type": "weighin", "removable": true, "held": true, "ordered": false, "guarded": false, "timestamp": "recordedAt"}
+  ],
+  "rules": [
+    {
+      "name": "note.body", "subject": "note", "kind": "local",
+      "spec": {"path": "note.body", "kind": "text", "unit": "bytes", "min": 0, "max": 500, "trim": true, "nfc": true}
+    },
+    {"name": "note.cap", "subject": "note", "kind": "server", "codes": ["cap"]},
+    {"name": "note.gone", "subject": "note", "kind": "server", "codes": ["unknown-record", "record-dead"]},
+    {"name": "note.stale", "subject": "note", "kind": "server", "codes": ["stale"]},
+    {"name": "note.taken", "subject": "note", "kind": "server", "codes": ["id-taken", "id-spent"]},
+    {
+      "name": "note.title", "subject": "note", "kind": "local",
+      "spec": {"path": "note.title", "kind": "text", "unit": "chars", "min": 1, "max": 60, "trim": true, "nfc": true}
+    },
+    {"name": "weighin.day", "subject": "weighin", "kind": "local", "codes": ["bad-instant"]},
+    {"name": "weighin.gone", "subject": "weighin", "kind": "server", "codes": ["unknown-record", "record-dead"]},
+    {
+      "name": "weighin.kg", "subject": "weighin", "kind": "local",
+      "spec": {"path": "weighin.kg", "kind": "number", "min": 20, "max": 400, "integer": false, "quantum": 0.01}
+    }
+  ]
+}

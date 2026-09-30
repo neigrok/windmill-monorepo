@@ -1,0 +1,40 @@
+# expect: build-settings Windmill [Release, iphoneos]: OTHER_SWIFT_FLAGS -Xfrontend -disable-access-control
+# expect: build-settings Windmill [Release, iphoneos]: SWIFT_VERSION 5.0
+# expect: build-settings Windmill [Release, iphoneos]: warnings are not errors
+# expect: build-settings Windmill [Release, iphonesimulator]: OTHER_SWIFT_FLAGS -Xfrontend -disable-access-control
+# expect: build-settings Windmill [Release, iphonesimulator]: SWIFT_VERSION 5.0
+# expect: build-settings Windmill [Release, iphonesimulator]: warnings are not errors
+# expect: project Windmill.settings.configs.Release: OTHER_SWIFT_FLAGS is set outside the target's own settings
+# expect: project Windmill.settings.configs.Release: SWIFT_TREAT_WARNINGS_AS_ERRORS is set outside the target's own settings
+# expect: project Windmill.settings.configs.Release: SWIFT_VERSION is set outside the target's own settings
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  WindmillKit:
+    path: WindmillKit
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: WindmillKit
+        product: WindmillGym
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+      configs:
+        Release:
+          SWIFT_VERSION: "5.0"
+          SWIFT_TREAT_WARNINGS_AS_ERRORS: "NO"
+          OTHER_SWIFT_FLAGS: "-Xfrontend -disable-access-control"

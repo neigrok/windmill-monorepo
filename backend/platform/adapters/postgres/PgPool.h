@@ -7,10 +7,16 @@
 #include <cstddef>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
 namespace wm {
+
+// Every connection stayed borrowed past the acquire timeout. Transient to the sync engine (§6.6).
+struct PgPoolExhausted : std::runtime_error {
+  using std::runtime_error::runtime_error;
+};
 
 // Every Postgres connection this process opens comes from here, never more than `maxConnections`
 // alive at once. Borrow through PgLease, never by hand: a connection opened per unit of work
@@ -18,19 +24,20 @@ namespace wm {
 // the next borrower, and one that comes back broken is dropped.
 class PgPool {
 public:
-  // Must sit above the number of borrowers that can be inside a handler at once. main.cpp sizes the
-  // pool as ioThreads + kReservedConnections; this default is what a tool with no listener uses.
-  static constexpr std::size_t kDefaultMaxConnections = 20;
+  // The most connections this process holds. main.cpp sizes the pool as the smaller of this and its
+  // borrowers (IO threads, sync workers, kReservedConnections); a tool with no listener takes it as is.
+  // A borrower past the ceiling waits in acquire() holding nothing, so oversubscription is safe.
+  static constexpr std::size_t kMaxConnections = 20;
 
-  // Headroom over the IO threads for non-request borrowers: the heartbeat loops and the lease a
-  // sweep holds across its whole pass.
+  // Headroom for non-request borrowers: the heartbeat loops and the lease a sweep holds across its
+  // whole pass.
   static constexpr std::size_t kReservedConnections = 8;
 
   // How long a borrower waits for the pool before giving up; a connection is held for one
   // transaction under a 5s statement_timeout, so waiting this long means a borrower leaked one.
   static constexpr std::chrono::milliseconds kDefaultAcquireTimeout{30'000};
 
-  explicit PgPool(std::string connString, std::size_t maxConnections = kDefaultMaxConnections,
+  explicit PgPool(std::string connString, std::size_t maxConnections = kMaxConnections,
                   std::chrono::milliseconds acquireTimeout = kDefaultAcquireTimeout);
 
   std::unique_ptr<pqxx::connection> acquire();

@@ -1,0 +1,161 @@
+[
+  {
+    "name": "both absent",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "join": null
+    }
+  },
+  {
+    "name": "absent loses to a register",
+    "input": {
+      "a": null,
+      "b": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the smaller stamp wins",
+    "input": {
+      "a": [
+        "first",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "second",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "first",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the smaller stamp wins whatever the value",
+    "input": {
+      "a": [
+        "aaa",
+        "6:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "zzz",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "zzz",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the actor breaks a pair tie",
+    "input": {
+      "a": [
+        "a",
+        "5:0:r_bbbbbbbbbbbb"
+      ],
+      "b": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: the bytewise-smaller jcs value wins",
+    "input": {
+      "a": [
+        "a",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "a",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: 10 beats 9, as jcs \"10\" < \"9\"",
+    "input": {
+      "a": [
+        9,
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        10,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        10,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: UTF-8 bytes decide, U+FB33 beats U+1F600",
+    "input": {
+      "a": [
+        "😀",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "דּ",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "דּ",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal registers",
+    "input": {
+      "a": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  }
+]

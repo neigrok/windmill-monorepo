@@ -1,0 +1,5 @@
+Domain/Package.swift: closure DomainKit reaches SwiftSyntax
+Domain/Package.swift: closure GymDomain reaches SwiftSyntax
+Domain/Package.swift: closure JournalDomain reaches SwiftSyntax
+Domain/Package.swift: dependency-use DomainKit uses swift-syntax's SwiftSyntax
+Domain/Package.swift: layer DomainKit (kit) may not depend on SwiftSyntax (test)

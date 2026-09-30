@@ -5,13 +5,16 @@ repository groups code by surface, then product.
 
 ```text
 backend/                    C++20 modular monolith
-  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry and AI usage
+  platform/                 product-neutral auth, OAuth, billing, MCP, email, telemetry, AI usage and
+                            the sync engine server
     infra/                  composition roots for the server and standalone MCP transports
   products/
     roadmap/                tree domain, synchronization and roadmap adapters
     journal/                pages, nudges, voice and echoes
     gym/                    training log, routines, Coach and gym adapters
-  db/                       idempotent schema and analyst funnel views
+    probe/                  the sync engine's test-only product; linked into tests and
+                            windmill_server_probe, never into windmill_server
+  db/                       idempotent schema, the probe's test schema and analyst funnel views
   deploy/                   Docker Compose, Caddy and production configuration
   test/                     platform/, products/, e2e/ and golden/
 web/                        Vite/React superapp for all three products
@@ -25,7 +28,8 @@ web/                        Vite/React superapp for all three products
     products/               roadmap/, journal/ and gym/
   test/                     mirrors the source
 apps/
-  ios/                      SwiftUI app; XcodeGen project and WindmillKit package
+  ios/                      no product app yet: Sync/ (the sync engine client), Domain/ (the domain kit
+                            and gym's domains on it), SyncTestingSurface/ and the dev-only SyncProbe/ app
   android/                  Kotlin/Compose app; :app, :platform and :gym Gradle modules
 packages/
   api-contract/             shared wire contracts and executable golden fixtures
@@ -51,11 +55,11 @@ room machinery.
 - **Web:** `shell/products.js` composes product route tables and settings sections. Shared settings
   and marketing surfaces consume that registry. Showcase reaches a product only through its
   `showcase.js` entry point; `test/shell-boundaries` checks those imports.
-- **Native:** iOS packages depend on `WindmillPlatform`; Android products depend on `:platform`.
-  iOS implements journal and gym and points roadmap readers to web. Android implements gym.
+- **Native:** Android products depend on `:platform`; Android implements gym. iOS holds the sync
+  engine client, which names no product, and the domain kit with gym's first domains on it; it
+  carries no product app yet.
 
-Raw design tokens are mirrored in `web/src/styles/tokens/`,
-`apps/ios/WindmillKit/Sources/WindmillPlatform/Tokens.swift` and
+Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
 `PLAN_COPY`, shared subscription wording, still lives in roadmap's web settings module.
 
@@ -63,21 +67,22 @@ Raw design tokens are mirrored in `web/src/styles/tokens/`,
 
 | Workflow | Responsibility |
 |---|---|
-| `backend.yml` | build and run C++ tests in Docker; publish server and embedder images |
+| `backend.yml` | build and run C++ tests in Docker, then the Postgres cases, the pattern fuzz and the sync deployment conformance (directly and through the production Caddyfile) in that image against a Postgres service; publish server and embedder images |
 | `web.yml` | install, test and build web; rsync trusted builds to the VPS |
-| `ios.yml` | simulator app build, crash-report tests and WindmillKit tests |
-| `ios-release.yml` | archive and upload the tested iOS main-push commit to App Store Connect, or release manually |
+| `ios.yml` | `swift test` of the Sync, Domain and SyncTestingSurface packages on macOS; simulator builds of the engine and the SyncProbe app |
 | `android.yml` | build and test; tags and versioned dispatches produce unpublished signing inputs |
 | `embedder.yml` | check pinned vectors and the sidecar HTTP process |
 | `tools.yml` | run the Lift importer suite |
+| `contract.yml` | check the sync corpus is what the JS reference generates; run the reference's tests and a fixed-seed replay fuzz |
 | `deploy.yml` | deploy a successful backend main-push SHA or a manually selected image tag |
 
 Build workflows skip Markdown-only changes within their surface. Shared API contracts still trigger
 their consumers, and web retains its email README because a test reads it.
 
-Backend Postgres integration cases require `WM_PG_TEST` and a local database; the Docker CI build
-runs without one. Automated model tests use deterministic fakes and fixtures. Actual-model
-exploration is manual and local with a user-provided key.
+Backend Postgres integration cases require `WM_PG_TEST` and a database: the Docker build skips them,
+and backend CI runs them in the image it built against a Postgres service. Automated model tests use
+deterministic fakes and fixtures. Actual-model exploration is manual and local with a user-provided
+key.
 
 The web deploy must land first on a fresh host because the embedder mounts its weights from the
 served web directory. See [deployment](backend/deploy/README.md) and
@@ -95,9 +100,12 @@ contents. Native acceptance and a same-key update check precede publication. See
 - [Journal architecture](backend/products/journal/ARCHITECTURE.md) and
   [gym architecture](backend/products/gym/ARCHITECTURE.md).
 - `docs/foundation/` holds specifications that apply to more than one product or platform:
-  [the sync engine](docs/foundation/engine.md) for every product and surface, and
-  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones. Both are specified
-  and not yet implemented.
+  [the sync engine](docs/foundation/engine.md) for every product and surface, built in the C++ server
+  (`backend/platform/**/sync*`) and the Swift client (`apps/ios/Sync`);
+  [the domain kit](docs/foundation/domain-kit.md), the pure-logic layer every Swift and Kotlin feature
+  domain is declared on, built in Swift (`apps/ios/Domain`) and not yet in Kotlin; and
+  [gym Coach on the client](docs/foundation/mobile/gym_coach.md) for both phones, specified and not
+  yet built.
 - [Web rules](web/CLAUDE.md), [iOS](apps/ios/README.md) and [Android](apps/android/README.md).
 - [Product direction](docs/PRODUCT_LOG.md) and [design consistency gaps](docs/design/consistency.md).
   `docs/design/` holds written canon; Figma holds the drawings.

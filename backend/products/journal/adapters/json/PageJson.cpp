@@ -21,7 +21,9 @@ Page parsePageWrite(const Json::Value& body, const UserId& user, const LocalDate
   page.mood = score("mood");
   page.energy = score("energy");
   page.source = parseSource(body.get("source", "typed").asString());
-  page.stamp = parseHlc(body.get("stamp", "0:0:").asString());
+  const std::optional<Hlc> stamp = parseHlc(body.get("stamp", "0:0:").asString());
+  if (!stamp) throw InvalidPage{"a page stamp is ms:counter:actor"};
+  page.stamp = *stamp;
   // updatedAtMs stays 0: it is server time, stamped on store.
   return page;
 }

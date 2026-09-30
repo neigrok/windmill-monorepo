@@ -1,0 +1,638 @@
+[
+  {
+    "name": "an update of an alive card commits with its receipt",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: an update of a card absent from drawn is refused unknown-record, predicted",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: an update of a card dead in drawn",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: a card row with no life register is not alive",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [{"t": "card", "id": "cardA001", "seq": 1, "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"]}}],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: a remove of an absent card",
+    "input": {
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}],
+      "drawn": [
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": 1800000009000}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: a move of an absent card",
+    "input": {
+      "plan": [{"op": "move", "t": "card", "id": "cardA001", "below": "cardB001"}],
+      "drawn": [
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: an update of a keyed day dead in drawn",
+    "input": {
+      "plan": [{"op": "update", "t": "day", "id": "2027-01-10", "f": {"score": 6}, "fields": ["score"]}],
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "day", "id": "2027-01-10"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "gone: a remove of an absent keyed day",
+    "input": {
+      "plan": [{"op": "remove", "t": "day", "id": "2027-01-10"}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": 1800000009000}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "day", "id": "2027-01-10"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "the gone subject is the first operation whose record is not alive",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]},
+        {"op": "update", "t": "card", "id": "cardB001", "f": {"title": "B"}, "fields": ["title"]},
+        {"op": "update", "t": "card", "id": "cardC001", "f": {"title": "C"}, "fields": ["title"]}
+      ],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardB001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a create is not gone-checked",
+    "input": {
+      "plan": [{"op": "create", "t": "lap", "id": "lap00002", "f": {"runId": "run00001", "weight": 12}}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "a keyed create is not gone-checked",
+    "input": {
+      "plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 6}, "fields": ["score"]}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "an update of a mark, which has no life, is not gone-checked",
+    "input": {
+      "scope": "self/overlay/b_00000001",
+      "plan": [{"op": "update", "t": "mark", "id": "oak", "f": {"done": true}, "fields": ["done"]}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "an update of the singleton meta is not gone-checked",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [{"op": "update", "t": "meta", "id": "meta", "f": {"title": "Plan"}, "fields": ["title"]}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "a guardRead is not gone-checked",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]},
+        {"op": "guardRead", "t": "card", "id": "cardX001", "fields": ["title"]}
+      ],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "a held remove commits with its releaseAt",
+    "input": {
+      "plan": [{"op": "remove", "t": "card", "id": "cardA001"}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": 1800000009000}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": 1800000009000}
+        }
+      }
+    }
+  },
+  {
+    "name": "an emptied gesture, with no local id, no retired gesture and no device write, is unchanged",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": [], "retired": []}
+    },
+    "expect": {"outcome": {"unchanged": {"result": null}}}
+  },
+  {
+    "name": "a receipt that only retires a held removal is committed",
+    "input": {
+      "plan": [{"op": "create", "t": "day", "id": "2027-01-10", "f": {"score": 5}, "fields": ["score"]}],
+      "drawn": [],
+      "receipt": {"gestureId": "g2", "localIds": [], "retired": ["g1"]}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g2", "localIds": [], "retired": ["g1"], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "a device write with no local id is committed",
+    "input": {
+      "plan": [{"op": "device", "key": "rack", "value": {"n": 1}}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": [], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {"result": null, "receipt": {"gestureId": "g1", "localIds": [], "retired": [], "releaseAt": null}}
+      }
+    }
+  },
+  {
+    "name": "a command with its prediction commits",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "Morning", "startedAt": 1800000000000, "join": false}
+      },
+      "predict": [
+        {"op": "create", "t": "run", "id": "run00001", "f": {"startedAt": 1800000000000, "label": "Morning"}}
+      ],
+      "plan": [],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "cap names the first record the plan creates of the capped type",
+    "input": {
+      "plan": [
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]},
+        {"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "N1"}, "below": "cardA001"},
+        {"op": "insert", "t": "card", "id": "cardN002", "f": {"title": "N2"}, "below": "cardA001"}
+      ],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "refused": {"code": "cap", "detail": {"type": "card", "cap": 3}}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "cap",
+            "subject": {"t": "card", "id": "cardN001"},
+            "detail": {"type": "card", "cap": 3},
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "cap passes over a created record of another type",
+    "input": {
+      "plan": [
+        {"op": "create", "t": "lap", "id": "lap00002", "f": {"runId": "run00001"}},
+        {"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "N1"}, "below": null}
+      ],
+      "drawn": [],
+      "refused": {"code": "cap", "detail": {"type": "card", "cap": 3}}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "cap",
+            "subject": {"t": "card", "id": "cardN001"},
+            "detail": {"type": "card", "cap": 3},
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "scope-dead names the first record the plan writes",
+    "input": {
+      "scope": "tree/b_00000001",
+      "plan": [
+        {"op": "update", "t": "meta", "id": "meta", "f": {"title": "Plan"}, "fields": ["title"]},
+        {"op": "create", "t": "link", "id": ["ash", "oak"], "f": {"strength": 2}}
+      ],
+      "drawn": [],
+      "refused": {"code": "scope-dead"}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "scope-dead",
+            "subject": {"t": "meta", "id": "meta"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "too-large names the first record the plan writes, passing over a guardRead",
+    "input": {
+      "plan": [
+        {"op": "guardRead", "t": "card", "id": "cardB001", "fields": ["title"]},
+        {"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}
+      ],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "refused": {"code": "too-large"}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "too-large",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "too-large names a removed record when the plan writes it first",
+    "input": {
+      "plan": [
+        {"op": "remove", "t": "lap", "id": "lap00001"},
+        {"op": "create", "t": "lap", "id": "lap00002", "f": {"runId": "run00001"}}
+      ],
+      "drawn": [
+        {"t": "lap", "id": "lap00001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"runId": ["run00001", "1000:0:r_aaaaaaaaaaaa"], "at": [1200, "1000:0:r_aaaaaaaaaaaa"], "weight": [10, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "refused": {"code": "too-large"}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "too-large",
+            "subject": {"t": "lap", "id": "lap00001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a violation in decide is refused with the violation",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": ""}, "fields": ["title"]}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {"outcome": {"refused": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}}}
+  },
+  {
+    "name": "a command spec violation in decide is refused with the violation",
+    "input": {
+      "cmd": {
+        "name": "probe.start",
+        "args": {"id": "run00001", "label": "x\u0000", "startedAt": 1800000000000, "join": false}
+      },
+      "plan": [],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {"outcome": {"refused": {"violation": {"rule": "probe.start.label", "path": "label", "reason": "nul"}}}}
+  },
+  {
+    "name": "a plan error fails the run",
+    "input": {
+      "plan": [{"op": "create", "t": "card", "id": "cardN001", "f": {"title": "N1"}}],
+      "drawn": [],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {"error": true}
+  },
+  {
+    "name": "gone reads drawn: an update of a card inside its delete window, dead in drawn and alive in stored, is refused",
+    "input": {
+      "plan": [{"op": "update", "t": "card", "id": "cardA001", "f": {"title": "Renamed"}, "fields": ["title"]}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "2000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an insert below a member absent from both views is refused, naming the anchor",
+    "input": {
+      "plan": [{"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "New"}, "below": "cardZ001"}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardZ001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "a move below a member only stored holds, inside its delete window, commits",
+    "input": {
+      "plan": [{"op": "move", "t": "card", "id": "cardA001", "below": "cardB001"}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["dead", "2000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "committed": {
+          "result": null,
+          "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": [], "releaseAt": null}
+        }
+      }
+    }
+  },
+  {
+    "name": "a move below a member dead in both views is refused, naming the anchor",
+    "input": {
+      "plan": [{"op": "move", "t": "card", "id": "cardA001", "below": "cardB001"}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["dead", "2000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["dead", "2000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardB001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  },
+  {
+    "name": "an insert below a member that holds no order key is refused, naming the anchor",
+    "input": {
+      "plan": [{"op": "insert", "t": "card", "id": "cardN001", "f": {"title": "New"}, "below": "cardA001"}],
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "receipt": {"gestureId": "g1", "localIds": ["g1/0"], "retired": []}
+    },
+    "expect": {
+      "outcome": {
+        "refused": {
+          "refused": {
+            "code": "unknown-record",
+            "subject": {"t": "card", "id": "cardA001"},
+            "detail": null,
+            "path": "predicted"
+          }
+        }
+      }
+    }
+  }
+]

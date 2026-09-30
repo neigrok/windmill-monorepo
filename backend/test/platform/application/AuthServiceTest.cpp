@@ -1,6 +1,11 @@
 #include "platform/application/AuthService.h"
+#include "platform/application/LiveSessions.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
+
+#include <stdexcept>
+#include <string>
+#include <vector>
 
 using namespace wm;
 using namespace wm::fake;
@@ -14,7 +19,8 @@ struct Harness {
   FakeClock clock;
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
-  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
 
   AuthService::RequestResult requestLink(
       const std::string& email, const std::string& forkSource = "",
@@ -290,7 +296,8 @@ TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
   Harness h;
   h.requestLink("sam@example.com");
   const UserId web = h.service.completeLink("s1").signedIn->user.id;
-  const UserId phone = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+  const AuthService::SignedIn phoneSignIn = h.service.completeProvider(appleId("a-1", kRelay))->signedIn;
+  const UserId phone = phoneSignIn.user.id;
   CHECK_EQ(h.repo.usersById.size(), 2u);
 
   h.requestLink("sam@example.com");  // s3/d3
@@ -302,7 +309,36 @@ TEST(linking_moves_the_doors_and_deletes_the_empty_account) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
   CHECK_FALSE(h.repo.findUserById(phone).has_value());
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), web.str());
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{h.tokens.digestOf(phoneSignIn.sessionSecret)}));
   CHECK_EQ(h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id.str(), web.str());
+}
+
+TEST(linking_tells_the_callers_revoked_sessions_before_a_fold_that_then_fails) {
+  struct UndeletableRepo : FakeAuthRepository {
+    std::vector<std::string> deleteUser(const UserId&) override { throw std::runtime_error("foreign_key_violation"); }
+  } repo;
+  FakeOAuthRepository oauthRepo;
+  FakeEmail email;
+  FakeTokens tokens;
+  FakeClock clock;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
+  service.requestLink("sam@example.com", "", std::nullopt, "", [](AuthService::RequestResult) {});   // s1/d1
+  service.completeLink("s1");                                                                         // s2/d2
+  const AuthService::SignedIn phone = service.completeProvider(appleId("a-1", kRelay))->signedIn;    // s3/d3
+  service.requestLink("sam@example.com", "", std::nullopt, "", [](AuthService::RequestResult) {});   // s4/d4
+
+  bool failed = false;
+  try {
+    service.linkAccount(phone.user.id, "s4");
+  } catch (const std::runtime_error&) {
+    failed = true;
+  }
+  CHECK(failed);
+  CHECK_FALSE(service.authenticate(phone.sessionSecret).has_value());
+  CHECK_EQ(revocations.digests, (std::vector<std::string>{"d3"}));
 }
 
 TEST(linking_is_refused_when_the_callers_account_holds_data) {
@@ -429,7 +465,8 @@ TEST(complete_link_loses_the_race_when_a_concurrent_verify_already_spent_it) {
   FakeClock clock;
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
-  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
   repo.insertLink("d1", "", Email{"sam@example.com"}, clock.now, clock.now + AuthPolicy::linkLifetimeMs, "");
 
   AuthService::Completion done = service.completeLink("s1");  // digestOf("s1") == "d1"
@@ -488,6 +525,7 @@ TEST(sign_out_drops_the_session) {
   h.service.signOut(session);
   CHECK_FALSE(h.service.authenticate(session).has_value());
   CHECK_EQ(h.repo.sessions.size(), 0u);
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d2"}));
 }
 
 TEST(update_name_trims_and_persists_and_rejects_blank_or_over_cap) {
@@ -584,14 +622,17 @@ TEST(revoke_session_revokes_one_flags_the_current_and_404s_unknown) {
   CHECK_FALSE(otherId.empty());
 
   CHECK(h.service.revokeSession(account, "sess-nope", current) == AuthService::RevokeOutcome::notFound);
+  CHECK(h.revocations.digests.empty());
 
   CHECK(h.service.revokeSession(account, otherId, current) == AuthService::RevokeOutcome::revoked);
   CHECK_FALSE(h.service.authenticate(other).has_value());
   CHECK(h.service.authenticate(current).has_value());
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4"}));
 
   CHECK(h.service.revokeSession(account, currentId, current) == AuthService::RevokeOutcome::revokedCurrent);
   CHECK_FALSE(h.service.authenticate(current).has_value());
   CHECK_EQ(h.repo.sessions.size(), 0u);
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4", "d2"}));
 }
 
 TEST(revoke_session_of_another_account_is_not_found) {
@@ -607,6 +648,7 @@ TEST(revoke_session_of_another_account_is_not_found) {
 
   CHECK(h.service.revokeSession(account, eveId, sam.signedIn->sessionSecret) == AuthService::RevokeOutcome::notFound);
   CHECK(h.service.authenticate(eveSession).has_value());
+  CHECK(h.revocations.digests.empty());
 }
 
 TEST(sign_out_everywhere_keeps_the_caller_current_and_drops_the_rest) {
@@ -625,6 +667,7 @@ TEST(sign_out_everywhere_keeps_the_caller_current_and_drops_the_rest) {
   CHECK_EQ(h.repo.sessions.size(), 1u);
   CHECK(h.service.authenticate(current).has_value());
   CHECK_FALSE(h.service.authenticate(other).has_value());
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d4"}));
 }
 
 TEST(authenticate_refuses_a_session_whose_account_is_closed) {
@@ -659,6 +702,7 @@ TEST(close_account_drops_every_session_disconnects_tools_and_returns_the_grace_e
   CHECK_FALSE(h.service.authenticate(otherSession).has_value());
   CHECK_EQ(h.oauth.listGrants(account).size(), 0u);
   CHECK(h.repo.usersById[account.str()].deletedAt.has_value());
+  CHECK_EQ(h.revocations.digests, (std::vector<std::string>{"d2", "d4"}));
 }
 
 TEST(a_within_grace_magic_link_sign_in_revives_the_account_and_reissues_a_session) {
@@ -822,7 +866,8 @@ TEST(complete_code_loses_the_race_when_a_concurrent_verify_already_spent_the_row
   FakeClock clock;
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
-  AuthService service{repo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
   repo.insertLink("d1", "d83201", Email{"sam@example.com"}, clock.now,
                   clock.now + AuthPolicy::linkLifetimeMs, "");
 
@@ -868,4 +913,89 @@ TEST(a_pending_fork_rides_the_row_whichever_credential_spends_it) {
   AuthService::CodeCompletion done = h.service.completeCode("sam@example.com", h.lastCode());
   CHECK(done.verdict == CodeVerdict::valid);
   CHECK_EQ(done.forkSource, std::string("t_source"));
+}
+
+namespace {
+// AuthService telling a real LiveSessions: every live connection opened on a session, and each digest whose connection
+// closed, in order. `Repo` lets a case stand in for the store.
+template <typename Repo = FakeAuthRepository>
+struct LiveHarness {
+  Repo repo;
+  FakeOAuthRepository oauthRepo;
+  FakeEmail email;
+  FakeTokens tokens;
+  FakeClock clock;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
+  LiveSessions live;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, live, "https://windmill.works"};
+  std::vector<std::string> closed;
+
+  // The session `secret` of `account`, with a live connection opened on it.
+  void connect(const UserId& account, const std::string& secret) {
+    const std::string digest = tokens.digestOf(secret);
+    repo.insertSession(digest, account, clock.now + 1'000'000, "", "", clock.now);
+    live.enter({digest}, clock.now, [this, digest] { closed.push_back(digest); });
+  }
+};
+}
+
+TEST(signing_out_closes_the_session_s_live_connections_before_it_returns) {
+  LiveHarness<> h;
+  const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
+  h.connect(sam, "s-web");
+  h.connect(sam, "s-phone");
+  h.service.signOut("s-web");
+  CHECK_EQ(h.closed, (std::vector<std::string>{"d-web"}));
+}
+
+TEST(revoking_a_session_closes_its_live_connections_before_it_returns) {
+  LiveHarness<> h;
+  const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
+  h.connect(sam, "s-web");
+  h.connect(sam, "s-phone");
+  CHECK(h.service.revokeSession(sam, h.repo.sessions["d-phone"].id, "s-web") == AuthService::RevokeOutcome::revoked);
+  CHECK_EQ(h.closed, (std::vector<std::string>{"d-phone"}));
+}
+
+TEST(signing_out_everywhere_closes_every_other_session_s_live_connections_before_it_returns) {
+  LiveHarness<> h;
+  const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
+  const UserId eve = h.repo.createUser(Email{"eve@example.com"}, "eve").id;
+  h.connect(sam, "s-web");
+  h.connect(sam, "s-phone");
+  h.connect(sam, "s-tablet");
+  h.connect(eve, "s-eve");
+  h.service.signOutEverywhere(sam, "s-web");
+  CHECK_EQ(h.closed, (std::vector<std::string>{"d-phone", "d-tablet"}));
+}
+
+TEST(closing_an_account_closes_every_live_connection_its_sessions_opened_before_it_returns) {
+  LiveHarness<> h;
+  const UserId sam = h.repo.createUser(Email{"sam@example.com"}, "sam").id;
+  const UserId eve = h.repo.createUser(Email{"eve@example.com"}, "eve").id;
+  h.connect(sam, "s-web");
+  h.connect(sam, "s-phone");
+  h.connect(eve, "s-eve");
+  h.service.closeAccount(sam);
+  CHECK_EQ(h.closed, (std::vector<std::string>{"d-web", "d-phone"}));
+}
+
+TEST(folding_an_account_closes_every_live_connection_its_sessions_opened_a_session_minted_mid_fold_included) {
+  // A sign-in that lands between the fold's revocation and its delete: the deleted row takes that session with it.
+  struct SignInMidFold : FakeAuthRepository {
+    std::vector<std::string> revokeAllSessions(const UserId& userId) override {
+      std::vector<std::string> revoked = FakeAuthRepository::revokeAllSessions(userId);
+      insertSession("d-late", userId, 9'000'000'000'000, "", "", 0);
+      return revoked;
+    }
+  };
+  LiveHarness<SignInMidFold> h;
+  const UserId phone = h.repo.createUser(Email{"relay@privaterelay.appleid.com"}, "phone").id;
+  h.connect(phone, "s-phone");
+  h.live.enter({"d-late"}, h.clock.now, [&h] { h.closed.push_back("d-late"); });
+  h.service.requestLink("sam@example.com", "", std::nullopt, "", [](AuthService::RequestResult) {});  // s1/d1
+  CHECK(h.service.linkAccount(phone, "s1").outcome == AuthService::LinkOutcome::linked);
+  CHECK_EQ(h.closed, (std::vector<std::string>{"d-phone", "d-late"}));
+  CHECK(h.repo.sessions.count("d-late") == 0);
 }

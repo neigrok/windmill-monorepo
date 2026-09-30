@@ -71,8 +71,8 @@ class WithheldWindowTests {
         return store
     }
 
-    // The transient's bytes are a cross-surface contract, not this room's to invent: web, iOS and
-    // Android say the same sentence about the same act, and every one of them ends in a full stop.
+    // The transient's bytes are a cross-surface contract, not this room's to invent: web and Android
+    // say the same sentence about the same act, and every one of them ends in a full stop.
     @Test
     fun theTransientNamesWhichThingLeftAndCountsWhereItCannotName() {
         val set = TrainingSet(id = "set_1", exerciseId = "bench-press", weightKg = 81.5, reps = 5,
@@ -354,7 +354,7 @@ class WithheldWindowTests {
     }
 
     // D13. There is no exception. A set's delete was exempted from the abandon on the belief that it
-    // rode the on-disk queue as it does on iOS; on this surface it sits in the very same in-memory
+    // rode an on-disk queue; on this surface it sits in the very same in-memory
     // list as every other verb, with no queue, no disk and no retry behind it. The exemption left it
     // strictly worse off than the deletes that abandon: it fired from a backgrounded app, timed out
     // ten seconds later against a host nothing had reached, and was dropped whatever the send

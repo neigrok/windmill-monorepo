@@ -87,7 +87,7 @@ test('the landing offers the log itself, and no line on it is dated against the 
 test('the brand root is handed gym’s words and its two scenes, and its door is the log', () => {
   const { root } = gymRoutes.landing;
   assert.equal(gymRoutes.landing.summary, undefined, 'nothing reads landing.summary any more');
-  assert.equal(root.platforms, 'Web · iOS · Android');
+  assert.equal(root.platforms, 'Web · Android');
   assert.deepEqual(root.band, {
     title: 'Log the set. The rest is remembered.',
     sub: 'Two taps between sets, and the next session opens with last time’s numbers.',

@@ -1,0 +1,1 @@
+Domain/Package.swift: unscanned GymDomain has no Swift file

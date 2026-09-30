@@ -1,0 +1,492 @@
+[
+  {
+    "name": "nfc composes a decomposed e and combining acute into one scalar",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "e\u0301"
+    },
+    "expect": {"value": "\u00e9"}
+  },
+  {
+    "name": "nfc false keeps the decomposed form byte for byte",
+    "input": {
+      "spec": {"path": "mark.memo", "kind": "text", "unit": "bytes", "min": 0, "max": 40, "trim": false, "nfc": false},
+      "value": "e\u0301"
+    },
+    "expect": {"value": "e\u0301"}
+  },
+  {
+    "name": "nfc runs before measuring: twelve decomposed letters fit twelve chars",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301"
+    },
+    "expect": {"value": "\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9\u00e9"}
+  },
+  {
+    "name": "without nfc twelve decomposed letters measure 24 scalars and are tooLong",
+    "input": {
+      "spec": {
+        "path": "probe.trimOnly", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": false
+      },
+      "value": "e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301e\u0301"
+    },
+    "expect": {
+      "violation": {
+        "rule": "probe.trimOnly", "path": "trimOnly", "reason": "tooLong", "max": 12, "unit": "chars", "measured": 24
+      }
+    }
+  },
+  {
+    "name": "nfc maps the Angstrom sign to A with ring above",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u212b"
+    },
+    "expect": {"value": "\u00c5"}
+  },
+  {
+    "name": "nfc composes Hangul jamo into one syllable",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u1100\u1161"
+    },
+    "expect": {"value": "\uac00"}
+  },
+  {
+    "name": "trim removes U+0009 to U+000D at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u0009\u000a\u000b\u000c\u000dx\u000d\u000c\u000b\u000a\u0009"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+0020 at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": " x "
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+00A0 at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u00a0x\u00a0"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+1680 at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u1680x\u1680"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+2000 to U+200A at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u2000\u2001\u2002\u2003\u2004\u2005\u2006\u2007\u2008\u2009\u200ax\u200a\u2009\u2008\u2007\u2006\u2005\u2004\u2003\u2002\u2001\u2000"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+2028 and U+2029 at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u2028\u2029x\u2029\u2028"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+202F at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u202fx\u202f"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+205F at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u205fx\u205f"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+3000 at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\u3000x\u3000"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim removes U+FEFF at both ends",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "\ufeffx\ufeff"
+    },
+    "expect": {"value": "x"}
+  },
+  {
+    "name": "trim keeps whitespace between other characters",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "a\u3000\u00a0b"
+    },
+    "expect": {"value": "a\u3000\u00a0b"}
+  },
+  {
+    "name": "trim keeps U+200B, which is not in the whitespace set",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u200bx\u200b"
+    },
+    "expect": {"value": "\u200bx\u200b"}
+  },
+  {
+    "name": "trim keeps U+180E, which is not in the whitespace set",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u180ex\u180e"
+    },
+    "expect": {"value": "\u180ex\u180e"}
+  },
+  {
+    "name": "trim keeps U+0085, which is not in the whitespace set",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u0085x\u0085"
+    },
+    "expect": {"value": "\u0085x\u0085"}
+  },
+  {
+    "name": "trim keeps U+001C to U+001F, which are not in the whitespace set",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u001c\u001dx\u001e\u001f"
+    },
+    "expect": {"value": "\u001c\u001dx\u001e\u001f"}
+  },
+  {
+    "name": "a lone U+200B is one char, not blank",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "\u200b"
+    },
+    "expect": {"value": "\u200b"}
+  },
+  {
+    "name": "trim removes a space by scalar even when a combining mark follows it",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": " \u0301x"
+    },
+    "expect": {"value": "\u0301x"}
+  },
+  {
+    "name": "trim false keeps leading and trailing whitespace",
+    "input": {
+      "spec": {
+        "path": "probe.nfcOnly", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": false, "nfc": true
+      },
+      "value": " x\u3000"
+    },
+    "expect": {"value": " x\u3000"}
+  },
+  {
+    "name": "U+0000 inside the text is nul",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "a\u0000b"
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "nul"}}
+  },
+  {
+    "name": "U+0000 survives trim and is nul",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": " \u0000 "
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "nul"}}
+  },
+  {
+    "name": "nul is found before measuring: a too long text holding U+0000 is nul",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "abcdefghijklm\u0000"
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "nul"}}
+  },
+  {
+    "name": "nul is found before the minimum: a lone U+0000 is nul, not tooShort",
+    "input": {
+      "spec": {"path": "probe.raw", "kind": "text", "unit": "chars", "min": 3, "max": 5, "trim": false, "nfc": false},
+      "value": "\u0000"
+    },
+    "expect": {"violation": {"rule": "probe.raw", "path": "raw", "reason": "nul"}}
+  },
+  {
+    "name": "nul applies with trim and nfc off",
+    "input": {
+      "spec": {"path": "mark.memo", "kind": "text", "unit": "bytes", "min": 0, "max": 40, "trim": false, "nfc": false},
+      "value": "note\u0000"
+    },
+    "expect": {"violation": {"rule": "mark.memo", "path": "memo", "reason": "nul"}}
+  },
+  {
+    "name": "twelve astral emoji are twelve chars",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "😀😀😀😀😀😀😀😀😀😀😀😀"
+    },
+    "expect": {"value": "😀😀😀😀😀😀😀😀😀😀😀😀"}
+  },
+  {
+    "name": "an astral emoji is four bytes: seven of them are 28 bytes",
+    "input": {
+      "spec": {"path": "card.body", "kind": "text", "unit": "bytes", "min": 0, "max": 24, "trim": true, "nfc": true},
+      "value": "😀😀😀😀😀😀😀"
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.body", "path": "body", "reason": "tooLong", "max": 24, "unit": "bytes", "measured": 28
+      }
+    }
+  },
+  {
+    "name": "a CJK ideograph is three bytes: eight of them fit 24 bytes",
+    "input": {
+      "spec": {"path": "card.body", "kind": "text", "unit": "bytes", "min": 0, "max": 24, "trim": true, "nfc": true},
+      "value": "漢字漢字漢字漢字"
+    },
+    "expect": {"value": "漢字漢字漢字漢字"}
+  },
+  {
+    "name": "a CJK ideograph is three bytes: eight and a letter are 25 bytes",
+    "input": {
+      "spec": {"path": "card.body", "kind": "text", "unit": "bytes", "min": 0, "max": 24, "trim": true, "nfc": true},
+      "value": "漢字漢字漢字漢字x"
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.body", "path": "body", "reason": "tooLong", "max": 24, "unit": "bytes", "measured": 25
+      }
+    }
+  },
+  {
+    "name": "a flag is two chars: six flags fit twelve",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸"
+    },
+    "expect": {"value": "🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸"}
+  },
+  {
+    "name": "a flag is two chars: seven flags are fourteen",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸🇺🇸"
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.title", "path": "title", "reason": "tooLong", "max": 12, "unit": "chars", "measured": 14
+      }
+    }
+  },
+  {
+    "name": "a family joined by U+200D is five chars: three families are fifteen",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "👩\u200d👩\u200d👧👩\u200d👩\u200d👧👩\u200d👩\u200d👧"
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.title", "path": "title", "reason": "tooLong", "max": 12, "unit": "chars", "measured": 15
+      }
+    }
+  },
+  {
+    "name": "only whitespace with min 1 is blank",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "  \u0009 "
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}
+  },
+  {
+    "name": "empty with min 1 is blank",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": ""
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}
+  },
+  {
+    "name": "only whitespace with min 0 trims to empty",
+    "input": {
+      "spec": {"path": "card.claim", "kind": "text", "unit": "chars", "min": 0, "max": 12, "trim": true, "nfc": true},
+      "value": "   "
+    },
+    "expect": {"value": ""}
+  },
+  {
+    "name": "empty with min 3 is blank, not tooShort",
+    "input": {
+      "spec": {"path": "probe.raw", "kind": "text", "unit": "chars", "min": 3, "max": 5, "trim": false, "nfc": false},
+      "value": ""
+    },
+    "expect": {"violation": {"rule": "probe.raw", "path": "raw", "reason": "blank"}}
+  },
+  {
+    "name": "below min is tooShort with its unit",
+    "input": {
+      "spec": {"path": "probe.raw", "kind": "text", "unit": "chars", "min": 3, "max": 5, "trim": false, "nfc": false},
+      "value": "ab"
+    },
+    "expect": {"violation": {"rule": "probe.raw", "path": "raw", "reason": "tooShort", "min": 3, "unit": "chars"}}
+  },
+  {
+    "name": "with trim off two spaces measure 2 and are tooShort, not blank",
+    "input": {
+      "spec": {"path": "probe.raw", "kind": "text", "unit": "chars", "min": 3, "max": 5, "trim": false, "nfc": false},
+      "value": "  "
+    },
+    "expect": {"violation": {"rule": "probe.raw", "path": "raw", "reason": "tooShort", "min": 3, "unit": "chars"}}
+  },
+  {
+    "name": "with trim off three spaces reach min 3",
+    "input": {
+      "spec": {"path": "probe.raw", "kind": "text", "unit": "chars", "min": 3, "max": 5, "trim": false, "nfc": false},
+      "value": "   "
+    },
+    "expect": {"value": "   "}
+  },
+  {
+    "name": "tooShort counts bytes after nfc: e and a combining acute compose to two bytes",
+    "input": {
+      "spec": {"path": "probe.bytesMin", "kind": "text", "unit": "bytes", "min": 4, "max": 8, "trim": true, "nfc": true},
+      "value": "e\u0301"
+    },
+    "expect": {
+      "violation": {"rule": "probe.bytesMin", "path": "bytesMin", "reason": "tooShort", "min": 4, "unit": "bytes"}
+    }
+  },
+  {
+    "name": "exactly max passes",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "abcdefghijkl"
+    },
+    "expect": {"value": "abcdefghijkl"}
+  },
+  {
+    "name": "one over max is tooLong carrying the measured count",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "abcdefghijklm"
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.title", "path": "title", "reason": "tooLong", "max": 12, "unit": "chars", "measured": 13
+      }
+    }
+  },
+  {
+    "name": "trim brings a long value within max",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "  abcdefghijkl  "
+    },
+    "expect": {"value": "abcdefghijkl"}
+  },
+  {
+    "name": "tooLong measures the trimmed text",
+    "input": {
+      "spec": {"path": "card.body", "kind": "text", "unit": "bytes", "min": 0, "max": 24, "trim": true, "nfc": true},
+      "value": "  aaaaaaaaaaaaaaaaaaaaaaaaa  "
+    },
+    "expect": {
+      "violation": {
+        "rule": "card.body", "path": "body", "reason": "tooLong", "max": 24, "unit": "bytes", "measured": 25
+      }
+    }
+  },
+  {
+    "name": "null passes the optional overload even with min 1",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": null
+    },
+    "expect": {"value": null}
+  },
+  {
+    "name": "a violation carries the path the spec was applied at",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "value": "", "at": "items.2.title"
+    },
+    "expect": {"violation": {"rule": "card.title", "path": "items.2.title", "reason": "blank"}}
+  },
+  {
+    "name": "measure composes and trims, then counts chars",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "measure": "  e\u0301  "
+    },
+    "expect": {"measured": 1}
+  },
+  {
+    "name": "measure without nfc or trim counts every byte",
+    "input": {
+      "spec": {"path": "mark.memo", "kind": "text", "unit": "bytes", "min": 0, "max": 40, "trim": false, "nfc": false},
+      "measure": "  e\u0301  "
+    },
+    "expect": {"measured": 7}
+  },
+  {
+    "name": "measure counts an astral emoji as four bytes",
+    "input": {
+      "spec": {"path": "card.body", "kind": "text", "unit": "bytes", "min": 0, "max": 24, "trim": true, "nfc": true},
+      "measure": "😀"
+    },
+    "expect": {"measured": 4}
+  },
+  {
+    "name": "measure has no nul step and counts U+0000",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "measure": "a\u0000b"
+    },
+    "expect": {"measured": 3}
+  },
+  {
+    "name": "measure trims U+FEFF and keeps U+200B",
+    "input": {
+      "spec": {"path": "card.title", "kind": "text", "unit": "chars", "min": 1, "max": 12, "trim": true, "nfc": true},
+      "measure": "\ufeff\u200bx\ufeff"
+    },
+    "expect": {"measured": 2}
+  },
+  {"name": "isBlank: the empty string is blank", "input": {"isBlank": ""}, "expect": {"isBlank": true}},
+  {
+    "name": "isBlank: ASCII whitespace is blank",
+    "input": {"isBlank": " \u0009\u000a\u000d\u000b\u000c"},
+    "expect": {"isBlank": true}
+  },
+  {
+    "name": "isBlank: every non-ASCII member of the set is blank",
+    "input": {"isBlank": "\u00a0\u1680\u2000\u2005\u200a\u2028\u2029\u202f\u205f\u3000\ufeff"},
+    "expect": {"isBlank": true}
+  },
+  {"name": "isBlank: U+200B is not blank", "input": {"isBlank": "\u200b"}, "expect": {"isBlank": false}},
+  {"name": "isBlank: U+0085 is not blank", "input": {"isBlank": "\u0085"}, "expect": {"isBlank": false}},
+  {"name": "isBlank: U+180E is not blank", "input": {"isBlank": " \u180e "}, "expect": {"isBlank": false}},
+  {"name": "isBlank: a letter between spaces is not blank", "input": {"isBlank": " a "}, "expect": {"isBlank": false}},
+  {"name": "isBlank: U+0000 is not blank", "input": {"isBlank": "\u0000"}, "expect": {"isBlank": false}}
+]

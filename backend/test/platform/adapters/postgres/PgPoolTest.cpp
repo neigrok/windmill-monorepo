@@ -173,7 +173,7 @@ TEST(pg_pool_returns_the_connection_when_the_transaction_throws) {
 
 TEST(pg_pool_ceiling_is_twenty_by_default) {
   PgPool pool{"postgresql://localhost/windmill-never-opened"};
-  CHECK_EQ(PgPool::kDefaultMaxConnections, static_cast<std::size_t>(20));
+  CHECK_EQ(PgPool::kMaxConnections, static_cast<std::size_t>(20));
   CHECK_EQ(pool.maxConnections(), static_cast<std::size_t>(20));
   CHECK_EQ(pool.openConnections(), static_cast<std::size_t>(0));  // and it connects lazily
 }

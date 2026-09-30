@@ -1,0 +1,1878 @@
+[
+  {
+    "name": "stored without holds equals drawn",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 5000,
+            "counter": 0
+          },
+          "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+          "admittedHigh": "0:0:",
+          "serverOffsetMs": 0,
+          "offsetSamples": [],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A"
+        },
+        "confirmed": {
+          "self/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a1",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a2",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Three",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1400:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1400:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1400,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  20,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "cursors": {
+          "self/probe": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+            "digest": "eaac2d204c813e1a5ce87808979aab2d9e29b4635b556faebafac25d9a5fda91",
+            "booted": true
+          }
+        },
+        "outbox": [
+          {
+            "localId": "g1/0",
+            "gestureId": "g1",
+            "lineage": "A",
+            "scope": "self/probe",
+            "state": "ready",
+            "commitOrder": 1,
+            "releaseAt": 0,
+            "stamp": "5000:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Uno",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1"
+            }
+          }
+        ]
+      },
+      "scope": "self/probe"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "review",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Uno",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0002",
+          "life": [
+            "alive",
+            "1100:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1100:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a1",
+              "1100:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Two",
+              "1100:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "alive",
+            "1200:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1200:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a2",
+              "1200:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Three",
+              "1200:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "1400:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1400:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              1400,
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00001",
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              20,
+              "1400:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 1
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00001",
+          "life": [
+            "alive",
+            "1300:0:srv"
+          ],
+          "born": "1300:0:srv",
+          "f": {
+            "startedAt": [
+              1300,
+              "1300:0:srv"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "card",
+          "card0001"
+        ],
+        [
+          "card",
+          "card0002"
+        ],
+        [
+          "card",
+          "card0003"
+        ],
+        [
+          "lap",
+          "lap00001"
+        ],
+        [
+          "run",
+          "run00001"
+        ]
+      ],
+      "capCount": {
+        "card": 3
+      }
+    }
+  },
+  {
+    "name": "a held delete leaves the record alive in stored and in the cap count",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 5000,
+            "counter": 0
+          },
+          "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+          "admittedHigh": "0:0:",
+          "serverOffsetMs": 0,
+          "offsetSamples": [],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A"
+        },
+        "confirmed": {
+          "self/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a1",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a2",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Three",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1400:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1400:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1400,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  20,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "cursors": {
+          "self/probe": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+            "digest": "eaac2d204c813e1a5ce87808979aab2d9e29b4635b556faebafac25d9a5fda91",
+            "booted": true
+          }
+        },
+        "outbox": [
+          {
+            "localId": "g1/0",
+            "gestureId": "g1",
+            "lineage": "A",
+            "scope": "self/probe",
+            "state": "held",
+            "commitOrder": 1,
+            "releaseAt": 14000,
+            "stamp": "5000:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0002",
+                  "born": "1100:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1"
+            }
+          }
+        ]
+      },
+      "scope": "self/probe"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "review",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "One",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0002",
+          "life": [
+            "alive",
+            "1100:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1100:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a1",
+              "1100:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Two",
+              "1100:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "alive",
+            "1200:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1200:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a2",
+              "1200:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Three",
+              "1200:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "1400:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1400:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              1400,
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00001",
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              20,
+              "1400:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 1
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00001",
+          "life": [
+            "alive",
+            "1300:0:srv"
+          ],
+          "born": "1300:0:srv",
+          "f": {
+            "startedAt": [
+              1300,
+              "1300:0:srv"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "card",
+          "card0001"
+        ],
+        [
+          "card",
+          "card0002"
+        ],
+        [
+          "card",
+          "card0003"
+        ],
+        [
+          "lap",
+          "lap00001"
+        ],
+        [
+          "run",
+          "run00001"
+        ]
+      ],
+      "capCount": {
+        "card": 3
+      }
+    }
+  },
+  {
+    "name": "stored keeps the prediction of a ready command entry",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 5001,
+            "counter": 0
+          },
+          "hlcHigh": "5001:0:r_aaaaaaaaaaaa",
+          "admittedHigh": "0:0:",
+          "serverOffsetMs": 0,
+          "offsetSamples": [],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A"
+        },
+        "confirmed": {
+          "self/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a1",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a2",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Three",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1400:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1400:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1400,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  20,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "cursors": {
+          "self/probe": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+            "digest": "eaac2d204c813e1a5ce87808979aab2d9e29b4635b556faebafac25d9a5fda91",
+            "booted": true
+          }
+        },
+        "outbox": [
+          {
+            "localId": "g1/0",
+            "gestureId": "g1",
+            "lineage": "A",
+            "scope": "self/probe",
+            "state": "ready",
+            "commitOrder": 1,
+            "releaseAt": 0,
+            "stamp": "5000:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/probe",
+              "cmd": {
+                "name": "probe.start",
+                "args": {
+                  "id": "run00002",
+                  "label": "Morning",
+                  "startedAt": 5000,
+                  "join": true
+                }
+              },
+              "gestureId": "g1"
+            },
+            "predict": [
+              {
+                "t": "run",
+                "id": "run00002",
+                "born": "5000:0:r_aaaaaaaaaaaa",
+                "life": [
+                  "alive",
+                  "5000:0:r_aaaaaaaaaaaa"
+                ],
+                "f": {
+                  "label": [
+                    "Morning",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "startedAt": [
+                    5000,
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              }
+            ]
+          },
+          {
+            "localId": "g2/0",
+            "gestureId": "g2",
+            "lineage": "A",
+            "scope": "self/probe",
+            "state": "ready",
+            "commitOrder": 2,
+            "releaseAt": 0,
+            "stamp": "5001:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "lap",
+                  "id": "lap00002",
+                  "born": "5001:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "at": [
+                      5001,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "runId": [
+                      "run00002",
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "weight": [
+                      30,
+                      "5001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2"
+            }
+          }
+        ]
+      },
+      "scope": "self/probe"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "review",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "One",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0002",
+          "life": [
+            "alive",
+            "1100:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1100:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a1",
+              "1100:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Two",
+              "1100:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "alive",
+            "1200:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1200:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a2",
+              "1200:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Three",
+              "1200:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "1400:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1400:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              1400,
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00001",
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              20,
+              "1400:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 1
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00002",
+          "life": [
+            "alive",
+            "5001:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5001:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              5001,
+              "5001:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00002",
+              "5001:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              30,
+              "5001:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00001",
+          "life": [
+            "alive",
+            "1300:0:srv"
+          ],
+          "born": "1300:0:srv",
+          "f": {
+            "startedAt": [
+              1300,
+              "1300:0:srv"
+            ]
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00002",
+          "life": [
+            "alive",
+            "5000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "5000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Morning",
+              "5000:0:r_aaaaaaaaaaaa"
+            ],
+            "startedAt": [
+              5000,
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "card",
+          "card0001"
+        ],
+        [
+          "card",
+          "card0002"
+        ],
+        [
+          "card",
+          "card0003"
+        ],
+        [
+          "lap",
+          "lap00001"
+        ],
+        [
+          "lap",
+          "lap00002"
+        ],
+        [
+          "run",
+          "run00001"
+        ],
+        [
+          "run",
+          "run00002"
+        ]
+      ],
+      "capCount": {
+        "card": 3
+      }
+    }
+  },
+  {
+    "name": "a held tag delete is alive in stored",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 5002,
+            "counter": 0
+          },
+          "hlcHigh": "5002:0:r_aaaaaaaaaaaa",
+          "admittedHigh": "0:0:",
+          "serverOffsetMs": 0,
+          "offsetSamples": [],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A"
+        },
+        "confirmed": {
+          "tree/b_00000001": [
+            {
+              "t": "link",
+              "id": [
+                "oak",
+                "elm"
+              ],
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "meta",
+              "id": "meta",
+              "f": {
+                "title": [
+                  "Plan",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "tag",
+              "id": "elm",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Elm",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "tag",
+              "id": "oak",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "label": [
+                  "Oak",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "cursors": {
+          "tree/b_00000001": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NH0",
+            "digest": "24d2e7c1b40c7806e4930a63d8d99c684a0a8b454249ffef9f9c8067565cc182",
+            "booted": true
+          }
+        },
+        "outbox": [
+          {
+            "localId": "g1/0",
+            "gestureId": "g1",
+            "lineage": "A",
+            "scope": "tree/b_00000001",
+            "state": "ready",
+            "commitOrder": 1,
+            "releaseAt": 0,
+            "stamp": "5000:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "oak",
+                    "elm"
+                  ],
+                  "life": [
+                    "dead",
+                    "5000:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g1"
+            }
+          },
+          {
+            "localId": "g2/0",
+            "gestureId": "g2",
+            "lineage": "A",
+            "scope": "tree/b_00000001",
+            "state": "ready",
+            "commitOrder": 2,
+            "releaseAt": 0,
+            "stamp": "5001:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "link",
+                  "id": [
+                    "elm",
+                    "oak"
+                  ],
+                  "life": [
+                    "alive",
+                    "5001:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g2"
+            }
+          },
+          {
+            "localId": "g3/0",
+            "gestureId": "g3",
+            "lineage": "A",
+            "scope": "tree/b_00000001",
+            "state": "held",
+            "commitOrder": 3,
+            "releaseAt": 14002,
+            "stamp": "5002:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "tree/b_00000001",
+              "d": [
+                {
+                  "t": "tag",
+                  "id": "elm",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "dead",
+                    "5002:0:r_aaaaaaaaaaaa"
+                  ]
+                }
+              ],
+              "gestureId": "g3"
+            }
+          }
+        ]
+      },
+      "scope": "tree/b_00000001"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "link",
+          "id": [
+            "elm",
+            "oak"
+          ],
+          "life": [
+            "alive",
+            "5001:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        {
+          "t": "link",
+          "id": [
+            "oak",
+            "elm"
+          ],
+          "life": [
+            "dead",
+            "5000:0:r_aaaaaaaaaaaa"
+          ]
+        },
+        {
+          "t": "meta",
+          "id": "meta",
+          "f": {
+            "title": [
+              "Plan",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "tag",
+          "id": "elm",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Elm",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "tag",
+          "id": "oak",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "label": [
+              "Oak",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "link",
+          [
+            "elm",
+            "oak"
+          ]
+        ],
+        [
+          "meta",
+          "meta"
+        ],
+        [
+          "tag",
+          "elm"
+        ],
+        [
+          "tag",
+          "oak"
+        ]
+      ],
+      "capCount": {}
+    }
+  },
+  {
+    "name": "stored of confirmed rows alone",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 0,
+            "counter": 0
+          },
+          "hlcHigh": "0:0:",
+          "admittedHigh": "0:0:",
+          "serverOffsetMs": 0,
+          "offsetSamples": [],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A"
+        },
+        "confirmed": {
+          "self/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a0",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "tier": [
+                  "review",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "One",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a1",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a2",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Three",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            },
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1400:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1400:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1400,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  20,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            }
+          ]
+        },
+        "cursors": {
+          "self/probe": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6NX0",
+            "digest": "eaac2d204c813e1a5ce87808979aab2d9e29b4635b556faebafac25d9a5fda91",
+            "booted": true
+          }
+        }
+      },
+      "scope": "self/probe"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "life": [
+            "alive",
+            "1000:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a0",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "tier": [
+              "review",
+              "1000:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "One",
+              "1000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0002",
+          "life": [
+            "alive",
+            "1100:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1100:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a1",
+              "1100:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Two",
+              "1100:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "alive",
+            "1200:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1200:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a2",
+              "1200:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Three",
+              "1200:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "1400:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1400:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              1400,
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00001",
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              20,
+              "1400:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 1
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00001",
+          "life": [
+            "alive",
+            "1300:0:srv"
+          ],
+          "born": "1300:0:srv",
+          "f": {
+            "startedAt": [
+              1300,
+              "1300:0:srv"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "card",
+          "card0001"
+        ],
+        [
+          "card",
+          "card0002"
+        ],
+        [
+          "card",
+          "card0003"
+        ],
+        [
+          "lap",
+          "lap00001"
+        ],
+        [
+          "run",
+          "run00001"
+        ]
+      ],
+      "capCount": {
+        "card": 3
+      }
+    }
+  },
+  {
+    "name": "a lifeless record left by a pending update over a server delete is not counted against the cap",
+    "input": {
+      "replica": {
+        "meta": {
+          "replica": "rp_00000000000000000000000000000001",
+          "state": "bound",
+          "nextN": 1,
+          "hlc": {
+            "ms": 5000,
+            "counter": 0
+          },
+          "hlcHigh": "5000:0:r_aaaaaaaaaaaa",
+          "admittedHigh": "2000:0:r_bbbbbbbbbbbb",
+          "serverOffsetMs": 0,
+          "offsetSamples": [
+            {
+              "offset": 0,
+              "rtt": 0
+            }
+          ],
+          "serverEpoch": "ep-1",
+          "ackThrough": 0,
+          "authPaused": false,
+          "account": "A",
+          "clockReading": {
+            "wall": 5001,
+            "mono": 5001,
+            "boot": "boot-1"
+          }
+        },
+        "confirmed": {
+          "self/probe": [
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1100:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1100:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a1",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Two",
+                  "1100:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            },
+            {
+              "t": "card",
+              "id": "card0003",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "ord": [
+                  "a2",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Three",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1400:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1400:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1400,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1400:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  20,
+                  "1400:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 5,
+              "rc": 5000,
+              "ru": 5000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1300:0:srv"
+              ],
+              "born": "1300:0:srv",
+              "f": {
+                "startedAt": [
+                  1300,
+                  "1300:0:srv"
+                ]
+              },
+              "seq": 4,
+              "rc": 4000,
+              "ru": 4000
+            }
+          ]
+        },
+        "cursors": {
+          "self/probe": {
+            "cursor": "eyJlIjoiZXAtMSIsIm0iOiJsaXZlIiwicyI6Nn0",
+            "digest": "cbf254b205d71a43b1a613bd53cb4c7f710eb2fb3e6482e4f3ebe4f64f1a08c0",
+            "booted": true
+          }
+        },
+        "outbox": [
+          {
+            "localId": "g1/0",
+            "gestureId": "g1",
+            "lineage": "A",
+            "scope": "self/probe",
+            "state": "ready",
+            "commitOrder": 1,
+            "releaseAt": 0,
+            "stamp": "5000:0:r_aaaaaaaaaaaa",
+            "intent": {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0001",
+                  "born": "1000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "title": [
+                      "Uno",
+                      "5000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1"
+            }
+          }
+        ]
+      },
+      "scope": "self/probe"
+    },
+    "expect": {
+      "records": [
+        {
+          "t": "card",
+          "id": "card0001",
+          "born": "1000:0:r_aaaaaaaaaaaa",
+          "f": {
+            "title": [
+              "Uno",
+              "5000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0002",
+          "life": [
+            "alive",
+            "1100:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1100:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a1",
+              "1100:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Two",
+              "1100:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "card",
+          "id": "card0003",
+          "life": [
+            "alive",
+            "1200:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1200:0:r_aaaaaaaaaaaa",
+          "f": {
+            "ord": [
+              "a2",
+              "1200:0:r_aaaaaaaaaaaa"
+            ],
+            "title": [
+              "Three",
+              "1200:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        },
+        {
+          "t": "lap",
+          "id": "lap00001",
+          "life": [
+            "alive",
+            "1400:0:r_aaaaaaaaaaaa"
+          ],
+          "born": "1400:0:r_aaaaaaaaaaaa",
+          "f": {
+            "at": [
+              1400,
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "runId": [
+              "run00001",
+              "1400:0:r_aaaaaaaaaaaa"
+            ],
+            "weight": [
+              20,
+              "1400:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          "v": {
+            "no": 1
+          }
+        },
+        {
+          "t": "run",
+          "id": "run00001",
+          "life": [
+            "alive",
+            "1300:0:srv"
+          ],
+          "born": "1300:0:srv",
+          "f": {
+            "startedAt": [
+              1300,
+              "1300:0:srv"
+            ]
+          }
+        }
+      ],
+      "visible": [
+        [
+          "card",
+          "card0002"
+        ],
+        [
+          "card",
+          "card0003"
+        ],
+        [
+          "lap",
+          "lap00001"
+        ],
+        [
+          "run",
+          "run00001"
+        ]
+      ],
+      "capCount": {
+        "card": 2
+      }
+    }
+  }
+]

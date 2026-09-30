@@ -1,0 +1,123 @@
+[
+  {
+    "name": "both absent",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "join": null
+    }
+  },
+  {
+    "name": "absent loses to a life",
+    "input": {
+      "a": null,
+      "b": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the greater stamp wins: a later death",
+    "input": {
+      "a": [
+        "alive",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "dead",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dead",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the greater stamp wins: a later revival",
+    "input": {
+      "a": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "alive",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "alive",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: alive wins",
+    "input": {
+      "a": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "alive",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "alive",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the actor breaks a pair tie",
+    "input": {
+      "a": [
+        "alive",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "dead",
+        "5:0:r_bbbbbbbbbbbb"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dead",
+        "5:0:r_bbbbbbbbbbbb"
+      ]
+    }
+  },
+  {
+    "name": "equal lives",
+    "input": {
+      "a": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dead",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  }
+]

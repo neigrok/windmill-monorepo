@@ -1,0 +1,10 @@
+name: iOS CI
+
+on: push
+
+jobs:
+  test-and-build:
+    runs-on: macos-26
+    steps:
+      - name: Test on macOS
+        run: swift test --explicit-target-dependency-import-check error -Xswiftc -swift-version -Xswiftc 5

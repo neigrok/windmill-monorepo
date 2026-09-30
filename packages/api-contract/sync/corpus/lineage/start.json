@@ -1,0 +1,2295 @@
+[
+  {
+    "name": "engine start releases every held entry, and the instance takes a fresh actor that its next commit uses (web: no fork guard)",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3005,
+                "counter": 0
+              },
+              "hlcHigh": "3005:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "held",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "steps": [
+        {
+          "op": "engineStart",
+          "deviceNow": 4000
+        },
+        {
+          "op": "commit",
+          "scope": "self/probe",
+          "changes": [
+            {
+              "op": "create",
+              "t": "card",
+              "id": "card0010",
+              "f": {
+                "title": "After start"
+              }
+            }
+          ],
+          "opts": {
+            "gestureId": "after-start"
+          },
+          "deviceNow": 4001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": false
+        },
+        {
+          "localIds": [
+            "after-start/0"
+          ],
+          "retired": [],
+          "stamp": "4001:0:r_cccccccccccc"
+        }
+      ],
+      "device": {
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 4001,
+                "counter": 0
+              },
+              "hlcHigh": "4001:0:r_cccccccccccc",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              },
+              {
+                "localId": "after-start/0",
+                "gestureId": "after-start",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 7,
+                "releaseAt": 0,
+                "stamp": "4001:0:r_cccccccccccc",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0010",
+                      "born": "4001:0:r_cccccccccccc",
+                      "life": [
+                        "alive",
+                        "4001:0:r_cccccccccccc"
+                      ],
+                      "f": {
+                        "title": [
+                          "After start",
+                          "4001:0:r_cccccccccccc"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "after-start"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "a forkGuard equal to its backup-excluded copy keeps every replica id",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a2",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a2",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              }
+            ]
+          }
+        ],
+        "meta": {
+          "forkGuard": "fg_00000001"
+        }
+      },
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "steps": [
+        {
+          "op": "engineStart",
+          "backupGuard": "fg_00000001",
+          "deviceNow": 4000
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": false
+        }
+      ],
+      "device": {
+        "meta": {
+          "forkGuard": "fg_00000001"
+        },
+        "active": "rp_000000000000000000000000000000a2",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a2",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "a missing backup-excluded copy re-identifies every replica under a new forkGuard",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a2",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a2",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              }
+            ]
+          },
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000b1",
+              "state": "dormant",
+              "nextN": 1,
+              "hlc": {
+                "ms": 2000,
+                "counter": 0
+              },
+              "hlcHigh": "2000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            },
+            "outbox": [
+              {
+                "localId": "before-B/0",
+                "gestureId": "before-B",
+                "lineage": "B",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "2000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "cardB001",
+                      "born": "2000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "2000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "B's",
+                          "2000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "before-B"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    20,
+                    20
+                  ]
+                }
+              }
+            }
+          }
+        ],
+        "meta": {
+          "forkGuard": "fg_00000001"
+        }
+      },
+      "ids": [
+        "rp_000000000000000000000000000000c1",
+        "rp_000000000000000000000000000000c2"
+      ],
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "forkGuards": [
+        "fg_00000002"
+      ],
+      "steps": [
+        {
+          "op": "engineStart",
+          "backupGuard": null,
+          "deviceNow": 4000
+        },
+        {
+          "op": "push",
+          "deviceNow": 4001
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": true
+        },
+        {
+          "replica": "rp_000000000000000000000000000000c1",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0009",
+                  "born": "3000:0:r_aaaaaaaaaaaa",
+                  "life": [
+                    "alive",
+                    "3000:0:r_aaaaaaaaaaaa"
+                  ],
+                  "f": {
+                    "title": [
+                      "Sent",
+                      "3000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g1",
+              "n": 1
+            },
+            {
+              "scope": "self/probe",
+              "d": [
+                {
+                  "t": "card",
+                  "id": "card0009",
+                  "born": "3000:0:r_aaaaaaaaaaaa",
+                  "f": {
+                    "tier": [
+                      "draft",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "gestureId": "g2",
+              "n": 2
+            }
+          ]
+        }
+      ],
+      "device": {
+        "meta": {
+          "forkGuard": "fg_00000002"
+        },
+        "active": "rp_000000000000000000000000000000c1",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000c1",
+              "state": "bound",
+              "nextN": 3,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2",
+                  "n": 2
+                },
+                "n": 2,
+                "digest": "95ad6410f57a20a44c61f483b73fd169dbd587a7bd1b9890be63c93d6f2e93fa"
+              }
+            ]
+          },
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000c2",
+              "state": "dormant",
+              "nextN": 1,
+              "hlc": {
+                "ms": 2000,
+                "counter": 0
+              },
+              "hlcHigh": "2000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "B"
+            },
+            "outbox": [
+              {
+                "localId": "before-B/0",
+                "gestureId": "before-B",
+                "lineage": "B",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "2000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "cardB001",
+                      "born": "2000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "2000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "B's",
+                          "2000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "before-B"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    20,
+                    20
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a backup-excluded copy that differs re-identifies every replica too",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a2",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a2",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "n": 1,
+                "digest": "f78f862c5df6ec76e9328e10234217637fb76293a1ad610b85bbbc69e30bdddf"
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              }
+            ]
+          }
+        ],
+        "meta": {
+          "forkGuard": "fg_00000001"
+        }
+      },
+      "ids": [
+        "rp_000000000000000000000000000000c1"
+      ],
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "forkGuards": [
+        "fg_00000002"
+      ],
+      "steps": [
+        {
+          "op": "engineStart",
+          "backupGuard": "fg_00000009",
+          "deviceNow": 4000
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": true
+        }
+      ],
+      "device": {
+        "meta": {
+          "forkGuard": "fg_00000002"
+        },
+        "active": "rp_000000000000000000000000000000c1",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000c1",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3002,
+                "counter": 0
+              },
+              "hlcHigh": "3002:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Sent",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3002:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "events": [
+        {
+          "event": "activeReplicaChanged",
+          "previous": "rp_000000000000000000000000000000a2",
+          "replica": "rp_000000000000000000000000000000c1"
+        }
+      ]
+    }
+  },
+  {
+    "name": "a store without a forkGuard mints its first and re-identifies nothing",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3005,
+                "counter": 0
+              },
+              "hlcHigh": "3005:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "held",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "forkGuards": [
+        "fg_00000001"
+      ],
+      "steps": [
+        {
+          "op": "engineStart",
+          "backupGuard": null,
+          "deviceNow": 4000
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": false
+        }
+      ],
+      "device": {
+        "meta": {
+          "forkGuard": "fg_00000001"
+        },
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3005,
+                "counter": 0
+              },
+              "hlcHigh": "3005:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ended": []
+    }
+  },
+  {
+    "name": "engine start answers a pending sign-in for the caller to resume",
+    "input": {
+      "device": {
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3005,
+                "counter": 0
+              },
+              "hlcHigh": "3005:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "held",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "actors": [
+        "r_cccccccccccc"
+      ],
+      "steps": [
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {
+            "probe": true
+          },
+          "deviceNow": 4000
+        },
+        {
+          "op": "engineStart",
+          "deviceNow": 5000
+        }
+      ]
+    },
+    "expect": {
+      "returns": [
+        {
+          "complete": false,
+          "due": [
+            {
+              "kind": "signed-out",
+              "product": "probe",
+              "count": {
+                "board": 1,
+                "card": 1,
+                "meta": 1,
+                "run": 1
+              },
+              "counted": [
+                "g1/0",
+                "g2/0",
+                "g3/0",
+                "g4/0",
+                "g5/0",
+                "g6/0"
+              ]
+            }
+          ]
+        },
+        {
+          "actor": "r_cccccccccccc",
+          "reidentified": false,
+          "pendingSignIn": {
+            "account": "A"
+          }
+        }
+      ],
+      "device": {
+        "meta": {
+          "pendingSignIn": {
+            "account": "A"
+          }
+        },
+        "active": "rp_000000000000000000000000000000a0",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_000000000000000000000000000000a0",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 3005,
+                "counter": 0
+              },
+              "hlcHigh": "3005:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "3000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "f": {
+                        "title": [
+                          "Offline",
+                          "3000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g1"
+                }
+              },
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 2,
+                "releaseAt": 0,
+                "stamp": "3001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "f": {
+                        "tier": [
+                          "draft",
+                          "3001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "guard": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "field": "tier",
+                      "stamp": null
+                    }
+                  ],
+                  "gestureId": "g2"
+                }
+              },
+              {
+                "localId": "g3/0",
+                "gestureId": "g3",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 3,
+                "releaseAt": 0,
+                "stamp": "3002:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "cmd": {
+                    "name": "probe.start",
+                    "args": {
+                      "id": "run00009",
+                      "startedAt": 3002,
+                      "join": true
+                    }
+                  },
+                  "gestureId": "g3"
+                },
+                "predict": [
+                  {
+                    "t": "run",
+                    "id": "run00009",
+                    "born": "3002:0:r_aaaaaaaaaaaa",
+                    "life": [
+                      "alive",
+                      "3002:0:r_aaaaaaaaaaaa"
+                    ],
+                    "f": {
+                      "startedAt": [
+                        3002,
+                        "3002:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  }
+                ]
+              },
+              {
+                "localId": "g4/0",
+                "gestureId": "g4",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 4,
+                "releaseAt": 0,
+                "stamp": "3003:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "board",
+                      "id": "b_00000001",
+                      "born": "3003:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "alive",
+                        "3003:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g4"
+                }
+              },
+              {
+                "localId": "g5/0",
+                "gestureId": "g5",
+                "lineage": "anon",
+                "scope": "tree/b_00000001",
+                "state": "ready",
+                "commitOrder": 5,
+                "releaseAt": 0,
+                "stamp": "3004:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "tree/b_00000001",
+                  "d": [
+                    {
+                      "t": "meta",
+                      "id": "meta",
+                      "f": {
+                        "title": [
+                          "Plan",
+                          "3004:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "gestureId": "g5"
+                }
+              },
+              {
+                "localId": "g6/0",
+                "gestureId": "g6",
+                "lineage": "anon",
+                "scope": "self/probe",
+                "state": "ready",
+                "commitOrder": 6,
+                "releaseAt": 12005,
+                "stamp": "3005:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/probe",
+                  "d": [
+                    {
+                      "t": "card",
+                      "id": "card0009",
+                      "born": "3000:0:r_aaaaaaaaaaaa",
+                      "life": [
+                        "dead",
+                        "3005:0:r_aaaaaaaaaaaa"
+                      ]
+                    }
+                  ],
+                  "gestureId": "g6"
+                }
+              }
+            ],
+            "device": {
+              "probe": {
+                "picture:pic00001": {
+                  "bytes": 12
+                },
+                "rack": {
+                  "plates": [
+                    10
+                  ]
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ended": []
+    }
+  }
+]

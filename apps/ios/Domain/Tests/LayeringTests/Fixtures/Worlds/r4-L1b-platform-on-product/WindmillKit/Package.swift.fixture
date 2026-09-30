@@ -1,0 +1,34 @@
+// swift-tools-version: 6.2
+import PackageDescription
+
+let userInterface: [SwiftSetting] = [
+  .defaultIsolation(MainActor.self),
+  .treatAllWarnings(as: .error),
+  .treatWarning("DeprecatedDeclaration", as: .warning),
+]
+let domainKit: Target.Dependency = .product(name: "DomainKit", package: "Domain")
+let gymDomain: Target.Dependency = .product(name: "GymDomain", package: "Domain")
+let journalDomain: Target.Dependency = .product(name: "JournalDomain", package: "Domain")
+let syncCore: Target.Dependency = .product(name: "SyncCore", package: "Sync")
+let syncAPI: Target.Dependency = .product(name: "SyncAPI", package: "Sync")
+let syncEngine: Target.Dependency = .product(name: "SyncEngine", package: "Sync")
+
+let package = Package(
+  name: "WindmillKit",
+  platforms: [.iOS(.v18), .macOS(.v15)],
+  products: [
+    .library(name: "WindmillPlatform", targets: ["WindmillPlatform"]),
+    .library(name: "WindmillGym", targets: ["WindmillGym"]),
+    .library(name: "WindmillJournal", targets: ["WindmillJournal"]),
+  ],
+  dependencies: [.package(path: "../Domain"), .package(path: "../Sync")],
+  targets: [
+    .target(name: "WindmillPlatform", dependencies: [gymDomain, domainKit, syncCore, syncAPI, syncEngine], swiftSettings: userInterface),
+    .target(name: "WindmillGym", dependencies: [gymDomain, domainKit, syncCore, syncAPI, syncEngine, "WindmillPlatform"], swiftSettings: userInterface),
+    .target(
+      name: "WindmillJournal", dependencies: [journalDomain, domainKit, syncCore, syncAPI, syncEngine, "WindmillPlatform"],
+      swiftSettings: userInterface),
+    .testTarget(name: "WindmillGymTests", dependencies: ["WindmillGym", gymDomain, domainKit], swiftSettings: [.defaultIsolation(MainActor.self)]),
+  ],
+  swiftLanguageModes: [.v6]
+)

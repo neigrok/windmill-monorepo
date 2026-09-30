@@ -50,8 +50,9 @@ struct AuthRepository {
   virtual void updateName(const UserId& userId, const std::string& name) = 0;
   virtual void markUserDeleted(const UserId& userId, UnixMs now) = 0;
   virtual void reviveUser(const UserId& userId) = 0;
-  // Hard delete; only for the link merge, whose precondition is an account proven empty.
-  virtual void deleteUser(const UserId& userId) = 0;
+  // Hard delete; only for the link merge, whose precondition is an account proven empty. Returns the digests of the
+  // sessions the account still held, which go with it.
+  virtual std::vector<std::string> deleteUser(const UserId& userId) = 0;
 
   // Keyed by the provider's subject, never by an address.
   virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;
@@ -90,9 +91,10 @@ struct AuthRepository {
   // Scoped to the owner, so a foreign id matches nothing. Returns the deleted row's digest,
   // or nullopt when nothing matched.
   virtual std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) = 0;
-  // Drops every session but the one whose digest is kept.
-  virtual void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) = 0;
-  virtual void revokeAllSessions(const UserId& userId) = 0;
+  // Drops every session but the one whose digest is kept. Returns the dropped rows' digests.
+  virtual std::vector<std::string> revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) = 0;
+  // Returns the dropped rows' digests.
+  virtual std::vector<std::string> revokeAllSessions(const UserId& userId) = 0;
 };
 
 }

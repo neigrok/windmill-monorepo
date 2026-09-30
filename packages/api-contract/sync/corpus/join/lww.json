@@ -1,0 +1,260 @@
+[
+  {
+    "name": "both absent",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "join": null
+    }
+  },
+  {
+    "name": "absent loses to a register",
+    "input": {
+      "a": null,
+      "b": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "a register beats absent",
+    "input": {
+      "a": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": null
+    },
+    "expect": {
+      "join": [
+        "x",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the greater stamp wins",
+    "input": {
+      "a": [
+        "old",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "new",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "new",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the greater stamp wins whatever the value",
+    "input": {
+      "a": [
+        "zzz",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "aaa",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "aaa",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the counter breaks a millisecond tie",
+    "input": {
+      "a": [
+        "a",
+        "5:2:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "b",
+        "5:1:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "a",
+        "5:2:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "the actor breaks a pair tie",
+    "input": {
+      "a": [
+        "a",
+        "5:0:r_bbbbbbbbbbbb"
+      ],
+      "b": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "a",
+        "5:0:r_bbbbbbbbbbbb"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: the bytewise-greater jcs value wins",
+    "input": {
+      "a": [
+        "a",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "b",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: 9 beats 10, as jcs \"9\" > \"10\"",
+    "input": {
+      "a": [
+        10,
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        9,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        9,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: null beats false, as jcs \"null\" > \"false\"",
+    "input": {
+      "a": [
+        false,
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        null,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        null,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: UTF-8 bytes decide, U+1F600 beats U+FB33",
+    "input": {
+      "a": [
+        "דּ",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "😀",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "😀",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: an object value by its jcs",
+    "input": {
+      "a": [
+        {
+          "b": 1,
+          "a": 2
+        },
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        {
+          "a": 3
+        },
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        {
+          "a": 3
+        },
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal stamps: 9 beats \"1\", as jcs byte 0x39 > 0x22",
+    "input": {
+      "a": [
+        "1",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        9,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        9,
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal registers",
+    "input": {
+      "a": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "same",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  }
+]

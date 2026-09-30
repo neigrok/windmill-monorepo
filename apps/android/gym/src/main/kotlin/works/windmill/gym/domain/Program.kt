@@ -4,8 +4,8 @@ import kotlinx.serialization.Serializable
 
 // A routine is savable while incomplete: a row with no set target is `open` and asks at the rack.
 object Program {
-    // Counted in CODE POINTS, the unit the store counts in (`char_length`) and the one web and iOS
-    // draw too. Sixty of them weigh at most 240 bytes, which is the store's own ceiling, so a name
+    // Counted in CODE POINTS, the unit the store counts in (`char_length`) and the one web draws
+    // too. Sixty of them weigh at most 240 bytes, which is the store's own ceiling, so a name
     // this field accepts is a name the log takes.
     const val maxNameLength = 60
 

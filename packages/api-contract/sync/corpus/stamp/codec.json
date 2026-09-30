@@ -1,0 +1,302 @@
+[
+  {
+    "name": "a plain stamp",
+    "input": {
+      "text": "1700000000000:3:r_aaaaaaaaaaaa"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 1700000000000,
+      "counter": 3,
+      "actor": "r_aaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "the unset stamp",
+    "input": {
+      "text": "0:0:"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 0,
+      "counter": 0,
+      "actor": ""
+    }
+  },
+  {
+    "name": "zero ms and counter with an actor",
+    "input": {
+      "text": "0:0:a"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 0,
+      "counter": 0,
+      "actor": "a"
+    }
+  },
+  {
+    "name": "the server actor",
+    "input": {
+      "text": "12:0:srv"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 12,
+      "counter": 0,
+      "actor": "srv"
+    }
+  },
+  {
+    "name": "an actor holding colons: the remainder after two colons",
+    "input": {
+      "text": "1:2:a:b:c"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 1,
+      "counter": 2,
+      "actor": "a:b:c"
+    }
+  },
+  {
+    "name": "a 64-byte actor",
+    "input": {
+      "text": "1:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 1,
+      "counter": 0,
+      "actor": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "a space is printable ASCII and so a valid actor byte",
+    "input": {
+      "text": "1:0:r x"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 1,
+      "counter": 0,
+      "actor": "r x"
+    }
+  },
+  {
+    "name": "a tilde, the last printable byte",
+    "input": {
+      "text": "1:0:~"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 1,
+      "counter": 0,
+      "actor": "~"
+    }
+  },
+  {
+    "name": "ms at 2^53 - 1",
+    "input": {
+      "text": "9007199254740991:0:a"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 9007199254740991,
+      "counter": 0,
+      "actor": "a"
+    }
+  },
+  {
+    "name": "counter at 2^32 - 1",
+    "input": {
+      "text": "5:4294967295:a"
+    },
+    "expect": {
+      "valid": true,
+      "ms": 5,
+      "counter": 4294967295,
+      "actor": "a"
+    }
+  },
+  {
+    "name": "empty text",
+    "input": {
+      "text": ""
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "one colon",
+    "input": {
+      "text": "1:0"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "no colon",
+    "input": {
+      "text": "1"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "leading zero in ms",
+    "input": {
+      "text": "01:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "leading zero in counter",
+    "input": {
+      "text": "1:00:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "ms at 2^53",
+    "input": {
+      "text": "9007199254740992:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "counter at 2^32",
+    "input": {
+      "text": "5:4294967296:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "empty actor on a set stamp",
+    "input": {
+      "text": "5:0:"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "empty actor with zero ms and a counter",
+    "input": {
+      "text": "0:1:"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a 65-byte actor",
+    "input": {
+      "text": "1:0:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a non-ASCII actor",
+    "input": {
+      "text": "1:0:é"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a control byte in the actor",
+    "input": {
+      "text": "1:0:a\tb"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a DEL byte in the actor",
+    "input": {
+      "text": "1:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a plus sign",
+    "input": {
+      "text": "+1:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a minus sign",
+    "input": {
+      "text": "-1:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "a decimal point",
+    "input": {
+      "text": "1.5:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "an exponent",
+    "input": {
+      "text": "1e3:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "an empty ms",
+    "input": {
+      "text": ":0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "an empty counter",
+    "input": {
+      "text": "1::a"
+    },
+    "expect": {
+      "valid": false
+    }
+  },
+  {
+    "name": "whitespace around a number",
+    "input": {
+      "text": " 1:0:a"
+    },
+    "expect": {
+      "valid": false
+    }
+  }
+]

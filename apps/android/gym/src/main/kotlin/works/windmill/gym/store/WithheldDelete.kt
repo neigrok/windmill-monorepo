@@ -15,8 +15,8 @@ import works.windmill.gym.domain.TrainingSet
 // no queue and no retry behind it. So leaving the room lets them all go the same way — a delete a
 // backgrounded app fired has nobody to read what the log answered, and one that timed out would be
 // dropped in silence. That means a weigh-in delete abandoned on backgrounding puts the dot back, the
-// same as every other verb here. A set's delete rides `SetQueue` on iOS and does not here; until it
-// does, that is the difference between the two phones and this file is the one place it is decided.
+// same as every other verb here, a set's delete included, and this file is the one place it is
+// decided.
 sealed interface Deletion {
     // What the window is keyed on. One window per subject, and the id every list filters against.
     val subjectId: String
@@ -114,9 +114,9 @@ data class WithheldDelete(
 // that named one of them would be saying the wrong thing about the others. Undo takes the newest
 // back and the transient re-reads for the rest.
 //
-// The same bytes on all three surfaces.
+// The same bytes on every surface.
 object Withheld {
-    // How long a delete stays the lifter's. Must match iOS to the millisecond.
+    // How long a delete stays the lifter's. Must match every surface to the millisecond.
     const val windowMs = 9_000L
 
     const val undo = "Undo"

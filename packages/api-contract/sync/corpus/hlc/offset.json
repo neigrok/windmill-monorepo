@@ -1,0 +1,671 @@
+[
+  {
+    "name": "one sample: server time minus the midpoint",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 1000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1200,
+            "mono": 1200,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8900,
+          "rtt": 200
+        }
+      ],
+      "serverOffsetMs": 8900,
+      "clockReading": {
+        "wall": 1200,
+        "mono": 1200,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "an odd round trip floors the midpoint",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 1000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1001,
+            "mono": 1001,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 9000,
+          "rtt": 1
+        }
+      ],
+      "serverOffsetMs": 9000,
+      "clockReading": {
+        "wall": 1001,
+        "mono": 1001,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "the lowest round trip wins",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 1000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1400,
+            "mono": 1400,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20050,
+          "send": {
+            "wall": 11000,
+            "mono": 11000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 11100,
+            "mono": 11100,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 30000,
+          "send": {
+            "wall": 21000,
+            "mono": 21000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 21300,
+            "mono": 21300,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8800,
+          "rtt": 400
+        },
+        {
+          "offset": 9000,
+          "rtt": 100
+        },
+        {
+          "offset": 8850,
+          "rtt": 300
+        }
+      ],
+      "serverOffsetMs": 9000,
+      "clockReading": {
+        "wall": 21300,
+        "mono": 21300,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "equal round trips choose the latest sample",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 1000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1100,
+            "mono": 1100,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20500,
+          "send": {
+            "wall": 11000,
+            "mono": 11000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 11100,
+            "mono": 11100,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8950,
+          "rtt": 100
+        },
+        {
+          "offset": 9450,
+          "rtt": 100
+        }
+      ],
+      "serverOffsetMs": 9450,
+      "clockReading": {
+        "wall": 11100,
+        "mono": 11100,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "a negative offset for a fast device clock",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 1000,
+          "send": {
+            "wall": 400000,
+            "mono": 400000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 400020,
+            "mono": 400020,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": -399010,
+          "rtt": 20
+        }
+      ],
+      "serverOffsetMs": -399010,
+      "clockReading": {
+        "wall": 400020,
+        "mono": 400020,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "the round trip is monotonic ms, and the midpoint wall ms",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 500,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1100,
+            "mono": 900,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20000,
+          "send": {
+            "wall": 11000,
+            "mono": 11000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 11300,
+            "mono": 11200,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8950,
+          "rtt": 400
+        },
+        {
+          "offset": 8850,
+          "rtt": 200
+        }
+      ],
+      "serverOffsetMs": 8850,
+      "clockReading": {
+        "wall": 11300,
+        "mono": 11200,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "a wall-clock jump against the monotonic clock discards the earlier samples",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1010,
+            "mono": 500,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20000,
+          "send": {
+            "wall": 11000,
+            "mono": 10490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 11050,
+            "mono": 10540,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 30000,
+          "send": {
+            "wall": 80000,
+            "mono": 11500,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 80100,
+            "mono": 11600,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": -50050,
+          "rtt": 100
+        }
+      ],
+      "serverOffsetMs": -50050,
+      "clockReading": {
+        "wall": 80100,
+        "mono": 11600,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "a reboot discards the earlier samples, which then accumulate again",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1010,
+            "mono": 500,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 30000,
+          "send": {
+            "wall": 80000,
+            "mono": 0,
+            "boot": "boot-2"
+          },
+          "recv": {
+            "wall": 80100,
+            "mono": 100,
+            "boot": "boot-2"
+          }
+        },
+        {
+          "serverTime": 31000,
+          "send": {
+            "wall": 81000,
+            "mono": 1000,
+            "boot": "boot-2"
+          },
+          "recv": {
+            "wall": 81040,
+            "mono": 1040,
+            "boot": "boot-2"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": -50050,
+          "rtt": 100
+        },
+        {
+          "offset": -50020,
+          "rtt": 40
+        }
+      ],
+      "serverOffsetMs": -50020,
+      "clockReading": {
+        "wall": 81040,
+        "mono": 1040,
+        "boot": "boot-2"
+      }
+    }
+  },
+  {
+    "name": "a request that straddles a jump yields no sample, and the next sample discards the earlier ones",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1010,
+            "mono": 500,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20000,
+          "send": {
+            "wall": 11000,
+            "mono": 10490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 90050,
+            "mono": 10540,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 30000,
+          "send": {
+            "wall": 90100,
+            "mono": 10600,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 90140,
+            "mono": 10640,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": -60120,
+          "rtt": 40
+        }
+      ],
+      "serverOffsetMs": -60120,
+      "clockReading": {
+        "wall": 90140,
+        "mono": 10640,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "a reboot during the request yields no sample, and the offset is kept",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 10000,
+          "send": {
+            "wall": 1000,
+            "mono": 490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1010,
+            "mono": 500,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 20000,
+          "send": {
+            "wall": 5000,
+            "mono": 4490,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 5050,
+            "mono": 30,
+            "boot": "boot-2"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 8995,
+          "rtt": 10
+        }
+      ],
+      "serverOffsetMs": 8995,
+      "clockReading": {
+        "wall": 1010,
+        "mono": 500,
+        "boot": "boot-1"
+      }
+    }
+  },
+  {
+    "name": "only the last OFFSET_SAMPLES samples count",
+    "input": {
+      "responses": [
+        {
+          "serverTime": 5000,
+          "send": {
+            "wall": 1000,
+            "mono": 1000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 1002,
+            "mono": 1002,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 90000,
+          "send": {
+            "wall": 10000,
+            "mono": 10000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 10050,
+            "mono": 10050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 91000,
+          "send": {
+            "wall": 11000,
+            "mono": 11000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 11050,
+            "mono": 11050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 92000,
+          "send": {
+            "wall": 12000,
+            "mono": 12000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 12050,
+            "mono": 12050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 93000,
+          "send": {
+            "wall": 13000,
+            "mono": 13000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 13050,
+            "mono": 13050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 94000,
+          "send": {
+            "wall": 14000,
+            "mono": 14000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 14050,
+            "mono": 14050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 95000,
+          "send": {
+            "wall": 15000,
+            "mono": 15000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 15050,
+            "mono": 15050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 96000,
+          "send": {
+            "wall": 16000,
+            "mono": 16000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 16050,
+            "mono": 16050,
+            "boot": "boot-1"
+          }
+        },
+        {
+          "serverTime": 97000,
+          "send": {
+            "wall": 17000,
+            "mono": 17000,
+            "boot": "boot-1"
+          },
+          "recv": {
+            "wall": 17050,
+            "mono": 17050,
+            "boot": "boot-1"
+          }
+        }
+      ]
+    },
+    "expect": {
+      "samples": [
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        },
+        {
+          "offset": 79975,
+          "rtt": 50
+        }
+      ],
+      "serverOffsetMs": 79975,
+      "clockReading": {
+        "wall": 17050,
+        "mono": 17050,
+        "boot": "boot-1"
+      }
+    }
+  }
+]

@@ -1,0 +1,272 @@
+[
+  {
+    "name": "the epoch is 1970-01-01",
+    "input": {"op": "fromInstant", "ms": 0, "offsetSeconds": 0},
+    "expect": {"day": "1970-01-01"}
+  },
+  {
+    "name": "one ms before the epoch is 1969-12-31: floor division",
+    "input": {"op": "fromInstant", "ms": -1, "offsetSeconds": 0},
+    "expect": {"day": "1969-12-31"}
+  },
+  {
+    "name": "exactly one day before the epoch is 1969-12-31",
+    "input": {"op": "fromInstant", "ms": -86400000, "offsetSeconds": 0},
+    "expect": {"day": "1969-12-31"}
+  },
+  {
+    "name": "one ms more than a day before the epoch is 1969-12-30",
+    "input": {"op": "fromInstant", "ms": -86400001, "offsetSeconds": 0},
+    "expect": {"day": "1969-12-30"}
+  },
+  {
+    "name": "the default now is 2027-01-15 in UTC",
+    "input": {"op": "fromInstant", "ms": 1800000000000, "offsetSeconds": 0},
+    "expect": {"day": "2027-01-15"}
+  },
+  {
+    "name": "a negative offset moves 08:00 UTC back to the previous day",
+    "input": {"op": "fromInstant", "ms": 1800000000000, "offsetSeconds": -32400},
+    "expect": {"day": "2027-01-14"}
+  },
+  {
+    "name": "a positive offset of +14h keeps 08:00 UTC on the same day",
+    "input": {"op": "fromInstant", "ms": 1800000000000, "offsetSeconds": 50400},
+    "expect": {"day": "2027-01-15"}
+  },
+  {
+    "name": "+2h moves 22:00 UTC to midnight of the next day",
+    "input": {"op": "fromInstant", "ms": 1800050400000, "offsetSeconds": 7200},
+    "expect": {"day": "2027-01-16"}
+  },
+  {
+    "name": "+05:30 moves 19:30 UTC to the next day",
+    "input": {"op": "fromInstant", "ms": 1800041400000, "offsetSeconds": 19800},
+    "expect": {"day": "2027-01-16"}
+  },
+  {
+    "name": "midnight UTC belongs to its own day",
+    "input": {"op": "fromInstant", "ms": 1799971200000, "offsetSeconds": 0},
+    "expect": {"day": "2027-01-15"}
+  },
+  {
+    "name": "midnight UTC less one second of offset is the previous day",
+    "input": {"op": "fromInstant", "ms": 1799971200000, "offsetSeconds": -1},
+    "expect": {"day": "2027-01-14"}
+  },
+  {
+    "name": "a negative instant with a positive offset crosses back to the epoch",
+    "input": {"op": "fromInstant", "ms": -3600000, "offsetSeconds": 3600},
+    "expect": {"day": "1970-01-01"}
+  },
+  {
+    "name": "the epoch with a negative offset is 1969-12-31",
+    "input": {"op": "fromInstant", "ms": 0, "offsetSeconds": -1},
+    "expect": {"day": "1969-12-31"}
+  },
+  {
+    "name": "noon on a leap day is 2024-02-29",
+    "input": {"op": "fromInstant", "ms": 1709208000000, "offsetSeconds": 0},
+    "expect": {"day": "2024-02-29"}
+  },
+  {
+    "name": "2100 is not a leap year: midnight of 2100-03-01",
+    "input": {"op": "fromInstant", "ms": 4107542400000, "offsetSeconds": 0},
+    "expect": {"day": "2100-03-01"}
+  },
+  {
+    "name": "one ms before 2100-03-01 is 2100-02-28",
+    "input": {"op": "fromInstant", "ms": 4107542399999, "offsetSeconds": 0},
+    "expect": {"day": "2100-02-28"}
+  },
+  {
+    "name": "a year below 1000 is zero-padded to four digits",
+    "input": {"op": "fromInstant", "ms": -30610267200000, "offsetSeconds": 0},
+    "expect": {"day": "0999-12-31"}
+  },
+  {
+    "name": "the first ms of 0001-01-01",
+    "input": {"op": "fromInstant", "ms": -62135596800000, "offsetSeconds": 0},
+    "expect": {"day": "0001-01-01"}
+  },
+  {
+    "name": "the last ms of 9999-12-31",
+    "input": {"op": "fromInstant", "ms": 253402300799999, "offsetSeconds": 0},
+    "expect": {"day": "9999-12-31"}
+  },
+  {"name": "parses a plain day", "input": {"op": "parse", "text": "2027-01-15"}, "expect": {"day": "2027-01-15"}},
+  {
+    "name": "parses February 29 of 2024, a leap year",
+    "input": {"op": "parse", "text": "2024-02-29"},
+    "expect": {"day": "2024-02-29"}
+  },
+  {
+    "name": "parses February 29 of 2000: divisible by 400",
+    "input": {"op": "parse", "text": "2000-02-29"},
+    "expect": {"day": "2000-02-29"}
+  },
+  {"name": "refuses February 29 of 2023", "input": {"op": "parse", "text": "2023-02-29"}, "expect": {"error": true}},
+  {
+    "name": "refuses February 29 of 1900: divisible by 100, not 400",
+    "input": {"op": "parse", "text": "1900-02-29"},
+    "expect": {"error": true}
+  },
+  {"name": "refuses February 29 of 2100", "input": {"op": "parse", "text": "2100-02-29"}, "expect": {"error": true}},
+  {"name": "parses April 30", "input": {"op": "parse", "text": "2027-04-30"}, "expect": {"day": "2027-04-30"}},
+  {"name": "refuses April 31", "input": {"op": "parse", "text": "2027-04-31"}, "expect": {"error": true}},
+  {"name": "refuses month 13", "input": {"op": "parse", "text": "2027-13-01"}, "expect": {"error": true}},
+  {"name": "refuses month 00", "input": {"op": "parse", "text": "2027-00-10"}, "expect": {"error": true}},
+  {"name": "refuses day 00", "input": {"op": "parse", "text": "2027-01-00"}, "expect": {"error": true}},
+  {"name": "refuses day 32", "input": {"op": "parse", "text": "2027-01-32"}, "expect": {"error": true}},
+  {"name": "parses year 0001", "input": {"op": "parse", "text": "0001-01-01"}, "expect": {"day": "0001-01-01"}},
+  {"name": "parses year 9999", "input": {"op": "parse", "text": "9999-12-31"}, "expect": {"day": "9999-12-31"}},
+  {"name": "refuses year 0000", "input": {"op": "parse", "text": "0000-01-01"}, "expect": {"error": true}},
+  {"name": "refuses a one-digit month", "input": {"op": "parse", "text": "2027-1-15"}, "expect": {"error": true}},
+  {"name": "refuses a two-digit year", "input": {"op": "parse", "text": "27-01-15"}, "expect": {"error": true}},
+  {"name": "refuses slashes", "input": {"op": "parse", "text": "2027/01/15"}, "expect": {"error": true}},
+  {
+    "name": "refuses a time after the day",
+    "input": {"op": "parse", "text": "2027-01-15T00:00"},
+    "expect": {"error": true}
+  },
+  {"name": "refuses a leading space", "input": {"op": "parse", "text": " 2027-01-15"}, "expect": {"error": true}},
+  {
+    "name": "refuses a trailing newline",
+    "input": {"op": "parse", "text": "2027-01-15\u000a"},
+    "expect": {"error": true}
+  },
+  {"name": "refuses the empty string", "input": {"op": "parse", "text": ""}, "expect": {"error": true}},
+  {"name": "refuses a five-digit year", "input": {"op": "parse", "text": "10000-01-01"}, "expect": {"error": true}},
+  {
+    "name": "refuses a letter in place of a digit",
+    "input": {"op": "parse", "text": "2027-01-1a"},
+    "expect": {"error": true}
+  },
+  {
+    "name": "refuses digits other than ASCII 0-9",
+    "input": {"op": "parse", "text": "\uff12\uff10\uff12\uff17-01-15"},
+    "expect": {"error": true}
+  },
+  {
+    "name": "adding one day crosses a month",
+    "input": {"op": "adding", "day": "2027-01-31", "days": 1},
+    "expect": {"day": "2027-02-01"}
+  },
+  {
+    "name": "adding one day crosses a year",
+    "input": {"op": "adding", "day": "2027-12-31", "days": 1},
+    "expect": {"day": "2028-01-01"}
+  },
+  {
+    "name": "adding one day reaches a leap day",
+    "input": {"op": "adding", "day": "2024-02-28", "days": 1},
+    "expect": {"day": "2024-02-29"}
+  },
+  {
+    "name": "adding one day skips a missing leap day",
+    "input": {"op": "adding", "day": "2023-02-28", "days": 1},
+    "expect": {"day": "2023-03-01"}
+  },
+  {
+    "name": "1900 has no leap day",
+    "input": {"op": "adding", "day": "1900-02-28", "days": 1},
+    "expect": {"day": "1900-03-01"}
+  },
+  {
+    "name": "2000 has a leap day",
+    "input": {"op": "adding", "day": "2000-02-28", "days": 1},
+    "expect": {"day": "2000-02-29"}
+  },
+  {
+    "name": "adding -1 goes back across a month",
+    "input": {"op": "adding", "day": "2027-03-01", "days": -1},
+    "expect": {"day": "2027-02-28"}
+  },
+  {
+    "name": "adding -1 goes back across a year",
+    "input": {"op": "adding", "day": "2027-01-01", "days": -1},
+    "expect": {"day": "2026-12-31"}
+  },
+  {
+    "name": "adding -1 goes back across the epoch",
+    "input": {"op": "adding", "day": "1970-01-01", "days": -1},
+    "expect": {"day": "1969-12-31"}
+  },
+  {
+    "name": "adding 0 is the same day",
+    "input": {"op": "adding", "day": "2027-01-15", "days": 0},
+    "expect": {"day": "2027-01-15"}
+  },
+  {
+    "name": "adding 366 days spans a leap year",
+    "input": {"op": "adding", "day": "2024-01-01", "days": 366},
+    "expect": {"day": "2025-01-01"}
+  },
+  {
+    "name": "adding -146097 days is exactly 400 years back",
+    "input": {"op": "adding", "day": "2027-01-15", "days": -146097},
+    "expect": {"day": "1627-01-15"}
+  },
+  {
+    "name": "adding -1 reaches the first day",
+    "input": {"op": "adding", "day": "0001-01-02", "days": -1},
+    "expect": {"day": "0001-01-01"}
+  },
+  {
+    "name": "the next day is 1 day away",
+    "input": {"op": "daysUntil", "day": "2027-01-15", "other": "2027-01-16"},
+    "expect": {"days": 1}
+  },
+  {
+    "name": "the previous day is -1 day away",
+    "input": {"op": "daysUntil", "day": "2027-01-16", "other": "2027-01-15"},
+    "expect": {"days": -1}
+  },
+  {
+    "name": "a day is 0 days from itself",
+    "input": {"op": "daysUntil", "day": "2027-01-15", "other": "2027-01-15"},
+    "expect": {"days": 0}
+  },
+  {
+    "name": "a leap year is 366 days",
+    "input": {"op": "daysUntil", "day": "2024-01-01", "other": "2025-01-01"},
+    "expect": {"days": 366}
+  },
+  {
+    "name": "a common year is 365 days",
+    "input": {"op": "daysUntil", "day": "2023-01-01", "other": "2024-01-01"},
+    "expect": {"days": 365}
+  },
+  {
+    "name": "from the epoch to the default today",
+    "input": {"op": "daysUntil", "day": "1970-01-01", "other": "2027-01-15"},
+    "expect": {"days": 20833}
+  },
+  {
+    "name": "backwards across the end of February",
+    "input": {"op": "daysUntil", "day": "2027-03-01", "other": "2027-02-28"},
+    "expect": {"days": -1}
+  },
+  {
+    "name": "from the first to the last representable day",
+    "input": {"op": "daysUntil", "day": "0001-01-01", "other": "9999-12-31"},
+    "expect": {"days": 3652058}
+  },
+  {"name": "1970-01-01 is a Thursday, 4", "input": {"op": "weekday", "day": "1970-01-01"}, "expect": {"weekday": 4}},
+  {"name": "2027-01-15 is a Friday, 5", "input": {"op": "weekday", "day": "2027-01-15"}, "expect": {"weekday": 5}},
+  {"name": "Sunday is 7", "input": {"op": "weekday", "day": "2027-01-17"}, "expect": {"weekday": 7}},
+  {"name": "Monday is 1", "input": {"op": "weekday", "day": "2027-01-18"}, "expect": {"weekday": 1}},
+  {
+    "name": "a Sunday before the epoch is 7: floor modulo",
+    "input": {"op": "weekday", "day": "1969-12-28"},
+    "expect": {"weekday": 7}
+  },
+  {
+    "name": "a Monday before the epoch is 1",
+    "input": {"op": "weekday", "day": "1969-12-29"},
+    "expect": {"weekday": 1}
+  },
+  {"name": "2000-01-01 is a Saturday, 6", "input": {"op": "weekday", "day": "2000-01-01"}, "expect": {"weekday": 6}},
+  {"name": "0001-01-01 is a Monday, 1", "input": {"op": "weekday", "day": "0001-01-01"}, "expect": {"weekday": 1}},
+  {"name": "9999-12-31 is a Friday, 5", "input": {"op": "weekday", "day": "9999-12-31"}, "expect": {"weekday": 5}}
+]

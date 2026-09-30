@@ -1,5 +1,5 @@
 {
-  "note": "The one grammar for a link inside a page of journal writing. Web paints it in web/src/products/journal/links.js; iOS paints it in apps/ios/WindmillKit/Sources/WindmillJournal/JournalLinks.swift. Both surfaces test against these cases, so neither can drift alone. lo/hi are UTF-16 code-unit offsets into text.",
+  "note": "The one grammar for a link inside a page of journal writing. Web paints it in web/src/products/journal/links.js; every surface that paints journal writing tests against these cases, so none can drift alone. lo/hi are UTF-16 code-unit offsets into text.",
   "cases": [
     { "why": "a scheme is a link", "text": "read https://example.com today", "links": [{ "lo": 5, "hi": 24, "href": "https://example.com" }] },
     { "why": "http as much as https", "text": "read http://example.com today", "links": [{ "lo": 5, "hi": 23, "href": "http://example.com" }] },

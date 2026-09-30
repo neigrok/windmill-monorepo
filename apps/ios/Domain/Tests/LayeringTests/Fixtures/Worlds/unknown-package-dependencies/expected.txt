@@ -1,0 +1,2 @@
+Domain/Package.swift: package-dependency WindmillKit
+Domain/Package.swift: package-dependency swift-case-paths

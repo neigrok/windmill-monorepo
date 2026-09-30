@@ -1,0 +1,247 @@
+[
+  {
+    "name": "words join with one dash",
+    "input": {
+      "label": "Learn Rust",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "learn-rust"
+    }
+  },
+  {
+    "name": "punctuation runs collapse",
+    "input": {
+      "label": "Hello,  World!!",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "hello-world"
+    }
+  },
+  {
+    "name": "leading and trailing punctuation drop",
+    "input": {
+      "label": "  --Leading and trailing--  ",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "leading-and-trailing"
+    }
+  },
+  {
+    "name": "dots between letters",
+    "input": {
+      "label": "a...b",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "a-b"
+    }
+  },
+  {
+    "name": "uppercase lowers, digits stay",
+    "input": {
+      "label": "ABC123 Step 1",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "abc123-step-1"
+    }
+  },
+  {
+    "name": "underscore is not alphanumeric",
+    "input": {
+      "label": "snake_case",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "snake-case"
+    }
+  },
+  {
+    "name": "tabs and newlines are separators",
+    "input": {
+      "label": "tabs\tand\nnewlines",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "tabs-and-newlines"
+    }
+  },
+  {
+    "name": "each UTF-8 byte outside [A-Za-z0-9] is a separator",
+    "input": {
+      "label": "Ünïcode",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "n-code"
+    }
+  },
+  {
+    "name": "non-ASCII before any letter adds nothing",
+    "input": {
+      "label": "日本 go",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "go"
+    }
+  },
+  {
+    "name": "an emoji between words",
+    "input": {
+      "label": "run 🏃 fast",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "run-fast"
+    }
+  },
+  {
+    "name": "an empty label takes the fallback",
+    "input": {
+      "label": "",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "step"
+    }
+  },
+  {
+    "name": "a label without alphanumerics takes the fallback",
+    "input": {
+      "label": "!!! ???",
+      "fallback": "kind",
+      "taken": []
+    },
+    "expect": {
+      "id": "kind"
+    }
+  },
+  {
+    "name": "a label of only non-ASCII takes the fallback",
+    "input": {
+      "label": "日本語",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "step"
+    }
+  },
+  {
+    "name": "the base stops at 40 characters",
+    "input": {
+      "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "a dash at the 40th character is trimmed",
+    "input": {
+      "label": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa bcd",
+      "fallback": "step",
+      "taken": []
+    },
+    "expect": {
+      "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  },
+  {
+    "name": "a taken base gets -2",
+    "input": {
+      "label": "abc",
+      "fallback": "step",
+      "taken": [
+        "abc"
+      ]
+    },
+    "expect": {
+      "id": "abc-2"
+    }
+  },
+  {
+    "name": "suffixes count up past taken ones",
+    "input": {
+      "label": "abc",
+      "fallback": "step",
+      "taken": [
+        "abc",
+        "abc-2",
+        "abc-3"
+      ]
+    },
+    "expect": {
+      "id": "abc-4"
+    }
+  },
+  {
+    "name": "a taken suffix alone does not move the base",
+    "input": {
+      "label": "abc",
+      "fallback": "step",
+      "taken": [
+        "abc-2"
+      ]
+    },
+    "expect": {
+      "id": "abc"
+    }
+  },
+  {
+    "name": "a taken fallback gets -2",
+    "input": {
+      "label": "",
+      "fallback": "step",
+      "taken": [
+        "step"
+      ]
+    },
+    "expect": {
+      "id": "step-2"
+    }
+  },
+  {
+    "name": "a label ending in -2 gets its own suffix",
+    "input": {
+      "label": "a-2",
+      "fallback": "step",
+      "taken": [
+        "a-2"
+      ]
+    },
+    "expect": {
+      "id": "a-2-2"
+    }
+  },
+  {
+    "name": "suffixes append to the 40-character base",
+    "input": {
+      "label": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "fallback": "step",
+      "taken": [
+        "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+      ]
+    },
+    "expect": {
+      "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb-2"
+    }
+  }
+]

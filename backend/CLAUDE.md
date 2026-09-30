@@ -5,15 +5,15 @@ One C++20 modular-monolith binary serving every product. Brand-wide rules live i
 
 ## Layering
 
-`platform/` is the product-neutral half — auth, oauth, billing, the MCP engine, email, telemetry,
-access, the HTTP host, and the AI spend meter (`domain/AiUsage`, `domain/AiFuse`,
+`platform/` is the product-neutral half — auth, oauth, billing, the MCP engine, the sync engine, email,
+telemetry, access, the HTTP host, and the AI spend meter (`domain/AiUsage`, `domain/AiFuse`,
 `ports/AiUsageRepository`: every vendor call is priced and recorded, and the ceilings read the same
 rows the owner page does).
 
-`products/<p>/` is one product each (roadmap, journal, gym), and every product repeats the same four
-layers: `domain/` (pure), `application/` (services over ports), `ports/` (the abstractions),
-`adapters/` (one subfolder per messy edge — `http` and `postgres` everywhere, plus
-`ws`/`mcp`/`llm`/`email` where a product needs them).
+`products/<p>/` is one product each (roadmap, journal, gym, and the sync engine's test-only probe),
+and every product repeats the same four layers: `domain/` (pure), `application/` (services over
+ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy edge — `http` and `postgres`
+everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them).
 
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket and MCP in one process),
 `mcp_main.cpp` (stdio transport), `mcp_http_main.cpp` (standalone HTTP transport, for local runs).
@@ -40,18 +40,42 @@ never the composite, so a prompt-injection-exposed agent cannot reach another pr
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # three binaries: domain · mcp · adapters
+ctest --test-dir build --output-on-failure      # four binaries (domain · mcp · adapters · sync) and the deploy check
 ```
 
-Drogon and libpqxx are the two vendor dependencies (`brew install drogon libpqxx`). Without them
-CMake builds the core libraries and the domain tests and skips the server — read the configure
-status line rather than assuming.
+Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
+comes from the system (`RUNNING.md` §1). Drogon is its pinned release with the patches in
+`third_party/drogon`, which the configure builds once into a cache and the image builds in a layer of
+its own: a request keeps every header line it was received with (`headerOccurrences()`), a response
+keeps a cookie per name, domain and path, and a request whose field lines or framing RFC 9112 calls
+invalid is refused. Its headers come first on every include path, so an unpatched Drogon installed
+beside the others never shadows them.
 
 Never build `-O0`: an un-inlined call chain overflows Drogon's worker-thread stack and corrupts
 return values with no crash. That is why the default build type is forced.
 
-Every test file is named by hand in one of three `add_executable` lists in `CMakeLists.txt`. A test
+Every test file is named by hand in one of four `add_executable` lists in `CMakeLists.txt`. A test
 file not in a list never runs.
+
+The sync engine (`docs/foundation/engine.md`) is a platform feature: `domain/sync/` (pure: records,
+shape, identity, the join, text merge), `ports/SyncStore.h` (the engine's own tables),
+`ports/SyncType.h` (what a product binds per type and command), `application/sync/` (the catalog,
+admission, push, pull, hello and the live channel, all run on `application/WorkerPool`), and the
+adapters `postgres/PgSyncStore`, `postgres/PgTableType` (the common one-table product store),
+`http/SyncApi` (`/v1/sync/hello`, `push`, `pull`) and `ws/SyncSocket` (`/v1/sync/live`), which read every
+request's credentials from the header lines it was received with (§9.1, `domain/sync/Credentials.h`). It is built
+against the sync contract in `../packages/api-contract/sync`, which CMake finds through
+`WM_API_CONTRACT_DIR` and the image build receives as the named context `contract` (`Dockerfile`,
+`.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
+case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
+skipped case, and a file nobody claims fails. They also load every product registry the contract ships
+(`RegistryTest.cpp`), though no product but the probe is bound to the engine. `windmill_sync_tests` replays the server's files again
+over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
+
+`products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
+worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
+`windmill_server` mounts no `/v1/sync` route, since no product has adopted the engine, and the
+Dockerfile fails the image if a probe symbol reaches it.
 
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the
 roadmap tree engine: the loose-graph model, the sync contract, the socket frames and the tables.

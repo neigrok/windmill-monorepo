@@ -1,0 +1,1094 @@
+[
+  {
+    "name": "a server delta takes one tick after the stored registers it overwrites",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 900000,
+          "counter": 7
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "7b53a1d7a466305041121c2beeb9b99a687e9b7d7216bdf66163b7d24e5d4dfd"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "Body",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1200000:5:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "f": {
+              "title": [
+                "Srv",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1200000,
+          "counter": 6
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 2
+            },
+            "digest": "0c80ffcff21775634b3a2ac23b30a2707529638b71ed08733210cc0ceb22d601"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "Body",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Srv",
+                  "1200000:6:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 1000,
+              "ru": 1000000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "two server deltas of one intent share one stamp",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 900000,
+          "counter": 7
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "7b53a1d7a466305041121c2beeb9b99a687e9b7d7216bdf66163b7d24e5d4dfd"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "Body",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1200000:5:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "f": {
+              "body": [
+                "B",
+                null
+              ]
+            }
+          },
+          {
+            "t": "card",
+            "id": "card0002",
+            "born": "1001:0:r_aaaaaaaaaaaa",
+            "f": {
+              "title": [
+                "T",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 3
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {
+              "card": 2
+            },
+            "digest": "af1eaaf41895b3b2b2b0b3082031f3b297a355dfd325ca1408ad928a88b4aa14"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "B",
+                  "1000000:0:srv"
+                ],
+                "title": [
+                  "Hi",
+                  "1200000:5:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 3,
+              "rc": 1000,
+              "ru": 1000000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "T",
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 3,
+              "rc": 2000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a server clock ahead of serverNow ticks its counter",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 2000000,
+          "counter": 3
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "f11de7e23ce3996565034e1bb15d2b0c315fcf70a2e8dd3dc7924fdb92a5644e"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Hi",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0001",
+            "born": "1000:0:r_aaaaaaaaaaaa",
+            "f": {
+              "title": [
+                "Srv",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 2
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 2000000,
+          "counter": 4
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 1
+            },
+            "digest": "c6208910c0a3e27985e73872d0175b27227513938c3e4368b7f69c9dc4dd55e3"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Srv",
+                  "2000000:4:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 1000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a server create takes the stamp for born, life and fields",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0009",
+            "born": null,
+            "life": [
+              "alive",
+              null
+            ],
+            "f": {
+              "title": [
+                "Srv",
+                null
+              ],
+              "tier": [
+                "draft",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 1
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1000000,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {
+              "card": 1
+            },
+            "digest": "98c9c23f2797e3e5023b285ed40591381a97a2eb36a092463c394a64cd017570"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0009",
+              "life": [
+                "alive",
+                "1000000:0:srv"
+              ],
+              "born": "1000000:0:srv",
+              "f": {
+                "tier": [
+                  "draft",
+                  "1000000:0:srv"
+                ],
+                "title": [
+                  "Srv",
+                  "1000000:0:srv"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000000,
+              "ru": 1000000
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a server delta observes a same-intent client delta on its register, so the server delta wins",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1300,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "8996bc55f55576aff555fb35fab540e4891143c4be74c41a286556fce5e8f775"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1200:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1200,
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  10,
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "run",
+            "id": "run00001",
+            "born": "1100:0:srv",
+            "life": [
+              "dead",
+              "1000000:0:r_aaaaaaaaaaaa"
+            ]
+          },
+          {
+            "t": "lap",
+            "id": "lap00001",
+            "born": "1200:0:r_aaaaaaaaaaaa",
+            "life": [
+              "dead",
+              "1200000:4:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1200000,
+          "counter": 5
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "1200000:5:srv",
+              "seq": 4
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "born": "1100:0:srv",
+              "lifeStamp": "1000000:0:r_aaaaaaaaaaaa",
+              "seq": 4
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a consequence stamped after the join observes a stored future (admissible) stamp it overwrites, so the server write wins",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1300,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 3,
+            "counters": {},
+            "digest": "195ef7c27426306438189824901eb9d3b0ed56160d18fcfe1441d5d54428544f"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "life": [
+                "alive",
+                "1250000:3:r_aaaaaaaaaaaa"
+              ],
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "f": {
+                "at": [
+                  1200,
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "runId": [
+                  "run00001",
+                  "1200:0:r_aaaaaaaaaaaa"
+                ],
+                "weight": [
+                  10,
+                  "1200:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "v": {
+                "no": 1
+              },
+              "seq": 3,
+              "rc": 3000,
+              "ru": 3000
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "life": [
+                "alive",
+                "1100:0:srv"
+              ],
+              "born": "1100:0:srv",
+              "f": {
+                "startedAt": [
+                  1100,
+                  "1100:0:srv"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "replica",
+        "account": "A",
+        "replica": "rp_0000000000000000000000000000000a",
+        "n": 1
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "run",
+            "id": "run00001",
+            "born": "1100:0:srv",
+            "life": [
+              "dead",
+              "1000000:0:r_aaaaaaaaaaaa"
+            ]
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "ok",
+        "seq": 4
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1250000,
+          "counter": 4
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 4,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        },
+        "spent": {
+          "acct:A/probe": [
+            {
+              "t": "lap",
+              "id": "lap00001",
+              "born": "1200:0:r_aaaaaaaaaaaa",
+              "lifeStamp": "1250000:4:srv",
+              "seq": 4
+            },
+            {
+              "t": "run",
+              "id": "run00001",
+              "born": "1100:0:srv",
+              "lifeStamp": "1000000:0:r_aaaaaaaaaaaa",
+              "seq": 4
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a server write refused at identity mints nothing",
+    "input": {
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 900000,
+          "counter": 7
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "7b53a1d7a466305041121c2beeb9b99a687e9b7d7216bdf66163b7d24e5d4dfd"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "Body",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1200000:5:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      },
+      "origin": {
+        "kind": "server",
+        "account": "A"
+      },
+      "intent": {
+        "scope": "self/probe",
+        "d": [
+          {
+            "t": "card",
+            "id": "card0003",
+            "born": "1:0:r_aaaaaaaaaaaa",
+            "f": {
+              "title": [
+                "Srv",
+                null
+              ]
+            }
+          }
+        ]
+      },
+      "serverNow": 1000000
+    },
+    "expect": {
+      "result": {
+        "s": "refused",
+        "code": "unknown-record"
+      },
+      "state": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 900000,
+          "counter": 7
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/probe": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {
+              "card": 2
+            },
+            "digest": "7b53a1d7a466305041121c2beeb9b99a687e9b7d7216bdf66163b7d24e5d4dfd"
+          }
+        },
+        "rows": {
+          "acct:A/probe": [
+            {
+              "t": "card",
+              "id": "card0001",
+              "life": [
+                "alive",
+                "1000:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1000:0:r_aaaaaaaaaaaa",
+              "f": {
+                "body": [
+                  "Body",
+                  "1000:0:r_aaaaaaaaaaaa"
+                ],
+                "title": [
+                  "Hi",
+                  "1200000:5:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1000,
+              "ru": 1000
+            },
+            {
+              "t": "card",
+              "id": "card0002",
+              "life": [
+                "alive",
+                "1001:0:r_aaaaaaaaaaaa"
+              ],
+              "born": "1001:0:r_aaaaaaaaaaaa",
+              "f": {
+                "title": [
+                  "Two",
+                  "1001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 2000,
+              "ru": 2000
+            }
+          ]
+        }
+      }
+    }
+  }
+]

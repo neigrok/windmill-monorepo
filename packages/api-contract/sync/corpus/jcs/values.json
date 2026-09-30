@@ -1,0 +1,506 @@
+[
+  {
+    "name": "zero",
+    "input": {
+      "bits": "0000000000000000"
+    },
+    "expect": {
+      "jcs": "0"
+    }
+  },
+  {
+    "name": "negative zero prints as 0",
+    "input": {
+      "bits": "8000000000000000"
+    },
+    "expect": {
+      "jcs": "0"
+    }
+  },
+  {
+    "name": "the smallest subnormal",
+    "input": {
+      "bits": "0000000000000001"
+    },
+    "expect": {
+      "jcs": "5e-324"
+    }
+  },
+  {
+    "name": "the negative smallest subnormal",
+    "input": {
+      "bits": "8000000000000001"
+    },
+    "expect": {
+      "jcs": "-5e-324"
+    }
+  },
+  {
+    "name": "the largest double",
+    "input": {
+      "bits": "7fefffffffffffff"
+    },
+    "expect": {
+      "jcs": "1.7976931348623157e+308"
+    }
+  },
+  {
+    "name": "the negative largest double",
+    "input": {
+      "bits": "ffefffffffffffff"
+    },
+    "expect": {
+      "jcs": "-1.7976931348623157e+308"
+    }
+  },
+  {
+    "name": "2^53",
+    "input": {
+      "bits": "4340000000000000"
+    },
+    "expect": {
+      "jcs": "9007199254740992"
+    }
+  },
+  {
+    "name": "-2^53",
+    "input": {
+      "bits": "c340000000000000"
+    },
+    "expect": {
+      "jcs": "-9007199254740992"
+    }
+  },
+  {
+    "name": "2^68 in plain notation",
+    "input": {
+      "bits": "4430000000000000"
+    },
+    "expect": {
+      "jcs": "295147905179352830000"
+    }
+  },
+  {
+    "name": "just below 1e23",
+    "input": {
+      "bits": "44b52d02c7e14af5"
+    },
+    "expect": {
+      "jcs": "9.999999999999997e+22"
+    }
+  },
+  {
+    "name": "1e23",
+    "input": {
+      "bits": "44b52d02c7e14af6"
+    },
+    "expect": {
+      "jcs": "1e+23"
+    }
+  },
+  {
+    "name": "just above 1e23",
+    "input": {
+      "bits": "44b52d02c7e14af7"
+    },
+    "expect": {
+      "jcs": "1.0000000000000001e+23"
+    }
+  },
+  {
+    "name": "the last plain notation below 1e21",
+    "input": {
+      "bits": "444b1ae4d6e2ef4e"
+    },
+    "expect": {
+      "jcs": "999999999999999700000"
+    }
+  },
+  {
+    "name": "plain notation near 1e21",
+    "input": {
+      "bits": "444b1ae4d6e2ef4f"
+    },
+    "expect": {
+      "jcs": "999999999999999900000"
+    }
+  },
+  {
+    "name": "1e21 switches to exponent notation",
+    "input": {
+      "bits": "444b1ae4d6e2ef50"
+    },
+    "expect": {
+      "jcs": "1e+21"
+    }
+  },
+  {
+    "name": "just below 1e-6",
+    "input": {
+      "bits": "3eb0c6f7a0b5ed8c"
+    },
+    "expect": {
+      "jcs": "9.999999999999997e-7"
+    }
+  },
+  {
+    "name": "1e-6 stays plain",
+    "input": {
+      "bits": "3eb0c6f7a0b5ed8d"
+    },
+    "expect": {
+      "jcs": "0.000001"
+    }
+  },
+  {
+    "name": "a shortest round trip, 16 digits",
+    "input": {
+      "bits": "41b3de4355555553"
+    },
+    "expect": {
+      "jcs": "333333333.3333332"
+    }
+  },
+  {
+    "name": "a shortest round trip, 17 digits",
+    "input": {
+      "bits": "41b3de4355555554"
+    },
+    "expect": {
+      "jcs": "333333333.33333325"
+    }
+  },
+  {
+    "name": "a shortest round trip, 16 digits again",
+    "input": {
+      "bits": "41b3de4355555555"
+    },
+    "expect": {
+      "jcs": "333333333.3333333"
+    }
+  },
+  {
+    "name": "a shortest round trip, rounding up",
+    "input": {
+      "bits": "41b3de4355555556"
+    },
+    "expect": {
+      "jcs": "333333333.3333334"
+    }
+  },
+  {
+    "name": "a shortest round trip, 17 digits again",
+    "input": {
+      "bits": "41b3de4355555557"
+    },
+    "expect": {
+      "jcs": "333333333.33333343"
+    }
+  },
+  {
+    "name": "a negative small fraction",
+    "input": {
+      "bits": "becbf647612f3696"
+    },
+    "expect": {
+      "jcs": "-0.0000033333333333333333"
+    }
+  },
+  {
+    "name": "a large fraction",
+    "input": {
+      "bits": "43143ff3c1cb0959"
+    },
+    "expect": {
+      "jcs": "1424953923781206.2"
+    }
+  },
+  {
+    "name": "1e-7 in exponent notation",
+    "input": {
+      "bits": "3e7ad7f29abcaf48"
+    },
+    "expect": {
+      "jcs": "1e-7"
+    }
+  },
+  {
+    "name": "0.1",
+    "input": {
+      "bits": "3fb999999999999a"
+    },
+    "expect": {
+      "jcs": "0.1"
+    }
+  },
+  {
+    "name": "one",
+    "input": {
+      "bits": "3ff0000000000000"
+    },
+    "expect": {
+      "jcs": "1"
+    }
+  },
+  {
+    "name": "NaN is not JSON",
+    "input": {
+      "bits": "7ff8000000000000"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "infinity is not JSON",
+    "input": {
+      "bits": "7ff0000000000000"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "negative infinity is not JSON",
+    "input": {
+      "bits": "fff0000000000000"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "1.0 prints as 1",
+    "input": {
+      "json": "1.0"
+    },
+    "expect": {
+      "jcs": "1"
+    }
+  },
+  {
+    "name": "-0 prints as 0",
+    "input": {
+      "json": "-0"
+    },
+    "expect": {
+      "jcs": "0"
+    }
+  },
+  {
+    "name": "-0.0 prints as 0",
+    "input": {
+      "json": "-0.0"
+    },
+    "expect": {
+      "jcs": "0"
+    }
+  },
+  {
+    "name": "1e21",
+    "input": {
+      "json": "1e21"
+    },
+    "expect": {
+      "jcs": "1e+21"
+    }
+  },
+  {
+    "name": "1E2 prints plainly",
+    "input": {
+      "json": "1E2"
+    },
+    "expect": {
+      "jcs": "100"
+    }
+  },
+  {
+    "name": "1e-7",
+    "input": {
+      "json": "1e-7"
+    },
+    "expect": {
+      "jcs": "1e-7"
+    }
+  },
+  {
+    "name": "0.000001",
+    "input": {
+      "json": "0.000001"
+    },
+    "expect": {
+      "jcs": "0.000001"
+    }
+  },
+  {
+    "name": "trailing zeros drop",
+    "input": {
+      "json": "4.50"
+    },
+    "expect": {
+      "jcs": "4.5"
+    }
+  },
+  {
+    "name": "a long integer rounds to 17 significant digits",
+    "input": {
+      "json": "123456789012345678901234567890"
+    },
+    "expect": {
+      "jcs": "1.2345678901234568e+29"
+    }
+  },
+  {
+    "name": "2^53 - 1",
+    "input": {
+      "json": "9007199254740991"
+    },
+    "expect": {
+      "jcs": "9007199254740991"
+    }
+  },
+  {
+    "name": "true, false, null",
+    "input": {
+      "json": "[true,false,null]"
+    },
+    "expect": {
+      "jcs": "[true,false,null]"
+    }
+  },
+  {
+    "name": "empty containers",
+    "input": {
+      "json": "[{},[],\"\"]"
+    },
+    "expect": {
+      "jcs": "[{},[],\"\"]"
+    }
+  },
+  {
+    "name": "whitespace is removed",
+    "input": {
+      "json": " [ 1 , { \"a\" : 2 } ] "
+    },
+    "expect": {
+      "jcs": "[1,{\"a\":2}]"
+    }
+  },
+  {
+    "name": "object keys sort",
+    "input": {
+      "json": "{\"b\":1,\"a\":2,\"c\":0}"
+    },
+    "expect": {
+      "jcs": "{\"a\":2,\"b\":1,\"c\":0}"
+    }
+  },
+  {
+    "name": "arrays keep their order",
+    "input": {
+      "json": "[3,1,2]"
+    },
+    "expect": {
+      "jcs": "[3,1,2]"
+    }
+  },
+  {
+    "name": "nested objects sort at every level",
+    "input": {
+      "json": "{\"z\":{\"y\":[3,{\"b\":true,\"a\":null}]},\"a\":\"x\"}"
+    },
+    "expect": {
+      "jcs": "{\"a\":\"x\",\"z\":{\"y\":[3,{\"a\":null,\"b\":true}]}}"
+    }
+  },
+  {
+    "name": "keys sort by UTF-16 code units, not code points",
+    "input": {
+      "json": "{\"\\ufb33\":2,\"\\ud83d\\ude00\":1}"
+    },
+    "expect": {
+      "jcs": "{\"😀\":1,\"דּ\":2}"
+    }
+  },
+  {
+    "name": "the RFC 8785 key-order example",
+    "input": {
+      "json": "{\"\\u20ac\":\"Euro Sign\",\"\\r\":\"Carriage Return\",\"\\ufb33\":\"Hebrew Letter Dalet With Dagesh\",\"1\":\"One\",\"\\ud83d\\ude00\":\"Emoji: Grinning Face\",\"\\u0080\":\"Control\",\"\\u00f6\":\"Latin Small Letter O With Diaeresis\"}"
+    },
+    "expect": {
+      "jcs": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\":\"Control\",\"ö\":\"Latin Small Letter O With Diaeresis\",\"€\":\"Euro Sign\",\"😀\":\"Emoji: Grinning Face\",\"דּ\":\"Hebrew Letter Dalet With Dagesh\"}"
+    }
+  },
+  {
+    "name": "escaped non-ASCII prints literally",
+    "input": {
+      "json": "\"\\u00e9\\u4e2d\\ud83d\\ude00\""
+    },
+    "expect": {
+      "jcs": "\"é中😀\""
+    }
+  },
+  {
+    "name": "control characters use short escapes where JSON has them",
+    "input": {
+      "json": "\"\\u0008\\u0009\\u000a\\u000c\\u000d\""
+    },
+    "expect": {
+      "jcs": "\"\\b\\t\\n\\f\\r\""
+    }
+  },
+  {
+    "name": "other control characters use lowercase \\u escapes",
+    "input": {
+      "json": "\"\\u0000\\u001f\\u0001\\u001F\""
+    },
+    "expect": {
+      "jcs": "\"\\u0000\\u001f\\u0001\\u001f\""
+    }
+  },
+  {
+    "name": "quote and backslash are escaped, slash is not",
+    "input": {
+      "json": "\"\\\"\\\\\\/\""
+    },
+    "expect": {
+      "jcs": "\"\\\"\\\\/\""
+    }
+  },
+  {
+    "name": "DEL and U+2028 print literally",
+    "input": {
+      "json": "\"\\u007f\\u2028\\u2029\""
+    },
+    "expect": {
+      "jcs": "\"  \""
+    }
+  },
+  {
+    "name": "a lone high surrogate is refused",
+    "input": {
+      "json": "\"\\ud800\""
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a lone low surrogate is refused",
+    "input": {
+      "json": "\"x\\udc00\""
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a surrogate pair out of order is refused",
+    "input": {
+      "json": "\"\\ude00\\ud83d\""
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

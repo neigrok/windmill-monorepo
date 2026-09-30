@@ -21,7 +21,7 @@ public:
   void updateName(const UserId& userId, const std::string& name) override;
   void markUserDeleted(const UserId& userId, UnixMs now) override;
   void reviveUser(const UserId& userId) override;
-  void deleteUser(const UserId& userId) override;
+  std::vector<std::string> deleteUser(const UserId& userId) override;
 
   std::optional<UserId> findIdentity(Provider provider, const std::string& subject) override;
   void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
@@ -46,8 +46,8 @@ public:
 
   std::vector<SessionRow> listSessions(const UserId& userId) override;
   std::optional<std::string> revokeSession(const UserId& userId, const std::string& sessionId) override;
-  void revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override;
-  void revokeAllSessions(const UserId& userId) override;
+  std::vector<std::string> revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) override;
+  std::vector<std::string> revokeAllSessions(const UserId& userId) override;
 
 private:
   std::shared_ptr<PgPool> pool_;

@@ -1,0 +1,47 @@
+name: SyncProbe
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  WindmillSync:
+    path: ../Sync
+targets:
+  SyncProbe:
+    type: application
+    platform: iOS
+    sources:
+      - path: Sources
+      - path: ../../../packages/api-contract/sync/probe.registry.json
+        buildPhase: resources
+    dependencies:
+      - package: WindmillSync
+        product: SyncCore
+      - package: WindmillSync
+        product: SyncAPI
+      - package: WindmillSync
+        product: SyncReplica
+      - package: WindmillSync
+        product: SyncStore
+      - package: WindmillSync
+        product: SyncEngine
+      - package: WindmillSync
+        product: SyncIOS
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Sync Probe
+        UILaunchScreen: {}
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.syncprobe
+        MARKETING_VERSION: "1.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

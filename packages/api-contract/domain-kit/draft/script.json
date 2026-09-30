@@ -1,0 +1,1099 @@
+[
+  {
+    "name": "a new card is blank, takes a prefill, and saves: base and current take the stored values and isNew ends",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "new", "id": "cardN001", "placement": "bottom"},
+        {"op": "edit", "f": {"title": "  Plan  ", "size": 82.506}},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": "bottom"
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "  Plan  ", "body": "", "size": 82.506, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": "bottom"
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "Plan", "body": "", "size": 82.51, "claim": null, "tier": "draft"},
+            "current": {"title": "Plan", "body": "", "size": 82.51, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": "bottom"
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a refused save leaves a new draft new and as it was, and the next save retries it",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "new", "id": "cardN001", "placement": {"below": "cardA001"}},
+        {"op": "save"},
+        {"op": "edit", "f": {"title": "Plan"}},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": {"below": "cardA001"}
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": {"below": "cardA001"}
+          },
+          "result": {"refused": {"violation": {"rule": "card.title", "path": "title", "reason": "blank"}}}
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": {"below": "cardA001"}
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Plan", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": {"below": "cardA001"}
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a failed save leaves the draft as it was and takes no gesture, so the retry commits as g1",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "open", "id": "cardA001"},
+        {"op": "edit", "f": {"title": "Beta"}},
+        {"op": "save", "fail": true},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"failed": true}
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a save whose commit fails fails even when nothing needed writing",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "open", "id": "cardA001"}, {"op": "save", "fail": true}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"failed": true}
+        }
+      ]
+    }
+  },
+  {
+    "name": "open answers null for an absent record and for a record inside its delete window",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "open", "id": "cardX001"}, {"op": "open", "id": "cardA001"}]
+    },
+    "expect": {"steps": [{"draft": null}, {"draft": null}]}
+  },
+  {
+    "name": "openOrNew of a minted type traps",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "openOrNew", "id": "cardA001"}]
+    },
+    "expect": {"steps": [{"trap": true}]}
+  },
+  {
+    "name": "openOrNew with a blank of another key traps",
+    "input": {
+      "t": "day",
+      "drawn": [],
+      "stored": [],
+      "ops": [{"op": "openOrNew", "id": "2027-01-10", "blank": "2027-01-11"}]
+    },
+    "expect": {"steps": [{"trap": true}]}
+  },
+  {
+    "name": "openOrNew opens a drawn day, and starts a new draft of an absent one",
+    "input": {
+      "t": "day",
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "openOrNew", "id": "2027-01-10"}, {"op": "openOrNew", "id": "2027-01-11"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": 5},
+            "current": {"score": 5},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-11",
+            "base": {"score": null},
+            "current": {"score": null},
+            "isNew": true,
+            "placement": null
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "an untouched new keyed draft over its own delete window saves nothing and stops being new",
+    "input": {
+      "t": "day",
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["dead", "3000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "openOrNew", "id": "2027-01-10"}, {"op": "save"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": null},
+            "current": {"score": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": null},
+            "current": {"score": null},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": null}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a save of a current whose id is not the draft's traps",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Other", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Other", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "open", "id": "cardA001"}, {"op": "edit", "f": {"title": "x"}}, {"op": "save", "as": "cardB001"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "x", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {"trap": true}
+      ]
+    }
+  },
+  {
+    "name": "a stale save leaves the draft as it was; rebase keeps the touched field and takes theirs for the rest; the next save commits",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["one", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["one", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "open", "id": "cardA001"},
+        {"op": "edit", "f": {"title": "Mine"}},
+        {
+          "op": "records",
+          "drawn": [
+            {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Theirs", "1000:0:r_aaaaaaaaaaaa"], "body": ["two", "1000:0:r_aaaaaaaaaaaa"], "tier": ["review", "1000:0:r_aaaaaaaaaaaa"]}}
+          ],
+          "stored": [
+            {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Theirs", "1000:0:r_aaaaaaaaaaaa"], "body": ["two", "1000:0:r_aaaaaaaaaaaa"], "tier": ["review", "1000:0:r_aaaaaaaaaaaa"]}}
+          ]
+        },
+        {"op": "save"},
+        {"op": "rebase", "f": {"title": "Theirs", "body": "two", "tier": "review"}},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Mine", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Mine", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Mine", "body": "one", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "refused": {
+              "refused": {
+                "code": "stale",
+                "subject": {"t": "card", "id": "cardA001"},
+                "detail": null,
+                "path": "predicted"
+              }
+            }
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Theirs", "body": "two", "size": null, "claim": null, "tier": "review"},
+            "current": {"title": "Mine", "body": "two", "size": null, "claim": null, "tier": "review"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Mine", "body": "two", "size": null, "claim": null, "tier": "review"},
+            "current": {"title": "Mine", "body": "two", "size": null, "claim": null, "tier": "review"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "rebase on a type whose saves are not guarded traps",
+    "input": {
+      "t": "day",
+      "drawn": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "day", "id": "2027-01-10", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "f": {"score": [5, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "open", "id": "2027-01-10"}, {"op": "rebase", "f": {"score": 3}}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": 5},
+            "current": {"score": 5},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {"trap": true}
+      ]
+    }
+  },
+  {
+    "name": "rebase onto theirs of another id traps",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "open", "id": "cardA001"}, {"op": "rebase", "f": {"title": "X"}, "id": "cardB001"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {"trap": true}
+      ]
+    }
+  },
+  {
+    "name": "a text field starts from the empty text in a new draft, then from what the last save stored",
+    "input": {
+      "t": "mark",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {"op": "openOrNew", "id": "oak"},
+        {"op": "edit", "f": {"memo": "first"}},
+        {"op": "save"},
+        {
+          "op": "records",
+          "drawn": [{"t": "mark", "id": "oak", "seq": 1, "x": {"memo": {"text": "first", "rev": 1, "merged": false}}}],
+          "stored": [{"t": "mark", "id": "oak", "seq": 1, "x": {"memo": {"text": "first", "rev": 1, "merged": false}}}]
+        },
+        {"op": "edit", "f": {"memo": "first and second"}},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": ""},
+            "current": {"done": null, "memo": ""},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": ""},
+            "current": {"done": null, "memo": "first"},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": "first"},
+            "current": {"done": null, "memo": "first"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g1"}
+        },
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": "first"},
+            "current": {"done": null, "memo": "first"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": "first"},
+            "current": {"done": null, "memo": "first and second"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "oak",
+            "base": {"done": null, "memo": "first and second"},
+            "current": {"done": null, "memo": "first and second"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g2"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a quantum field is taken rounded: equal to the store it writes nothing and leaves the draft clean",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [1, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"], "size": [1, "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "open", "id": "cardA001"},
+        {"op": "edit", "f": {"size": 1.004}},
+        {"op": "save"},
+        {"op": "edit", "f": {"size": 82.506}},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": 1.004, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": null}
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": 1, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": 82.506, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": 82.51, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": 82.51, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "a gone save leaves the draft as it was",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"ord": ["a0", "1000:0:r_aaaaaaaaaaaa"], "title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "body": ["x", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "open", "id": "cardA001"},
+        {"op": "edit", "f": {"title": "Beta"}},
+        {"op": "records", "drawn": [], "stored": []},
+        {"op": "save"}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardA001",
+            "base": {"title": "Alpha", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "Beta", "body": "x", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "refused": {
+              "refused": {
+                "code": "unknown-record",
+                "subject": {"t": "card", "id": "cardA001"},
+                "detail": null,
+                "path": "predicted"
+              }
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a new singleton draft saves its field and stops being new",
+    "input": {
+      "t": "meta",
+      "drawn": [],
+      "stored": [],
+      "ops": [{"op": "openOrNew", "id": "meta"}, {"op": "edit", "f": {"title": " Plan "}}, {"op": "save"}]
+    },
+    "expect": {
+      "steps": [
+        {"draft": {"id": "meta", "base": {"title": ""}, "current": {"title": ""}, "isNew": true, "placement": null}},
+        {
+          "draft": {
+            "id": "meta",
+            "base": {"title": ""},
+            "current": {"title": " Plan "},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "meta",
+            "base": {"title": "Plan"},
+            "current": {"title": "Plan"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {"saved": "g1"}
+        }
+      ]
+    }
+  },
+  {
+    "name": "an untouched new keyed draft with no record writes nothing and stays new, so its next save creates it",
+    "input": {
+      "t": "day",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {"op": "openOrNew", "id": "2027-01-10"},
+        {"op": "save"},
+        {"op": "edit", "f": {"score": 4}},
+        {"op": "save", "gesture": true}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": null},
+            "current": {"score": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": null},
+            "current": {"score": null},
+            "isNew": true,
+            "placement": null
+          },
+          "result": {"saved": null}
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": null},
+            "current": {"score": 4},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"score": 4},
+            "current": {"score": 4},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "gesture": {
+              "changes": [{"op": "put", "t": "day", "id": "2027-01-10", "f": {"score": 4}, "present": true}],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [{"t": "day", "id": "2027-01-10"}],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a new card with no placement is inserted below the last stored card",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [{"op": "new", "id": "cardN001"}, {"op": "edit", "f": {"title": "New"}}, {"op": "save", "gesture": true}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "create",
+                  "t": "card",
+                  "id": "cardN001",
+                  "f": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+                  "anchor": {"field": "ord", "below": "cardB001"}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a new card placed at the top is inserted below nothing",
+    "input": {
+      "t": "card",
+      "drawn": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "stored": [
+        {"t": "card", "id": "cardA001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Alpha", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a0", "1000:0:r_aaaaaaaaaaaa"]}},
+        {"t": "card", "id": "cardB001", "seq": 1, "life": ["alive", "1000:0:r_aaaaaaaaaaaa"], "born": "1000:0:r_aaaaaaaaaaaa", "f": {"title": ["Beta", "1000:0:r_aaaaaaaaaaaa"], "ord": ["a1", "1000:0:r_aaaaaaaaaaaa"]}}
+      ],
+      "ops": [
+        {"op": "new", "id": "cardN001", "placement": "top"},
+        {"op": "edit", "f": {"title": "New"}},
+        {"op": "save", "gesture": true}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": "top"
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": true,
+            "placement": "top"
+          }
+        },
+        {
+          "draft": {
+            "id": "cardN001",
+            "base": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "current": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+            "isNew": false,
+            "placement": "top"
+          },
+          "result": {
+            "saved": "g1",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "create",
+                  "t": "card",
+                  "id": "cardN001",
+                  "f": {"title": "New", "body": "", "size": null, "claim": null, "tier": "draft"},
+                  "anchor": {"field": "ord", "below": null}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a whole save leaves the draft holding what it wrote, its timestamp included, and an untouched save writes it all again",
+    "input": {
+      "t": "fact",
+      "drawn": [],
+      "stored": [],
+      "ops": [
+        {"op": "openOrNew", "id": "2027-01-10"},
+        {"op": "edit", "f": {"value": 80.04}},
+        {"op": "save", "gesture": true},
+        {"op": "save", "gesture": true}
+      ]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": null, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 80.04, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": 80, "at": 1800000000000},
+            "current": {"value": 80, "at": 1800000000000},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g1",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "fact",
+                  "id": "2027-01-10",
+                  "present": true,
+                  "f": {"value": 80, "at": 1800000000000}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [{"t": "fact", "id": "2027-01-10"}],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": 80, "at": 1800000000000},
+            "current": {"value": 80, "at": 1800000000000},
+            "isNew": false,
+            "placement": null
+          },
+          "result": {
+            "saved": "g2",
+            "gesture": {
+              "changes": [
+                {
+                  "op": "put",
+                  "t": "fact",
+                  "id": "2027-01-10",
+                  "present": true,
+                  "f": {"value": 80, "at": 1800000000000}
+                }
+              ],
+              "atomic": false,
+              "hold": false,
+              "guards": [],
+              "retire": [{"t": "fact", "id": "2027-01-10"}],
+              "cmd": null,
+              "predict": [],
+              "local": []
+            }
+          }
+        }
+      ]
+    }
+  },
+  {
+    "name": "a refused whole save leaves the draft as it was",
+    "input": {
+      "t": "fact",
+      "drawn": [],
+      "stored": [],
+      "ops": [{"op": "openOrNew", "id": "2027-01-10"}, {"op": "edit", "f": {"value": 600}}, {"op": "save"}]
+    },
+    "expect": {
+      "steps": [
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": null, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 600, "at": null},
+            "isNew": true,
+            "placement": null
+          }
+        },
+        {
+          "draft": {
+            "id": "2027-01-10",
+            "base": {"value": null, "at": null},
+            "current": {"value": 600, "at": null},
+            "isNew": true,
+            "placement": null
+          },
+          "result": {"refused": {"violation": {"rule": "fact.value", "path": "value", "reason": "above", "max": 500}}}
+        }
+      ]
+    }
+  }
+]

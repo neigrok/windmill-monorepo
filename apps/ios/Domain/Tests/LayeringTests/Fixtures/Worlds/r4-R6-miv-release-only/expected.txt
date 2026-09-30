@@ -1,0 +1,1 @@
+Domain/Package.swift: settings GymDomain is [enableUpcomingFeature(MemberImportVisibility) when {config: release, platformNames: []}], not [enableUpcomingFeature(MemberImportVisibility)]

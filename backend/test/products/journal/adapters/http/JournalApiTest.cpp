@@ -37,8 +37,9 @@ struct Harness {
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
-      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works");
+      std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
   FakeJournalRepository repo;
   std::shared_ptr<PageService> pages = std::make_shared<PageService>(repo);
   JournalApi api{pages, auth};
@@ -344,7 +345,7 @@ TEST(journal_put_with_a_malformed_stamp_is_400_not_500) {
   h.signIn("s-live");
   Json::Value body(Json::objectValue);
   body["body"] = "hi";
-  body["stamp"] = "x:0:dev";   // parseHlc throws on the non-numeric ms — a client 400, never a 500
+  body["stamp"] = "x:0:dev";   // not a D-1 stamp — a client 400, never a 500
 
   drogon::HttpResponsePtr response = sendPut(h.api, putRequest(body, "s-live"), "2026-07-27");
 

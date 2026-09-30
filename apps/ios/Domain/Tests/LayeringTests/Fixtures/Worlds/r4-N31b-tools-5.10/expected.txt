@@ -1,0 +1,2 @@
+Domain/Package.swift: language-modes [5], not [6]
+Domain/Package.swift: tools-version 5.10.0, below 6.2

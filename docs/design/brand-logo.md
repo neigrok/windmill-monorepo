@@ -12,7 +12,6 @@ wordmark. Child node `9:108` is the standalone mark.
 | `web/public/brand-mark.svg` | Compact mark; exported path geometry and colours with the viewBox tightened around the artwork. |
 | `web/public/favicon.svg`, `favicon-32.png`, `favicon.ico` | Browser identity derived from the mark. |
 | `web/public/icon-192.png`, `icon-512.png`, `apple-touch-icon.png` | Web install icons derived from the mark on a cream ground. |
-| `apps/ios/App/Assets.xcassets/AppIcon.appiconset/AppIcon.png` | 1024px opaque compact mark on cream, declared as the universal iOS app icon. |
 | `apps/android/app/src/main/res/drawable/ic_launcher_foreground.xml` | Native vector foreground preserving the compact mark's seven paths, colours, and circular hub. |
 | `apps/android/app/src/main/res/values/colors.xml` | Android launcher background, `ic_launcher_background = #F9F5EB`. |
 
@@ -52,6 +51,6 @@ without a supplied monochrome layer.
 
 ## Native acceptance
 
-The iOS asset is included in the app icon catalog. Review launcher masks, small sizes and supported
-appearance variants on native devices; inspecting the source asset alone does not establish those
-states. Tracking: `windmill-native-logo` in tree `t_9362d9bc883e0a1e`.
+Review the Android launcher masks, small sizes and supported appearance variants on devices;
+inspecting the source asset alone does not establish those states. Tracking: `windmill-native-logo`
+in tree `t_9362d9bc883e0a1e`.

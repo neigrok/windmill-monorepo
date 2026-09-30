@@ -8,8 +8,8 @@ page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?nod
 Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is
 `roadmap/guidelines/front-door.md` and `starter-quests.md`; Journal's first run is
 `journal/onboarding.md`; Android's gym is `gym/android-delivery.md`. Two parts of this doc hold on
-every surface: signing in with work already on the device (§6) and signing out with unsent changes
-(§7).
+every surface: signing in with work already on the device (§6) and signing out with changes the
+account has not confirmed (§7).
 
 ---
 
@@ -41,8 +41,8 @@ lists every screen in both states; where they differ, both boards are drawn side
 - **A quiet Sign in** under the doors, for someone returning on a new phone (§4).
 - **No account wall, no skip, no permissions, no carousel.**
 - After a sign-out it adds one line, once: *Signed out. Nothing of yours is left on this phone.*
-  When the person kept unsent changes (§7), the line says so instead: *Signed out. 3 unsent
-  changes stay on this phone until you sign back in.*
+  When the person kept unconfirmed changes (§7), the line says so instead: *Signed out. 3 changes
+  your account hasn't confirmed stay on this phone until you sign back in.*
 
 ## 4. Returning on a new phone
 
@@ -149,20 +149,24 @@ every held delete go and makes one attempt to send what is unsent, then raises o
 *Sign out?* · *Your pages and log stay in your account and leave this phone.* · **Cancel** ·
 **Sign out** (destructive). Confirming returns to Where to start? with its signed-out line (§3).
 
-**When changes still have not reached the account**, the alert is this variant instead: it says how
-many and asks what happens to them. The variant holds on every surface; on the web and Android it is
-the only sign-out confirmation.
+**When the account has not yet confirmed some changes**, the alert is this variant instead: it says
+how many and asks what happens to them. The variant holds on every surface; on the web and Android it
+is the only sign-out confirmation.
 
 > **Sign out?**
-> 3 changes haven't reached your account yet. Keep them on this phone until you sign back in, or
-> discard them for good. Everything else is in your account and leaves this phone.
+> 3 changes haven't been confirmed by your account yet. Keep them on this phone until you sign back
+> in, or discard them from this phone. Everything else is in your account and leaves this phone.
 > **Keep** · **Discard** (destructive) · **Cancel**
 
+- **The count is every change the account has not confirmed**, including one already sent whose
+  answer has not come back. Such a change may already be in the account, so the copy never says a
+  change is lost for good or kept out of the account.
 - **Keep** signs out and leaves the changes on the phone, hidden. They are sent the next time the
   same account signs in, and never to another account.
-- **Discard** signs out and deletes them.
-- The count is singular when it is one: *1 change hasn't reached your account yet. Keep it on this
-  phone until you sign back in, or discard it for good.*
+- **Discard** signs out and deletes them from this phone. A change the account already received
+  stays there; Discard cannot recall it.
+- The count is singular when it is one: *1 change hasn't been confirmed by your account yet. Keep it
+  on this phone until you sign back in, or discard it from this phone.*
 
 ## 8. Each room's first run
 
@@ -219,8 +223,8 @@ plus an SF Symbols Draw On check. No congratulation copy, no celebration, no cou
    intact.
 4. **Bringing it back** needs each room's total and newest-record date before records stream, so
    the last room can open as soon as its own data is in.
-5. **Sign-out counts what is still unsent** after its one attempt to send it, so the alert's
-   number is real. Kept changes survive app updates and stay hidden until the same account signs
+5. **Sign-out counts what the account has not confirmed** after its one attempt to send it, so the
+   alert's number is real. Kept changes survive app updates and stay hidden until the same account signs
    in.
 6. **The sign-in question needs to know, per room, whether the account already holds records of
    its own**, before anything is sent.

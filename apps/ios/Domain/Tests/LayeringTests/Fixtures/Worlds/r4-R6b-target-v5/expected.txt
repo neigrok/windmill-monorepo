@@ -1,0 +1,1 @@
+Domain/Package.swift: settings GymDomain is [enableUpcomingFeature(MemberImportVisibility), swiftLanguageMode(5)], not [enableUpcomingFeature(MemberImportVisibility)]

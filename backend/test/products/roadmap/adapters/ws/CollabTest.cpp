@@ -67,7 +67,8 @@ struct Harness {
   FakeOAuthRepository oauthRepo;
   OAuthService oauth{oauthRepo, tokens, clock};
   FakeAccountFootprint footprint;
-  AuthService auth{authRepo, email, tokens, clock, oauth, footprint, "https://windmill.works"};
+  FakeSessionRevocations revocations;
+  AuthService auth{authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
   PresenceHub presence;
   TreeRegistry trees_registry{trees, progressRepo, tokens, Hlc{1, 0, "genesis"}, rooms, clock};
   Collab collab{rooms, ops, bus, progress, auth, presence, clock, {"https://windmill.works"}};

@@ -1,0 +1,122 @@
+From 671a8e55f359c4b97480389f4f6fca4f306b3541 Mon Sep 17 00:00:00 2001
+From: Windmill <noreply@windmill.works>
+Date: Tue, 29 Sep 2026 22:53:52 +0400
+Subject: [PATCH] Refuse a request whose field lines or framing RFC 9112 calls
+ invalid
+
+The parser read a header line with no colon as the end of the header
+section, so the lines after it became the start of the next request; it
+kept a name holding whitespace (a line folded onto the one before, or a
+space before the colon) as a field of that name; it kept a bare CR or LF
+inside a line; and it framed a request that sent Content-Length twice, or
+beside Transfer-Encoding, or Transfer-Encoding on two lines, by the first
+Content-Length or the first coding. A proxy in front that reads any of
+these as RFC 9112 does frames the connection's requests differently from
+the server behind it.
+
+Each is now answered 400 and the connection closed: a field line must be a
+non-empty name with no whitespace, a colon and a value, with no bare CR or
+LF; and a request carries at most one Content-Length, or one
+Transfer-Encoding line and no Content-Length. A second Transfer-Encoding
+line always names a coding other than one final chunked, which the parser
+does not decode; a single line naming such a coding stays a 501, as before.
+---
+ lib/src/HttpRequestParser.cc | 59 ++++++++++++++++++++++++++++++++++--
+ 1 file changed, 56 insertions(+), 3 deletions(-)
+
+diff --git a/lib/src/HttpRequestParser.cc b/lib/src/HttpRequestParser.cc
+index a42a83f..8cd2311 100644
+--- a/lib/src/HttpRequestParser.cc
++++ b/lib/src/HttpRequestParser.cc
+@@ -16,7 +16,9 @@
+ #include <drogon/HttpTypes.h>
+ #include <trantor/utils/Logger.h>
+ #include <trantor/utils/MsgBuffer.h>
++#include <algorithm>
+ #include <iostream>
++#include <string_view>
+ #include "HttpAppFrameworkImpl.h"
+ #include "HttpRequestImpl.h"
+ #include "HttpResponseImpl.h"
+@@ -29,6 +31,29 @@ static constexpr size_t CRLF_LEN = 2;            // strlen("crlf")
+ static constexpr size_t METHOD_MAX_LEN = 7;      // strlen("OPTIONS")
+ static constexpr size_t TRUNK_LEN_MAX_LEN = 16;  // 0xFFFFFFFF,FFFFFFFF
+ 
++static bool isFieldWhitespace(char c)
++{
++    return c == ' ' || c == '\t';
++}
++
++static bool isLineBreak(char c)
++{
++    return c == '\r' || c == '\n';
++}
++
++static bool equalsIgnoringAsciiCase(const std::string &text,
++                                    std::string_view lowerCase)
++{
++    return text.size() == lowerCase.size() &&
++           std::equal(text.begin(),
++                      text.end(),
++                      lowerCase.begin(),
++                      [](char a, char b) {
++                          return (a >= 'A' && a <= 'Z' ? a - 'A' + 'a' : a) ==
++                                 b;
++                      });
++}
++
+ HttpRequestParser::HttpRequestParser(const trantor::TcpConnectionPtr &connPtr)
+     : status_(HttpRequestParseStatus::kExpectMethod),
+       loop_(connPtr->getLoop()),
+@@ -206,10 +231,20 @@ int HttpRequestParser::parseRequest(MsgBuffer *buf)
+                     return 0;
+                 }
+ 
+-                const char *colon = std::find(buf->peek(), crlf, ':');
+-                // found colon
+-                if (colon != crlf)
++                if (crlf != buf->peek())
+                 {
++                    // RFC 9112 5: a field line is a name, a colon and a value.
++                    // A line with no colon, a name that is empty or holds
++                    // whitespace (a line folded onto the one before is one),
++                    // or a bare CR or LF anywhere in it is refused, never read
++                    // as the end of the header section or as another field.
++                    const char *colon = std::find(buf->peek(), crlf, ':');
++                    if (colon == crlf || colon == buf->peek() ||
++                        std::any_of(buf->peek(), colon, isFieldWhitespace) ||
++                        std::any_of(buf->peek(), crlf, isLineBreak))
++                    {
++                        return -k400BadRequest;
++                    }
+                     request_->addHeader(buf->peek(), colon, crlf);
+                     buf->retrieveUntil(crlf + CRLF_LEN);
+                     continue;
+@@ -217,6 +252,24 @@ int HttpRequestParser::parseRequest(MsgBuffer *buf)
+                 buf->retrieveUntil(crlf + CRLF_LEN);
+                 // end of headers
+ 
++                // RFC 9112 6.1, 6.3: Content-Length sent twice or beside
++                // Transfer-Encoding leaves the request no one length, and a
++                // second Transfer-Encoding line is a coding other than one
++                // final chunked, which this parser does not decode. Refuse
++                // either rather than choose a framing. (One line naming any
++                // coding but chunked stays 501 below.)
++                size_t framings = 0;
++                for (const auto &[name, value] : request_->headerOccurrences())
++                {
++                    if (equalsIgnoringAsciiCase(name, "content-length") ||
++                        equalsIgnoringAsciiCase(name, "transfer-encoding"))
++                        ++framings;
++                }
++                if (framings > 1)
++                {
++                    return -k400BadRequest;
++                }
++
+                 // We might want a kProcessHeaders status for code readability
+                 // and maintainability.
+ 
+-- 
+2.50.1 (Apple Git-155)
+

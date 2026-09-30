@@ -1,0 +1,215 @@
+[
+  {
+    "name": "both absent",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "join": null
+    }
+  },
+  {
+    "name": "absent loses to a register",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": null,
+      "b": [
+        "draft",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "draft",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "a higher rank beats a newer stamp",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "draft",
+        "9:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "a higher rank beats a newer stamp from the other side",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "review",
+        "9:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal ranks: the greater stamp wins",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "dropped",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dropped",
+        "6:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal ranks: the greater stamp wins the other way",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "dropped",
+        "6:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "done",
+        "7:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "done",
+        "7:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal ranks and stamps: the bytewise-greater jcs wins",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "done",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "dropped",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "dropped",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal values of rank 0: the greater stamp wins",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "draft",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "draft",
+        "4:9:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "draft",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  },
+  {
+    "name": "equal registers",
+    "input": {
+      "rank": {
+        "draft": 0,
+        "review": 1,
+        "done": 2,
+        "dropped": 2
+      },
+      "a": [
+        "review",
+        "5:0:r_aaaaaaaaaaaa"
+      ],
+      "b": [
+        "review",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    },
+    "expect": {
+      "join": [
+        "review",
+        "5:0:r_aaaaaaaaaaaa"
+      ]
+    }
+  }
+]

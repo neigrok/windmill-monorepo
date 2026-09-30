@@ -1,0 +1,682 @@
+[
+  {
+    "name": "an empty list",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "key": "a0"
+    }
+  },
+  {
+    "name": "before the first key",
+    "input": {
+      "a": null,
+      "b": "a0"
+    },
+    "expect": {
+      "key": "Zz"
+    }
+  },
+  {
+    "name": "after the first key",
+    "input": {
+      "a": "a0",
+      "b": null
+    },
+    "expect": {
+      "key": "a1"
+    }
+  },
+  {
+    "name": "between adjacent integers",
+    "input": {
+      "a": "a0",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0V"
+    }
+  },
+  {
+    "name": "between a key and its next integer",
+    "input": {
+      "a": "a0V",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0l"
+    }
+  },
+  {
+    "name": "between an integer and a fraction",
+    "input": {
+      "a": "a0",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0G"
+    }
+  },
+  {
+    "name": "a deeper fraction",
+    "input": {
+      "a": "a1V",
+      "b": "a1W"
+    },
+    "expect": {
+      "key": "a1VV"
+    }
+  },
+  {
+    "name": "across the negative-positive boundary",
+    "input": {
+      "a": "Zz",
+      "b": "a0"
+    },
+    "expect": {
+      "key": "ZzV"
+    }
+  },
+  {
+    "name": "after the last one-digit positive integer rolls to two digits",
+    "input": {
+      "a": "az",
+      "b": null
+    },
+    "expect": {
+      "key": "b00"
+    }
+  },
+  {
+    "name": "before Zz",
+    "input": {
+      "a": null,
+      "b": "Zz"
+    },
+    "expect": {
+      "key": "Zy"
+    }
+  },
+  {
+    "name": "before Z0 rolls the head down",
+    "input": {
+      "a": null,
+      "b": "Z0"
+    },
+    "expect": {
+      "key": "Yzz"
+    }
+  },
+  {
+    "name": "after b00",
+    "input": {
+      "a": "b00",
+      "b": null
+    },
+    "expect": {
+      "key": "b01"
+    }
+  },
+  {
+    "name": "different integer parts take the next integer",
+    "input": {
+      "a": "a0",
+      "b": "a9"
+    },
+    "expect": {
+      "key": "a1"
+    }
+  },
+  {
+    "name": "equal keys are refused",
+    "input": {
+      "a": "a1",
+      "b": "a1"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "descending keys are refused",
+    "input": {
+      "a": "a2",
+      "b": "a1"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a trailing zero is not a key",
+    "input": {
+      "a": "a10",
+      "b": null
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a head outside [A-Za-z] is not a key",
+    "input": {
+      "a": "!0",
+      "b": null
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a character outside base 62 is not a key",
+    "input": {
+      "a": "a0!",
+      "b": null
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "a key shorter than its head demands is refused",
+    "input": {
+      "a": "a",
+      "b": null
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "the internal floor is not a key",
+    "input": {
+      "a": "A00000000000000000000000000",
+      "b": null
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "chain 7, insert 1",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "key": "a0"
+    }
+  },
+  {
+    "name": "chain 7, insert 2",
+    "input": {
+      "a": null,
+      "b": "a0"
+    },
+    "expect": {
+      "key": "Zz"
+    }
+  },
+  {
+    "name": "chain 7, insert 3",
+    "input": {
+      "a": "a0",
+      "b": null
+    },
+    "expect": {
+      "key": "a1"
+    }
+  },
+  {
+    "name": "chain 7, insert 4",
+    "input": {
+      "a": "a0",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0V"
+    }
+  },
+  {
+    "name": "chain 7, insert 5",
+    "input": {
+      "a": "a0",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0G"
+    }
+  },
+  {
+    "name": "chain 7, insert 6",
+    "input": {
+      "a": "a0",
+      "b": "a0G"
+    },
+    "expect": {
+      "key": "a08"
+    }
+  },
+  {
+    "name": "chain 7, insert 7",
+    "input": {
+      "a": "a08",
+      "b": "a0G"
+    },
+    "expect": {
+      "key": "a0C"
+    }
+  },
+  {
+    "name": "chain 7, insert 8",
+    "input": {
+      "a": "Zz",
+      "b": "a0"
+    },
+    "expect": {
+      "key": "ZzV"
+    }
+  },
+  {
+    "name": "chain 7, insert 9",
+    "input": {
+      "a": "a08",
+      "b": "a0C"
+    },
+    "expect": {
+      "key": "a0A"
+    }
+  },
+  {
+    "name": "chain 7, insert 10",
+    "input": {
+      "a": "a0G",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0O"
+    }
+  },
+  {
+    "name": "chain 7, insert 11",
+    "input": {
+      "a": "ZzV",
+      "b": "a0"
+    },
+    "expect": {
+      "key": "Zzl"
+    }
+  },
+  {
+    "name": "chain 7, insert 12",
+    "input": {
+      "a": "Zz",
+      "b": "ZzV"
+    },
+    "expect": {
+      "key": "ZzG"
+    }
+  },
+  {
+    "name": "chain 7, insert 13",
+    "input": {
+      "a": "a0G",
+      "b": "a0O"
+    },
+    "expect": {
+      "key": "a0K"
+    }
+  },
+  {
+    "name": "chain 7, insert 14",
+    "input": {
+      "a": "a0A",
+      "b": "a0C"
+    },
+    "expect": {
+      "key": "a0B"
+    }
+  },
+  {
+    "name": "chain 7, insert 15",
+    "input": {
+      "a": "ZzG",
+      "b": "ZzV"
+    },
+    "expect": {
+      "key": "ZzO"
+    }
+  },
+  {
+    "name": "chain 7, insert 16",
+    "input": {
+      "a": "Zzl",
+      "b": "a0"
+    },
+    "expect": {
+      "key": "Zzt"
+    }
+  },
+  {
+    "name": "chain 7, insert 17",
+    "input": {
+      "a": "ZzV",
+      "b": "Zzl"
+    },
+    "expect": {
+      "key": "Zzd"
+    }
+  },
+  {
+    "name": "chain 7, insert 18",
+    "input": {
+      "a": "a08",
+      "b": "a0A"
+    },
+    "expect": {
+      "key": "a09"
+    }
+  },
+  {
+    "name": "chain 7, insert 19",
+    "input": {
+      "a": "Zzd",
+      "b": "Zzl"
+    },
+    "expect": {
+      "key": "Zzh"
+    }
+  },
+  {
+    "name": "chain 7, insert 20",
+    "input": {
+      "a": "a1",
+      "b": null
+    },
+    "expect": {
+      "key": "a2"
+    }
+  },
+  {
+    "name": "chain 7, insert 21",
+    "input": {
+      "a": "Zzd",
+      "b": "Zzh"
+    },
+    "expect": {
+      "key": "Zzf"
+    }
+  },
+  {
+    "name": "chain 7, insert 22",
+    "input": {
+      "a": "a0V",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0l"
+    }
+  },
+  {
+    "name": "chain 7, insert 23",
+    "input": {
+      "a": "ZzV",
+      "b": "Zzd"
+    },
+    "expect": {
+      "key": "ZzZ"
+    }
+  },
+  {
+    "name": "chain 7, insert 24",
+    "input": {
+      "a": "ZzO",
+      "b": "ZzV"
+    },
+    "expect": {
+      "key": "ZzS"
+    }
+  },
+  {
+    "name": "chain 11, insert 1",
+    "input": {
+      "a": null,
+      "b": null
+    },
+    "expect": {
+      "key": "a0"
+    }
+  },
+  {
+    "name": "chain 11, insert 2",
+    "input": {
+      "a": "a0",
+      "b": null
+    },
+    "expect": {
+      "key": "a1"
+    }
+  },
+  {
+    "name": "chain 11, insert 3",
+    "input": {
+      "a": "a0",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0V"
+    }
+  },
+  {
+    "name": "chain 11, insert 4",
+    "input": {
+      "a": "a0V",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0l"
+    }
+  },
+  {
+    "name": "chain 11, insert 5",
+    "input": {
+      "a": "a1",
+      "b": null
+    },
+    "expect": {
+      "key": "a2"
+    }
+  },
+  {
+    "name": "chain 11, insert 6",
+    "input": {
+      "a": "a0l",
+      "b": "a1"
+    },
+    "expect": {
+      "key": "a0t"
+    }
+  },
+  {
+    "name": "chain 11, insert 7",
+    "input": {
+      "a": null,
+      "b": "a0"
+    },
+    "expect": {
+      "key": "Zz"
+    }
+  },
+  {
+    "name": "chain 11, insert 8",
+    "input": {
+      "a": "a0l",
+      "b": "a0t"
+    },
+    "expect": {
+      "key": "a0p"
+    }
+  },
+  {
+    "name": "chain 11, insert 9",
+    "input": {
+      "a": "a0p",
+      "b": "a0t"
+    },
+    "expect": {
+      "key": "a0r"
+    }
+  },
+  {
+    "name": "chain 11, insert 10",
+    "input": {
+      "a": "a0l",
+      "b": "a0p"
+    },
+    "expect": {
+      "key": "a0n"
+    }
+  },
+  {
+    "name": "chain 11, insert 11",
+    "input": {
+      "a": "a0n",
+      "b": "a0p"
+    },
+    "expect": {
+      "key": "a0o"
+    }
+  },
+  {
+    "name": "chain 11, insert 12",
+    "input": {
+      "a": "a1",
+      "b": "a2"
+    },
+    "expect": {
+      "key": "a1V"
+    }
+  },
+  {
+    "name": "chain 11, insert 13",
+    "input": {
+      "a": "a0n",
+      "b": "a0o"
+    },
+    "expect": {
+      "key": "a0nV"
+    }
+  },
+  {
+    "name": "chain 11, insert 14",
+    "input": {
+      "a": "a0r",
+      "b": "a0t"
+    },
+    "expect": {
+      "key": "a0s"
+    }
+  },
+  {
+    "name": "chain 11, insert 15",
+    "input": {
+      "a": "a0s",
+      "b": "a0t"
+    },
+    "expect": {
+      "key": "a0sV"
+    }
+  },
+  {
+    "name": "chain 11, insert 16",
+    "input": {
+      "a": "a0",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0G"
+    }
+  },
+  {
+    "name": "chain 11, insert 17",
+    "input": {
+      "a": "a0G",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0O"
+    }
+  },
+  {
+    "name": "chain 11, insert 18",
+    "input": {
+      "a": "a0O",
+      "b": "a0V"
+    },
+    "expect": {
+      "key": "a0S"
+    }
+  },
+  {
+    "name": "chain 11, insert 19",
+    "input": {
+      "a": "a0l",
+      "b": "a0n"
+    },
+    "expect": {
+      "key": "a0m"
+    }
+  },
+  {
+    "name": "chain 11, insert 20",
+    "input": {
+      "a": "a0l",
+      "b": "a0m"
+    },
+    "expect": {
+      "key": "a0lV"
+    }
+  },
+  {
+    "name": "chain 11, insert 21",
+    "input": {
+      "a": "a0o",
+      "b": "a0p"
+    },
+    "expect": {
+      "key": "a0oV"
+    }
+  },
+  {
+    "name": "chain 11, insert 22",
+    "input": {
+      "a": "a0",
+      "b": "a0G"
+    },
+    "expect": {
+      "key": "a08"
+    }
+  },
+  {
+    "name": "chain 11, insert 23",
+    "input": {
+      "a": "a0o",
+      "b": "a0oV"
+    },
+    "expect": {
+      "key": "a0oG"
+    }
+  },
+  {
+    "name": "chain 11, insert 24",
+    "input": {
+      "a": "a0o",
+      "b": "a0oG"
+    },
+    "expect": {
+      "key": "a0o8"
+    }
+  }
+]

@@ -1,21 +1,26 @@
 name: iOS CI
 
-# Build and test only; ships nothing. Editing packages/api-contract/gym-ladder.json fires this
-# workflow, web.yml and android.yml: all three languages run the ladder rule against that golden.
-# xcodebuild against a simulator rather than `swift build` — the package is iOS-only.
+# Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
+# and the engine's public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app for
+# the simulator; ships nothing. The corpus runners read
+# packages/api-contract/sync and packages/api-contract/domain-kit by walking up from #filePath, and the
+# SyncSchema target is generated from the registries there, so the whole repository is checked out and a
+# change to either contract runs this workflow too.
 
 on:
   push:
     branches: [main]
     paths:
       - 'apps/ios/**'
-      - 'packages/api-contract/**'
+      - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/domain-kit/**'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   pull_request:
     paths:
       - 'apps/ios/**'
-      - 'packages/api-contract/**'
+      - 'packages/api-contract/sync/**'
+      - 'packages/api-contract/domain-kit/**'
       - '.github/workflows/ios.yml'
       - '!apps/ios/**/*.md'
   workflow_dispatch:
@@ -26,51 +31,57 @@ concurrency:
 
 defaults:
   run:
-    working-directory: apps/ios
+    working-directory: apps/ios/Sync
 
 jobs:
-  build-and-test:
-    runs-on: macos-latest
+  test-and-build:
+    # swift-tools-version 6.2 needs Xcode 26.
+    runs-on: macos-26
+    timeout-minutes: 40
     steps:
       - uses: actions/checkout@v5
 
-      - run: xcodebuild -version
+      # The repository pins one toolchain: the domain kit's layering tests read sources with swift-syntax
+      # 602, which must match the compiler's major (Swift 6.2), and its compile attacks assert what that
+      # compiler refuses. Moving to a newer Xcode means bumping swift-syntax and re-checking the attacks.
+      - name: Select Xcode 26.3
+        run: sudo xcode-select -s /Applications/Xcode_26.3.app
 
-      # Windmill.xcodeproj is generated, never committed; project.yml is the checked-in half.
-      - name: Generate the project from project.yml
+      - run: |
+          xcodebuild -version
+          swift --version
+
+      # The probe app's project is generated from project.yml, and the domain kit's layering tests
+      # resolve it and their app fixtures with XcodeGen.
+      - name: Install XcodeGen
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: "1"
         run: |
           brew install xcodegen
+          xcodegen --version
+
+      # Sources/SyncSchema is generated from the product registries and checked in; a stale file fails here.
+      - name: Check the generated registry
+        run: swift run --explicit-target-dependency-import-check error SyncSchemaGen --check
+
+      # Property tests draw a fresh seed each run; a failure names it, and SYNC_SEED=<seed> replays it.
+      - name: Test on macOS
+        run: swift test --explicit-target-dependency-import-check error
+
+      - name: Build for the iOS simulator
+        run: xcodebuild build -scheme WindmillSync-Package -destination 'generic/platform=iOS Simulator'
+
+      - name: Build the SyncProbe app for the iOS simulator
+        working-directory: apps/ios/SyncProbe
+        run: |
           xcodegen generate
+          xcodebuild build -project SyncProbe.xcodeproj -scheme SyncProbe -destination 'generic/platform=iOS Simulator'
 
-      # Resolve a simulator by capability, never by name: the runner image's device list moves with
-      # every Xcode release.
-      - name: Pick a simulator
-        id: sim
-        run: |
-          udid=$(xcrun simctl list devices available --json \
-            | python3 -c "import json,sys;ds=json.load(sys.stdin)['devices'];print(next(d['udid'] for rs in ds.values() for d in rs if d['name'].startswith('iPhone')))")
-          echo "udid=$udid" >> "$GITHUB_OUTPUT"
-          xcrun simctl list devices available | grep -m1 iPhone
+      # The domain kit's tests include the layering checks over every package under apps/ios.
+      - name: Test the domain kit
+        working-directory: apps/ios/Domain
+        run: swift test --explicit-target-dependency-import-check error
 
-      - name: Build the app
-        env:
-          IOS_SENTRY_DSN: ${{ github.event_name != 'pull_request' && secrets.IOS_SENTRY_DSN || '' }}
-        run: |
-          xcodebuild build -project Windmill.xcodeproj -scheme Windmill \
-            -destination "id=${{ steps.sim.outputs.udid }}" CODE_SIGNING_ALLOWED=NO \
-            IOS_SENTRY_DSN="$IOS_SENTRY_DSN"
-
-      - name: Test crash report routing and privacy
-        run: |
-          xcodebuild test -project Windmill.xcodeproj -scheme Windmill \
-            -destination "id=${{ steps.sim.outputs.udid }}" \
-            -only-testing:WindmillCrashReportTests CODE_SIGNING_ALLOWED=NO
-
-      # The ladder test reads packages/api-contract/gym-ladder.json by walking up from #filePath, so
-      # the whole repo must be checked out. Run from the package directory: WindmillKit-Package is
-      # the package's implicit scheme and does not exist in Windmill.xcodeproj.
-      - name: Test WindmillKit
-        working-directory: apps/ios/WindmillKit
-        run: |
-          xcodebuild test -scheme WindmillKit-Package \
-            -destination "id=${{ steps.sim.outputs.udid }}"
+      - name: Test the engine's public test surface from outside the engine package
+        working-directory: apps/ios/SyncTestingSurface
+        run: swift test --explicit-target-dependency-import-check error

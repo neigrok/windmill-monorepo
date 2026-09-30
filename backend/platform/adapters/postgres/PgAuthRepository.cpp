@@ -20,6 +20,12 @@ User userFrom(const auto& row) {
 }
 const char* kUserColumns =
     "id::text, email::text, name, (extract(epoch from deleted_at) * 1000)::bigint AS deleted_ms";
+// The token_hash of every row a DELETE … RETURNING token_hash dropped.
+std::vector<std::string> digestsOf(const pqxx::result& rows) {
+  std::vector<std::string> digests;
+  for (const auto& row : rows) digests.push_back(row["token_hash"].template as<std::string>());
+  return digests;
+}
 }
 
 std::optional<User> PgAuthRepository::findUserByEmail(const Email& email) {
@@ -74,11 +80,16 @@ void PgAuthRepository::reviveUser(const UserId& userId) {
   txn.commit();
 }
 
-void PgAuthRepository::deleteUser(const UserId& userId) {
+std::vector<std::string> PgAuthRepository::deleteUser(const UserId& userId) {
+  // The row is locked first, so no session is inserted for it between the two deletes: every session the account held
+  // is one this answers.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  txn.exec_params("SELECT 1 FROM users WHERE id = $1::uuid FOR UPDATE", userId.str());
+  const pqxx::result sessions = txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid RETURNING token_hash", userId.str());
   txn.exec_params("DELETE FROM users WHERE id = $1::uuid", userId.str());
   txn.commit();
+  return digestsOf(sessions);
 }
 
 std::optional<UserId> PgAuthRepository::findIdentity(Provider provider, const std::string& subject) {
@@ -272,19 +283,21 @@ std::optional<std::string> PgAuthRepository::revokeSession(const UserId& userId,
   return rows[0]["token_hash"].as<std::string>();
 }
 
-void PgAuthRepository::revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) {
+std::vector<std::string> PgAuthRepository::revokeSessionsExcept(const UserId& userId, const std::string& keepDigest) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid AND token_hash <> $2",
-                  userId.str(), keepDigest);
+  pqxx::result rows = txn.exec_params(
+      "DELETE FROM sessions WHERE user_id = $1::uuid AND token_hash <> $2 RETURNING token_hash", userId.str(), keepDigest);
   txn.commit();
+  return digestsOf(rows);
 }
 
-void PgAuthRepository::revokeAllSessions(const UserId& userId) {
+std::vector<std::string> PgAuthRepository::revokeAllSessions(const UserId& userId) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid", userId.str());
+  pqxx::result rows = txn.exec_params("DELETE FROM sessions WHERE user_id = $1::uuid RETURNING token_hash", userId.str());
   txn.commit();
+  return digestsOf(rows);
 }
 
 }

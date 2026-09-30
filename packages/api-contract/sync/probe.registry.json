@@ -1,0 +1,240 @@
+{
+  "$schema": "./registry.schema.json",
+  "registry": "probe",
+  "version": 2,
+  "minVersion": 2,
+  "products": {
+    "probe": {
+      "surfaces": ["web", "ios", "android"],
+      "device": {
+        "rack": { "keyPattern": "^rack$", "value": { "type": "json" } },
+        "picture": { "keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": { "type": "json" } }
+      }
+    }
+  },
+  "types": [
+    {
+      "type": "board",
+      "scope": "product:probe",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^b_[0-9a-f]{8}$",
+      "mint": { "prefix": "b_", "alphabet": "0123456789abcdef", "length": 8 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "keep",
+      "governs": "tree",
+      "origins": ["replica", "server"],
+      "primary": true,
+      "fields": {}
+    },
+    {
+      "type": "card",
+      "scope": "product:probe",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "cap": 3,
+      "primary": true,
+      "fields": {
+        "title": { "kind": "lww", "writer": "client", "unit": "chars", "min": 1, "max": 12, "domain": { "type": "string" } },
+        "body": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 24, "domain": { "type": "string" } },
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } },
+        "size": {
+          "kind": "lww",
+          "writer": "client",
+          "domain": { "type": "number", "min": -500, "max": 500, "nullable": true, "quantum": 0.01 }
+        },
+        "claim": { "kind": "fww", "writer": "client", "unit": "chars", "max": 12, "domain": { "type": "string" } },
+        "tier": { "kind": "ranked", "writer": "client", "rank": { "draft": 0, "review": 1, "done": 2, "dropped": 2 } },
+        "attachment": {
+          "kind": "lww",
+          "writer": "client",
+          "unit": "bytes",
+          "max": 120,
+          "domain": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "id": { "type": "string", "pattern": "^[A-Za-z0-9_-]{8,64}$" },
+              "localOnly": { "type": "boolean" },
+              "scale": { "type": "number", "min": 0, "max": 10, "quantum": 0.5 }
+            },
+            "required": ["id"]
+          }
+        }
+      }
+    },
+    {
+      "type": "run",
+      "scope": "product:probe",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "startedAt": { "kind": "time", "writer": "client" },
+        "label": { "kind": "lww", "writer": "client", "unit": "chars", "max": 12, "domain": { "type": "string", "nullable": true } },
+        "endedAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0, "nullable": true } }
+      }
+    },
+    {
+      "type": "lap",
+      "scope": "product:probe",
+      "identity": "minted",
+      "idSpace": "global",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz", "length": 16 },
+      "seeded": { "seedMax": 58, "ordinalMax": 99999 },
+      "life": true,
+      "revivable": false,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "runId": { "kind": "const", "writer": "client", "ref": "run", "parent": true },
+        "no": { "kind": "serial", "writer": "server", "serialNext": ["runId"] },
+        "at": { "kind": "time", "writer": "client" },
+        "weight": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": -500, "max": 500, "quantum": 0.01 } }
+      }
+    },
+    {
+      "type": "day",
+      "scope": "product:probe",
+      "identity": "keyed",
+      "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "life": true,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "score": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 10 } }
+      }
+    },
+    {
+      "type": "fact",
+      "scope": "product:probe",
+      "identity": "keyed",
+      "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
+      "life": true,
+      "wholePut": true,
+      "deadRows": "spent",
+      "origins": ["replica", "server"],
+      "fields": {
+        "value": { "kind": "lww", "writer": "client", "domain": { "type": "number", "min": 0, "max": 500, "quantum": 0.1 } },
+        "at": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0 } }
+      }
+    },
+    {
+      "type": "meta",
+      "scope": "tree",
+      "identity": "singleton",
+      "singletonId": "meta",
+      "idPattern": "^meta$",
+      "life": false,
+      "origins": ["replica", "server"],
+      "fields": {
+        "title": { "kind": "lww", "writer": "client", "unit": "chars", "max": 12, "domain": { "type": "string" } },
+        "visibility": {
+          "kind": "lww",
+          "writer": "server",
+          "domain": { "type": "string", "enum": ["private", "unlisted", "public"] },
+          "opens": ["unlisted", "public"]
+        }
+      }
+    },
+    {
+      "type": "tag",
+      "scope": "tree",
+      "identity": "derived",
+      "derive": { "fallback": "tag" },
+      "idSpace": "scope",
+      "idPattern": "^[a-z0-9_-]{1,64}$",
+      "mint": { "prefix": "", "alphabet": "0123456789abcdefghijklmnopqrstuvwxyz", "length": 12 },
+      "life": true,
+      "revivable": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "fields": {
+        "label": { "kind": "lww", "writer": "client", "unit": "chars", "max": 24, "domain": { "type": "string" } }
+      }
+    },
+    {
+      "type": "link",
+      "scope": "tree",
+      "identity": "keyed",
+      "key": { "tuple": [{ "name": "from", "ref": "tag" }, { "name": "to", "ref": "tag" }] },
+      "life": true,
+      "deadRows": "keep",
+      "origins": ["replica", "server"],
+      "fields": {
+        "strength": { "kind": "lww", "writer": "client", "domain": { "type": "number", "integer": true, "min": 0, "max": 9 } }
+      }
+    },
+    {
+      "type": "mark",
+      "scope": "overlay",
+      "identity": "keyed",
+      "key": { "ref": "tag" },
+      "life": false,
+      "visibleWhen": ["done", "memo"],
+      "origins": ["replica"],
+      "fields": {
+        "done": { "kind": "lww", "writer": "client", "domain": { "type": "boolean", "nullable": true } },
+        "memo": { "kind": "text", "writer": "client", "unit": "bytes", "max": 40 }
+      }
+    }
+  ],
+  "commands": [
+    {
+      "name": "probe.start",
+      "scope": "product:probe",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "id": { "type": "ref<run>" },
+        "label": { "type": "json", "optional": true, "domain": { "type": "string", "unit": "chars", "max": 12, "nullable": true } },
+        "startedAt": { "type": "time" },
+        "join": { "type": "json", "domain": { "type": "boolean" } }
+      },
+      "predicts": ["run"]
+    },
+    {
+      "name": "probe.end",
+      "scope": "product:probe",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "runId": { "type": "ref<run>" },
+        "endedAt": { "type": "instant" }
+      },
+      "predicts": ["run"]
+    },
+    {
+      "name": "probe.copy",
+      "scope": "product:probe",
+      "origins": ["replica", "server"],
+      "serverInternal": false,
+      "args": {
+        "src": { "type": "ref<board>" },
+        "dst": { "type": "ref<board>" }
+      },
+      "predicts": ["board"]
+    },
+    {
+      "name": "probe.tick",
+      "scope": "product:probe",
+      "origins": ["server"],
+      "serverInternal": true,
+      "beforePull": true,
+      "args": {}
+    }
+  ]
+}

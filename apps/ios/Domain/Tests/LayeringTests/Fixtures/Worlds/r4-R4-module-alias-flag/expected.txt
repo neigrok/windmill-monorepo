@@ -1,0 +1,1 @@
+Domain/Package.swift: settings GymDomain is [enableUpcomingFeature(MemberImportVisibility), unsafeFlags([-module-alias, Engine=SyncEngine])], not [enableUpcomingFeature(MemberImportVisibility)]

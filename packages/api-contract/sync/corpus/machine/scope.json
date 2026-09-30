@@ -1,0 +1,86 @@
+[
+  {
+    "name": "absent --first-write--> alive",
+    "input": {
+      "from": "absent",
+      "event": "first-write",
+      "to": "alive"
+    },
+    "expect": {
+      "to": "alive"
+    }
+  },
+  {
+    "name": "absent --governing-create--> alive",
+    "input": {
+      "from": "absent",
+      "event": "governing-create",
+      "to": "alive"
+    },
+    "expect": {
+      "to": "alive"
+    }
+  },
+  {
+    "name": "alive --governing-delete--> dead",
+    "input": {
+      "from": "alive",
+      "event": "governing-delete",
+      "to": "dead"
+    },
+    "expect": {
+      "to": "dead"
+    }
+  },
+  {
+    "name": "dead --horizon--> dead",
+    "input": {
+      "from": "dead",
+      "event": "horizon",
+      "to": "dead"
+    },
+    "expect": {
+      "to": "dead"
+    }
+  },
+  {
+    "name": "illegal: dead --first-write--> any",
+    "input": {
+      "from": "dead",
+      "event": "first-write"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: dead --governing-create--> any",
+    "input": {
+      "from": "dead",
+      "event": "governing-create"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: alive --governing-create--> any",
+    "input": {
+      "from": "alive",
+      "event": "governing-create"
+    },
+    "expect": {
+      "error": true
+    }
+  },
+  {
+    "name": "illegal: absent --governing-delete--> any",
+    "input": {
+      "from": "absent",
+      "event": "governing-delete"
+    },
+    "expect": {
+      "error": true
+    }
+  }
+]

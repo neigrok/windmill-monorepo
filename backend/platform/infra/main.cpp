@@ -50,6 +50,7 @@
 #include "products/roadmap/adapters/ws/WsPresenceBus.h"
 #include "platform/application/AuthService.h"
 #include "platform/application/Entitlements.h"
+#include "platform/application/LiveSessions.h"
 #include "platform/domain/AiFuse.h"
 #include "platform/domain/MailArming.h"
 #include "products/roadmap/application/ForkService.h"
@@ -98,13 +99,30 @@
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/routes.h"
 
+#ifdef WM_SYNC_PROBE
+#include "platform/adapters/http/SyncApi.h"
+#include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/adapters/ws/SyncSocket.h"
+#include "platform/application/WorkerPool.h"
+#include "platform/application/sync/Admission.h"
+#include "platform/application/sync/SyncCatalog.h"
+#include "platform/application/sync/SyncLive.h"
+#include "platform/application/sync/SyncService.h"
+#include "products/probe/ProbeRegistry.h"
+#include "products/probe/adapters/http/DevApi.h"
+#include "products/probe/adapters/postgres/PgProbe.h"
+#endif
+
 #include <drogon/drogon.h>
 
 #include <algorithm>
+#include <cstdio>
 #include <cctype>
 #include <cstdlib>
 #include <memory>
+#include <optional>
 #include <set>
+#include <stdexcept>
 #include <string>
 #include <thread>
 #include <typeinfo>
@@ -126,12 +144,23 @@ int envDays(const char* name, int fallback) {
 int main() {
   using namespace wm;
 
-  // Also sizes the database pool: a pool ceiling below the thread count turns into waits and 500s.
+#ifdef WM_SYNC_PROBE
+  // windmill_server_probe serves the probe, a test and dev product: never where the app is served over https.
+  if (const char* appUrl = std::getenv("WINDMILL_APP_URL"); appUrl && std::string(appUrl).rfind("https://", 0) == 0) {
+    std::fprintf(stderr, "windmill_server_probe refuses an https WINDMILL_APP_URL: the probe product never runs in production\n");
+    return 1;
+  }
+#endif
+
+  // Also sizes the database pool, with the sync engine's workers (engine.md §6) beside the IO threads.
   const unsigned int ioThreads = std::max(4u, std::thread::hardware_concurrency());
+  constexpr std::size_t kSyncWorkers = 4;
+  constexpr std::size_t kSyncQueueCeiling = 256;
 
   const char* url = std::getenv("DATABASE_URL");
   std::string connString = url ? url : "postgresql://localhost/windmill";
-  auto pool = std::make_shared<PgPool>(connString, ioThreads + PgPool::kReservedConnections);
+  auto pool = std::make_shared<PgPool>(
+      connString, std::min(PgPool::kMaxConnections, ioThreads + kSyncWorkers + PgPool::kReservedConnections));
   const Hlc genesis{1, 0, "genesis"};
 
   auto trees = std::make_shared<PgTreeRepository>(pool);
@@ -143,13 +172,21 @@ int main() {
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
   auto presence = std::make_shared<PresenceHub>();
 
-  // The session rides in an HttpOnly cookie whose Secure flag and Domain follow the deployment.
+  // The session rides in an HttpOnly cookie whose Secure flag and scopes follow the deployment: the live Domain, and
+  // every Domain it was set in before (engine.md §9.1 Session cookie scopes).
   const char* appUrlEnv = std::getenv("WINDMILL_APP_URL");
   std::string appBaseUrl = appUrlEnv ? appUrlEnv : "http://localhost:5183";
   const char* resendKey = std::getenv("RESEND_API_KEY");
   const char* resendFrom = std::getenv("RESEND_FROM");
   const char* cookieDomainEnv = std::getenv("WINDMILL_COOKIE_DOMAIN");
-  std::string cookieDomain = cookieDomainEnv ? cookieDomainEnv : "";
+  const char* retiredCookieDomainsEnv = std::getenv("WINDMILL_COOKIE_RETIRED_DOMAINS");
+  std::optional<SessionCookieScopes> cookieScopes;
+  try {
+    cookieScopes.emplace(cookieDomainEnv ? cookieDomainEnv : "", retiredCookieDomainsEnv ? retiredCookieDomainsEnv : "");
+  } catch (const std::invalid_argument& refused) {
+    std::fprintf(stderr, "refusing to start: %s (WINDMILL_COOKIE_DOMAIN, WINDMILL_COOKIE_RETIRED_DOMAINS)\n", refused.what());
+    return 1;
+  }
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
   auto authRepo = std::make_shared<PgAuthRepository>(pool);
@@ -201,9 +238,14 @@ int main() {
                 {"paddle_subscriptions", "user_id"},  // platform
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
+                {"sync_scopes", "owner"},             // the sync engine
+                {"sync_replicas", "account"},         // the sync engine
+                {"sync_requests", "account"},         // the sync engine
             });
+  // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
+  auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
-                                                   *oauthService, *accountFootprint, appBaseUrl);
+                                                   *oauthService, *accountFootprint, *liveSessions, appBaseUrl);
   auto forkService = std::make_shared<ForkService>(*registry, *trees, *tokens);
   // Empty client id/secret leaves configured() false and the routes bounce to the app. The redirect
   // URI must be registered verbatim in the Google Cloud console.
@@ -222,7 +264,7 @@ int main() {
       appleClientId ? appleClientId : "", appleTeamId ? appleTeamId : "", appleKeyId ? appleKeyId : "",
       applePrivateKey ? applePrivateKey : "");
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
-  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, cookieDomain,
+  auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
                                            googleClient, appBaseUrl, appleClient);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
@@ -480,7 +522,7 @@ int main() {
     resp->setStatusCode(drogon::k204NoContent);
     writeCors(req, resp);
     resp->addHeader("Access-Control-Allow-Methods", "GET, PUT, PATCH, POST, DELETE, OPTIONS");
-    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization");
+    resp->addHeader("Access-Control-Allow-Headers", "content-type, authorization, sync-schema");
     resp->addHeader("Access-Control-Max-Age", "600");
     return resp;
   });
@@ -864,6 +906,45 @@ int main() {
                        .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 
+#ifdef WM_SYNC_PROBE
+  // The sync engine (engine.md) over the probe product and db/probe.sql. windmill_server composes no
+  // registry yet, since no product has adopted the engine, so it mounts none of /v1/sync.
+  const sync::Registry& syncRegistry = probe::registry();
+  const sync::Limits syncLimits;
+  sync::SyncCatalog syncCatalog(syncRegistry);
+  probe::PgProbe probeTables(syncRegistry);
+  probeTables.bindTo(syncCatalog);
+  syncCatalog.seal();
+  sync::PgSyncStore syncStore(pool, syncLimits.lockTimeoutMs);
+  sync::ServerClock serverClock;
+  auto physNow = std::make_shared<sync::PhysicalClock>(*systemClock);
+  auto syncLive = std::make_shared<sync::SyncLive>(syncCatalog, syncStore, syncLimits);
+  sync::Admission admission(syncCatalog, syncStore, *syncLive, serverClock, *sentry, syncLimits);
+  const std::string syncEpoch = [&syncStore] {
+    const std::unique_ptr<sync::SyncTxn> txn = syncStore.begin(sync::TxnMode::snapshot);
+    return syncStore.epoch(*txn);
+  }();
+  auto syncWorkers = std::make_shared<WorkerPool>("sync", kSyncWorkers, kSyncQueueCeiling);
+  auto syncService = std::make_shared<sync::SyncService>(syncCatalog, syncStore, admission, *physNow);
+  sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncService,
+                                                                               .auth = authService,
+                                                                               .workers = syncWorkers,
+                                                                               .clock = physNow,
+                                                                               .minSchema = syncRegistry.minVersion(),
+                                                                               .epoch = syncEpoch,
+                                                                               .limits = syncLimits}));
+  sync::installSyncSocket(sync::SyncSocketDeps{.live = syncLive,
+                                               .workers = syncWorkers,
+                                               .auth = authService,
+                                               .sessions = liveSessions,
+                                               .clock = physNow,
+                                               .allowedOrigins = allowedOrigins,
+                                               .minSchema = syncRegistry.minVersion(),
+                                               .epoch = syncEpoch});
+  sync::linkSyncSocket();
+  probe::registerDevRoutes(app, std::make_shared<probe::DevApi>(*authService, *authRepo, *tokens, *systemClock, syncStore));
+#endif
+
   // EVERY product that sends mail must appear in this list, or it keeps mailing an address the
   // provider has already called dead. An empty secret refuses every delivery (Svix retries): set
   // the secret FIRST, then register the endpoint in Resend, or every genuine delivery burns a retry.
@@ -881,10 +962,14 @@ int main() {
   const char* portEnv = std::getenv("PORT");
   int port = portEnv ? std::atoi(portEnv) : 8080;
   LOG_INFO << "windmill-backend listening on :" << port;
-  app.setClientMaxBodySize(8 * 1024 * 1024);         // backstop cap; a full PUT document can be large
+  // Backstop cap; a full PUT document can be large. Above it Drogon answers a bare 413 before any handler runs,
+  // which engine.md §9.1 allows a transport: it sits above PUSH_MAX_BYTES and PULL_MAX_BYTES.
+  app.setClientMaxBodySize(8 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);                    // global socket ceiling (all arrive via Caddy)
-  const char* listenHost = std::getenv("WINDMILL_HOST");
-  app.addListener(listenHost && *listenHost ? listenHost : "0.0.0.0", port).setThreadNum(ioThreads).run();
+  const char* listenHostEnv = std::getenv("WINDMILL_HOST");
+  const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
+  app.addListener(listenHost, port);
+  app.setThreadNum(ioThreads).run();
   return 0;
 }

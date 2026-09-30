@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <stdexcept>
 
 namespace wm {
 
@@ -103,6 +104,68 @@ AddressTrust trustOf(const ProviderIdentity& identity) {
   if (!parseEmail(identity.email.value)) return AddressTrust::unusable;
   if (identity.relayEmail || isPrivateRelay(identity.email)) return AddressTrust::appOnly;
   return AddressTrust::crossDoor;
+}
+
+namespace {
+
+std::string_view trimmedOfSpaceAndTab(std::string_view text) {
+  while (!text.empty() && (text.front() == ' ' || text.front() == '\t')) text.remove_prefix(1);
+  while (!text.empty() && (text.back() == ' ' || text.back() == '\t')) text.remove_suffix(1);
+  return text;
+}
+
+// The scope a browser files a cookie under for a Domain: no leading dot, lower case (RFC 6265 §5.2.3).
+std::string cookieScopeOf(std::string_view domain) {
+  if (domain.starts_with('.')) domain.remove_prefix(1);
+  std::string scope(domain);
+  std::transform(scope.begin(), scope.end(), scope.begin(), [](char c) { return c >= 'A' && c <= 'Z' ? static_cast<char>(c - 'A' + 'a') : c; });
+  return scope;
+}
+
+bool isHostNameByte(char c) {
+  return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') || c == '-' || c == '.';
+}
+
+// The WHATWG URL host parser reads a name whose last label is a number (decimal, or hex after 0x) as an IPv4 address.
+bool endsInANumber(std::string_view host) {
+  std::string_view last = host.substr(host.rfind('.') + 1);
+  if (last.starts_with("0x") || last.starts_with("0X")) {
+    last.remove_prefix(2);
+    return std::all_of(last.begin(), last.end(), [](char c) { return std::isxdigit(static_cast<unsigned char>(c)) != 0; });
+  }
+  return !last.empty() && std::all_of(last.begin(), last.end(), [](char c) { return c >= '0' && c <= '9'; });
+}
+
+}
+
+std::optional<std::string> SessionCookieScopes::refusalOf(std::string_view domain) {
+  const std::string_view trimmed = trimmedOfSpaceAndTab(domain);
+  if (trimmed.empty()) return std::nullopt;
+  const std::string quoted = "\"" + std::string(domain) + "\"";
+  if (trimmed.starts_with('[') || std::count(trimmed.begin(), trimmed.end(), ':') > 1) return quoted + " is an IP address";
+  if (!std::all_of(trimmed.begin(), trimmed.end(), isHostNameByte)) return quoted + " is not a bare host name";
+  const std::string_view host = trimmed.starts_with('.') ? trimmed.substr(1) : trimmed;
+  if (host.empty() || host.starts_with('.') || host.ends_with('.') || host.find("..") != std::string_view::npos)
+    return quoted + " has an empty label";
+  if (host.find('.') == std::string_view::npos) return quoted + " is a single label, with no registrable domain";
+  if (endsInANumber(host)) return quoted + " is an IP address";
+  if (cookieScopeOf(host.substr(host.rfind('.') + 1)) == "localhost") return quoted + " ends in the label localhost, with no registrable domain";
+  return std::nullopt;
+}
+
+SessionCookieScopes::SessionCookieScopes(std::string_view domain, std::string_view retiredDomains) {
+  std::vector<std::string_view> named{domain, ""};
+  for (std::size_t start = 0; start <= retiredDomains.size();) {
+    const std::size_t comma = std::min(retiredDomains.find(',', start), retiredDomains.size());
+    named.push_back(retiredDomains.substr(start, comma - start));
+    start = comma + 1;
+  }
+  for (const std::string_view entry : named) {
+    if (const std::optional<std::string> refusal = refusalOf(entry)) throw std::invalid_argument("the session cookie's Domain " + *refusal);
+    const std::string scope(trimmedOfSpaceAndTab(entry));
+    const bool known = std::any_of(scopes_.begin(), scopes_.end(), [&scope](const std::string& kept) { return cookieScopeOf(kept) == cookieScopeOf(scope); });
+    if (!known) scopes_.push_back(scope);
+  }
 }
 
 }

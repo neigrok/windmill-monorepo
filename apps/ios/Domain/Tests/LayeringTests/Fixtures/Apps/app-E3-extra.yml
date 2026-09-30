@@ -1,0 +1,10 @@
+targets:
+  CoachDomain:
+    type: framework
+    platform: iOS
+    sources:
+      - path: CoachSources
+    settings:
+      base:
+        SWIFT_VERSION: "5.0"
+        GENERATE_INFOPLIST_FILE: "YES"

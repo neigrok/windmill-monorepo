@@ -1,0 +1,3 @@
+Sync/Sources/SyncEngine/SyncStatus.swift:5: combine ObservableObject
+Sync/Sources/SyncEngine/SyncStatus.swift:6: combine @Published
+Sync/Sources/SyncEngine/SyncStatus.swift:7: combine @Published

@@ -1,0 +1,1 @@
+WindmillKit/Package.swift: layer WindmillPlatform (platform) may not depend on GymDomain (product domain)

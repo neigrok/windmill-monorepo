@@ -3,6 +3,13 @@
 Wire shapes shared across backend, web and native. Executable fixtures are tested by each implementing
 surface; written contracts specify API behavior and compatibility.
 
+## `sync/`
+
+The sync engine's conformance contract ([engine.md](../../docs/foundation/engine.md) §11): the
+authoritative registry schema, the test-only `probe` product, the reference model in plain Node.js,
+and the golden corpus every engine implementation passes for its role. [sync/README.md](sync/README.md)
+has the layout and commands; [sync/corpus/README.md](sync/corpus/README.md) the vector shapes.
+
 ## `genesis.js`
 
 A locally-born tree's first sync converges with the server's empty tree only while this seed is
@@ -26,7 +33,6 @@ byte-equal to the backend's (`Legend::seededDefaults` + `Hlc{1,0,"genesis"}`). R
 Read as a test — each from this file in the repo, never a bundled copy — by:
 
 - `web/test/products/gym/logger/ladder.test.js` → `web/src/products/gym/logger/ladder.js`
-- `apps/ios/WindmillKit/Tests/WindmillGymTests/LadderTests.swift` → `apps/ios/WindmillKit/Sources/WindmillGym/Ladder.swift`
 - `apps/android/gym/src/test/kotlin/works/windmill/gym/domain/LadderTests.kt` → `apps/android/gym/src/main/kotlin/works/windmill/gym/domain/Ladder.kt`
 
 ## `gym-history.md`

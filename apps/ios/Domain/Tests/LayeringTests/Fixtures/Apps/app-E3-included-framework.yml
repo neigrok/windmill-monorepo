@@ -1,0 +1,34 @@
+# expect: build-settings CoachDomain [Debug, iphoneos]: a com.apple.product-type.framework
+# expect: build-settings CoachDomain [Debug, iphonesimulator]: a com.apple.product-type.framework
+# expect: build-settings CoachDomain [Release, iphoneos]: a com.apple.product-type.framework
+# expect: build-settings CoachDomain [Release, iphonesimulator]: a com.apple.product-type.framework
+# expect: project CoachDomain: SWIFT_TREAT_WARNINGS_AS_ERRORS is not set in the target's own settings
+# expect: project CoachDomain: SWIFT_WARNINGS_AS_WARNINGS_GROUPS is not set in the target's own settings
+include:
+  - app-E3-extra.yml
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  WindmillKit:
+    path: WindmillKit
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - path: App
+    dependencies:
+      - package: WindmillKit
+        product: WindmillGym
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        CODE_SIGNING_ALLOWED: "NO"
+        GENERATE_INFOPLIST_FILE: "YES"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor

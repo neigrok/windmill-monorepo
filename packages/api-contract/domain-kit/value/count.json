@@ -1,0 +1,178 @@
+[
+  {
+    "name": "no items below min 1 is tooFew",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": [],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items", "path": "items", "reason": "tooFew", "min": 1}}
+  },
+  {
+    "name": "four items above max 3 is tooMany",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["a", "b", "c", "d"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items", "path": "items", "reason": "tooMany", "max": 3}}
+  },
+  {
+    "name": "the count is checked before the items: four blank items are tooMany",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["", "", "", ""],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items", "path": "items", "reason": "tooMany", "max": 3}}
+  },
+  {
+    "name": "items validate in order and the first bad item throws at its index",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["ok", "", "abcdefg"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items.label", "path": "items.1", "reason": "blank"}}
+  },
+  {
+    "name": "a later bad item is found when the earlier items pass",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["ok", "fine", "abcdef"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {
+      "violation": {
+        "rule": "probe.items.label", "path": "items.2", "reason": "tooLong", "max": 5, "unit": "chars", "measured": 6
+      }
+    }
+  },
+  {
+    "name": "a U+0000 item is nul at its index",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["a", "b\u0000"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items.label", "path": "items.1", "reason": "nul"}}
+  },
+  {
+    "name": "the normalised items are returned",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["  a ", "e\u0301", "b"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"items": ["a", "\u00e9", "b"]}
+  },
+  {
+    "name": "number items round to the item quantum",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": [1.25, 2.75, 99.9],
+      "itemSpec": {
+        "path": "probe.items.weight", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 0.5
+      }
+    },
+    "expect": {"items": [1.5, 3, 100]}
+  },
+  {
+    "name": "100.2 rounds to 100 within max 100",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": [100.2],
+      "itemSpec": {
+        "path": "probe.items.weight", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 0.5
+      }
+    },
+    "expect": {"items": [100]}
+  },
+  {
+    "name": "100.3 rounds to 100.5, above max 100 at its index",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": [100.3],
+      "itemSpec": {
+        "path": "probe.items.weight", "kind": "number", "min": 0, "max": 100, "integer": false, "quantum": 0.5
+      }
+    },
+    "expect": {"violation": {"rule": "probe.items.weight", "path": "items.0", "reason": "above", "max": 100}}
+  },
+  {
+    "name": "exactly max items pass",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["a", "b", "c"],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"items": ["a", "b", "c"]}
+  },
+  {
+    "name": "min 0 admits no items",
+    "input": {
+      "spec": {"path": "probe.tags", "kind": "count", "min": 0, "max": 2},
+      "items": [],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"items": []}
+  },
+  {
+    "name": "null passes the optional overload",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": null,
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      }
+    },
+    "expect": {"items": null}
+  },
+  {
+    "name": "without an item spec the items return as they are",
+    "input": {"spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3}, "items": ["  x ", 3]},
+    "expect": {"items": ["  x ", 3]}
+  },
+  {
+    "name": "item paths extend the at path",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": ["ok", ""],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      },
+      "at": "entries.0.sets"
+    },
+    "expect": {"violation": {"rule": "probe.items.label", "path": "entries.0.sets.1", "reason": "blank"}}
+  },
+  {
+    "name": "tooFew carries the at path",
+    "input": {
+      "spec": {"path": "probe.items", "kind": "count", "min": 1, "max": 3},
+      "items": [],
+      "itemSpec": {
+        "path": "probe.items.label", "kind": "text", "unit": "chars", "min": 1, "max": 5, "trim": true, "nfc": true
+      },
+      "at": "entries.2.sets"
+    },
+    "expect": {"violation": {"rule": "probe.items", "path": "entries.2.sets", "reason": "tooFew", "min": 1}}
+  }
+]

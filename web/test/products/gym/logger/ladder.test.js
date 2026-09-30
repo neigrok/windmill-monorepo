@@ -1,4 +1,4 @@
-// The ladder table lives in packages/api-contract/gym-ladder.json; iOS runs it as a test too.
+// The ladder table lives in packages/api-contract/gym-ladder.json; Android runs it as a test too.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';

@@ -61,12 +61,12 @@ template <typename Row>
 NodeStateEntry nodeFromRow(const Row& row) {
   NodeStateEntry node;
   node.id = NodeId{row["node_id"].template as<std::string>()};
-  node.createdAt = parseHlc(row["created_hlc"].template as<std::string>());
-  node.deletedAt = parseHlc(row["deleted_hlc"].template as<std::string>());
+  node.createdAt = roadmapStamp(row["created_hlc"].template as<std::string>());
+  node.deletedAt = roadmapStamp(row["deleted_hlc"].template as<std::string>());
   node.label = row["label"].template as<std::string>();
-  node.labelAt = parseHlc(row["label_hlc"].template as<std::string>());
+  node.labelAt = roadmapStamp(row["label_hlc"].template as<std::string>());
   node.color = parseColor(row["color"].template as<std::string>()).value_or(NodeColor::terracotta);
-  node.colorAt = parseHlc(row["color_hlc"].template as<std::string>());
+  node.colorAt = roadmapStamp(row["color_hlc"].template as<std::string>());
   return node;
 }
 
@@ -149,8 +149,8 @@ std::vector<TreeReadiness> PgReminderRepository::readinessFor(const UserId& user
     for (const auto& edge : edges) {
       state.edges.push_back(EdgeStateEntry{
           Edge{NodeId{edge["from_id"].as<std::string>()}, NodeId{edge["to_id"].as<std::string>()}},
-          parseHlc(edge["added_hlc"].as<std::string>()),
-          parseHlc(edge["removed_hlc"].as<std::string>())});
+          roadmapStamp(edge["added_hlc"].as<std::string>()),
+          roadmapStamp(edge["removed_hlc"].as<std::string>())});
     }
 
     const TreeData data = LooseGraph(state).toTreeData(id, row["title"].as<std::string>());

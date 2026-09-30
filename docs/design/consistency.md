@@ -8,13 +8,15 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 - **F4 · Gym Daylight PR ink.** Web and the [approved specimen](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=874-7735)
   use gold-700 `#6E5217`; Android `GymSkin.kt` still uses `#A17822`. Align Android and check native
-  PR rows. iOS defines only the Instrument gym palette; a Daylight palette must use gold-700.
+  PR rows. `guidelines/superapp-shell.md` §8 says iOS gym defines only its Instrument palette;
+  `apps/ios` defines none (6v), and the rebuilt Daylight palette uses gold-700.
 - **F7 / F29 · Mono weights.** `web/src/styles/fonts.js` loads JetBrains Mono 400/500/600.
   Gym and journal CSS request heavier mono weights. Normalize the uses or supply the faces.
 - **F8 · Unused numeral tokens.** `gymTokens.css` declares `--weight-size`, `--weight-leading`
   and `--reps-size`; no web rule consumes them. Remove them or give them a real consumer.
-- **4j · Text scaling.** iOS `WindmillFont` uses fixed-size `.system(size:)` fonts. Define and
-  implement Dynamic Type behavior, and check web text resizing across the gym's pixel-sized type.
+- **4j · Text scaling.** `gym/briefs/12-native-idiom.md` says iOS's fixed-size fonts need Dynamic
+  Type behavior; `apps/ios` has no fonts (6v). Define Dynamic Type for the rebuilt rooms, and check
+  web text resizing across the gym's pixel-sized type.
 - **Published clay tokens.** Reconcile Design System `surface/card` dark mode with web's
   `#171719`. The recorded published value is `#17120B` (`VariableID:1:66`, key
   `f5e7a675adcd56fc6c985da0c7d8341fca46caac`). Gym's local `shell/clay/*` aliases must remain
@@ -27,7 +29,7 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 ### Sync engine
 
-Spec: [Windmill sync engine](../foundation/engine.md), specified and not yet adopted by any product. Canon
+Spec: [Windmill sync engine](../foundation/engine.md), built in the server and the Swift client and adopted by no product app yet. Canon
 states the owner's rulings of 2026-09-26 on its lifecycle; each app keeps the behavior below until
 its product adopts the engine. The apps are rewritten onto the engine, not migrated: nothing today's
 apps store carries across.
@@ -40,25 +42,24 @@ apps store carries across.
   holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
   process dying is let go on the next start. The apps let holds go the other way, putting the rows
   back and sending nothing: the web when the document hides or the room unmounts
-  (`useTrainingLog.js`), Android on `ON_STOP` and on disposal (`GymRoom.kt`, `abandonWithheld`), iOS
-  on scene `.background` and on leaving the room (`GymRoom.swift`, `withheld.abandon()`). Only iOS
-  set deletions reach disk (`TrainingStore.swift` `delete` into `SetQueue`); every other hold is in
-  memory.
+  (`useTrainingLog.js`), Android on `ON_STOP` and on disposal (`GymRoom.kt`, `abandonWithheld`).
+  Every hold is in memory.
 - **7b · Notes reorder.** Canon (`gym/briefs/10-notes.md` "A move writes one note",
   `13-gestures.md`; owner ruling 2026-09-26): moving a note writes that note's position only, right
   after the row drawn above the drop point in stored order, so a note inside a delete window keeps
-  its stored place. All three apps send the complete order, mapping the drawn order onto the stored
-  one (`Notes.jsx`, `NotesScreen.swift` `resequenced(_:drawn:)`, `TrainingStore.kt`
-  `reorderNotes(drawn)`), and the backend refuses an order that does not name every note
-  (`400 notes-order-mismatch`, `PgNotesRepository::reorderNotes`).
+  its stored place. Web and Android send the complete order, mapping the drawn order onto the
+  stored one (`Notes.jsx`, `TrainingStore.kt` `reorderNotes(drawn)`), and the backend refuses an
+  order that does not name every note (`400 notes-order-mismatch`, `PgNotesRepository::reorderNotes`).
 - **7c · Sign-out.** Canon (`guidelines/superapp-flow.md` §3 and §7, `roadmap/guidelines/auth.md`
   §4, `roadmap/guidelines/front-door.md` §2; owner ruling 2026-09-26): signing out takes the
-  account's synced data off the device. When changes have not reached the account, the confirmation
-  states how many and offers **Keep** (hidden on the device, sent at the same account's next
-  sign-in) or **Discard** (destructive), and Where to start?'s signed-out line has a kept-changes
-  variant. No app counts unsent changes or offers Keep or Discard.
-  - iOS signs out with no confirmation under a footer saying what you've written *stays on this
-    device, editable* (`YouScreen.swift`, 6f).
+  account's synced data off the device. When the account has not confirmed some changes, the
+  confirmation states how many and offers **Keep** (hidden on the device, sent at the same
+  account's next sign-in) or **Discard** (destructive, from this device only), and Where to
+  start?'s signed-out line has a kept-changes variant. No app counts unconfirmed changes or offers
+  Keep or Discard.
+  - The copy must stay within what the engine can guarantee. The count is ready plus sent entries,
+    and a sent change may already be in the account, which Discard cannot recall; so the alert
+    says *haven't been confirmed* and *discard them from this phone*, never *for good*.
   - Android signs out from the You sheet with no confirmation (`YouSheet.kt`).
   - The web signs out at once, and on sign-out or any change of account wipes the account's roadmap
     trees from the browser, unsynced edits included, with no warning: `accountChange.js` calls each
@@ -66,7 +67,7 @@ apps store carries across.
     (`localTrees.js`), which deletes every account-stamped registry row, sync blob and per-tree
     store. The web journal keeps the account's pages on disk under their own key, hidden
     (`pageStore.js` `forget`, `pageCache.js`); web gym keeps no local log.
-  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unsent-changes variant;
+  - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unconfirmed-changes variant;
     board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
     lists sign-out with unsent changes as open question 8; the Android *Account / Profile* board
     ([`669:8214`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8214)) draws no confirmation. The web's confirmation is not drawn.
@@ -80,9 +81,6 @@ apps store carries across.
   - Silent adoption where canon asks. The web roadmap adopts every signed-out tree on this device,
     adding it beside the account's (`claimLocalTrees.js`). The web journal joins signed-out drafts
     into the account's pages for those days (`pageStore.js` `claimAnonymousDrafts`, `joinBodies`).
-    The iOS journal carries signed-out pages across with the later stamp winning per day
-    (`PageStore.swift` `carryTheAnonymousClaim`, `PageCache.store`). The iOS gym adopts the
-    anonymous shelf, queue and weigh-ins on a verified sign-in (`TrainingStore.swift` `connect`).
   - Standing claim rows where canon asks once at sign-in. Android asks *These are mine* / *Not
     mine* on a settings row (`SettingsScreen.kt`), and its sign-in door says *Logged before any
     sign-in. Nothing joins an account until you say it is yours.* (`SignInDoor.kt`).
@@ -90,9 +88,6 @@ apps store carries across.
     workouts oldest first, the live one, then weigh-ins (`ClaimReplay.kt` `run`) — where canon
     sends changes in the order they were made (`gym/briefs/11-bodyweight.md`,
     `gym/android-delivery.md`).
-  - Copy. iOS says *Signing in claims what you've already written* (`YouScreen.swift`), and its
-    sign-in door says *What you make on this device is claimed by your account when you sign in.*
-    (`SignInDoor.swift`) where canon says *can join your account* (`roadmap/guidelines/auth.md` §7).
   - Figma: the Gym board *Account · Sign-in and connections* (`678:11123`) draws the claim row
     *Unclaimed log* (`678:11183`, These are mine / Not mine) and its *Local log removed* Undo
     (`678:11192`), which the sign-in question replaces; the Android *Account / Sign in* board
@@ -100,56 +95,50 @@ apps store carries across.
     in.*, true only for an account with no gym records; the first-run READ ME line `174:4274` says
     signed-out work *moves to the account on sign-in* with no question. No surface draws the sign-in
     question or its Discard confirmation.
+- **7f · Notes stored verbatim.** `gym/briefs/10-notes.md` stores a note's title and body
+  *verbatim* but bounds them *after trim*; the domain kit's example (`../foundation/domain-kit.md`)
+  trims and NFC-normalises before saving. Rule whether a saved note is normalised.
+- **7g · Notes account-only.** `10-notes.md` makes notes account-only (signed out, Notes is a
+  sign-in door); `../foundation/mobile/gym_coach.md` Appendix C gives `save_note` `seats: any`, so a
+  signed-out Coach turn could write one. Rule which holds.
 - **7h · Weigh-in conflicts.** `gym/briefs/11-bodyweight.md` ("The wire", and the paragraph on a
   weigh-in written again inside its delete window) says the write with the later `recordedAt` wins.
-  Under the engine (A.2 `weighin`; owner ruling 2026-09-26, newest wins per field by stamp), the
-  newest save wins by its stamp, whatever `recordedAt` holds: a save made later on a device whose
-  clock runs behind beats an earlier save that carries a later `recordedAt`. The engine rule stands;
-  restate the brief's two sentences by it.
+  Under the engine (A.2 `weighin`, a `wholePut` type; owner ruling 2026-09-26, newest wins per field
+  by stamp), each save writes every field and presence at one stamp, so the newest save wins whole by
+  its stamp, whatever `recordedAt` holds: a save made later on a device whose clock runs behind beats
+  an earlier save that carries a later `recordedAt`, and a save newer than a delete, held or not,
+  keeps the weigh-in. The engine rule stands; restate the brief's two sentences by it.
+- **7i · A weight at the bound.** Web and Android refuse 19.996 kg against the 20 kg minimum. Under
+  the engine a commit rounds to the quantum (0.01) and admission checks the rounded value (A.2
+  `weighin` `kg` 20–400; engine §7.1 step 4), so 19.996 is saved as 20.00. Rule whether the sheet
+  accepts such an entry as 20 or refuses it before rounding, and align the clients.
 
-## iOS first run
+## iOS
 
-Canon: `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and
-the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
+`apps/ios` holds no product app, so no entry here compares canon with iOS code. First-run canon:
+`guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and the Figma
+page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
-- **6a · Rooms and shell chrome.** `WindmillApp.swift` registers `RoadmapModule()`, and the shell
-  still draws the hub (`HubView.swift`), the W capsule and its switcher sheet (`Shell.swift`) and
-  the one-time House sheet (`FirstRun.swift`). Canon: two rooms and the room menu; all four are
-  retired.
-- **6b · Where to start.** `EntryQuestionView` asks *What do you want to do first?* over three cards
-  with a *Just show me around* skip and no Sign in door; its cards paint hard-coded hexes, and Gym's
-  are grey-blue rather than verdigris. Canon: *Where to start?*, two doors in the rooms' own
-  colours and a quiet Sign in.
-- **6c · Returning on a new phone.** Sign-in has no *Bringing it back* arrival with per-room counts
-  and does not open the room holding the newest record as soon as its data is in.
-- **6d · Sign in with Apple is off.** `project.yml` sets `WMAppleSignInEnabled: false`, so
-  `SignInDoor` leads with email, and its Hide My Email copy asks for a pasted web link instead of
-  the canon footnote *Signed up with email before? Use email, so it stays one account.*
-- **6e · Keep offers.** Signed out, `RoutinesScreen` draws the claim card (*Your log is saved on
-  this device.*) before any routine or workout exists. Journal has no Keep row, the finish receipt
-  has no Keep this log, there is no Keep sheet, and nothing signed in says *backed up*.
-- **6f · You and sign-out.** `YouScreen` shows the Windmill One row signed out, has no Erase data,
-  and signs out with no confirmation under a footer saying what you've written *stays on this
-  device, editable*. Canon: no One signed out, Erase data, and the sign-out alert *Your pages and
-  log stay in your account and leave this phone.*, with its unsent-changes variant (7c).
-- **6g · Gym first open and Coach signed out.** Gym opens on the Routines empty state (Build a
-  routine · Just start logging), not the Coach-led *Set up your routines*; signed out, Coach is a
-  wall (`Ask.needsSignIn`, pinned by `AskTests.swift`). Canon: the starters, the escapes and the
-  5-question allowance.
-- **6i · Gold primaries.** `actionCapsule(.primary)` fills `gold400` (`Tokens.swift`). Canon:
-  terracotta for the shell and Journal, verdigris in Gym, never gold for a CTA
-  (`brand-foundations.md`).
-- **6j · Permission offers.** iOS has no journal nudge offer and no Apple Health switch on the
-  finish receipt; neither notification nor HealthKit authorization exists in `apps/ios`.
+- **6v · iOS canon is unbuilt.** `apps/ios` holds the sync engine client, the domain kit and the
+  dev-only probe app; every iOS drawing and every iOS line of written canon describes a room no build
+  implements, the app icon (`brand-logo.md` lists none for iOS) and Sign in with Apple included.
+  Where canon states the deleted app's code or behavior as current, restate it as the rebuild's
+  requirement or drop it: `gym/briefs/09-coach.md` (`Proposal.swift`, `Ask.swift`, `ReviewGate`),
+  `10-notes.md` (`.onMove`), `11-bodyweight.md` (the iOS sheet, chart, empty-window, refusal and
+  `TrainingStore.weighIn` paragraphs), `13-gestures.md` (full swipe), `15-the-routine.md` (History
+  and routine detail), `16-the-workout.md` and `17-set-targets.md` (5m), `19-connected-log.md`
+  (`ConnectInvite`), `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j),
+  `journal/scales.md` (the iOS stroke, haptics and frames; 1j), `journal/journal.md` §11 and
+  `journal/onboarding.md` §2 (the journal room and its ink notes), and `gym/feedback-contract.md`
+  (iOS acceptance).
 - **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
   bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
   30-day AI ceiling. Signed-out Coach needs a device-scoped identity, a durable 5-per-phone count
   that never refills, its own refusal reason, and a decision on what Coach reads for a phone whose
   log is not on the server. [Gym Coach on the client](../foundation/mobile/gym_coach.md) specifies all four.
 - **6l · Backend: signed-out routines.** Coach creates routines on the server for an account.
-  Signed out they must land on the phone's anonymous shelf (`LocalLog.swift`) with a stable,
-  retry-safe identity and be adopted once on sign-in under the sign-in rule (7d), without
-  duplicates.
+  Signed out they must land on the phone with a stable, retry-safe identity and be adopted once on
+  sign-in under the sign-in rule (7d), without duplicates.
 - **6m · Backend: signed-out photos.** A sent photo is kept in private storage with the account's
   conversation. Signed out it must be sent inline for Coach to read and not persisted server-side;
   the phone keeps the only copy.
@@ -159,9 +148,6 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
   the routine name where `gym/briefs/16-the-workout.md` uses *Well done.* or *Ended early.*, and
   board 02d labels the Routines primary *Start logging* where `gym/briefs/12-native-idiom.md` uses
   *Just start logging*. Choose one of each and align the other.
-- **6u · Journal ink notes.** iOS draws no ink-notes layer over the first-open canvas
-  (`JournalRoom.swift`), bundles no Caveat font, and has no room menu to carry *Show ink notes*
-  (6a). Canon: `journal/onboarding.md` §2 and `guidelines/superapp-shell.md` §3.
 
 ## Roadmap
 
@@ -204,9 +190,10 @@ the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR
 - **1i · Month navigation.** The web uses an in-flow `MonthDivider`; `journal.md` still describes
   a floating month pill and desktop month rail. Decide whether to specify those controls or align
   the canon to the divider.
-- **1j · Today's glyphs.** Web `DayMarker` omits today's glyphs while iOS `DayGlyphs` draws a
-  breathing mood pip. Choose whether this platform difference should remain. The motion budget is
-  at most one infinite loop, not a requirement to add one.
+- **1j · Today's glyphs.** Web `DayMarker` draws no glyphs for today; `journal/scales.md` still
+  names a difference from iOS, which has no journal room (6v). Decide whether today draws glyphs,
+  a breathing mood pip, on any surface. The motion budget is at most one infinite loop, not a
+  requirement to add one.
 - **4x · Echo quote relocation.** Check first-load marks against current passage text before
   rendering; later-read relocation alone does not establish correct initial highlights.
 - **4z / 5c · Echo arrival motion.** Reconcile journal's gradual luminance arrival with the shared
@@ -263,11 +250,12 @@ it in these places.
 ### Native and web differences
 
 - **5m · iOS logger.** Android uses the [quiet ledger](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O?node-id=805-4536)
-  defined in `gym/briefs/16-the-workout.md`; iOS `LoggerScreen.swift` retains its horizontal slot
-  strip and last-time line. Translate the current logger into native iOS controls.
+  defined in `gym/briefs/16-the-workout.md`, which still says iOS retains its horizontal slot strip,
+  last-time line and kind picker; `apps/ios` has no logger (6v). The rebuilt iOS logger translates
+  the quiet ledger into native iOS controls.
 - **Coach Markdown.** Android renders answer Markdown blocks and paces streamed text; web
-  `CoachRoom.jsx` and iOS `AskScreen.swift` render plain text. Decide the shared block typography
-  and pacing, then align the other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
+  `CoachRoom.jsx` renders plain text. Decide the shared block typography and pacing, then align the
+  other clients and Figma specimens. Tracking: `gym-android-coach-stream-markdown`.
 - **Workout display names.** The API's optional `routineName` changes a corrected workout's
   display name independently of its frozen plan. Native session readers need to prefer it,
   including an explicitly empty name for a free session.
@@ -277,15 +265,15 @@ it in these places.
   Recalled schemes backed by grouped steppers are the design recommendation; the current create
   sheet uses grouped steppers. Preserve `TargetBlock(scheme, onChange)` until device tests cover
   varied reps/loads, keyboard, focus and TalkBack.
-- **4k · Leaving drafts.** Reconcile the unsaved-routine exit policy across web, iOS and Android.
+- **4k · Leaving drafts.** Reconcile the unsaved-routine exit policy across web and Android.
   Cover native Back, Cancel, navigation away and restored drafts before choosing confirmation rules.
 - **4u · Delete scope.** Define whether a held session deletion also filters movement ranking,
   records and finish reads elsewhere in the room. Undo visibility and stored-count validation are
   already separate concerns under `gym/briefs/13-gestures.md`.
 - **3s · iOS bottom band.** Coordinate the routine Start refusal, room status and Undo transient
   so concurrent messages cannot hide a reachable action.
-- **4v · Browser failure.** Android `ConnectedLogScreen.kt` swallows `openUri` errors; iOS
-  `GymRoom.swift` opens the URL without a completion handler. Show a recovery when a browser cannot open.
+- **4v · Browser failure.** Android `ConnectedLogScreen.kt` swallows `openUri` errors. Show a
+  recovery when a browser cannot open.
 - **Native acceptance.** Keep API 26, notification promotion-disabled fallback, full TalkBack
   traversal and review-gate transitions in the Android acceptance matrix. Existing source or
   representative captures do not establish the full device matrix.
@@ -297,8 +285,8 @@ it in these places.
 ### Copy and review decisions
 
 - **Connected-log write disclosure.** `GymToolCatalog.cpp` exposes append-only `save_note` at
-  `gym:write`, but native ConnectedLog Write copy omits saving Notes. Add this capability to both
-  native disclosures under `gym/briefs/19-connected-log.md`; do not imply existing notes can be edited.
+  `gym:write`, but Android's ConnectedLog Write copy omits saving Notes. Add this capability to the
+  disclosure under `gym/briefs/19-connected-log.md`; do not imply existing notes can be edited.
 
 - **2h / 2w / 5k · Refusals.** Set one wording rule for invalid numeric entry, byte-limit errors
   and failed session deletion. A refusal must identify the affected act, retain the user's input

@@ -43,7 +43,7 @@ std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {
     op.seq = static_cast<Seq>(row["seq"].as<long long>());
     op.opId = row["op_id"].as<std::string>();
     op.command = std::move(*command);
-    op.hlc = parseHlc(row["hlc"].as<std::string>());
+    op.hlc = roadmapStamp(row["hlc"].as<std::string>());
     op.actor = UserId{row["actor_id"].as<std::string>()};
     op.createdAtMs = static_cast<std::uint64_t>(row["created_ms"].as<long long>());
     ops.push_back(std::move(op));

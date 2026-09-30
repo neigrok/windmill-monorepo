@@ -1,0 +1,341 @@
+[
+  {
+    "name": "two empty records",
+    "input": {
+      "type": "card",
+      "a": {},
+      "b": {}
+    },
+    "expect": {
+      "join": {}
+    }
+  },
+  {
+    "name": "each field by its kind: title lww, claim fww, tier ranked",
+    "input": {
+      "type": "card",
+      "a": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "claim": [
+            "ann",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "tier": [
+            "done",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "B",
+            "7:0:r_aaaaaaaaaaaa"
+          ],
+          "claim": [
+            "bob",
+            "7:0:r_aaaaaaaaaaaa"
+          ],
+          "tier": [
+            "review",
+            "7:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "join": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "claim": [
+            "ann",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "tier": [
+            "done",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "title": [
+            "B",
+            "7:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "fields on one side only are kept",
+    "input": {
+      "type": "card",
+      "a": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "body": [
+            "text",
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "size": [
+            1.25,
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "join": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "body": [
+            "text",
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "size": [
+            1.25,
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a delete joins over a create",
+    "input": {
+      "type": "card",
+      "a": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "life": [
+          "dead",
+          "8:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "join": {
+        "life": [
+          "dead",
+          "8:0:r_aaaaaaaaaaaa"
+        ],
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "born takes the smaller stamp",
+    "input": {
+      "type": "card",
+      "a": {
+        "born": "6:0:r_aaaaaaaaaaaa"
+      },
+      "b": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    },
+    "expect": {
+      "join": {
+        "born": "5:0:r_aaaaaaaaaaaa"
+      }
+    }
+  },
+  {
+    "name": "const and time fields join as fww",
+    "input": {
+      "type": "lap",
+      "a": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "runId": [
+            "run00001",
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "at": [
+            1000,
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "runId": [
+            "run00002",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "at": [
+            2000,
+            "7:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "join": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "at": [
+            1000,
+            "6:0:r_aaaaaaaaaaaa"
+          ],
+          "runId": [
+            "run00002",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a field the registry does not know, present on one side, is kept",
+    "input": {
+      "type": "card",
+      "a": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "A",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "shine": [
+            "gold",
+            "4:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "title": [
+            "B",
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "join": {
+        "born": "5:0:r_aaaaaaaaaaaa",
+        "f": {
+          "shine": [
+            "gold",
+            "4:0:r_aaaaaaaaaaaa"
+          ],
+          "title": [
+            "B",
+            "6:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "a keyed record without born",
+    "input": {
+      "type": "link",
+      "a": {
+        "life": [
+          "alive",
+          "5:0:r_aaaaaaaaaaaa"
+        ]
+      },
+      "b": {
+        "life": [
+          "dead",
+          "5:1:r_aaaaaaaaaaaa"
+        ]
+      }
+    },
+    "expect": {
+      "join": {
+        "life": [
+          "dead",
+          "5:1:r_aaaaaaaaaaaa"
+        ]
+      }
+    }
+  },
+  {
+    "name": "a singleton without life",
+    "input": {
+      "type": "meta",
+      "a": {
+        "f": {
+          "title": [
+            "x",
+            "5:0:r_aaaaaaaaaaaa"
+          ]
+        }
+      },
+      "b": {
+        "f": {
+          "title": [
+            "y",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "visibility": [
+            "public",
+            "9:0:srv"
+          ]
+        }
+      }
+    },
+    "expect": {
+      "join": {
+        "f": {
+          "title": [
+            "y",
+            "5:0:r_aaaaaaaaaaaa"
+          ],
+          "visibility": [
+            "public",
+            "9:0:srv"
+          ]
+        }
+      }
+    }
+  }
+]
