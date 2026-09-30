@@ -148,8 +148,8 @@ package final class Simulator {
 
   static let startMs: Int64 = 1_800_000_000_000
   static let maxPhones = 5
-  // Two rows a chunk, one entry a settling slice and one result a batch, so deaths fall between them (§11.3).
-  static let limits = Limits(chunkRows: 2, settleEntries: 1, resultsPerBatch: 1)
+  // A sliced step holds the writer up to 40 ms, straddling the 12 ms aim, so measured sizes wander and deaths fall between steps (§11.3).
+  static let slicedHoldMs: Int64 = 40
   // Pages of a few rows, so a pull often stops short of its head and frames come between its pages (§11.3).
   static let serverLimits = { () -> ServerLimits in
     var limits = ServerLimits()
@@ -196,7 +196,7 @@ package final class Simulator {
       ModelServer(registry: registry, rules: ProbeServerRules(), state: ServerState(epoch: "ep-0", accounts: ["A": "Ann", "B": "Bob"]),
                   limits: Self.serverLimits),
       clock: world)
-    fleet = Fleet(registry: registry, network: SimNetwork(server: server), seed: seed, limits: Self.limits)
+    fleet = Fleet(registry: registry, network: SimNetwork(server: server), seed: seed, slicedHoldMs: Self.slicedHoldMs)
     rowsSeen = server.rowsVersion
     let (pushes, fleet) = (pushes, fleet)
     fleet.network.watchPushes { [weak fleet] served in pushes.record(served, devices: fleet?.devices ?? []) }

@@ -65,9 +65,16 @@ public struct LoadedReplica: Sendable {
     return loadedEntries
   }
 
-  // Every entry of a scope, in commit order; like `outbox`, it traps after a load of part of the outbox.
+  // Every entry of a scope, in commit order; after a load of part of the outbox, reading a scope it did not load whole traps.
   public func entries(in scope: ScopeRef) -> [OutboxEntry] {
-    outbox.filter { $0.scope == scope }
+    precondition(entrySelection.all || entrySelection.scopes.contains(scope), "the entries of \(scope) were read but not loaded")
+    return loadedEntries.filter { $0.scope == scope }
+  }
+
+  // The entries that touch one record, in commit order; after a load of part of the outbox, reading a record whose row it did not read traps.
+  public func entries(touching key: RecordKey, in scope: ScopeRef) -> [OutboxEntry] {
+    precondition(entrySelection.all || confirmed[scope]?.wasRead(key) == true, "the entries touching \(key) were read but not loaded")
+    return loadedEntries.filter { $0.scope == scope && $0.touches(key) }
   }
 
   // The entries that touch a record the load read, in commit order: every entry after a load of the whole outbox, and

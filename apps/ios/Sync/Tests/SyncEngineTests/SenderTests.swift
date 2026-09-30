@@ -46,7 +46,7 @@ struct SenderTests {
   // them; ackThrough moves in the last batch only.
   @Test func anAnswersResultsAreRecordedInBatchesInAscendingNAndAckThroughMovesInTheLast() async throws {
     let seen = Mutex<(store: Store?, batches: [String])>((nil, []))
-    let rig = try Rig(account: "A", limits: Limits(resultsPerBatch: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(resultsPerBatch: 2)), crashPoints: CrashPoints { point in
       guard point == .afterCommit(.results), let store = seen.withLock({ $0.store }) else { return }
       let replica = try store.read { tx in try tx.replica(tx.activeReplica())! }
       let line = "acked \(replica.outbox.filter { $0.state == .acked }.compactMap(\.n)) ackThrough \(replica.meta.ackThrough)"
@@ -59,12 +59,34 @@ struct SenderTests {
     #expect(seen.withLock(\.batches) == ["acked [1, 2] ackThrough 0", "acked [1, 2, 3, 4] ackThrough 0", "acked [1, 2, 3, 4, 5] ackThrough 5"])
   }
 
+  // Each result batch is sized by how long the last held the writer on the engine's clock (§2.5): the first holds 50 ms, the rest nothing.
+  @Test func eachResultBatchIsSizedByHowLongTheLastHeldTheWriterOnTheEnginesClock() async throws {
+    let seen = Mutex<(store: Store, clock: SimClock)?>(nil)
+    let acked = Mutex<[Int]>([])
+    let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
+      guard let (store, clock) = seen.withLock({ $0 }) else { return }
+      switch point {
+      case .beforeCommit(.results): if acked.withLock({ $0.isEmpty }) { clock.advance(ms: 50) }
+      case .afterCommit(.results):
+        let count = try store.read { tx in try tx.replica(tx.activeReplica())!.outbox.filter { $0.state == .acked }.count }
+        acked.withLock { $0.append(count) }
+      default: break
+      }
+    })
+    seen.withLock { $0 = (rig.store, rig.clock) }
+    try rig.commit(Gesture(changes: Rig.days(60), gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 60, (1...60).map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .again)
+    #expect(acked.withLock { $0 } == [16, 19, 25, 37, 60])
+    #expect(rig.engine.slices.size(.results) == 48)
+  }
+
   // A process death between two result batches keeps the batches recorded and loses the rest: their entries stay sent,
   // ackThrough has not moved, and the next process's push sends them again under the same numbers and ackThrough, which
   // the server answers from its stored results.
   @Test func aDeathBetweenResultBatchesLeavesTheRestSentAndAckThroughUnmoved() async throws {
     let dead = Mutex(false)
-    let rig = try Rig(account: "A", limits: Limits(resultsPerBatch: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(resultsPerBatch: 2)), crashPoints: CrashPoints { point in
       guard point == .afterCommit(.results), !dead.withLock({ $0 }) else { return }
       dead.withLock { $0 = true }
       throw RigError("the process died")

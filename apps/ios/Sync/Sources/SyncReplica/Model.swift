@@ -332,28 +332,42 @@ public struct Rows: Sendable, Hashable {
   public enum Coverage: Sendable, Hashable {
     case all
     case some(keys: Set<RecordKey>, types: Set<String>, empty: Bool)
+
+    func covers(_ key: RecordKey) -> Bool {
+      switch self {
+      case .all: true
+      case .some(let keys, let types, _): keys.contains(key) || types.contains(key.type)
+      }
+    }
   }
 
   public private(set) var loaded: [RecordKey: Row]
+  // What may be read: what the load read, and every row written since.
   public private(set) var coverage: Coverage
+  // What the load read, whose touching entries loaded with it (`EntrySelection`); a write never widens it.
+  public let read: Coverage
 
   // Every row of the scope.
   public init(_ rows: [Row] = []) {
     loaded = Dictionary(uniqueKeysWithValues: rows.map { ($0.key, $0) })
     coverage = .all
+    read = .all
   }
 
   // The rows of `keys` and of `types`; `empty` says whether the scope holds no row at all.
   public init(loaded rows: [Row], keys: Set<RecordKey>, types: Set<String>, empty: Bool) {
     loaded = Dictionary(uniqueKeysWithValues: rows.map { ($0.key, $0) })
     coverage = .some(keys: keys, types: types, empty: empty)
+    read = coverage
   }
 
   public func covers(_ key: RecordKey) -> Bool {
-    switch coverage {
-    case .all: true
-    case .some(let keys, let types, _): keys.contains(key) || types.contains(key.type)
-    }
+    coverage.covers(key)
+  }
+
+  // Whether the load read `key`'s row, so the entries touching it loaded too; a row only written since was not read.
+  public func wasRead(_ key: RecordKey) -> Bool {
+    read.covers(key)
   }
 
   public func covers(type: String) -> Bool {
@@ -423,20 +437,21 @@ public struct RowSelection: Sendable, Hashable {
   }
 }
 
-// What a planner reads of one replica's outbox, so its Action loads exactly that: every entry, or the entries that touch
-// a record its row reads cover, with every entry of the held gestures, the sent entries of some numbers, and the first
-// entries a cursor covers.
+// What a planner reads of one replica's outbox, so its Action loads exactly that: every entry, or those its row reads touch and each field names.
 public struct EntrySelection: Sendable, Hashable {
   public var all: Bool
   public var heldGestures: Bool
   public var numbered: Set<Int64>
   public var covered: CoveredEntries?
+  public var scopes: Set<ScopeRef>
 
-  public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil) {
+  public init(all: Bool = false, heldGestures: Bool = false, numbered: Set<Int64> = [], covered: CoveredEntries? = nil,
+              scopes: Set<ScopeRef> = []) {
     self.all = all
     self.heldGestures = heldGestures
     self.numbered = numbered
     self.covered = covered
+    self.scopes = scopes
   }
 
   public static let every = EntrySelection(all: true)
@@ -549,23 +564,17 @@ extension Notice {
 
 // MARK: - What planners are given
 
-// A planner's bounds; `chunkRows`, `settleEntries` and `resultsPerBatch` size the writer's slices, one at least (§2.5).
+// A planner's bounds.
 public struct Limits: Sendable, Hashable {
   public let holdMs: Int64
   public let pushMaxIntents: Int
   public let pushMaxBytes: Int
-  public let chunkRows: Int
-  public let settleEntries: Int
-  public let resultsPerBatch: Int
 
   public init(holdMs: Int64 = Constants.holdMs, pushMaxIntents: Int = Constants.pushMaxIntents,
-              pushMaxBytes: Int = Constants.pushMaxBytes, chunkRows: Int = 64, settleEntries: Int = 32, resultsPerBatch: Int = 16) {
+              pushMaxBytes: Int = Constants.pushMaxBytes) {
     self.holdMs = holdMs
     self.pushMaxIntents = pushMaxIntents
     self.pushMaxBytes = pushMaxBytes
-    self.chunkRows = max(1, chunkRows)
-    self.settleEntries = max(1, settleEntries)
-    self.resultsPerBatch = max(1, resultsPerBatch)
   }
 }
 

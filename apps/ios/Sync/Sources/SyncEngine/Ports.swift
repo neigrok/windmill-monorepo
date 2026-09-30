@@ -18,7 +18,7 @@ public protocol WallClock: Sendable {
   func reading() -> ClockReading
 }
 
-// The wall clock that stamps and times releases, and the clock every timer and backoff sleeps on.
+// The wall clock that stamps and times releases, and the clock every timer and backoff sleeps on and writes are timed by.
 public struct EngineClock: Sendable {
   public let wall: any WallClock
   public let sleeper: any Clock<Duration>

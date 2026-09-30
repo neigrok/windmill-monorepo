@@ -16,9 +16,17 @@ struct OutcomesTests {
   // A push answer's steps in order, as the sender records them.
   static func receive(_ answer: Answer<PushResponse>, to request: PushRequest, by planner: PushPlanner, in replica: inout LoadedReplica,
                       instance: inout Instance, timing: Timing, identities: IdentitySource) throws {
-    for step in planner.steps(for: answer, to: request, resultsPerBatch: Limits().resultsPerBatch) {
+    for step in steps(answer, to: request, by: planner, batch: 16) {
       try planner.apply(step, to: &replica, instance: &instance, timing: timing, identities: identities)
     }
+  }
+
+  // A push answer's steps, its result batches of `size` each.
+  static func steps(_ answer: Answer<PushResponse>, to request: PushRequest, by planner: PushPlanner, batch size: Int) -> [PushStep] {
+    var steps = planner.steps(for: answer, to: request)
+    var taken: [PushStep] = []
+    while let step = steps.next(sizes: WriterSlices(.fixed(.init(resultsPerBatch: size)))) { taken.append(step) }
+    return taken
   }
 
   @Test func aJoinRewritesTheCalledIdInDeviceRowsThroughTheProductHook() throws {
@@ -61,7 +69,7 @@ struct OutcomesTests {
     let answer = try PushResponse(json: [
       "serverTime": 5010, "epoch": "ep-7", "as": "A", "lastN": 2, "results": [["n": 1, "s": "ok", "seq": 1], ["n": 2, "s": "ok", "seq": 2]],
     ])
-    let steps = planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1)
+    let steps = Self.steps(.ok(answer), to: request, by: planner, batch: 1)
     let first = try #require(steps.firstIndex { if case .results = $0 { true } else { false } })
     var receiving = instance
     for step in steps[...first] {
@@ -86,7 +94,7 @@ struct OutcomesTests {
       "serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 1]],
     ])
     var receiving = instance
-    for step in pushes.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+    for step in Self.steps(.ok(answer), to: request, by: pushes, batch: 1) {
       if case .epoch = step { break }
       try pushes.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
     }
@@ -157,7 +165,7 @@ struct OutcomesTests {
     ])
     var receiving = instance
     var epochs: [String?] = []
-    for step in planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+    for step in Self.steps(.ok(answer), to: request, by: planner, batch: 1) {
       try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
       if case .results = step { epochs.append(replica.meta.serverEpoch) }
     }
@@ -179,7 +187,7 @@ struct OutcomesTests {
     let request = try #require(try planner.number(&replica, at: 5000))
     let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-2", "as": "A", "lastN": 1, "results": [["n": 1, "s": "ok", "seq": 3]]])
     var receiving = instance
-    for step in planner.steps(for: .ok(answer), to: request, resultsPerBatch: 1) {
+    for step in Self.steps(.ok(answer), to: request, by: planner, batch: 1) {
       if case .epoch = step { break }
       try planner.apply(step, to: &replica, instance: &receiving, timing: .steady(send: 5000, recv: 5010), identities: try QueuedIdentities([:]))
     }
@@ -193,7 +201,7 @@ struct OutcomesTests {
     var replica = LoadedReplica(meta: meta, wholeScopes: true)
     let planner = PushPlanner(registry: Self.probe)
     let answer = try PushResponse(json: ["serverTime": 5010, "epoch": "ep-1", "as": "A", "lastN": 3, "results": []])
-    let steps = planner.steps(for: .ok(answer), to: PushRequest(replica: "rp_1", account: "A", ackThrough: 0, intents: []), resultsPerBatch: 16)
+    let steps = Self.steps(.ok(answer), to: PushRequest(replica: "rp_1", account: "A", ackThrough: 0, intents: []), by: planner, batch: 16)
     #expect(steps == [
       .sample(serverTime: 5010), .results(ResultBatch(results: [], lastN: 3, epoch: "ep-1", isLast: true)), .epoch("ep-1"),
     ])

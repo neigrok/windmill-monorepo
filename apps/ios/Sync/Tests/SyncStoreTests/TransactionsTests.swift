@@ -239,6 +239,85 @@ struct TransactionsTests {
     }
   }
 
+  // §7.5 step 3: a frame reads of the outbox only what its rules need, never every entry, the same beside 0 or 40 unsent entries.
+  @Test func aFrameReadsOfTheOutboxOnlyWhatItsRulesNeed() throws {
+    let runs = try [0, 40].map(Self.framesBeside)
+    #expect(runs[0].reads == runs[1].reads)
+    #expect(runs.map(\.outcomes) == Array(repeating: ["applied", "pull self/probe", "ignored tree/b_00000001", "gone"], count: 2))
+    #expect(runs.map(\.outbox) == [["b/0"], ["b/0"] + (0..<40).map { "u\($0)/0" }])
+    let touching = { (type: String, id: String?) in
+      "SELECT outbox.* FROM outbox_touch JOIN outbox USING (local_id)\n"
+        + #"WHERE outbox_touch.scope = 'self/probe' AND outbox_touch.type = '"# + type + "'"
+        + (id.map { #" AND outbox_touch.id = '""# + $0 + #""'"# } ?? "") + " AND outbox.replica = 1"
+    }
+    let covered = { (seq: Int) in
+      "SELECT * FROM outbox WHERE replica = 1 AND scope = 'self/probe' AND state = 'acked' AND result_epoch = 'ep-1' AND result_seq <= \(seq)\n"
+        + "ORDER BY commit_order LIMIT 33"
+    }
+    let scope = { (scope: String) in "SELECT * FROM outbox WHERE replica = 1 AND scope = '\(scope)'" }
+    let above = { (count: Int) in "SELECT local_id, commit_order FROM outbox WHERE replica = 1 ORDER BY commit_order DESC LIMIT \(count)" }
+    #expect(runs[0].reads == [
+      [touching("card", "card0009"), touching("board", nil), covered(6), above(3)],
+      [touching("card", "card0010"), touching("board", nil), covered(9), above(2)],
+      [touching("board", "b_00000001"), touching("board", nil), scope("tree/b_00000001"), above(2)],
+      [touching("board", nil), scope("tree/b_00000002"), above(3)],
+    ])
+  }
+
+  // A settling change, a change past a gap, a not-found whose board's create waits, a gone: their outbox reads and outcomes, the outbox after.
+  static func framesBeside(_ unsent: Int) throws -> (reads: [[String]], outcomes: [String], outbox: [String]) {
+    let product = ScopeRef.product("probe")
+    let stamp = try Stamp("1000:0:r_aaaaaaaaaaaa")
+    let life = Lattice(life: Life(.alive, stamp), born: stamp)
+    var meta = ReplicaMeta(replica: "rp_1", state: .bound, account: "A")
+    meta.serverEpoch = "ep-1"
+    let entry = { (localId: String, scope: ScopeRef, order: Int64, key: RecordKey, n: Int64?, resultSeq: Int64?) in
+      var entry = OutboxEntry(
+        localId: localId, gestureId: String(localId.dropLast(2)), lineage: "A", scope: scope, state: n == nil ? .ready : .acked,
+        commitOrder: order, releaseAt: 0, stamp: stamp, intent: Intent(n: n, scope: scope, deltas: [Delta(key: key, lattice: life)]))
+      entry.digest = n.map { _ in entry.intent.digest }
+      entry.resultSeq = resultSeq
+      entry.resultEpoch = resultSeq.map { _ in "ep-1" }
+      return entry
+    }
+    let outbox = [
+      entry("a/0", product, 1, RecordKey("day", "2026-09-01"), 1, 6),
+      entry("t/0", .tree("b_00000002"), 2, RecordKey("tag", "tag-1"), 2, 2),
+      entry("b/0", product, 3, RecordKey("board", "b_00000001"), nil, nil),
+    ] + (0..<unsent).map { entry("u\($0)/0", product, Int64(4 + $0), RecordKey("lap", RecordID("lap\(1_000 + $0)")), nil, nil) }
+    let board = Row(key: RecordKey("board", "b_00000002"), lattice: life, seq: 1)
+    let booted = { (seq: Int64, rows: [Row]) in
+      CursorRecord(cursor: Cursor(epoch: "ep-1", mode: .live, seq: seq).text, digest: ScopeDigest(rows: rows.map(\.json)), booted: true)
+    }
+    let store = try Store.inMemory(holding: LoadedDevice(meta: DeviceMeta(), active: "rp_1", replicas: [
+      LoadedReplica(meta: meta, outbox: outbox, confirmed: [product: Rows([board])],
+                    cursors: [product: booted(5, [board]), .tree("b_00000002"): booted(1, [])], wholeScopes: true),
+    ]), registry: Self.probe)
+    let card = { (id: String, seq: Int64) in Row(key: RecordKey("card", RecordID(id)), lattice: life, seq: seq) }
+    let change = { (row: Row, digested: [Row]) in
+      try LiveFrame(json: [
+        "op": "change", "as": "A", "scope": product.json, "epoch": "ep-1", "seq": JSON(row.seq), "rows": [row.json],
+        "digest": .string(ScopeDigest(rows: digested.map(\.json)).hex),
+      ])
+    }
+    let frames = [
+      try change(card("card0009", 6), [board, card("card0009", 6)]), try change(card("card0010", 9), []),
+      LiveFrame.notFound(.tree("b_00000001"), servedAs: "A"), .gone(.tree("b_00000002"), servedAs: "A"),
+    ]
+    let taken = try Self.readsRecorded(by: store)
+    var reads: [[String]] = []
+    var outcomes: [String] = []
+    for frame in frames {
+      let applied = try #require(try store.apply(
+        frame, replica: "rp_1", subscribed: .own(Subscriptions(products: ["probe"], opened: [])), settling: 32,
+        instance: Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: 5000, appVersion: "1")).value)
+      reads.append(taken().filter { $0.contains("outbox") })
+      outcomes.append(([applied.outcome.rawValue] + applied.next.map(\.text) + (applied.unsettled ? ["unsettled"] : [])).joined(separator: " "))
+    }
+    let left = try store.read { try $0.device(rows: true).activeReplica.outbox.map(\.localId) }
+    return (reads, outcomes, left)
+  }
+
   // A commit whose gesture mints any number of ids loads the replica twice: once for what the gesture names, and once
   // more with every id it drew.
   @Test func aCommitMintingAnyNumberOfIdsLoadsTheReplicaTwice() throws {
@@ -607,10 +686,10 @@ struct StoredDevice: ClientDevice {
   }
 
   mutating func settle(_ scope: ScopeRef, count: Int) throws -> Bool {
-    guard let left = take(try store.settle(scope, replica: active(), count: count)) else {
+    guard let settled = take(try store.settle(scope, replica: active(), count: count)) else {
       throw VectorError("the store dropped a slice of the active replica")
     }
-    return left
+    return settled.left
   }
 
   mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {

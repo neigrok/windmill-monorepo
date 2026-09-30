@@ -130,7 +130,7 @@ public struct PlannedDevice: ClientDevice {
   }
 
   public mutating func settle(_ scope: ScopeRef, count: Int) throws -> Bool {
-    try device.modify(device.active) { try pages.settle(scope, count: count, in: &$0) }
+    try device.modify(device.active) { try pages.settle(scope, count: count, in: &$0).left }
   }
 
   public mutating func apply(_ frame: LiveFrame, subscribed: [ScopeRef], instance: Instance) throws -> FrameOutcome {
@@ -351,7 +351,8 @@ public enum ClientSteps {
                                             context: StepContext) throws -> Int? {
     var left = dieAfter ?? .max
     var limit: Int?
-    for step in PushPlanner(registry: context.registry).steps(for: answer, to: request, resultsPerBatch: 1) {
+    var steps = PushPlanner(registry: context.registry).steps(for: answer, to: request)
+    while let step = steps.next(sizes: WriterSlices(.fixed(.init(resultsPerBatch: 1)))) {
       if case .halve(let half, _) = step { limit = half }
       if case .results(let batch) = step {
         let sent = Set(try device.activeReplica().outbox.filter { $0.state == .sent }.compactMap(\.n))
@@ -373,16 +374,12 @@ public enum ClientSteps {
     let settles = settles ?? .max
     var left = dieAfter ?? .max
     var outcomes: [JSON] = []
-    var ended: Set<ScopeRef> = []
-    let steps = PageApplier(registry: context.registry).steps(for: answer, to: request, account: account, chunkRows: chunkRows ?? .max,
-                                                             settles: settles)
-    for step in steps {
-      if case .page(let page, _, let chunk) = step {
-        if ended.contains(page.scope) { continue }
-        if left <= 0 {
-          if !chunk.isFirst { outcomes.append(["scope": page.scope.json, "outcome": "partial"]) }
-          break
-        }
+    let sizes = WriterSlices(.fixed(.init(chunkRows: chunkRows ?? .max)))
+    var steps = PageApplier(registry: context.registry).steps(for: answer, to: request, account: account)
+    while let step = steps.next(sizes: sizes, settles: settles) {
+      if case .page(let page, _, let chunk) = step, left <= 0 {
+        if !chunk.isFirst { outcomes.append(["scope": page.scope.json, "outcome": "partial"]) }
+        break
       }
       let applied = try device.apply(step, subscribed: subscribed, instance: &instance, timing: timing, identities: context.identities)
       guard case .page(let page, _, let chunk) = step else { continue }
@@ -391,7 +388,7 @@ public enum ClientSteps {
         continue
       }
       if [.applied, .reset, .gone, .notFound].contains(outcome) { left -= 1 }
-      if !chunk.isLast { ended.insert(page.scope) }
+      if !chunk.isLast { steps.skipRest(of: page.scope) }
       var unsettled = applied.unsettled
       while unsettled {
         guard left > 0 else { return .array(outcomes + [["scope": page.scope.json, "outcome": "unsettled"]]) }

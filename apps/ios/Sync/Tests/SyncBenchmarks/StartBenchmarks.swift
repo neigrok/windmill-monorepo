@@ -30,6 +30,7 @@ extension Benchmarks {
           pages.add(contentsOf: times.durations(of: .pullPage, as: pages.measure))
           Bench.report("boot · memory and disk (the model server's own pages counted)", peak.growth(since: before, as: "peak") + [
             ("pullRounds", "\(booted.rounds.count)"), ("bytesOnDisk", Bench.format(bytes: Phone.bytesOnDisk(path))),
+            ("chunkRowsAfter", "\(booted.phone.engine.slices.size(.chunk(Gym.scope)))"),
           ])
         }
       }

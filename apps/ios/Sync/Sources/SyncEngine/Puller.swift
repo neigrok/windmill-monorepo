@@ -98,6 +98,9 @@ package final class PullWants: Sendable {
 }
 
 package actor Puller {
+  // A transaction that stores a cursor settles the first entry it covers and slices the rest, so a chunk's hold is its rows' (§2.5).
+  static let settledWithCursor = 1
+
   let core: EngineCore
   let transport: any SyncTransport
   let pages: PageApplier
@@ -162,8 +165,8 @@ package actor Puller {
     guard let scope = queued.frame.scope else { return .again }
     do {
       let applied = try core.write { store, instance in
-        try store.apply(queued.frame, replica: queued.replica, subscribed: core.subscriptions(),
-                        settling: core.store.limits.settleEntries, instance: instance)
+        try store.apply(queued.frame, replica: queued.replica, subscribed: core.subscriptions(), settling: Self.settledWithCursor,
+                        instance: instance)
       }
       guard let applied else { return .frame(scope, nil) }
       if applied.unsettled { _ = try settle(scope, in: queued.replica) }
@@ -248,25 +251,25 @@ package actor Puller {
     defer { core.wakes.live.kick() }
     var replica = meta.replica
     var reports: [PageReport] = []
-    var ended: Set<ScopeRef> = []
-    let (chunkRows, settles) = (core.store.limits.chunkRows, core.store.limits.settleEntries)
-    for step in pages.steps(for: answer, to: request, account: meta.account, chunkRows: chunkRows, settles: settles) {
+    var steps = pages.steps(for: answer, to: request, account: meta.account)
+    while let step = steps.next(sizes: core.slices.withLock { $0 }, settles: Self.settledWithCursor) {
       if step == .pauseAuth {
         wants.add(scopes)
         return try unauthenticated(replica, under: token)
       }
-      if case .page(let page, _, _) = step, ended.contains(page.scope) { continue }
       let asked = replica
-      let applied = try core.write { store, instance in
+      let (applied, held) = try core.timedWrite { store, instance in
         try store.apply(step, replica: asked, account: meta.account, subscribed: core.subscriptions(), instance: &instance,
                         timing: timing, identities: core.identities)
       }
       guard let applied else { return .again }
       replica = applied.replica
       guard case .page(let page, _, let chunk) = step else { continue }
+      let took = applied.outcome == nil || applied.outcome == .applied ? chunk.rows.count : 0
+      core.slices.withLock { $0.record(.chunk(page.scope), took: took, held: held) }
       wants.add(applied.next)
       guard let outcome = applied.outcome else { continue }
-      if !chunk.isLast { ended.insert(page.scope) }
+      if !chunk.isLast { steps.skipRest(of: page.scope) }
       reports.append(PageReport(scope: page.scope, outcome: outcome))
       doubt(page, outcome)
       if applied.unsettled, try !settle(page.scope, in: replica) { return .again }
@@ -283,10 +286,12 @@ package actor Puller {
 
   // §7.5 step 2 the settling slices after `scope`'s cursor is stored, until none is left; false once `replica` is gone.
   func settle(_ scope: ScopeRef, in replica: String) throws -> Bool {
-    let count = core.store.limits.settleEntries
     while true {
-      guard let left = try core.write({ store, _ in try store.settle(scope, replica: replica, count: count) }) else { return false }
-      guard left else { return true }
+      let count = core.slices.withLock { $0.size(.settle) }
+      let (settled, held) = try core.timedWrite { store, _ in try store.settle(scope, replica: replica, count: count) }
+      guard let settled else { return false }
+      core.slices.withLock { $0.record(.settle, took: settled.resolved, held: held) }
+      guard settled.left else { return true }
     }
   }
 

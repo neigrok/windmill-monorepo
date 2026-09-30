@@ -21,7 +21,7 @@ public struct Timing: Sendable, Hashable {
   }
 }
 
-// One local transaction of a push answer, in the order `PushPlanner.steps` gives them.
+// One local transaction of a push answer, in the order `PushSteps` gives them.
 public enum PushStep: Sendable, Hashable {
   // §10.4, before any stamp of the answer is observed.
   case sample(serverTime: Int64)
@@ -74,6 +74,32 @@ public struct ResultBatch: Sendable, Hashable {
     self.lastN = lastN
     self.epoch = epoch
     self.isLast = isLast
+  }
+}
+
+// §7.4 a push answer's transactions in order: the sample, then a 401's pause, a 200's result batches and epoch, or a failure's own move.
+public struct PushSteps: Sendable {
+  enum Part: Sendable {
+    case step(PushStep)
+    // A 200's results not yet taken, ascending by n.
+    case results(ArraySlice<PushResult>, lastN: Int64, epoch: String)
+  }
+
+  var parts: [Part]
+
+  // The next transaction: a batch takes, in ascending n, as many results as `sizes` gives now, one at least; the last moves ackThrough.
+  public mutating func next(sizes: WriterSlices) -> PushStep? {
+    guard let part = parts.first else { return nil }
+    switch part {
+    case .step(let step):
+      parts.removeFirst()
+      return step
+    case .results(let results, let lastN, let epoch):
+      let batch = results.prefix(sizes.size(.results))
+      let rest = results.dropFirst(batch.count)
+      if rest.isEmpty { parts.removeFirst() } else { parts[0] = .results(rest, lastN: lastN, epoch: epoch) }
+      return .results(ResultBatch(results: Array(batch), lastN: lastN, epoch: epoch, isLast: rest.isEmpty))
+    }
   }
 }
 
@@ -172,32 +198,25 @@ public struct PushPlanner: Sendable {
 
   // MARK: A push answer, step by step
 
-  // Every answer carrying `serverTime` yields its sample first. Then an answer handled as a 401 (§9.1: a 401, an
-  // `account-mismatch`, or a 200 or 409 served as anyone but the account the push named) only pauses; a 200 gives its
-  // results in batches of at most `resultsPerBatch`, in ascending n, the last moving ackThrough, then its epoch; and any
-  // other failure its own move.
-  public func steps(for answer: Answer<PushResponse>, to request: PushRequest, resultsPerBatch: Int) -> [PushStep] {
-    let sample = answer.serverTime.map { [PushStep.sample(serverTime: $0)] } ?? []
-    guard !answer.isUnauthenticated(for: request.account) else { return sample + [.pauseAuth] }
+  // `request`'s answer as its transactions; one handled as a 401 is a 401, an `account-mismatch`, or a 200 or 409 served as another (§9.1).
+  public func steps(for answer: Answer<PushResponse>, to request: PushRequest) -> PushSteps {
+    let sample = answer.serverTime.map { [PushSteps.Part.step(.sample(serverTime: $0))] } ?? []
+    guard !answer.isUnauthenticated(for: request.account) else { return PushSteps(parts: sample + [.step(.pauseAuth)]) }
     switch answer {
     case .ok(let response):
-      let results = response.results
-      let starts = results.isEmpty ? [0] : Array(stride(from: 0, to: results.count, by: resultsPerBatch))
-      let batches = starts.map { start in
-        let end = min(start + resultsPerBatch, results.count)
-        return PushStep.results(ResultBatch(
-          results: Array(results[start..<end]), lastN: response.lastN, epoch: response.epoch, isLast: end == results.count))
-      }
-      return sample + batches + [.epoch(response.epoch)]
+      let results = PushSteps.Part.results(response.results[...], lastN: response.lastN, epoch: response.epoch)
+      return PushSteps(parts: sample + [results, .step(.epoch(response.epoch))])
     case .failed(let failure):
       switch failure.status {
-      case 409: return sample + [.reidentify]
+      case 409: return PushSteps(parts: sample + [.step(.reidentify)])
       case 400, 413:
         let malformed = failure.status == 400
-        if request.intents.count > 1 { return sample + [.halve(limit: (request.intents.count + 1) / 2, malformed: malformed)] }
-        guard let n = request.intents.first?.n else { return sample }
-        return sample + [.refuseLocally(n: n, malformed: malformed)]
-      default: return sample
+        if request.intents.count > 1 {
+          return PushSteps(parts: sample + [.step(.halve(limit: (request.intents.count + 1) / 2, malformed: malformed))])
+        }
+        guard let n = request.intents.first?.n else { return PushSteps(parts: sample) }
+        return PushSteps(parts: sample + [.step(.refuseLocally(n: n, malformed: malformed))])
+      default: return PushSteps(parts: sample)
       }
     }
   }
