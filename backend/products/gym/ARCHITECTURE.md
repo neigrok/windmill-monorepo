@@ -59,11 +59,22 @@ once. `routes.cpp` names every path in one column; `TrainingApi.h` holds the sta
 The engine binding lives in `sync/`: pure rules and commands in `domain/`, binding in `application/`,
 receipts and projection reads through `ports/GymState`, and adopted-table stores in
 `adapters/postgres/PgGym`. `windmill_gym_sync` embeds gym registry v3 from `composition.json` and is
-linked by gym. Its schema, `db/gym_sync.sql`, remains isolated to tests. `GYM_ENGINE_WRITES` defaults
+linked by gym. Its adoption schema, `db/gym_sync.sql`, is applied separately during migration and in
+isolated sync tests; the ordinary deploy applies only `schema.sql`. `GYM_ENGINE_WRITES` defaults
 off; when enabled, the services use `ports/GymWriteDoor`, implemented by the Postgres `GymDoor`,
 for server-origin admission on the sync worker pool. Reads use the repositories above.
 `GYM_WRITE_FREEZE` defaults off and refuses every write while disabling staleness settlement.
 `windmill_server` mounts no sync route.
+
+`windmill_gym_backfill` adopts each account in one transaction, repairs incomplete scopes and skips only reconciled accounts,
+and preserves legacy receipts. The audit reconciles every eligible physical row and required spent
+id, including accounts without scopes. Engine doors refuse unadopted accounts with 503
+`gym-not-adopted` and roll back a provisional scope. Coach note saves and immutable receipt
+snapshots commit together; duplicate insight IDs become spent in that same admission.
+`deploy/gym-migration/rehearse.py` proves frozen read equality,
+scope digests and sequences, and second-run immutability. The runtime image carries both the
+backfill and snapshot binaries, the adoption schema, and the rehearsal. The manual backup and
+rehearsal workflows operate inside the VPS; the rehearsal restores a disposable database.
 
 ## 3. Schema
 
@@ -77,11 +88,17 @@ deletion is the cascade. The REST repositories do date/time work in SQL (`to_tim
 `extract(epoch …)`); instants cross the wire and the domain as epoch-ms `uint64`. The engine binding's
 pure weigh-in rule compares the UTC calendar day.
 
+The ordinary schema's referential actions below serve the default legacy writers. `gym_sync.sql`
+removes actions between adopted records and the session routine-identity trigger; admitted writes
+perform those consequences explicitly in the same transaction and scope sequence. Actions on a
+record's own register tables, projections, shares, and account deletion remain (engine C.1).
+
 ### 3.1 Catalog
 
 - **A seed row is GLOBAL**, so never `UPDATE gym_exercises SET name` on one: a seed rename takes a
   per-account line in `gym_exercise_names`, and every read of a movement name coalesces that over the
-  seed's. Renaming back to the seed's own name DELETES the line; a movement the lifter created renames
+  seed's. Renaming back clears the override: the legacy store removes its row, and admission unsets
+  its `name` register while preserving the envelope and aliases. A movement the lifter created renames
   in place; the id never moves either way.
 - Aliases are what the picker searches beside the current name. The name is part of the key, so
   renaming BACK deletes one row; the rename caps the list at `kMaxAliases` (5) and the set ships on the
@@ -239,8 +256,8 @@ plan; `history_routine_id` retains filter identity after the living routine is d
 - **One pending proposal per (routine, door, connection).** A newer one from the same door and
   connection supersedes the older and writes its own id into the older row's `superseded_by`;
   another door's, or another agent's on the same account, stands. Applied, dismissed and superseded
-  proposals stay as a dated record for as long as the routine stands — `routine_id` cascades, so an
-  applied REMOVAL takes the whole ledger with it.
+  proposals stay as a dated record for as long as the routine stands. Removal takes the whole ledger
+  with it, through the ordinary schema's cascade or admission's explicit dependent deletions.
 - **The superseded refusal names its reason, and never guesses it.** A settle (apply or dismiss) on
   a proposal past settling answers one code, `proposal-superseded`, with one of three sentences,
   decided in the store in this order: `superseded_by` set → *a newer proposal replaced this one* —
@@ -857,9 +874,18 @@ Every read keeps its bytes (engine Appendix C.8, gate 1):
 A Coach conversation's delete first admits `threadId = null` on the proposals naming it, then deletes
 the conversation.
 
+The real-process differential in `test/e2e/gym_write_differential.py` drives the same REST and MCP
+writes against plain-schema and adopted databases, retries every write, and compares response bytes
+and interleaved reads. Its normalization and coverage inventory are in `test/e2e/README.md`.
+Three owner rulings qualify write equality: **D1**, deleted routine and note IDs stay spent under
+admission (409 `routine-id-taken` / `note-id-taken`); **D2**, a replayed start returns the workout its
+receipt says it joined, even when a different workout is now open; **D3**, weigh-in ordering across
+a door and a replica follows engine stamps. D3 requires a replica and cannot arise in this
+server-door-only differential; a door retains the legacy `recordedAt` ordering.
+
 ## 9. MCP tools
 
-`adapters/mcp/GymToolCatalog` declares twenty-two tools; `adapters/mcp/GymTools` dispatches them.
+`adapters/mcp/GymToolCatalog` declares twenty-three tools; `adapters/mcp/GymTools` dispatches them.
 The table uses product-local names. External MCP publishes only `gym_<local>` names and accepts
 unambiguous raw compatibility aliases; in-process Coach uses the local catalog. **The level is declared beside the description**, in the same `ToolDeclaration` the
 gate reads, so a tool cannot be described as one thing and gated as another.

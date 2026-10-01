@@ -5,8 +5,10 @@
 
 #include <pqxx/pqxx>
 
+#include <functional>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace wm::sync {
 
@@ -18,10 +20,14 @@ public:
   PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs);
   void commit() override;
   pqxx::transaction_base& sql() { return *txn_; }
+  // Product receipts can snapshot materialized rows in this transaction. A failure rolls back
+  // the receipt and admission together; a refused admission destroys its callbacks with its txn.
+  void beforeCommit(std::function<void()> callback);
 
 private:
   PgLease lease_;
   std::unique_ptr<pqxx::transaction_base> txn_;
+  std::vector<std::function<void()>> beforeCommit_;
 };
 
 // The SQL behind an engine transaction, for a product's Postgres store. Throws std::logic_error when the

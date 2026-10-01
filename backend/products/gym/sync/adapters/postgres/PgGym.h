@@ -27,6 +27,9 @@ public:
   void purge(sync::SyncTxn&, const sync::ScopeKey&) override;
 
   std::vector<sync::Row> adoptionRows(sync::SyncTxn&, const sync::ScopeKey&, sync::Ms migrationTime);
+  std::vector<sync::Row> adoptedRows(sync::SyncTxn&, const sync::ScopeKey&);
+  bool needsAdoption(sync::SyncTxn&, const sync::ScopeKey&);
+  Seq greatestSeq(sync::SyncTxn&, const sync::ScopeKey&);
   void adopt(sync::SyncTxn&, const sync::ScopeKey&, const std::vector<sync::Row>&);
 
 private:
@@ -34,6 +37,7 @@ private:
   std::string table_;
   std::string owner_;
   std::string id_;
+  std::string adoptionPredicate() const;
 };
 
 class PgGym {

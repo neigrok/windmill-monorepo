@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "platform/domain/sync/Record.h"
+#include "platform/ports/SyncStore.h"
 
 #include <memory>
 #include <functional>
@@ -17,6 +18,7 @@ public:
                              std::optional<std::string> account = std::nullopt,
                              const std::function<void(const Json::Value&)>& onAccount = {});
   std::vector<Json::Value> audit(std::optional<std::string> account = std::nullopt);
+  static bool adopted(sync::SyncTxn&, const sync::ScopeKey&);
 
 private:
   std::shared_ptr<PgPool> pool_;

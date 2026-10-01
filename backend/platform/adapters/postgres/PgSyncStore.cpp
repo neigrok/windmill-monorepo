@@ -112,7 +112,13 @@ PgSyncTxn::PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs) : 
 }
 
 void PgSyncTxn::commit() {
+  for (const auto& callback : beforeCommit_) callback();
+  beforeCommit_.clear();
   txn_->commit();
+}
+
+void PgSyncTxn::beforeCommit(std::function<void()> callback) {
+  beforeCommit_.push_back(std::move(callback));
 }
 
 pqxx::transaction_base& sqlOf(SyncTxn& txn) {

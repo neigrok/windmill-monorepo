@@ -1,12 +1,14 @@
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
 
 #include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/application/GymSwitches.h"
 #include "products/gym/sync/adapters/postgres/GymDoorHash.h"
 
 #include <algorithm>
 #include <numeric>
+#include <stdexcept>
 
 namespace wm::gym {
 
@@ -87,6 +89,8 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
         answer.session = open;
         return std::nullopt;
       }
+      if (receipt.empty() && incoming.id != open->id)
+        txn.reserveSpent("session", sync::RecordId{incoming.id.str()});
       return gymCommand("gym.start", args);
     }
     if (!receipt.empty()) { answer.error = StartError::idTaken; return std::nullopt; }
@@ -406,7 +410,21 @@ CorrectionOutcome GymDoor::correctSession(const UserId& user, const SessionId& s
                                   pqxx::params{set.id.str()});
       if (!taken.empty()) { answer.error = CorrectionError::idTaken; return std::nullopt; }
     }
-    return gymCommand("gym.correctSession", args);
+    SessionCorrectionIn admitted{incoming.requestId, batch.session.startedAtMs,
+                                 *batch.session.finishedAtMs, *batch.session.displayName, {}};
+    for (const auto& set : batch.sets) admitted.sets.push_back({set, true, true});
+    auto effects = toJson(admitted);
+    effects["sessionId"] = session.str();
+    dynamic_cast<sync::PgSyncTxn&>(txn).beforeCommit([&txn, original = args,
+        expectedHash = gymCorrectionRequestHash(effects), id = incoming.requestId,
+        owner = user.str(), sessionId = session.str()] {
+      const auto saved = sync::sqlOf(txn).exec(
+          "update gym_correction_receipts set request_hash=$1,sync_args=$2::jsonb "
+          "where id=$3 and user_id=$4::uuid and session_id=$5 and request_hash=$6 returning id",
+          pqxx::params{gymCorrectionRequestHash(original), sync::jcs(original), id, owner, sessionId, expectedHash});
+      if (saved.empty()) throw std::runtime_error("gym correction receipt was not reserved");
+    });
+    return gymCommand("gym.correctSession", effects);
   });
   const auto code = refusal(result);
   if (code == "unknown-record" || code == "record-dead") answer.error = CorrectionError::notFound;

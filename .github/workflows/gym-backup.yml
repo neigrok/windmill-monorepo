@@ -1,0 +1,46 @@
+name: Gym production backup
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Back up and verify on the VPS
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
+          cd ~/windmill
+          umask 077
+          mkdir -p backups
+          backup="backups/gym-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
+          partial="$backup.partial"
+          trap 'rm -f "$partial"' EXIT
+          docker compose exec -T db sh -ec \
+            'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$partial"
+          test -s "$partial"
+          docker compose exec -T db pg_restore --list < "$partial" > /dev/null
+          mv "$partial" "$backup"
+          printf 'PASS backup verified: %s/%s\n' "$PWD" "$backup"
+          printf 'bytes: %s\n' "$(wc -c < "$backup")"
+          sha256sum "$backup"
+          REMOTE

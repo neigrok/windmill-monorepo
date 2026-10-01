@@ -314,10 +314,28 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
     if (!ids.empty() && (!ids[0][2].as<bool>() || ids[0][0].as<std::string>() != incoming.title || ids[0][1].as<std::string>() != incoming.body)) {
       error = NoteWriteError::idTaken; return std::nullopt;
     }
-    for (const auto& note : notes_.notes(incoming.user)) if (note.title == incoming.title && note.body == incoming.body) { saved = note; break; }
-    if (saved) return std::nullopt;
-    if (recordTaken(txn, incoming.user, "note", incoming.id.str())) { error = NoteWriteError::idTaken; return std::nullopt; }
-    if (notes_.notes(incoming.user).size() >= kMaxNotes) { error = NoteWriteError::full; return std::nullopt; }
+    const auto standing = sync::sqlOf(txn).exec("select id,title,body,position,(extract(epoch from updated_at)*1000)::bigint as updated_ms from gym_notes where user_id=$1::uuid order by position for update", pqxx::params{incoming.user.str()});
+    for (const auto& note : standing) {
+      if (note["title"].as<std::string>() != incoming.title || note["body"].as<std::string>() != incoming.body) continue;
+      saved = Note{NoteId{note["id"].as<std::string>()}, incoming.user, note["title"].as<std::string>(), note["body"].as<std::string>(), note["position"].as<int>(), note["updated_ms"].as<std::uint64_t>()};
+      break;
+    }
+    if (!saved && recordTaken(txn, incoming.user, "note", incoming.id.str())) { error = NoteWriteError::idTaken; return std::nullopt; }
+    if (!saved && standing.size() >= kMaxNotes) { error = NoteWriteError::full; return std::nullopt; }
+    dynamic_cast<sync::PgSyncTxn&>(txn).beforeCommit([&, txnPtr = &txn] {
+      auto& sql = sync::sqlOf(*txnPtr);
+      if (!saved) {
+        const auto rows = sql.exec("select title,body,position,(extract(epoch from updated_at)*1000)::bigint as updated_ms from gym_notes where id=$1 and user_id=$2::uuid", pqxx::params{incoming.id.str(), incoming.user.str()});
+        if (rows.empty()) throw std::logic_error("admitted insight note is missing");
+        saved = Note{incoming.id, incoming.user, rows[0]["title"].as<std::string>(), rows[0]["body"].as<std::string>(), rows[0]["position"].as<int>(), rows[0]["updated_ms"].as<std::uint64_t>()};
+      }
+      const auto inserted = sql.exec("insert into gym_note_saves(id,user_id,note) values($1,$2::uuid,$3::jsonb) on conflict do nothing returning id", pqxx::params{incoming.id.str(), incoming.user.str(), sync::jcs(toJson(*saved))});
+      if (inserted.empty() && (!receipt(*txnPtr) || error != NoteWriteError::none)) throw sync::Refusal("id-taken");
+    });
+    if (saved) {
+      if (ids.empty() && saved->id != incoming.id) txn.reserveSpent("note", sync::RecordId{incoming.id.str()});
+      return std::nullopt;
+    }
     const auto rows = sync::sqlOf(txn).exec("select ord from gym_notes where user_id=$1::uuid order by ord collate \"C\" desc nulls last,id collate \"C\" desc limit 1", pqxx::params{incoming.user.str()});
     const std::optional<std::string> last = rows.empty() || rows[0][0].is_null() ? std::nullopt : std::optional(rows[0][0].as<std::string>());
     Json::Value fields(Json::objectValue); fields["title"] = incoming.title; fields["body"] = incoming.body; fields["ord"] = sync::between(last, std::nullopt);
@@ -327,16 +345,6 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
   if (refusal(result) == "cap") return {std::nullopt, NoteWriteError::full};
   if (refusal(result) == "id-spent" || refusal(result) == "id-taken") return {std::nullopt, NoteWriteError::idTaken};
   requireOk(result);
-  const Json::Value recorded = execute(incoming.user, "save_note_receipt", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    if (receipt(txn)) return std::nullopt;
-    if (!saved) for (const auto& note : notes_.notes(incoming.user)) if (note.title == incoming.title && note.body == incoming.body) { saved = note; break; }
-    if (!saved) { error = NoteWriteError::idTaken; return std::nullopt; }
-    const auto inserted = sync::sqlOf(txn).exec("insert into gym_note_saves(id,user_id,note) values($1,$2::uuid,$3::jsonb) on conflict do nothing returning id", pqxx::params{incoming.id.str(), incoming.user.str(), sync::jcs(toJson(*saved))});
-    if (inserted.empty() && !receipt(txn)) error = NoteWriteError::idTaken;
-    return std::nullopt;
-  });
-  requireOk(recorded);
-  if (error != NoteWriteError::none) return {std::nullopt, error};
   return {saved, NoteWriteError::none};
 }
 

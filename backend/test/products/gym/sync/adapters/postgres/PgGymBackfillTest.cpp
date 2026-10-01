@@ -256,3 +256,129 @@ TEST(gym_backfill_rolls_back_every_account_row_when_adoption_fails) {
   CHECK_EQ(jcs(after), jcs(before));
 }
 
+
+TEST(gym_backfill_audit_rejects_legacy_accounts_without_a_scope) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[0]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  bool refused = false;
+  try { backfill.audit(world.account(input["account"].asString()).str()); }
+  catch (const std::runtime_error& error) { refused = std::string(error.what()).find("adoption") != std::string::npos; }
+  CHECK(refused);
+}
+
+TEST(gym_backfill_repairs_an_empty_scope_created_before_adoption) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[0]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto owner = world.account(input["account"].asString());
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    REQUIRE(world.store().insertScope(*txn, ScopeKey::product(owner, "gym"), owner, std::nullopt));
+    txn->commit();
+  }
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  bool refused = false;
+  try { backfill.audit(owner.str()); }
+  catch (const std::runtime_error& error) { refused = std::string(error.what()).find("adoption") != std::string::npos; }
+  CHECK(refused);
+  const auto before = databaseRows(world);
+  const auto preview = backfill.run(input["M"].asUInt64(), true, owner.str());
+  CHECK_EQ(jcs(databaseRows(world)), jcs(before));
+  REQUIRE_EQ(preview.size(), 1u);
+  CHECK_EQ(preview[0]["changed"].asUInt64(), 18u);
+  const auto actual = backfill.run(input["M"].asUInt64(), false, owner.str());
+  REQUIRE_EQ(actual.size(), 1u);
+  CHECK_FALSE(actual[0]["skipped"].asBool());
+  CHECK_EQ(actual[0]["changed"].asUInt64(), 18u);
+  const auto audited = backfill.audit(owner.str());
+  REQUIRE_EQ(audited.size(), 1u);
+  CHECK_EQ(audited[0]["rows"].asUInt64(), 13u);
+  CHECK_EQ(audited[0]["spent"].asUInt64(), 5u);
+  const auto repaired = databaseRows(world);
+  CHECK_EQ(backfill.run(input["M"].asUInt64() + 1000, false, owner.str())[0]["changed"].asUInt64(), 0u);
+  CHECK_EQ(jcs(databaseRows(world)), jcs(repaired));
+}
+
+TEST(gym_backfill_repairs_partial_envelopes_and_missing_spent_preserving_adopted_stamps) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[1]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto owner = world.account(input["account"].asString()).str();
+  const auto before = world.dump();
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    sqlOf(*txn).exec("update gym_notes set title_stamp=null where id='note0000001'");
+    sqlOf(*txn).exec("update gym_sessions set rc=null where id='session0001'");
+    sqlOf(*txn).exec("delete from sync_spent where type='set' and id='set00000002'");
+    txn->commit();
+  }
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  bool refused = false;
+  try { backfill.audit(owner); }
+  catch (const std::runtime_error& error) { refused = std::string(error.what()).find("adoption") != std::string::npos; }
+  CHECK(refused);
+  const auto actual = backfill.run(input["M"].asUInt64() + 1000, false, owner);
+  REQUIRE_EQ(actual.size(), 1u);
+  CHECK_EQ(actual[0]["changed"].asUInt64(), 3u);
+  CHECK_FALSE(actual[0]["skipped"].asBool());
+  CHECK(backfill.audit(owner)[0]["audit"].asBool());
+  const auto after = world.dump();
+  for (const auto& prior : before["rows"]["acct:A/gym"]) {
+    for (const auto& current : after["rows"]["acct:A/gym"]) {
+      if (prior["t"] != current["t"] || prior["id"] != current["id"]) continue;
+      if (prior["id"] != "note0000001" && prior["id"] != "session0001") {
+        CHECK_EQ(jcs(prior), jcs(current));
+        continue;
+      }
+      CHECK_EQ(prior["born"], current["born"]);
+      CHECK_EQ(prior["life"], current["life"]);
+      CHECK_EQ(prior["ru"], current["ru"]);
+      for (const auto& name : prior["f"].getMemberNames()) {
+        if (prior["id"] == "note0000001" && name == "title") {
+          CHECK_EQ(current["f"][name][0], prior["f"][name][0]);
+          CHECK_EQ(current["f"][name][1].asString(), std::to_string(input["M"].asUInt64() + 1000) + ":0:srv");
+          continue;
+        }
+        CHECK_EQ(jcs(prior["f"][name]), jcs(current["f"][name]));
+      }
+    }
+  }
+  const auto repaired = databaseRows(world);
+  CHECK_EQ(backfill.run(input["M"].asUInt64() + 2000, false, owner)[0]["changed"].asUInt64(), 0u);
+  CHECK_EQ(jcs(databaseRows(world)), jcs(repaired));
+}
+
+TEST(gym_backfill_recreates_a_missing_scope_for_fully_enveloped_rows_without_restamping) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[3]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto owner = world.account(input["account"].asString()).str();
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  backfill.run(input["M"].asUInt64(), false, owner);
+  const auto before = world.dump()["rows"];
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    sqlOf(*txn).exec("delete from sync_scopes");
+    txn->commit();
+  }
+  const auto actual = backfill.run(input["M"].asUInt64() + 1000, false, owner);
+  REQUIRE_EQ(actual.size(), 1u);
+  CHECK_EQ(actual[0]["changed"].asUInt64(), 0u);
+  CHECK_FALSE(actual[0]["skipped"].asBool());
+  CHECK_EQ(jcs(world.dump()["rows"]), jcs(before));
+  CHECK(backfill.audit(owner)[0]["audit"].asBool());
+}

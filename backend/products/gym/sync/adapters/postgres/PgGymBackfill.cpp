@@ -99,11 +99,12 @@ std::vector<std::string> accounts(SyncTxn& txn, const std::optional<std::string>
 
 std::vector<Row> spentRows(SyncTxn& txn, const ScopeKey& scope, const Stamp& stamp) {
   const auto result = sqlOf(txn).exec(
-    "select 'set' as type, id from (select set_id as id from gym_set_revisions where user_id=$1::uuid and deleted union select id from gym_write_receipts where user_id=$1::uuid and kind='set') ids "
+    "select type,id from (select 'set' as type, id from (select set_id as id from gym_set_revisions where user_id=$1::uuid and deleted union select id from gym_write_receipts where user_id=$1::uuid and kind='set') ids "
     "where not exists(select 1 from gym_sets s where s.id=ids.id) union "
     "select 'session', id from gym_write_receipts r where user_id=$1::uuid and kind='session' and not exists(select 1 from gym_sessions s where s.id=r.id) union "
     "select 'routine', routine_id from gym_routine_creations c where user_id=$1::uuid and not exists(select 1 from gym_routines r where r.id=c.routine_id) union "
-    "select 'note', id from gym_note_saves n where user_id=$1::uuid and not exists(select 1 from gym_notes r where r.id=n.id)", pqxx::params{scope.account().str()});
+    "select 'note', id from gym_note_saves n where user_id=$1::uuid and not exists(select 1 from gym_notes r where r.id=n.id)) required "
+    "where not exists(select 1 from sync_spent s where s.scope_key=$2 and s.type=required.type and s.id=required.id and s.seq>0 and s.born is not null and s.life_stamp is not null)", pqxx::params{scope.account().str(), scope.text()});
   std::vector<Row> out;
   for (const auto& resultRow : result) out.push_back(spentRow(resultRow[0].template as<std::string>(), RecordId(resultRow[1].template as<std::string>()), stamp, stamp, 0));
   return out;
@@ -122,6 +123,7 @@ Json::Value report(const ScopeRow& scope, std::uint64_t rows, std::uint64_t spen
 }
 
 Json::Value checkScope(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
+  if (!PgGymBackfill::adopted(txn, scope.key)) throw std::runtime_error("C.8 adoption audit failed: " + scope.key.text() + " has unadopted rows or required spent ids");
   Digest256 digest;
   Seq greatest = 0;
   std::uint64_t rows = 0, spent = 0;
@@ -168,7 +170,8 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
     auto& sql = sqlOf(*txn);
     const ScopeKey key = ScopeKey::product(UserId(owner), "gym");
     if (!dryRun) sql.exec("select pg_advisory_xact_lock(hashtext('gym-backfill'),hashtext($1))", pqxx::params{owner});
-    if (const auto existing = store.scope(*txn, key, RowLock::none)) {
+    const auto existing = store.scope(*txn, key, dryRun ? RowLock::none : RowLock::noKeyUpdate);
+    if (existing && adopted(*txn, key)) {
       Json::Value out = checkScope(*txn, store, *existing);
       out["skipped"] = true;
       out["dryRun"] = dryRun;
@@ -176,43 +179,57 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
       if (onAccount) onAccount(reports.back());
       continue;
     }
-    ScopeRow scope{.key = key, .owner = UserId(owner)};
+    ScopeRow scope = existing.value_or(ScopeRow{.key = key, .owner = UserId(owner)});
     std::map<std::string, std::vector<Row>> records;
     std::vector<Row> spent = spentRows(*txn, key, stamp);
-    std::uint64_t count = 0;
+    std::uint64_t changed = spent.size();
     for (const TypeDef& type : registry().types()) {
       PgGymType typeStore(type);
       records[type.name] = typeStore.adoptionRows(*txn, key, migrationTime);
-      count += records[type.name].size();
+      changed += records[type.name].size();
+      scope.seq = std::max(scope.seq, typeStore.greatestSeq(*txn, key));
     }
-    if (count + spent.size() == 0) continue;
+    for (const auto& row : sql.exec("select coalesce(max(seq),0) from sync_spent where scope_key=$1", pqxx::params{key.text()}))
+      scope.seq = std::max(scope.seq, row[0].template as<Seq>());
+    if (!existing && changed == 0 && scope.seq == 0) continue;
     for (const TypeDef& type : registry().types()) {
       std::vector<Row*> ordered;
       for (Row& row : records[type.name]) ordered.push_back(&row);
       for (Row& row : spent) if (row.t == type.name) ordered.push_back(&row);
       std::sort(ordered.begin(), ordered.end(), [](const Row* a, const Row* b) { return a->id < b->id; });
       for (Row* row : ordered) row->seq = ++scope.seq;
-      for (const Row& row : records[type.name]) scope.digest = scope.digest + rowHash(row.toJson());
     }
-    if (!records["note"].empty()) scope.counters["note"] = records["note"].size();
     if (!dryRun) {
-      if (!store.insertScope(*txn, key, UserId(owner), std::nullopt)) throw std::runtime_error("scope appeared during backfill: " + key.text());
+      if (!existing && !store.insertScope(*txn, key, UserId(owner), std::nullopt)) throw std::runtime_error("scope appeared during backfill: " + key.text());
       for (const TypeDef& type : registry().types()) {
         PgGymType typeStore(type);
         typeStore.adopt(*txn, key, records[type.name]);
       }
       for (const Row& row : spent) store.addSpent(*txn, key, row);
-      // Hash what pull will actually serve, rather than relying on the derivation's round trip.
-      scope.digest = Digest256();
-      for (const TypeDef& type : registry().types()) {
-        PgGymType typeStore(type);
-        for (const Row& row : typeStore.feed(*txn, key, FeedQuery{})) scope.digest = scope.digest + rowHash(row.toJson());
-      }
+    }
+    scope.digest = Digest256();
+    std::uint64_t count = 0, spentCount = 0;
+    for (const TypeDef& type : registry().types()) {
+      PgGymType typeStore(type);
+      std::map<std::string, Row> complete;
+      if (dryRun) {
+        for (const Row& row : typeStore.adoptedRows(*txn, key)) complete.emplace(row.id.key(), row);
+        for (const Row& row : records[type.name]) complete.insert_or_assign(row.id.key(), row);
+      } else for (const Row& row : typeStore.feed(*txn, key, FeedQuery{})) complete.emplace(row.id.key(), row);
+      for (const auto& [id, row] : complete) scope.digest = scope.digest + rowHash(row.toJson());
+      count += complete.size();
+      if (type.name == "note" && (!complete.empty() || scope.counters.contains("note"))) scope.counters["note"] = complete.size();
+      std::set<std::string> allSpent;
+      for (const Row& row : store.feedSpent(*txn, key, type, FeedQuery{})) allSpent.insert(row.id.key());
+      for (const Row& row : spent) if (row.t == type.name) allSpent.insert(row.id.key());
+      spentCount += allSpent.size();
+    }
+    if (!dryRun) {
       store.saveScope(*txn, scope);
       checkScope(*txn, store, scope);
       txn->commit();
     }
-    Json::Value out = report(scope, count, spent.size(), count + spent.size());
+    Json::Value out = report(scope, count, spentCount, changed);
     out["migrationMs"] = Json::UInt64(migrationTime);
     out["skipped"] = false;
     out["dryRun"] = dryRun;
@@ -222,6 +239,18 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
   return reports;
 }
 
+bool PgGymBackfill::adopted(SyncTxn& txn, const ScopeKey& scope) {
+  const auto current = sqlOf(txn).exec("select seq from sync_scopes where key=$1", pqxx::params{scope.text()});
+  const Seq scopeSeq = current.empty() ? 0 : current[0][0].as<Seq>();
+  for (const TypeDef& type : registry().types()) {
+    PgGymType typeStore(type);
+    if (typeStore.needsAdoption(txn, scope)) return false;
+    if (typeStore.greatestSeq(txn, scope) > scopeSeq) return false;
+  }
+  if (sqlOf(txn).exec("select exists(select 1 from sync_spent where scope_key=$1 and seq>$2)", pqxx::params{scope.text(), static_cast<std::int64_t>(scopeSeq)})[0][0].as<bool>()) return false;
+  return spentRows(txn, scope, stampOf("0:0:srv")).empty();
+}
+
 std::vector<Json::Value> PgGymBackfill::audit(std::optional<std::string> account) {
   PgSyncStore store(pool_, Limits{}.lockTimeoutMs);
   auto txn = store.begin(TxnMode::snapshot);
@@ -229,7 +258,8 @@ std::vector<Json::Value> PgGymBackfill::audit(std::optional<std::string> account
   std::vector<Json::Value> reports;
   for (const auto& owner : accounts(*txn, account)) {
     const auto scope = store.scope(*txn, ScopeKey::product(UserId(owner), "gym"), RowLock::none);
-    if (scope) reports.push_back(checkScope(*txn, store, *scope));
+    if (!scope) throw std::runtime_error("C.8 adoption audit failed: acct:" + owner + "/gym has eligible rows or spent ids but no scope");
+    reports.push_back(checkScope(*txn, store, *scope));
   }
   return reports;
 }

@@ -91,7 +91,7 @@ resolves to `http://localhost:8088` outside a production build. Run the server o
 
 ```sh
 cmake --build build -j8
-ctest --test-dir build --output-on-failure       # four binaries (domain · mcp · adapters · sync) and the deploy check
+ctest --test-dir build --output-on-failure       # four C++ suites, deploy check and differential comparator tests
 ctest --test-dir build -V                        # …and their summary lines
 ```
 
@@ -130,6 +130,30 @@ WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" GYM_ENGINE_WRITES=1 \
   ctest --test-dir build -R '^(mcp|adapters)$' -V
 ```
+
+The real-server write differential owns two fresh databases and two test server processes on
+free loopback ports 18900–18949. Both use the production composition with one controlled test clock;
+the production `windmill_server` ignores the test clock environment. It seeds matching session cookies and MCP keys,
+backfills the engine
+database, drives every write route and gym tool with retries, and interleaves reads. It stops both
+servers and drops both databases on success or failure. Python 3 and the Postgres client tools are
+required. CI uses `--image` for off-vs-on and builds origin/main in a temporary worktree inside
+the tested builder for main-vs-off. Both modes compare timestamps exactly; only independently
+random generated identities use stable paired aliases (test/e2e/README.md).
+
+```sh
+python3 test/e2e/gym_write_differential.py --mode off-vs-on --bin-dir build \
+  --maintenance-db 'postgresql:///postgres?host=/tmp'
+python3 test/e2e/gym_write_differential.py --mode main-vs-off --bin-dir build \
+  --maintenance-db 'postgresql:///postgres?host=/tmp'
+dropdb -h /tmp wm_rest_test
+dropdb -h /tmp wm_sync_test
+```
+
+See [test/e2e/README.md](test/e2e/README.md) for the exact normalization and intended differences.
+The migration binaries and rehearsal ship in the runtime image. Dispatch the one-time production
+backup and restored-copy rehearsal as described in
+[deploy/gym-migration/README.md](deploy/gym-migration/README.md); neither workflow runs on push.
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
 that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It also mounts the

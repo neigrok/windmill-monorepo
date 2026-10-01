@@ -29,6 +29,13 @@ class SyncTxn {
 public:
   virtual ~SyncTxn() = default;
   virtual void commit() = 0;
+  // A server builder can consume a fresh minted id without creating a physical record.
+  // Admission locks these ids and stages their tombstones with the intent's sequence and feed.
+  void reserveSpent(std::string type, RecordId id) { reservedSpent_.emplace_back(std::move(type), std::move(id)); }
+  const std::vector<std::pair<std::string, RecordId>>& reservedSpent() const { return reservedSpent_; }
+
+private:
+  std::vector<std::pair<std::string, RecordId>> reservedSpent_;
 };
 
 // §6.1 step 3's row modes: a tree held while an overlay writes (keyShare), a tree a command reads (share),

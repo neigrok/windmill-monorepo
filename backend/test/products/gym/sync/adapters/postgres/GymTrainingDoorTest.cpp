@@ -3,7 +3,15 @@
 
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/application/GymSwitches.h"
+#include "products/gym/sync/adapters/postgres/GymDoorHash.h"
+#include "platform/domain/sync/Jcs.h"
+#include "platform/application/WorkerPool.h"
+#include "platform/adapters/postgres/PgSyncStore.h"
+#include "products/gym/sync/adapters/postgres/PgGym.h"
+#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "products/gym/sync/GymRegistry.h"
 
+#include <cmath>
 #include <cstdlib>
 
 using namespace wm;
@@ -64,6 +72,84 @@ TEST(gym_training_engine_start_refusals_and_join_receipt_follow_D2) {
   REQUIRE(joined.session);
   CHECK_EQ(joined.session->id, first.session->id);
   CHECK_EQ(joined.session->finishedAtMs, std::optional<std::uint64_t>{at + 1000});
+  CHECK(h.failures.messages.empty());
+}
+
+TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_replicas) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto at = h.clock.now;
+  const auto original = h.door.start(h.user, startAt("session_original", at));
+  REQUIRE(original.session);
+  const auto joined = h.door.start(h.user, startAt("session_joinalias", at));
+  CHECK_EQ(joined.session, original.session);
+  const auto state = [&] {
+    PgLease lease{*pool()};
+    pqxx::read_transaction sql{*lease};
+    return sql.exec("select seq,(select seq from sync_spent where scope_key=$1 and type='session' and id=$2) as alias_seq from sync_scopes where key=$1",
+                     pqxx::params{"acct:" + h.user.str() + "/gym", "session_joinalias"});
+  };
+  const auto reserved = state();
+  REQUIRE_EQ(reserved.size(), 1U);
+  REQUIRE(!reserved[0]["alias_seq"].is_null());
+  CHECK_EQ(reserved[0]["seq"].as<int>(), 2);
+  CHECK_EQ(reserved[0]["alias_seq"].as<int>(), 2);
+  CHECK_EQ(h.door.start(h.user, startAt("session_joinalias", at)).session, original.session);
+  CHECK_EQ(state()[0]["seq"].as<int>(), 2);
+  engine::PgGymBackfill backfill{pool()};
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  REQUIRE(h.door.append(h.user, original.session->id, setAt("set_joinalias1", at)).set);
+  CHECK_EQ(state()[0]["seq"].as<int>(), 3);
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+
+  sync::SyncCatalog catalog{engine::registry()};
+  engine::PgGym gym{engine::registry()};
+  gym.bindTo(catalog);
+  catalog.seal();
+  sync::PgSyncStore store{pool(), sync::Limits{}.lockTimeoutMs};
+  sync::NullChangeFeed feed;
+  sync::ServerClock stamps;
+  sync::Admission admission{catalog, store, feed, stamps, h.failures};
+  Json::Value fields(Json::objectValue);
+  auto delta = GymDoor::delta("session", "session_joinalias", fields, true);
+  const std::string stamp = std::to_string(at) + ":0:r_session_alias";
+  delta["born"] = stamp;
+  delta["life"][1] = stamp;
+  for (const auto& field : delta["f"].getMemberNames()) delta["f"][field][1] = stamp;
+  auto built = GymDoor::intent();
+  built["d"].append(delta);
+  BlockingThread::Mark blocking;
+  const auto outcome = admission.admit(sync::ReplicaOrigin{h.user, "r_session_alias", 1, sync::intentDigest(built)}, built, at);
+  const auto* refused = std::get_if<sync::Admitted>(&outcome);
+  REQUIRE(refused);
+  CHECK_EQ(refused->result["code"].asString(), "id-spent");
+  CHECK_EQ(state()[0]["seq"].as<int>(), 3);
+  CHECK(!h.log.session(h.user, SessionId{"session_joinalias"}));
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(h.failures.messages.empty());
+}
+
+TEST(gym_training_engine_refused_join_rolls_back_reserved_alias) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  REQUIRE(h.door.start(h.user, startAt("session_joinbase", h.clock.now)).session);
+  Json::Value args(Json::objectValue);
+  args["id"] = "session_nojoin";
+  args["startedAt"] = Json::UInt64(h.clock.now);
+  args["joinOpenSession"] = false;
+  const auto result = h.door.execute(h.user, "refused_join_test", args, [&](sync::SyncTxn& txn) {
+    txn.reserveSpent("session", sync::RecordId{std::string{"session_nojoin"}});
+    auto built = GymDoor::intent();
+    built["cmd"]["name"] = "gym.start";
+    built["cmd"]["args"] = args;
+    return std::optional<Json::Value>{built};
+  });
+  CHECK_EQ(GymDoor::refusal(result), "session-open");
+  PgLease lease{*pool()};
+  pqxx::read_transaction sql{*lease};
+  CHECK_EQ(sql.exec("select seq from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym"})[0][0].as<int>(), 1);
+  CHECK_EQ(sql.exec("select count(*) from sync_spent where type='session' and id='session_nojoin'")[0][0].as<int>(), 0);
+  CHECK_EQ(sql.exec("select count(*) from gym_write_receipts where kind='session' and id='session_nojoin'")[0][0].as<int>(), 0);
   CHECK(h.failures.messages.empty());
 }
 
@@ -213,6 +299,74 @@ TEST(gym_training_engine_correction_maps_open_payload_overlap_and_set_taken) {
   incoming.sets[0].set.id = SetId{"set_correct01"};
   incoming.startedAtMs = end - 5000;
   CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::overlap);
+  CHECK(h.failures.messages.empty());
+}
+
+TEST(gym_training_engine_correction_admits_trimmed_name_and_keeps_raw_receipt) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto end = h.clock.now;
+  const SessionId session{"session_trimmed"};
+  SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
+                         {setAt("set_trimmed01", end - 1500)}};
+  REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
+  const auto stored = h.log.setOf(h.user, imported.sets[0].id);
+  REQUIRE(stored);
+  SessionCorrectionIn incoming{"correct_trimmed1", end - 2000, end - 1000,
+                               "  Corrected workout  ", {{*stored, true, true}}};
+  const auto corrected = h.door.correctSession(h.user, session, incoming);
+  REQUIRE_EQ(corrected.error, CorrectionError::none);
+  REQUIRE(corrected.session);
+  CHECK_EQ(corrected.session->displayName, std::optional<std::string>{"Corrected workout"});
+  CHECK_EQ(corrected.sets, std::vector<Set>{*stored});
+  CHECK(h.door.correctSession(h.user, session, incoming).replayed);
+  auto original = toJson(incoming);
+  original["sessionId"] = session.str();
+  {
+    PgLease lease{*pool()};
+    pqxx::read_transaction sql{*lease};
+    const auto receipt = sql.exec("select request_hash,sync_args from gym_correction_receipts where id=$1",
+                                  pqxx::params{incoming.requestId});
+    REQUIRE_EQ(receipt.size(), 1u);
+    CHECK_EQ(receipt[0][0].as<std::string>(), gymCorrectionRequestHash(original));
+    CHECK_EQ(sync::jcs(sync::parseJson(receipt[0][1].as<std::string>())), sync::jcs(original));
+  }
+  incoming.routineName = "Corrected workout";
+  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::payloadConflict);
+  CHECK(h.failures.messages.empty());
+}
+
+TEST(gym_training_engine_correction_admits_long_padding_and_validated_numbers) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto end = h.clock.now;
+  const SessionId session{"session_padding"};
+  SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
+                         {setAt("set_padding01", end - 1500)}};
+  REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
+  auto existing = h.log.setOf(h.user, imported.sets[0].id);
+  REQUIRE(existing);
+  existing->weightKg = 20.2500000001;
+  existing->rpe = 7.5000000001;
+  existing->note = "ignored because absent from the request";
+  const Set added{SetId{"set_padding02"}, session, ExerciseId{"dip"}, 2,
+                  -0.0000000001, 8, SetKind::working, std::nullopt, "", end - 1400};
+  SessionCorrectionIn incoming{"correct_padding1", end - 2000, end - 1000,
+                               std::string(241, ' ') + "Valid workout" + std::string(241, ' '),
+                               {{*existing, true, false}, {added, true, true}}};
+  const auto corrected = h.door.correctSession(h.user, session, incoming);
+  REQUIRE_EQ(corrected.error, CorrectionError::none);
+  REQUIRE(corrected.session);
+  CHECK_EQ(corrected.session->displayName, std::optional<std::string>{"Valid workout"});
+  REQUIRE_EQ(corrected.sets.size(), 2u);
+  CHECK_EQ(corrected.sets[0].weightKg, 20.25);
+  CHECK_EQ(corrected.sets[0].rpe, std::optional<double>{7.5});
+  CHECK_EQ(corrected.sets[0].note, "");
+  CHECK_EQ(corrected.sets[1].weightKg, 0.0);
+  CHECK(!std::signbit(corrected.sets[1].weightKg));
+  CHECK(h.door.correctSession(h.user, session, incoming).replayed);
+  incoming.sets[0].set.weightKg = 20.25;
+  CHECK_EQ(h.door.correctSession(h.user, session, incoming).error, CorrectionError::payloadConflict);
   CHECK(h.failures.messages.empty());
 }
 

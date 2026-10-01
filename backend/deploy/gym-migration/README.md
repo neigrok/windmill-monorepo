@@ -1,5 +1,27 @@
 # Gym migration rehearsal
 
+Run the manual **Gym production backup** (`.github/workflows/gym-backup.yml`) first, then
+**Gym migration rehearsal** (`.github/workflows/gym-rehearsal.yml`) from GitHub Actions → Run
+workflow, on a revision carrying these workflows. Both use the same `SSH_KEY`, `SSH_HOST`,
+`SSH_USER` and optional `SSH_PORT` as `deploy.yml`, and serialize with VPS deployment. They have
+only `workflow_dispatch`; a push never runs either workflow.
+
+The backup runs custom-format `pg_dump` inside `~/windmill`'s compose `db` container, verifies
+`pg_restore --list`, and publishes a timestamped `~/windmill/backups/gym-*.dump` only after that
+check. It prints the path, byte size and SHA-256 checksum. No dump or production data leaves the
+box. The backup directory and files are private to the SSH user.
+
+The rehearsal selects the newest completed dump, restores it into a uniquely named disposable
+database in the same Postgres, and uses the running server container's exact image to run this
+rehearsal. That image must carry `windmill_gym_backfill`, `windmill_gym_snapshot`, Python, the
+adoption schema, and this script (the current Dockerfile does). Adoption is applied between the
+frozen snapshots via `--apply-adoption`. Production keeps running: only the disposable database
+must have no other clients. Output contains pass/fail and counts; detailed snapshots and logs stay
+in a container tmpfs and disappear when it exits. A trap force-drops the disposable database on
+success, failure or a received termination signal. The production database is never migrated by
+this workflow. A failed rehearsal must be resolved before production rollout; these workflows
+do not turn either switch on.
+
 Appendix C.8 is executable here. Run the same commands against a restored production copy before
 rollout and against production during its write freeze. The binaries are built by backend CMake;
 the workflow also needs Python 3 and `psql`. Keep this directory, `db/gym_sync.sql`, and
@@ -36,8 +58,9 @@ The workflow checks, in order:
 3. Run the backfill with `--dry-run`, and prove that it changed no table or sequence.
 4. Run the migration.
 5. Snapshot the reads again, prove that reading changed no table or sequence, compare every
-   response file byte for byte, then run `--audit` to compare each scope's stored digest and
-   sequence with its TypeStore feed and spent ids.
+   response file byte for byte, then run `--audit` to reconcile every account's eligible physical
+   rows and required spent ids before comparing each scope's digest and sequence with its feed.
+   Missing scopes and incomplete envelopes fail the audit; an existing empty scope is repaired.
 6. Run the migration again: require `changed: 0` for every account and compare every non-system
    table's complete rows and every sequence's value and `is_called` byte for byte.
 
@@ -88,13 +111,27 @@ preferences, renamed custom movements, a renamed seed and an aliases-only seed; 
 and PNG attachments; and workout, snapshot log and live range log shares. Fixture ids and history
 values are fixed; accounts and repository creation timestamps are minted by the existing stores.
 
-Owner handoff (C.5): the backfill preserves legacy import receipts and their original request
-hashes and `sync_kind`. Wave 1's `PgGymState` reads a null `sync_kind` as a start receipt, and
-`GymRules` import hashing differs from the legacy repository's raw-argument hash. The write-door
-bridge must recognize legacy imports and compare a replay using their legacy hash; rewriting
-these receipts during migration would violate C.5.
+Engine writes enabled before adoption refuse with 503 `gym-not-adopted`, including the lazy
+staleness settlement on reads, and leave no empty scope behind. A scope created by an older
+writer is not proof of adoption: the backfill reconciles and repairs its incomplete rows and spent
+ids before the audit can pass. Keep the write freeze in place throughout migration.
+
+The backfill preserves legacy import receipts and their original request hashes and `sync_kind`
+(C.5). The admitted write door compares legacy import replays using the repository's original
+raw-argument hash before admission; it does not rewrite receipts during migration.
 
 The offline read composition interprets C.7 as suppressing the lazy-close write while returning
 the existing rows, using the same read services and serializers. Freezing one snapshot clock also
 keeps expiry, rolling statistics and record windows identical between the two readings; C.8 tests
 the migration's effect rather than elapsed wall time.
+
+`rehearse_local.py` owns and force-drops two seeded disposable databases and runs the full workflow
+on each. Its early-switch case starts the production server with engine writes enabled before
+backfill, requires 503 `gym-not-adopted` and zero new scopes, stops the server, then inserts the
+empty scope an older writer could leave. The full rehearsal must repair that scope, preserve all
+read bytes, audit every account and remain immutable on its second run:
+
+```sh
+python3 backend/deploy/gym-migration/rehearse_local.py \
+  --bin-dir /path/to/build --output /private/tmp/gym-local-gates
+```

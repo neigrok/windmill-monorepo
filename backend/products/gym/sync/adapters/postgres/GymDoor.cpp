@@ -5,6 +5,7 @@
 #include "platform/application/sync/ServerCall.h"
 #include "products/gym/application/GymSwitches.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
+#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/GymRegistry.h"
 
 #include <future>
@@ -96,9 +97,15 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
         std::optional<Json::Value> built;
         try {
+          if (!engine::PgGymBackfill::adopted(txn, sync::ScopeKey::product(user, "gym")))
+            throw GymUnavailable("gym-not-adopted", "gym history must be adopted before engine writes are enabled");
           built = builder(txn);
         } catch (const InvalidTraining&) {
           throw sync::ServerBuildAborted{std::current_exception()};
+        } catch (const GymUnavailable&) {
+          throw sync::ServerBuildAborted{std::current_exception()};
+        } catch (const pqxx::undefined_column&) {
+          throw sync::ServerBuildAborted{std::make_exception_ptr(GymUnavailable("gym-not-adopted", "gym adoption schema must be applied before engine writes are enabled"))};
         }
         if (!built) return std::nullopt;
         const sync::ScopeKey scope = sync::ScopeKey::product(user, "gym");

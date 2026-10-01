@@ -1,14 +1,14 @@
 # syntax=docker/dockerfile:1.7
 #
-# Windmill backend image. One image, two binaries. windmill_server (:8080) is the deployed
-# one and the only service the compose file starts — it serves REST, the collab socket and
+# Windmill backend image. The service and offline migration binaries share one image.
+# windmill_server (:8080) is the only service the compose file starts — it serves REST, the collab socket and
 # MCP from one process. windmill_mcp_http (:8090) is the standalone MCP transport, carried
 # here so a local or single-purpose run has it (deploy/docker-compose.yml, where the retired
 # `mcp` service is noted).
 #
 # The build boundary lives here: Drogon and libpqxx are the messy vendor deps, so we
-# resolve them once in a fat builder and ship a slim runtime that carries only the two
-# binaries, the schema, and the shared libraries ldd actually reports.
+# resolve them once in a fat builder and ship a slim runtime that carries the
+# service and migration binaries, schemas, rehearsal, and their shared libraries.
 #
 # The context is backend/, which cannot see the sync contract the build embeds and the tests read
 # (the corpus and the registries), so the build takes it as a second, named context:
@@ -20,7 +20,7 @@ FROM ubuntu:22.04 AS build
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates git cmake make g++ pkg-config \
+      ca-certificates git cmake make g++ pkg-config python3 postgresql-client \
       libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libc-ares-dev libbrotli-dev \
       libpq-dev libcurl4-openssl-dev \
  && rm -rf /var/lib/apt/lists/*
@@ -55,7 +55,8 @@ COPY --from=contract sync/corpus /contract/sync/corpus
 # test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a red test.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
-      --target windmill_server windmill_mcp_http windmill_server_probe \
+      --target windmill_server windmill_server_test_clock windmill_mcp_http windmill_server_probe \
+               windmill_gym_backfill windmill_gym_snapshot \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -63,11 +64,13 @@ RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contra
 RUN ctest --test-dir build --output-on-failure
 
 # Belt and braces: prove the binaries exist before we carry them to the runtime stage.
-RUN test -x build/windmill_server && test -x build/windmill_mcp_http
+RUN test -x build/windmill_server && test -x build/windmill_mcp_http \
+ && test -x build/windmill_gym_backfill && test -x build/windmill_gym_snapshot
 
 # The probe is the sync engine's test and dev product: it must never ship. windmill_server links no probe
-# code, and the runtime stage carries only db/schema.sql, never db/probe.sql.
+# code, and the runtime stage carries schema.sql and gym_sync.sql, never probe.sql.
 RUN ! nm -C build/windmill_server | grep -q 'wm::probe::'
+RUN ! nm -C build/windmill_gym_backfill build/windmill_gym_snapshot | grep -q 'wm::probe::'
 
 ########################  runtime  ########################
 # Same Ubuntu 22.04 userland as the builder, so glibc/libstdc++ ABI matches exactly.
@@ -86,13 +89,19 @@ RUN apt-get update \
       libc-ares2 \
       libbrotli1 \
       postgresql-client-14 \
+      python3 \
       curl \
       ca-certificates \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
+COPY --from=build /src/build/windmill_gym_backfill /usr/local/bin/windmill_gym_backfill
+COPY --from=build /src/build/windmill_gym_snapshot /usr/local/bin/windmill_gym_snapshot
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
+COPY --from=build /src/db/gym_sync.sql          /app/db/gym_sync.sql
+COPY --from=build /src/deploy/gym-migration/rehearse.py /app/deploy/gym-migration/rehearse.py
+COPY --from=build /src/products/gym/routes.cpp  /app/products/gym/routes.cpp
 
 WORKDIR /app
 EXPOSE 8080 8090

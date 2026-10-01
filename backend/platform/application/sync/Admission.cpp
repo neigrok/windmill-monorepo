@@ -151,17 +151,22 @@ private:
     if (std::optional<AdmitOutcome> answered = lookUpCall()) return *answered;  // 4
     if (builder_) {
       const std::optional<Json::Value> built = (*builder_)(*txn_);
-      if (!built) {
+      if (!built && txn_->reservedSpent().empty()) {
         const Json::Value result = okResult(scopeRow_->seq, std::nullopt, {});
         recordResult(result);
         txn_->commit();
         return Admitted{result};
       }
-      builtWire_ = *built;
-      Shaped shaped = shapeIntent(registry_, *builtWire_, Sender{caller_.account, true}, now_, a_.limits_.maxSkewMs);
-      if (shaped.scope != scope() || shaped.scope.kind() == ScopeKind::tree || shaped.scope.kind() == ScopeKind::overlay)
-        throw Refusal(code::invalid);
-      shaped_ = std::move(shaped);
+      if (built) {
+        builtWire_ = *built;
+        Shaped shaped = shapeIntent(registry_, *builtWire_, Sender{caller_.account, true}, now_, a_.limits_.maxSkewMs);
+        if (shaped.scope != scope()) throw Refusal(code::invalid);
+        shaped_ = std::move(shaped);
+      } else {
+        // Reservation-only builders have no wire delta or command to shape.
+        shaped_->intent = Intent{.scope = intent().scope, .gestureId = intent().gestureId};
+      }
+      if (scope().kind() == ScopeKind::tree || scope().kind() == ScopeKind::overlay) throw Refusal(code::invalid);
       lockFreshIds();
       checkAccess();
     }
@@ -223,6 +228,14 @@ private:
     }
     for (const auto& [type, id] : argumentRecords()) {
       if (registry_.type(type)->idSpace == IdSpace::global) fresh.emplace_back(type, id);
+    }
+    for (const auto& [name, id] : txn_->reservedSpent()) {
+      const TypeDef* type = registry_.type(name);
+      if (!builder_ || !caller_.server || !type || type->scope != scope().registryScope() ||
+          type->identity != Identity::minted || type->deadRows != DeadRows::spent || !type->origins.server ||
+          !id.json().isString() || !type->idPattern || !type->idPattern->matches(id.column()))
+        throw Refusal(code::invalid);
+      if (type->idSpace == IdSpace::global) fresh.emplace_back(name, id);
     }
     lockGlobalIds(fresh);
   }
@@ -289,6 +302,7 @@ private:
     for (const auto& [type, id] : argumentRecords()) {
       if (registry_.type(type)->scope == scope().registryScope()) touched.emplace_back(type, id);
     }
+    touched.insert(touched.end(), txn_->reservedSpent().begin(), txn_->reservedSpent().end());
     lockRecords(scope(), touched);
   }
 
@@ -383,9 +397,24 @@ private:
   // 13 for the intent's scope.
   void applyIntentScope() {
     const ScopeRow& row = *scopeRow_;
-    if (std::optional<ScopeWrite> write = changes_->stage(scope(), row.seq, row.counters, row.digest, row.open, a_.catalog_.opening())) {
-      persist(*write, *scopeRow_);
+    std::optional<ScopeWrite> write = changes_->stage(scope(), row.seq, row.counters, row.digest, row.open, a_.catalog_.opening());
+    std::set<std::pair<std::string, RecordId>> reservations(txn_->reservedSpent().begin(), txn_->reservedSpent().end());
+    if (!reservations.empty() && (!builder_ || !caller_.server)) throw Refusal(code::invalid);
+    std::optional<Stamp> stamp;
+    for (const auto& [type, id] : reservations) {
+      const auto& held = records_.at(RecordRef{scope(), type, id});
+      if (held.state.kind == IdState::Kind::foreign || held.typed) throw Refusal(code::idTaken);
+      if (held.stored) continue;
+      if (write && std::any_of(write->rows.begin(), write->rows.end(), [&](const RowWrite& changed) {
+        return changed.type->name == type && changed.id == id;
+      })) throw Refusal(code::invalid);
+      if (!write) write = ScopeWrite{.scope = scope(), .seq = row.seq + 1, .counters = row.counters, .digest = row.digest, .open = row.open};
+      if (!stamp) stamp = clock_.tick(now_);
+      const Row spent = spentRow(type, id, stamp, *stamp, write->seq);
+      write->spentAdded.push_back(spent);
+      write->frameRows.push_back(spent.thin());
     }
+    if (write) persist(*write, *scopeRow_);
   }
 
   // 15: a governing create inserts its tree; a governing death kills the tree and its overlays.

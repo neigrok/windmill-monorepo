@@ -454,6 +454,15 @@ target_sources(windmill_gym PRIVATE
 add_executable(windmill_server platform/infra/main.cpp)
 target_link_libraries(windmill_server PRIVATE windmill_roadmap windmill_journal windmill_gym)
 
+# The real composition with a harness-controlled clock; never copied to the runtime image.
+add_executable(windmill_server_test_clock platform/infra/main.cpp)
+target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
+target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_journal windmill_gym)
+
+find_package(Python3 COMPONENTS Interpreter REQUIRED)
+add_test(NAME gym_differential COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/e2e/gym_write_differential_test.py)
+
 # The same server with the sync engine over the probe product (db/probe.sql): the test and dev stack's
 # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.
 add_executable(windmill_server_probe platform/infra/main.cpp)
@@ -573,6 +582,7 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
   test/products/gym/sync/adapters/postgres/GymTrainingDoorTest.cpp
+  test/products/gym/sync/adapters/postgres/GymAdoptionDoorTest.cpp
   test/products/gym/sync/adapters/postgres/GymRecordDoorTest.cpp
   test/products/gym/adapters/http/GymDoorApiTest.cpp
   test/products/gym/adapters/http/GymFreezeTest.cpp

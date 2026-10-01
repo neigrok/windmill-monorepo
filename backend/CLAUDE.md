@@ -42,7 +42,7 @@ never the composite, so a prompt-injection-exposed agent cannot reach another pr
 ```sh
 cmake -S . -B build                             # RelWithDebInfo by default (CMakeLists.txt:12)
 cmake --build build -j8
-ctest --test-dir build --output-on-failure      # four binaries (domain · mcp · adapters · sync) and the deploy check
+ctest --test-dir build --output-on-failure      # four C++ suites, deploy check and differential comparator tests
 ```
 
 Drogon and libpqxx are the two vendor dependencies, and the configure fails without either. libpqxx
@@ -56,7 +56,7 @@ beside the others never shadows them.
 Never build `-O0`: an un-inlined call chain overflows Drogon's worker-thread stack and corrupts
 return values with no crash. That is why the default build type is forced.
 
-Every test file is named by hand in one of four `add_executable` lists in `CMakeLists.txt`. A test
+Every C++ test file is named by hand in one of four `add_executable` lists in `CMakeLists.txt`. A test
 file not in a list never runs.
 
 The sync engine (`docs/foundation/engine.md`) is a platform feature: `domain/sync/` (pure: records,
@@ -83,6 +83,15 @@ Postgres cases use plain `schema.sql` at `DATABASE_URL`, admitted door cases the
 corpus runs over fakes and Postgres, and all five backfill vectors over Postgres. The backfill tool requires the
 adopted schema and migrates each account in one transaction; `deploy/gym-migration/` holds the offline
 rehearsal.
+
+`test/e2e/gym_write_differential.py` runs the production composition with a test-only shared clock,
+creates and drops its own databases, and compares gym REST/MCP writes, retries and reads in two
+modes: origin/main against switches-off, and switches-off against adopted engine writes. CI's
+Postgres job runs both from the tested builder image. Production ignores the test clock environment.
+The runtime ships `windmill_gym_backfill`,
+`windmill_gym_snapshot`, `gym_sync.sql` and the rehearsal; the probe symbol gate remains mandatory.
+The dispatch-only `gym-backup.yml` and `gym-rehearsal.yml` retain all production data on the VPS,
+and serialize with deployment. Operator steps live in `deploy/gym-migration/README.md`.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:

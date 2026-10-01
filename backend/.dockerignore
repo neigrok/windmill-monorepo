@@ -13,7 +13,10 @@ cmake-build-*/
 .idea/
 .claude/
 uploads/
-# The Caddyfile alone comes in, for the test that it forwards every credential line untouched.
+# Caddy's deploy test and the offline gym rehearsal are build inputs.
 deploy/*
 !deploy/Caddyfile
+!deploy/gym-migration/
+deploy/gym-migration/*
+!deploy/gym-migration/rehearse.py
 *.md

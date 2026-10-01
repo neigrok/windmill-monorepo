@@ -6,6 +6,7 @@
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/application/WorkerPool.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
+#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/GymRegistry.h"
 
 #include <chrono>
@@ -230,6 +231,233 @@ TEST(gym_record_engine_insight_receipts_preserve_snapshot_after_edit_and_delete)
   CHECK_EQ(notes.notes(h.user).size(), 1U);
 }
 
+namespace {
+
+void insightReceiptRace(bool remove) {
+  doortest::Harness h;
+  doortest::EngineSwitch enabled;
+  NotesService notes{h.notes, h.clock, &h.door};
+  const Note incoming{NoteId{"note_atomic1"}, h.user, "Constraint", "Keep sessions short"};
+  PgLease lease{*doortest::pool()};
+  pqxx::work txn{*lease};
+  txn.exec("lock table gym_note_saves in share mode");
+  auto save = std::async(std::launch::async, [&] { return notes.saveInsight(incoming); });
+  int waiting = 0;
+  const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
+  while (std::chrono::steady_clock::now() < deadline) {
+    waiting = txn.exec("select count(*) from pg_locks where relation='gym_note_saves'::regclass and mode='RowExclusiveLock' and not granted")[0][0].as<int>();
+    if (waiting == 1) break;
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  CHECK_EQ(waiting, 1);
+  // While the receipt insert is held up, readers must never see an admitted note without its
+  // replay receipt. Both editor writes and deletes must queue until the whole save commits.
+  CHECK(notes.notes(h.user).empty());
+  CHECK(!notes.noteSave(h.user, incoming.id));
+  auto change = std::async(std::launch::async, [&] {
+    if (remove) notes.deleteNote(h.user, incoming.id);
+    else CHECK(notes.saveNote(Note{incoming.id, h.user, "Edited", "Changed"}).note);
+  });
+  CHECK_EQ(change.wait_for(std::chrono::milliseconds(50)), std::future_status::timeout);
+  txn.commit();
+  const auto saved = save.get();
+  change.get();
+  REQUIRE(saved.note);
+  CHECK_EQ(saved.note->title, incoming.title);
+  CHECK_EQ(saved.note->body, incoming.body);
+  CHECK_EQ(notes.noteSave(h.user, incoming.id), saved.note);
+  CHECK_EQ(notes.saveInsight(incoming).note, saved.note);
+  const auto standing = notes.notes(h.user);
+  if (remove) CHECK(standing.empty());
+  else {
+    REQUIRE_EQ(standing.size(), 1U);
+    CHECK_EQ(standing[0].title, "Edited");
+  }
+  CHECK(h.failures.messages.empty());
+}
+
+struct FailingInsightReceipt {
+  FailingInsightReceipt() {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("create function gym_test_fail_note_receipt() returns trigger language plpgsql as $$ begin raise exception 'injected before insight receipt'; end $$");
+    txn.exec("create trigger gym_test_fail_note_receipt before insert on gym_note_saves for each row execute function gym_test_fail_note_receipt()");
+    txn.commit();
+  }
+  ~FailingInsightReceipt() {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("drop trigger gym_test_fail_note_receipt on gym_note_saves");
+    txn.exec("drop function gym_test_fail_note_receipt()");
+    txn.commit();
+  }
+};
+
+}
+
+TEST(gym_record_engine_insight_note_and_receipt_are_atomic_during_concurrent_edit) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  insightReceiptRace(false);
+}
+
+TEST(gym_record_engine_insight_note_and_receipt_are_atomic_during_concurrent_delete) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  insightReceiptRace(true);
+}
+
+TEST(gym_record_engine_insight_receipt_failure_rolls_back_note_and_scope) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  doortest::Harness h;
+  doortest::EngineSwitch enabled;
+  NotesService notes{h.notes, h.clock, &h.door};
+  FailingInsightReceipt inject;
+  const Note incoming{NoteId{"note_atomic1"}, h.user, "Constraint", "Keep sessions short"};
+  bool failed = false;
+  try { notes.saveInsight(incoming); }
+  catch (const std::runtime_error&) { failed = true; }
+  CHECK(failed);
+  CHECK(notes.notes(h.user).empty());
+  CHECK(!notes.noteSave(h.user, incoming.id));
+  PgLease lease{*doortest::pool()};
+  pqxx::work txn{*lease};
+  CHECK_EQ(txn.exec("select count(*) from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym"})[0][0].as<int>(), 0);
+  CHECK_EQ(h.failures.messages.size(), 1U);
+}
+
+TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_replicas) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  doortest::Harness h;
+  doortest::EngineSwitch enabled;
+  NotesService notes{h.notes, h.clock, &h.door};
+  const auto original = notes.saveInsight(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
+  REQUIRE(original.note);
+  const Note duplicate{NoteId{"note_duplicate1"}, h.user, "Constraint", "Same text"};
+  CHECK_EQ(notes.saveInsight(duplicate).note, original.note);
+  CHECK_EQ(notes.noteSave(h.user, duplicate.id), original.note);
+  const auto state = [&] {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    return txn.exec("select seq,(select seq from sync_spent where scope_key=$1 and type='note' and id=$2) as alias_seq from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym", duplicate.id.str()});
+  };
+  const auto reserved = state();
+  REQUIRE_EQ(reserved.size(), 1U);
+  CHECK_EQ(reserved[0]["seq"].as<int>(), 2);
+  CHECK_EQ(reserved[0]["alias_seq"].as<int>(), 2);
+  CHECK_EQ(notes.saveInsight(duplicate).note, original.note);
+  CHECK_EQ(state()[0]["seq"].as<int>(), 2);
+  engine::PgGymBackfill backfill{doortest::pool()};
+  const auto audited = backfill.audit(h.user.str());
+  REQUIRE_EQ(audited.size(), 1U);
+  CHECK(audited[0]["audit"].asBool());
+  REQUIRE(notes.saveNote(Note{NoteId{"note_nextwrite1"}, h.user, "Next", "Other text"}).note);
+  CHECK_EQ(state()[0]["seq"].as<int>(), 3);
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+
+  sync::SyncCatalog catalog{engine::registry()};
+  engine::PgGym gym{engine::registry()};
+  gym.bindTo(catalog);
+  catalog.seal();
+  sync::PgSyncStore store{doortest::pool(), sync::Limits{}.lockTimeoutMs};
+  sync::NullChangeFeed feed;
+  sync::ServerClock stamps;
+  sync::Admission admission{catalog, store, feed, stamps, h.failures};
+  Json::Value fields(Json::objectValue); fields["title"] = "Alias reused"; fields["body"] = "Changed"; fields["ord"] = "a1";
+  auto delta = GymDoor::delta("note", duplicate.id.str(), fields, true);
+  const std::string stamp = std::to_string(h.clock.now) + ":0:r_note_alias";
+  delta["born"] = stamp;
+  delta["life"][1] = stamp;
+  for (const auto& field : delta["f"].getMemberNames()) delta["f"][field][1] = stamp;
+  auto built = GymDoor::intent(); built["d"].append(delta);
+  BlockingThread::Mark blocking;
+  const auto outcome = admission.admit(sync::ReplicaOrigin{h.user, "r_note_alias", 1, sync::intentDigest(built)}, built, h.clock.now);
+  const auto* refused = std::get_if<sync::Admitted>(&outcome);
+  REQUIRE(refused);
+  CHECK_EQ(refused->result["code"].asString(), "id-spent");
+  CHECK_EQ(state()[0]["seq"].as<int>(), 3);
+  CHECK_EQ(notes.notes(h.user).size(), 2U);
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(h.failures.messages.empty());
+}
+
+TEST(gym_record_engine_insight_receipt_failure_rolls_back_alias_reservation_and_retry) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  doortest::Harness h;
+  doortest::EngineSwitch enabled;
+  NotesService notes{h.notes, h.clock, &h.door};
+  const auto original = notes.saveNote(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
+  REQUIRE(original.note);
+  const Note duplicate{NoteId{"note_duplicate1"}, h.user, "Constraint", "Same text"};
+  {
+    FailingInsightReceipt inject;
+    bool failed = false;
+    try { notes.saveInsight(duplicate); }
+    catch (const std::runtime_error&) { failed = true; }
+    CHECK(failed);
+  }
+  CHECK_EQ(notes.notes(h.user), std::vector<Note>{*original.note});
+  CHECK(!notes.noteSave(h.user, duplicate.id));
+  {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    CHECK_EQ(txn.exec("select seq from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym"})[0][0].as<int>(), 1);
+    CHECK_EQ(txn.exec("select count(*) from sync_spent where type='note' and id=$1", pqxx::params{duplicate.id.str()})[0][0].as<int>(), 0);
+  }
+  CHECK_EQ(notes.saveInsight(duplicate).note, original.note);
+  engine::PgGymBackfill backfill{doortest::pool()};
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK_EQ(h.failures.messages.size(), 1U);
+}
+
+TEST(gym_record_engine_server_spent_batch_has_one_sequence_result_and_publication) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
+  doortest::Harness h;
+  sync::SyncCatalog catalog{engine::registry()};
+  engine::PgGym gym{engine::registry()};
+  gym.bindTo(catalog);
+  catalog.seal();
+  sync::PgSyncStore store{doortest::pool(), sync::Limits{}.lockTimeoutMs};
+  struct Feed : sync::ChangeFeed {
+    std::vector<sync::CommittedChange> events;
+    void publish(const sync::CommittedChange& event) override { events.push_back(event); }
+  } feed;
+  sync::ServerClock stamps;
+  sync::Admission admission{catalog, store, feed, stamps, h.failures};
+  BlockingThread::Mark blocking;
+  auto scopeIntent = GymDoor::intent();
+  scopeIntent["cmd"]["name"] = "gym.closeStale";
+  scopeIntent["cmd"]["args"] = Json::Value(Json::objectValue);
+  const auto reserve = [&] {
+    return admission.admitBuilt(sync::ServerOrigin{h.user, std::nullopt}, scopeIntent, h.clock.now,
+      [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
+        txn.reserveSpent("note", sync::RecordId{std::string{"note_reserved1"}});
+        txn.reserveSpent("note", sync::RecordId{std::string{"note_reserved2"}});
+        txn.reserveSpent("note", sync::RecordId{std::string{"note_reserved1"}});
+        return std::nullopt;
+      });
+  };
+  const auto outcome = reserve();
+  const auto* admitted = std::get_if<sync::Admitted>(&outcome);
+  REQUIRE(admitted);
+  CHECK_EQ(admitted->result["s"].asString(), "ok");
+  CHECK_EQ(admitted->result["seq"].asInt(), 1);
+  REQUIRE_EQ(feed.events.size(), 1U);
+  REQUIRE_EQ(feed.events[0].changed.size(), 1U);
+  CHECK_EQ(feed.events[0].changed[0].seq, 1U);
+  REQUIRE_EQ(feed.events[0].changed[0].rows.size(), 2U);
+  for (const auto& row : feed.events[0].changed[0].rows) {
+    CHECK_EQ(row["seq"].asInt(), 1);
+    CHECK_EQ(row["life"][0].asString(), "dead");
+  }
+  const auto replay = reserve();
+  const auto* repeated = std::get_if<sync::Admitted>(&replay);
+  REQUIRE(repeated);
+  CHECK_EQ(repeated->result["seq"].asInt(), 1);
+  CHECK_EQ(feed.events.size(), 1U);
+  engine::PgGymBackfill backfill{doortest::pool()};
+  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(h.failures.messages.empty());
+}
+
 TEST(gym_record_engine_weighin_whole_put_and_preferences_keep_sql_reads) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
@@ -331,13 +559,16 @@ TEST(gym_record_engine_insight_global_receipt_race_has_one_owner_and_snapshot) {
   auto owner = std::async(std::launch::async, [&] { return notes.saveInsight(Note{receiptId, h.user, "Constraint", "Same text"}); });
   auto other = std::async(std::launch::async, [&] { return notes.saveInsight(Note{receiptId, h.other, "Constraint", "Same text"}); });
   int waiting = 0;
+  int idWaiting = 0;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (std::chrono::steady_clock::now() < deadline) {
     waiting = txn.exec("select count(*) from pg_locks where relation='gym_note_saves'::regclass and mode='RowExclusiveLock' and not granted")[0][0].as<int>();
-    if (waiting == 2) break;
+    idWaiting = txn.exec("select count(*) from pg_locks where locktype='advisory' and database=(select oid from pg_database where datname=current_database()) and not granted")[0][0].as<int>();
+    if (waiting == 1 && idWaiting == 1) break;
     std::this_thread::sleep_for(std::chrono::milliseconds(5));
   }
-  CHECK_EQ(waiting, 2);
+  CHECK_EQ(waiting, 1);
+  CHECK_EQ(idWaiting, 1);
   txn.commit();
   const auto ownerResult = owner.get();
   const auto otherResult = other.get();
