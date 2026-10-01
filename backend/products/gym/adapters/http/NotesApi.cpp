@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/NotesApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -20,19 +21,22 @@ Json::Value wrapped(const std::vector<Note>& notes) {
 NotesApi::NotesApi(std::shared_ptr<NotesService> notes, std::shared_ptr<AuthService> auth)
     : notes_(std::move(notes)), auth_(std::move(auth)) {}
 
-void NotesApi::listNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void NotesApi::listNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
   cb(jsonResponse(wrapped(notes_->notes(*caller))));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Upsert by the client-minted id: a fresh id lands last, the same id with the same text replays,
 // the same id with different text is an edit. Every bound refusal is the entity's own sentence.
 void NotesApi::saveNote(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                        const std::string& id) {
+                        const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -63,11 +67,14 @@ void NotesApi::saveNote(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   Json::Value body(Json::objectValue);
   body["note"] = toJson(*outcome.note);
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Absent and already gone are one answer, so a retry lands the same 204.
 void NotesApi::deleteNote(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                          const std::string& id) {
+                          const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -77,9 +84,12 @@ void NotesApi::deleteNote(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void NotesApi::reorderNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void NotesApi::reorderNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -105,6 +115,8 @@ void NotesApi::reorderNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb
     return;
   }
   cb(jsonResponse(wrapped(outcome.notes)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

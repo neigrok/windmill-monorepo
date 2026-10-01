@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/TrainingApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -48,7 +49,7 @@ Json::Value ownerShare(const LogShare& share, const std::string& baseUrl) {
 
 }
 
-void TrainingApi::history(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void TrainingApi::history(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   const auto caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -59,9 +60,12 @@ void TrainingApi::history(const drogon::HttpRequestPtr& req, HttpCallback&& cb) 
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that history query"));
   }
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void TrainingApi::createLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void TrainingApi::createLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   const auto caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to share your training log"));
@@ -99,9 +103,11 @@ void TrainingApi::createLogShare(const drogon::HttpRequestPtr& req, HttpCallback
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that log share"));
   }
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void TrainingApi::listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void TrainingApi::listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   const auto caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your share links"));
@@ -112,10 +118,13 @@ void TrainingApi::listLogShares(const drogon::HttpRequestPtr& req, HttpCallback&
   for (const LogShare& share : training_->logShares(*caller))
     body["shares"].append(ownerShare(share, appBaseUrl_));
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void TrainingApi::revokeLogShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-    const std::string& id) {
+    const std::string& id) try {
+  requireGymWrite();
   const auto caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to revoke a share link"));
@@ -125,10 +134,12 @@ void TrainingApi::revokeLogShare(const drogon::HttpRequestPtr& req, HttpCallback
   const auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void TrainingApi::sharedHistory(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-    const std::string& token) {
+    const std::string& token) try {
   try {
     const auto shared = training_->sharedHistory(token, historyQuery(req));
     if (!shared) {
@@ -144,6 +155,8 @@ void TrainingApi::sharedHistory(const drogon::HttpRequestPtr& req, HttpCallback&
   } catch (const InvalidTraining&) {
     cb(error(drogon::k400BadRequest, "could not read that history query"));
   }
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

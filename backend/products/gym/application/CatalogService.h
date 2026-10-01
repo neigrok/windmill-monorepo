@@ -8,6 +8,8 @@
 
 namespace wm::gym {
 
+class GymWriteDoor;
+
 // stepKg omitted means the equipment decides it (defaultStepKg).
 struct ExerciseWrite {
   ExerciseId id;
@@ -21,7 +23,7 @@ struct ExerciseWrite {
 // store's own fact, handed straight back. A movement's RECORD lives on TrainingService.
 class CatalogService {
 public:
-  explicit CatalogService(CatalogRepository& catalog);
+  explicit CatalogService(CatalogRepository& catalog, GymWriteDoor* door = nullptr);
 
   std::vector<Exercise> catalog(const UserId& user);
   ExerciseInsertOutcome createExercise(const UserId& user, const ExerciseWrite& incoming);
@@ -31,6 +33,7 @@ public:
                                          const std::string& name);
 
 private:
+  GymWriteDoor* door_;
   CatalogRepository& catalog_;
 };
 

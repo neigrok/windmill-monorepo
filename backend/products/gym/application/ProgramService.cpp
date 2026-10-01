@@ -1,11 +1,13 @@
 #include "products/gym/application/ProgramService.h"
+#include "products/gym/application/GymSwitches.h"
+#include "products/gym/ports/GymWriteDoor.h"
 
 #include <utility>
 
 namespace wm::gym {
 
-ProgramService::ProgramService(ProgramRepository& program, Clock& clock)
-    : program_(program), clock_(clock) {}
+ProgramService::ProgramService(ProgramRepository& program, Clock& clock, GymWriteDoor* door)
+    : door_(door), program_(program), clock_(clock) {}
 
 std::optional<Routine> ProgramService::routineCreation(const UserId& user, const RoutineId& id) {
   return program_.routineCreation(user, id);
@@ -27,6 +29,9 @@ std::vector<RoutineEvent> ProgramService::routineHistory(const UserId& user, con
 // outcome the entire refusal set. The create's idempotency is the id, not a lookup.
 RoutineWriteOutcome ProgramService::createRoutine(const UserId& user, const RoutineWrite& incoming,
                                                   std::optional<ProposalDoor> byAgent) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites())
+    return door_->createRoutine(Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries}, byAgent);
   return program_.insertRoutine(
       Routine{incoming.id, user, incoming.name, incoming.position, incoming.entries}, byAgent,
       clock_.nowMs());
@@ -34,11 +39,16 @@ RoutineWriteOutcome ProgramService::createRoutine(const UserId& user, const Rout
 
 RoutineWriteOutcome ProgramService::replaceRoutine(const UserId& user, const RoutineId& id,
                                                    const RoutineWrite& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites())
+    return door_->replaceRoutine(Routine{id, user, incoming.name, incoming.position, incoming.entries}, incoming.expectedRevision);
   return program_.replaceRoutine(Routine{id, user, incoming.name, incoming.position, incoming.entries},
                                  clock_.nowMs(), incoming.expectedRevision);
 }
 
 bool ProgramService::deleteRoutine(const UserId& user, const RoutineId& id) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->deleteRoutine(user, id);
   return program_.deleteRoutine(user, id);
 }
 
@@ -53,6 +63,8 @@ std::optional<RoutineProposal> ProgramService::proposal(const UserId& user, cons
 // The document goes through the Routine constructor and is thrown away: its only job is to refuse
 // what a plan cannot hold, at the mint rather than at the tap. Nothing here writes to the program.
 ProposalMintOutcome ProgramService::propose(const UserId& user, const ProposalWrite& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->propose(user, incoming);
   std::optional<Routine> base = program_.routine(user, incoming.routine);
   if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
 
@@ -82,6 +94,8 @@ ProposalMintOutcome ProgramService::proposeRemoval(const UserId& user, const Pro
                                                    const RoutineId& routine,
                                                    const std::string& summary,
                                                    const ProposalSource& source) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->proposeRemoval(user, id, routine, summary, source);
   std::optional<Routine> base = program_.routine(user, routine);
   if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
 
@@ -104,6 +118,8 @@ ProposalMintOutcome ProgramService::proposeRemoval(const UserId& user, const Pro
 // the write. A removal has no document to compute and takes the store's other verb. The intent is
 // read off the proposal, never off the caller.
 ProposalSettleOutcome ProgramService::apply(const UserId& user, const ProposalId& id) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->apply(user, id);
   std::optional<RoutineProposal> held = program_.proposal(user, id);
   if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
   const std::uint64_t nowMs = clock_.nowMs();
@@ -119,6 +135,8 @@ ProposalSettleOutcome ProgramService::apply(const UserId& user, const ProposalId
 }
 
 ProposalSettleOutcome ProgramService::dismiss(const UserId& user, const ProposalId& id) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->dismiss(user, id);
   return program_.dismissProposal(user, id, clock_.nowMs());
 }
 

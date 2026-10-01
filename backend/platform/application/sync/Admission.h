@@ -14,6 +14,7 @@
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <functional>
 #include <mutex>
 #include <optional>
 #include <stdexcept>
@@ -54,6 +55,10 @@ private:
 // The in-process mutex of a scope (§6.1 step 3.1) not taken within LOCK_TIMEOUT_MS: transient (§6.6).
 struct ScopeLockTimeout : std::runtime_error {
   using std::runtime_error::runtime_error;
+};
+
+struct ServerBuildAborted {
+  std::exception_ptr error;
 };
 
 // §6.3: the k-th admit of a server-origin call that carries a requestId, and the call's digest. `looksUp` marks
@@ -107,12 +112,14 @@ using AdmitOutcome = std::variant<Admitted, OutOfTurn, Retry, CallAnswered, Repl
 // §6.1: admits one intent atomically, whatever its origin, and publishes what it committed (§6.8).
 class Admission {
 public:
+  using ServerBuilder = std::function<std::optional<Json::Value>(SyncTxn&)>;
   Admission(const SyncCatalog& catalog, SyncStore& store, ChangeFeed& feed, ServerClock& clock, FailureReporter& failures,
             Limits limits = {});
 
   // One wire intent at `serverNow`, which a push reads once for all its intents (§6.1 step 2). Runs only
   // on a blocking thread (§6).
   AdmitOutcome admit(const Origin& origin, const Json::Value& intent, Ms serverNow);
+  AdmitOutcome admitBuilt(const ServerOrigin&, const Json::Value& scopeIntent, Ms serverNow, const ServerBuilder&);
 
   const Limits& limits() const { return limits_; }
 

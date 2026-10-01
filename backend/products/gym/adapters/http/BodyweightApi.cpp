@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/BodyweightApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -15,7 +16,7 @@ BodyweightApi::BodyweightApi(std::shared_ptr<BodyweightService> bodyweight,
 
 // `latest` is the account's newest day whatever the window asked for, so one windowed read draws
 // both the chart and the reading at the head of the log.
-void BodyweightApi::listEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void BodyweightApi::listEntries(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -32,6 +33,8 @@ void BodyweightApi::listEntries(const drogon::HttpRequestPtr& req, HttpCallback&
   const std::optional<Bodyweight> latest = bodyweight_->latest(*caller);
   body["latest"] = latest ? toJson(*latest) : Json::Value(Json::nullValue);
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Upsert by the day; the reply is the row that STANDS, which is the incoming one only when its
@@ -40,7 +43,8 @@ void BodyweightApi::listEntries(const drogon::HttpRequestPtr& req, HttpCallback&
 // past the device's local today at the field with the same sentence, and this is the server's
 // half, loose by the one day a local calendar can run ahead of UTC.
 void BodyweightApi::saveEntry(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                              const std::string& dateLocal) {
+                              const std::string& dateLocal) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -69,11 +73,16 @@ void BodyweightApi::saveEntry(const drogon::HttpRequestPtr& req, HttpCallback&& 
   Json::Value body(Json::objectValue);
   body["entry"] = toJson(bodyweight_->save(*incoming));
   cb(jsonResponse(body));
+} catch (const InvalidTraining& refused) {
+  cb(error(drogon::k400BadRequest, refused.what()));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Absent, already gone and a day that is not a day are one answer, so a retry lands the same 204.
 void BodyweightApi::deleteEntry(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                                const std::string& dateLocal) {
+                                const std::string& dateLocal) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -83,6 +92,8 @@ void BodyweightApi::deleteEntry(const drogon::HttpRequestPtr& req, HttpCallback&
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

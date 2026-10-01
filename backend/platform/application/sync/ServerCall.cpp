@@ -3,6 +3,8 @@
 #include "platform/domain/sync/Wire.h"
 
 #include <utility>
+#include <atomic>
+#include <chrono>
 
 namespace wm::sync {
 
@@ -15,14 +17,22 @@ Digest256 callDigest(const std::string& tool, const Json::Value& args) {
   return intentDigest(call);
 }
 
+std::string serverGesture() {
+  static std::atomic<std::uint64_t> next{0};
+  const auto now = std::chrono::steady_clock::now().time_since_epoch().count();
+  return "server-" + std::to_string(now) + "-" + std::to_string(++next);
+}
+
 }
 
 ServerCall::ServerCall(Admission& admission, SyncStore& store, UserId account, std::optional<std::string> requestId, const std::string& tool,
                        const Json::Value& args)
-    : admission_(admission), store_(store), account_(std::move(account)), requestId_(std::move(requestId)), digest_(callDigest(tool, args)) {}
+    : admission_(admission), store_(store), account_(std::move(account)), requestId_(std::move(requestId)), digest_(callDigest(tool, args)),
+      gestureId_(requestId_.value_or(serverGesture())) {}
 
 AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
   ++k_;
+  intent["gestureId"] = gestureId_;
   if (!requestId_) return admission_.admit(ServerOrigin{account_, std::nullopt}, intent, serverNow);
   // A call's parts are stored under `<requestId>#k`, so a requestId holding '#' could name another call's part.
   if (requestId_->empty() || requestId_->find_first_of(std::string("#\0", 2)) != std::string::npos) {
@@ -30,6 +40,23 @@ AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
   }
   intent["gestureId"] = *requestId_;
   const AdmitOutcome outcome = admission_.admit(ServerOrigin{account_, CallPart{*requestId_, k_, digest_, !ran_}}, intent, serverNow);
+  if (const Replayed* replayed = std::get_if<Replayed>(&outcome)) return Admitted{replayed->result};
+  ran_ = ran_ || std::holds_alternative<Admitted>(outcome);
+  return outcome;
+}
+
+AdmitOutcome ServerCall::admitBuilt(Json::Value scopeIntent, Ms serverNow, const Admission::ServerBuilder& builder) {
+  ++k_;
+  if (requestId_ && (requestId_->empty() || requestId_->find_first_of(std::string("#\0", 2)) != std::string::npos))
+    return CallAnswered{refusedResult(Refused{code::invalid, {}})};
+  scopeIntent["gestureId"] = gestureId_;
+  const auto build = [&](SyncTxn& txn) -> std::optional<Json::Value> {
+    auto built = builder(txn);
+    if (built) (*built)["gestureId"] = gestureId_;
+    return built;
+  };
+  if (!requestId_) return admission_.admitBuilt(ServerOrigin{account_, std::nullopt}, scopeIntent, serverNow, build);
+  const AdmitOutcome outcome = admission_.admitBuilt(ServerOrigin{account_, CallPart{*requestId_, k_, digest_, !ran_}}, scopeIntent, serverNow, build);
   if (const Replayed* replayed = std::get_if<Replayed>(&outcome)) return Admitted{replayed->result};
   ran_ = ran_ || std::holds_alternative<Admitted>(outcome);
   return outcome;

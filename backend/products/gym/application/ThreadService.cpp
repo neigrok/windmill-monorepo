@@ -1,16 +1,19 @@
 #include "products/gym/application/ThreadService.h"
+#include "products/gym/application/GymSwitches.h"
+#include "products/gym/ports/GymWriteDoor.h"
 #include <algorithm>
 
 namespace wm::gym {
 
-ThreadService::ThreadService(AskThreadRepository& threads, Clock& clock)
-    : threads_(threads), clock_(clock) {}
+ThreadService::ThreadService(AskThreadRepository& threads, Clock& clock, GymWriteDoor* door)
+    : threads_(threads), clock_(clock), door_(door) {}
 
 std::optional<CoachImage> ThreadService::image(const UserId& user, const ThreadId& thread, const std::string& id) {
   return threads_.image(user, thread, id);
 }
 
 ImageWriteError ThreadService::putImage(const UserId& user, const ThreadId& thread, const CoachImage& image) {
+  requireGymWrite();
   return threads_.putImage(user, thread, image);
 }
 
@@ -19,6 +22,7 @@ std::optional<AskGeneration> ThreadService::generation(const UserId& user, const
 }
 
 std::optional<AskGeneration> ThreadService::stopGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId) {
+  requireGymWrite();
   return threads_.stopGeneration(user, thread, requestId);
 }
 
@@ -42,23 +46,29 @@ std::optional<AskThread> ThreadService::thread(const UserId& user, const ThreadI
 }
 
 bool ThreadService::deleteThread(const UserId& user, const ThreadId& id) {
+  requireGymWrite();
+  if (gymEngineWrites() && door_)
+    return threads_.deleteThread(user, id, [&] { door_->unlinkThread(user, id); });
   return threads_.deleteThread(user, id);
 }
 
 ThreadOpenOutcome ThreadService::openThread(const UserId& user, const ThreadId& id,
                                             const std::string& title) {
+  requireGymWrite();
   return threads_.openThread(user, id, title, clock_.nowMs());
 }
 
 // One clock read for the pair: two reads could date the answer before the question.
 void ThreadService::appendTurns(const UserId& user, const ThreadId& id,
                                 std::vector<ThreadTurn> turns) {
+  requireGymWrite();
   const std::uint64_t nowMs = clock_.nowMs();
   for (ThreadTurn& turn : turns) turn.atMs = nowMs;
   threads_.appendTurns(user, id, turns);
 }
 
 void ThreadService::discardEmptyThread(const UserId& user, const ThreadId& id) {
+  requireGymWrite();
   threads_.discardEmptyThread(user, id);
 }
 

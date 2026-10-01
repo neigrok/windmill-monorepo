@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/CatalogApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -14,7 +15,7 @@ CatalogApi::CatalogApi(std::shared_ptr<CatalogService> catalog,
                        std::shared_ptr<TrainingService> training, std::shared_ptr<AuthService> auth)
     : catalog_(std::move(catalog)), training_(std::move(training)), auth_(std::move(auth)) {}
 
-void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -23,9 +24,12 @@ void CatalogApi::listExercises(const drogon::HttpRequestPtr& req, HttpCallback&&
   Json::Value body(Json::objectValue);
   body["exercises"] = toJson(catalog_->catalog(*caller));
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void CatalogApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void CatalogApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -49,12 +53,15 @@ void CatalogApi::createExercise(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   cb(jsonResponse(toJson(*outcome.exercise)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // The movement keeps its id. A caller's own movement renames in place; a seed takes a per-account
 // display name, since seed rows are global.
 void CatalogApi::renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                            const std::string& id) {
+                            const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -78,11 +85,13 @@ void CatalogApi::renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   cb(jsonResponse(toJson(*renamed)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // A movement nobody has lifted answers 200 with zeroed counts; the 404 means no such movement.
 void CatalogApi::exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                            const std::string& id) {
+                            const std::string& id) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -94,6 +103,8 @@ void CatalogApi::exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   cb(jsonResponse(toJson(*record)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

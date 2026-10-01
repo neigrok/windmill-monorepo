@@ -105,8 +105,10 @@ The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. T
 reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql` and `db/gym_sync.sql`.
 The gym adoption and backfill rehearsal is documented in [deploy/gym-migration/README.md](deploy/gym-migration/README.md).
 Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` to the
-REST database: it removes the `ON DELETE` actions the REST repositories still require. The sync
-suite wipes sync, probe and gym data as it replays the corpus, store and concurrency cases.
+legacy repository database: it removes the `ON DELETE` actions those repository tests require.
+The admitted gym door cases in `adapters` use `WM_SYNC_DATABASE_URL`, with real repositories and
+the gym catalog. The existing HTTP/MCP contract fixtures use fakes. The sync suite wipes sync,
+probe and gym data as it replays the corpus, store and concurrency cases; run these binaries serially.
 
 ```sh
 createdb -h /tmp wm_rest_test
@@ -116,6 +118,17 @@ psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
   ctest --test-dir build -R '^(domain|sync|adapters)$' -V
+```
+
+`GYM_ENGINE_WRITES` and `GYM_WRITE_FREEZE` accept `1`, `true` or `on`, and default off. Engine writes
+require the adopted gym schema and metadata. The freeze refuses REST writes with `503 gym-frozen`,
+MCP and Coach abilities with error results, and leaves staleness unchanged on reads. Conversations
+and workout shares retain their existing tables; conversation deletion admits proposal unlinking.
+
+```sh
+WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
+  WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" GYM_ENGINE_WRITES=1 \
+  ctest --test-dir build -R '^(mcp|adapters)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for

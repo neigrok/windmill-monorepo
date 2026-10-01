@@ -27,6 +27,7 @@ public:
   // (CallAnswered; a requestId that is empty or holds '#' or U+0000 is answered invalid), at a refusal, stored or
   // replayed, which is its result, or at a transient Retry, which leaves a started call running.
   AdmitOutcome admit(Json::Value intent, Ms serverNow);
+  AdmitOutcome admitBuilt(Json::Value scopeIntent, Ms serverNow, const Admission::ServerBuilder&);
 
   // §6.3 step 3: after the last part, the call's result (its refusal, else its last admit's) written into its
   // row, done, in a transaction of its own, which a repeat of the call answers. Only this call's own row, and
@@ -39,6 +40,7 @@ private:
   UserId account_;
   std::optional<std::string> requestId_;
   Digest256 digest_;
+  std::string gestureId_;
   int k_ = 0;
   bool ran_ = false;  // an admit of this call committed: the call was looked up
 };

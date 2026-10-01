@@ -12,6 +12,8 @@
 
 namespace wm::gym {
 
+class GymWriteDoor;
+
 // Everything the client says, nothing the server decides — the set number and the owner are the
 // store's and the session's to assign.
 // joinOpenSession true puts the caller into whatever session is open; false creates exactly the
@@ -104,7 +106,7 @@ enum class DiscardOutcome { done, notFound, open };
 class TrainingService {
 public:
   TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
-                  TokenGenerator& tokens);
+                  TokenGenerator& tokens, GymWriteDoor* door = nullptr);
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
@@ -159,6 +161,7 @@ private:
   ProgramRepository& program_;
   Clock& clock_;
   TokenGenerator& tokens_;
+  GymWriteDoor* door_;
 };
 
 }

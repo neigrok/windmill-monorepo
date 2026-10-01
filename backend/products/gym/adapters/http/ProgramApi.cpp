@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/ProgramApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -14,7 +15,7 @@ ProgramApi::ProgramApi(std::shared_ptr<ProgramService> program, std::shared_ptr<
     : program_(std::move(program)), auth_(std::move(auth)) {}
 
 // A routine is written as its whole document: create and replace take the same body.
-void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -24,9 +25,12 @@ void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& 
   body["routines"] = toJson(program_->routines(*caller),
                             program_->proposals(*caller, ProposalQuery{std::nullopt, true}));
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -55,10 +59,12 @@ void ProgramApi::createRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
     return;
   }
   cb(jsonResponse(toJson(*outcome.routine)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                        const std::string& id) {
+                        const std::string& id) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -76,10 +82,13 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
   Json::Value body = toJson(*routine, pending);
   body["history"] = toJson(program_->routineHistory(*caller, RoutineId{id}));
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                            const std::string& id) {
+                            const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -113,10 +122,13 @@ void ProgramApi::replaceRoutine(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   cb(jsonResponse(toJson(*outcome.routine)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void ProgramApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                           const std::string& id) {
+                           const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -130,10 +142,12 @@ void ProgramApi::deleteRoutine(const drogon::HttpRequestPtr& req, HttpCallback&&
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // One read serves all three questions; a settled proposal stays in the list.
-void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -146,11 +160,13 @@ void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&&
   Json::Value body(Json::objectValue);
   body["proposals"] = toJson(program_->proposals(*caller, query));
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Absent, another account's and never-existed are one answer.
 void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                         const std::string& id) {
+                         const std::string& id) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -162,12 +178,15 @@ void ProgramApi::getProposal(const drogon::HttpRequestPtr& req, HttpCallback&& c
     return;
   }
   cb(jsonResponse(toJson(*held)));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // All of it or none: one transaction against the frozen base revision. The reply carries the settled
 // proposal and the routine as it now stands; the routine is absent for a removal.
 void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                           const std::string& id) {
+                           const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -209,11 +228,14 @@ void ProgramApi::applyProposal(const drogon::HttpRequestPtr& req, HttpCallback&&
   body["proposal"] = toJson(*outcome.proposal);
   if (outcome.routine) body["routine"] = toJson(*outcome.routine);
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // A settle, not a delete: the proposal stays in the routine's history.
 void ProgramApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                             const std::string& id) {
+                             const std::string& id) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -247,6 +269,8 @@ void ProgramApi::dismissProposal(const drogon::HttpRequestPtr& req, HttpCallback
   Json::Value body(Json::objectValue);
   body["proposal"] = toJson(*outcome.proposal);
   cb(jsonResponse(body));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

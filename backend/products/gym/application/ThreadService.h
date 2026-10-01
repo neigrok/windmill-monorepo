@@ -9,12 +9,14 @@
 
 namespace wm::gym {
 
+class GymWriteDoor;
+
 // Separate from AskService so a deployment with no vendor key wired, which registers no
 // `POST /v1/gym/ask`, still reads and deletes the threads it already has.
 // The OUTCOME is derived where it is drawn (`outcomeOf`) and never stored.
 class ThreadService {
 public:
-  ThreadService(AskThreadRepository& threads, Clock& clock);
+  ThreadService(AskThreadRepository& threads, Clock& clock, GymWriteDoor* door = nullptr);
 
   std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id);
   ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image);
@@ -35,6 +37,7 @@ public:
 private:
   AskThreadRepository& threads_;
   Clock& clock_;
+  GymWriteDoor* door_;
 };
 
 }

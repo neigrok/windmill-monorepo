@@ -7,10 +7,12 @@
 
 namespace wm::gym {
 
+class GymWriteDoor;
+
 // Notes hold the lifter's instructions and useful user-provided insights saved by Coach.
 class NotesService {
 public:
-  NotesService(NotesRepository& notes, Clock& clock);
+  NotesService(NotesRepository& notes, Clock& clock, GymWriteDoor* door = nullptr);
 
   std::vector<Note> notes(const UserId& user);
   NoteWriteOutcome saveNote(const Note& incoming);
@@ -20,6 +22,7 @@ public:
   NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order);
 
 private:
+  GymWriteDoor* door_;
   NotesRepository& notes_;
   Clock& clock_;
 };

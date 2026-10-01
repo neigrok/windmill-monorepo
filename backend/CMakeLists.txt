@@ -160,6 +160,7 @@ add_library(windmill_gym_sync
   products/gym/sync/application/GymProduct.cpp)
 target_include_directories(windmill_gym_sync PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym_sync PUBLIC windmill_platform)
+target_link_libraries(windmill_gym PUBLIC windmill_gym_sync)
 file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
 string(JSON WM_GYM_REGISTRY GET "${WM_COMPOSITION}" registries 0)
 string(JSON WM_REGISTRY_COUNT LENGTH "${WM_COMPOSITION}" registries)
@@ -232,6 +233,7 @@ add_executable(windmill_domain_tests
   test/platform/application/sync/SyncCatalogTest.cpp
   test/platform/application/sync/AdmissionTest.cpp
   test/platform/application/sync/ServerCallTest.cpp
+  test/platform/application/sync/ServerBuilderTest.cpp
   test/platform/application/sync/SyncServiceTest.cpp
   test/platform/application/sync/SyncLiveTest.cpp
   test/products/roadmap/domain/IdsTest.cpp
@@ -417,6 +419,9 @@ target_sources(windmill_journal PRIVATE
 # route seam.
 # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
 target_sources(windmill_gym PRIVATE
+  products/gym/sync/adapters/postgres/GymDoor.cpp
+  products/gym/sync/adapters/postgres/GymTrainingDoor.cpp
+  products/gym/sync/adapters/postgres/GymRecordDoor.cpp
   products/gym/adapters/json/HistoryJson.cpp
   products/gym/adapters/json/TrainingJson.cpp
   products/gym/adapters/postgres/PgLogHistory.cpp
@@ -567,6 +572,10 @@ add_executable(windmill_adapters_tests
 test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/journal/adapters/postgres/PgJournalRepositoryTest.cpp
   test/products/journal/adapters/postgres/PgEchoRepositoryTest.cpp
+  test/products/gym/sync/adapters/postgres/GymTrainingDoorTest.cpp
+  test/products/gym/sync/adapters/postgres/GymRecordDoorTest.cpp
+  test/products/gym/adapters/http/GymDoorApiTest.cpp
+  test/products/gym/adapters/http/GymFreezeTest.cpp
   test/products/gym/adapters/http/TrainingApiTest.cpp
   test/products/gym/adapters/http/CatalogApiTest.cpp
   test/products/gym/adapters/http/ProgramApiTest.cpp

@@ -1,4 +1,5 @@
 #include "products/gym/adapters/mcp/GymTools.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
@@ -680,6 +681,8 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
                               ReadReceipt& run) {
   ReadReceipt served;
   try {
+    for (const auto& tool : gymToolCatalog())
+      if (tool.name() == name && tool.access != Access::read) requireGymWrite();
     ToolResult outcome = dispatch(name, arguments, caller.user, source, served);
     // A refusal served nothing, so it counts nothing; the throw paths below skip the merge too.
     if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
@@ -703,6 +706,8 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
     return outcome;
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die rather than answer
+  } catch (const GymUnavailable& unavailable) {
+    return ToolResult::failure(name + ": " + unavailable.code + ": " + unavailable.what());
   } catch (const InvalidTraining& malformed) {
     // Validation failures unwind any open repository transaction without committing it.
     return ToolResult::failure(name + ": " + malformed.what());
