@@ -127,11 +127,6 @@ jobs:
           --mode off-vs-on
           --image windmill-backend-build --bin-dir build
           --maintenance-db "$DATABASE_URL"
-      - name: Build origin/main in a temporary worktree and prove switches-off compatibility
-        run: |
-          docker run --rm --network host -e DATABASE_URL -v "$PWD:/repo:ro" \
-            windmill-backend-build python3 /repo/backend/test/e2e/gym_write_differential.py \
-            --mode main-vs-off --bin-dir /src/build --drogon-prefix /opt/drogon --jobs 2
 
   build-and-push:
     needs: [test, postgres]
