@@ -1,5 +1,5 @@
--- Test-only gym binding schema; apply after schema.sql in the isolated sync test database.
--- REST repositories require schema.sql's ON DELETE actions and must use a different database.
+-- Gym adoption schema; apply after schema.sql under the migration write freeze.
+-- Plain REST Postgres tests require schema.sql's ON DELETE actions and use a different database.
 
 alter table gym_routines
   add column if not exists seq bigint,

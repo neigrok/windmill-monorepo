@@ -2,7 +2,7 @@
 
 // The golden corpus of the sync engine (packages/api-contract/sync/corpus, engine.md §11.1), replayed
 // as test cases: one case per vector of every file a runner claims, one skipped case per file claimed
-// as pending or as the client's, and one failing case for a file nobody claims or a claim with no
+// as pending, another binary's or the client's, and one failing case for a file nobody claims or a claim with no
 // file. A new corpus file therefore cannot go unread.
 
 #include "platform/domain/sync/Jcs.h"
@@ -34,6 +34,11 @@ struct ClientRole {
   std::string reason;
 };
 
+// A server file exercised by a named binary against its required store.
+struct ExternalRunner {
+  std::string binary;
+};
+
 // A file that is one value rather than a list of vectors (constants.json), checked whole in one case.
 struct FileCheck {
   std::function<void(const Json::Value& file)> check;
@@ -46,7 +51,7 @@ struct Transcript {
 
 // Keyed by a file's path under the corpus ("jcs/values.json"), or by a directory ("admit/") for every
 // file in it; a file's own key wins over its directory's.
-using Claims = std::map<std::string, std::variant<Runner, Pending, ClientRole, FileCheck, Transcript>>;
+using Claims = std::map<std::string, std::variant<Runner, Pending, ClientRole, ExternalRunner, FileCheck, Transcript>>;
 
 // `{"error": true}` when `answer` throws `Refusal`, the corpus's shape for a function that must fail.
 template <typename Refusal, typename Answer>
@@ -161,7 +166,7 @@ inline void registerCorpus(const std::filesystem::path& directory, const Claims&
     const std::size_t slash = file.find('/');
     if (claim == claims.end() && slash != std::string::npos) claim = claims.find(file.substr(0, slash + 1));
     if (claim == claims.end()) {
-      registerFailure("sync_corpus/" + file, "nobody claims corpus/" + file + ": give it a runner, or claim it pending or the client's");
+      registerFailure("sync_corpus/" + file, "nobody claims corpus/" + file + ": give it a runner, or name its pending, external or client owner");
       continue;
     }
     if (const Pending* pending = std::get_if<Pending>(&claim->second)) {
@@ -171,6 +176,11 @@ inline void registerCorpus(const std::filesystem::path& directory, const Claims&
     }
     if (const ClientRole* client = std::get_if<ClientRole>(&claim->second)) {
       const std::string reason = "client role: " + client->reason;
+      ::testing::Register{"sync_corpus/" + file, [reason] { SKIP(reason); }};
+      continue;
+    }
+    if (const ExternalRunner* external = std::get_if<ExternalRunner>(&claim->second)) {
+      const std::string reason = "external runner: " + external->binary;
       ::testing::Register{"sync_corpus/" + file, [reason] { SKIP(reason); }};
       continue;
     }

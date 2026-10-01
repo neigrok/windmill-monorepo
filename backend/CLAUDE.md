@@ -16,7 +16,9 @@ ports), `ports/` (the abstractions), `adapters/` (one subfolder per messy edge โ
 everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them).
 
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket and MCP in one process),
-`mcp_main.cpp` (stdio transport), `mcp_http_main.cpp` (standalone HTTP transport, for local runs).
+`mcp_main.cpp` (stdio transport), `mcp_http_main.cpp` (standalone HTTP transport, for local runs),
+and the gym migration tools (`gym_backfill_main.cpp`, `gym_snapshot_main.cpp`,
+`gym_rehearsal_seed_main.cpp`; `deploy/gym-migration/README.md`).
 
 ## How a product plugs in
 
@@ -72,10 +74,12 @@ skipped case, and a file nobody claims fails. They also load every product regis
 (`RegistryTest.cpp`), and run the test-only gym binding against registry v3 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` ยง7).
 
-`products/gym/sync/` binds gym's nine types and seven commands over its adopted tables. Only the test
-binaries link `windmill_gym_sync`; `db/gym_sync.sql` is applied after `schema.sql` only in the isolated
-`WM_SYNC_DATABASE_URL` test database. REST Postgres cases use plain `schema.sql` at `DATABASE_URL`.
-The admission corpus runs over fakes and Postgres; the backfill corpus is pending wave 2.
+`products/gym/sync/` binds gym's nine types and seven commands over its adopted tables. The test
+binaries and `windmill_gym_backfill` link `windmill_gym_sync`. Tests apply `db/gym_sync.sql` after
+`schema.sql` in the isolated `WM_SYNC_DATABASE_URL` database; REST Postgres cases use plain
+`schema.sql` at `DATABASE_URL`. The admission corpus runs over fakes and Postgres; all five backfill
+corpus vectors run over Postgres. The backfill tool requires the adopted schema and migrates each
+account in one transaction; `deploy/gym-migration/` provides the offline rehearsal workflow.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:

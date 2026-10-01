@@ -461,6 +461,15 @@ target_link_libraries(windmill_mcp PRIVATE windmill_roadmap)
 add_executable(windmill_mcp_http platform/infra/mcp_http_main.cpp)  # standalone HTTP transport: windmill_server serves MCP in prod, and this still ships in the image for local/single-purpose runs (Dockerfile builds, smoke-tests and installs it)
 target_link_libraries(windmill_mcp_http PRIVATE windmill_roadmap)
 
+add_executable(windmill_gym_backfill platform/infra/gym_backfill_main.cpp)
+target_link_libraries(windmill_gym_backfill PRIVATE windmill_gym_sync)
+
+add_executable(windmill_gym_snapshot platform/infra/gym_snapshot_main.cpp)
+target_link_libraries(windmill_gym_snapshot PRIVATE windmill_gym)
+
+add_executable(windmill_gym_rehearsal_seed platform/infra/gym_rehearsal_seed_main.cpp)
+target_link_libraries(windmill_gym_rehearsal_seed PRIVATE windmill_gym)
+
 add_executable(windmill_mcp_tests
   test/http_main.cpp
   test/platform/adapters/mcp/McpServerTest.cpp
@@ -496,8 +505,11 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgAdmissionConcurrencyTest.cpp
   test/platform/adapters/postgres/PgPullSnapshotTest.cpp
   test/products/probe/adapters/postgres/PgProbeTest.cpp
-  test/products/gym/sync/adapters/postgres/PgGymTest.cpp)
-target_sources(windmill_gym_sync PRIVATE products/gym/sync/adapters/postgres/PgGym.cpp)
+  test/products/gym/sync/adapters/postgres/PgGymTest.cpp
+  test/products/gym/sync/adapters/postgres/PgGymBackfillTest.cpp)
+target_sources(windmill_gym_sync PRIVATE
+  products/gym/sync/adapters/postgres/PgGym.cpp
+  products/gym/sync/adapters/postgres/PgGymBackfill.cpp)
 target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_gym_sync)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"

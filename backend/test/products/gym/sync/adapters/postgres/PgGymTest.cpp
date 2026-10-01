@@ -74,10 +74,6 @@ namespace {
 
 }
 
-TEST(gym_backfill_is_pending_wave_2) {
-  SKIP("wave 2 adoption and backfill: gym/backfill.json");
-}
-
 TEST(gym_binding_foreign_keys_defer_to_commit_and_accept_a_set_before_its_session) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");

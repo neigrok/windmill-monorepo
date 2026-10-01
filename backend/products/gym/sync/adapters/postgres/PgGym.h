@@ -26,6 +26,9 @@ public:
                                          const std::string&, Seq) override { return std::nullopt; }
   void purge(sync::SyncTxn&, const sync::ScopeKey&) override;
 
+  std::vector<sync::Row> adoptionRows(sync::SyncTxn&, const sync::ScopeKey&, sync::Ms migrationTime);
+  void adopt(sync::SyncTxn&, const sync::ScopeKey&, const std::vector<sync::Row>&);
+
 private:
   const sync::TypeDef& type_;
   std::string table_;

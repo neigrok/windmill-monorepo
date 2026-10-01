@@ -75,7 +75,7 @@ public:
       sql.exec(std::string("delete from ") + table);
     }
     if (gym_) {
-      sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_correction_receipts cascade");
+      sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_ask_threads cascade");
       for (const auto& id : state["product"]["seeds"].getMemberNames()) {
         sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
       }
@@ -110,6 +110,13 @@ public:
     }
     for (const std::string& key : state["rows"].getMemberNames()) {
       const ScopeKey scope = storeKey(key);
+      if (gym_) {
+        for (const auto& row : state["rows"][key]) {
+          if (row["t"] != "proposal" || row["f"]["threadId"][0].isNull()) continue;
+          sql.exec("insert into gym_ask_threads(id,user_id,title,created_at,asked_at) values($1,$2::uuid,'Corpus Coach',to_timestamp(0),to_timestamp(0)) on conflict do nothing",
+                   pqxx::params{row["f"]["threadId"][0].asString(), scope.account().str()});
+        }
+      }
       for (const TypeDef* type : catalog_.applyOrder()) {
         for (const Json::Value& wire : state["rows"][key]) {
           const Row row(wire);

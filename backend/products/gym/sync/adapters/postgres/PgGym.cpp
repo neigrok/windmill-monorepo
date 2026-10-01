@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/FractionalIndex.h"
 #include "products/gym/sync/domain/GymRules.h"
 
 #include <algorithm>
@@ -34,19 +35,20 @@ std::string column(const std::string& type, const std::string& field) {
   return snake(field);
 }
 
-Json::Value readEntries(SyncTxn& txn, const std::string& id) {
+Json::Value readEntries(SyncTxn& txn, const std::string& id, bool legacy = false) {
   auto& sql = sqlOf(txn);
   Json::Value entries(Json::arrayValue);
   for (const auto& row : sql.exec("select * from gym_routine_entries where routine_id=$1 order by position", pqxx::params{id})) {
     Json::Value entry(Json::objectValue);
     entry["exerciseId"] = row["exercise_id"].template as<std::string>();
-    if (row["rest_seconds_present"].template as<bool>()) entry["restSeconds"] = row["rest_seconds"].is_null() ? Json::Value() : Json::Value(row["rest_seconds"].template as<int>());
-    if (row["sets_present"].template as<bool>()) {
+    if (legacy ? !row["rest_seconds"].is_null() : row["rest_seconds_present"].template as<bool>()) entry["restSeconds"] = row["rest_seconds"].is_null() ? Json::Value() : Json::Value(row["rest_seconds"].template as<int>());
+    const auto sets = sql.exec("select * from gym_routine_entry_sets where routine_id=$1 and position=$2 order by set_index", pqxx::params{id, row["position"].template as<int>()});
+    if (legacy ? !sets.empty() : row["sets_present"].template as<bool>()) {
       entry["sets"] = Json::Value(Json::arrayValue);
-      for (const auto& set : sql.exec("select * from gym_routine_entry_sets where routine_id=$1 and position=$2 order by set_index", pqxx::params{id, row["position"].template as<int>()})) {
+      for (const auto& set : sets) {
         Json::Value target(Json::objectValue);
-        if (set["reps_present"].template as<bool>()) target["reps"] = set["reps"].is_null() ? Json::Value() : Json::Value(set["reps"].template as<int>());
-        if (set["weight_kg_present"].template as<bool>()) target["weightKg"] = set["weight_kg"].is_null() ? Json::Value() : Json::Value(set["weight_kg"].template as<double>());
+        if (legacy ? !set["reps"].is_null() : set["reps_present"].template as<bool>()) target["reps"] = set["reps"].is_null() ? Json::Value() : Json::Value(set["reps"].template as<int>());
+        if (legacy ? !set["weight_kg"].is_null() : set["weight_kg_present"].template as<bool>()) target["weightKg"] = set["weight_kg"].is_null() ? Json::Value() : Json::Value(set["weight_kg"].template as<double>());
         entry["sets"].append(target);
       }
     }
@@ -55,17 +57,19 @@ Json::Value readEntries(SyncTxn& txn, const std::string& id) {
   return entries;
 }
 
-Json::Value readChanges(SyncTxn& txn, const std::string& id) {
+Json::Value readChanges(SyncTxn& txn, const std::string& id, bool legacy = false) {
   Json::Value changes(Json::arrayValue);
   for (const auto& row : sqlOf(txn).exec("select * from gym_proposal_changes where proposal_id=$1 order by position", pqxx::params{id})) {
     Json::Value change(Json::objectValue);
     change["kind"] = row["kind"].template as<std::string>();
     change["exerciseId"] = row["exercise_id"].template as<std::string>();
     for (const std::string side : {"before", "after"}) {
-      if (!row[(side + "_present").c_str()].template as<bool>()) continue;
+      const std::string kind = row["kind"].template as<std::string>();
+      const bool present = side == "before" ? kind != "added" : kind != "removed";
+      if (legacy ? !present : !row[(side + "_present").c_str()].template as<bool>()) continue;
       change[side] = Json::Value(Json::objectValue);
-      if (row[(side + "_sets_present").c_str()].template as<bool>()) change[side]["sets"] = row[(side + "_sets").c_str()].is_null() ? Json::Value() : parseJson(row[(side + "_sets").c_str()].template as<std::string>());
-      if (row[(side + "_rest_present").c_str()].template as<bool>()) change[side]["restSeconds"] = row[(side + "_rest_seconds").c_str()].is_null() ? Json::Value() : Json::Value(row[(side + "_rest_seconds").c_str()].template as<int>());
+      if (legacy ? !row[(side + "_sets").c_str()].is_null() : row[(side + "_sets_present").c_str()].template as<bool>()) change[side]["sets"] = row[(side + "_sets").c_str()].is_null() ? Json::Value() : parseJson(row[(side + "_sets").c_str()].template as<std::string>());
+      if (legacy ? !row[(side + "_rest_seconds").c_str()].is_null() : row[(side + "_rest_present").c_str()].template as<bool>()) change[side]["restSeconds"] = row[(side + "_rest_seconds").c_str()].is_null() ? Json::Value() : Json::Value(row[(side + "_rest_seconds").c_str()].template as<int>());
     }
     changes.append(change);
   }
@@ -148,7 +152,7 @@ std::string selectColumns(const TypeDef& type, const std::string& id) {
 }
 
 template <typename R>
-Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& result) {
+Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& result, bool legacy = false) {
   Row row{type.name, RecordId(result["sync_id"].template as<std::string>())};
   row.seq = result["seq"].template as<Seq>();
   row.rc = result["rc"].template as<Ms>();
@@ -163,8 +167,8 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
     }
     if (result[(snake(name) + "_stamp").c_str()].is_null()) continue;
     Json::Value v;
-    if (name == "entries") v = readEntries(txn, row.id.column());
-    else if (name == "changes") v = readChanges(txn, row.id.column());
+    if (name == "entries") v = readEntries(txn, row.id.column(), legacy);
+    else if (name == "changes") v = readChanges(txn, row.id.column(), legacy);
     else if (name == "aliases") v = readAliases(txn, scope, row.id.column());
     else if (!result[col.c_str()].is_null()) {
       if (instant(type.name, name) || name == "recordedAt") v = Json::Int64(result[col.c_str()].template as<std::int64_t>());
@@ -381,6 +385,97 @@ std::optional<std::int64_t> PgGymType::maxSerial(SyncTxn& txn, const ScopeKey& s
 void PgGymType::purge(SyncTxn& txn, const ScopeKey& scope) {
   if (type_.name == "exercise" || type_.name == "exerciseName") sqlOf(txn).exec("delete from gym_exercise_aliases where user_id=$1::uuid", pqxx::params{scope.account().str()});
   sqlOf(txn).exec("delete from " + table_ + " where " + owner_ + "=$1::uuid", pqxx::params{scope.account().str()});
+}
+
+std::vector<Row> PgGymType::adoptionRows(SyncTxn& txn, const ScopeKey& scope, Ms migrationTime) {
+  auto& sql = sqlOf(txn);
+  const std::string stamp = sql.quote(std::to_string(migrationTime) + ":0:srv");
+  const std::string now = std::to_string(migrationTime) + "::bigint";
+  const bool created = type_.name == "routine" || type_.name == "exercise" || type_.name == "proposal" || type_.name == "note";
+  const bool updated = type_.name == "exerciseName" || type_.name == "weighin" || type_.name == "prefs" || type_.name == "note";
+  const std::string at = updated ? "(extract(epoch from updated_at)*1000)::bigint" : now;
+  std::string select = id_.empty() ? "'prefs'::text as sync_id" : id_ + "::text as sync_id";
+  select += ", 1::bigint as seq, " + (created ? "(extract(epoch from created_at)*1000)::bigint" : at) + " as rc, " + at + " as ru";
+  if (type_.identity == Identity::minted) select += ", " + stamp + " as born";
+  if (type_.life) select += ", " + stamp + " as life_stamp";
+  for (const auto& [name, field] : type_.fields) {
+    const std::string col = column(type_.name, name);
+    if (field.kind == FieldKind::serial) { select += ", " + col; continue; }
+    std::string present = col + " is not null";
+    if (name == "entries" || name == "changes") present = "true";
+    if (name == "ord") present = "false";
+    if (name == "aliases") present = "exists(select 1 from gym_exercise_aliases a where a.user_id=$1::uuid and a.exercise_id=" + table_ + "." + id_ + ")";
+    select += ", case when " + present + " then " + stamp + " end as " + snake(name) + "_stamp";
+    if (complex(name)) continue;
+    select += instant(type_.name, name) ? ", (extract(epoch from " + col + ")*1000)::bigint as " + col : ", " + col;
+  }
+  std::string order = id_.empty() ? "" : " order by " + id_ + "::text collate \"C\"";
+  if (type_.name == "note") order = " order by position, id collate \"C\"";
+  std::vector<Row> rows;
+  std::optional<std::string> ord;
+  for (const auto& result : sql.exec("select " + select + " from " + table_ + " where " + owner_ + "=$1::uuid" + order, pqxx::params{scope.account().str()})) {
+    Row row = readRow(txn, scope, type_, result, true);
+    if (type_.name == "note") {
+      ord = between(ord, std::nullopt);
+      row.lattice.f.emplace("ord", Reg(*ord, stampOf(std::to_string(migrationTime) + ":0:srv")));
+    }
+    rows.push_back(std::move(row));
+  }
+  if (type_.name == "exerciseName") {
+    for (const auto& result : sql.exec("select distinct a.exercise_id from gym_exercise_aliases a join gym_exercises e on e.id=a.exercise_id "
+                                      "where a.user_id=$1::uuid and e.created_by is null and not exists(select 1 from gym_exercise_names n where n.user_id=a.user_id and n.exercise_id=a.exercise_id)", pqxx::params{scope.account().str()})) {
+      Row row(type_.name, RecordId(result[0].template as<std::string>()));
+      row.rc = row.ru = migrationTime;
+      row.lattice.f.emplace("aliases", Reg(readAliases(txn, scope, row.id.column()), stampOf(std::to_string(migrationTime) + ":0:srv")));
+      rows.push_back(std::move(row));
+    }
+  }
+  return rows;
+}
+
+void PgGymType::adopt(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row>& rows) {
+  auto& sql = sqlOf(txn);
+  for (const Row& row : rows) {
+    if (type_.name == "exerciseName") {
+      sql.exec("insert into gym_exercise_names(user_id,exercise_id,name,updated_at) values($1::uuid,$2,null,to_timestamp($3::numeric/1000)) on conflict do nothing",
+               pqxx::params{scope.account().str(), row.id.column(), static_cast<std::int64_t>(row.ru)});
+    }
+    pqxx::params params{scope.account().str()};
+    std::string updates;
+    auto add = [&](const std::string& col, const auto& value) {
+      params.append(value);
+      if (!updates.empty()) updates += ",";
+      updates += col + "=$" + std::to_string(params.size());
+    };
+    add("seq", static_cast<std::int64_t>(row.seq));
+    add("rc", static_cast<std::int64_t>(row.rc));
+    add("ru", static_cast<std::int64_t>(row.ru));
+    if (row.lattice.born) add("born", toString(*row.lattice.born));
+    if (row.lattice.life) add("life_stamp", toString(row.lattice.life->stamp));
+    for (const auto& [name, field] : type_.fields) {
+      if (field.kind == FieldKind::serial) continue;
+      const auto found = row.lattice.f.find(name);
+      add(snake(name) + "_stamp", found == row.lattice.f.end() ? std::optional<std::string>() : std::optional(toString(found->second.stamp)));
+    }
+    if (type_.name == "note") add("ord", row.lattice.f.at("ord").value.asString());
+    std::string where = owner_ + "=$1::uuid";
+    if (!id_.empty()) {
+      params.append(row.id.column());
+      where += " and " + id_ + "::text=$" + std::to_string(params.size());
+    }
+    sql.exec("update " + table_ + " set " + updates + " where " + where, params);
+  }
+  if (type_.name == "routine") {
+    sql.exec("update gym_routine_entries e set rest_seconds_present=rest_seconds is not null, sets_present=exists(select 1 from gym_routine_entry_sets s where s.routine_id=e.routine_id and s.position=e.position) "
+             "from gym_routines r where r.id=e.routine_id and r.user_id=$1::uuid", pqxx::params{scope.account().str()});
+    sql.exec("update gym_routine_entry_sets s set reps_present=reps is not null, weight_kg_present=weight_kg is not null "
+             "from gym_routines r where r.id=s.routine_id and r.user_id=$1::uuid", pqxx::params{scope.account().str()});
+  }
+  if (type_.name == "proposal") {
+    sql.exec("update gym_proposal_changes set before_present=kind<>'added', after_present=kind<>'removed', "
+             "before_sets_present=before_sets is not null, after_sets_present=after_sets is not null, "
+             "before_rest_present=before_rest_seconds is not null, after_rest_present=after_rest_seconds is not null where user_id=$1::uuid", pqxx::params{scope.account().str()});
+  }
 }
 
 Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {

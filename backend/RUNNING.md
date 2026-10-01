@@ -102,7 +102,8 @@ the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the
 
 The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases.
 The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. The engine `sync` suite
-reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql` and test-only `db/gym_sync.sql`.
+reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql` and `db/gym_sync.sql`.
+The gym adoption and backfill rehearsal is documented in [deploy/gym-migration/README.md](deploy/gym-migration/README.md).
 Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` to the
 REST database: it removes the `ON DELETE` actions the REST repositories still require. The sync
 suite wipes sync, probe and gym data as it replays the corpus, store and concurrency cases.

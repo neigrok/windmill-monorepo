@@ -25,8 +25,8 @@
 #include <utility>
 #include <vector>
 
-// The domain binary's reading of the golden corpus: every file of corpus/ is run here, pending, or the
-// client's (test/SyncCorpus.h). Each runner answers a vector's input in the shape of its expect.
+// The domain binary's reading of the golden corpus: every file is run here or claimed by another
+// binary, the client, or a pending runner. Each runner answers an input in the shape of its expect.
 
 using namespace wm;
 using namespace wm::sync;
@@ -377,7 +377,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"machine/scope.json", scopeMachine},
       {"admit/", admitOverFakes},
       {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(true); return test::gymAdmitVector(world, input); }},
-      {"gym/backfill.json", corpus::Pending{"wave 2 adoption and backfill"}},
+      {"gym/backfill.json", corpus::ExternalRunner{"windmill_sync_tests over Postgres"}},
       {"admit/requests.json", requestsOverFakes},
       {"push/serve.json", pushOverFakes},
       {"pull/serve.json", pullOverFakes},

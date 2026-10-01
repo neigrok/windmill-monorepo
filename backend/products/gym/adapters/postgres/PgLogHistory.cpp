@@ -164,8 +164,9 @@ std::optional<SharedHistory> PgLogRepository::sharedHistory(const std::string& t
     const HistoryQuery& query, std::uint64_t nowMs) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  const bool readOnly = txn.exec("SHOW transaction_read_only")[0][0].as<std::string>() == "on";
   const auto rows = txn.exec_params("SELECT * FROM gym_log_shares WHERE token=$1 AND revoked_ms IS NULL "
-      "AND expires_ms>$2 FOR SHARE", token, nowMs);
+      "AND expires_ms>$2" + std::string(readOnly ? "" : " FOR SHARE"), token, nowMs);
   if (rows.empty()) return std::nullopt;
   const LogShare share = shareFrom(rows[0]);
   const std::string source = share.mode == LogShareMode::live ? historySource(txn, share.user) :
