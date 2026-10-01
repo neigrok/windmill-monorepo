@@ -53,16 +53,21 @@ public final class SteppedEngine: Sendable {
   // A device of `fleet`, its engine built and not yet started; `copy` is a store another device's was copied into.
   init(joining fleet: Fleet, name: String, clock: SimClock, account: String?, killer: Killer? = nil, holding copy: LoadedDevice? = nil) {
     let (faults, commits) = (CommitFaults(), commits)
+    let (seed, holdMs) = (fleet.nextSeed(), UInt64(fleet.slicedHoldMs))
+    let holds = SeededRandomSource(seed: seed ^ 0x5EED_0F_1177E2)
     let ports = DevicePorts(
-      clock: clock, random: SeededRandomSource(seed: fleet.nextSeed()), tokens: InMemoryTokenStore(), connectivity: SwitchedConnectivity(),
+      clock: clock, random: SeededRandomSource(seed: seed), tokens: InMemoryTokenStore(), connectivity: SwitchedConnectivity(),
       events: EventLog(), network: fleet.network, crashPoints: CrashPoints { point in
+        if holdMs > 0, case .beforeCommit(let tx) = point, [.pullPage, .settle, .results].contains(tx) {
+          clock.advance(ms: Int64(holds.next() % (holdMs + 1)))
+        }
         try faults.hit(point)
         try killer?.hit(point)
         if case .afterCommit = point { commits.committed() }
       })
     let store = Self.surely("open its store") {
-      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints) }
-        ?? Store.inMemory(registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints)
+      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, crashPoints: ports.crashPoints) }
+        ?? Store.inMemory(registry: fleet.registry, crashPoints: ports.crashPoints)
     }
     let forkGuard = InMemoryForkGuardStore()
     let engine = Self.surely("launch its engine") { try ports.launch(over: store, forkGuard: forkGuard) }
@@ -197,7 +202,7 @@ public final class SteppedEngine: Sendable {
   // session in the keychain out of backups, so a restore onto a wiped phone finds neither; a store rolled back in place
   // finds both.
   package func restore(_ backup: LoadedDevice, keepingForkGuardCopy kept: Bool) async throws {
-    let store = try Store.inMemory(holding: backup, registry: fleet.registry, limits: fleet.limits, crashPoints: ports.crashPoints)
+    let store = try Store.inMemory(holding: backup, registry: fleet.registry, crashPoints: ports.crashPoints)
     let forkGuard = kept ? process.withLock(\.forkGuard) : InMemoryForkGuardStore()
     if !kept {
       for account in tokens.accounts() { tokens.delete(for: account) }
@@ -312,8 +317,7 @@ struct DevicePorts: Sendable {
 
 // MARK: - The devices of one server
 
-// What `sync()` drives and `device()` joins, every device's store under `limits`. It holds its devices weakly: a device
-// lives as long as its test holds it.
+// What `sync()` drives and `device()` joins. It holds its devices weakly: a device lives as long as its test holds it.
 final class Fleet: Sendable {
   struct Member {
     weak var device: SteppedEngine?
@@ -327,14 +331,15 @@ final class Fleet: Sendable {
   let registry: Registry
   let network: SimNetwork
   let seed: UInt64
-  let limits: Limits
+  // The most a sliced step holds a device's writer on its clock, each drawing a seeded 0 to this many ms; 0 leaves the clock alone.
+  let slicedHoldMs: Int64
   let members = Mutex(Members())
 
-  init(registry: Registry, network: SimNetwork, seed: UInt64, limits: Limits = Limits()) {
+  init(registry: Registry, network: SimNetwork, seed: UInt64, slicedHoldMs: Int64 = 0) {
     self.registry = registry
     self.network = network
     self.seed = seed
-    self.limits = limits
+    self.slicedHoldMs = slicedHoldMs
   }
 
   var devices: [SteppedEngine] { members.withLock { $0.list.compactMap(\.device) } }

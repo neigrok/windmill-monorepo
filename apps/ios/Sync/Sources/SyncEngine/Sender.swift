@@ -133,16 +133,21 @@ package actor Sender {
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
     var replica: String? = request.replica
-    for step in answers.steps(for: answer, to: request, resultsPerBatch: core.store.limits.resultsPerBatch) {
-      guard let id = replica else { break }
+    var steps = answers.steps(for: answer, to: request)
+    while let id = replica, let step = steps.next(sizes: core.slices.withLock { $0 }) {
       if case .halve(let limit, _) = step { batchLimit = limit }
       if step == .pauseAuth {
         conflicts = 0
         return try core.pauseAuth(id, sentUnder: token) ? .paused : .again
       }
-      replica = try core.write { store, instance in
+      let (next, held) = try core.timedWrite { store, instance in
         try store.apply(step, replica: id, instance: &instance, timing: timing, identities: core.identities)
       }
+      if case .results(let batch) = step {
+        let took = next == nil ? 0 : batch.results.count
+        core.slices.withLock { $0.record(.results, took: took, held: held) }
+      }
+      replica = next
     }
     guard replica != nil else { return .again }
     switch answer {

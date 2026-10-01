@@ -1,4 +1,5 @@
 import SyncCore
+import SyncReplica
 
 // The engine-only public types. The values products share live in SyncAPI.
 
@@ -6,13 +7,16 @@ public struct EngineConfig: Sendable {
   public var appVersion: String
   public var surface: Surface
   public var drivesLoops: Bool
+  // How a pull page's chunks, its settling slices and a push answer's result batches are sized (§2.5).
+  public var slicing: WriterSlicing
 
   // `surface`: the products a bound replica subscribes are those whose registry `surfaces` include it (§7.9).
   // `drivesLoops` false builds the loops without starting them, for step-mode tests and the simulator.
-  public init(appVersion: String, surface: Surface, drivesLoops: Bool = true) {
+  public init(appVersion: String, surface: Surface, drivesLoops: Bool = true, slicing: WriterSlicing = .measured) {
     self.appVersion = appVersion
     self.surface = surface
     self.drivesLoops = drivesLoops
+    self.slicing = slicing
   }
 }
 

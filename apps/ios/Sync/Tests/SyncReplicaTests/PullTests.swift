@@ -105,7 +105,7 @@ struct PullTests {
     let applier = PageApplier(registry: Self.probe)
     var replica = try Self.replica(product: Self.booted(seq: 0))
     let requested = replica.cursors[Self.product]?.cursor
-    let chunks = PageChunk.of(page, size: 1, settles: .max)
+    let chunks = [PageChunk(of: page, from: 0, size: 1, settles: .max), PageChunk(of: page, from: 1, size: 1, settles: .max)]
     #expect(try applier.apply(page, requestedUnder: requested, chunk: chunks[0], to: &replica, subscribed: Self.everyScope,
                               instance: Self.instance).outcome == nil)
     let applied = replica
@@ -132,7 +132,8 @@ struct PullTests {
       "serverTime": 1_000, "epoch": "ep-1", "as": "A", "lastN": 3, "results": .array((1...3).map { ["n": JSON($0), "s": "ok", "seq": JSON($0)] }),
     ])
     var instance = Self.instance
-    for step in pushes.steps(for: .ok(answer), to: request, resultsPerBatch: 3) {
+    var steps = pushes.steps(for: .ok(answer), to: request)
+    while let step = steps.next(sizes: WriterSlices(.fixed(.init(resultsPerBatch: 3)))) {
       try pushes.apply(step, to: &replica, instance: &instance, timing: .steady(send: 1_000, recv: 1_000), identities: try QueuedIdentities([:]))
     }
     let applier = PageApplier(registry: Self.probe)
@@ -142,17 +143,67 @@ struct PullTests {
     #expect(applied.outcome == .applied && applied.unsettled)
     #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["g1/1 acked", "g1/2 acked"])
     #expect(replica.cursors[Self.product] == CursorRecord(booted: true, mismatchReset: true))
-    #expect(try applier.settle(Self.product, count: 1, in: &replica) == false)
+    let settled = try applier.settle(Self.product, count: 1, in: &replica)
+    #expect(settled.resolved == 0 && !settled.left)
     #expect(replica.outbox.map { "\($0.localId) \($0.state.rawValue)" } == ["g1/1 acked", "g1/2 acked"])
   }
 
-  @Test(arguments: [(3, [0..<3]), (1, [0..<1, 1..<2, 2..<3]), (2, [0..<2, 2..<3]), (5, [0..<3])])
-  func aPageIsCutIntoChunksOfWholeRowsInPageOrder(_ size: Int, _ ranges: [Range<Int>]) throws {
-    let page = Self.rows(try (1...3).map { try Self.card("card000\($0)", seq: Int64($0)) }, at: 3)
-    #expect(PageChunk.of(page, size: size, settles: 4)
-      == ranges.enumerated().map { PageChunk(rows: $1, isLast: $0 == ranges.count - 1, settles: 4) })
-    #expect(PageChunk.of(PullPage(scope: Self.product, body: .reset), size: 1, settles: 4)
-      == [PageChunk(rows: 0..<0, isLast: true, settles: 4)])
+  // §2.5: each chunk takes, as it is taken, the next whole rows of its page, as many as its scope's size then; a page without rows is one.
+  @Test(arguments: [([3], [0..<3]), ([1, 1, 1], [0..<1, 1..<2, 2..<3]), ([1, 5], [0..<1, 1..<3]), ([2, 1], [0..<2, 2..<3])])
+  func aPullAnswerIsCutIntoChunksOfWholeRowsAsItsStepsAreTaken(_ sizes: [Int], _ ranges: [Range<Int>]) throws {
+    let (answer, request) = try Self.answerOfThreeCardsAndATreeReset()
+    var steps = PageApplier(registry: Self.probe).steps(for: .ok(answer), to: request, account: "A")
+    var taken: [PullStep] = []
+    for size in [1, 1] + sizes + [1] {
+      if let step = steps.next(sizes: WriterSlices(.fixed(.init(chunkRows: size))), settles: 10 * size) { taken.append(step) }
+    }
+    let requested = Self.booted(seq: 0).cursor
+    #expect(steps.next(sizes: WriterSlices(.measured), settles: 1) == nil)
+    #expect(taken == [.sample(serverTime: 5_000), .epoch("ep-1")]
+      + ranges.enumerated().map { index, rows in
+        .page(answer.pages[0], requested: requested, chunk: PageChunk(rows: rows, isLast: index == ranges.count - 1, settles: 10 * sizes[index]))
+      }
+      + [.page(answer.pages[1], requested: nil, chunk: PageChunk(rows: 0..<0, isLast: true, settles: 10))])
+  }
+
+  // §7.5 step 2: a chunk that fails its check applies nothing more of its page; the answer's next page follows.
+  @Test func skippingTheRestOfAPageTakesTheNextPage() throws {
+    let (answer, request) = try Self.answerOfThreeCardsAndATreeReset()
+    var steps = PageApplier(registry: Self.probe).steps(for: .ok(answer), to: request, account: "A")
+    let one = WriterSlices(.fixed(.init(chunkRows: 1)))
+    let first = (0..<3).compactMap { _ in steps.next(sizes: one, settles: 1) }
+    steps.skipRest(of: Self.tree)
+    steps.skipRest(of: Self.product)
+    #expect(first == [
+      .sample(serverTime: 5_000), .epoch("ep-1"),
+      .page(answer.pages[0], requested: Self.booted(seq: 0).cursor, chunk: PageChunk(rows: 0..<1, isLast: false)),
+    ])
+    #expect(steps.next(sizes: one, settles: 1) == .page(answer.pages[1], requested: nil, chunk: PageChunk(rows: 0..<0, isLast: true, settles: 1)))
+    #expect(steps.next(sizes: one, settles: 1) == nil)
+  }
+
+  // A size below one cuts one row, so a page always ends.
+  @Test func aChunkOfNoRowsIsOneRow() throws {
+    let (answer, _) = try Self.answerOfThreeCardsAndATreeReset()
+    let chunks = [0, -1].map { PageChunk(of: answer.pages[0], from: 1, size: $0, settles: 1) }
+    #expect(chunks == Array(repeating: PageChunk(rows: 1..<2, isLast: false), count: 2))
+  }
+
+  // A 200 holding a page of three cards for the product scope, asked under its booted cursor, then a reset of the tree.
+  static func answerOfThreeCardsAndATreeReset() throws -> (PullResponse, PullRequest) {
+    let cards = try (1...3).map { try Self.card("card000\($0)", seq: Int64($0)) }
+    let answer = try PullResponse(json: [
+      "serverTime": 5_000, "epoch": "ep-1", "as": "A", "pages": [
+        [
+          "scope": Self.product.json, "kind": "rows", "rows": .array(cards.map(\.json)),
+          "cursor": .string(Cursor(epoch: "ep-1", mode: .live, seq: 3).text), "more": false, "seq": 3,
+          "digest": .string(ScopeDigest(rows: cards.map(\.json)).hex),
+        ],
+        ["scope": Self.tree.json, "kind": "reset"],
+      ],
+    ])
+    let request = PullRequest(scopes: [.init(scope: Self.product, cursor: Self.booted(seq: 0).cursor), .init(scope: Self.tree, cursor: nil)])
+    return (answer, request)
   }
 
   // MARK: Frames and the subscription set
@@ -331,7 +382,9 @@ struct PullTests {
     let applier = PageApplier(registry: probe)
     let asked = requested ?? replica.cursors[page.scope]?.cursor
     var after = replica
-    return try PageChunk.of(page, size: size, settles: .max).map { chunk in
+    var chunks = [PageChunk(of: page, from: 0, size: size, settles: .max)]
+    while let last = chunks.last, !last.isLast { chunks.append(PageChunk(of: page, from: last.rows.upperBound, size: size, settles: .max)) }
+    return try chunks.map { chunk in
       let outcome = try applier.apply(page, requestedUnder: asked, chunk: chunk, to: &after, subscribed: everyScope, instance: instance).outcome
       return (after, outcome)
     }

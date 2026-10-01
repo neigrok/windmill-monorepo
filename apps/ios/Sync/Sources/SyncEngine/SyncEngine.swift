@@ -289,6 +289,9 @@ public final class SyncEngine: Replica {
 
   // The store's writer, as the engine's writes take it in turn (§2.5).
   package var writers: WriterLine { core.writers }
+
+  // The sizes the engine's sliced steps take next (§2.5).
+  package var slices: WriterSlices { core.slices.withLock { $0 } }
 }
 
 // MARK: - The core
@@ -320,6 +323,7 @@ final class EngineCore: Sendable {
   let opened = Mutex<[ScopeRef]>([])
   let doubts = Mutex(Doubts())
   let writers = WriterLine()
+  let slices: Mutex<WriterSlices>
   // The thread inside a write, 0 when none: a write nested in one on the same thread (an engine call from a commit's
   // body) stops with a message instead of waiting on itself.
   let writingThread = Atomic<UInt64>(0)
@@ -334,6 +338,7 @@ final class EngineCore: Sendable {
     self.random = random
     self.identities = identities
     self.connectivity = connectivity
+    slices = Mutex(WriterSlices(config.slicing))
   }
 
   var registry: Registry { store.registry }
@@ -348,21 +353,30 @@ final class EngineCore: Sendable {
   // subscription set, wakes both, which pull and follow the scopes that joined it (§7.9). One that takes rows out of
   // every view wakes the sweep.
   func write<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> Value {
+    try timedWrite(action).value
+  }
+
+  // The same, and how long it held the writer on the engine's clock, which sizes the next sliced step (§2.5).
+  func timedWrite<Value>(_ action: (Store, inout Instance) throws -> Written<Value>) throws -> (value: Value, held: Duration) {
     var thread: UInt64 = 0
     pthread_threadid_np(nil, &thread)
     precondition(writingThread.load(ordering: .acquiring) != thread,
                  "an engine write inside another: a commit's body reads through its context and writes nothing")
     writers.enter()
     defer { writers.leave() }
-    let (value, change) = try actor.withLock { actor in
-      writingThread.store(thread, ordering: .releasing)
-      defer { writingThread.store(0, ordering: .releasing) }
-      var instance = Instance(actor: actor, deviceNow: clock.wall.nowMs(), appVersion: config.appVersion)
-      let written = try action(store, &instance)
-      actor = instance.actor
-      publisher.publish(written.change, written.events)
-      return (written.value, written.change)
+    var written: (value: Value, change: StoreChange)?
+    let held = try clock.sleeper.measure {
+      written = try actor.withLock { actor in
+        writingThread.store(thread, ordering: .releasing)
+        defer { writingThread.store(0, ordering: .releasing) }
+        var instance = Instance(actor: actor, deviceNow: clock.wall.nowMs(), appVersion: config.appVersion)
+        let written = try action(store, &instance)
+        actor = instance.actor
+        publisher.publish(written.change, written.events)
+        return (written.value, written.change)
+      }
     }
+    let (value, change) = written!
     if change.seat {
       doubts.withLock { $0.clear() }
       pullWants.all()
@@ -372,7 +386,7 @@ final class EngineCore: Sendable {
       wakes.live.kick()
     }
     if change.released { wakes.sweeper.kick() }
-    return value
+    return (value, held)
   }
 
   // A governing record changed, or a whole scope was swapped or forgotten, so the set may hold other trees now (§7.9).

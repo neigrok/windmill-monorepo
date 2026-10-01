@@ -50,6 +50,35 @@ struct ModelTests {
         confirmed: [.product("probe"): Rows(loaded: [], keys: [RecordKey("card", "card0001")], types: [], empty: true)], wholeScopes: false)
       _ = replica.entries(in: .product("probe"))
     }
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(scopes: [.tree("b_00000001")]),
+                                  wholeScopes: false)
+      _ = replica.entries(in: .tree("b_00000002"))
+    }
+  }
+
+  // The entries touching a record load with its row: reading those of a record the load did not read traps, one written since included.
+  @Test func readingTheEntriesTouchingARecordTheLoadDidNotReadTraps() async throws {
+    await #expect(processExitsWith: .failure) {
+      let replica = LoadedReplica(
+        meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(),
+        confirmed: [.product("probe"): Rows(loaded: [], keys: [RecordKey("card", "card0001")], types: [], empty: true)], wholeScopes: false)
+      _ = replica.entries(touching: RecordKey("card", "card0002"), in: .product("probe"))
+    }
+    await #expect(processExitsWith: .failure) {
+      let stamp = try! Stamp("1000:0:r_aaaaaaaaaaaa")
+      let row = Row(key: RecordKey("card", "card0009"), lattice: Lattice(life: Life(.alive, stamp), born: stamp), seq: 1)
+      var replica = LoadedReplica(meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(),
+                                  confirmed: [.product("probe"): Rows(loaded: [], keys: [], types: [], empty: false)], wholeScopes: false)
+      replica.apply(.putRow(.product("probe"), row))
+      _ = replica.entries(touching: row.key, in: .product("probe"))
+    }
+    let row = Row(key: RecordKey("card", "card0001"), seq: 1)
+    var replica = LoadedReplica(
+      meta: ReplicaMeta(replica: "rp_1", state: .anon), entries: EntrySelection(),
+      confirmed: [.product("probe"): Rows(loaded: [], keys: [row.key], types: [], empty: true)], wholeScopes: false)
+    replica.apply(.putRow(.product("probe"), row))
+    #expect(replica.entries(touching: row.key, in: .product("probe")) == [])
   }
 
   // After a load of part of the outbox, the entries that touch what was read are those that touch a record the rows it
@@ -126,10 +155,5 @@ struct ModelTests {
     replica.apply(.deleteRow(.product("probe"), RecordKey("card", "card0002")))
     #expect(replica.rows(.product("probe")).row(row.key) == row)
     #expect(replica.rows(.product("probe")).row(RecordKey("card", "card0002")) == nil)
-  }
-
-  // A slice holds one at least, so a limit of none, which would slice forever, slices one at a time.
-  @Test func aSliceLimitBelowOneIsOne() {
-    #expect(Limits(chunkRows: 0, settleEntries: 0, resultsPerBatch: -1) == Limits(chunkRows: 1, settleEntries: 1, resultsPerBatch: 1))
   }
 }

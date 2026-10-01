@@ -133,7 +133,7 @@ struct PullerTests {
     let order = Mutex<[TxName]>([])
     let inLine = Mutex(0)
     let engine = Mutex<SyncEngine?>(nil)
-    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(chunkRows: 2)), crashPoints: CrashPoints { point in
       guard case .afterCommit(let tx) = point, tx == .pullPage || tx == .commit else { return }
       let chunks = order.withLock { order in
         order.append(tx)
@@ -159,7 +159,7 @@ struct PullerTests {
   // scope `behind`. The next process pulls the page again under the unmoved cursor, and ends as the page applied whole.
   @Test func aDeathBetweenChunksLeavesTheScopeBehindAndThePagePulledAgainEndsAsWhole() async throws {
     let dead = Mutex(false)
-    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(chunkRows: 2)), crashPoints: CrashPoints { point in
       guard point == .afterCommit(.pullPage), !dead.withLock({ $0 }) else { return }
       dead.withLock { $0 = true }
       throw RigError("the process died")
@@ -185,7 +185,7 @@ struct PullerTests {
   @Test(.timeLimit(.minutes(1))) func aTreeClosedAndOpenedAgainBetweenChunksTakesNoLaterChunk() async throws {
     let chunks = Mutex(0)
     let engine = Mutex<SyncEngine?>(nil)
-    let rig = try Rig(account: "A", limits: Limits(chunkRows: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(chunkRows: 2)), crashPoints: CrashPoints { point in
       guard point == .afterCommit(.pullPage), let running = engine.withLock({ $0 }) else { return }
       let chunk = chunks.withLock { chunks in
         chunks += 1
@@ -215,6 +215,96 @@ struct PullerTests {
     #expect(try Self.cursor(rig, Self.tree) == nil)
   }
 
+  // Each chunk is sized by how long its scope's last held the writer on the engine's clock (§2.5): two hold 50 ms, the rest nothing.
+  @Test func eachChunkIsSizedByHowLongTheLastHeldTheWriterOnTheEnginesClock() async throws {
+    let clock = Mutex<SimClock?>(nil)
+    let store = Mutex<Store?>(nil)
+    let applied = Mutex<[Int]>([])
+    let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
+      guard let clock = clock.withLock({ $0 }), let store = store.withLock({ $0 }) else { return }
+      switch point {
+      case .beforeCommit(.pullPage): if applied.withLock({ $0.count }) < 2 { clock.advance(ms: 50) }
+      case .afterCommit(.pullPage):
+        let rows = try store.read { tx in try tx.replica(tx.activeReplica(), reads: [Rig.scope: RowSelection(all: true)])! }.rows(Rig.scope).all
+        applied.withLock { $0.append(rows.count) }
+      default: break
+      }
+    })
+    clock.withLock { $0 = rig.clock }
+    store.withLock { $0 = rig.store }
+    let cards = try (1...100).map { try Rig.cardRow("card\(1_000 + $0)", "C\($0)", seq: Int64($0)) }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(cards, seq: 100)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(applied.withLock { $0 } == [64, 79, 82, 88, 100])
+    #expect(rig.engine.slices.size(.chunk(Rig.scope)) == 24)
+    #expect(rig.engine.slices.size(.chunk(Self.tree)) == 64)
+  }
+
+  // A chunk outside the set applies nothing and leaves its scope's size: a tree's pages hold 1 ms and 1 ms more per 64 rows offered.
+  @Test func chunksThatApplyNothingLeaveTheirScopesSizeAsItWas() async throws {
+    let engine = Mutex<(engine: SyncEngine, clock: SimClock)?>(nil)
+    let phase = Mutex<(outside: Int, log: [String]?)>((0, nil))
+    let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
+      guard case .beforeCommit(.pullPage) = point, let (engine, clock) = engine.withLock({ $0 }) else { return }
+      let size = engine.slices.size(.chunk(Self.tree))
+      let hold = phase.withLock { phase -> Int64 in
+        let outside = phase.outside > 0
+        let hold = outside ? 1 : 1 + Int64(size) / 64
+        phase.outside -= outside ? 1 : 0
+        phase.log?.append("\(outside ? "outside" : "applied") offered \(size) held \(hold)")
+        return hold
+      }
+      clock.advance(ms: hold)
+    })
+    let tags = try (1...3000).map { index in
+      try Row(json: [
+        "t": "tag", "id": .string("tag-\(index)"), "life": ["alive", "1000:0:r_server00001"], "born": "1000:0:r_server00001",
+        "seq": JSON(index), "rc": 1_000, "ru": 1_000,
+      ])
+    }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 0)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    engine.withLock { $0 = (rig.engine, rig.clock) }
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(tags, in: Self.tree, seq: 3000)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    try rig.engine.unsubscribe(Self.tree)
+    phase.withLock { $0 = (3, []) }
+    rig.engine.puller.wants.add([Rig.scope])
+    rig.transport.willAnswerPull(200, Rig.pulled(Array(repeating: Rig.rows(tags, in: Self.tree, seq: 3000), count: 3)))
+    #expect(await rig.engine.puller.step() == .pulled(Array(repeating: PageReport(scope: Self.tree, outcome: .outside), count: 3)))
+    try rig.engine.subscribe(Self.tree)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(tags, in: Self.tree, seq: 3000)]))
+    #expect(await rig.engine.puller.step() == Self.applied(Self.tree))
+    #expect(phase.withLock { $0.log } == Array(repeating: "outside offered 744 held 1", count: 3)
+      + Array(repeating: "applied offered 744 held 12", count: 5))
+  }
+
+  // Each settling slice is sized by how long the last held the writer (§2.5): 60 entries a page covers, the first slice holding 50 ms.
+  @Test func eachSettlingSliceIsSizedByHowLongTheLastHeldTheWriterOnTheEnginesClock() async throws {
+    let store = Mutex<(store: Store, clock: SimClock)?>(nil)
+    let left = Mutex<[Int]>([])
+    let rig = try Rig(account: "A", crashPoints: CrashPoints { point in
+      guard let (store, clock) = store.withLock({ $0 }) else { return }
+      switch point {
+      case .beforeCommit(.settle): if left.withLock({ $0.isEmpty }) { clock.advance(ms: 50) }
+      case .afterCommit(.settle):
+        let count = try store.read { tx in try tx.replica(tx.activeReplica())!.outbox.count }
+        left.withLock { $0.append(count) }
+      default: break
+      }
+    })
+    try rig.commit(Gesture(changes: Rig.days(60), gestureId: "g1"))
+    rig.transport.willAnswerPush(200, Rig.ok(lastN: 60, (1...60).map { Rig.admitted($0, seq: $0) }))
+    #expect(await rig.engine.sender.step() == .again)
+    store.withLock { $0 = (rig.store, rig.clock) }
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 60)]))
+    rig.engine.puller.wants.all()
+    #expect(await rig.engine.puller.step() == Self.applied(Rig.scope))
+    #expect(left.withLock { $0 } == [27, 20, 6, 0])
+    #expect(rig.engine.slices.size(.settle) == 56)
+  }
+
   // Five days put in one gesture, pushed and acked at seqs 1 to 5: acked entries a page at seq 5 covers.
   static func ackedDays(_ rig: Rig) async throws {
     try rig.commit(Gesture(changes: (1...5).map { .put("day", RecordID("2026-09-0\($0)"), present: true, ["score": JSON($0)]) }, gestureId: "g1"))
@@ -222,12 +312,11 @@ struct PullerTests {
     #expect(await rig.engine.sender.step() == .again)
   }
 
-  // §7.5 step 2: a page's last chunk settles the first entries its cursor covers, and settling slices the rest, each
-  // its own transaction, in commit order, before the next page.
+  // §7.5 step 2: a page's last chunk settles the first entry its cursor covers, and slices the rest in commit order before the next page.
   @Test func aPagesCoveredEntriesSettleInSlicesAfterItsLastChunk() async throws {
     let settled = Mutex<[String]>([])
     let store = Mutex<Store?>(nil)
-    let rig = try Rig(account: "A", limits: Limits(settleEntries: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(settleEntries: 2)), crashPoints: CrashPoints { point in
       guard case .afterCommit(let tx) = point, tx == .pullPage || tx == .settle, let store = store.withLock({ $0 }) else { return }
       let left = try store.read { tx in try tx.replica(tx.activeReplica())!.outbox.map(\.localId) }
       settled.withLock { $0.append("\(tx.rawValue) \(left)") }
@@ -239,7 +328,7 @@ struct PullerTests {
     rig.engine.puller.wants.all()
     #expect(await rig.engine.puller.step() == Self.applied(Rig.scope, Self.tree))
     #expect(settled.withLock { $0 } == [
-      "pullPage [\"g1/2\", \"g1/3\", \"g1/4\"]", "settle [\"g1/4\"]", "settle []", "pullPage []",
+      "pullPage [\"g1/1\", \"g1/2\", \"g1/3\", \"g1/4\"]", "settle [\"g1/3\", \"g1/4\"]", "settle []", "pullPage []",
     ])
   }
 
@@ -247,7 +336,7 @@ struct PullerTests {
   // next page, empty at its head, settles them.
   @Test func aDeathBetweenSlicesLeavesTheRestAckedUntilTheNextPage() async throws {
     let dead = Mutex(false)
-    let rig = try Rig(account: "A", limits: Limits(settleEntries: 2), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(settleEntries: 2)), crashPoints: CrashPoints { point in
       guard point == .afterCommit(.settle), !dead.withLock({ $0 }) else { return }
       dead.withLock { $0 = true }
       throw RigError("the process died")
@@ -257,7 +346,7 @@ struct PullerTests {
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 5)]))
     rig.engine.puller.wants.all()
     #expect(await rig.engine.puller.step() == .backoff(ms: 1_000))
-    #expect(try rig.outbox() == ["g1/4 acked 5"])
+    #expect(try rig.outbox() == ["g1/3 acked 4", "g1/4 acked 5"])
     let relaunched = try rig.relaunch()
     rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows(seq: 5, digestOf: [])]))
     relaunched.puller.wants.all()
@@ -269,7 +358,7 @@ struct PullerTests {
   // A frame applied inline settles its first covered entries in its own transaction, and slices the rest.
   @Test func aFrameAppliedInlineSettlesInSlices() async throws {
     let order = Mutex<[TxName]>([])
-    let rig = try Rig(account: "A", limits: Limits(settleEntries: 1), crashPoints: CrashPoints { point in
+    let rig = try Rig(account: "A", slicing: .fixed(.init(settleEntries: 1)), crashPoints: CrashPoints { point in
       guard case .afterCommit(let tx) = point, tx == .liveFrame || tx == .settle else { return }
       order.withLock { $0.append(tx) }
     })

@@ -39,12 +39,14 @@ struct Rig {
   let engine: SyncEngine
   // Every event the engine publishes, in order.
   let events = EventLog()
+  let slicing: WriterSlicing
 
   // `account`: a replica bound to it before the engine starts, whose token is `token`. `path`: a file store there, whose
   // reads run beside its writes, instead of one in memory.
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
-       limits: Limits = Limits(), drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
+       limits: Limits = Limits(), slicing: WriterSlicing = .measured, drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
        crashPoints: CrashPoints = .none, path: String? = nil) throws {
+    self.slicing = slicing
     clock = SimClock(wallMs: Self.startMs)
     random = QueuedRandom(seed: 7)
     transport = ScriptedTransport()
@@ -58,21 +60,21 @@ struct Rig {
       _ = try store.firstLaunch(identities: identities)
       _ = try store.signIn(account: account, holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     }
-    engine = try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens,
-                            forkGuard: forkGuard, connectivity: connectivity, drivesLoops: drivesLoops, bindings: bindings, events: events)
+    engine = try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens, forkGuard: forkGuard,
+                            connectivity: connectivity, slicing: slicing, drivesLoops: drivesLoops, bindings: bindings, events: events)
   }
 
   // Another process over the same store: the engine as a relaunch builds it.
   func relaunch() throws -> SyncEngine {
     try Rig.engine(over: store, clock: clock, random: random, transport: transport, tokens: tokens, forkGuard: forkGuard,
-                   connectivity: connectivity, drivesLoops: false, bindings: [], events: events)
+                   connectivity: connectivity, slicing: slicing, drivesLoops: false, bindings: [], events: events)
   }
 
   static func engine(over store: Store, clock: SimClock, random: QueuedRandom, transport: ScriptedTransport,
                      tokens: InMemoryTokenStore, forkGuard: InMemoryForkGuardStore, connectivity: SwitchedConnectivity,
-                     drivesLoops: Bool, bindings: [any ProductBinding], events: EventLog) throws -> SyncEngine {
+                     slicing: WriterSlicing, drivesLoops: Bool, bindings: [any ProductBinding], events: EventLog) throws -> SyncEngine {
     try SyncEngine(
-      config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops), bindings: bindings, store: store,
+      config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: drivesLoops, slicing: slicing), bindings: bindings, store: store,
       transport: transport, tokens: tokens, forkGuard: forkGuard, clock: clock.engineClock, random: random,
       identities: Identities(random: random), connectivity: connectivity, tap: { events.append($0) })
   }
@@ -102,6 +104,14 @@ struct Rig {
 
   static func card(_ id: String, _ title: String) -> Change {
     .create("card", id: .given(RecordID(id)), ["title": .string(title)])
+  }
+
+  // `count` puts of days from 2026-01-01, 28 days a month, each scored 1.
+  static func days(_ count: Int) -> [Change] {
+    (0..<count).map { index in
+      let (month, day) = (1 + index / 28, 1 + index % 28)
+      return .put("day", RecordID("2026-\(month < 10 ? "0" : "")\(month)-\(day < 10 ? "0" : "")\(day)"), present: true, ["score": 1])
+    }
   }
 
   @discardableResult

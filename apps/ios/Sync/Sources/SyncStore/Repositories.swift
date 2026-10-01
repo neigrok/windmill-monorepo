@@ -115,9 +115,7 @@ public struct StoreTransaction {
     try GRDB.Row.fetchAll(db, sql: "SELECT * FROM outbox WHERE replica = ? ORDER BY commit_order", arguments: [handle.value]).map(entry)
   }
 
-  // The entries `selection` names: every one, or those that touch a record `reads` covers, every entry of the held
-  // gestures, the sent entries numbered and the first a cursor covers, each found through an index; with the highest
-  // commit order among the entries left unread, which only the orders above every entry read can hold.
+  // The entries `selection` names, each found through an index, and the highest commit order among those left unread, above every one read.
   func outbox(of handle: ReplicaHandle, _ selection: EntrySelection,
               touching reads: [ScopeRef: RowSelection]) throws -> (read: [OutboxEntry], unreadCommitOrder: Int64) {
     if selection.all { return (try outbox(of: handle), 0) }
@@ -151,6 +149,9 @@ public struct StoreTransaction {
         SELECT * FROM outbox WHERE replica = ? AND scope = ? AND state = 'acked' AND result_epoch = ? AND result_seq <= ?
         ORDER BY commit_order LIMIT ?
         """, [handle.value, covered.scope.text, covered.epoch, covered.cleanSeq, covered.limit]))
+    }
+    for scope in selection.scopes {
+      queries.append(("SELECT * FROM outbox WHERE replica = ? AND scope = ?", [handle.value, scope.text]))
     }
     var read: [[UInt8]: GRDB.Row] = [:]
     for query in queries {

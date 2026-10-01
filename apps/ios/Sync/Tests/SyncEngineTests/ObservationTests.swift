@@ -547,13 +547,14 @@ final class Shelves {
   }
 
   static func device(on network: SimNetwork, clock: SimClock, connectivity: SwitchedConnectivity, seed: UInt64) throws -> SyncEngine {
-    let store = try Store.inMemory(registry: Rig.shelf, limits: Limits(chunkRows: 2, settleEntries: 1, resultsPerBatch: 1))
+    let store = try Store.inMemory(registry: Rig.shelf)
     let identities = Identities(random: SeededRandomSource(seed: seed))
     _ = try store.firstLaunch(identities: identities)
     _ = try store.signIn(account: "A", holdsRecords: [:], decisions: [:], counted: [:], identities: identities)
     return try SyncEngine(
-      config: EngineConfig(appVersion: "1.0", surface: .ios, drivesLoops: false), store: store, transport: network,
-      tokens: InMemoryTokenStore(["A": network.server.token(for: "A")]), forkGuard: InMemoryForkGuardStore(),
+      config: EngineConfig(
+        appVersion: "1.0", surface: .ios, drivesLoops: false, slicing: .fixed(.init(chunkRows: 2, settleEntries: 1, resultsPerBatch: 1))),
+      store: store, transport: network, tokens: InMemoryTokenStore(["A": network.server.token(for: "A")]), forkGuard: InMemoryForkGuardStore(),
       clock: clock.engineClock, random: SeededRandomSource(seed: seed + 100), connectivity: connectivity)
   }
 

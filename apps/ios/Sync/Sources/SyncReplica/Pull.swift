@@ -19,7 +19,7 @@ public enum FrameOutcome: String, Sendable, Hashable {
   case paused
 }
 
-// One local transaction of a pull answer, in the order `PageApplier.steps` gives them.
+// One local transaction of a pull answer, in the order `PullSteps` gives them.
 public enum PullStep: Sendable, Hashable {
   case sample(serverTime: Int64)
   case pauseAuth
@@ -41,20 +41,52 @@ public struct PageChunk: Sendable, Hashable {
     self.settles = isLast ? settles : 0
   }
 
+  // The chunk of `page` from row `start`: its next rows, at most `size` of them and one at least; a page without rows is one chunk.
+  public init(of page: PullPage, from start: Int, size: Int, settles: Int) {
+    guard case .rows(let rows) = page.body else {
+      self.init(rows: 0..<0, isLast: true, settles: settles)
+      return
+    }
+    let size = max(1, size)
+    let end = rows.rows.count - start > size ? start + size : rows.rows.count
+    self.init(rows: start..<end, isLast: end == rows.rows.count, settles: settles)
+  }
+
   public var isFirst: Bool { rows.lowerBound == 0 }
 
-  // The chunks of `page`, each of at most `size` rows; a page without rows, or of another kind, is one.
-  public static func of(_ page: PullPage, size: Int, settles: Int) -> [PageChunk] {
-    guard case .rows(let rows) = page.body, rows.rows.count > size else { return [whole(page, settles: settles)] }
-    return stride(from: 0, to: rows.rows.count, by: size).map { start in
-      let end = min(start + size, rows.rows.count)
-      return PageChunk(rows: start..<end, isLast: end == rows.rows.count, settles: settles)
+  public static func whole(_ page: PullPage, settles: Int) -> PageChunk {
+    PageChunk(of: page, from: 0, size: .max, settles: settles)
+  }
+}
+
+// §7.5 steps 1–2 a pull answer's transactions in order: the sample, then a 401's pause or a 200's epoch and pages, each chunk cut as taken.
+public struct PullSteps: Sendable {
+  enum Part: Sendable {
+    case step(PullStep)
+    // A page whose rows from `row` on are not yet taken.
+    case page(PullPage, requested: String?, row: Int)
+  }
+
+  var parts: [Part]
+
+  // The next transaction: a chunk takes as many rows as `sizes` gives its scope now, the last settling `settles` covered entries.
+  public mutating func next(sizes: WriterSlices, settles: Int) -> PullStep? {
+    guard let part = parts.first else { return nil }
+    switch part {
+    case .step(let step):
+      parts.removeFirst()
+      return step
+    case .page(let page, let requested, let row):
+      let chunk = PageChunk(of: page, from: row, size: sizes.size(.chunk(page.scope)), settles: settles)
+      if chunk.isLast { parts.removeFirst() } else { parts[0] = .page(page, requested: requested, row: chunk.rows.upperBound) }
+      return .page(page, requested: requested, chunk: chunk)
     }
   }
 
-  public static func whole(_ page: PullPage, settles: Int) -> PageChunk {
-    guard case .rows(let rows) = page.body else { return PageChunk(rows: 0..<0, isLast: true, settles: settles) }
-    return PageChunk(rows: 0..<rows.rows.count, isLast: true, settles: settles)
+  // A chunk of `scope`'s page failed its check, so nothing more of the page applies (§7.5 step 2).
+  public mutating func skipRest(of scope: ScopeRef) {
+    guard case .page(let page, _, _)? = parts.first, page.scope == scope else { return }
+    parts.removeFirst()
   }
 }
 
@@ -96,9 +128,9 @@ public struct PageApplier: Sendable {
   // §7.9: a tree or overlay scope waits while its governing record's create is still in the outbox, held, ready or sent,
   // by a delta or a prediction, since the server holds no such scope yet. It is pulled once that entry has its result.
   public func awaitsGoverningCreate(_ scope: ScopeRef, in replica: LoadedReplica) -> Bool {
-    guard let key = registry.governingRecord(of: scope)?.key else { return false }
-    return replica.outbox.contains { entry in
-      entry.state != .acked && entry.drawnDeltas.contains { $0.key == key && $0.creates }
+    guard let governing = registry.governingRecord(of: scope) else { return false }
+    return replica.entries(touching: governing.key, in: governing.scope).contains { entry in
+      entry.state != .acked && entry.drawnDeltas.contains { $0.key == governing.key && $0.creates }
     }
   }
 
@@ -177,12 +209,35 @@ public struct PageApplier: Sendable {
     }
   }
 
-  // What of the outbox a page reads: none before its last chunk, which reads what it settles and one more; all otherwise.
-  public func entries(of step: PullStep) -> EntrySelection {
-    guard case .page(let page, _, let chunk) = step, case .rows(let rows) = page.body else { return .every }
-    guard chunk.isLast, let cursor = Cursor(decoding: rows.cursor), let cleanSeq = cursor.cleanSeq else { return EntrySelection() }
-    let covered = CoveredEntries(scope: page.scope, epoch: cursor.epoch, cleanSeq: cleanSeq, limit: chunk.settles.onePast)
-    return EntrySelection(covered: covered)
+  // What of the outbox a step reads in `meta`'s replica: a last chunk what it settles and one more, an end its scope's, an epoch change all.
+  public func entries(of step: PullStep, in meta: ReplicaMeta) -> EntrySelection {
+    switch step {
+    case .sample, .pauseAuth:
+      return EntrySelection()
+    case .epoch(let epoch):
+      guard let held = meta.serverEpoch, !held.utf8.elementsEqual(epoch.utf8) else { return EntrySelection() }
+      return .every
+    case .page(let page, _, let chunk):
+      switch page.body {
+      case .reset: return EntrySelection()
+      case .gone, .notFound: return EntrySelection(scopes: [page.scope])
+      case .rows(let rows):
+        guard chunk.isLast, let cursor = Cursor(decoding: rows.cursor), let cleanSeq = cursor.cleanSeq else { return EntrySelection() }
+        return EntrySelection(covered: CoveredEntries(scope: page.scope, epoch: cursor.epoch, cleanSeq: cleanSeq, limit: chunk.settles.onePast))
+      }
+    }
+  }
+
+  // What of the outbox a frame reads (§7.5 step 3): a change what it settles and one more, an end its scope's, never every entry.
+  public func entries(of frame: LiveFrame, settling count: Int) -> EntrySelection {
+    switch frame {
+    case .change(let change):
+      return EntrySelection(covered: CoveredEntries(scope: change.scope, epoch: change.epoch, cleanSeq: change.seq, limit: count.onePast))
+    case .gone(let scope, _), .notFound(let scope, _):
+      return EntrySelection(scopes: [scope])
+    case .pong, .other:
+      return EntrySelection()
+    }
   }
 
   // What a settling slice of `scope` reads: the first `count` entries its stored cursor covers, and one more.
@@ -204,18 +259,14 @@ public struct PageApplier: Sendable {
     return [governing.scope: RowSelection(keys: [governing.key])]
   }
 
-  // The answer to a pull the replica of `account` made: its offset sample first; then, for an answer handled as a 401
-  // (§9.1), the pause and nothing more; for a 200, the epoch and each page's chunks of at most `chunkRows` rows, the last
-  // settling `settles` of the entries its cursor covers.
-  public func steps(for answer: Answer<PullResponse>, to request: PullRequest, account: String?, chunkRows: Int,
-                    settles: Int) -> [PullStep] {
-    let sample = answer.serverTime.map { [PullStep.sample(serverTime: $0)] } ?? []
-    guard !answer.isUnauthenticated(for: account) else { return sample + [.pauseAuth] }
-    guard case .ok(let response) = answer else { return sample }
-    return sample + [.epoch(response.epoch)] + response.pages.flatMap { page in
-      let requested = request.scopes.first { $0.scope == page.scope }?.cursor
-      return PageChunk.of(page, size: chunkRows, settles: settles).map { PullStep.page(page, requested: requested, chunk: $0) }
-    }
+  // The answer to a pull the replica of `account` made, as its transactions (`PullSteps`).
+  public func steps(for answer: Answer<PullResponse>, to request: PullRequest, account: String?) -> PullSteps {
+    let sample = answer.serverTime.map { [PullSteps.Part.step(.sample(serverTime: $0))] } ?? []
+    guard !answer.isUnauthenticated(for: account) else { return PullSteps(parts: sample + [.step(.pauseAuth)]) }
+    guard case .ok(let response) = answer else { return PullSteps(parts: sample) }
+    return PullSteps(parts: sample + [.step(.epoch(response.epoch))] + response.pages.map { page in
+      .page(page, requested: request.scopes.first { $0.scope == page.scope }?.cursor, row: 0)
+    })
   }
 
   // One step, one local transaction, against the subscription set `subscribed`. A page's transaction answers its outcome,
@@ -237,12 +288,13 @@ public struct PageApplier: Sendable {
     return (nil, false)
   }
 
-  // §7.5 step 2 one settling slice: the first `count` entries the stored cursor covers resolve; true while any are left.
-  public func settle(_ scope: ScopeRef, count: Int, in replica: inout LoadedReplica) throws -> Bool {
-    guard replica.cursors[scope]?.cleanSeq != nil else { return false }
+  // §7.5 step 2 one settling slice: the first `count` entries the stored cursor covers resolve; how many did, and whether any are left.
+  public func settle(_ scope: ScopeRef, count: Int, in replica: inout LoadedReplica) throws -> (resolved: Int, left: Bool) {
+    guard replica.cursors[scope]?.cleanSeq != nil else { return (0, false) }
     let covered = replica.covered(in: scope)
-    for entry in covered.prefix(count) { try replica.move(entry.localId, .resolve) }
-    return covered.count > count
+    let slice = covered.prefix(count)
+    for entry in slice { try replica.move(entry.localId, .resolve) }
+    return (slice.count, covered.count > count)
   }
 
   // MARK: Pages
@@ -317,7 +369,7 @@ public struct PageApplier: Sendable {
       record.booted = true
     }
     replica.apply(.putCursor(scope, record))
-    let unsettled = try settle(scope, count: count, in: &replica)
+    let unsettled = try settle(scope, count: count, in: &replica).left
     if cursor.isLiveAtSeq && cursor.seq == page.seq && replica.staging[scope] == nil {
       let checked = checkDigest(record, of: scope, received: page.digest, seq: page.seq, appVersion: instance.appVersion, in: &replica)
       if checked != record { replica.apply(.putCursor(scope, checked)) }

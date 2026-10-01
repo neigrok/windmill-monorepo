@@ -115,6 +115,11 @@ extension Benchmarks {
         await phone.sync()
         contended.report(p95Budget: Self.contendedBudgetMs)
         times.reportEachKind("while sending the offline workout beside commits")
+        let slices = phone.engine.slices
+        Bench.report("slices · sizes after sending the offline workout", [
+          ("chunkRows", "\(slices.size(.chunk(Gym.scope)))"), ("settleEntries", "\(slices.size(.settle))"),
+          ("resultsPerBatch", "\(slices.size(.results))"),
+        ])
       }
     }
 
