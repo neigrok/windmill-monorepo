@@ -5,6 +5,7 @@
 #include "products/gym/domain/Training.h"
 
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
@@ -77,8 +78,8 @@ struct AskThreadRepository {
                            const std::vector<ThreadTurn>& turns) = 0;
   // Removes only a thread with neither messages nor a generation.
   virtual void discardEmptyThread(const UserId& user, const ThreadId& id) = 0;
-  // The turns cascade; the proposals do not — the schema sets their `thread_id` null.
-  virtual bool deleteThread(const UserId& user, const ThreadId& id) = 0;   // false = nothing to remove
+  virtual bool deleteThread(const UserId& user, const ThreadId& id,
+                            const std::function<void()>& beforeDelete = {}) = 0;
 };
 
 }

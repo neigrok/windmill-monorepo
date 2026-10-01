@@ -59,8 +59,11 @@ once. `routes.cpp` names every path in one column; `TrainingApi.h` holds the sta
 The engine binding lives in `sync/`: pure rules and commands in `domain/`, binding in `application/`,
 receipts and projection reads through `ports/GymState`, and adopted-table stores in
 `adapters/postgres/PgGym`. `windmill_gym_sync` embeds gym registry v3 from `composition.json` and is
-linked only by tests. Its schema, `db/gym_sync.sql`, is test-only. Production REST and MCP still use
-the repositories above; `windmill_server` mounts no sync route.
+linked by gym. Its schema, `db/gym_sync.sql`, remains isolated to tests. `GYM_ENGINE_WRITES` defaults
+off; when enabled, the services use `ports/GymWriteDoor`, implemented by the Postgres `GymDoor`,
+for server-origin admission on the sync worker pool. Reads use the repositories above.
+`GYM_WRITE_FREEZE` defaults off and refuses every write while disabling staleness settlement.
+`windmill_server` mounts no sync route.
 
 ## 3. Schema
 

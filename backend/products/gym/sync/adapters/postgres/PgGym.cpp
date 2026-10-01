@@ -3,6 +3,7 @@
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/Jcs.h"
 #include "products/gym/sync/domain/GymRules.h"
+#include "products/gym/sync/adapters/postgres/GymDoorHash.h"
 
 #include <algorithm>
 #include <cctype>
@@ -332,6 +333,15 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
     if (type_.name == "exerciseName" || type_.name == "weighin") target = "(user_id," + id_ + ")";
     if (type_.name == "prefs") target = "(user_id)";
     sql.exec("insert into " + table_ + "(" + columns + ") values(" + placeholders + ") on conflict " + target + " do update set " + updates, params);
+    if (type_.name == "set" && !write.before) {
+      Json::Value request(Json::objectValue);
+      request["id"] = row.id.json();
+      for (const char* field : {"exerciseId", "weightKg", "reps", "kind", "rpe", "note", "completedAt"})
+        if (!value(&row, field).isNull()) request[field] = value(&row, field);
+      const std::string session = value(&row, "sessionId").asString();
+      sql.exec("insert into gym_write_receipts(kind,id,user_id,session_id,request_hash) values('set',$1,$2::uuid,$3,$4) on conflict do nothing",
+               pqxx::params{row.id.column(), scope.account().str(), session, gymSetRequestHash(request, session)});
+    }
     if (type_.name == "routine") {
       setRevision(txn, write);
       writeEntries(txn, row.id.column(), value(&row, "entries"));
@@ -401,13 +411,13 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
     const std::string id = row[0].template as<std::string>();
     if (row[2].is_null() || row[2].template as<std::string>() == "starts") books["starts"][id] = row[1].template as<std::string>();
     else {
-      books["importHashes"][id] = row[4].template as<std::string>();
+      books["importHashes"][id] = row[3].is_null() ? row[4].template as<std::string>() : sha256(jcs(parseJson(row[3].template as<std::string>()))).hex();
       if (!row[3].is_null()) books["imports"][id] = parseJson(row[3].template as<std::string>());
     }
   }
   for (const auto& row : sql.exec("select id,session_id,sync_args,request_hash from gym_correction_receipts where user_id=$1::uuid", owner)) {
     const std::string id = row[0].template as<std::string>();
-    books["correctionHashes"][id] = row[3].template as<std::string>();
+    books["correctionHashes"][id] = row[2].is_null() ? row[3].template as<std::string>() : sha256(jcs(parseJson(row[2].template as<std::string>()))).hex();
     books["corrections"][id]["sessionId"] = row[1].template as<std::string>();
     if (!row[2].is_null()) books["corrections"][id]["args"] = parseJson(row[2].template as<std::string>());
   }
@@ -417,7 +427,7 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
 void PgGymState::receipt(SyncTxn& txn, const ScopeKey& scope, const std::string& kind, const std::string& id, const Json::Value& receipt) {
   auto& sql = sqlOf(txn);
   const Json::Value args = kind == "corrections" ? receipt["args"] : receipt;
-  const std::string hash = sha256(jcs(args)).hex();
+  const std::string hash = kind == "imports" ? gymImportRequestHash(args) : kind == "corrections" ? gymCorrectionRequestHash(args) : sha256(jcs(args)).hex();
   if (kind == "corrections") {
     sql.exec("insert into gym_correction_receipts(id,user_id,session_id,request_hash,sync_args) values($1,$2::uuid,$3,$4,$5::jsonb) on conflict do nothing", pqxx::params{id, scope.account().str(), receipt["sessionId"].asString(), hash, jcs(args)});
     return;

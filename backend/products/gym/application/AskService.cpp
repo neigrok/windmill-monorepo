@@ -1,4 +1,5 @@
 #include "products/gym/application/AskService.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
@@ -92,6 +93,7 @@ void AskTools::observe(const ToolResult& result, const std::string& name, const 
 }
 
 void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
+  if (gymWriteFrozen()) return;
   if (!repository_) return;
   operations_ = repository_->operations(caller.user, thread_, generation_->id);
   if (operations_.empty()) return;
@@ -123,6 +125,10 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
 
 ToolResult AskTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
+  if (gymWriteFrozen())
+    for (const auto& tool : inner_.declareTools())
+      if (tool.name() == name && tool.access != Access::read)
+        return ToolResult::failure(name + ": gym-frozen: gym writes are temporarily frozen");
   if (repository_) {
     const auto current = repository_->generation(caller.user, thread_, generation_->requestId);
     if (current && current->stopRequested) return ToolResult::failure("Coach was stopped before this action");
@@ -232,6 +238,7 @@ void AskService::readGeneration(const UserId& user, const ThreadId& thread, cons
 }
 
 std::optional<AskGeneration> AskService::stop(const UserId& user, const ThreadId& thread, const std::string& requestId) {
+  requireGymWrite();
   auto generation = threads_.stopGeneration(user, thread, requestId);
   if (!generation || generation->status != "running") return generation;
   auto lease = threads_.tryLease(user, thread);
@@ -283,6 +290,7 @@ struct AskService::Job {
 
 void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
                      std::string question, std::function<void(AskReply)> done, std::string requestId, std::vector<std::string> attachmentIds) {
+  if (gymWriteFrozen()) { done(AskReply{AskRefusal::frozen}); return; }
   if (!wellFormedId(thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
   if (!requestId.empty() && !wellFormedId(requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
   if (attachmentIds.size() > 1 || std::any_of(attachmentIds.begin(), attachmentIds.end(), [](const auto& id) { return !wellFormedId(id); })) { done(AskReply{AskRefusal::attachmentInvalid}); return; }
@@ -331,6 +339,7 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
   auto& opened = job->opened;
   auto& repository = threads_;
   try {
+    if (gymWriteFrozen()) { reply.refusal = AskRefusal::frozen; finish(job); return; }
     if (job->worker && !job->overlap) job->lease = repository.tryLease(caller, thread);
     generation = repository.generation(caller, thread, requestId);
     const auto replyFromStored = [&] {

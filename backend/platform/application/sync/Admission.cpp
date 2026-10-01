@@ -57,13 +57,13 @@ HlcClock::State ServerClock::state() const {
 // SyncReader a product's check and command read through.
 class Admission::Attempt final : public SyncReader {
 public:
-  Attempt(Admission& admission, const Origin& origin, const Json::Value& wire, Ms now)
+  Attempt(Admission& admission, const Origin& origin, const Json::Value& wire, Ms now, const ServerBuilder* builder = nullptr)
       : a_(admission),
         registry_(admission.catalog_.registry()),
         origin_(origin),
         wire_(wire),
         now_(now),
-        caller_{std::visit([](const auto& o) { return o.account; }, origin), std::holds_alternative<ServerOrigin>(origin)} {}
+        caller_{std::visit([](const auto& o) { return o.account; }, origin), std::holds_alternative<ServerOrigin>(origin)}, builder_(builder) {}
 
   AdmitOutcome run() {
     if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
@@ -80,6 +80,9 @@ public:
         stripe = a_.takeStripe(shaped_->scope);
         clock_ = a_.clock_.copy();
         return admitUnderLock();
+      } catch (const ServerBuildAborted& aborted) {
+        txn_.reset();
+        std::rethrow_exception(aborted.error);
       } catch (const Refusal& refusal) {
         txn_.reset();
         return answerRefusal(refusal.refused);
@@ -146,6 +149,22 @@ private:
     lockFreshIds();                                                       // 3.6
     checkAccess();                                                        // 3.7
     if (std::optional<AdmitOutcome> answered = lookUpCall()) return *answered;  // 4
+    if (builder_) {
+      const std::optional<Json::Value> built = (*builder_)(*txn_);
+      if (!built) {
+        const Json::Value result = okResult(scopeRow_->seq, std::nullopt, {});
+        recordResult(result);
+        txn_->commit();
+        return Admitted{result};
+      }
+      builtWire_ = *built;
+      Shaped shaped = shapeIntent(registry_, *builtWire_, Sender{caller_.account, true}, now_, a_.limits_.maxSkewMs);
+      if (shaped.scope != scope() || shaped.scope.kind() == ScopeKind::tree || shaped.scope.kind() == ScopeKind::overlay)
+        throw Refusal(code::invalid);
+      shaped_ = std::move(shaped);
+      lockFreshIds();
+      checkAccess();
+    }
     changes_.emplace(registry_, scope(), now_, a_.limits_);
     lockIntentRecords();                                                  // 5
     admitDeltas(scope(), intent().d, caller_.server ? Source::server : Source::client);  // 6
@@ -513,7 +532,8 @@ private:
   }
 
   CommandCtx commandCtx() {
-    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire_["cmd"]["args"]};
+    const Json::Value& wire = builtWire_ ? *builtWire_ : wire_;
+    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire["cmd"]["args"]};
   }
 
   // The records a command's `ref<t>` arguments name.
@@ -588,8 +608,10 @@ private:
   const Registry& registry_;
   const Origin& origin_;
   const Json::Value& wire_;
+  std::optional<Json::Value> builtWire_;
   const Ms now_;
   const Caller caller_;
+  const ServerBuilder* builder_;
   HlcClock clock_{"srv"};
   std::optional<Shaped> shaped_;
   std::unique_ptr<SyncTxn> txn_;
@@ -611,6 +633,12 @@ Admission::Admission(const SyncCatalog& catalog, SyncStore& store, ChangeFeed& f
 AdmitOutcome Admission::admit(const Origin& origin, const Json::Value& intent, Ms serverNow) {
   requireBlockingThread();
   return Attempt(*this, origin, intent, serverNow).run();
+}
+
+AdmitOutcome Admission::admitBuilt(const ServerOrigin& origin, const Json::Value& scopeIntent, Ms serverNow, const ServerBuilder& builder) {
+  requireBlockingThread();
+  const Origin server = origin;
+  return Attempt(*this, server, scopeIntent, serverNow, &builder).run();
 }
 
 std::unique_lock<std::timed_mutex> Admission::takeStripe(const ScopeKey& scope) {

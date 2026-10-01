@@ -1538,10 +1538,12 @@ public:
     });
   }
 
-  bool deleteThread(const UserId& user, const ThreadId& id) override {
+  bool deleteThread(const UserId& user, const ThreadId& id,
+                    const std::function<void()>& beforeDelete = {}) override {
     if (!thread(user, id)) return false;
     auto lease = tryLease(user, id);
     if (!lease) throw ThreadBusy{};
+    if (beforeDelete) beforeDelete();
     const std::size_t before = db.threadRows.size();
     std::erase_if(db.threadRows,
                   [&](const AskThread& held) { return held.id == id && held.user == user; });

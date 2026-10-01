@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/PreferencesApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -14,18 +15,21 @@ PreferencesApi::PreferencesApi(std::shared_ptr<PreferencesService> preferences,
     : preferences_(std::move(preferences)), auth_(std::move(auth)) {}
 
 // A lifter with no row is answered with the defaults; nothing is written on the way out.
-void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void PreferencesApi::preferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
     return;
   }
   cb(jsonResponse(toJson(preferences_->preferences(*caller))));
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // The whole document: a field the body does not name takes its default. `lb` is a reading unit only —
 // every stored and wire load is kilograms.
-void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -44,6 +48,8 @@ void PreferencesApi::savePreferences(const drogon::HttpRequestPtr& req, HttpCall
   } catch (const InvalidTraining& malformed) {
     cb(error(drogon::k400BadRequest, malformed.what(), "preferences-unreadable"));
   }
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

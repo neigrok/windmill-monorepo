@@ -1,4 +1,5 @@
 #include "products/gym/adapters/http/AskApi.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -15,6 +16,8 @@ namespace wm::gym {
 namespace {
 
 drogon::HttpResponsePtr refusalOf(AskRefusal refusal) {
+  if (refusal == AskRefusal::frozen)
+    return error(drogon::k503ServiceUnavailable, "gym writes are temporarily frozen", "gym-frozen");
   if (refusal == AskRefusal::threadMalformed)
     return error(drogon::k400BadRequest, "that isn’t a conversation Coach can answer");
   if (refusal == AskRefusal::threadTaken)
@@ -141,7 +144,8 @@ private:
 AskApi::AskApi(std::shared_ptr<AskService> ask, std::shared_ptr<AuthService> auth)
     : ask_(std::move(ask)), auth_(std::move(auth)) {}
 
-void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+  requireGymWrite();
   std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -244,6 +248,8 @@ void AskApi::ask(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
     if (reply.receipt) body["receipt"] = toJson(*reply.receipt);
     cb(jsonResponse(body));
   }, requestId, attachments);
+} catch (const GymUnavailable& unavailable) {
+  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

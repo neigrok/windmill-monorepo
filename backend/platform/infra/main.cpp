@@ -97,6 +97,7 @@
 #include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
+#include "products/gym/sync/adapters/postgres/GymDoor.h"
 #include "products/gym/routes.h"
 
 #ifdef WM_SYNC_PROBE
@@ -411,14 +412,16 @@ int main() {
   auto gymPreferences = std::make_shared<gym::PgPreferencesRepository>(pool);
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
+  auto gymDoor = std::make_shared<gym::GymDoor>(pool, *systemClock, *sentry, *gymLog, *gymProgram,
+      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences);
   auto gymTrainingService =
-      std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens);
-  auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog);
-  auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock);
-  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock);
-  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences);
-  auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *systemClock);
-  auto gymBodyweightService = std::make_shared<gym::BodyweightService>(*gymBodyweight);
+      std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens, gymDoor.get());
+  auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, gymDoor.get());
+  auto gymProgramService = std::make_shared<gym::ProgramService>(*gymProgram, *systemClock, gymDoor.get());
+  auto gymThreadService = std::make_shared<gym::ThreadService>(*gymThreads, *systemClock, gymDoor.get());
+  auto gymPreferencesService = std::make_shared<gym::PreferencesService>(*gymPreferences, gymDoor.get());
+  auto gymNotesService = std::make_shared<gym::NotesService>(*gymNotes, *systemClock, gymDoor.get());
+  auto gymBodyweightService = std::make_shared<gym::BodyweightService>(*gymBodyweight, gymDoor.get());
   auto gymTools = std::make_shared<gym::GymTools>(*gymTrainingService, *gymCatalogService,
                                                   *gymProgramService, *gymNotesService,
                                                   *gymBodyweightService, appBaseUrl);

@@ -1,4 +1,6 @@
 #include "products/gym/application/TrainingService.h"
+#include "products/gym/application/GymSwitches.h"
+#include "products/gym/ports/GymWriteDoor.h"
 
 #include <utility>
 
@@ -6,7 +8,9 @@ namespace wm::gym {
 
 namespace {
 // Called before a start and before every read whose reply carries session state a close rewrites.
-void settleOpen(LogRepository& log, const UserId& user, std::uint64_t nowMs) {
+void settleOpen(LogRepository& log, GymWriteDoor* door, const UserId& user, std::uint64_t nowMs) {
+  if (gymWriteFrozen()) return;
+  if (door && gymEngineWrites()) { door->closeStale(user); return; }
   std::optional<Session> open = log.open(user);
   if (!open) return;
   std::optional<std::uint64_t> closeAt = autoCloseAt(*open, log.lastActivity(open->id), nowMs);
@@ -29,8 +33,8 @@ std::optional<StartOutcome> heldFor(LogRepository& log, const UserId& user,
 }
 
 TrainingService::TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
-                                 TokenGenerator& tokens)
-    : log_(log), program_(program), clock_(clock), tokens_(tokens) {}
+                                 TokenGenerator& tokens, GymWriteDoor* door)
+    : log_(log), program_(program), clock_(clock), tokens_(tokens), door_(door) {}
 
 // Idempotent by construction, no guard flag: the caller's OWN id resolves FIRST. Only when nothing
 // landed under that id does the open session enter, and the caller's intent decides join or refusal.
@@ -38,7 +42,9 @@ TrainingService::TrainingService(LogRepository& log, ProgramRepository& program,
 // The write is resolved by a read: the insert no-ops on the PK and on the one-open index, so what the
 // store holds afterwards is the answer. Nothing resolving even then means another owner's row.
 StartOutcome TrainingService::start(const UserId& user, const SessionStart& incoming) {
-  settleOpen(log_, user, clock_.nowMs());
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->start(user, incoming);
+  settleOpen(log_, door_, user, clock_.nowMs());
   std::optional<StartOutcome> already = heldFor(log_, user, incoming);
   if (already) return *already;
   // Only a start that would CREATE is held to the clock.
@@ -65,6 +71,8 @@ StartOutcome TrainingService::start(const UserId& user, const SessionStart& inco
 // arrives; `setOf` reads the rows that STAND, so a deleted set resolves to nothing here.
 AppendOutcome TrainingService::append(const UserId& user, const SessionId& session,
                                       const SetWrite& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->append(user, session, incoming);
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, AppendError::notFound};
   Set set{incoming.id, session, incoming.exercise, 0, incoming.weightKg, incoming.reps,
@@ -83,6 +91,8 @@ AppendOutcome TrainingService::append(const UserId& user, const SessionId& sessi
 
 BatchLogOutcome TrainingService::appendSets(const UserId& user, const SessionId& session,
                                             const std::vector<SetWrite>& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->appendSets(user, session, incoming);
   std::vector<Set> sets;
   for (std::size_t i = 0; i < incoming.size(); ++i) {
     const SetWrite& row = incoming[i];
@@ -101,6 +111,8 @@ BatchLogOutcome TrainingService::appendSets(const UserId& user, const SessionId&
 // finished thing it is. The plan is frozen only from a routine this account can read; a routine it
 // cannot is the store's `unknownRoutine`, answered after a replay has had its chance.
 BatchLogOutcome TrainingService::importSession(const UserId& user, const SessionImport& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->importSession(user, incoming);
   const std::uint64_t nowMs = clock_.nowMs();
   Session session{incoming.id, user, incoming.startedAtMs, incoming.finishedAtMs, incoming.routine,
                   std::nullopt, ClosedBy::finish};
@@ -119,7 +131,7 @@ BatchLogOutcome TrainingService::importSession(const UserId& user, const Session
   }
   const SetBatch batch{incoming.id, std::move(sets), nowMs, true};
   batch.checkInterval(session, true);
-  settleOpen(log_, user, nowMs);
+  settleOpen(log_, door_, user, nowMs);
   if (incoming.routine) {
     const std::optional<Routine> routine = program_.routine(user, *incoming.routine);
     if (routine) session.plan = snapshotOf(*routine);
@@ -129,7 +141,7 @@ BatchLogOutcome TrainingService::importSession(const UserId& user, const Session
 
 std::vector<SessionRows> TrainingService::sessions(const UserId& user, const std::vector<SessionId>& ids) {
   if (ids.empty() || ids.size() > 50) throw InvalidTraining("sessionIds must contain 1 to 50 ids");
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   return log_.sessions(user, ids);
 }
 
@@ -139,6 +151,8 @@ std::vector<SessionRows> TrainingService::sessions(const UserId& user, const std
 // Two devices correcting the same set at once leave the second one's values standing.
 std::optional<Set> TrainingService::fixSet(const UserId& user, const SessionId& session,
                                            const SetId& id, const SetFix& fix) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->fixSet(user, session, id, fix);
   std::optional<Set> stored = log_.setOf(user, id);
   if (!stored || !(stored->session == session)) return std::nullopt;
   return log_.updateSet(user, corrected(*stored, fix));
@@ -147,6 +161,8 @@ std::optional<Set> TrainingService::fixSet(const UserId& user, const SessionId& 
 // Says nothing back, so a client whose network dropped sends the same delete again for the same
 // reply. The row moves whole into the revisions table, marked deleted; no door reads it back.
 void TrainingService::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) { door_->deleteSet(user, session, id); return; }
   log_.deleteSet(user, session, id);
 }
 
@@ -156,6 +172,8 @@ void TrainingService::deleteSet(const UserId& user, const SessionId& session, co
 // would get.
 FinishOutcome TrainingService::finish(const UserId& user, const SessionId& session,
                                       std::uint64_t finishedAtMs) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->finish(user, session, finishedAtMs);
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return {std::nullopt, FinishError::notFound};
   if (!canFinishAt(*stored, finishedAtMs)) return {std::nullopt, FinishError::badInstant};
@@ -172,7 +190,7 @@ FinishOutcome TrainingService::finish(const UserId& user, const SessionId& sessi
 // the store hands back newest first, reading them backwards rather than re-sorting.
 // A page carries the OPEN session like any other row, but only finished ones fold into the marks.
 std::vector<LogRow> TrainingService::log(const UserId& user, const LogCursor& cursor) {
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   LogPage page = log_.log(user, cursor);
 
   std::vector<SessionMarks> walked;
@@ -193,13 +211,13 @@ std::vector<LogRow> TrainingService::log(const UserId& user, const LogCursor& cu
 }
 
 std::optional<Session> TrainingService::openSession(const UserId& user) {
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   return log_.open(user);
 }
 
 // Settles staleness; a phone's owed sets arriving after that close still land under lateSetLands.
 std::optional<SessionDetail> TrainingService::detail(const UserId& user, const SessionId& session) {
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
   return SessionDetail{*stored, log_.setsOf(session)};
@@ -228,6 +246,8 @@ std::optional<Review> TrainingService::review(const UserId& user, const SessionI
 // still logging into destroys the sets in flight. Staleness is settled elsewhere, not here. The row
 // going between the load and the delete is the same fact as never having been there.
 DiscardOutcome TrainingService::discard(const UserId& user, const SessionId& session) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->discard(user, session);
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return DiscardOutcome::notFound;
   if (!stored->finishedAtMs) return DiscardOutcome::open;
@@ -237,13 +257,13 @@ DiscardOutcome TrainingService::discard(const UserId& user, const SessionId& ses
 
 // Staleness IS settled first: the answer counts finished sessions only.
 Statistics TrainingService::statistics(const UserId& user) {
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   return wm::gym::statistics(log_.trainingLog(user));
 }
 
 StatsProgress TrainingService::progress(const UserId& user) {
   const std::uint64_t nowMs = clock_.nowMs();
-  settleOpen(log_, user, nowMs);
+  settleOpen(log_, door_, user, nowMs);
   const std::vector<ProgressSet> history = log_.progressHistory(user);
   return statsProgress(history, nowMs);
 }
@@ -253,7 +273,7 @@ StatsProgress TrainingService::progress(const UserId& user) {
 std::optional<MovementRecord> TrainingService::movementRecord(const UserId& user,
                                                               const ExerciseId& exercise) {
   const std::uint64_t nowMs = clock_.nowMs();
-  settleOpen(log_, user, nowMs);
+  settleOpen(log_, door_, user, nowMs);
   MovementHistory history = log_.movementHistory(user, exercise);
   if (!history.exercise) return std::nullopt;
   return wm::gym::movementRecord(*history.exercise, history, nowMs);
@@ -263,6 +283,7 @@ std::optional<MovementRecord> TrainingService::movementRecord(const UserId& user
 // share answers with itself, an expired one is replaced, a session this caller cannot read answers
 // with nothing.
 std::optional<SessionShare> TrainingService::share(const UserId& user, const SessionId& session) {
+  requireGymWrite();
   // One clock read decides both what the new share ends at and whether the existing one has ended.
   const std::uint64_t nowMs = clock_.nowMs();
   return log_.insertShare(
@@ -270,6 +291,7 @@ std::optional<SessionShare> TrainingService::share(const UserId& user, const Ses
 }
 
 bool TrainingService::revokeShare(const UserId& user, const SessionId& session) {
+  requireGymWrite();
   return log_.revokeShare(user, session);
 }
 
@@ -279,13 +301,15 @@ std::optional<SharedSession> TrainingService::shared(const std::string& token) {
 
 CorrectionOutcome TrainingService::correctSession(const UserId& user, const SessionId& session,
     const SessionCorrectionIn& incoming) {
+  requireGymWrite();
+  if (door_ && gymEngineWrites()) return door_->correctSession(user, session, incoming);
   if (!wellFormedId(incoming.requestId)) throw InvalidTraining{"bad correction request id"};
   return log_.correctSession(user, session, incoming, clock_.nowMs());
 }
 
 HistoryPage TrainingService::history(const UserId& user, const HistoryQuery& query) {
   query.validate();
-  settleOpen(log_, user, clock_.nowMs());
+  settleOpen(log_, door_, user, clock_.nowMs());
   HistoryQuery read = query;
   read.asOfMs = clock_.nowMs();
   return log_.history(user, read);
@@ -293,11 +317,12 @@ HistoryPage TrainingService::history(const UserId& user, const HistoryQuery& que
 
 std::optional<LogShare> TrainingService::shareLog(const UserId& user, const std::string& id,
     LogShareMode mode, bool range, std::uint64_t fromMs, std::uint64_t untilMs) {
+  requireGymWrite();
   const auto now = clock_.nowMs();
   LogShare share{id, user, tokens_.mint().secret, mode, range, fromMs, untilMs, now,
                  shareExpiryAt(now)};
   share.validate();
-  settleOpen(log_, user, now);
+  settleOpen(log_, door_, user, now);
   return log_.createLogShare(share);
 }
 
@@ -306,6 +331,7 @@ std::vector<LogShare> TrainingService::logShares(const UserId& user) {
 }
 
 void TrainingService::revokeLogShare(const UserId& user, const std::string& id) {
+  requireGymWrite();
   log_.revokeLogShare(user, id);
 }
 

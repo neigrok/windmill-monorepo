@@ -260,7 +260,8 @@ void PgAskThreadRepository::discardEmptyThread(const UserId& user, const ThreadI
   txn.commit();
 }
 
-bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id) {
+bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id,
+                                         const std::function<void()>& beforeDelete) {
   {
     PgLease conn{*pool_};
     pqxx::work txn{*conn};
@@ -268,7 +269,7 @@ bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id)
   }
   auto lease = tryLease(user, id);
   if (!lease) throw ThreadBusy{};
-  // The turns cascade with the row; the proposals do not — the schema sets their thread_id null.
+  if (beforeDelete) beforeDelete();
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(

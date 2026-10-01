@@ -9,6 +9,8 @@
 
 namespace wm::gym {
 
+class GymWriteDoor;
+
 // A routine travels as its WHOLE document; there is no per-entry route and no reorder verb. Entry
 // positions are the order the entries arrive in; the Routine constructor refuses anything else.
 struct RoutineWrite {
@@ -36,7 +38,7 @@ struct ProposalWrite {
 // so no catalog port is held here.
 class ProgramService {
 public:
-  ProgramService(ProgramRepository& program, Clock& clock);
+  ProgramService(ProgramRepository& program, Clock& clock, GymWriteDoor* door = nullptr);
 
   std::optional<Routine> routineCreation(const UserId& user, const RoutineId& id);
   std::vector<Routine> routines(const UserId& user);
@@ -68,6 +70,7 @@ public:
   ProposalSettleOutcome dismiss(const UserId& user, const ProposalId& id);
 
 private:
+  GymWriteDoor* door_;
   ProgramRepository& program_;
   Clock& clock_;
 };
