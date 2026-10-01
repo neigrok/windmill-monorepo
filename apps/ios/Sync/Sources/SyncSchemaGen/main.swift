@@ -1,9 +1,7 @@
 import Foundation
 import SyncCore
 
-// `swift run SyncSchemaGen` regenerates Sources/SyncSchema from the product registries, every *.registry.json in
-// packages/api-contract/sync but the test-only probe's. `--check` writes nothing and exits 1 when a checked-in file
-// differs from what the registries generate.
+// `swift run SyncSchemaGen` regenerates Sources/SyncSchema from composition.json; `--check` refuses stale sources.
 
 let arguments = Array(CommandLine.arguments.dropFirst())
 guard arguments == [] || arguments == ["--check"] else {
@@ -22,10 +20,11 @@ do {
     root.deleteLastPathComponent()
   }
   let contract = root.appendingPathComponent(SchemaSources.directory)
-  let registries = try files.contentsOfDirectory(atPath: contract.path)
-    .filter { $0.hasSuffix(".registry.json") && $0 != "probe.registry.json" }
-    .map { name in RegistryFile(name: name, json: try JSON(parsing: [UInt8](Data(contentsOf: contract.appendingPathComponent(name))))) }
-  let generated = try SchemaSources.files(from: registries)
+  let composition = try Composition(json: JSON(parsing: [UInt8](Data(contentsOf: contract.appendingPathComponent("composition.json")))))
+  let registries = try composition.registries.map { name in
+    RegistryFile(name: name, json: try JSON(parsing: [UInt8](Data(contentsOf: contract.appendingPathComponent(name)))))
+  }
+  let generated = try SchemaSources.files(from: registries, composition: composition)
   let present = files.fileExists(atPath: target.path) ? try files.contentsOfDirectory(atPath: target.path) : []
   let existing = try Dictionary(uniqueKeysWithValues: present.filter { $0.hasSuffix(".swift") }
     .map { name in (name, [UInt8](try Data(contentsOf: target.appendingPathComponent(name)))) })

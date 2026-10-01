@@ -72,6 +72,7 @@ const FINISHED = rec('session', 'session0001', {
 });
 const SET = rec('set', 'set00000001', { stamp: s(T + 3), seq: 4, f: { sessionId: 'session0001', exerciseId: 'back-squat', weightKg: 80, reps: 5, kind: 'working', note: '', completedAt: T + 600_000 }, v: { setNumber: 1 } });
 const CHANGES = [{ kind: 'retargeted', exerciseId: 'back-squat', before: { sets: [{ reps: 5, weightKg: 80 }], restSeconds: 180 }, after: { sets: [{ reps: 5, weightKg: 85 }], restSeconds: 180 } }];
+const ROUTINE_GUARDS = ['entries', 'name'].map((field) => ({ t: 'routine', id: 'routine0001', field, stamp: s(T + 1) }));
 const proposalRow = (id, seq, extra = {}, stamp = `${T + 4}:0:srv`) => rec('proposal', id, {
   stamp, seq,
   f: { routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier squat', changes: CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude', state: 'pending', ...extra },
@@ -200,14 +201,14 @@ function proposals() {
     admitted('a replica\'s proposal naming a deleted routine is refused unknown-record', { state: base({ spent: { [GYM_A]: [{ t: 'routine', id: 'routine0009', born: s(T), lifeStamp: s(T + H), seq: 6 }] } }), origin: A, intent: mint('proposal003', { routineId: 'routine0009', door: 'ask', connection: '', agent: '' }, A) }),
     admitted('a replica\'s proposal create with door mcp is invalid', { state: base(), origin: A, intent: mint('proposal003', {}, A) }),
     admitted('a replica\'s proposal create naming an agent is invalid', { state: base(), origin: A, intent: mint('proposal003', { door: 'ask', connection: '', agent: 'Claude' }, A) }),
-    admitted('a replica\'s proposal create from the phone Coach door is admitted, its state unset and read as pending', { state: base(), origin: A, intent: mint('proposal003', { door: 'ask', connection: '', agent: '' }, A) }),
+    admitted('a replica\'s proposal create from the phone Coach door is admitted, its state unset and read as pending', { state: base(), origin: A, intent: { ...mint('proposal003', { door: 'ask', connection: '', agent: '' }, A), guard: ROUTINE_GUARDS } }),
     admitted('apply writes the proposal\'s document and supersedes the routine\'s other pending proposals', { state: base({ a: [other], product: { bases: { [GYM_A]: { proposal001: { revision: 1, name: 'Lower A' }, proposal002: { revision: 1, name: 'Lower A' } } } } }), intent: apply() }),
     admitted('apply of an applied proposal is ok and writes nothing', { state: settled(settledBy('applied')), intent: apply() }),
     admitted('apply of a dismissed proposal is refused proposal-settled with its state', { state: settled(settledBy('dismissed')), intent: apply() }),
     admitted('apply of a proposal a newer one replaced is refused proposal-superseded: replaced', { state: settled(settledBy('superseded', { supersededBy: 'proposal009' })), intent: apply() }),
     admitted('apply of a proposal its routine outran is refused proposal-superseded: routine-changed', { state: settled(settledBy('superseded'), { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: apply() }),
     admitted('apply of a proposal superseded before either reason was recorded is refused proposal-superseded: superseded', { state: settled(settledBy('superseded')), intent: apply() }),
-    admitted('apply of a pending proposal whose base the routine outran is refused proposal-superseded: routine-changed', { state: settled(PENDING, { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: apply() }),
+    admitted('apply of a pending proposal whose base the routine outran is refused proposal-superseded: routine-changed, leaving pending unchanged', { state: settled(PENDING, { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: apply() }),
     admitted('apply of a removal kills the routine and its proposals, and writes routineId null on its sessions', { state: settled(removal), intent: apply() }),
     admitted('apply of a proposal that died with its routine is refused record-dead', { state: base({ spent: { [GYM_A]: [{ t: 'proposal', id: 'proposal007', born: `${T}:0:srv`, lifeStamp: `${T + H}:0:srv`, seq: 6 }] } }), intent: apply('proposal007') }),
     admitted('dismiss settles a pending proposal with its settledAt', { state: base(), intent: dismiss() }),
@@ -281,6 +282,93 @@ function sessions() {
 }
 
 // M7: notes order by `ord`; the cap counts alive notes.
+function adversarial() {
+  const phone = (extra = {}) => create('proposal', 'proposal003', s(T + 9 * H), {
+    routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier',
+    changes: CHANGES, door: 'ask', connection: '', agent: '', ...extra,
+  });
+  const guarded = (extra = {}, guard = ROUTINE_GUARDS) => gym([phone(extra)], { guard });
+  const deleteRoutine = { t: 'routine', id: 'routine0001', born: s(T + 1), life: ['dead', s(T + 9 * H)] };
+  const stale = rec('session', 'session0001', { stamp: `${T + 2}:0:srv`, seq: 3,
+    f: { startedAt: T, finishedAt: T + 600_000, closedBy: 'stale' } });
+  const zero = rec('session', 'session0001', { stamp: '0:0:srv', seq: 1, f: { startedAt: 0 } });
+  const only = (session, sets = []) => gymState({ rows: { [GYM_A]: [session, ...sets] } });
+  const finish = (finishedAt) => cmd('gym.finish', { sessionId: 'session0001', finishedAt });
+  const set = { id: 'set00000003', exerciseId: 'dip', weightKg: 0, reps: 10, completedAt: T + 2 * H + 60_000 };
+  const importArgs = (extra = {}) => ({ id: 'session0003', startedAt: T + 2 * H, finishedAt: T + 3 * H, sets: [set], ...extra });
+  const fixedSet = { id: 'set00000001', exerciseId: 'back-squat', setNumber: 1, weightKg: 80, reps: 5, completedAt: T + 60_000 };
+  const correctArgs = (extra = {}) => ({ sessionId: 'session0001', requestId: 'fix-000001', startedAt: T,
+    finishedAt: T + H, routineName: 'Lower A', sets: [fixedSet], ...extra });
+  const correction = (sets) => cmd('gym.correctSession', correctArgs({ sets }));
+  const open = rec('session', 'session0001', { stamp: `${T + 2}:0:srv`, seq: 3, f: { startedAt: T + 8 * H } });
+  const prior = (number) => rec('set', 'set00000001', { stamp: s(T + 8 * H), seq: 4,
+    f: { sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, kind: 'working', note: '', completedAt: T + 8 * H }, v: { setNumber: number } });
+  const nextSet = (id = 'set00000009') => create('set', id, s(T + 9 * H), {
+    sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, kind: 'working', note: '', completedAt: T + 9 * H,
+  });
+  const repeated = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: {
+    name: 'Lower A', entries: [...SQUAT, { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 90 }] }, { exerciseId: 'dip' }],
+  } });
+  const repeatedChanges = [
+    { kind: 'retargeted', exerciseId: 'back-squat', before: CHANGES[0].before, after: { sets: [{ reps: 3, weightKg: 90 }] } },
+    { kind: 'retargeted', exerciseId: 'back-squat', before: { sets: [{ reps: 3, weightKg: 90 }] }, after: CHANGES[0].before },
+    { kind: 'removed', exerciseId: 'dip', before: {} },
+  ];
+  return [
+    admitted('a phone proposal without either routine guard is invalid', { state: base(), intent: gym([phone()]) }),
+    admitted('a phone proposal without the name guard is invalid', { state: base(), intent: guarded({}, ROUTINE_GUARDS.slice(0, 1)) }),
+    admitted('a phone proposal without the entries guard is invalid', { state: base(), intent: guarded({}, ROUTINE_GUARDS.slice(1)) }),
+    admitted('a phone proposal based on a moved entries stamp is stale', { state: base(), intent: guarded({}, ROUTINE_GUARDS.map((g) => g.field === 'entries' ? { ...g, stamp: s(T) } : g)) }),
+    admitted('a phone proposal based on a moved name stamp is stale', { state: base(), intent: guarded({}, ROUTINE_GUARDS.map((g) => g.field === 'name' ? { ...g, stamp: s(T) } : g)) }),
+    admitted('a guarded phone proposal with forged kept content is invalid', { state: base(), intent: guarded({ changes: [{ ...CHANGES[0], kind: 'kept' }] }) }),
+    admitted('a guarded phone proposal with a forged before side is invalid', { state: base(), intent: guarded({ changes: [{ ...CHANGES[0], before: { sets: [{ reps: 1 }] } }] }) }),
+    admitted('a guarded phone proposal omitting a removed base line is invalid', { state: base(), intent: guarded({ changes: [{ kind: 'added', exerciseId: 'dip', after: {} }] }) }),
+    admitted('a server proposal with forged kept content is invalid', { state: base(), origin: SERVER_A,
+      intent: gym([create('proposal', 'proposal003', null, { ...Object.fromEntries(Object.entries(phone().f).map(([k, v]) => [k, v[0]])), changes: [{ ...CHANGES[0], kind: 'kept' }] })]) }),
+    admitted('a proposal guarded before a same-intent routine rename is invalid', { state: base(), intent: gym([
+      update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { name: 'Legs' }), phone(),
+    ], { guard: ROUTINE_GUARDS }) }),
+    admitted('a routine delete clears the same-intent start session routineId, retaining its frozen plan and history', { state: base(),
+      intent: gym([deleteRoutine], { cmd: { name: 'gym.start', args: { id: 'session0002', routineId: 'routine0001', startedAt: T + 9 * H, joinOpenSession: true } } }) }),
+    admitted('two same-key proposal creates supersede in intent order: only the second stays pending', { state: base(),
+      intent: gym([phone(), { ...phone(), id: 'proposal004' }], { guard: ROUTINE_GUARDS }) }),
+    admitted('three same-key proposal creates name their immediate successors', { state: base(),
+      intent: gym([phone(), { ...phone(), id: 'proposal004' }, { ...phone(), id: 'proposal005' }], { guard: ROUTINE_GUARDS }) }),
+    admitted('a routine and set may reference an exercise created in the same intent', { state: only(open), intent: gym([
+      create('routine', 'routine0002', s(T + 9 * H), { name: 'Carry', entries: [{ exerciseId: 'sledpush01' }] }),
+      create('exercise', 'sledpush01', s(T + 9 * H), { name: 'Sled Push', pattern: 'carry', equipment: 'machine', stepKg: 5 }),
+      { ...nextSet(), f: { ...nextSet().f, exerciseId: ['sledpush01', s(T + 9 * H)] } },
+    ]) }),
+    admitted('a correction setNumber 2147483647 lands', { state: base(), intent: correction([{ ...fixedSet, setNumber: 2_147_483_647 }]) }),
+    admitted('a correction setNumber 2147483648 is invalid', { state: base(), intent: correction([{ ...fixedSet, setNumber: 2_147_483_648 }]) }),
+    admitted('automatic setNumber 2147483647 lands', { state: only(open, [prior(2_147_483_646)]), intent: gym([nextSet()]) }),
+    admitted('automatic setNumber beyond 2147483647 is invalid', { state: only(open, [prior(2_147_483_647)]), intent: gym([nextSet()]) }),
+    admitted('two same-intent sets crossing the serial maximum are invalid together', { state: only(open, [prior(2_147_483_646)]), intent: gym([nextSet(), nextSet('set00000010')]) }),
+    admitted('a finish exactly 4 h after a stale close moves finishedAt to the boundary', { state: only(stale), intent: finish(T + 600_000 + 4 * H) }),
+    admitted('closeStale closes exactly 4 h after the last activity', { state: only(rec('session', 'session0001', { stamp: `${T + 6 * H}:0:srv`, seq: 1, f: { startedAt: T + 6 * H } })), origin: SERVER_A, intent: cmd('gym.closeStale', {}) }),
+    admitted('an import with duplicate set ids is invalid', { state: base(), intent: cmd('gym.importSession', importArgs({ sets: [set, { ...set, reps: 9 }] })) }),
+    admitted('a correction with duplicate set ids is invalid', { state: base(), intent: correction([fixedSet, { ...fixedSet, setNumber: 2 }]) }),
+    admitted('a correction with duplicate numbers for one movement is invalid', { state: base(), intent: correction([fixedSet, { ...fixedSet, id: 'set00000009' }]) }),
+    admitted('an import ending 1 ms in the future is bad-instant', { state: base(), intent: cmd('gym.importSession', importArgs({ finishedAt: NOW + 1 })) }),
+    admitted('a correction ending 1 ms in the future is bad-instant', { state: base(), intent: cmd('gym.correctSession', correctArgs({ finishedAt: NOW + 1 })) }),
+    admitted('an import set 1 ms before its interval is bad-instant', { state: base(), intent: cmd('gym.importSession', importArgs({ sets: [{ ...set, completedAt: T + 2 * H - 1 }] })) }),
+    admitted('an import set 1 ms after its interval is bad-instant', { state: base(), intent: cmd('gym.importSession', importArgs({ sets: [{ ...set, completedAt: T + 3 * H + 1 }] })) }),
+    admitted('a correction set 1 ms before its interval is bad-instant', { state: base(), intent: correction([{ ...fixedSet, completedAt: T - 1 }]) }),
+    admitted('a correction set 1 ms after its interval is bad-instant', { state: base(), intent: correction([{ ...fixedSet, completedAt: T + H + 1 }]) }),
+    admitted('a finish at zero for a session starting at zero is bad-instant', { state: only(zero), intent: finish(0) }),
+    admitted('a guarded removal proposal lists every base line as removed', { state: base(), intent: guarded({ intent: 'remove', changes: [{ kind: 'removed', exerciseId: 'back-squat', before: CHANGES[0].before }] }) }),
+    admitted('a guarded revision proposal cannot leave an empty routine', { state: base(), intent: guarded({ changes: [{ kind: 'removed', exerciseId: 'back-squat', before: CHANGES[0].before }] }) }),
+    admitted('a proposal matches repeated exercises first unmatched first, with removals last', { state: gymState({ rows: { [GYM_A]: [repeated] } }), intent: guarded({ changes: repeatedChanges }) }),
+    admitted('a proposal cannot match repeated exercises by equal targets instead of occurrence', { state: gymState({ rows: { [GYM_A]: [repeated] } }), intent: guarded({ changes: repeatedChanges.map((line, i) => i < 2 ? { ...line, kind: 'kept', before: line.after } : line) }) }),
+    admitted('a new correction setNumber 2147483647 lands', { state: base(), intent: correction([{ ...fixedSet, id: 'set00000009', setNumber: 2_147_483_647 }]) }),
+    admitted('automatic numbering retains stored maximum even when that peer dies in the same intent', { state: only(open, [prior(2_147_483_647)]),
+      intent: gym([{ t: 'set', id: 'set00000001', born: s(T + 8 * H), life: ['dead', s(T + 9 * H)] }, nextSet()]) }),
+    admitted('a proposal created before a same-intent routine rename captures the joined base revision and name', { state: base(), origin: SERVER_A,
+      intent: gym([create('proposal', 'proposal003', null, Object.fromEntries(Object.entries(phone().f).map(([k, v]) => [k, v[0]]))),
+        update('routine', 'routine0001', s(T + 1), null, { name: 'Legs' })]) }),
+  ];
+}
+
 function notes() {
   const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord } });
   const ten = gymState({ rows: { [GYM_A]: Array.from({ length: 10 }, (_, i) => note(`note000000${i}`, i + 1, `a${i}`)), [GYM_B]: [] } });
@@ -361,7 +449,7 @@ function backfills() {
 
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...adversarial()],
     'gym/backfill.json': backfills(),
   };
 }

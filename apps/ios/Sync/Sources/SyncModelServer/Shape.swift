@@ -49,15 +49,17 @@ public struct PlannedDelta: Sendable, Hashable {
   public var born: StampSlot?
   public var fields: [String: PlannedRegister]
   public var texts: [String: TextWrite]
+  public var serials: [String: JSON]
 
   public init(key: RecordKey, op: Op, life: PlannedLife? = nil, born: StampSlot? = nil, fields: [String: PlannedRegister] = [:],
-              texts: [String: TextWrite] = [:]) {
+              texts: [String: TextWrite] = [:], serials: [String: JSON] = [:]) {
     self.key = key
     self.op = op
     self.life = life
     self.born = born
     self.fields = fields
     self.texts = texts
+    self.serials = serials
   }
 
   // A server create: born and life at the stamp the pass mints (§10.3).
@@ -364,4 +366,3 @@ public enum IdentityRules {
     }
   }
 }
-

@@ -376,6 +376,8 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"identity/table.json", identityTable},
       {"machine/scope.json", scopeMachine},
       {"admit/", admitOverFakes},
+      {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(true); return test::gymAdmitVector(world, input); }},
+      {"gym/backfill.json", corpus::Pending{"wave 2 adoption and backfill"}},
       {"admit/requests.json", requestsOverFakes},
       {"push/serve.json", pushOverFakes},
       {"pull/serve.json", pullOverFakes},

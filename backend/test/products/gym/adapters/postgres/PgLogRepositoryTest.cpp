@@ -44,6 +44,7 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   repo.close(SessionId{"ses_pg000001"}, t1 + 9'000, ClosedBy::finish);
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());
   std::optional<Session> closed = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  REQUIRE(closed.has_value());
   CHECK_EQ(closed->finishedAtMs, std::optional<std::uint64_t>(t1 + 1'000));
 
   repo.insertSession(sessionAt("ses_pg000002", t1 + 5));
@@ -188,6 +189,9 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
   CHECK(bench1.error == SetInsertError::none);
   CHECK(squat1.error == SetInsertError::none);
   CHECK(bench2.error == SetInsertError::none);
+  REQUIRE(bench1.set.has_value());
+  REQUIRE(squat1.set.has_value());
+  REQUIRE(bench2.set.has_value());
   CHECK_EQ(bench1.set->setNumber, 1);
   CHECK_EQ(squat1.set->setNumber, 1);   // its own count, not the session's
   CHECK_EQ(bench2.set->setNumber, 2);
@@ -231,6 +235,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   CHECK(theirs.error == SetInsertError::idTaken);
   CHECK_EQ(theirs.set, std::optional<Set>());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000002"}), std::vector<Set>{});
+  REQUIRE(mine.set.has_value());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*mine.set});
 
   // The same lifter reusing one of their own spent ids in a later session: the same refusal.
@@ -261,11 +266,13 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
 
   CHECK(unknown.error == SetInsertError::unknownExercise);
   CHECK_EQ(unknown.set, std::optional<Set>());
+  REQUIRE(landed.set.has_value());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 
   // The rolled-back transaction is the refused write's alone: the next append lands normally.
   SetInsertOutcome after = repo.insertSet(benchSet("set_pg000003", 85.0, t1 + 3'000));
   CHECK(after.error == SetInsertError::none);
+  REQUIRE(after.set.has_value());
   CHECK_EQ(after.set->setNumber, 2);
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), (std::vector<Set>{*landed.set, *after.set}));
 }
@@ -312,6 +319,7 @@ TEST(pg_gym_a_set_that_never_landed_cannot_land_after_the_session_closed) {
 
   CHECK(refused.error == SetInsertError::finished);
   CHECK_EQ(refused.set, std::optional<Set>());
+  REQUIRE(landed.set.has_value());
   CHECK_EQ(repo.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{*landed.set});
 }
 
@@ -329,9 +337,11 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   SetInsertOutcome tomorrow = repo.insertSet(benchSet("set_pg000003", 60.0, t1 + 600'000 + kAutoCloseMs + 1));
 
   CHECK(owed.error == SetInsertError::none);
+  REQUIRE(owed.set.has_value());
   CHECK_EQ(owed.set->setNumber, 2);
   CHECK(tomorrow.error == SetInsertError::finished);
   std::optional<Session> extended = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  REQUIRE(extended.has_value());
   CHECK_EQ(extended->finishedAtMs, std::optional<std::uint64_t>(t1 + 600'000));
   CHECK(extended->closedBy == std::optional<ClosedBy>(ClosedBy::stale));
   CHECK_EQ(repo.open(wm::UserId{kUser}), std::optional<Session>());   // extended, not reopened
@@ -339,10 +349,11 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   // The lifter's finish onto the stale close: inside the window it moves the end and the word, later only the word.
   repo.close(SessionId{"ses_pg000001"}, t1 + 700'000, ClosedBy::finish);
   std::optional<Session> upgraded = repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"});
+  REQUIRE(upgraded.has_value());
   CHECK_EQ(upgraded->finishedAtMs, std::optional<std::uint64_t>(t1 + 700'000));
   CHECK(upgraded->closedBy == std::optional<ClosedBy>(ClosedBy::finish));
   repo.close(SessionId{"ses_pg000001"}, t1 + 900'000, ClosedBy::finish);            // a finish never moves again
-  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"})->finishedAtMs,
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000001"}).value().finishedAtMs,
            std::optional<std::uint64_t>(t1 + 700'000));
 
   repo.insertSession(sessionAt("ses_pg000002", t1 + 900'000));
@@ -610,16 +621,20 @@ TEST(pg_gym_last_time_is_the_newest_finished_session_of_that_movement) {
   LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
 
   CHECK(last.error == LastTimeError::none);
+  REQUIRE(last.lastTime.has_value());
+  REQUIRE(top.set.has_value());
+  REQUIRE(backOff.set.has_value());
   CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
   CHECK_EQ(last.lastTime->session.finishedAtMs, std::optional<std::uint64_t>(t1 + 15'000));
   CHECK_EQ(last.lastTime->routineName, std::string("Bench day"));
-  CHECK_EQ(last.lastTime->sets, (std::vector<Set>{*top.set, *backOff.set}));
+  REQUIRE_EQ(last.lastTime->sets, (std::vector<Set>{*top.set, *backOff.set}));
   // The warmup is set 1 of that movement, so the block starts at 2: a filter, not a renumbering.
   CHECK_EQ(last.lastTime->sets[0].setNumber, 2);
 
   // The other account reads its own log, and only that.
   LastTimeOutcome theirs = repo.lastTime(wm::UserId{kOther}, ExerciseId{"bench-press"});
   CHECK(theirs.error == LastTimeError::none);
+  REQUIRE(theirs.lastTime.has_value());
   CHECK_EQ(theirs.lastTime->session.id, SessionId{"ses_pg000004"});
   CHECK_EQ(theirs.lastTime->routineName, std::string(""));
   REQUIRE_EQ(theirs.lastTime->sets.size(), static_cast<std::size_t>(1));
@@ -681,9 +696,12 @@ TEST(pg_gym_last_time_walks_sessions_not_set_instants) {
   std::vector<SessionSummary> listed = pageOf(repo, wm::UserId{kUser}, page(t1 + 7 * day, 50));
 
   CHECK(last.error == LastTimeError::none);
+  REQUIRE(last.lastTime.has_value());
+  REQUIRE(honest.set.has_value());
   CHECK_EQ(last.lastTime->session.id, SessionId{"ses_pg000002"});
   CHECK_EQ(last.lastTime->sets, std::vector<Set>{*honest.set});
   // The two reads sort on the same key, so they can never name a different newest session.
+  REQUIRE_EQ(listed.size(), static_cast<std::size_t>(2));
   CHECK_EQ(listed[0].session.id, last.lastTime->session.id);
 }
 
@@ -717,6 +735,7 @@ TEST(pg_gym_last_time_never_answers_with_a_session_the_caller_does_not_own) {
   CHECK_EQ(repo.session(wm::UserId{kOther}, SessionId{"ses_pg000001"}), std::optional<Session>());
   // The locator's probe filters exactly what the block read filters.
   CHECK(ours.error == LastTimeError::none);
+  REQUIRE(ours.lastTime.has_value());
   CHECK_EQ(ours.lastTime->session.id, SessionId{"ses_pg000001"});
   CHECK_EQ(ours.lastTime->routineName, std::string("A private routine"));
   REQUIRE_EQ(ours.lastTime->sets.size(), static_cast<std::size_t>(1));
@@ -756,6 +775,8 @@ TEST(pg_gym_last_time_names_the_routine_only_when_the_stored_plan_holds_a_string
     LastTimeOutcome last = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
 
     CHECK(last.error == LastTimeError::none);
+    REQUIRE(last.lastTime.has_value());
+    REQUIRE(landed.set.has_value());
     CHECK_EQ(last.lastTime->routineName, name);
     CHECK_EQ(last.lastTime->sets, std::vector<Set>{*landed.set});
   }
@@ -836,6 +857,9 @@ TEST(pg_gym_last_sets_is_the_last_row_of_each_movements_last_time_block) {
 
   // The claim, stated as an assertion: this IS lastTime's block, projected to its last row.
   LastTimeOutcome block = repo.lastTime(wm::UserId{kUser}, ExerciseId{"bench-press"});
+  REQUIRE_EQ(ours.size(), static_cast<std::size_t>(1));
+  REQUIRE(block.lastTime.has_value());
+  REQUIRE(!block.lastTime->sets.empty());
   CHECK_EQ(ours[0].weightKg, block.lastTime->sets.back().weightKg);
   CHECK_EQ(ours[0].reps, block.lastTime->sets.back().reps);
   CHECK_EQ(ours[0].atMs, block.lastTime->session.startedAtMs);
@@ -890,11 +914,12 @@ TEST(pg_gym_the_plan_snapshot_round_trips_through_jsonb) {
   REQUIRE(stored.has_value());
   CHECK_EQ(stored->plan, std::optional<PlanSnapshot>(frozen));
   CHECK_EQ(stored->routine, std::optional<RoutineId>(RoutineId{"rt_pg000001"}));
+  REQUIRE(last.lastTime.has_value());
   CHECK_EQ(last.lastTime->routineName, std::string("Push A"));
   CHECK_EQ(last.lastTime->session.plan, std::optional<PlanSnapshot>(frozen));
   // An ad-hoc session carries no plan, and no plan is an absence rather than an empty one.
   repo.insertSession(sessionAt("ses_pg000002", t1 + 10'000));
-  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"})->plan,
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"}).value().plan,
            std::optional<PlanSnapshot>());
 }
 
@@ -1240,7 +1265,7 @@ TEST(pg_gym_a_correction_reaches_no_set_outside_the_workout_or_the_account) {
   Set elsewhere{SetId{"set_pg000001"}, SessionId{"ses_pg000009"}, ExerciseId{"bench-press"}, 1,
                 60, 8, SetKind::working, std::nullopt, "", t1 + 1'000};
   CHECK_EQ(repo.updateSet(wm::UserId{kUser}, elsewhere), std::optional<Set>());
-  CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"})->weightKg, 82.5);
+  CHECK_EQ(repo.setOf(wm::UserId{kUser}, SetId{"set_pg000001"}).value().weightKg, 82.5);
   {
     wm::PgLease c{*wm::pgTestPool()};
     pqxx::work w{*c};
@@ -1561,7 +1586,7 @@ TEST(pg_gym_reads_a_pre_1970_legacy_row_instead_of_failing_the_whole_log) {
   CHECK_EQ(listed[1].session.id.str(), std::string("ses_pg000002"));
   CHECK_EQ(listed[1].session.startedAtMs, static_cast<std::uint64_t>(1));
   CHECK_EQ(listed[1].session.finishedAtMs, std::optional<std::uint64_t>(1));
-  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"})->startedAtMs,
+  CHECK_EQ(repo.session(wm::UserId{kUser}, SessionId{"ses_pg000002"}).value().startedAtMs,
            static_cast<std::uint64_t>(1));
 }
 
@@ -1890,6 +1915,8 @@ TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) 
   const auto created = repo.appendSets(wm::UserId{kUser}, batch);
   CHECK(created.error == BatchLogError::none);
   REQUIRE_EQ(created.sets.size(), 2u);
+  REQUIRE(created.sets[0].current.has_value());
+  REQUIRE(created.sets[1].current.has_value());
   CHECK_EQ(created.sets[0].current->setNumber, 1);
   CHECK_EQ(created.sets[1].current->setNumber, 2);
   Set corrected = *created.sets[0].current;
@@ -1898,6 +1925,8 @@ TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) 
   repo.deleteSet(wm::UserId{kUser}, SessionId{"ses_batch001"}, last.id);
   const auto replay = repo.appendSets(wm::UserId{kUser}, batch);
   CHECK(replay.replayed);
+  REQUIRE_EQ(replay.sets.size(), 2u);
+  REQUIRE(replay.sets[0].current.has_value());
   CHECK_EQ(replay.sets[0].current->reps, 3);
   CHECK_FALSE(replay.sets[1].current.has_value());
   Set changed = first;
@@ -1960,6 +1989,9 @@ TEST(pg_gym_batch_and_single_writes_serialize_set_numbers_under_the_same_session
   for (const Set& set : repo.setsOf(SessionId{"ses_batch001"})) numbers.push_back(set.setNumber);
   std::sort(numbers.begin(), numbers.end());
   CHECK_EQ(numbers, (std::vector<int>{1, 2, 3}));
+  REQUIRE_EQ(batch.sets.size(), 2u);
+  REQUIRE(batch.sets[0].current.has_value());
+  REQUIRE(batch.sets[1].current.has_value());
   CHECK_EQ(batch.sets[1].current->setNumber, batch.sets[0].current->setNumber + 1);
 }
 

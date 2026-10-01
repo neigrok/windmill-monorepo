@@ -15,8 +15,6 @@ public enum Gym {
     public static let weighin = "weighin"
     public static let prefs = "prefs"
     public static let proposal = "proposal"
-    public static let thread = "thread"
-    public static let message = "message"
   }
 
   public enum Commands {
@@ -36,15 +34,25 @@ public enum Gym {
     public static let sessionOverlap: RefusalCode = "session-overlap"
     public static let unknownExercise: RefusalCode = "unknown-exercise"
     public static let badInstant: RefusalCode = "bad-instant"
+    public static let proposalSettled: RefusalCode = "proposal-settled"
+    public static let proposalSuperseded: RefusalCode = "proposal-superseded"
   }
 
   public enum Defaults {
+    public enum Routine {
+      public static let position: Int = 0
+    }
+
     public enum Prefs {
       public static let confirmHaptic: Bool = true
       public static let confirmSound: Bool = false
       public static let restSeconds: Int? = nil
       public static let restSound: Bool = true
       public static let units: String = "kg"
+    }
+
+    public enum Proposal {
+      public static let state: String = "pending"
     }
   }
 
@@ -113,7 +121,7 @@ public enum Gym {
                   "note": ["max": 4000, "type": "string", "unit": "bytes"],
                   "reps": ["integer": true, "max": 500, "min": 1, "type": "number"],
                   "rpe": ["max": 10, "min": 1, "nullable": true, "quantum": 0.1, "type": "number"],
-                  "setNumber": ["integer": true, "min": 1, "type": "number"],
+                  "setNumber": ["integer": true, "max": 2147483647, "min": 1, "type": "number"],
                   "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
                 ],
                 "required": ["id", "exerciseId", "setNumber", "weightKg", "reps", "completedAt"],
@@ -165,7 +173,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 2,
+    "minVersion": 3,
     "products": [
       "gym": [
         "codes": [
@@ -175,6 +183,8 @@ public enum Gym {
           "session-overlap",
           "unknown-exercise",
           "bad-instant",
+          "proposal-settled",
+          "proposal-superseded",
         ],
         "device": [
           "movement": [
@@ -189,12 +199,7 @@ public enum Gym {
             "keyPattern": "^offer:[A-Za-z0-9_-]{8,64}$",
             "value": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
           ],
-          "picture": ["keyPattern": "^picture:[A-Za-z0-9_-]{8,64}$", "localOnly": true, "value": ["type": "json"]],
           "rack": ["keyPattern": "^rack:[A-Za-z0-9_-]{8,64}$", "value": ["type": "json"]],
-          "runningTurn": [
-            "keyPattern": "^runningTurn$",
-            "value": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
-          ],
         ],
         "surfaces": ["web", "ios", "android"],
       ],
@@ -204,17 +209,18 @@ public enum Gym {
       [
         "deadRows": "spent",
         "fields": [
+          "createdDoor": ["domain": ["enum": ["mcp", "ask"], "type": "string"], "kind": "const", "writer": "server"],
           "entries": [
             "domain": [
               "items": [
                 "properties": [
                   "exerciseId": ["pattern": "^[A-Za-z0-9_-]{1,64}$", "type": "string"],
-                  "restSeconds": ["integer": true, "max": 900, "min": 15, "nullable": true, "type": "number"],
+                  "restSeconds": ["integer": true, "max": 900, "min": 15, "type": "number"],
                   "sets": [
                     "items": [
                       "properties": [
-                        "reps": ["integer": true, "max": 100, "min": 1, "nullable": true, "type": "number"],
-                        "weightKg": ["max": 500, "min": -500, "nullable": true, "quantum": 0.01, "type": "number"],
+                        "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
+                        "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
                       ],
                       "type": "object",
                     ],
@@ -231,8 +237,20 @@ public enum Gym {
             "kind": "lww",
             "writer": "client",
           ],
-          "name": ["domain": ["type": "string"], "kind": "lww", "max": 240, "unit": "bytes", "writer": "client"],
-          "ord": ["domain": ["type": "fracKey"], "kind": "lww", "writer": "client"],
+          "name": [
+            "domain": ["type": "string"],
+            "kind": "lww",
+            "max": 240,
+            "min": 1,
+            "unit": "bytes",
+            "writer": "client",
+          ],
+          "position": [
+            "default": 0,
+            "domain": ["integer": true, "max": 2147483647, "min": 0, "type": "number"],
+            "kind": "lww",
+            "writer": "client",
+          ],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -253,6 +271,15 @@ public enum Gym {
       [
         "deadRows": "spent",
         "fields": [
+          "aliases": [
+            "domain": [
+              "items": ["max": 240, "min": 1, "type": "string", "unit": "bytes"],
+              "maxItems": 5,
+              "type": "array",
+            ],
+            "kind": "lww",
+            "writer": "server",
+          ],
           "equipment": [
             "domain": [
               "enum": ["barbell", "dumbbell", "machine", "cable", "bodyweight", "kettlebell"],
@@ -261,9 +288,21 @@ public enum Gym {
             "kind": "const",
             "writer": "client",
           ],
-          "name": ["domain": ["type": "string"], "kind": "lww", "max": 240, "unit": "bytes", "writer": "client"],
+          "name": [
+            "domain": ["type": "string"],
+            "kind": "lww",
+            "max": 240,
+            "min": 1,
+            "unit": "bytes",
+            "writer": "client",
+          ],
           "pattern": [
             "domain": ["enum": ["squat", "hinge", "press", "pull", "carry", "core", "isolation"], "type": "string"],
+            "kind": "const",
+            "writer": "client",
+          ],
+          "stepKg": [
+            "domain": ["max": 99.99, "min": 0.01, "quantum": 0.01, "type": "number"],
             "kind": "const",
             "writer": "client",
           ],
@@ -285,18 +324,28 @@ public enum Gym {
         "type": "exercise",
       ],
       [
-        "deadRows": "spent",
         "fields": [
           "aliases": [
-            "domain": ["items": ["max": 240, "type": "string", "unit": "bytes"], "maxItems": 5, "type": "array"],
+            "domain": [
+              "items": ["max": 240, "min": 1, "type": "string", "unit": "bytes"],
+              "maxItems": 5,
+              "type": "array",
+            ],
             "kind": "lww",
             "writer": "server",
           ],
-          "name": ["domain": ["type": "string"], "kind": "lww", "max": 240, "unit": "bytes", "writer": "client"],
+          "name": [
+            "domain": ["type": "string"],
+            "kind": "lww",
+            "max": 240,
+            "min": 1,
+            "unit": "bytes",
+            "writer": "client",
+          ],
         ],
         "identity": "keyed",
         "key": ["ref": "exercise"],
-        "life": true,
+        "life": false,
         "origins": ["replica", "server"],
         "scope": "product:gym",
         "type": "exerciseName",
@@ -313,6 +362,11 @@ public enum Gym {
             "writer": "server",
           ],
           "finishedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "server"],
+          "historyRoutineId": [
+            "domain": ["nullable": true, "pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
+            "kind": "const",
+            "writer": "server",
+          ],
           "plan": ["domain": ["nullable": true, "type": "json"], "kind": "const", "writer": "server"],
           "routineId": [
             "domain": ["nullable": true, "type": "id"],
@@ -320,7 +374,7 @@ public enum Gym {
             "ref": "routine",
             "writer": "server",
           ],
-          "startedAt": ["kind": "time", "writer": "client"],
+          "startedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "server"],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -341,7 +395,7 @@ public enum Gym {
       [
         "deadRows": "spent",
         "fields": [
-          "completedAt": ["kind": "time", "writer": "client"],
+          "completedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "client"],
           "exerciseId": ["kind": "const", "ref": "exercise", "writer": "client"],
           "kind": [
             "domain": ["enum": ["warmup", "working", "drop", "failure"], "type": "string"],
@@ -427,7 +481,7 @@ public enum Gym {
         "idPattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$",
         "identity": "keyed",
         "life": true,
-        "origins": ["replica"],
+        "origins": ["replica", "server"],
         "primary": true,
         "scope": "product:gym",
         "type": "weighin",
@@ -462,8 +516,54 @@ public enum Gym {
       [
         "deadRows": "spent",
         "fields": [
+          "agent": ["domain": ["type": "string"], "kind": "const", "max": 64, "unit": "chars", "writer": "client"],
           "changes": [
-            "domain": ["items": ["type": "json"], "maxItems": 100, "type": "array"],
+            "domain": [
+              "items": [
+                "properties": [
+                  "after": [
+                    "properties": [
+                      "restSeconds": ["integer": true, "max": 900, "min": 15, "type": "number"],
+                      "sets": [
+                        "items": [
+                          "properties": [
+                            "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
+                            "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                          ],
+                          "type": "object",
+                        ],
+                        "maxItems": 20,
+                        "type": "array",
+                      ],
+                    ],
+                    "type": "object",
+                  ],
+                  "before": [
+                    "properties": [
+                      "restSeconds": ["integer": true, "max": 900, "min": 15, "type": "number"],
+                      "sets": [
+                        "items": [
+                          "properties": [
+                            "reps": ["integer": true, "max": 100, "min": 1, "type": "number"],
+                            "weightKg": ["max": 500, "min": -500, "quantum": 0.01, "type": "number"],
+                          ],
+                          "type": "object",
+                        ],
+                        "maxItems": 20,
+                        "type": "array",
+                      ],
+                    ],
+                    "type": "object",
+                  ],
+                  "exerciseId": ["pattern": "^[A-Za-z0-9_-]{1,64}$", "type": "string"],
+                  "kind": ["enum": ["kept", "added", "removed", "retargeted"], "type": "string"],
+                ],
+                "required": ["kind", "exerciseId"],
+                "type": "object",
+              ],
+              "maxItems": 100,
+              "type": "array",
+            ],
             "kind": "const",
             "writer": "client",
           ],
@@ -484,18 +584,24 @@ public enum Gym {
             "writer": "client",
           ],
           "routineId": ["kind": "const", "ref": "routine", "writer": "client"],
+          "settledAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "server"],
           "state": [
+            "default": "pending",
             "kind": "ranked",
             "rank": ["applied": 1, "dismissed": 1, "pending": 0, "superseded": 1],
             "writer": "server",
           ],
           "summary": ["domain": ["type": "string"], "kind": "const", "max": 400, "unit": "bytes", "writer": "client"],
           "supersededBy": [
-            "domain": ["enum": ["proposal", "routine"], "type": "string"],
+            "domain": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
             "kind": "lww",
             "writer": "server",
           ],
-          "threadId": ["domain": ["nullable": true, "type": "id"], "kind": "lww", "ref": "thread", "writer": "client"],
+          "threadId": [
+            "domain": ["nullable": true, "pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
+            "kind": "lww",
+            "writer": "server",
+          ],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -512,80 +618,7 @@ public enum Gym {
         "seeded": ["ordinalMax": 99999, "seedMax": 58],
         "type": "proposal",
       ],
-      [
-        "deadRows": "spent",
-        "fields": [
-          "title": ["domain": ["type": "string"], "kind": "const", "max": 8000, "unit": "bytes", "writer": "client"],
-        ],
-        "idPattern": "^[A-Za-z0-9_-]{8,64}$",
-        "idSpace": "global",
-        "identity": "minted",
-        "life": true,
-        "mint": [
-          "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-          "length": 16,
-          "prefix": "",
-        ],
-        "origins": ["replica", "server"],
-        "revivable": false,
-        "scope": "product:gym",
-        "seeded": ["ordinalMax": 99999, "seedMax": 58],
-        "type": "thread",
-      ],
-      [
-        "deadRows": "spent",
-        "fields": [
-          "at": ["kind": "time", "writer": "client"],
-          "calls": ["domain": ["type": "json"], "kind": "lww", "max": 32768, "unit": "bytes", "writer": "client"],
-          "pictures": [
-            "domain": [
-              "items": [
-                "properties": [
-                  "id": ["pattern": "^[A-Za-z0-9_-]{8,64}$", "type": "string"],
-                  "localOnly": ["type": "boolean"],
-                  "mediaType": ["pattern": "^image/[a-z0-9.+-]{1,64}$", "type": "string"],
-                ],
-                "required": ["id", "mediaType"],
-                "type": "object",
-              ],
-              "maxItems": 1,
-              "type": "array",
-            ],
-            "kind": "const",
-            "writer": "client",
-          ],
-          "receipt": ["domain": ["type": "json"], "kind": "lww", "max": 16384, "unit": "bytes", "writer": "client"],
-          "replica": [
-            "domain": ["pattern": "^(?:rp_[0-9a-f]{32}|srv)$", "type": "string"],
-            "kind": "const",
-            "writer": "client",
-          ],
-          "role": ["domain": ["enum": ["lifter", "coach"], "type": "string"], "kind": "const", "writer": "client"],
-          "state": [
-            "kind": "ranked",
-            "rank": ["completed": 2, "declined": 2, "failed": 2, "interrupted": 1, "running": 0, "stopped": 2],
-            "writer": "client",
-          ],
-          "text": ["domain": ["type": "string"], "kind": "lww", "max": 131072, "unit": "bytes", "writer": "client"],
-          "threadId": ["kind": "const", "parent": true, "ref": "thread", "writer": "client"],
-          "truncated": ["domain": ["type": "boolean"], "kind": "lww", "writer": "client"],
-        ],
-        "idPattern": "^[A-Za-z0-9_-]{8,64}$",
-        "idSpace": "global",
-        "identity": "minted",
-        "life": true,
-        "mint": [
-          "alphabet": "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz",
-          "length": 16,
-          "prefix": "",
-        ],
-        "origins": ["replica", "server"],
-        "revivable": false,
-        "scope": "product:gym",
-        "seeded": ["ordinalMax": 99999, "seedMax": 58],
-        "type": "message",
-      ],
     ],
-    "version": 2,
+    "version": 3,
   ]
 }

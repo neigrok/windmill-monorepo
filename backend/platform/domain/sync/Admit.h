@@ -112,6 +112,7 @@ struct RowWrite {
   std::optional<Row> before;
   std::optional<Row> after;
   std::vector<TextRevision> revisions;
+  std::optional<Ms> appliedAt;
 };
 
 // §6.1 step 13 for one scope: the next seq, counters, digest and open flag, each record's row write, the

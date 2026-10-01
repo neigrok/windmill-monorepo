@@ -115,7 +115,11 @@ ChangeSet::ChangeSet(const Registry& registry, ScopeKey intentScope, Ms serverNo
 
 void ChangeSet::admit(const TypeDef& type, const ScopeKey& scope, Delta delta, Source source, const Locked& locked) {
   const Op op = opOf(type, delta);
-  const Decision decision = decide(type, op, locked.state, delta.lattice.born);
+  IdState state = locked.state;
+  if (source == Source::check) {
+    if (const Change* joined = find(RecordRef{scope, delta.t, delta.id})) state = IdState{joined->after.alive() ? IdState::Kind::alive : IdState::Kind::dead, joined->after.lattice.born};
+  }
+  const Decision decision = decide(type, op, state, delta.lattice.born);
   if (decision.verdict == Decision::Verdict::refuse) throw Refusal(decision.code);
   if (decision.verdict == Decision::Verdict::ok) return;
   if (source == Source::client && locked.stored) {
@@ -363,7 +367,7 @@ std::optional<ScopeWrite> ChangeSet::stage(const ScopeKey& scope, Seq seq, const
     }
     write.digest = write.digest - hashOf(change.typed) + hashOf(typedAfter);
     if (opening && after.t == opening->type) write.open = opening->opens(after);
-    write.rows.push_back(RowWrite{&type, after.id, change.typed, std::move(typedAfter), change.revisions});
+    write.rows.push_back(RowWrite{&type, after.id, change.typed, std::move(typedAfter), change.revisions, serverNow_});
   }
   if (write.rows.empty()) return std::nullopt;
   return write;

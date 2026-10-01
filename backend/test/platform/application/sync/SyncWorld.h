@@ -5,6 +5,9 @@
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Scope.h"
 #include "products/probe/ProbeRegistry.h"
+#include "products/gym/sync/GymRegistry.h"
+#include "products/gym/sync/application/GymProduct.h"
+#include "test/products/gym/sync/domain/GymFakes.h"
 #include "products/probe/application/ProbeProduct.h"
 #include "test/platform/application/sync/SyncFakes.h"
 
@@ -152,13 +155,15 @@ private:
 // The engine over the in-memory fakes, bound to the probe product.
 class FakeWorld final : public SyncWorld {
 public:
-  FakeWorld() : catalog_(probe::registry()), product_(receipts_) {
+  FakeWorld(bool gym = false) : catalog_(gym ? wm::gym::engine::registry() : probe::registry()), product_(receipts_), gymProduct_(gymState_), gym_(gym) {
     std::map<std::string, TypeStore*> stores;
-    for (const TypeDef& type : probe::registry().types()) {
-      types_.push_back(std::make_unique<fake::FakeTypeStore>(type, 1));
+    for (const TypeDef& type : catalog_.registry().types()) {
+      if (gym_) types_.push_back(std::make_unique<wm::gym::engine::test::FakeGymType>(type));
+      else types_.push_back(std::make_unique<fake::FakeTypeStore>(type, 1));
       stores.emplace(type.name, types_.back().get());
     }
-    product_.bindTo(catalog_, stores);
+    if (gym_) gymProduct_.bindTo(catalog_, stores);
+    else product_.bindTo(catalog_, stores);
     catalog_.seal();
     seed(Json::Value(Json::objectValue));
   }
@@ -223,6 +228,7 @@ public:
       }
     }
     const Json::Value& product = state["product"];
+    if (gym_) db.gym = product;
     for (const std::string& key : product["receipts"].getMemberNames()) {
       for (const std::string& called : product["receipts"][key].getMemberNames())
         db.startReceipts[{storeKey(key), called}] = product["receipts"][key][called].asString();
@@ -277,6 +283,10 @@ public:
     state["product"] = Json::Value(Json::objectValue);
     for (const auto& [key, resolved] : db.startReceipts) state["product"]["receipts"][aliasKey(key.first)][key.second] = resolved;
     for (const auto& [key, source] : db.copyReceipts) state["product"]["copies"][aliasKey(key.first)][key.second] = source;
+    if (gym_) {
+      state["product"] = db.gym;
+      for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
+    }
     dropEmpty(state);
     return state;
   }
@@ -284,9 +294,12 @@ public:
 private:
   fake::FakeSyncStore store_;
   fake::FakeProbeReceipts receipts_;
-  std::vector<std::unique_ptr<fake::FakeTypeStore>> types_;
+  std::vector<std::unique_ptr<TypeStore>> types_;
   SyncCatalog catalog_;
   probe::ProbeProduct product_;
+  wm::gym::engine::test::FakeGymState gymState_;
+  wm::gym::engine::GymProduct gymProduct_;
+  bool gym_;
 };
 
 }

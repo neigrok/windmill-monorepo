@@ -9,6 +9,7 @@ import { Refusal } from '../server/admit.js';
 export const STALE_MS = 4 * 3_600_000;
 export const MAX_ALIASES = 5;
 const DAY_MS = 86_400_000;
+const MAX_SET_NUMBER = 2_147_483_647;
 
 function valueOf(record, field) {
   return record?.f?.[field]?.[0];
@@ -65,6 +66,23 @@ function utcDay(ms) {
 // A session's span, an empty one taking up its first instant, as gym's crossedBy reads it.
 function spanOf(startedAt, finishedAt) {
   return [startedAt, Math.max(finishedAt ?? startedAt, startedAt + 1)];
+}
+
+function proposalChanges(base, proposed) {
+  const matched = new Set();
+  const side = ({ exerciseId, ...targets }) => targets;
+  const changes = proposed.map((entry) => {
+    const at = base.findIndex((line, i) => !matched.has(i) && line.exerciseId === entry.exerciseId);
+    const after = side(entry);
+    if (at === -1) return { kind: 'added', exerciseId: entry.exerciseId, after };
+    matched.add(at);
+    const before = side(base[at]);
+    return { kind: sameJson(before, after) ? 'kept' : 'retargeted', exerciseId: entry.exerciseId, before, after };
+  });
+  base.forEach((entry, i) => {
+    if (!matched.has(i)) changes.push({ kind: 'removed', exerciseId: entry.exerciseId, before: side(entry) });
+  });
+  return changes;
 }
 
 export class GymProduct {
@@ -354,15 +372,35 @@ export class GymProduct {
   // Product rules on the joined records, record by record in intent order; the deltas they append are
   // the rules' server writes and the consequences of a death (§2.2).
   check(ctx, records) {
-    const joined = new Map(records.map((record) => [`${record.type.type}|${JSON.stringify(record.after.id)}`, record.after]));
-    const current = (t, id) => joined.get(`${t}|${JSON.stringify(id)}`) ?? ctx.stored(t, id);
-    const appended = [];
-    const later = new Map();
-    for (const record of records) {
-      const rule = RULES[record.type.type];
-      if (rule) rule(ctx, record, { current, appended, later, product: this });
+    for (const record of records.filter((record) => record.after.t === 'routine')) {
+      const revisions = book(ctx, 'revisions');
+      if (died(record)) delete revisions[record.after.id];
+      else if (created(record)) revisions[record.after.id] = 1;
+      else if (changed(record, 'name') || changed(record, 'entries')) revisions[record.after.id] = (revisions[record.after.id] ?? 1) + 1;
     }
-    for (const delta of later.values()) appended.push(delta);
+    const key = (t, id) => `${t}|${JSON.stringify(id)}`;
+    const joined = new Map(records.map((record) => [key(record.type.type, record.after.id), structuredClone(record.after)]));
+    const current = (t, id) => joined.get(`${t}|${JSON.stringify(id)}`) ?? ctx.stored(t, id);
+    const rowsOf = (t) => {
+      const rows = new Map(ctx.rowsOf(t).map((row) => [key(t, row.id), current(t, row.id)]));
+      for (const [id, row] of joined) if (row.t === t) rows.set(id, row);
+      return [...rows.values()];
+    };
+    const appended = [];
+    const futureProposals = new Set(records.filter((record) => record.after.t === 'proposal' && created(record)).map((record) => record.after.id));
+    const numbered = [];
+    const append = (delta) => {
+      appended.push(delta);
+      const row = structuredClone(current(delta.t, delta.id));
+      if (delta.life) row.life = delta.life;
+      row.f = { ...row.f, ...delta.f };
+      joined.set(key(delta.t, delta.id), row);
+    };
+    for (const record of records) {
+      if (record.after.t === 'proposal') futureProposals.delete(record.after.id);
+      const rule = RULES[record.type.type];
+      if (rule) rule(ctx, record, { current, rowsOf, append, futureProposals, numbered, product: this });
+    }
     return appended;
   }
 }
@@ -380,9 +418,9 @@ function changed(record, field) {
     && !sameJson(valueOf(record.original, field), valueOf(record.after, field));
 }
 
-function exerciseKnown(ctx, id) {
+function exerciseKnown(ctx, id, current = ctx.stored) {
   if (Object.hasOwn(ctx.productState.seeds ?? {}, id)) return true;
-  const own = ctx.stored('exercise', id);
+  const own = current('exercise', id);
   return own !== undefined && isAlive(own);
 }
 
@@ -393,8 +431,10 @@ function renamed(aliases, before, after) {
 }
 
 const RULES = {
-  set(ctx, record, { current, later }) {
+  set(ctx, record, { current, append, numbered }) {
     const { after } = record;
+    if (isAlive(after) && after.v?.setNumber !== undefined
+      && (!Number.isInteger(after.v.setNumber) || after.v.setNumber < 1 || after.v.setNumber > MAX_SET_NUMBER)) throw new Refusal('invalid');
     if (!created(record)) {
       const moved = ctx.deltas.some((delta) => delta.t === 'set' && delta.id === after.id && delta.f?.completedAt !== undefined);
       if (moved && record.original !== undefined) throw new Refusal('invalid');
@@ -403,39 +443,44 @@ const RULES = {
     const sessionId = valueOf(after, 'sessionId');
     const session = current('session', sessionId);
     if (!record.createdBy.includes('command') && session && isAlive(session)) {
-      const finishedAt = later.get(sessionId)?.f.finishedAt[0] ?? valueOf(session, 'finishedAt');
+      const finishedAt = valueOf(session, 'finishedAt');
       if (isSet(finishedAt)) {
         const completedAt = valueOf(after, 'completedAt');
         if (valueOf(session, 'closedBy') !== 'stale' || completedAt > finishedAt + STALE_MS) throw new Refusal('session-finished');
-        if (completedAt > finishedAt) later.set(sessionId, { t: 'session', id: sessionId, born: session.born, f: { finishedAt: [completedAt, null] } });
+        if (completedAt > finishedAt) append({ t: 'session', id: sessionId, born: session.born, f: { finishedAt: [completedAt, null] } });
       }
     }
-    if (!exerciseKnown(ctx, valueOf(after, 'exerciseId'))) throw new Refusal('unknown-exercise');
+    if (!exerciseKnown(ctx, valueOf(after, 'exerciseId'), current)) throw new Refusal('unknown-exercise');
+    if (record.isNew) {
+      const peers = [...ctx.rowsOf('set'), ...numbered].filter((row) => isAlive(row) && row.id !== after.id
+        && valueOf(row, 'sessionId') === sessionId && valueOf(row, 'exerciseId') === valueOf(after, 'exerciseId'));
+      const number = after.v?.setNumber ?? 1 + Math.max(0, ...peers.map((row) => row.v?.setNumber ?? 0));
+      if (!Number.isInteger(number) || number < 1 || number > MAX_SET_NUMBER) throw new Refusal('invalid');
+      numbered.push({ ...after, v: { ...after.v, setNumber: number } });
+    }
   },
 
-  session(ctx, record, { appended }) {
+  session(ctx, record, { rowsOf, append }) {
     if (created(record)) {
       if (record.createdBy.some((source) => source !== 'command')) throw new Refusal('invalid');
       return;
     }
     if (!died(record)) return;
     const original = record.original;
-    if (!isSet(valueOf(original, 'finishedAt')) && !isStale(ctx, original)) throw new Refusal('session-open');
-    for (const set of ctx.rowsOf('set')) {
-      if (isAlive(set) && valueOf(set, 'sessionId') === original.id) appended.push({ t: 'set', id: set.id, born: set.born, life: ['dead', null] });
+    if (!isSet(valueOf(original, 'finishedAt')) && !isStale({ ...ctx, rowsOf }, original)) throw new Refusal('session-open');
+    for (const set of rowsOf('set')) {
+      if (isAlive(set) && valueOf(set, 'sessionId') === original.id) append({ t: 'set', id: set.id, born: set.born, life: ['dead', null] });
     }
   },
 
-  routine(ctx, record, { current, appended }) {
+  routine(ctx, record, { current, rowsOf, append }) {
     const { after } = record;
-    const revisions = book(ctx, 'revisions');
     if (died(record)) {
-      delete revisions[after.id];
-      for (const proposal of ctx.rowsOf('proposal')) {
-        if (isAlive(proposal) && valueOf(proposal, 'routineId') === after.id) appended.push({ t: 'proposal', id: proposal.id, born: proposal.born, life: ['dead', null] });
+      for (const proposal of rowsOf('proposal')) {
+        if (isAlive(proposal) && valueOf(proposal, 'routineId') === after.id) append({ t: 'proposal', id: proposal.id, born: proposal.born, life: ['dead', null] });
       }
-      for (const session of ctx.rowsOf('session')) {
-        if (isAlive(session) && valueOf(session, 'routineId') === after.id) appended.push({ t: 'session', id: session.id, born: session.born, f: { routineId: [null, null] } });
+      for (const session of rowsOf('session')) {
+        if (isAlive(session) && valueOf(session, 'routineId') === after.id) append({ t: 'session', id: session.id, born: session.born, f: { routineId: [null, null] } });
       }
       return;
     }
@@ -445,43 +490,40 @@ const RULES = {
     if (isNew || changed(record, 'entries')) {
       const entries = valueOf(after, 'entries');
       if (!Array.isArray(entries) || entries.length === 0 || entries.some((entry) => entry.sets !== undefined && entry.sets.length === 0)) throw new Refusal('invalid');
-      if (entries.some((entry) => !exerciseKnown(ctx, entry.exerciseId))) throw new Refusal('unknown-exercise');
+      if (entries.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
     }
-    if (isNew) revisions[after.id] = 1;
     if (!moved) return;
-    revisions[after.id] = (revisions[after.id] ?? 1) + 1;
-    for (const stored of ctx.rowsOf('proposal')) {
-      const proposal = current('proposal', stored.id);
+    for (const proposal of rowsOf('proposal')) {
       if (!isAlive(proposal) || valueOf(proposal, 'routineId') !== after.id || stateOf(proposal) !== 'pending') continue;
-      appended.push({ t: 'proposal', id: proposal.id, born: proposal.born, f: { state: ['superseded', null], settledAt: [ctx.serverNow, null] } });
+      append({ t: 'proposal', id: proposal.id, born: proposal.born, f: { state: ['superseded', null], settledAt: [ctx.serverNow, null] } });
     }
   },
 
-  exercise(ctx, record, { appended }) {
+  exercise(ctx, record, { append }) {
     const { after } = record;
     if (died(record)) throw new Refusal('invalid');
     if (created(record) && !isSet(valueOf(after, 'stepKg'))) throw new Refusal('invalid');
     if (changed(record, 'name')) {
       const aliases = renamed(valueOf(after, 'aliases'), valueOf(record.original, 'name'), valueOf(after, 'name'));
-      appended.push({ t: 'exercise', id: after.id, born: after.born, f: { aliases: [aliases, null] } });
+      append({ t: 'exercise', id: after.id, born: after.born, f: { aliases: [aliases, null] } });
     }
   },
 
-  exerciseName(ctx, record, { appended }) {
+  exerciseName(ctx, record, { append }) {
     const { after } = record;
     const seed = ctx.productState.seeds?.[after.id];
     if (!seed) throw new Refusal('invalid');
     const before = valueOf(record.original, 'name') ?? seed.name;
     const now = valueOf(after, 'name') ?? seed.name;
     if (before === now) return;
-    appended.push({ t: 'exerciseName', id: after.id, f: { aliases: [renamed(valueOf(after, 'aliases'), before, now), null] } });
+    append({ t: 'exerciseName', id: after.id, f: { aliases: [renamed(valueOf(after, 'aliases'), before, now), null] } });
   },
 
   weighin(ctx, record) {
     if (isAlive(record.after) && record.after.id > utcDay(ctx.serverNow + DAY_MS)) throw new Refusal('bad-instant');
   },
 
-  proposal(ctx, record, { current, appended }) {
+  proposal(ctx, record, { current, rowsOf, append, futureProposals }) {
     const { after } = record;
     if (!created(record)) return;
     if (ctx.origin === 'replica') {
@@ -491,12 +533,24 @@ const RULES = {
     const routineId = valueOf(after, 'routineId');
     const routine = current('routine', routineId);
     if (routine === undefined || !isAlive(routine)) throw new Refusal('unknown-record');
-    book(ctx, 'bases')[after.id] = { revision: book(ctx, 'revisions')[routineId] ?? 1, name: valueOf(routine, 'name') };
-    for (const stored of ctx.rowsOf('proposal')) {
-      const other = current('proposal', stored.id);
-      if (other.id === after.id || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'routineId') !== routineId) continue;
+    if (ctx.origin === 'replica') {
+      for (const field of ['entries', 'name']) {
+        if (!ctx.guards.some((guard) => guard.t === 'routine' && guard.id === routineId && guard.field === field
+          && guard.stamp === (routine.f?.[field]?.[1] ?? null))) throw new Refusal('invalid');
+      }
+    }
+    const changes = valueOf(after, 'changes');
+    const proposed = changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
+    const removing = valueOf(after, 'intent') === 'remove';
+    if ((removing ? proposed.length !== 0 : proposed.length === 0 || proposed.length > 50
+      || !valueOf(after, 'proposedName') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
+      || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
+    if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
+    book(ctx, 'bases')[after.id] = { revision: ctx.productState.revisions?.[ctx.scopeKey]?.[routineId] ?? 1, name: valueOf(routine, 'name') };
+    for (const other of rowsOf('proposal')) {
+      if (other.id === after.id || futureProposals.has(other.id) || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'routineId') !== routineId) continue;
       if (valueOf(other, 'door') !== valueOf(after, 'door') || (valueOf(other, 'connection') ?? '') !== (valueOf(after, 'connection') ?? '')) continue;
-      appended.push({ t: 'proposal', id: other.id, born: other.born, f: { state: ['superseded', null], supersededBy: [after.id, null], settledAt: [ctx.serverNow, null] } });
+      append({ t: 'proposal', id: other.id, born: other.born, f: { state: ['superseded', null], supersededBy: [after.id, null], settledAt: [ctx.serverNow, null] } });
     }
   },
 };

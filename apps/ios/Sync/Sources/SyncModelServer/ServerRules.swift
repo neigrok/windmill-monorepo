@@ -2,9 +2,10 @@ import SyncCore
 
 // The product plug-in port, mirroring the server's `SyncType` and command ports (§2.3, §6.4): a product's replay rules,
 // command handlers, checks on joined records and revision retention reach admission only through it. A product's
-// rules here are a test double its own team writes; only the generic core is held to the server corpus.
+// rules here are a test double pinned by its product's corpus.
 
 public protocol ServerRules: Sendable {
+  func elsewhere(_ key: RecordKey, product: JSON.Object) -> Bool
   // §6.1 step 7: a command's replay, read from the locked rows and its stored arguments; a replay skips the guards.
   func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool
 
@@ -12,7 +13,7 @@ public protocol ServerRules: Sendable {
   func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome
 
   // §6.1 step 10: the product's rules on the joined records; the deltas it appends pass steps 5, 6 and 9.
-  func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta]
+  func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta]
 
   // G6 and Appendix A: the superseded text heads a scope keeps once an admission has stored new ones.
   func keptRevisions(_ revisions: [Revision]) -> [Revision]
@@ -21,13 +22,14 @@ public protocol ServerRules: Sendable {
 // A product with no rules of its own conforms with an empty body: no command replays, every command is invalid, a check
 // appends nothing, and every superseded text head is kept.
 extension ServerRules {
+  public func elsewhere(_ key: RecordKey, product: JSON.Object) -> Bool { false }
   public func replays(_ command: CheckedCommand, in context: RuleContext) -> Bool { false }
 
   public func run(_ command: CheckedCommand, in context: RuleContext) throws(Refusal) -> CommandOutcome {
     throw Refusal(.invalid)
   }
 
-  public func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] { [] }
+  public func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] { [] }
 
   public func keptRevisions(_ revisions: [Revision]) -> [Revision] { revisions }
 }
@@ -38,18 +40,26 @@ public struct RuleContext: Sendable {
   public let registry: Registry
   public let scope: ScopeKey
   public let origin: IntentOrigin
+  public let deltas: [PlannedDelta]
+  public let guards: [Guard]
   public let serverNow: Int64
+  // The product state this admission commits only after every check passes.
+  public var product: JSON.Object
+  let rules: any ServerRules
   let state: ServerState
   let joined: [RecordKey: Row]
 
   public var account: String { origin.account }
 
-  // The product's own server state (receipts and the like), as this admission has it so far.
-  public var product: JSON.Object { state.product }
-
   // §4.2 the id state as admission locked it, before this intent.
   public func idState(of key: RecordKey) -> IdState {
-    state.idState(of: key, in: scope, registry: registry)
+    let stored = state.idState(of: key, in: scope, registry: registry)
+    if case .none = stored, rules.elsewhere(key, product: product) { return .foreign }
+    return stored
+  }
+
+  public func storedRecords(ofType type: String) -> [Row] {
+    (state.rows[scope] ?? [:]).filter { $0.key.type == type }.sorted { $0.key < $1.key }.map(\.value)
   }
 
   // A record's typed row as this intent has joined it so far: alive, or a kept dead row.

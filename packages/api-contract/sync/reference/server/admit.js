@@ -236,6 +236,7 @@ class Admission {
       account: this.origin.account,
       origin: this.fromServer ? 'server' : 'replica',
       deltas: this.intent.d ?? [],
+      guards: this.intent.guard ?? [],
       productState: work.product,
       idState: (t, id) => this.idStateOf(scopeKey, registry.type(t), id),
       stored: (t, id) => work.stored(scopeKey, t, id),
@@ -250,7 +251,8 @@ class Admission {
     for (const delta of deltas) {
       const type = this.registry.type(delta.t);
       const op = opOf(type, delta);
-      const idState = this.idStateOf(scopeKey, type, delta.id);
+      const joined = source === 'check' ? this.records.get(`${scopeKey}|${recordKey(delta.t, delta.id)}`)?.after : undefined;
+      const idState = joined ? { state: isAlive(joined) ? 'alive' : 'dead', born: joined.born } : this.idStateOf(scopeKey, type, delta.id);
       const decision = decide(type, op, idState, delta.born);
       if (decision.verdict === 'refuse') throw new Refusal(decision.code);
       if (decision.verdict === 'ok') continue;

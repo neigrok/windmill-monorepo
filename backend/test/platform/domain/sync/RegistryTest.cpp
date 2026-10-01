@@ -3,6 +3,7 @@
 #include "platform/domain/sync/Jcs.h"
 
 #include "products/probe/ProbeRegistry.h"
+#include "products/gym/sync/GymRegistry.h"
 #include "test/testing.h"
 
 #include <algorithm>
@@ -469,7 +470,7 @@ TEST(a_domain_admits_a_number_only_on_its_quantum_at_any_depth) {
   const std::vector<Registry> registries = productRegistries();
   const Registry& gym = registries.front();
   const Domain& entries = *gym.type("routine")->fields.at("entries").domain;
-  CHECK(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {"weightKg": null}]}])")));
+  CHECK(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {}]}])")));
   CHECK_FALSE(entries.admits(parseJson(R"([{"exerciseId": "dip", "sets": [{"reps": 8, "weightKg": 60.25}, {"weightKg": 60.005}]}])")));
 
   const ArgDef& sets = gym.command("gym.importSession")->args.at("sets");
@@ -506,20 +507,21 @@ TEST(the_gym_registry_reads_as_declared) {
   const std::vector<Registry> registries = productRegistries();
   const Registry& gym = registries.front();
   CHECK_EQ(namesOf(gym.types()), (std::vector<std::string>{"routine", "exercise", "exerciseName", "session", "set", "note", "weighin",
-                                                          "prefs", "proposal", "thread", "message"}));
+                                                          "prefs", "proposal"}));
   CHECK_EQ(namesOf(gym.commands()), (std::vector<std::string>{"gym.start", "gym.importSession", "gym.correctSession", "gym.finish",
                                                              "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"}));
   CHECK_EQ(gym.products().at("gym").codes, (std::vector<std::string>{"payload-conflict", "session-finished", "session-open",
-                                                                    "session-overlap", "unknown-exercise", "bad-instant"}));
+                                                                    "session-overlap", "unknown-exercise", "bad-instant", "proposal-settled", "proposal-superseded"}));
   // Device rows live in `device/gym` alone (§2.5): never a wire type, never sent.
   const std::map<std::string, DeviceRowDef>& device = gym.products().at("gym").device;
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
-  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "picture", "rack", "runningTurn"}));
-  CHECK(device.at("runningTurn").keyPattern.matches("runningTurn"));
-  CHECK_FALSE(device.at("runningTurn").keyPattern.matches("runningTurn:t_0001"));
-  CHECK_FALSE(device.at("runningTurn").localOnly);
-  CHECK(device.at("picture").localOnly);
+  CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "rack"}));
+  CHECK_EQ(gym.version(), 3);
+  CHECK_EQ(gym.minVersion(), 3);
+  CHECK(gym.type("thread") == nullptr);
+  CHECK(gym.type("message") == nullptr);
+  for (const auto& row : deviceRows) CHECK(device.at(row).keyPattern.matches(row + ":session0001"));
   for (const std::string& row : deviceRows) CHECK(gym.type(row) == nullptr);
   CHECK_EQ(gym.type("set")->fields.at("weightKg").domain->quantum->step(), 0.01);
   CHECK_EQ(gym.type("set")->fields.at("rpe").domain->quantum->step(), 0.1);
@@ -537,8 +539,12 @@ TEST(the_gym_registry_reads_as_declared) {
 
 // The product registries ship as one registry: one version and minVersion, and no product, type, command or
 // refusal code a second registry declares again.
-TEST(the_product_registries_compose_into_one_registry) {
-  const std::vector<Registry> registries = productRegistries();
+TEST(the_deployment_composition_embeds_gym_alone) {
+  const Json::Value composition = parseJson(wm::gym::engine::compositionText());
+  CHECK_EQ(jcs(composition), jcs(parseJson(R"({"composition":"windmill","registries":["gym.registry.json"]})")));
+  CHECK_EQ(wm::gym::engine::registry().version(), 3);
+  CHECK_EQ(wm::gym::engine::registry().minVersion(), 3);
+  const std::vector<Registry> registries{wm::gym::engine::registry()};
   std::set<std::pair<std::int64_t, std::int64_t>> versions;
   std::vector<std::string> declared;
   for (const Registry& registry : registries) {

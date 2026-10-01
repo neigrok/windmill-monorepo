@@ -3,11 +3,11 @@ import SyncModelServer
 import SyncTesting
 import Testing
 
-// The server-role corpus files (corpus/README.md "Server files") run against ModelServer and the probe's rules, and
-// the server half of every protocol transcript.
+// Server-role vectors use their product's rules; protocol transcripts use the probe.
 
 enum ServerHandlers {
   static let probe = try! Corpus.probeRegistry()
+  static let gym = try! Registry(json: Corpus.registryFile("gym"))
 
   static let table: [String: @Sendable (JSON) throws -> JSON] = files.merging(admitFiles) { $1 }
 
@@ -29,6 +29,7 @@ enum ServerHandlers {
     "text/merge.json": { try textMerge($0) },
     "envelope/credentials.json": { try credentials($0) },
     "admit/requests.json": { try requests($0) },
+    "gym/admit.json": { try admit($0, registry: gym, rules: GymServerRules()) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },
     "live/death.json": { input in
@@ -131,14 +132,14 @@ enum ServerHandlers {
   }
 
   // `{state, origin, intent, serverNow, limits?}`: §6.1 for one intent, no push bookkeeping.
-  static func admit(_ input: JSON) throws -> JSON {
+  static func admit(_ input: JSON, registry: Registry = probe, rules: any ServerRules = ProbeServerRules()) throws -> JSON {
     var state = try ServerState(json: input.member("state"))
     let origin = try input.member("origin")
     let account = try origin.member("account").asString()
     let from: IntentOrigin = try origin.member("kind").asString() == "replica"
       ? .replica(account: account, replica: try origin.member("replica").asString(), n: try origin.member("n").asInteger())
       : .server(account: account, requestId: nil)
-    let admission = Admission(registry: probe, rules: ProbeServerRules(), limits: try ServerLimits(json: input["limits"]))
+    let admission = Admission(registry: registry, rules: rules, limits: try ServerLimits(json: input["limits"]))
     let admitted = try admission.admit(input.member("intent"), from: from, at: try input.member("serverNow").asInteger(), in: &state)
     return ["result": admitted.result.json, "state": state.json]
   }

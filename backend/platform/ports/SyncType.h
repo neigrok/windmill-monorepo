@@ -74,6 +74,8 @@ struct CheckCtx {
   const Caller& caller;
   Ms serverNow = 0;
   SyncReader& read;
+  SyncTxn& txn;
+  const Intent& intent;
 };
 
 // A type's product rules (Appendix A).
@@ -93,6 +95,7 @@ struct CommandCtx {
   const Json::Value& args;
   SyncReader& read;
   SyncTxn& txn;
+  const Json::Value& rawArgs;
 };
 
 // Deltas a command writes into a scope the same intent creates (§6.1 step 14).

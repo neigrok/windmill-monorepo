@@ -31,6 +31,7 @@ namespace wm::sync::fake {
 // and the probe's receipts.
 struct FakeDb {
   std::string epoch = "ep-1";
+  Json::Value gym = Json::Value(Json::objectValue);
   std::map<std::string, std::string> accountNames;
   std::map<ScopeKey, ScopeRow> scopes;
   std::map<std::string, ReplicaRow> replicas;
@@ -304,7 +305,7 @@ private:
 };
 
 // Any registry type's typed rows, kept whole. `revisionsKept` is the product's text revision policy.
-class FakeTypeStore final : public TypeStore {
+class FakeTypeStore : public TypeStore {
 public:
   FakeTypeStore(const TypeDef& type, std::size_t revisionsKept) : type_(type), revisionsKept_(revisionsKept) {}
 

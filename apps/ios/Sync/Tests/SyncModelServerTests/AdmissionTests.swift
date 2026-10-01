@@ -187,7 +187,7 @@ struct Boards: ServerRules {
       created: [ScopeKey(.tree(destination.id.description)): copied.map(PlannedDelta.copy(of:))])
   }
 
-  func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
+  func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
     changes.filter { change in
       guard change.scope == context.scope, change.key.type == "doc", change.after.isAlive,
             case .string(let folder)? = change.after.lattice.fields["folderId"]?.value else { return false }
@@ -341,7 +341,7 @@ struct Creators: ServerRules {
     try probe.run(command, in: context)
   }
 
-  func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
+  func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
     let creators = changes.map { ("\($0.key.type)/\($0.key.id)", JSON.array($0.createdBy.map { .string($0.rawValue) })) }
     throw Refusal(.invalid, detail: .object(JSON.Object(uniqueKeysWithValues: creators)))
   }

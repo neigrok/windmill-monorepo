@@ -324,10 +324,11 @@ private:
     std::set<std::string> touched;
     for (const Change& change : changes_->changes()) touched.insert(change.type->name);
     std::vector<Delta> appended;
-    const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this};
+    const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
+    std::set<TypeRules*> checked;
     for (const TypeDef& type : registry_.types()) {
       TypeRules* rules = touched.contains(type.name) ? a_.catalog_.rules(type.name) : nullptr;
-      if (!rules) continue;
+      if (!rules || !checked.insert(rules).second) continue;
       std::vector<Delta> deltas = rules->check(ctx, changes_->changes());
       appended.insert(appended.end(), std::make_move_iterator(deltas.begin()), std::make_move_iterator(deltas.end()));
     }
@@ -512,7 +513,7 @@ private:
   }
 
   CommandCtx commandCtx() {
-    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_};
+    return CommandCtx{registry_, *scopeRow_, caller_, now_, intent().cmd->args, *this, *txn_, wire_["cmd"]["args"]};
   }
 
   // The records a command's `ref<t>` arguments name.

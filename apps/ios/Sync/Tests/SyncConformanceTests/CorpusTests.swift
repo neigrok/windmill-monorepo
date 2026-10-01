@@ -5,7 +5,7 @@ import Testing
 // One test case per corpus vector with a handler; a corpus file without one fails the run.
 
 struct CorpusTests {
-  @Test("vector", arguments: try Corpus.files().filter { Handlers.table[$0.path] != nil }.flatMap { try Corpus.vectors(in: $0) })
+  @Test("vector", arguments: try Corpus.files().filter { $0.role != .cppOnly && Handlers.table[$0.path] != nil }.flatMap { try Corpus.vectors(in: $0) })
   func vector(_ vector: CorpusVector) async throws {
     let handler = try #require(Handlers.table[vector.file])
     let answer: JSON
@@ -38,7 +38,7 @@ struct CorpusTests {
   }
 
   @Test func everyCorpusFileHasAHandler() throws {
-    #expect(try Corpus.files().filter { Handlers.table[$0.path] == nil }.map(\.path) == [])
+    #expect(try Corpus.files().filter { $0.role != .cppOnly && Handlers.table[$0.path] == nil }.map(\.path) == [])
   }
 
   // The transcript runner is no easier than the transcript: a line or an ending the engines do not meet is reported,
@@ -81,6 +81,9 @@ struct CorpusTests {
     }
     #expect(unclassified == [])
     #expect(stale == [])
+    #expect(Corpus.role(of: "gym/admit.json") == .server)
+    #expect(Corpus.role(of: "gym/backfill.json") == .cppOnly)
+    #expect(Corpus.role(of: "gym/unclaimed.json") == nil)
   }
 
   @Test func everyHandlerNamesACorpusFile() throws {

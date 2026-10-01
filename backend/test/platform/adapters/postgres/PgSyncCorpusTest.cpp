@@ -25,6 +25,7 @@ const char* needsPostgres() {
 [[maybe_unused]] const bool registered = [] {
   corpus::registerFiles(WM_SYNC_CONTRACT_DIR "/corpus",
                         std::map<std::string, std::variant<corpus::Runner, corpus::Transcript>>{
+                            {"gym/admit.json", [](const Json::Value& input) { static test::PgWorld gym(true); return test::gymAdmitVector(gym, input); }},
                             {"admit/", [](const Json::Value& input) { return test::admitVector(world(), input); }},
                             {"admit/requests.json", [](const Json::Value& input) { return test::requestsVector(world(), input); }},
                             {"push/serve.json", [](const Json::Value& input) { return test::pushVector(world(), input); }},

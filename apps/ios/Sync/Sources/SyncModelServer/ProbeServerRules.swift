@@ -31,7 +31,7 @@ public struct ProbeServerRules: ServerRules {
   // A run is created only by `probe.start`: a create from any other source is invalid, a delta beside the command
   // included. A run that dies here takes every lap under it, the ones this intent deletes included, at the next pass's
   // server stamp.
-  public func check(_ changes: [RecordChange], in context: RuleContext) throws(Refusal) -> [PlannedDelta] {
+  public func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] {
     if changes.contains(where: { $0.key.type == "run" && $0.createdBy.contains { $0 != .command } }) { throw Refusal(.invalid) }
     let dying = changes.filter { $0.key.type == "run" && $0.diesHere }.map { $0.key.id.json }
     guard !dying.isEmpty else { return [] }

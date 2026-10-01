@@ -48,7 +48,7 @@ RUN git clone --depth 1 --branch "${LIBPQXX_VERSION}" https://github.com/jtv/lib
 
 WORKDIR /src
 COPY . .
-COPY --from=contract sync/*.registry.json /contract/sync/
+COPY --from=contract sync/*.registry.json sync/composition.json /contract/sync/
 COPY --from=contract sync/corpus /contract/sync/corpus
 
 # Configure once, then build the two service binaries, the probe server the sync conformance runs against, and every

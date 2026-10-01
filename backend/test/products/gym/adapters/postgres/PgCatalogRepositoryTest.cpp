@@ -85,9 +85,10 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
   ExerciseInsertOutcome fine = repo.insertExercise(wm::UserId{kUser}, floorStep);
 
   CHECK(top.error == ExerciseInsertError::none);
-  CHECK_EQ(top.exercise, std::optional<Exercise>(ceiling));
+  REQUIRE_EQ(top.exercise, std::optional<Exercise>(ceiling));
   CHECK_EQ(top.exercise->stepKg, 99.99);
   CHECK(fine.error == ExerciseInsertError::none);
+  REQUIRE_EQ(fine.exercise, std::optional<Exercise>(floorStep));
   CHECK_EQ(fine.exercise->stepKg, 0.01);
   // What the domain refuses is what the column would have raised on, proved by the statement itself.
   {

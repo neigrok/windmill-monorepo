@@ -183,6 +183,8 @@ struct AdmissionRun {
   var createdScopes: [ScopeKey] = []
   var changeEvents: [LiveEvent] = []
   var deathEvents: [LiveEvent] = []
+  var intentDeltas: [PlannedDelta] = []
+  var intentGuards: [Guard] = []
 
   init(admission: Admission, origin: IntentOrigin, serverNow: Int64, scope: ScopeKey, state: ServerState) {
     self.admission = admission
@@ -195,6 +197,8 @@ struct AdmissionRun {
   var registry: Registry { admission.registry }
 
   mutating func admit(_ intent: CheckedIntent) throws -> AdmitResult {
+    intentDeltas = intent.deltas
+    intentGuards = intent.guards
     try lockScope(for: intent)
     let deltas = try lockIdentities(intent.deltas, in: scope, from: .intent)
     let replay = intent.command.map { admission.rules.replays($0, in: context()) } ?? false
@@ -206,7 +210,9 @@ struct AdmissionRun {
       commandDeltas += try lockIdentities(written, in: created, from: .command)
     }
     firstPassStamp = try join(deltas + commandDeltas, observing: deltas)
-    let appended = try admission.rules.check(changes(), in: context())
+    var checking = context()
+    let appended = try admission.rules.check(changes(), in: &checking)
+    state.product = checking.product
     _ = try join(try lockIdentities(appended, in: scope, from: .check), observing: deltas)
     try checkParents()
     assignSerials()
@@ -244,7 +250,8 @@ struct AdmissionRun {
 
   mutating func lock(_ place: Place) -> IdState {
     if let locked = locks[place] { return locked }
-    let locked = state.idState(of: place.key, in: place.scope, registry: registry)
+    var locked = state.idState(of: place.key, in: place.scope, registry: registry)
+    if case .none = locked, admission.rules.elsewhere(place.key, product: state.product) { locked = .foreign }
     locks[place] = locked
     return locked
   }
@@ -254,8 +261,13 @@ struct AdmissionRun {
     var applying: [PlacedDelta] = []
     for delta in deltas {
       let type = registry.type(delta.key.type)!
-      let locked = lock(Place(scope: scope, key: delta.key))
-      switch IdentityRules.verdict(delta.op, on: locked, born: delta.born, revivable: type.revivable == true) {
+      let place = Place(scope: scope, key: delta.key)
+      let locked = lock(place)
+      let present: IdState
+      if source == .check, let joined = touched[place]?.joined {
+        present = joined.isAlive ? .alive(joined) : .dead(joined)
+      } else { present = locked }
+      switch IdentityRules.verdict(delta.op, on: present, born: delta.born, revivable: type.revivable == true) {
       case .refuse(let code): throw Refusal(code)
       case .ok: continue
       case .apply: break
@@ -333,6 +345,7 @@ struct AdmissionRun {
     var record = touched[place] ?? Touched(locked: lock(place))
     var row = record.joined ?? record.locked.row ?? Row(key: delta.key, seq: 0)
     row.lattice = try Join.record(type, row.lattice, delta.lattice)
+    for (name, value) in placed.delta.serials { row.serials[name] = value }
     record.joinedFields = row.lattice.fields
     for (name, write) in delta.texts.sorted(by: { $0.key < $1.key }) {
       try merge(write, into: &row, in: place.scope, field: type.field(name)!, superseded: &record.superseded)
@@ -395,7 +408,8 @@ struct AdmissionRun {
   func context() -> RuleContext {
     let joined = touched.filter { $0.key.scope == scope }.compactMap { place, record in record.joined.map { (place.key, $0) } }
     return RuleContext(
-      registry: registry, scope: scope, origin: origin, serverNow: serverNow, state: state,
+      registry: registry, scope: scope, origin: origin, deltas: intentDeltas, guards: intentGuards,
+      serverNow: serverNow, product: state.product, rules: admission.rules, state: state,
       joined: Dictionary(uniqueKeysWithValues: joined))
   }
 
@@ -417,27 +431,24 @@ struct AdmissionRun {
   // MARK: - Step 11: serials for new records, in admission order
 
   mutating func assignSerials() {
+    var numbered: [ScopeKey: [Row]] = [:]
     for place in order {
-      guard var record = touched[place], var row = record.joined, row.isAlive, !record.locked.isAlive,
-            let type = registry.type(place.key.type) else { continue }
+      guard var record = touched[place], var row = record.joined, row.isAlive,
+            record.locked.row == nil, let type = registry.type(place.key.type) else { continue }
       for field in type.fields {
         guard case .serial(let next) = field.kind, row.serials[field.name] == nil else { continue }
         let shared = next.map { row.lattice.fields[$0]?.value }
-        let highest = joinedRows(ofType: place.key.type, in: place.scope)
-          .filter { peer in peer.key != place.key && peer.isAlive && next.map { peer.lattice.fields[$0]?.value } == shared }
+        let peers = Array((state.rows[place.scope] ?? [:]).values) + (numbered[place.scope] ?? [])
+        let highest = peers
+          .filter { peer in peer.key.type == place.key.type && peer.key != place.key && peer.isAlive && next.map { peer.lattice.fields[$0]?.value } == shared }
           .compactMap { try? $0.serials[field.name]?.asInteger() }
           .max() ?? 0
         row.serials[field.name] = JSON(highest + 1)
       }
       record.joined = row
       touched[place] = record
+      numbered[place.scope, default: []].append(row)
     }
-  }
-
-  func joinedRows(ofType type: String, in scope: ScopeKey) -> [Row] {
-    var byKey = (state.rows[scope] ?? [:]).filter { $0.key.type == type }
-    for (place, record) in touched where place.scope == scope && place.key.type == type { byKey[place.key] = record.joined }
-    return Array(byKey.values)
   }
 
   // MARK: - Step 12: caps by the growth rule, in each scope the intent writes

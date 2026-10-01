@@ -100,22 +100,21 @@ assertion(s) failed`. *Stopped before the end* counts cases a failing `REQUIRE` 
 counts cases the environment could not run, never folded into the passed count. A case that takes
 the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the exit status is honest.
 
-The Postgres integration cases need a live database with `db/schema.sql` applied and run only under
-`WM_PG_TEST`. They seed and clean their own rows.
+The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases.
+The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. The engine `sync` suite
+reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql` and test-only `db/gym_sync.sql`.
+Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` to the
+REST database: it removes the `ON DELETE` actions the REST repositories still require. The sync
+suite wipes sync, probe and gym data as it replays the corpus, store and concurrency cases.
 
 ```sh
-WM_PG_TEST=1 DATABASE_URL="postgresql:///windmill?host=/tmp" \
-  ctest --test-dir build -R adapters -V
-```
-
-The sync engine's Postgres suite (`windmill_sync_tests`, the `sync` test) replays the golden corpus,
-the store conformance cases and the concurrency cases over `db/schema.sql` plus the probe's
-`db/probe.sql`. It wipes every `sync_*` and `probe_*` row as it goes, so give it a throwaway database:
-
-```sh
+createdb -h /tmp wm_rest_test
 createdb -h /tmp wm_sync_test
-psql -h /tmp -d wm_sync_test -f db/schema.sql -f db/probe.sql
-WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" ctest --test-dir build -R sync -V
+psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
+psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql -f db/gym_sync.sql
+WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
+  WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
+  ctest --test-dir build -R '^(domain|sync|adapters)$' -V
 ```
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
@@ -162,11 +161,19 @@ needs Docker and curl, and checks the Caddyfile first (the `deploy` test).
 WM_E2E_DB=wm_sync_test PORT=8089 EDGE_PORT=8443 node test/e2e/deployment_conformance.mjs
 ```
 
+After stopping the probe server and finishing verification, remove the throwaway databases:
+
+```sh
+dropdb -h /tmp wm_rest_test
+dropdb -h /tmp wm_sync_test
+```
+
 The Docker build runs `ctest` with no database beside it, so its Postgres cases skip. Backend CI's
 `postgres` job runs them: it loads the builder stage the `test` job built and runs the `domain`,
-`sync` and `adapters` tests under `WM_PG_TEST` against a Postgres 16 service holding `db/schema.sql`
-and `db/probe.sql`, one suite after another in one database, then serves the stage's own
-`windmill_server_probe` on that database and runs `test/e2e/deployment_conformance.mjs` against it.
+`sync` and `adapters` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service with
+the same two-database setup above (`windmill_test` for REST, `windmill_sync_test` for sync), then
+serves the stage's own `windmill_server_probe` on the sync database and runs
+`test/e2e/deployment_conformance.mjs` against it.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

@@ -56,6 +56,12 @@ preamble says what it reads from another aggregate's tables; shared helpers live
 The in-memory fake keeps one shared store (`FakeGymStore`) so every cross-aggregate rule is written
 once. `routes.cpp` names every path in one column; `TrainingApi.h` holds the status ladder.
 
+The engine binding lives in `sync/`: pure rules and commands in `domain/`, binding in `application/`,
+receipts and projection reads through `ports/GymState`, and adopted-table stores in
+`adapters/postgres/PgGym`. `windmill_gym_sync` embeds gym registry v3 from `composition.json` and is
+linked only by tests. Its schema, `db/gym_sync.sql`, is test-only. Production REST and MCP still use
+the repositories above; `windmill_server` mounts no sync route.
+
 ## 3. Schema
 
 Table definitions and migrations live in the Gym section of [schema.sql](../../db/schema.sql). The whole file
@@ -64,8 +70,9 @@ that has to change gets its own idempotent statement beside its table, and a dat
 it must end up identically shaped to one created after.
 
 Tables are `gym_*`, `user_id uuid references users(id) on delete cascade` everywhere — account
-deletion is the cascade. **All date/time work stays in SQL** (`to_timestamp`, `extract(epoch …)`);
-instants cross the wire and the domain as epoch-ms `uint64`; no C++ calendar function is consulted.
+deletion is the cascade. The REST repositories do date/time work in SQL (`to_timestamp`,
+`extract(epoch …)`); instants cross the wire and the domain as epoch-ms `uint64`. The engine binding's
+pure weigh-in rule compares the UTC calendar day.
 
 ### 3.1 Catalog
 

@@ -170,7 +170,7 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   2. A correction receipt for `requestId`: same session and equal arguments → `ok`, writing the
      session and its named sets still alive; otherwise `payload-conflict`.
   3. `finishedAt` unset → `session-open`. No set, two sets with one id, or two with one
-     `(exerciseId, setNumber)` → `invalid`. Instants as for the import → `bad-instant`; a crossing →
+     `(exerciseId, setNumber)`, or a set number outside 1–2 147 483 647 → `invalid`. Instants as for the import → `bad-instant`; a crossing →
      `session-overlap`.
   4. The session takes `startedAt`, `finishedAt`, `closedBy: finish` and `displayName := routineName`.
      A named set standing in the session keeps its movement (another → `invalid`) and its kind, takes
@@ -185,7 +185,7 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   `unknown-record`; dead → `record-dead`.
   - Apply: `applied` → `ok`, write `[]`; `dismissed` → `proposal-settled` `{state}`; `superseded` →
     `proposal-superseded` `{reason}`; pending with the routine's revision ≠ its base revision →
-    `proposal-superseded` `{reason: "routine-changed"}`. Otherwise `state := applied`, `settledAt := serverNow`, and a
+    `proposal-superseded` `{reason: "routine-changed"}`, leaving pending and `settledAt` unchanged. Otherwise `state := applied`, `settledAt := serverNow`, and a
     revise writes the routine's `name := proposedName` and `entries :=` its changes other than `removed`,
     in order, each `{exerciseId, ...after}`; a removal kills the routine.
   - Dismiss: `dismissed` → `ok`, write `[]`; `applied` → `proposal-settled` `{state}`; `superseded` →
@@ -193,8 +193,12 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   - `reason`: `replaced` when `supersededBy` is set; else `routine-changed` when the routine's revision
     ≠ the proposal's base revision; else `superseded`.
 
-**Checks**, record by record in intent order, on the joined records:
-- **Set.** A create that is not a command's, in an alive session with `finishedAt` set: closed `stale`
+**Checks**, record by record in intent order, on stored records with joined records and earlier
+staged effects over them. Routine revisions are projected from the joined documents before proposal
+bases are captured:
+- **Set.** A supplied or automatic `setNumber` outside 1–2 147 483 647 → `invalid`. Automatic
+  numbering reads stored alive sets and earlier numbered new sets, including a stored set deleted
+  by the intent. A create that is not a command's, in an alive session with `finishedAt` set: closed `stale`
   and `completedAt ≤ finishedAt + 4 h` lands and moves `finishedAt` to `max(finishedAt, completedAt)`;
   otherwise `session-finished`. Then any set create whose `exerciseId` is neither a seed nor an alive
   exercise of the scope → `unknown-exercise`. A delta, not a command's, that writes `completedAt` of a
@@ -213,10 +217,16 @@ outside every scope. A proposal's unset `state` reads as `pending`, the registry
   register, else the seed's name) writes `aliases` as for an exercise.
 - **Weighin.** An alive put of a day later than the UTC date of `serverNow + 86 400 000` → `bad-instant`.
 - **Proposal.** A replica's create needs `door: ask` and `connection` and `agent` unset or `""` (else
-  `invalid`). A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create
-  records its base (the routine's revision and name) and writes `state := superseded`,
-  `supersededBy :=` its id and `settledAt := serverNow` on the alive pending proposal of the same
-  routine, door and connection.
+  `invalid`), plus guards on both routine `entries` and `name` at their read stamps; moved stamps →
+  `stale`. The check requires those stamps to match the joined routine (`invalid`). Every create
+  carries the canonical diff: match proposed lines to the first unmatched base occurrence of their
+  exercise; equal sides are kept, unequal sides retargeted, unmatched proposed lines added, then
+  unmatched base lines removed in base order. A revision leaves 1–50 entries, a nonempty name and no
+  empty set scheme; a removal leaves no proposed entries. A forged diff → `invalid`. A create whose
+  `routineId` is absent, `foreign` or dead → `unknown-record`. It captures the joined routine’s final
+  revision and name as its base and writes `state := superseded`, `supersededBy :=` its id and
+  `settledAt := serverNow` on stored and earlier created pending proposals of the same routine, door
+  and connection. The last same-key create remains pending.
 
 ### `gym/admit.json` (server)
 

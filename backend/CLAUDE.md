@@ -69,12 +69,17 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), though no product but the probe is bound to the engine. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the test-only gym binding against registry v3 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
+
+`products/gym/sync/` binds gym's nine types and seven commands over its adopted tables. Only the test
+binaries link `windmill_gym_sync`; `db/gym_sync.sql` is applied after `schema.sql` only in the isolated
+`WM_SYNC_DATABASE_URL` test database. REST Postgres cases use plain `schema.sql` at `DATABASE_URL`.
+The admission corpus runs over fakes and Postgres; the backfill corpus is pending wave 2.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
-`windmill_server` mounts no `/v1/sync` route, since no product has adopted the engine, and the
+`windmill_server` mounts no `/v1/sync` route; the gym binding is test-only until rollout, and the
 Dockerfile fails the image if a probe symbol reaches it.
 
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the

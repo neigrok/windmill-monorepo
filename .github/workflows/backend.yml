@@ -10,6 +10,7 @@ on:
       - 'backend/**'
       - 'services/embedder/**'
       - 'packages/api-contract/sync/*.registry.json'
+      - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
@@ -20,6 +21,7 @@ on:
       - 'backend/**'
       - 'services/embedder/**'
       - 'packages/api-contract/sync/*.registry.json'
+      - 'packages/api-contract/sync/composition.json'
       - 'packages/api-contract/sync/corpus/**'
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
@@ -77,6 +79,7 @@ jobs:
           --health-retries 12
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_test
+      WM_SYNC_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_sync_test
     steps:
       - uses: actions/checkout@v5
       - uses: docker/setup-buildx-action@v4
@@ -89,8 +92,12 @@ jobs:
           load: true
           tags: windmill-backend-build
           cache-from: type=gha
-      - name: Apply the schema and the probe's tables
-        run: psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql -f backend/db/probe.sql
+      - name: Prepare isolated REST and sync databases
+        run: |
+          psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
+          createdb --maintenance-db="$DATABASE_URL" windmill_sync_test
+          psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/db/schema.sql -f backend/db/probe.sql -f backend/db/gym_sync.sql
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -98,12 +105,12 @@ jobs:
         run: node backend/test/platform/domain/sync/reference_pattern_cases.mjs > "$RUNNER_TEMP/pattern-cases.json"
       - name: Run the domain, sync and adapters suites against Postgres
         run: |
-          docker run --rm --network host -e WM_PG_TEST=1 -e DATABASE_URL \
+          docker run --rm --network host -e WM_PG_TEST=1 -e DATABASE_URL -e WM_SYNC_DATABASE_URL \
             -e WM_PATTERN_CASES=/cases/pattern-cases.json -v "$RUNNER_TEMP:/cases:ro" \
             windmill-backend-build ctest --test-dir build -R '^(domain|sync|adapters)$' --output-on-failure
       - name: Serve windmill_server_probe from the tested builder stage
         run: |
-          docker run -d --name probe --network host -e DATABASE_URL -e PORT=18613 windmill-backend-build build/windmill_server_probe
+          docker run -d --name probe --network host -e DATABASE_URL="$WM_SYNC_DATABASE_URL" -e PORT=18613 windmill-backend-build build/windmill_server_probe
           for attempt in $(seq 1 50); do
             curl -sf -o /dev/null -H 'Sync-Schema: 2' http://127.0.0.1:18613/v1/sync/hello && exit 0
             sleep 0.2
@@ -111,7 +118,7 @@ jobs:
           docker logs probe
           exit 1
       - name: Credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
-        run: WM_E2E_DB="$DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
+        run: WM_E2E_DB="$WM_SYNC_DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
 
   build-and-push:
     needs: [test, postgres]

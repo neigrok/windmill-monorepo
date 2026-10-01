@@ -4,6 +4,7 @@
 #include "platform/domain/sync/Jcs.h"
 #include "products/probe/ProbeRegistry.h"
 #include "products/probe/adapters/postgres/PgProbe.h"
+#include "products/gym/sync/adapters/postgres/PgGym.h"
 #include "test/PgTestPool.h"
 #include "test/platform/application/sync/SyncWorld.h"
 
@@ -11,15 +12,17 @@
 
 #include <algorithm>
 #include <cstdio>
+#include <map>
+#include <set>
 #include <string>
 #include <vector>
 
-// The sync engine over Postgres (db/schema.sql + db/probe.sql, applied by hand as RUNNING.md §7 says), for
-// the WM_PG_TEST suite. Seeding wipes every sync_* and probe_* row: the suite runs on a throwaway database.
+// The sync engine over the isolated WM_SYNC_DATABASE_URL database (RUNNING.md §7).
+// Seeding wipes sync, probe and gym rows; schema.sql, probe.sql and gym_sync.sql must be applied.
 
 namespace wm::sync::test {
 
-inline const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres with db/schema.sql and db/probe.sql, see RUNNING.md §7";
+inline const char* kNeedsPostgres = "WM_PG_TEST unset — needs WM_SYNC_DATABASE_URL with schema.sql, probe.sql and gym_sync.sql, see RUNNING.md §7";
 
 inline bool postgresEnabled() {
   return std::getenv("WM_PG_TEST") != nullptr;
@@ -27,8 +30,9 @@ inline bool postgresEnabled() {
 
 class PgWorld final : public SyncWorld {
 public:
-  PgWorld() : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), catalog_(probe::registry()) {
-    probe_.bindTo(catalog_);
+  PgWorld(bool gym = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), catalog_(gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym) {
+    if (gym_) gymProduct_.bindTo(catalog_);
+    else probe_.bindTo(catalog_);
     catalog_.seal();
     resetClock(Json::Value(Json::objectValue));
   }
@@ -70,6 +74,21 @@ public:
                               "sync_requests", "sync_replicas", "sync_scopes"}) {
       sql.exec(std::string("delete from ") + table);
     }
+    if (gym_) {
+      sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_correction_receipts cascade");
+      for (const auto& id : state["product"]["seeds"].getMemberNames()) {
+        sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
+      }
+      productSeed_ = state["product"];
+      implicitRevisions_.clear();
+      for (const auto& key : state["rows"].getMemberNames()) {
+        for (const auto& row : state["rows"][key]) {
+          if (row["t"] == "routine" && !state["product"]["revisions"][key].isMember(row["id"].asString())) {
+            implicitRevisions_[key].insert(row["id"].asString());
+          }
+        }
+      }
+    }
     for (const std::string& alias : aliasesIn(state)) {
       const std::string name = state["accounts"][alias]["name"].asString();
       sql.exec("insert into users (id, email, name) values ($1::uuid, $2, $3) on conflict (id) do update set name = excluded.name",
@@ -91,9 +110,23 @@ public:
     }
     for (const std::string& key : state["rows"].getMemberNames()) {
       const ScopeKey scope = storeKey(key);
-      for (const Json::Value& wire : state["rows"][key]) {
-        const Row row(wire);
-        catalog_.store(row.t).apply(*txn, scope, {RowWrite{catalog_.registry().type(row.t), row.id, std::nullopt, row, {}}});
+      for (const TypeDef* type : catalog_.applyOrder()) {
+        for (const Json::Value& wire : state["rows"][key]) {
+          const Row row(wire);
+          if (row.t != type->name) continue;
+          catalog_.store(row.t).apply(*txn, scope, {RowWrite{type, row.id, std::nullopt, row, {}}});
+        }
+      }
+    }
+    if (gym_) {
+      // Some corpus fixtures retain an old set after omitting its session. A non-sync parent
+      // satisfies the relational FK without adding a row to the engine's state or open session.
+      for (const auto& key : state["rows"].getMemberNames()) {
+        for (const auto& row : state["rows"][key]) {
+          if (row["t"] != "set") continue;
+          sql.exec("insert into gym_sessions(id,user_id,started_at,finished_at) values($1,$2::uuid,to_timestamp(0),to_timestamp(0)) on conflict (id) do nothing",
+                   pqxx::params{row["f"]["sessionId"][0].asString(), storeKey(key).account().str()});
+        }
       }
     }
     for (const std::string& key : state["spent"].getMemberNames()) {
@@ -143,6 +176,21 @@ public:
       for (const std::string& destination : product["copies"][key].getMemberNames()) {
         sql.exec("insert into probe_copy_receipts (scope_key, destination, source) values ($1, $2, $3)",
                  pqxx::params{storeKey(key).text(), destination, product["copies"][key][destination].asString()});
+      }
+    }
+    if (gym_) {
+      wm::gym::engine::PgGymState gymState;
+      const Json::Value& product = state["product"];
+      for (const char* kind : {"starts", "imports", "corrections"}) {
+        for (const std::string& key : product[kind].getMemberNames()) {
+          for (const std::string& id : product[kind][key].getMemberNames()) gymState.receipt(*txn, storeKey(key), kind, id, product[kind][key][id]);
+        }
+      }
+      for (const std::string& key : product["revisions"].getMemberNames()) for (const std::string& id : product["revisions"][key].getMemberNames()) {
+        sql.exec("update gym_routines set revision=$3 where user_id=$1::uuid and id=$2", pqxx::params{storeKey(key).account().str(), id, product["revisions"][key][id].asInt()});
+      }
+      for (const std::string& key : product["bases"].getMemberNames()) for (const std::string& id : product["bases"][key].getMemberNames()) {
+        sql.exec("update gym_proposals set base_revision=$3,base_name=$4 where user_id=$1::uuid and id=$2", pqxx::params{storeKey(key).account().str(), id, product["bases"][key][id]["revision"].asInt(), product["bases"][key][id]["name"].asString()});
       }
     }
     txn->commit();
@@ -223,6 +271,27 @@ public:
       state["product"]["copies"][aliasKey(*ScopeKey::parse(row["scope_key"].template as<std::string>()))][row["destination"].template as<std::string>()] =
           row["source"].template as<std::string>();
     }
+    if (gym_) {
+      state["product"] = Json::Value(Json::objectValue);
+      state["product"]["seeds"] = productSeed_["seeds"];
+      state["product"]["bases"] = productSeed_["bases"];
+      wm::gym::engine::PgGymState gymState;
+      for (const auto& key : state["scopes"].getMemberNames()) {
+        Json::Value books = gymState.load(*txn, storeKey(key));
+        // SQL supplies revision 1 for legacy routines; the corpus only represents explicit
+        // revision books, so leave an unchanged implicit default out of its dumped state.
+        for (const auto& id : implicitRevisions_[key]) {
+          if (books["revisions"].isMember(id) && books["revisions"][id] == 1) books["revisions"].removeMember(id);
+        }
+        for (const char* kind : {"starts", "imports", "corrections", "revisions", "bases"}) {
+          if (books[kind].isNull() || books[kind].empty()) continue;
+          if (std::string(kind) == "bases") {
+            for (const auto& id : books[kind].getMemberNames()) state["product"][kind][key][id] = books[kind][id];
+          } else state["product"][kind][key] = books[kind];
+        }
+      }
+      for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].isNull() || state["product"][key].empty()) state["product"].removeMember(key);
+    }
     dropEmpty(state);
     return state;
   }
@@ -241,8 +310,12 @@ private:
 
   PgSyncStore store_;
   probe::PgProbe probe_;
+  wm::gym::engine::PgGym gymProduct_;
   SyncCatalog catalog_;
   Json::Value accounts_;
+  Json::Value productSeed_;
+  std::map<std::string, std::set<std::string>> implicitRevisions_;
+  bool gym_;
 };
 
 }

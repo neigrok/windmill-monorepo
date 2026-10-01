@@ -83,6 +83,20 @@ inline Json::Value admitVector(SyncWorld& world, const Json::Value& input) {
   return object({{"result", admitted->result}, {"state", after}});
 }
 
+inline Json::Value gymAdmitVector(SyncWorld& world, const Json::Value& input) {
+  Json::Value answer = admitVector(world, input);
+  if (answer["result"]["s"] != "ok") return answer;
+  const std::string scope = "acct:" + input["origin"]["account"].asString() + "/gym";
+  Json::Value& product = answer["state"]["product"];
+  // The reference's empty book namespaces have no SQL rows.
+  if (input["intent"]["cmd"]["name"] == "gym.start" && !product["starts"].isMember(scope)) product["starts"][scope] = Json::Value(Json::objectValue);
+  for (const auto& kind : input["state"]["product"].getMemberNames()) {
+    if (!input["state"]["product"][kind].isObject() || !input["state"]["product"][kind].isMember(scope)) continue;
+    if (kind == "revisions" && !product[kind].isMember(scope)) product[kind][scope] = Json::Value(Json::objectValue);
+  }
+  return answer;
+}
+
 // admit/requests.json: §6.3 for each call in order. `crashAfter: k` stops right after part k commits;
 // `transientAt: k` and `faultAt: k` fail admit k inside its own transaction (fake::FaultingStore), transiently
 // or as a fault, and the call stops at the answer Admission gives.

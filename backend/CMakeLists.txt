@@ -155,6 +155,20 @@ add_library(windmill_gym
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
+add_library(windmill_gym_sync
+  products/gym/sync/domain/GymRules.cpp
+  products/gym/sync/application/GymProduct.cpp)
+target_include_directories(windmill_gym_sync PUBLIC ${CMAKE_SOURCE_DIR})
+target_link_libraries(windmill_gym_sync PUBLIC windmill_platform)
+file(READ "${WM_API_CONTRACT_DIR}/sync/composition.json" WM_COMPOSITION)
+string(JSON WM_GYM_REGISTRY GET "${WM_COMPOSITION}" registries 0)
+string(JSON WM_REGISTRY_COUNT LENGTH "${WM_COMPOSITION}" registries)
+if(NOT WM_REGISTRY_COUNT EQUAL 1 OR NOT WM_GYM_REGISTRY STREQUAL "gym.registry.json")
+  message(FATAL_ERROR "wave 1 binds only the gym composition")
+endif()
+wm_embed_registry(windmill_gym_sync wm::gym::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_GYM_REGISTRY}")
+wm_embed_registry(windmill_gym_sync wm::gym::engine compositionText "${WM_API_CONTRACT_DIR}/sync/composition.json")
+
 # --- probe: the sync engine's test and dev product (packages/api-contract/sync/probe.registry.json), the
 # worked example of a product on the engine. Only the test binaries and windmill_server_probe link it;
 # windmill_server never does, and the Dockerfile proves it. Its Postgres adapter and the dev stack's endpoints
@@ -256,6 +270,7 @@ add_executable(windmill_domain_tests
   test/products/journal/application/EchoSweepTest.cpp
   test/products/journal/application/EchoDerivationsTest.cpp
   test/products/journal/application/WarmEchoRepositoryTest.cpp
+  test/products/gym/sync/domain/GymRulesTest.cpp
   test/products/gym/domain/TrainingTest.cpp
   test/products/gym/domain/PreferencesTest.cpp
   test/products/gym/domain/RoutineTest.cpp
@@ -275,7 +290,7 @@ add_executable(windmill_domain_tests
   test/products/gym/application/ThreadServiceTest.cpp
   test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/application/BodyweightServiceTest.cpp)
-target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe)
+target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe windmill_gym_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
 # contract holds.
 target_compile_definitions(windmill_domain_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
@@ -471,7 +486,8 @@ target_sources(windmill_probe PRIVATE
   products/probe/adapters/http/DevApi.cpp)
 
 # The sync engine over Postgres alone, so `ctest -R sync` runs it without every product's Pg suite. Its
-# cases skip unless WM_PG_TEST is set against a database holding db/schema.sql and db/probe.sql.
+# cases use WM_SYNC_DATABASE_URL, isolated from the REST adapters' DATABASE_URL, with schema.sql,
+# probe.sql and gym_sync.sql applied. They skip unless WM_PG_TEST is set.
 add_executable(windmill_sync_tests
   test/http_main.cpp
   test/platform/adapters/http/SyncApiTest.cpp
@@ -479,9 +495,13 @@ add_executable(windmill_sync_tests
   test/platform/adapters/postgres/PgSyncStoreTest.cpp
   test/platform/adapters/postgres/PgAdmissionConcurrencyTest.cpp
   test/platform/adapters/postgres/PgPullSnapshotTest.cpp
-  test/products/probe/adapters/postgres/PgProbeTest.cpp)
-target_link_libraries(windmill_sync_tests PRIVATE windmill_probe)
-target_compile_definitions(windmill_sync_tests PRIVATE WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync")
+  test/products/probe/adapters/postgres/PgProbeTest.cpp
+  test/products/gym/sync/adapters/postgres/PgGymTest.cpp)
+target_sources(windmill_gym_sync PRIVATE products/gym/sync/adapters/postgres/PgGym.cpp)
+target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_gym_sync)
+target_compile_definitions(windmill_sync_tests PRIVATE
+  WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
+  WM_PG_TEST_URL_ENV="WM_SYNC_DATABASE_URL")
 add_test(NAME sync COMMAND windmill_sync_tests)
 
 add_executable(windmill_adapters_tests
