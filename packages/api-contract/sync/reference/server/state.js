@@ -2,6 +2,7 @@
 // gives the canonical form the corpus carries: maps sorted, rows sorted by (t, id), empty parts left out.
 
 import { ZERO_DIGEST } from '../core/digest.js';
+import { setOwn } from '../core/maps.js';
 import { compactRow, compareRecords, isAlive, recordKey, sortedMap } from '../core/rows.js';
 
 function scopeJson(scope) {
@@ -46,7 +47,7 @@ export class ServerState {
     }
     this.requests = {};
     for (const [account, requests] of Object.entries(json.requests ?? {})) {
-      this.requests[account] = Object.fromEntries(requests.map((request) => [request.requestId, structuredClone(request)]));
+      setOwn(this.requests, account, Object.fromEntries(requests.map((request) => [request.requestId, structuredClone(request)])));
     }
     this.product = structuredClone(json.product ?? {});
   }

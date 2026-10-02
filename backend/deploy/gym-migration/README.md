@@ -58,14 +58,22 @@ The workflow checks, in order:
 3. Run the backfill with `--dry-run`, and prove that it changed no table or sequence.
 4. Run the migration.
 5. Snapshot the reads again, prove that reading changed no table or sequence, compare every
-   response file byte for byte, then run `--audit` to reconcile every account's eligible physical
-   rows and required spent ids before comparing each scope's digest and sequence with its feed.
-   Missing scopes and incomplete envelopes fail the audit; an existing empty scope is repaired.
+   response file byte for byte, then run `--audit` against the immutable per-account raw source and
+   recorded migration clock in `gym_sync_adoptions`. Every adopted row and required spent id is
+   reconciled independently: envelope stamps equal `M:0:srv`, sequence and receipt times equal
+   the frozen derivation, and legacy values, receipts, revisions and projections are preserved.
+   The feed digest and greatest sequence are checked separately. Missing sources, missing scopes
+   and incomplete or corrupted envelopes fail the audit; an existing empty scope is repaired.
+   `--audit --test-corruptions` then deliberately changes field, born, life and spent stamps,
+   sequences, receipt times, revisions and receipt hashes, recomputes each candidate's digest,
+   requires audit rejection, and rolls every mutation back. A complete table comparison proves
+   that these negative checks changed no stored row or sequence.
 6. Run the migration again: require `changed: 0` for every account and compare every non-system
    table's complete rows and every sequence's value and `is_called` byte for byte.
 
 `result.json` records exact account, response, route, tool, scope and table counts. `migration.jsonl`,
-`dry-run.jsonl`, `audit.jsonl` and `second-run.jsonl` hold the tool's reports. `reads-before` and
+`dry-run.jsonl`, `audit.jsonl`, `corruption-audit.jsonl` and `second-run.jsonl` hold the tool's reports.
+The result includes the exact number of corruptions rejected. `reads-before` and
 `reads-after` hold per-account response bodies, status codes and headers, MCP `tools/call` result
 objects, and manifests of the exact requests. Table comparisons use sorted `to_jsonb(row)` values
 and each row's `xmin`, plus a fixed UTC database timezone. This detects a no-op UPDATE as a row
@@ -135,3 +143,8 @@ read bytes, audit every account and remain immutable on its second run:
 python3 backend/deploy/gym-migration/rehearse_local.py \
   --bin-dir /path/to/build --output /private/tmp/gym-local-gates
 ```
+
+`--audit` validates the frozen migration base before admitted writes resume. After admissions,
+`--audit-current` checks current envelope completeness, row/spent reconciliation, digest and greatest
+sequence without comparing live records with the frozen migration output. The real-server differential
+runs the frozen audit immediately after migration and the current audit after its write sequence.

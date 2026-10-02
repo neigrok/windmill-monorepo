@@ -221,6 +221,7 @@ public struct Gesture: Hashable, Sendable {
   public var hold: Bool
   public var guards: [RegisterRef]
   public var retire: [RecordRef]
+  public var supersede: [String]
   public var command: Command?
   public var predict: [Change]
   public var local: [DeviceWrite]
@@ -229,13 +230,14 @@ public struct Gesture: Hashable, Sendable {
   // `guards`: exactly these lattice registers, each at its stored stamp. `retire`: held removal gestures of these
   // records end undone first.
   public init(changes: [Change], atomic: Bool = false, hold: Bool = false, guards: [RegisterRef] = [],
-              retire: [RecordRef] = [], command: Command? = nil, predict: [Change] = [], local: [DeviceWrite] = [],
+              retire: [RecordRef] = [], supersede: [String] = [], command: Command? = nil, predict: [Change] = [], local: [DeviceWrite] = [],
               gestureId: String? = nil) {
     self.changes = changes
     self.atomic = atomic
     self.hold = hold
     self.guards = guards
     self.retire = retire
+    self.supersede = supersede
     self.command = command
     self.predict = predict
     self.local = local
@@ -244,7 +246,7 @@ public struct Gesture: Hashable, Sendable {
 
   public static func == (lhs: Gesture, rhs: Gesture) -> Bool {
     lhs.changes == rhs.changes && lhs.atomic == rhs.atomic && lhs.hold == rhs.hold && lhs.guards == rhs.guards
-      && lhs.retire == rhs.retire && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.local == rhs.local
+      && lhs.retire == rhs.retire && lhs.supersede.map { Array($0.utf8) } == rhs.supersede.map { Array($0.utf8) } && lhs.command == rhs.command && lhs.predict == rhs.predict && lhs.local == rhs.local
       && lhs.gestureId.map { Array($0.utf8) } == rhs.gestureId.map { Array($0.utf8) }
   }
 
@@ -254,6 +256,7 @@ public struct Gesture: Hashable, Sendable {
     hasher.combine(hold)
     hasher.combine(guards)
     hasher.combine(retire)
+    hasher.combine(supersede.map { Array($0.utf8) })
     hasher.combine(command)
     hasher.combine(predict)
     hasher.combine(local)
@@ -275,20 +278,23 @@ public struct CommitReceipt: Hashable, Sendable {
   public let ids: [RecordID?]
   public let releaseAt: Int64?
   public let retired: [String]
+  public let superseded: [String]
 
   // `ids`: the resolved id per change, aligned with the gesture's changes. `releaseAt`: set when held, the Undo deadline.
-  public init(gestureId: String, stamp: Stamp, localIds: [String], ids: [RecordID?], releaseAt: Int64?, retired: [String]) {
+  public init(gestureId: String, stamp: Stamp, localIds: [String], ids: [RecordID?], releaseAt: Int64?, retired: [String], superseded: [String] = []) {
     self.gestureId = gestureId
     self.stamp = stamp
     self.localIds = localIds
     self.ids = ids
     self.releaseAt = releaseAt
     self.retired = retired
+    self.superseded = superseded
   }
 
   public static func == (lhs: CommitReceipt, rhs: CommitReceipt) -> Bool {
     lhs.gestureId.utf8.elementsEqual(rhs.gestureId.utf8) && lhs.stamp == rhs.stamp
       && lhs.localIds.map { Array($0.utf8) } == rhs.localIds.map { Array($0.utf8) } && lhs.ids == rhs.ids
+      && lhs.superseded.map { Array($0.utf8) } == rhs.superseded.map { Array($0.utf8) }
       && lhs.releaseAt == rhs.releaseAt && lhs.retired.map { Array($0.utf8) } == rhs.retired.map { Array($0.utf8) }
   }
 
@@ -299,6 +305,7 @@ public struct CommitReceipt: Hashable, Sendable {
     hasher.combine(ids)
     hasher.combine(releaseAt)
     hasher.combine(retired.map { Array($0.utf8) })
+    hasher.combine(superseded.map { Array($0.utf8) })
   }
 }
 
@@ -462,3 +469,9 @@ public struct UndoOffer: Hashable, Sendable, Identifiable {
     hasher.combine(releaseAt)
   }
 }
+
+// Called in the result transaction before acknowledgement or resolution removes the command.
+public typealias CommandResultDeviceWrites = @Sendable (Command, PushResult, String, JSON.Object) -> [DeviceWrite]
+
+// Product device rows that hold unsaved work beyond the outbox; sign-out pins their values when asking Discard.
+public typealias PendingDeviceWork = @Sendable (String, JSON.Object) -> [String]

@@ -50,9 +50,10 @@ public struct PlannedDelta: Sendable, Hashable {
   public var fields: [String: PlannedRegister]
   public var texts: [String: TextWrite]
   public var serials: [String: JSON]
+  public var replacements: [String: TextReplacement]
 
   public init(key: RecordKey, op: Op, life: PlannedLife? = nil, born: StampSlot? = nil, fields: [String: PlannedRegister] = [:],
-              texts: [String: TextWrite] = [:], serials: [String: JSON] = [:]) {
+              texts: [String: TextWrite] = [:], serials: [String: JSON] = [:], replacements: [String: TextReplacement] = [:]) {
     self.key = key
     self.op = op
     self.life = life
@@ -60,6 +61,7 @@ public struct PlannedDelta: Sendable, Hashable {
     self.fields = fields
     self.texts = texts
     self.serials = serials
+    self.replacements = replacements
   }
 
   // A server create: born and life at the stamp the pass mints (§10.3).
@@ -364,5 +366,17 @@ public enum IdentityRules {
       guard sameBorn(row) else { return .refuse(.unknownRecord) }
       return revivable ? .apply : .refuse(.idSpent)
     }
+  }
+}
+
+public struct TextReplacement: Sendable, Hashable {
+  public let text: String
+  public let archiveNonempty: Bool
+  public let archive: JSON.Object
+
+  public init(_ text: String, archiveNonempty: Bool = false, archive: JSON.Object = [:]) {
+    self.text = text
+    self.archiveNonempty = archiveNonempty
+    self.archive = archive
   }
 }

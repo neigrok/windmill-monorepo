@@ -198,6 +198,8 @@ enum Kit {
     let records: [Record]
     var now: Int64 { Kit.moment.now.ms }
     var replica: String { "rp_00000000000000000000000000000001" }
+    var actor: String { replica }
+    let isAnonymous = false
     func drawn(_ type: String, _ id: RecordID) throws -> Record? { records.first { $0.type == type && $0.id == id } }
     func stored(_ type: String, _ id: RecordID) throws -> Record? { try drawn(type, id) }
     func drawn(_ type: String) throws -> [Record] { records.filter { $0.type == type } }
@@ -206,6 +208,11 @@ enum Kit {
     func stored(_ type: String, where field: String, is id: RecordID) throws -> [Record] { [] }
     func device(_ key: String) throws -> JSON? { nil }
     func firstPullComplete() throws -> Bool { true }
+    func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }
+    func checkpoint() throws -> ScopeCheckpoint { ScopeCheckpoint() }
+    func devices(prefix: String) throws -> JSON.Object { [:] }
+    func commands() throws -> [QueuedCommand] { [] }
+    func opaqueID() throws -> String { throw CommitFailure.malformed("no opaque identity here") }
     func mintID(_ type: String) throws -> RecordID { throw CommitFailure.malformed("no mint here") }
   }
 }

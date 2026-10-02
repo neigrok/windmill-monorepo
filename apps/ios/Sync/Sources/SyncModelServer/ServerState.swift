@@ -439,25 +439,30 @@ public struct Revision: Sendable, Hashable, Comparable {
   public let field: String
   public let rev: Int64
   public let text: String
+  public let metadata: JSON.Object
 
-  public init(key: RecordKey, field: String, rev: Int64, text: String) {
+  public init(key: RecordKey, field: String, rev: Int64, text: String, metadata: JSON.Object = [:]) {
     self.key = key
     self.field = field
     self.rev = rev
     self.text = text
+    self.metadata = metadata
   }
 
   init(json: JSON) throws {
     let object = try json.asObject()
-    try object.expectKeys(required: ["t", "id", "field", "rev", "text"])
+    try object.expectKeys(required: ["t", "id", "field", "rev", "text"], optional: ["archivedAt", "documentStamp"])
     self.init(
       key: RecordKey(try object.member("t").asString(), try RecordID(json: object.member("id"))),
       field: try object.member("field").asString(), rev: try object.member("rev").asInteger(),
-      text: try object.member("text").asString())
+      text: try object.member("text").asString(),
+      metadata: JSON.Object(uniqueKeysWithValues: object.members.filter { ["archivedAt", "documentStamp"].contains($0.key) }))
   }
 
   var json: JSON {
-    ["t": .string(key.type), "id": key.id.json, "field": .string(field), "rev": JSON(rev), "text": .string(text)]
+    var fields = metadata
+    for (name, value) in ["t": JSON.string(key.type), "id": key.id.json, "field": .string(field), "rev": JSON(rev), "text": .string(text)] { fields[name] = value }
+    return .object(fields)
   }
 
   public static func == (lhs: Revision, rhs: Revision) -> Bool { lhs.json == rhs.json }

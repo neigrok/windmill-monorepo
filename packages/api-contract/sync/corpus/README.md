@@ -1242,7 +1242,10 @@ part through a write map. The reference does rewrite them.
   finishes, even with nothing left; `keep` is the plain confirm then. `keep` covers every entry,
   counted or not; a `discard` whose `counted` differs from the entries now is asked again. The finish resolves acked entries; Discard ends the
   rest `discarded` (it cannot recall a sent entry that may have landed); Keep purges confirmed rows,
-  spent ids, cursors, staging, known scopes and device rows.
+  spent ids, cursors, staging and known scopes, and retains durable product device rows with the account's
+  dormant replica. Discard deletes those rows. A product's pending device work adds to `unsent`; a
+  nonzero `pending` count is reported, and `counted` pins each row's product, key and SHA-256 of its
+  JCS bytes, so Discard asks again if pending edits change after the question.
 - `start.json`: `engineStart` on web; with an equal backup copy; with a missing or different copy
   (every replica re-identified, a new `forkGuard`, then a push under the new id); a first launch
   minting the first `forkGuard`; a pending sign-in answered.

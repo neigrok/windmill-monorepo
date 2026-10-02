@@ -32,6 +32,8 @@ namespace wm::sync::fake {
 struct FakeDb {
   std::string epoch = "ep-1";
   Json::Value gym = Json::Value(Json::objectValue);
+  Json::Value journal = Json::Value(Json::objectValue);
+  std::map<std::tuple<RecordRef, std::string, Seq>, Json::Value> revisionMetadata;
   std::map<std::string, std::string> accountNames;
   std::map<ScopeKey, ScopeRow> scopes;
   std::map<std::string, ReplicaRow> replicas;

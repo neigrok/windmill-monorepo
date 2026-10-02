@@ -17,25 +17,32 @@ public final class Store: Sendable {
   // A file store: a `DatabasePool` in WAL mode. `rewriteDeviceValue` is the products' hook for a write map's joined id
   // in their device rows (§7.7 write map step 1).
   public convenience init(path: String, registry: Registry, limits: Limits = Limits(), crashPoints: CrashPoints = .none,
-                          rewriteDeviceValue: @escaping DeviceValueRewrite = PushPlanner.keepDeviceValue) throws {
+                          rewriteDeviceValue: @escaping DeviceValueRewrite = PushPlanner.keepDeviceValue,
+                          commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
+                          pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) throws {
     try self.init(writer: DatabasePool(path: path, configuration: Schema.configuration()), registry: registry, limits: limits,
-                  crashPoints: crashPoints, rewriteDeviceValue: rewriteDeviceValue)
+                  crashPoints: crashPoints, rewriteDeviceValue: rewriteDeviceValue, commandResultWrites: commandResultWrites,
+                  pendingDeviceWork: pendingDeviceWork)
   }
 
   // The same schema, migrations and writer over one in-memory connection, for the step-mode harness.
   public static func inMemory(registry: Registry, limits: Limits = Limits(), crashPoints: CrashPoints = .none,
-                              rewriteDeviceValue: @escaping DeviceValueRewrite = PushPlanner.keepDeviceValue) throws -> Store {
+                              rewriteDeviceValue: @escaping DeviceValueRewrite = PushPlanner.keepDeviceValue,
+                              commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
+                              pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) throws -> Store {
     try Store(writer: DatabaseQueue(configuration: Schema.configuration()), registry: registry, limits: limits, crashPoints: crashPoints,
-              rewriteDeviceValue: rewriteDeviceValue)
+              rewriteDeviceValue: rewriteDeviceValue, commandResultWrites: commandResultWrites, pendingDeviceWork: pendingDeviceWork)
   }
 
   init(writer: any DatabaseWriter, registry: Registry, limits: Limits, crashPoints: CrashPoints,
-       rewriteDeviceValue: @escaping DeviceValueRewrite) throws {
+       rewriteDeviceValue: @escaping DeviceValueRewrite, commandResultWrites: @escaping CommandResultDeviceWrites,
+       pendingDeviceWork: @escaping PendingDeviceWork) throws {
     self.writer = writer
     self.registry = registry
     self.limits = limits
     self.crashPoints = crashPoints
-    planners = Planners(registry: registry, limits: limits, rewriteDeviceValue: rewriteDeviceValue)
+    planners = Planners(registry: registry, limits: limits, rewriteDeviceValue: rewriteDeviceValue, commandResultWrites: commandResultWrites,
+                        pendingDeviceWork: pendingDeviceWork)
     try Schema.migrator.migrate(writer)
     try writer.write { db in
       let built = try Int.fetchOne(db, sql: "SELECT ref_index_version FROM device")
@@ -78,6 +85,8 @@ public final class Store: Sendable {
       return value
     }
   }
+
+  public func pendingWork(in replica: LoadedReplica) -> [String] { planners.lifecycle.pendingWork(in: replica) }
 
   // A connection setting as SQLite reports it.
   func pragma(_ name: String) throws -> String {
@@ -136,11 +145,12 @@ struct Planners: Sendable {
   let pages: PageApplier
   let lifecycle: ReplicaLifecycle
 
-  init(registry: Registry, limits: Limits, rewriteDeviceValue: @escaping DeviceValueRewrite) {
+  init(registry: Registry, limits: Limits, rewriteDeviceValue: @escaping DeviceValueRewrite, commandResultWrites: @escaping CommandResultDeviceWrites,
+       pendingDeviceWork: @escaping PendingDeviceWork) {
     commits = CommitPlanner(registry: registry, limits: limits)
     hold = Hold(registry: registry)
-    pushes = PushPlanner(registry: registry, limits: limits, rewriteDeviceValue: rewriteDeviceValue)
+    pushes = PushPlanner(registry: registry, limits: limits, rewriteDeviceValue: rewriteDeviceValue, commandResultWrites: commandResultWrites)
     pages = PageApplier(registry: registry)
-    lifecycle = ReplicaLifecycle(registry: registry)
+    lifecycle = ReplicaLifecycle(registry: registry, pendingDeviceWork: pendingDeviceWork)
   }
 }

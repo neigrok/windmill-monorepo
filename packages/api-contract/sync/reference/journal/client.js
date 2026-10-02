@@ -6,6 +6,10 @@ import { claimBody, nextDocumentStamp } from "./product.js";
 const SCOPE = "self/journal";
 const fields = ["body", "mood", "energy", "source"];
 export const pendingClaimKey = (claimId) => `pendingClaim:${claimId}`;
+export const pendingClaimWork = (product, rows) => product !== "journal" ? [] : Object.entries(rows)
+  .filter(([key, pending]) => key.startsWith("pendingClaim:") && pending &&
+    ((pending.touched?.length ?? 0) > 0 || Object.keys(pending.retirements ?? {}).length > 0))
+  .map(([key]) => key);
 const document = (args) => Object.fromEntries(fields.map((f) => [f, args[f]]));
 const prediction = (day, doc) => [{
   op: "write", t: "page", id: day,
@@ -55,7 +59,8 @@ export function onClaimPushResponse(replica, ctx, request, response, timing) {
       const pending = replica.deviceRows("journal")[pendingClaimKey(entry.intent.cmd.args.claimId)];
       if (!pending) continue;
       if (result.s === "ok") pending.claimResult = { seq: result.seq, epoch: response.body.epoch };
-      if (result.s === "refused") pending.refusal = result.code;
+      if (result.s === "refused" && !["clock-skew", "base-unknown"].includes(result.code))
+        pending.refusal = result.code;
     }
   }
   return onPushResponse(replica, ctx, request, response, timing);

@@ -15,6 +15,13 @@ public struct Reader {
     self.registry = registry
   }
 
+  public var actor: String { (source as? any CommitContext)?.actor ?? "" }
+  public var isAnonymous: Bool { source.isAnonymous }
+  public func commands() throws -> [QueuedCommand] { try (source as? any CommitContext)?.commands() ?? [] }
+  public func devices(prefix: String) throws -> JSON.Object { try source.devices(prefix: prefix) }
+  public func checkpoint() throws -> ScopeCheckpoint { try source.checkpoint() }
+  public func confirmed<E: Entity>(_ type: E.Type, _ id: ID<E>) throws -> Record? { try source.confirmed(E.type, id.record) }
+
   public func repository<E: Entity>(_ type: E.Type) -> Repository<E> {
     Repository(source: source, registry: registry)
   }
@@ -55,6 +62,8 @@ public struct Repository<E: Entity> {
   public func capacity() throws -> Capacity {
     Capacity(of: E.self, stored: try source.stored(E.type), registry: registry)
   }
+
+  public func record(_ id: ID<E>, in view: ViewMode) throws -> Record? { try record(id.record, in: view) }
 
   // The visible records, decoded in `all`'s order: an `Ordered` type by its key then its id, any other by its id. A record
   // that does not decode is a schema fault, surfaced, never skipped.

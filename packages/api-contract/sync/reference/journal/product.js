@@ -3,6 +3,7 @@
 import { createHash } from "node:crypto";
 import { COUNTER_LIMIT, MS_LIMIT } from "../core/constants.js";
 import { jcs } from "../core/jcs.js";
+import { ownValue, setOwn } from "../core/maps.js";
 import { Stamp } from "../core/stamp.js";
 import { Refusal, replacementText } from "../server/admit.js";
 
@@ -142,7 +143,7 @@ export class JournalProduct {
     if (cmd.name !== "journal.claimPage") throw new Refusal("invalid");
     const claims = book(ctx, "journalClaims");
     const digest = createHash("sha256").update(jcs(cmd.args)).digest("hex");
-    const old = claims[cmd.args.claimId];
+    const old = ownValue(claims, cmd.args.claimId);
     if (old) {
       if (old.digest !== digest) throw new Refusal("claim-conflict");
       return { deltas: [], write: [] };
@@ -166,11 +167,11 @@ export class JournalProduct {
       stamp,
     };
     const outcome = this.replace(ctx, args);
-    claims[cmd.args.claimId] = {
+    setOwn(claims, cmd.args.claimId, {
       digest,
       day: cmd.args.day,
       documentStamp: stamp,
-    };
+    });
     return outcome;
   }
 

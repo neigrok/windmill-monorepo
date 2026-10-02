@@ -209,7 +209,6 @@ public struct LoadedReplica: Sendable {
       cursors = [:]
       staging = [:]
       known = [:]
-      deviceRows = [:]
     }
   }
 

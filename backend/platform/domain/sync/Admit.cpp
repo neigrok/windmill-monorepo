@@ -21,6 +21,7 @@ Json::Value comparable(const std::optional<Row>& row) {
     for (const auto& [name, text] : row->x) {
       texts[name]["text"] = text.text;
       texts[name]["merged"] = text.merged;
+      texts[name]["pending"] = text.rev == 0;
     }
   }
   if (!row->v.empty()) {
@@ -173,7 +174,7 @@ std::set<RevisionWanted> ChangeSet::revisionsWanted() const {
   std::set<RevisionWanted> wanted;
   for (const Queued& queued : queued_) {
     for (const auto& [name, write] : queued.delta.x) {
-      if (!write.base.rev) continue;
+      if (write.replacement || !write.base.rev) continue;
       Seq headRev = 0;
       if (queued.locked.stored) {
         if (const auto head = queued.locked.stored->x.find(name); head != queued.locked.stored->x.end()) headRev = head->second.rev;
@@ -208,6 +209,14 @@ void ChangeSet::join(const std::map<RevisionWanted, std::optional<std::string>>&
       const TextVal head = before && stored != before->x.end() ? stored->second : TextVal{};
       std::optional<std::string> revision;
       if (const auto loaded = revisions.find(RevisionWanted{key, name, write.base.rev.value_or(0)}); loaded != revisions.end()) revision = loaded->second;
+      if (write.replacement) {
+        if (queued.source != Source::command && queued.source != Source::check) throw std::logic_error("internal text replacement from a wire delta");
+        if (static_cast<std::int64_t>(lengthIn(field.bounds->unit, write.text)) > *field.bounds->max) throw Refusal(code::tooLarge);
+        after.x[name] = TextVal{write.text, 0, false};
+        if (head.rev > 0 && (!write.archiveNonempty || !head.text.empty()))
+          superseded.push_back(TextRevision{name, head.rev, head.text, write.archive});
+        continue;
+      }
       const std::optional<TextMerge> merge = mergeText(head.text, head.rev, write.base, write.text, revision, limits_.mergeWorkCells);
       if (!merge) throw Refusal(code::baseUnknown);
       if (static_cast<std::int64_t>(lengthIn(field.bounds->unit, merge->text)) > *field.bounds->max) throw Refusal(code::tooLarge);

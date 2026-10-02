@@ -589,7 +589,8 @@ void PgGymState::receipt(SyncTxn& txn, const ScopeKey& scope, const std::string&
 }
 
 PgGym::PgGym(const Registry& registry) : product_(state_) {
-  for (const TypeDef& type : registry.types()) stores_.push_back(std::make_unique<PgGymType>(type));
+  for (const TypeDef& type : registry.types())
+    if (type.scope == RegistryScope{ScopeKind::product, "gym"}) stores_.push_back(std::make_unique<PgGymType>(type));
 }
 
 void PgGym::bindTo(SyncCatalog& catalog) {

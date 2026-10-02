@@ -161,6 +161,7 @@ struct Touched {
   var ops: Set<Op> = []
   var createdBy: [ChangeSource] = []
   var superseded: [String: TextState] = [:]
+  var archives: [String: JSON.Object] = [:]
 
   var changed: Bool { joined.map { $0.content != locked.row?.content } ?? false }
   var diesHere: Bool { locked.isAlive && joined?.isAlive == false }
@@ -350,6 +351,15 @@ struct AdmissionRun {
     for (name, write) in delta.texts.sorted(by: { $0.key < $1.key }) {
       try merge(write, into: &row, in: place.scope, field: type.field(name)!, superseded: &record.superseded)
     }
+    for (name, replacement) in placed.delta.replacements {
+      guard let field = type.field(name), case .text = field.kind else { throw Refusal(.invalid) }
+      if let bounds = field.bounds, bounds.unit.length(of: replacement.text) > bounds.max ?? .max { throw Refusal(.tooLarge) }
+      if let head = row.texts[name], !replacement.archiveNonempty || !head.text.isEmpty {
+        record.superseded[name] = head
+        record.archives[name] = replacement.archive
+      }
+      row.texts[name] = TextState(text: replacement.text, rev: nextSeq(of: place.scope), merged: false)
+    }
     if row.lattice.life?.isAlive == false && type.revivable != true {
       row.lattice.fields = [:]
       row.texts = [:]
@@ -485,10 +495,13 @@ struct AdmissionRun {
       if net != 0 || record.counters[type.name] != nil { record.counters[type.name] = (record.counters[type.name] ?? 0) + net }
     }
     let superseded = changed.flatMap { place in
-      touched[place]!.superseded.map { Revision(key: place.key, field: $0.key, rev: $0.value.rev, text: $0.value.text) }
+      touched[place]!.superseded.map { field, head in
+        let metadata = touched[place]!.archives[field] ?? [:]
+        return Revision(key: place.key, field: field, rev: head.rev, text: head.text, metadata: metadata)
+      }
     }
     if !superseded.isEmpty {
-      state.revisions[written] = admission.rules.keptRevisions((state.revisions[written] ?? []) + superseded).sorted()
+      state.revisions[written] = admission.rules.pruneRevisions((state.revisions[written] ?? []) + superseded, archived: superseded, serverNow: serverNow, scope: written, product: &state.product).sorted()
     }
     commit(rows, into: written, as: record)
   }

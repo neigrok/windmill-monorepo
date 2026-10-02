@@ -8,6 +8,7 @@ public struct Plan: Sendable {
   var command: Command?
   var predictions: [Prediction] = []
   var deviceWrites: [DeviceWrite] = []
+  var supersededGestures: [String] = []
 
   public init() {}
 
@@ -57,6 +58,8 @@ public struct Plan: Sendable {
   public mutating func guardRead<E: Entity>(_ id: ID<E>, fields: [String]) {
     operations.append(Operation(.guardRead(fields.uniqueInByteOrder), of: E.self, id: id.record))
   }
+
+  public mutating func supersede(_ gestureIds: [String]) { supersededGestures = gestureIds }
 
   public mutating func device(_ key: String, _ value: JSON?) {
     deviceWrites.append(DeviceWrite(key: key, value: value))
@@ -161,13 +164,18 @@ public protocol ServerCommand: Sendable {
 // The values a product expects its command to write, server-written fields included, drawn until the result arrives.
 public struct Prediction: Sendable {
   enum Kind: Sendable {
-    case create, update
+    case create, update, write
   }
 
   let kind: Kind
   let type: String
   let id: RecordID
   let values: [String: JSON]
+  var texts: [String: String] = [:]
+
+  public static func write<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON], texts: [String: String] = [:]) -> Prediction {
+    Prediction(kind: .write, type: E.type, id: id.record, values: values, texts: texts)
+  }
 
   public static func create<E: Entity>(_ type: E.Type, _ id: ID<E>, _ values: [String: JSON]) -> Prediction {
     Prediction(kind: .create, type: E.type, id: id.record, values: values)

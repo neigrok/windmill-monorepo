@@ -146,6 +146,14 @@ def main():
     equal_files(args.output / "data-migrated", args.output / "data-after-read", "second read snapshot wrote data")
     read_files = equal_files(args.output / "reads-before", args.output / "reads-after", "read response diff")
     run([str(binaries["windmill_gym_backfill"]), "--audit"], environment, args.output / "audit.jsonl")
+    run([str(binaries["windmill_gym_backfill"]), "--audit", "--test-corruptions"], environment,
+        args.output / "corruption-audit.jsonl")
+    offline(environment)
+    database_dump(environment, args.output / "data-after-corruption-audit")
+    equal_files(args.output / "data-migrated", args.output / "data-after-corruption-audit", "corruption audit changed table rows or sequences")
+    negative_audit = [json.loads(line) for line in (args.output / "corruption-audit.jsonl").read_text().splitlines()]
+    if any(not row["envelopeAudit"] or row["corruptionsRejected"] == 0 for row in negative_audit):
+        raise RuntimeError("a migrated scope did not reject recomputed-digest corruptions")
     run([str(binaries["windmill_gym_backfill"])], environment, args.output / "second-run.jsonl")
     offline(environment)
     second = [json.loads(line) for line in (args.output / "second-run.jsonl").read_text().splitlines()]
@@ -157,6 +165,7 @@ def main():
     report = {"passed": True, "accounts": before["accounts"], "responses": before["responses"],
               "restGetRoutes": len(routes), "mcpReadTools": len(before["mcpReadTools"]),
               "readFilesCompared": read_files, "auditedScopes": len(audit),
+              "corruptionsRejected": sum(row["corruptionsRejected"] for row in negative_audit),
               "secondRunChanges": sum(row["changed"] for row in second),
               "tableRowsAndSequencesFilesCompared": data_files,
               "tables": len([row for row in migrated if "table" in row]),

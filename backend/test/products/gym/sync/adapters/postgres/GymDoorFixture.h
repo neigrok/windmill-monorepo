@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
+#include "platform/infra/SyncProducts.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/adapters/postgres/PgCatalogRepository.h"
@@ -39,7 +40,7 @@ struct Harness {
   PgNotesRepository notes{pool()};
   PgBodyweightRepository bodyweight{pool()};
   PgPreferencesRepository preferences{pool()};
-  GymDoor door{pool(), clock, failures, log, program, catalog, notes, bodyweight, preferences};
+  GymDoor door{pool(), clock, failures, log, program, catalog, notes, bodyweight, preferences, sync::productCatalog()};
 
   Harness() {
     PgLease lease{*pool()};

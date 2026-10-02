@@ -98,6 +98,7 @@
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
+#include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 
 #ifdef WM_SYNC_PROBE
@@ -413,7 +414,7 @@ int main() {
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
   auto gymDoor = std::make_shared<gym::GymDoor>(pool, *systemClock, *sentry, *gymLog, *gymProgram,
-      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences);
+      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences, sync::productCatalog());
   auto gymTrainingService =
       std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens, gymDoor.get());
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, gymDoor.get());
@@ -910,8 +911,8 @@ int main() {
   gym::registerRoutes(app, gymDeps);
 
 #ifdef WM_SYNC_PROBE
-  // The sync engine (engine.md) over the probe product and db/probe.sql. windmill_server composes no
-  // registry yet, since no product has adopted the engine, so it mounts none of /v1/sync.
+  // The dev-only endpoints use the probe registry. Production binds gym + journal internally
+  // and mounts none of /v1/sync.
   const sync::Registry& syncRegistry = probe::registry();
   const sync::Limits syncLimits;
   sync::SyncCatalog syncCatalog(syncRegistry);

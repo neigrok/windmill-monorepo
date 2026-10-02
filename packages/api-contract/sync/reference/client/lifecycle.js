@@ -3,6 +3,8 @@
 // which announces every change of `activeReplica()` in `ctx.events`.
 
 import { moveEntry, REPLICA_MACHINE, transition } from '../core/machines.js';
+import { createHash } from 'node:crypto';
+import { jcs } from '../core/jcs.js';
 import { recordKey, stampsOf } from '../core/rows.js';
 import { releaseAll } from './hold.js';
 import { Replica } from './replica.js';
@@ -148,7 +150,8 @@ export function signIn(device, ctx, { account, holdsRecords, decisions = {}, cou
 
 // Sign-out after the caller's flush (at most SIGNOUT_FLUSH_MS). Without a finish (`choice` keep, the
 // confirm when nothing is left, or discard) it answers the question {unsent, ready, sent, counted},
-// the counted local ids of the ready and sent entries (Discard cannot recall a sent entry that may have
+// the counted local ids of the ready and sent entries and the byte-pinned durable device work
+// (Discard cannot recall a sent entry that may have
 // landed). Keep covers every entry; a Discard whose pinned `counted` differs from the entries now is
 // asked again. The finish resolves acked entries, which the server holds.
 export function signOut(device, ctx, { choice, counted } = {}) {
@@ -156,11 +159,17 @@ export function signOut(device, ctx, { choice, counted } = {}) {
   const previous = bound.id;
   releaseAll(bound, ctx.registry, ctx.ended);
   const unsent = bound.entries().filter((entry) => entry.state === 'ready' || entry.state === 'sent');
+  // Products identify durable device work that has not yet become an outbox entry. Pin its bytes so
+  // Discard asks again if typing changed after the question, even when its device key did not.
+  const pending = Object.entries(bound.device).sort(([a], [b]) => a < b ? -1 : a > b ? 1 : 0)
+    .flatMap(([product, rows]) => (ctx.pendingDeviceWork?.(product, rows) ?? []).slice().sort().map((key) =>
+      `device:${product}:${key}:${createHash('sha256').update(jcs(rows[key])).digest('hex')}`));
   const question = {
-    unsent: unsent.length,
+    unsent: unsent.length + pending.length,
     ready: unsent.filter((entry) => entry.state === 'ready').length,
     sent: unsent.filter((entry) => entry.state === 'sent').length,
-    counted: unsent.map((entry) => entry.localId),
+    counted: [...unsent.map((entry) => entry.localId), ...pending],
+    ...(pending.length ? { pending: pending.length } : {}),
   };
   const finished = choice === 'keep' || (choice === 'discard' && sameCounted(counted, question.counted));
   if (!finished) return { complete: false, ...question };
@@ -172,7 +181,8 @@ export function signOut(device, ctx, { choice, counted } = {}) {
     bound.cursors = {};
     bound.staging = {};
     bound.known = {};
-    bound.device = {};
+    // Device rows hold durable product work, including edits behind frozen command payloads.
+    // Keep retains them with this account's dormant replica; Discard deletes the entire replica.
   } else {
     transition(REPLICA_MACHINE, 'bound', 'sign-out-discard', 'deleted');
     for (const entry of bound.entries()) moveEntry(bound, ctx.ended, entry, 'discard');

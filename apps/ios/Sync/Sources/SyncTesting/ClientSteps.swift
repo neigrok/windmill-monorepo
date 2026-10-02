@@ -57,13 +57,14 @@ public struct PlannedDevice: ClientDevice {
   let pages: PageApplier
   let lifecycle: ReplicaLifecycle
 
-  public init(_ device: LoadedDevice, registry: Registry, limits: Limits) {
+  public init(_ device: LoadedDevice, registry: Registry, limits: Limits, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
+              pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
     self.device = device
     commits = CommitPlanner(registry: registry, limits: limits)
     hold = Hold(registry: registry)
-    pushes = PushPlanner(registry: registry, limits: limits)
+    pushes = PushPlanner(registry: registry, limits: limits, commandResultWrites: commandResultWrites)
     pages = PageApplier(registry: registry)
-    lifecycle = ReplicaLifecycle(registry: registry)
+    lifecycle = ReplicaLifecycle(registry: registry, pendingDeviceWork: pendingDeviceWork)
   }
 
   public var events: [EngineEvent] { device.events }
@@ -424,6 +425,7 @@ public enum ClientSteps {
         RegisterRef(type: try register.member("t").asString(), id: try RecordID(json: register.member("id")), field: try register.member("field").asString())
       } ?? [],
       retire: try opts["retire"]?.asArray().map { RecordRef(type: try $0.member("t").asString(), id: try RecordID(json: $0.member("id"))) } ?? [],
+      supersede: try opts["supersede"]?.asArray().map { try $0.asString() } ?? [],
       command: try opts["cmd"].map { try Command(json: $0) },
       predict: try opts["predict"]?.asArray().map(change) ?? [],
       local: try (opts["local"]?.asObject().members ?? []).map { DeviceWrite(key: $0.key, value: $0.value.isNull ? nil : $0.value) },
@@ -464,7 +466,9 @@ public enum ClientSteps {
   public static func json(_ outcome: CommitOutcome) -> JSON {
     switch outcome {
     case .committed(let receipt):
-      return ["localIds": .array(receipt.localIds.map { .string($0) }), "retired": .array(receipt.retired.map { .string($0) }), "stamp": receipt.stamp.json]
+      var answer: JSON.Object = ["localIds": .array(receipt.localIds.map { .string($0) }), "retired": .array(receipt.retired.map { .string($0) }), "stamp": receipt.stamp.json]
+      if !receipt.superseded.isEmpty { answer["superseded"] = .array(receipt.superseded.map(JSON.string)) }
+      return .object(answer)
     case .refused(let code, let detail, _):
       var object: JSON.Object = ["refused": code.json]
       object["detail"] = detail
@@ -491,10 +495,12 @@ public enum ClientSteps {
   }
 
   public static func json(_ signOut: SignOut) -> JSON {
-    [
+    var result: JSON.Object = [
       "complete": .bool(signOut.complete), "unsent": JSON(signOut.unsent), "ready": JSON(signOut.ready), "sent": JSON(signOut.sent),
       "counted": .array(signOut.counted.map { .string($0) }),
     ]
+    if signOut.pending > 0 { result["pending"] = JSON(signOut.pending) }
+    return .object(result)
   }
 }
 
@@ -607,8 +613,10 @@ extension ReplicaBatch {
 extension Store {
   // An in-memory store holding `device` whole: a device restored from a backup, or one another was cloned into.
   public static func inMemory(holding device: LoadedDevice, registry: Registry, limits: Limits = Limits(),
-                              crashPoints: CrashPoints = .none) throws -> Store {
-    let store = try Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints)
+                              crashPoints: CrashPoints = .none, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
+                              pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) throws -> Store {
+    let store = try Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints, commandResultWrites: commandResultWrites,
+                                   pendingDeviceWork: pendingDeviceWork)
     _ = try store.write(.firstLaunch) { _ in Planned((), ReplicaBatch(building: device)) }
     return store
   }

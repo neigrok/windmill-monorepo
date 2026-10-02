@@ -14,6 +14,7 @@ import { ServerState } from "../../server/state.js";
 import {
   journalRegistry,
   journalProduct,
+  admissionVectors,
   pruneExpanded,
 } from "../../vectors/journal.js";
 import { runSteps } from "../../vectors/steps.js";
@@ -32,6 +33,25 @@ const replay = (input) =>
     registry: journalRegistry,
     product: journalProduct,
   });
+
+test("prototype names are valid journal claim ids with durable exact replay receipts", () => {
+  const sample = admissionVectors().find((v) => v.name === "claim empty account creates page");
+  for (const claimId of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+    const input = structuredClone(sample.input);
+    input.intent.cmd.args.claimId = claimId;
+    const first = replay(input);
+    assert.equal(first.result.s, "ok", claimId);
+    assert.equal(Object.hasOwn(first.state.product.journalClaims[key], claimId), true, claimId);
+    const again = replay({ ...input, state: first.state.toJSON() });
+    assert.equal(again.result.s, "ok", claimId);
+    assert.deepEqual(again.result.write, [], claimId);
+    assert.deepEqual(again.state.toJSON(), first.state.toJSON(), claimId);
+    const changed = structuredClone(input);
+    changed.intent.cmd.args.body = "Changed.";
+    changed.state = first.state.toJSON();
+    assert.equal(replay(changed).result.code, "claim-conflict", claimId);
+  }
+});
 
 test("journal/admit.json replays under the journal binding", () => {
   for (const { name, input, expect } of load("admit.json")) {

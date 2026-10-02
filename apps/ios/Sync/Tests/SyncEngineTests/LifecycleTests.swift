@@ -3,6 +3,7 @@ import SyncCore
 import SyncEngine
 import SyncModelServer
 import SyncReplica
+import SyncSchema
 import SyncStore
 import SyncTesting
 import Synchronization
@@ -385,6 +386,51 @@ struct LifecycleTests {
   }
 
   // MARK: Sign-out (§7.10)
+
+  @Test(arguments: [SignOutChoice.keep, .discard])
+  func aDelayedClaimKeepsItsPendingEditsOnlyWhenSignOutKeepsWork(_ choice: SignOutChoice) async throws {
+    let scope = Journal.scope, key = "pendingClaim:claim-delayed"
+    let rig = try Rig(registry: SyncSchema.registry, pendingDeviceWork: { product, rows in
+      product == "journal" ? rows.members.filter { $0.key.hasPrefix("pendingClaim:") }.map(\.key) : []
+    })
+    let args: JSON.Object = ["day": "2026-10-01", "claimId": "claim-delayed", "body": "First words.", "mood": .null, "energy": .null, "source": "typed"]
+    let pending: JSON = ["base": "First words.", "latest": "First words. New signed-in words.", "touched": ["body"]]
+    _ = try rig.engine.commit(scope, Gesture(changes: [], command: Command(name: Journal.Commands.claimPage, args: .object(args)),
+      predict: [.write("page", RecordID("2026-10-01"), [:], texts: ["body": TextEdit(text: "First words.")])],
+      local: [DeviceWrite(key: key, value: ["base": "First words.", "latest": "First words.", "touched": []])]))
+    #expect(try await rig.signIn("A", holds: ["journal": false, "gym": false]).isComplete)
+    _ = try #require(rig.store.number(at: rig.clock.nowMs()).value)
+    _ = try rig.engine.commit(scope, Gesture(changes: [], local: [DeviceWrite(key: key, value: pending)]))
+    rig.connectivity.set(online: false)
+    let session = try await rig.engine.signOut()
+    #expect((session.ready, session.sent, session.pending, session.unsent) == (0, 1, 1, 2))
+    try await session.finish(choice)
+    #expect(try rig.engine.read(scope) { try $0.device(key) } == nil)
+    if choice == .discard {
+      #expect(try rig.engine.dormantReplicas().isEmpty)
+      return
+    }
+    #expect(try rig.engine.dormantReplicas() == [DormantReplica(account: "A", ready: 0, sent: 1, pending: 1)])
+    rig.connectivity.set(online: true)
+    #expect(try await rig.signIn("A", holds: ["journal": true, "gym": false]).isComplete)
+    #expect(try rig.engine.read(scope) { try $0.device(key) } == pending)
+    let request = try #require(rig.store.number(at: rig.clock.nowMs()).value)
+    #expect(request.intents.first?.command?.args["body"] == "First words.")
+  }
+
+  @Test func discardPinsTheValueOfPendingWorkBeyondTheOutbox() async throws {
+    let rig = try Rig(account: "A", pendingDeviceWork: { product, rows in product == "probe" ? rows.members.map(\.key) : [] })
+    rig.connectivity.set(online: false)
+    try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "rack", value: ["latest": "first"])]))
+    let session = try await rig.engine.signOut()
+    #expect((session.ready, session.sent, session.pending, session.unsent) == (0, 0, 1, 1))
+    try rig.commit(Gesture(changes: [], local: [DeviceWrite(key: "rack", value: ["latest": "edited after asking"])]))
+    await #expect(throws: EngineError.signOutChanged(ready: 0, sent: 0, pending: 1)) { try await session.finish(.discard) }
+    #expect(try rig.engine.read(Rig.scope) { try $0.device("rack") } == ["latest": "edited after asking"])
+    let current = try await rig.engine.signOut()
+    try await current.finish(.discard)
+    #expect(try rig.engine.dormantReplicas().isEmpty)
+  }
 
   // The flush runs for at most SIGNOUT_FLUSH_MS; then the sender holds the replica, so nothing more is numbered and the
   // count stays true. The push still in flight is abandoned: its answer, when it comes, is recorded. Keep leaves the

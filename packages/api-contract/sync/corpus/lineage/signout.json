@@ -1,6 +1,6 @@
 [
   {
-    "name": "sign-out with an empty outbox still waits for a finish; its confirm, Keep, purges the account's rows, cursors and device rows, leaves the replica dormant and starts an anon replica",
+    "name": "sign-out with an empty outbox still waits for a finish; Keep purges account rows and cursors, retains device work, leaves the replica dormant and starts an anon replica",
     "input": {
       "device": {
         "active": "rp_000000000000000000000000000000a2",
@@ -133,6 +133,15 @@
               "ackThrough": 0,
               "authPaused": false,
               "account": "A"
+            },
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    5
+                  ]
+                }
+              }
             }
           },
           {
@@ -585,7 +594,16 @@
                   "gestureId": "g1"
                 }
               }
-            ]
+            ],
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    5
+                  ]
+                }
+              }
+            }
           },
           {
             "meta": {
@@ -1278,6 +1296,15 @@
                 "mono": 5002,
                 "boot": "boot-1"
               }
+            },
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    5
+                  ]
+                }
+              }
             }
           },
           {
@@ -1807,7 +1834,16 @@
                   "gestureId": "autosave"
                 }
               }
-            ]
+            ],
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    5
+                  ]
+                }
+              }
+            }
           },
           {
             "meta": {
@@ -2013,6 +2049,15 @@
               "ackThrough": 0,
               "authPaused": false,
               "account": "A"
+            },
+            "device": {
+              "probe": {
+                "rack": {
+                  "plates": [
+                    5
+                  ]
+                }
+              }
             }
           }
         ]

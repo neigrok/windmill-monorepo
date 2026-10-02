@@ -7,6 +7,7 @@ import Testing
 
 enum ServerHandlers {
   static let probe = try! Corpus.probeRegistry()
+  static let journal = try! Registry(json: Corpus.registryFile("journal"))
   static let gym = try! Registry(json: Corpus.registryFile("gym"))
 
   static let table: [String: @Sendable (JSON) throws -> JSON] = files.merging(admitFiles) { $1 }
@@ -29,6 +30,16 @@ enum ServerHandlers {
     "text/merge.json": { try textMerge($0) },
     "envelope/credentials.json": { try credentials($0) },
     "admit/requests.json": { try requests($0) },
+    "journal/admit.json": { try admit($0, registry: journal, rules: JournalServerRules()) },
+    "journal/revisions.json": { input in
+      let rows = try input.member("revisions").asArray().map { row in
+        Revision(key: RecordKey("page", RecordID(try row.member("day").asString())), field: "body",
+          rev: try row.member("rev").asInteger(), text: String(repeating: "x", count: Int(try row.member("bytes").asInteger())),
+          metadata: ["archivedAt": try row.member("archivedAt")])
+      }
+      let days = try Set(input.member("days").asArray().map { RecordID(try $0.asString()) })
+      return ["kept": .array(JournalServerRules.prune(rows, days: days, serverNow: try input.member("serverNow").asInteger()).map { JSON($0.rev) })]
+    },
     "gym/admit.json": { try admit($0, registry: gym, rules: GymServerRules()) },
     "push/serve.json": { try push($0) },
     "pull/serve.json": { try pull($0) },

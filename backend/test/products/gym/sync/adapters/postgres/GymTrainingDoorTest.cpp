@@ -97,10 +97,10 @@ TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_r
   CHECK_EQ(h.door.start(h.user, startAt("session_joinalias", at)).session, original.session);
   CHECK_EQ(state()[0]["seq"].as<int>(), 2);
   engine::PgGymBackfill backfill{pool()};
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   REQUIRE(h.door.append(h.user, original.session->id, setAt("set_joinalias1", at)).set);
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
 
   sync::SyncCatalog catalog{engine::registry()};
   engine::PgGym gym{engine::registry()};
@@ -125,7 +125,7 @@ TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_r
   CHECK_EQ(refused->result["code"].asString(), "id-spent");
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
   CHECK(!h.log.session(h.user, SessionId{"session_joinalias"}));
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   CHECK(h.failures.messages.empty());
 }
 

@@ -5,7 +5,9 @@
 #include "products/probe/ProbeRegistry.h"
 #include "products/probe/adapters/postgres/PgProbe.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
+#include "products/journal/sync/adapters/postgres/PgJournal.h"
 #include "test/PgTestPool.h"
+#include "test/SyncCorpus.h"
 #include "test/platform/application/sync/SyncWorld.h"
 
 #include <pqxx/pqxx>
@@ -18,11 +20,11 @@
 #include <vector>
 
 // The sync engine over the isolated WM_SYNC_DATABASE_URL database (RUNNING.md §7).
-// Seeding wipes sync, probe and gym rows; schema.sql, probe.sql and gym_sync.sql must be applied.
+// Seeding wipes sync, probe and gym rows; schema.sql, probe.sql, gym_sync.sql and journal_sync.sql must be applied.
 
 namespace wm::sync::test {
 
-inline const char* kNeedsPostgres = "WM_PG_TEST unset — needs WM_SYNC_DATABASE_URL with schema.sql, probe.sql and gym_sync.sql, see RUNNING.md §7";
+inline const char* kNeedsPostgres = "WM_PG_TEST unset — needs WM_SYNC_DATABASE_URL with schema.sql, probe.sql, gym_sync.sql and journal_sync.sql, see RUNNING.md §7";
 
 inline bool postgresEnabled() {
   return std::getenv("WM_PG_TEST") != nullptr;
@@ -30,8 +32,9 @@ inline bool postgresEnabled() {
 
 class PgWorld final : public SyncWorld {
 public:
-  PgWorld(bool gym = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), catalog_(gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym) {
-    if (gym_) gymProduct_.bindTo(catalog_);
+  PgWorld(bool gym = false, bool journal = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), journalProduct_(wm::journal::engine::registry()), catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym), journal_(journal) {
+    if (journal_) journalProduct_.bindTo(catalog_);
+    else if (gym_) gymProduct_.bindTo(catalog_);
     else probe_.bindTo(catalog_);
     catalog_.seal();
     resetClock(Json::Value(Json::objectValue));
@@ -75,6 +78,7 @@ public:
       sql.exec(std::string("delete from ") + table);
     }
     if (gym_) {
+      sql.exec("delete from gym_sync_adoptions");
       sql.exec("truncate gym_exercises,gym_routines,gym_sessions,gym_notes,gym_bodyweight,gym_preferences,gym_write_receipts,gym_correction_receipts,gym_routine_creations,gym_note_saves,gym_ask_threads cascade");
       for (const auto& id : state["product"]["seeds"].getMemberNames()) {
         sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
@@ -88,6 +92,13 @@ public:
           }
         }
       }
+    }
+    if (journal_) {
+      sql.exec("truncate journal_page_revision,journal_page,journal_sync_state,journal_claim_receipts,journal_content_clock,journal_sync_adoptions cascade");
+      productSeed_ = state["product"];
+      journalInitial_.clear();
+      for (const auto& key : state["rows"].getMemberNames()) for (const auto& row : state["rows"][key])
+        if (row["t"] == "page") journalInitial_[{key, row["id"].asString()}] = row["seq"].asUInt64();
     }
     for (const std::string& alias : aliasesIn(state)) {
       const std::string name = state["accounts"][alias]["name"].asString();
@@ -144,6 +155,12 @@ public:
     }
     for (const std::string& key : state["revisions"].getMemberNames()) {
       for (const Json::Value& revision : state["revisions"][key]) {
+        if (journal_) {
+          const auto& stamp = revision["documentStamp"];
+          sql.exec("insert into journal_page_revision(user_id,day,body,stamp_ms,stamp_counter,stamp_actor,superseded_at,engine_rev) values($1::uuid,$2::date,$3,$4,$5,$6,to_timestamp($7::numeric/1000),$8)",
+            pqxx::params{storeKey(key).account().str(), revision["id"].asString(), revision["text"].asString(), stamp["ms"].asInt64(), stamp["counter"].asInt64(), stamp["actor"].asString(), revision["archivedAt"].asInt64(), revision["rev"].asInt64()});
+          continue;
+        }
         sql.exec("insert into probe_marks_revisions (scope_key, id, field, rev, text) values ($1, $2, $3, $4, $5)",
                  pqxx::params{storeKey(key).text(), RecordId(revision["id"]).column(), revision["field"].asString(), revision["rev"].asInt64(),
                               revision["text"].asString()});
@@ -200,6 +217,26 @@ public:
         sql.exec("update gym_proposals set base_revision=$3,base_name=$4 where user_id=$1::uuid and id=$2", pqxx::params{storeKey(key).account().str(), id, product["bases"][key][id]["revision"].asInt(), product["bases"][key][id]["name"].asString()});
       }
     }
+    if (journal_) {
+      for (const auto& key : product["journalAdoptions"].getMemberNames()) {
+        const auto& marker = product["journalAdoptions"][key];
+        Json::Value frozen;
+        for (const auto& vector : corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/journal/backfill.json")) {
+          if (sha256(jcs(vector["input"]["legacy"])).hex() == marker["manifest"].asString()) { frozen = vector["input"]["legacy"]; break; }
+        }
+        if (frozen.isNull()) throw std::logic_error("journal marker fixture has no independently retained source");
+        sql.exec("insert into journal_sync_adoptions(user_id,migration_ms,first_run_policy,manifest_digest,frozen_input) values($1::uuid,$2,$3,$4,$5::jsonb)", pqxx::params{storeKey(key).account().str(), marker["M"].asInt64(), marker["firstRunPolicy"].asString(), marker["manifest"].asString(), jcs(frozen)});
+      }
+      for (const auto& key : product["journalRevisionProjection"].getMemberNames()) for (const auto& rev : product["journalRevisionProjection"][key].getMemberNames())
+        sql.exec("update journal_page_revision set migration_id=$3 where user_id=$1::uuid and engine_rev=$2", pqxx::params{storeKey(key).account().str(), std::stoll(rev), product["journalRevisionProjection"][key][rev]["migrationId"].asInt64()});
+      wm::journal::engine::PgJournalState journalState;
+      for (const auto& key : product["journalClaims"].getMemberNames())
+        for (const auto& id : product["journalClaims"][key].getMemberNames()) journalState.receipt(*txn, storeKey(key), id, product["journalClaims"][key][id]);
+      for (const auto& key : product["journalContentClocks"].getMemberNames())
+        journalState.saveClock(*txn, storeKey(key), product["journalContentClocks"][key]["server"]);
+      for (const auto& key : product["journalPages"].getMemberNames()) for (const auto& day : product["journalPages"][key].getMemberNames())
+        sql.exec("update journal_page set updated_at=to_timestamp($3::numeric/1000) where user_id=$1::uuid and day=$2::date", pqxx::params{storeKey(key).account().str(), day, product["journalPages"][key][day]["updatedAt"].asInt64()});
+    }
     txn->commit();
   }
 
@@ -250,6 +287,19 @@ public:
       state["revisions"][aliasKey(*ScopeKey::parse(row["scope_key"].template as<std::string>()))].append(revision);
     }
 
+    if (journal_) {
+      for (const auto& row : sql.exec("select user_id::text, to_char(day,'YYYY-MM-DD') as day,body,engine_rev,stamp_ms,stamp_counter,stamp_actor,floor(extract(epoch from superseded_at)*1000)::bigint as archived_at from journal_page_revision order by user_id,day,engine_rev")) {
+        const auto scope = aliasKey(ScopeKey::product(UserId(row["user_id"].template as<std::string>()), "journal"));
+        Json::Value revision(Json::objectValue);
+        revision["t"] = "page"; revision["id"] = row["day"].template as<std::string>(); revision["field"] = "body";
+        revision["rev"] = Json::UInt64(row["engine_rev"].template as<Seq>()); revision["text"] = row["body"].template as<std::string>();
+        revision["archivedAt"] = Json::UInt64(row["archived_at"].template as<Ms>());
+        revision["documentStamp"]["ms"] = Json::UInt64(row["stamp_ms"].template as<Ms>());
+        revision["documentStamp"]["counter"] = Json::UInt64(row["stamp_counter"].template as<Ms>());
+        revision["documentStamp"]["actor"] = row["stamp_actor"].template as<std::string>();
+        state["revisions"][scope].append(revision);
+      }
+    }
     state["replicas"] = Json::Value(Json::objectValue);
     state["results"] = Json::Value(Json::objectValue);
     for (const auto& row : sql.exec("select replica, account::text as account, last_n from sync_replicas order by replica")) {
@@ -299,6 +349,40 @@ public:
       }
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].isNull() || state["product"][key].empty()) state["product"].removeMember(key);
     }
+    if (journal_) {
+      state["product"] = productSeed_.isNull() ? Json::Value(Json::objectValue) : productSeed_;
+      for (const char* kind : {"journalClaims", "journalContentClocks", "journalPages", "journalAdoptions", "journalRevisionProjection"}) state["product"].removeMember(kind);
+      for (const auto& marker : sql.exec("select user_id::text,migration_ms,first_run_policy,manifest_digest from journal_sync_adoptions order by user_id")) {
+        const auto key = aliasKey(ScopeKey::product(UserId(marker["user_id"].template as<std::string>()), "journal"));
+        auto& value = state["product"]["journalAdoptions"][key];
+        value["M"] = Json::UInt64(marker["migration_ms"].template as<Ms>());
+        value["manifest"] = marker["manifest_digest"].template as<std::string>();
+        value["firstRunPolicy"] = marker["first_run_policy"].template as<std::string>();
+      }
+      for (const auto& row : sql.exec("select user_id::text,engine_rev,migration_id,stamp_ms,stamp_counter,stamp_actor,floor(extract(epoch from superseded_at)*1000)::bigint as archived_at from journal_page_revision where migration_id is not null order by user_id,engine_rev")) {
+        const auto key = aliasKey(ScopeKey::product(UserId(row["user_id"].template as<std::string>()), "journal"));
+        auto& value = state["product"]["journalRevisionProjection"][key][std::to_string(row["engine_rev"].template as<Seq>())];
+        value["migrationId"] = Json::UInt64(row["migration_id"].template as<Seq>());
+        value["stamp"]["ms"] = Json::UInt64(row["stamp_ms"].template as<Ms>());
+        value["stamp"]["counter"] = Json::UInt64(row["stamp_counter"].template as<Ms>());
+        value["stamp"]["actor"] = row["stamp_actor"].template as<std::string>();
+        value["supersededAt"] = Json::UInt64(row["archived_at"].template as<Ms>());
+      }
+      wm::journal::engine::PgJournalState journalState;
+      for (const auto& key : state["scopes"].getMemberNames()) {
+        auto books = journalState.load(*txn, storeKey(key));
+        if (!books["claims"].isNull() && !books["claims"].empty()) state["product"]["journalClaims"][key] = books["claims"];
+        if (!books["contentClock"].isNull()) state["product"]["journalContentClocks"][key]["server"] = books["contentClock"];
+      }
+      for (const auto& row : sql.exec("select user_id::text,to_char(day,'YYYY-MM-DD') as day,seq,floor(extract(epoch from updated_at)*1000)::bigint as updated_at from journal_page where seq is not null")) {
+        const auto key = aliasKey(ScopeKey::product(UserId(row["user_id"].template as<std::string>()), "journal"));
+        const auto day = row["day"].template as<std::string>();
+        const auto initial = journalInitial_.find({key, day});
+        if (initial == journalInitial_.end() || initial->second != row["seq"].template as<Seq>() || productSeed_["journalPages"][key].isMember(day))
+          state["product"]["journalPages"][key][day]["updatedAt"] = Json::UInt64(row["updated_at"].template as<Ms>());
+      }
+      for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
+    }
     dropEmpty(state);
     return state;
   }
@@ -318,11 +402,14 @@ private:
   PgSyncStore store_;
   probe::PgProbe probe_;
   wm::gym::engine::PgGym gymProduct_;
+  wm::journal::engine::PgJournal journalProduct_;
   SyncCatalog catalog_;
   Json::Value accounts_;
   Json::Value productSeed_;
   std::map<std::string, std::set<std::string>> implicitRevisions_;
+  std::map<std::pair<std::string, std::string>, Seq> journalInitial_;
   bool gym_;
+  bool journal_;
 };
 
 }

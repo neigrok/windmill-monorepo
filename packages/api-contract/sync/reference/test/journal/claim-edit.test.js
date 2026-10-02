@@ -4,7 +4,12 @@ import test from "node:test";
 import { CONSTANTS } from "../../core/constants.js";
 import { stampsOf } from "../../core/rows.js";
 import { compareDocumentStamps } from "../../journal/product.js";
-import { pendingClaimKey, reconcileClaimBody } from "../../journal/client.js";
+import { editPendingClaim, onClaimPushResponse, pendingClaimKey, pendingClaimWork, reconcileClaimBody } from "../../journal/client.js";
+import { Device } from "../../client/replica.js";
+import { signOut } from "../../client/lifecycle.js";
+import { steadyTiming } from "../../core/clock.js";
+import { ACTOR } from "../../vectors/fixtures.js";
+import { journalRegistry } from "../../vectors/journal.js";
 import { runClaimEdit } from "../../vectors/journal-claim.js";
 
 const vectors = JSON.parse(readFileSync(new URL("../../../corpus/journal/claim-edit.json", import.meta.url)));
@@ -29,7 +34,7 @@ test("the prescribed eager switch succeeds twice but silently loses newer typing
 });
 
 test("durable pending edits are resaved only after the joined row and result, above its stamp", () => {
-  for (const { name, input, expect } of vectors.slice(1).filter((v) => v.input.edit.body)) {
+  for (const { name, input, expect } of vectors.slice(1).filter((v) => v.input.edit.body && v.input.signOut !== "discard")) {
     const claim = expect.claimResponse.body.results[0];
     const saved = expect.saveResponse.body.results[0];
     assert.equal(claim.s, "ok", name);
@@ -90,4 +95,77 @@ test("local reconciliation preserves account prefix on deletion and preserves am
   assert.equal(reconcileClaimBody("Account.\n\nOriginal.", "Original.", ""), "Account.");
   assert.equal(reconcileClaimBody("Original.", "Original.", "Replacement."), "Replacement.");
   assert.equal(reconcileClaimBody("Concurrent account rewrite.", "Original.", "New typing."), "Concurrent account rewrite.\n\nNew typing.");
+});
+
+test("Keep retains delayed claim edits and resumes their reconciliation after sign-in", () => {
+  const input = { ...vectors[1].input, signOut: "keep" };
+  const out = runClaimEdit(input);
+  const question = out.trace.find((t) => t.op === "signOutQuestion").value;
+  assert.equal(question.unsent, 2);
+  assert.equal(question.pending, 1);
+  const dormant = out.trace.find((t) => t.op === "signOut").device.replicas.find((r) => r.meta.state === "dormant");
+  assert.equal(dormant.device.journal[pendingClaimKey(input.claim.claimId)].latest.body, input.edit.body);
+  assert.equal(out.saveRequest.intents[0].cmd.args.body, `Account words.\n\n${input.edit.body}`);
+  assert.equal(row(out.server).x.body.text, `Account words.\n\n${input.edit.body}`);
+});
+
+test("Keep counts pending edits after the frozen claim has settled", () => {
+  const input = { ...vectors[1].input, signOutAfterResult: true };
+  const out = runClaimEdit(input);
+  const question = out.trace.find((t) => t.op === "signOutQuestion").value;
+  assert.equal(question.unsent, 1);
+  assert.equal(question.pending, 1);
+  assert.equal(question.ready, 0);
+  assert.equal(question.sent, 0);
+  assert.equal(row(out.server).x.body.text, `Account words.\n\n${input.edit.body}`);
+});
+
+test("Discard purges pending claims and post-freeze edits", () => {
+  const out = runClaimEdit({ ...vectors[1].input, signOut: "discard" });
+  assert.equal(out.device.replicas.some((r) => r.meta.state === "dormant"), false);
+  assert.equal(out.device.replicas.some((r) => r.device?.journal?.[pendingClaimKey(vectors[1].input.claim.claimId)]), false);
+  assert.equal(out.pending, null);
+  assert.equal(out.saveRequest, null);
+});
+
+test("recoverable clock skew never poisons pending edits before the restamped retry", () => {
+  const input = { ...vectors[1].input, skewMs: CONSTANTS.MAX_SKEW_MS + vectors[1].input.claimAt + 10_000 };
+  const out = runClaimEdit(input);
+  assert.equal(out.trace.find((t) => t.op === "skewResult").value.body.results[0].code, "clock-skew");
+  assert.equal(out.claimResponse.body.results[0].s, "ok");
+    assert.ok(out.saveResponse);
+    assert.equal(out.saveResponse.body.results[0].s, "ok");
+  assert.equal(row(out.server).x.body.text, `Account words.\n\n${input.edit.body}`);
+  assert.equal(out.pending, null);
+});
+
+test("Discard pins pending claim bytes and asks again when edits changed after the question", () => {
+  const v = vectors.find((v) => v.input.occupied && !v.input.strategy);
+  const device = new Device(v.expect.trace.find((t) => t.op === "editCommit").device);
+  const ctx = { registry: journalRegistry, device, actor: ACTOR, deviceNow: v.input.now + v.input.editAt + 1,
+    pendingDeviceWork: pendingClaimWork, ended: [], nextGestureId: () => "late", newReplicaId: () => "rp_00000000000000000000000000000002" };
+  const question = signOut(device, ctx);
+  assert.equal(question.pending, 1);
+  const body = v.input.edit.body + " Later.";
+  editPendingClaim(device.activeReplica, ctx, v.input.claim.claimId, { body });
+  const changed = signOut(device, ctx, { choice: "discard", counted: question.counted });
+  assert.equal(changed.complete, false);
+  assert.notDeepEqual(changed.counted, question.counted);
+  const kept = signOut(device, ctx, { choice: "keep", counted: question.counted });
+  assert.equal(kept.complete, true);
+  assert.equal(device.dormantOf("A").deviceRows("journal")[pendingClaimKey(v.input.claim.claimId)].latest.body, body);
+});
+
+test("pending journal refusals record terminal failures and exclude both automatic recoveries", () => {
+  const v = vectors.find((v) => v.input.occupied && !v.input.strategy);
+  const sent = v.expect.trace.find((t) => t.op === "claimSent");
+  for (const code of ["clock-skew", "base-unknown", "claim-conflict"]) {
+    const device = new Device(sent.device), replica = device.activeReplica;
+    const ctx = { registry: journalRegistry, device, actor: ACTOR, deviceNow: v.input.now + v.input.claimAt, ended: [], telemetry: [] };
+    const response = { status: 200, body: { epoch: "ep-1", as: "A", serverTime: ctx.deviceNow,
+      lastN: code === "clock-skew" ? 0 : 1, results: [{ n: 1, s: "refused", code }] } };
+    onClaimPushResponse(replica, ctx, sent.value, response, steadyTiming(ctx.deviceNow, ctx.deviceNow));
+    assert.equal(replica.deviceRows("journal")[pendingClaimKey(v.input.claim.claimId)].refusal,
+      code === "claim-conflict" ? code : null, code);
+  }
 });

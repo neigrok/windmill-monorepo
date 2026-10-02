@@ -53,22 +53,24 @@ public enum SignOutChoice: String, Sendable, Hashable {
   case keep, discard
 }
 
-// A sign-out's question, or its finish: the ready and the sent entries (a sent entry may already have landed), and
-// `counted`, their local ids in commit order, which a Discard pins. Acked entries are not unsent.
+// A sign-out's question, or its finish: ready and sent entries plus pending product device work. `counted` pins entry
+// local ids in commit order, followed by device-row keys and value digests. Acked entries are not unsent.
 public struct SignOut: Sendable, Hashable {
   public let complete: Bool
   public let ready: Int
   public let sent: Int
+  public let pending: Int
   public let counted: [String]
 
-  public init(complete: Bool, ready: Int, sent: Int, counted: [String]) {
+  public init(complete: Bool, ready: Int, sent: Int, pending: Int = 0, counted: [String]) {
     self.complete = complete
     self.ready = ready
     self.sent = sent
+    self.pending = pending
     self.counted = counted
   }
 
-  public var unsent: Int { ready + sent }
+  public var unsent: Int { ready + sent + pending }
 }
 
 // The answer to one account's sign-out: finished; the active replica is no longer bound to the account; or a Discard
@@ -79,7 +81,7 @@ public enum SignOutFinish: Sendable, Hashable {
   case changed(SignOut)
 }
 
-// Pinned local ids are the ones counted now, byte for byte.
+// Pinned work identifiers are the ones counted now, byte for byte.
 func sameCounted(_ pinned: [String], _ counted: [String]) -> Bool {
   pinned.map { Array($0.utf8) } == counted.map { Array($0.utf8) }
 }
@@ -109,10 +111,12 @@ public enum SubscriptionSet: Sendable, Hashable {
 public struct ReplicaLifecycle: Sendable {
   public let registry: Registry
   let hold: Hold
+  let pendingDeviceWork: PendingDeviceWork
 
-  public init(registry: Registry) {
+  public init(registry: Registry, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
     self.registry = registry
     hold = Hold(registry: registry)
+    self.pendingDeviceWork = pendingDeviceWork
   }
 
   // MARK: Re-identify and epochs
@@ -361,7 +365,7 @@ public struct ReplicaLifecycle: Sendable {
     let question = try countUnsent(&device)
     guard let choice, choice == .keep || counted.map({ sameCounted($0, question.counted) }) ?? true else { return question }
     try finishSignOut(&device, keeping: choice == .keep, identities: identities)
-    return SignOut(complete: true, ready: question.ready, sent: question.sent, counted: question.counted)
+    return SignOut(complete: true, ready: question.ready, sent: question.sent, pending: question.pending, counted: question.counted)
   }
 
   // Step 2, after the caller's bounded flush, for `account`'s sign-out: nil when the active replica is not bound to it.
@@ -378,23 +382,33 @@ public struct ReplicaLifecycle: Sendable {
     let question = try countUnsent(&device)
     if choice == .discard && !sameCounted(counted, question.counted) { return .changed(question) }
     try finishSignOut(&device, keeping: choice == .keep, identities: identities)
-    return .finished(SignOut(complete: true, ready: question.ready, sent: question.sent, counted: question.counted))
+    return .finished(SignOut(complete: true, ready: question.ready, sent: question.sent, pending: question.pending, counted: question.counted))
   }
 
-  // The active replica, which is bound: holds released, and the ready and the sent entries counted. Acked entries stay
+  // The active replica, which is bound: holds released, and ready, sent and pending device work counted. Acked entries stay
   // until the sign-out finishes, since one cancelled leaves them to resolve by the pull that brings their rows.
   func countUnsent(_ device: inout LoadedDevice) throws -> SignOut {
     try device.modify(device.active) { replica -> SignOut in
       try hold.releaseAll(in: &replica)
       let unsent = replica.outbox.filter { $0.state == .ready || $0.state == .sent }
+      let pending = pendingWork(in: replica)
       return SignOut(
         complete: false, ready: unsent.filter { $0.state == .ready }.count, sent: unsent.filter { $0.state == .sent }.count,
-        counted: unsent.map(\.localId))
+        pending: pending.count, counted: unsent.map(\.localId) + pending)
+    }
+  }
+
+  public func pendingWork(in replica: LoadedReplica) -> [String] {
+    replica.deviceRows.keys.sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.flatMap { product in
+      let rows = replica.deviceRows[product]!
+      return Set(pendingDeviceWork(product, rows)).sorted { $0.utf8.lexicographicallyPrecedes($1.utf8) }.compactMap { key in
+        rows[key].map { "device:\(product):\(key):\(SHA256Hex.of($0.jcs))" }
+      }
     }
   }
 
   // The finish: acked entries resolve, since the server holds them; then Keep purges the caches and leaves the unsent
-  // entries dormant, and Discard deletes the replica. The anon replica, created if absent, becomes active.
+  // entries and durable device rows dormant, and Discard deletes the replica. The anon replica, created if absent, becomes active.
   func finishSignOut(_ device: inout LoadedDevice, keeping: Bool, identities: IdentitySource) throws {
     let bound = device.active
     try device.modify(bound) { replica in

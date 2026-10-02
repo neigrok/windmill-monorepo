@@ -214,6 +214,7 @@ class Differential:
                     command(["psql", database, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(BACKEND / "db/gym_sync.sql")])
                     report = self.binary("windmill_gym_backfill", {"DATABASE_URL": database}).decode()
                     (self.directory / "backfill.jsonl").write_text(report)
+                    self.binary("windmill_gym_backfill", {"DATABASE_URL": database}, "--audit")
                     assert sum(json.loads(line)["changed"] for line in report.splitlines()) > 0
             self.start(side, database, ports[side])
             if not side:
@@ -570,7 +571,7 @@ class Differential:
         assert not missing_reads, ("read route coverage", missing_reads)
         self.intended_differences(routine)
         if self.args.mode == "off-vs-on":
-            self.binary("windmill_gym_backfill", {"DATABASE_URL": self.databases[1][1]}, "--audit")
+            self.binary("windmill_gym_backfill", {"DATABASE_URL": self.databases[1][1]}, "--audit-current")
         return {"passed": True, "mode": self.args.mode, "pairedRequests": self.count, "restWriteScenarios": self.writes,
                 "restReads": self.reads, "mcpTools": len(self.tools), "writeRoutes": len(routes), "readRoutes": len(read_routes),
                 "intendedDifferenceChecks": self.exceptions, "D3": "requires a replica; no replica exists in this test"}

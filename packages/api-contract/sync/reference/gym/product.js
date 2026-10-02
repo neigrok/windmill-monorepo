@@ -3,6 +3,7 @@
 // base). corpus/README.md "The gym product" states the same rules.
 
 import { sameJson } from '../core/jcs.js';
+import { ownValue, setOwn } from '../core/maps.js';
 import { isAlive } from '../core/rows.js';
 import { Refusal } from '../server/admit.js';
 
@@ -135,7 +136,7 @@ export class GymProduct {
     const deltas = staleClose(ctx);
     const closed = new Set(deltas.map((delta) => delta.id));
     const starts = book(ctx, 'starts');
-    const resolved = starts[args.id] ?? (ctx.stored('session', args.id) ? args.id : undefined);
+    const resolved = ownValue(starts, args.id) ?? (ctx.stored('session', args.id) ? args.id : undefined);
     if (resolved !== undefined) {
       const session = ctx.stored('session', resolved);
       if (!session || !isAlive(session)) return { deltas, write: [] };
@@ -146,7 +147,7 @@ export class GymProduct {
     const open = ctx.rowsOf('session').find((session) => isOpen(session) && !closed.has(session.id));
     if (open) {
       if (args.joinOpenSession !== true) throw new Refusal('session-open');
-      starts[args.id] = open.id;
+      setOwn(starts, args.id, open.id);
       return { deltas, write: [{ t: 'session', id: open.id, from: args.id, born: open.born }] };
     }
     const f = { startedAt: [args.startedAt, null] };
@@ -157,7 +158,7 @@ export class GymProduct {
       f.plan = [readable ? planOf(routine) : null, null];
       if (readable) f.historyRoutineId = [args.routineId, null];
     }
-    starts[args.id] = args.id;
+    setOwn(starts, args.id, args.id);
     const written = Object.fromEntries(Object.keys(f).map((name) => [name, null]));
     return {
       deltas: [...deltas, { t: 'session', id: args.id, life: ['alive', null], born: null, f }],
@@ -218,7 +219,7 @@ export class GymProduct {
       f.plan = [readable ? planOf(routine) : null, null];
       if (readable) f.historyRoutineId = [args.routineId, null];
     }
-    imports[args.id] = structuredClone(args);
+    setOwn(imports, args.id, structuredClone(args));
     const setDeltas = args.sets.map((set) => ({ t: 'set', id: set.id, life: ['alive', null], born: null, f: this.setFields(args.id, set, 'working') }));
     return {
       deltas: [...deltas, { t: 'session', id: args.id, life: ['alive', null], born: null, f }, ...setDeltas],
@@ -297,7 +298,7 @@ export class GymProduct {
     for (const [id, set] of standing) {
       if (!named.has(id)) deltas.push({ t: 'set', id, born: set.born, life: ['dead', null] });
     }
-    corrections[args.requestId] = { sessionId: args.sessionId, args: structuredClone(args) };
+    setOwn(corrections, args.requestId, { sessionId: args.sessionId, args: structuredClone(args) });
     return { deltas, write };
   }
 
@@ -321,7 +322,7 @@ export class GymProduct {
   supersededReason(ctx, proposal) {
     if (isSet(valueOf(proposal, 'supersededBy'))) return 'replaced';
     const routineId = valueOf(proposal, 'routineId');
-    if (book(ctx, 'revisions')[routineId] !== book(ctx, 'bases')[proposal.id]?.revision) return 'routine-changed';
+    if (ownValue(book(ctx, 'revisions'), routineId) !== ownValue(book(ctx, 'bases'), proposal.id)?.revision) return 'routine-changed';
     return 'superseded';
   }
 
@@ -339,7 +340,7 @@ export class GymProduct {
     if (state === 'dismissed') throw new Refusal('proposal-settled', { state });
     if (state === 'superseded') throw new Refusal('proposal-superseded', { reason: this.supersededReason(ctx, proposal) });
     const routineId = valueOf(proposal, 'routineId');
-    if (book(ctx, 'revisions')[routineId] !== book(ctx, 'bases')[proposalId]?.revision) throw new Refusal('proposal-superseded', { reason: 'routine-changed' });
+    if (ownValue(book(ctx, 'revisions'), routineId) !== ownValue(book(ctx, 'bases'), proposalId)?.revision) throw new Refusal('proposal-superseded', { reason: 'routine-changed' });
     const routine = ctx.stored('routine', routineId);
     const settle = { t: 'proposal', id: proposalId, born: proposal.born, f: { state: ['applied', null], settledAt: [ctx.serverNow, null] } };
     if (valueOf(proposal, 'intent') === 'remove') {
@@ -375,8 +376,8 @@ export class GymProduct {
     for (const record of records.filter((record) => record.after.t === 'routine')) {
       const revisions = book(ctx, 'revisions');
       if (died(record)) delete revisions[record.after.id];
-      else if (created(record)) revisions[record.after.id] = 1;
-      else if (changed(record, 'name') || changed(record, 'entries')) revisions[record.after.id] = (revisions[record.after.id] ?? 1) + 1;
+      else if (created(record)) setOwn(revisions, record.after.id, 1);
+      else if (changed(record, 'name') || changed(record, 'entries')) setOwn(revisions, record.after.id, (ownValue(revisions, record.after.id) ?? 1) + 1);
     }
     const key = (t, id) => `${t}|${JSON.stringify(id)}`;
     const joined = new Map(records.map((record) => [key(record.type.type, record.after.id), structuredClone(record.after)]));
@@ -511,7 +512,7 @@ const RULES = {
 
   exerciseName(ctx, record, { append }) {
     const { after } = record;
-    const seed = ctx.productState.seeds?.[after.id];
+    const seed = ownValue(ctx.productState.seeds, after.id);
     if (!seed) throw new Refusal('invalid');
     const before = valueOf(record.original, 'name') ?? seed.name;
     const now = valueOf(after, 'name') ?? seed.name;
@@ -546,7 +547,7 @@ const RULES = {
       || !valueOf(after, 'proposedName') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
       || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
     if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
-    book(ctx, 'bases')[after.id] = { revision: ctx.productState.revisions?.[ctx.scopeKey]?.[routineId] ?? 1, name: valueOf(routine, 'name') };
+    setOwn(book(ctx, 'bases'), after.id, { revision: ownValue(ctx.productState.revisions?.[ctx.scopeKey], routineId) ?? 1, name: valueOf(routine, 'name') });
     for (const other of rowsOf('proposal')) {
       if (other.id === after.id || futureProposals.has(other.id) || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'routineId') !== routineId) continue;
       if (valueOf(other, 'door') !== valueOf(after, 'door') || (valueOf(other, 'connection') ?? '') !== (valueOf(after, 'connection') ?? '')) continue;

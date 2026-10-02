@@ -59,6 +59,7 @@ struct TextRevision {
   std::string field;
   Seq rev = 0;
   std::string text;
+  Json::Value metadata;
 };
 
 // One record of the intent after step 9: what a product's check reads and step 13 stores. `stored` and

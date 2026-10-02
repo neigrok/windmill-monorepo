@@ -37,8 +37,8 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
   case signInChanged
   // The sign-in was cancelled, completed, or replaced by another.
   case signInEnded
-  // The unsent entries differ from those a Discard counted: ask again from `signOut()`.
-  case signOutChanged(ready: Int, sent: Int)
+  // The unsent entries or pending device values differ from those a Discard counted: ask again from `signOut()`.
+  case signOutChanged(ready: Int, sent: Int, pending: Int = 0)
   // The sign-out finished, was cancelled, or another sign-out replaced it.
   case signOutEnded
 
@@ -52,7 +52,7 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
     case .decisionMissing(let product): "the signed-out decision for \(product) has no answer"
     case .signInChanged: "the work made signed out changed since the question was asked"
     case .signInEnded: "the sign-in was cancelled, completed or replaced"
-    case .signOutChanged(let ready, let sent): "\(ready + sent) changes are unsent now, not the ones the confirmation counted"
+    case .signOutChanged(let ready, let sent, let pending): "\(ready + sent + pending) changes are unsent now, not the ones the confirmation counted"
     case .signOutEnded: "the sign-out finished, was cancelled or was replaced"
     }
   }
@@ -61,7 +61,7 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
   public static func == (lhs: EngineError, rhs: EngineError) -> Bool {
     switch (lhs, rhs) {
     case (.signedIn(let a), .signedIn(let b)), (.decisionMissing(let a), .decisionMissing(let b)): a.utf8.elementsEqual(b.utf8)
-    case (.signOutChanged(let a, let b), .signOutChanged(let c, let d)): (a, b) == (c, d)
+    case (.signOutChanged(let a, let b, let c), .signOutChanged(let d, let e, let f)): (a, b, c) == (d, e, f)
     case (.notSignedIn, .notSignedIn), (.unauthenticated, .unauthenticated), (.unreachable, .unreachable),
          (.upgradeRequired, .upgradeRequired), (.signInChanged, .signInChanged), (.signInEnded, .signInEnded),
          (.signOutEnded, .signOutEnded):
@@ -72,26 +72,31 @@ public enum EngineError: Error, Equatable, CustomStringConvertible {
 }
 
 // A replica an account left on this device at sign-out with Keep (§7.10): its unsent entries, which go on the account's
-// next sign-in here. A sent entry may already have landed.
+// next sign-in here, and durable pending device work. A sent entry may already have landed.
 public struct DormantReplica: Sendable, Hashable {
   public let account: String
   public let ready: Int
   public let sent: Int
+  public let pending: Int
 
-  public init(account: String, ready: Int, sent: Int) {
+  public init(account: String, ready: Int, sent: Int, pending: Int = 0) {
     self.account = account
     self.ready = ready
     self.sent = sent
+    self.pending = pending
   }
 
+  public var unsent: Int { ready + sent + pending }
+
   public static func == (lhs: DormantReplica, rhs: DormantReplica) -> Bool {
-    lhs.account.utf8.elementsEqual(rhs.account.utf8) && lhs.ready == rhs.ready && lhs.sent == rhs.sent
+    lhs.account.utf8.elementsEqual(rhs.account.utf8) && lhs.ready == rhs.ready && lhs.sent == rhs.sent && lhs.pending == rhs.pending
   }
 
   public func hash(into hasher: inout Hasher) {
     hasher.combine(Array(account.utf8))
     hasher.combine(ready)
     hasher.combine(sent)
+    hasher.combine(pending)
   }
 }
 

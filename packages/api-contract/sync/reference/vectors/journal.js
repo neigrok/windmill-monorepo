@@ -348,6 +348,12 @@ export function admissionVectors() {
       first.expect.state,
     ),
   );
+  for (const claimId of ["constructor", "toString", "hasOwnProperty", "__proto__"]) {
+    const first = admission(`claim prototype id ${claimId} first`, claim({ claimId }), old);
+    out.push(first,
+      admission(`claim prototype id ${claimId} replay`, claim({ claimId }), first.expect.state),
+      admission(`claim prototype id ${claimId} changed conflicts`, claim({ claimId, body: "different" }), first.expect.state));
+  }
   out.push(
     admission(
       "joined cap rolls back receipt",

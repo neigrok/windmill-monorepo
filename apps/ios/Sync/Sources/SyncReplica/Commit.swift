@@ -50,10 +50,9 @@ public struct CommitPlanner: Sendable {
     return reads
   }
 
-  // The entries a commit of `gesture` reads beyond those of its rows: every entry of the held gestures, when it retires
-  // (step 4). A retired gesture only removes records it names, so the entries its fold reaches are those of its rows.
+  // Retire loads held gestures; supersede loads the whole outbox to prove complete eligibility and fold dependents.
   public func entryReads(of gesture: Gesture) -> EntrySelection {
-    EntrySelection(heldGestures: !gesture.retire.isEmpty)
+    gesture.supersede.isEmpty ? EntrySelection(heldGestures: !gesture.retire.isEmpty) : .every
   }
 
   // Step 1: the replica is anon or bound.
@@ -78,8 +77,10 @@ public struct CommitPlanner: Sendable {
     clock.observe(replica.meta.hlcHigh)
     let stamp = clock.tick(physNow: physNow, actor: instance.actor)
 
-    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: replica)
+    let superseding = try supersedingEntries(gesture.supersede, in: scope, replica: replica)
     var retired = replica
+    try hold.end(superseding, by: .silentFold, in: &retired)
+    let retiring = retiringEntries(of: gesture.retire, in: scope, replica: retired)
     try hold.end(retiring, by: .retire, in: &retired)
     var builder = DeltaBuilder(
       registry: registry, replica: retired, scope: scope, stamp: stamp, physNow: physNow,
@@ -149,7 +150,24 @@ public struct CommitPlanner: Sendable {
     }
     return .committed(CommitReceipt(
       gestureId: gestureId, stamp: stamp, localIds: entries.map(\.localId), ids: builder.ids,
-      releaseAt: gesture.hold ? releaseAt : nil, retired: retiredGestures))
+      releaseAt: gesture.hold ? releaseAt : nil, retired: retiredGestures,
+      superseded: superseding.reduce(into: []) { ids, entry in
+        if !ids.contains(where: { $0.utf8.elementsEqual(entry.gestureId.utf8) }) { ids.append(entry.gestureId) }
+      }))
+  }
+
+  func supersedingEntries(_ ids: [String], in scope: ScopeRef, replica: LoadedReplica) throws -> [OutboxEntry] {
+    guard !ids.isEmpty else { return [] }
+    guard replica.meta.state == .anon, Set(ids.map { Array($0.utf8) }).count == ids.count else {
+      throw CommitFailure.malformed("supersede requires distinct anonymous gestures")
+    }
+    for id in ids {
+      let entries = replica.outbox.filter { $0.gestureId.utf8.elementsEqual(id.utf8) }
+      guard !entries.isEmpty, entries.allSatisfy({ $0.scope == scope && $0.isQueued && $0.n == nil }) else {
+        throw CommitFailure.malformed("supersede requires a complete never-numbered gesture in this scope")
+      }
+    }
+    return replica.outbox.filter { entry in ids.contains { $0.utf8.elementsEqual(entry.gestureId.utf8) } }
   }
 
   func product(of scope: ScopeRef) throws -> String {
@@ -345,7 +363,7 @@ struct DeltaBuilder {
     }
   }
 
-  // A command's prediction: a create or an update of any field, server-written ones included.
+  // A command's prediction may write server fields and text, including a lifeless document.
   func predicted(_ change: Change) throws -> Delta {
     let type = try typeOf(change.type)
     guard let id = change.id else { throw CommitFailure.malformed("a prediction names its record") }
@@ -357,14 +375,23 @@ struct DeltaBuilder {
       delta.lattice.born = stamp
       delta.lattice.life = Life(.alive, stamp)
       delta.lattice.fields = try fields(type, change.values, current: nil, server: true)
-    case .update:
+    case .update, .write, .put:
       if type.hasBorn {
         guard let current else { throw CommitFailure.malformed("a predicted update of \(key) absent from drawn") }
         delta.lattice.born = current.lattice.born
       }
       delta.lattice.fields = try fields(type, change.values, current: current, server: true)
     default:
-      throw CommitFailure.malformed("a prediction is a create or an update")
+      throw CommitFailure.malformed("a prediction is a create, update, put or write")
+    }
+    for (name, edit) in change.texts {
+      guard let field = type.field(name), case .text = field.kind else {
+        throw CommitFailure.malformed("a prediction names an unknown text field")
+      }
+      let from = edit.editedFrom ?? current?.texts[name] ?? ""
+      let confirmed = replica.rows(scope).row(key)?.texts[name]
+      let base: TextBase = if let confirmed, confirmed.text.utf8.elementsEqual(from.utf8) { .rev(confirmed.rev) } else { .text(from) }
+      delta.texts[name] = TextWrite(text: edit.text, base: base)
     }
     return delta
   }
@@ -561,7 +588,7 @@ struct DeltaBuilder {
   mutating func texts(_ type: TypeDef, _ key: RecordKey, _ edits: [String: TextEdit], current: ViewRecord?) throws -> [String: TextWrite] {
     var out: [String: TextWrite] = [:]
     for (name, edit) in edits {
-      guard case .text? = type.field(name)?.kind else { throw CommitFailure.malformed("\(type.name).\(name) is not a text field") }
+      guard let field = type.field(name), case .text = field.kind, field.writer == .client else { throw CommitFailure.malformed("\(type.name).\(name) is not a client text field") }
       let shown = current?.texts[name] ?? ""
       let from = edit.editedFrom ?? shown
       if edit.text.utf8.elementsEqual(shown.utf8) { continue }

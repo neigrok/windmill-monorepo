@@ -122,8 +122,8 @@ public final class SyncEngine: Replica {
     let committed: (outcome: CommitOutcome?, value: T)
     do {
       committed = try core.write { store, instance in
-        try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow] tx in
-          let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow)
+        try store.commit(in: scope, instance: instance, identities: core.identities) { [core, deviceNow = instance.deviceNow, actor = instance.actor.text] tx in
+          let context = try TransactionReader(tx, core: core, scope: scope, deviceNow: deviceNow, actor: actor)
           defer { context.end() }
           let decided: (Gesture?, T)
           do {

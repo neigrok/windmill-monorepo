@@ -113,7 +113,7 @@ extension SyncEngine {
 
   // Signs the account out as far as the person's answer: every held entry is released, the sender flushes what is
   // unsent for at most SIGNOUT_FLUSH_MS and then holds the replica. The session counts what is still unsent, ready or
-  // sent (a sent entry may already have landed), for the product's confirmation to state; the person then keeps it,
+  // sent (a sent entry may already have landed), plus pending product device work, for the confirmation; the person keeps it,
   // discards it, or cancels and stays signed in. A later sign-out replaces this one.
   public func signOut() async throws -> SignOutSession {
     guard let seat = try core.seat(), seat.state == .bound, let account = seat.account else { throw EngineError.notSignedIn }
@@ -147,13 +147,13 @@ extension SyncEngine {
 
   // MARK: Dormant replicas
 
-  // What accounts left on this device at sign-out with Keep, each with its unsent entries.
+  // What accounts left on this device at sign-out with Keep, each with its unsent entries and pending device work.
   public func dormantReplicas() throws -> [DormantReplica] {
     try core.store.read { try $0.device() }.replicas.compactMap { replica in
       guard replica.meta.state == .dormant, let account = replica.meta.account else { return nil }
       return DormantReplica(
         account: account, ready: replica.outbox.filter { $0.state == .ready }.count,
-        sent: replica.outbox.filter { $0.state == .sent }.count)
+        sent: replica.outbox.filter { $0.state == .sent }.count, pending: core.store.pendingWork(in: replica).count)
     }
   }
 
@@ -234,7 +234,8 @@ public final class SignOutSession: Sendable {
   public let ready: Int
   // Sent with no answer yet: each may already be in the account.
   public let sent: Int
-  // The unsent entries the confirmation states, which Discard covers exactly.
+  public let pending: Int
+  // The work identifiers and device-row value digests the confirmation pins for Discard.
   package let counted: [String]
   package let hold: Int
   let engine: SyncEngine
@@ -246,16 +247,17 @@ public final class SignOutSession: Sendable {
     self.hold = hold
     ready = counted.ready
     sent = counted.sent
+    pending = counted.pending
     self.counted = counted.counted
   }
 
-  public var unsent: Int { ready + sent }
+  public var unsent: Int { ready + sent + pending }
 
   // The finish. Keep, the plain confirm when nothing is unsent, leaves every unsent entry on this device, counted or not,
-  // dormant until the account signs in here again; Discard deletes the replica and the entries the confirmation
-  // counted, and cannot recall one the server already received. Either way acked entries resolve, the account's rows
-  // leave the device, its token is deleted, and the signed-out replica becomes active. Throws `signOutChanged` when the
-  // unsent entries differ from those a Discard counted (nothing changes: ask again from `signOut()`), and
+  // with its durable product device rows dormant until the account signs in here again; Discard deletes the replica and work the confirmation
+  // counted, and cannot recall an entry the server already received. Either way acked entries resolve, the account's
+  // server caches leave the device, its token is deleted, and the signed-out replica becomes active. Throws `signOutChanged` when
+  // unsent entries or pending device values differ from those a Discard counted (nothing changes: ask again from `signOut()`), and
   // `signOutEnded` once this sign-out finished, was cancelled or was replaced. A token that cannot be deleted now is
   // deleted at the next engine start. Answers what the finish covered: the unsent entries as it counted them.
   @discardableResult
@@ -282,7 +284,7 @@ public final class SignOutSession: Sendable {
     }
     if case .changed(let counted) = finished {
       state.withLock { $0 = .open }
-      throw EngineError.signOutChanged(ready: counted.ready, sent: counted.sent)
+      throw EngineError.signOutChanged(ready: counted.ready, sent: counted.sent, pending: counted.pending)
     }
     state.withLock { $0 = .ended }
     await engine.sender.endHold(hold)

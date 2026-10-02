@@ -113,15 +113,18 @@ public struct PushPlanner: Sendable {
   public let limits: Limits
   let lifecycle: ReplicaLifecycle
   let rewriteDeviceValue: DeviceValueRewrite
+  let commandResultWrites: CommandResultDeviceWrites
 
   // A product without device rows naming ids keeps every value.
   public static let keepDeviceValue: DeviceValueRewrite = { _, _, value, _, _, _ in value }
 
-  public init(registry: Registry, limits: Limits = Limits(), rewriteDeviceValue: @escaping DeviceValueRewrite = keepDeviceValue) {
+  public init(registry: Registry, limits: Limits = Limits(), rewriteDeviceValue: @escaping DeviceValueRewrite = keepDeviceValue,
+              commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] }) {
     self.registry = registry
     self.limits = limits
     lifecycle = ReplicaLifecycle(registry: registry)
     self.rewriteDeviceValue = rewriteDeviceValue
+    self.commandResultWrites = commandResultWrites
   }
 
   // MARK: Numbering
@@ -257,6 +260,15 @@ public struct PushPlanner: Sendable {
   // (§7.5 step 2).
   func apply(_ result: PushResult, lastN: Int64, epoch: String, to replica: inout LoadedReplica, instance: Instance) throws {
     guard let entry = replica.sentEntry(numbered: result.n) else { return }
+    if let command = entry.intent.command, let product = registry.product(of: entry.scope) {
+      for write in commandResultWrites(command, result, epoch, replica.deviceRows[product] ?? [:]) {
+        guard registry.product(product)?.device.contains(where: { $0.keyPattern.matches(write.key) }) == true else {
+          throw CommitFailure.malformed("a command result wrote an undeclared device row")
+        }
+        if let value = write.value { replica.apply(.putDeviceRow(product: product, key: write.key, value)) }
+        else { replica.apply(.deleteDeviceRow(product: product, key: write.key)) }
+      }
+    }
     switch result.verdict {
     case .refused(let code):
       try refuse(entry.localId, code: code, detail: result.detail, lastN: lastN, in: &replica, instance: instance)

@@ -58,3 +58,16 @@ test('requestIds are per account', () => {
   const other = serverCall({ state: first.state, registry, product, account: 'B', requestId: 'req-1', tool: 'cards.add', args: { n: 2 }, intents: [card('card000b', 'Bee')], serverNow: 1_000_000 });
   assert.deepEqual(other.result, { s: 'ok', seq: 1 });
 });
+
+test('prototype names are ordinary request ids with stored parts and exact replay', () => {
+  for (const requestId of ['constructor', 'toString', 'hasOwnProperty', '__proto__']) {
+    const first = call(base(), { requestId });
+    assert.deepEqual(first.result, { s: 'ok', seq: 2 }, requestId);
+    assert.equal(Object.hasOwn(first.state.requests.A, requestId), true, requestId);
+    const restarted = new ServerState(first.state.toJSON());
+    const again = call(restarted, { requestId, serverNow: 2_000_000 });
+    assert.deepEqual(again.result, first.result, requestId);
+    assert.deepEqual(again.state.toJSON(), first.state.toJSON(), requestId);
+    assert.equal(call(restarted, { requestId, args: { n: 3 } }).result.code, 'request-conflict', requestId);
+  }
+});

@@ -31,9 +31,9 @@ enum AppProject {
   static let defaultToolchain = "com.apple.dt.toolchain.XcodeDefault"
 
   static func findings(root: URL, app: App) throws -> [Finding] {
-    let written = try JSONDecoder().decode(
-      JSONValue.self, from: Data(try Shell.run(["xcodegen", "dump", "--type", "json", "--spec", root.appending(path: app.spec).path]).utf8))
-    let resolved = try Scratch.withDirectory { scratch in try resolve(root: root, app: app, scratch: scratch) }
+    let specification = Data(try Shell.run(["xcodegen", "dump", "--type", "json", "--spec", root.appending(path: app.spec).path]).utf8)
+    let written = try JSONDecoder().decode(JSONValue.self, from: specification)
+    let resolved = try Scratch.withDirectory { scratch in try resolve(root: root, app: app, scratch: scratch, specification: specification) }
     return specFindings(written, root: root, app: app).map { Finding(app.spec, "project", $0) }
       + resolvedFindings(resolved).map { Finding(app.spec, "build-settings", $0) }
   }
@@ -130,11 +130,23 @@ enum AppProject {
   }
 
   // Generated into scratch (its path shown as $(SRCROOT), its derived data kept there); nil when it does not resolve.
-  static func resolve(root: URL, app: App, scratch: URL) throws -> [Resolved]? {
+  static func resolve(root: URL, app: App, scratch: URL, specification: Data) throws -> [Resolved]? {
     let project = scratch.appending(path: "project"), derivedData = "-IDECustomDerivedDataLocation=\(scratch.appending(path: "derived").path)"
     try FileManager.default.createDirectory(at: project, withIntermediateDirectories: true)
+    // Xcode resolves local packages from the generated project, unlike sources from --project-root.
+    var spec = try JSONSerialization.jsonObject(with: specification) as! [String: Any]
+    var packages = spec["packages"] as? [String: [String: Any]] ?? [:]
+    for (name, entry) in packages {
+      guard let path = entry["path"] as? String else { continue }
+      var package = entry
+      package["path"] = (path.hasPrefix("/") ? URL(fileURLWithPath: path) : app.directory(in: root).appending(path: path)).standardizedFileURL.path
+      packages[name] = package
+    }
+    spec["packages"] = packages
+    let generatedSpec = scratch.appending(path: "project.json")
+    try JSONSerialization.data(withJSONObject: spec).write(to: generatedSpec)
     _ = try Shell.run([
-      "xcodegen", "generate", "--quiet", "--spec", root.appending(path: app.spec).path, "--project", project.path, "--project-root",
+      "xcodegen", "generate", "--quiet", "--spec", generatedSpec.path, "--project", project.path, "--project-root",
       app.directory(in: root).path,
     ])
     guard let generated = try FileManager.default.contentsOfDirectory(atPath: project.path).first(where: { $0.hasSuffix(".xcodeproj") }),

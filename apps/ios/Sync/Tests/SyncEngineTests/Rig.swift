@@ -45,7 +45,7 @@ struct Rig {
   // reads run beside its writes, instead of one in memory.
   init(account: String? = nil, token: SessionToken? = SessionToken("token-1"), registry: Registry = Rig.probe,
        limits: Limits = Limits(), slicing: WriterSlicing = .measured, drivesLoops: Bool = false, bindings: [any ProductBinding] = [],
-       crashPoints: CrashPoints = .none, path: String? = nil) throws {
+       crashPoints: CrashPoints = .none, path: String? = nil, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) throws {
     self.slicing = slicing
     clock = SimClock(wallMs: Self.startMs)
     random = QueuedRandom(seed: 7)
@@ -53,8 +53,8 @@ struct Rig {
     tokens = InMemoryTokenStore(account.flatMap { account in token.map { [account: $0] } } ?? [:])
     forkGuard = InMemoryForkGuardStore()
     connectivity = SwitchedConnectivity()
-    store = try path.map { try Store(path: $0, registry: registry, limits: limits, crashPoints: crashPoints) }
-      ?? Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints)
+    store = try path.map { try Store(path: $0, registry: registry, limits: limits, crashPoints: crashPoints, pendingDeviceWork: pendingDeviceWork) }
+      ?? Store.inMemory(registry: registry, limits: limits, crashPoints: crashPoints, pendingDeviceWork: pendingDeviceWork)
     if let account {
       let identities = Identities(random: SeededRandomSource(seed: 11))
       _ = try store.firstLaunch(identities: identities)

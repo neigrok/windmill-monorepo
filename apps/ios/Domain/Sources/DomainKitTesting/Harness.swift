@@ -12,8 +12,11 @@ public final class Harness {
   let zone: any Zone
 
   public convenience init(registry: Registry, start: Instant, zone: any Zone = FixedZone(offsetSeconds: 0), seed: UInt64 = 1,
-                          account: String? = "acct-1", rules: any ServerRules = NoServerRules()) {
-    let engine = SteppedEngine(registry: registry, startMs: start.ms, seed: seed, account: account, rules: rules)
+                          account: String? = "acct-1", rules: any ServerRules = NoServerRules(),
+                          commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] },
+                          pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
+    let engine = SteppedEngine(registry: registry, startMs: start.ms, seed: seed, account: account, rules: rules,
+                               commandResultWrites: commandResultWrites, pendingDeviceWork: pendingDeviceWork)
     self.init(engine, registry: registry, zone: zone)
   }
 

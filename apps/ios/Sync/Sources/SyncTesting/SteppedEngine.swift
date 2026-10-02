@@ -42,10 +42,10 @@ public final class SteppedEngine: Sendable {
 
   // A server of `registry`'s products holding nothing, with `rules`, and its first device, the clock at `startMs`,
   // signed in as `account` or signed out when nil. Every id, actor and backoff its devices draw follows `seed`.
-  public convenience init(registry: Registry, startMs: Int64, seed: UInt64 = 1, account: String? = "acct-1", rules: any ServerRules) {
+  public convenience init(registry: Registry, startMs: Int64, seed: UInt64 = 1, account: String? = "acct-1", rules: any ServerRules, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] }, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
     let clock = SimClock(wallMs: startMs)
     let server = ModelServerHandle(ModelServer(registry: registry, rules: rules, state: ServerState(epoch: "ep-1")), clock: clock)
-    self.init(joining: Fleet(registry: registry, network: SimNetwork(server: server), seed: seed), name: "device-1", clock: clock,
+    self.init(joining: Fleet(registry: registry, network: SimNetwork(server: server), seed: seed, commandResultWrites: commandResultWrites, pendingDeviceWork: pendingDeviceWork), name: "device-1", clock: clock,
               account: account)
     CallerThread.run { [self] in await startSignedIn() }
   }
@@ -66,8 +66,8 @@ public final class SteppedEngine: Sendable {
         if case .afterCommit = point { commits.committed() }
       })
     let store = Self.surely("open its store") {
-      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, crashPoints: ports.crashPoints) }
-        ?? Store.inMemory(registry: fleet.registry, crashPoints: ports.crashPoints)
+      try copy.map { try Store.inMemory(holding: $0, registry: fleet.registry, crashPoints: ports.crashPoints, commandResultWrites: fleet.commandResultWrites, pendingDeviceWork: fleet.pendingDeviceWork) }
+        ?? Store.inMemory(registry: fleet.registry, crashPoints: ports.crashPoints, commandResultWrites: fleet.commandResultWrites, pendingDeviceWork: fleet.pendingDeviceWork)
     }
     let forkGuard = InMemoryForkGuardStore()
     let engine = Self.surely("launch its engine") { try ports.launch(over: store, forkGuard: forkGuard) }
@@ -202,7 +202,7 @@ public final class SteppedEngine: Sendable {
   // session in the keychain out of backups, so a restore onto a wiped phone finds neither; a store rolled back in place
   // finds both.
   package func restore(_ backup: LoadedDevice, keepingForkGuardCopy kept: Bool) async throws {
-    let store = try Store.inMemory(holding: backup, registry: fleet.registry, crashPoints: ports.crashPoints)
+    let store = try Store.inMemory(holding: backup, registry: fleet.registry, crashPoints: ports.crashPoints, commandResultWrites: fleet.commandResultWrites, pendingDeviceWork: fleet.pendingDeviceWork)
     let forkGuard = kept ? process.withLock(\.forkGuard) : InMemoryForkGuardStore()
     if !kept {
       for account in tokens.accounts() { tokens.delete(for: account) }
@@ -331,14 +331,18 @@ final class Fleet: Sendable {
   let registry: Registry
   let network: SimNetwork
   let seed: UInt64
+  let commandResultWrites: CommandResultDeviceWrites
+  let pendingDeviceWork: PendingDeviceWork
   // The most a sliced step holds a device's writer on its clock, each drawing a seeded 0 to this many ms; 0 leaves the clock alone.
   let slicedHoldMs: Int64
   let members = Mutex(Members())
 
-  init(registry: Registry, network: SimNetwork, seed: UInt64, slicedHoldMs: Int64 = 0) {
+  init(registry: Registry, network: SimNetwork, seed: UInt64, slicedHoldMs: Int64 = 0, commandResultWrites: @escaping CommandResultDeviceWrites = { _, _, _, _ in [] }, pendingDeviceWork: @escaping PendingDeviceWork = { _, _ in [] }) {
     self.registry = registry
     self.network = network
     self.seed = seed
+    self.commandResultWrites = commandResultWrites
+    self.pendingDeviceWork = pendingDeviceWork
     self.slicedHoldMs = slicedHoldMs
   }
 

@@ -17,6 +17,7 @@ public protocol ServerRules: Sendable {
 
   // G6 and Appendix A: the superseded text heads a scope keeps once an admission has stored new ones.
   func keptRevisions(_ revisions: [Revision]) -> [Revision]
+  func pruneRevisions(_ revisions: [Revision], archived: [Revision], serverNow: Int64, scope: ScopeKey, product: inout JSON.Object) -> [Revision]
 }
 
 // A product with no rules of its own conforms with an empty body: no command replays, every command is invalid, a check
@@ -32,6 +33,7 @@ extension ServerRules {
   public func check(_ changes: [RecordChange], in context: inout RuleContext) throws(Refusal) -> [PlannedDelta] { [] }
 
   public func keptRevisions(_ revisions: [Revision]) -> [Revision] { revisions }
+  public func pruneRevisions(_ revisions: [Revision], archived: [Revision], serverNow: Int64, scope: ScopeKey, product: inout JSON.Object) -> [Revision] { keptRevisions(revisions) }
 }
 
 // What a handler or check may read: the locked rows of the intent's scope with this intent's joins over them, other

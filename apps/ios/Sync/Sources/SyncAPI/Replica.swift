@@ -4,6 +4,7 @@ import SyncCore
 
 // A scope's views, read inside the call that passed the reader; using it after that call returns throws.
 public protocol ScopeReader {
+  var isAnonymous: Bool { get }
   // The folded record, visible or not; nil only when no confirmed row, delta or prediction names it.
   func drawn(_ type: String, _ id: RecordID) throws -> Record?
   func stored(_ type: String, _ id: RecordID) throws -> Record?
@@ -17,6 +18,9 @@ public protocol ScopeReader {
   func device(_ key: String) throws -> JSON?
   // §7.9: the scope's first pull is complete, or the replica does not pull it.
   func firstPullComplete() throws -> Bool
+  func confirmed(_ type: String, _ id: RecordID) throws -> Record?
+  func checkpoint() throws -> ScopeCheckpoint
+  func devices(prefix: String) throws -> JSON.Object
 }
 
 // The reader of a read-and-commit body (§7.1), inside the commit's own transaction.
@@ -25,6 +29,9 @@ public protocol CommitContext: ScopeReader {
   var now: Int64 { get }
   // The id of the replica the commit writes to, the active one (§7.12), which a record that names its writer carries.
   var replica: String { get }
+  var actor: String { get }
+  func commands() throws -> [QueuedCommand]
+  func opaqueID() throws -> String
   // A CSPRNG id by the type's registry `mint`, never one taken in the views. A type that mints none, or a mint after the
   // call that passed the context returned, throws malformed.
   func mintID(_ type: String) throws -> RecordID
@@ -84,5 +91,20 @@ extension Replica {
     let (outcome, _) = try commit(scope) { _ in (gesture, ()) }
     guard let outcome else { preconditionFailure("a commit of a gesture always has an outcome") }
     return outcome
+  }
+}
+
+public struct ScopeCheckpoint: Sendable {
+  public let epoch: String?
+  public let cleanSeq: Int64?
+  public init(epoch: String? = nil, cleanSeq: Int64? = nil) { self.epoch = epoch; self.cleanSeq = cleanSeq }
+}
+
+public struct QueuedCommand: Sendable {
+  public let gestureId: String
+  public let command: Command
+  public let canSupersede: Bool
+  public init(gestureId: String, command: Command, canSupersede: Bool) {
+    self.gestureId = gestureId; self.command = command; self.canSupersede = canSupersede
   }
 }

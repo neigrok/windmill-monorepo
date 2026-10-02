@@ -68,6 +68,11 @@ public struct IDSource {
     self.context = context
   }
 
+  public func opaqueID() -> String {
+    do { return try context.opaqueID() }
+    catch { preconditionFailure("minting an opaque identity failed: \(error)") }
+  }
+
   public func mint<E: Entity>(_ type: E.Type) -> ID<E> {
     do {
       return ID(try context.mintID(E.type))
@@ -155,7 +160,7 @@ enum Step<Result, Refusal: ProductRefusal> {
     case (.done(let outcome), _):
       return outcome
     case (.writing(let plan, let result), .committed(let receipt)?):
-      let wroteNothing = receipt.localIds.isEmpty && receipt.retired.isEmpty && plan.deviceWrites.isEmpty
+      let wroteNothing = receipt.localIds.isEmpty && receipt.retired.isEmpty && receipt.superseded.isEmpty && plan.deviceWrites.isEmpty
       return wroteNothing ? .unchanged(result) : .committed(result, receipt)
     case (.writing(let plan, _), .refused(let code, let detail, _)?):
       let subject = plan.subject(ofRefusal: code, detail: detail, registry: registry)

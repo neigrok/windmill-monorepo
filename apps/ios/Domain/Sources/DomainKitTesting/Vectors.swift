@@ -117,6 +117,8 @@ package final class VectorReader: CommitContext {
   let records: VectorRecords
   package let now: Int64
   package let replica = "rp_00000000000000000000000000000001"
+  package var actor: String { replica }
+  package let isAnonymous = false
   var ids: [RecordID]
   let pulled: Bool
   let scope: (ref: ScopeRef, registry: Registry)?
@@ -151,6 +153,11 @@ package final class VectorReader: CommitContext {
 
   package func device(_ key: String) throws -> JSON? { nil }
   package func firstPullComplete() throws -> Bool { pulled }
+  package func confirmed(_ type: String, _ id: RecordID) throws -> Record? { try stored(type, id) }
+  package func checkpoint() throws -> ScopeCheckpoint { ScopeCheckpoint() }
+  package func devices(prefix: String) throws -> JSON.Object { [:] }
+  package func commands() throws -> [QueuedCommand] { [] }
+  package func opaqueID() throws -> String { throw CommitFailure.malformed("the vector lists no opaque identity") }
 
   package func mintID(_ type: String) throws -> RecordID {
     guard !ids.isEmpty else { throw CommitFailure.malformed("the vector lists no id left to mint a \(type)") }

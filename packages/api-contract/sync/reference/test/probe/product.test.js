@@ -44,6 +44,16 @@ test('probe.start creates, replays by receipt and joins the open run', () => {
   assert.throws(() => probe.runCommand(context([run('run00001')]), { name: 'probe.start', args: { id: 'run00002', startedAt: 10, join: false } }), (error) => error instanceof Refusal && error.code === 'invalid');
 });
 
+test('probe.start stores a __proto__ receipt as ordinary id data', () => {
+  const probe = new ProbeProduct(), ctx = context([]);
+  const command = { name: 'probe.start', args: { id: '__proto__', startedAt: 10 } };
+  assert.equal(probe.isReplay(ctx, command), false);
+  assert.equal(probe.runCommand(ctx, command).deltas[0].id, '__proto__');
+  assert.equal(Object.hasOwn(ctx.productState.receipts[ctx.scopeKey], '__proto__'), true);
+  assert.equal(probe.isReplay(ctx, command), true);
+  assert.deepEqual(probe.runCommand(ctx, command), { deltas: [], write: [] });
+});
+
 test('probe.end writes endedAt on an open run; probe.tick ends open runs started TICK_AFTER_MS ago', () => {
   const probe = new ProbeProduct();
   const rows = [run('run00001'), run('run00002', { f: { startedAt: [1, '1:0:srv'], endedAt: [3, '3:0:srv'] } })];

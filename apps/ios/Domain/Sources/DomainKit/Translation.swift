@@ -17,6 +17,7 @@ extension Plan {
       hold: isHeld,
       guards: try guards(registry),
       retire: retire(registry),
+      supersede: supersededGestures,
       command: command,
       predict: try predicted(registry),
       local: deviceWrites)
@@ -86,6 +87,7 @@ extension Plan {
       switch prediction.kind {
       case .create: changes.append(.create(prediction.type, id: .given(prediction.id), prediction.values))
       case .update: changes.append(.update(prediction.type, prediction.id, prediction.values))
+      case .write: changes.append(.write(prediction.type, prediction.id, prediction.values, texts: prediction.texts.mapValues { TextEdit(text: $0) }))
       }
     }
     return changes

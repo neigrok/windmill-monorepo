@@ -52,12 +52,14 @@ final class TransactionReader: CommitContext {
   let meta: ReplicaMeta
   let now: Int64
   var replica: String { meta.replica }
+  let actor: String
+  var isAnonymous: Bool { meta.state == .anon }
   var isOpen = true
   var minted: Set<RecordID> = []
   var failure: (any Error)?
 
   // `deviceNow`: the device clock this call reads at; `now` is physNow() at it (§10.2).
-  init(_ tx: StoreTransaction, core: EngineCore, scope: ScopeRef, deviceNow: Int64) throws {
+  init(_ tx: StoreTransaction, core: EngineCore, scope: ScopeRef, deviceNow: Int64, actor: String? = nil) throws {
     guard core.registry.scopeKind(of: scope) != nil else {
       throw CommitFailure.malformed("\(scope) is no product, tree or overlay scope of the registry")
     }
@@ -66,6 +68,7 @@ final class TransactionReader: CommitContext {
     self.tx = tx
     self.core = core
     self.scope = scope
+    self.actor = actor ?? ""
     self.meta = meta
     now = meta.physNow(deviceNow: deviceNow)
   }
@@ -121,6 +124,49 @@ final class TransactionReader: CommitContext {
       guard isOpen else { throw TransactionReader.ended }
       return try core.firstPullComplete(tx, of: scope, in: meta.replica)
     }
+  }
+
+  func confirmed(_ type: String, _ id: RecordID) throws -> Record? {
+    try reading {
+      try checkLives(type)
+      let key = RecordKey(type, id), replica = try load(RowSelection(keys: [key]))
+      guard let row = replica.rows(scope).row(key) else { return nil }
+      return Record(type: type, id: id, life: row.lattice.life, born: row.lattice.born,
+        values: row.lattice.fields.mapValues(\.value), texts: row.texts.mapValues { TextValue(text: $0.text, merged: $0.merged, pending: false) },
+        serials: row.serials, rc: row.rc, ru: row.ru, isVisible: Visibility.of(row, registry: registry), isPending: false, isHeld: false)
+    }
+  }
+
+  func checkpoint() throws -> ScopeCheckpoint {
+    try reading {
+      let replica = try load(RowSelection())
+      let cursor = replica.cursor(scope)
+      let cursorEpoch = cursor?.cursor.flatMap(Cursor.init(decoding:))?.epoch
+      let clean = cursorEpoch == meta.serverEpoch && cursor?.behind == false && cursor?.digestStop == nil && cursor?.mismatchReset != true && replica.staging[scope] == nil
+      return ScopeCheckpoint(epoch: meta.serverEpoch, cleanSeq: clean ? cursor?.cleanSeq : nil)
+    }
+  }
+
+  func devices(prefix: String) throws -> JSON.Object {
+    try reading {
+      let replica = try load(RowSelection())
+      guard let product = registry.product(of: scope) else { return [:] }
+      return JSON.Object(uniqueKeysWithValues: (replica.deviceRows[product]?.members ?? []).filter { $0.key.hasPrefix(prefix) })
+    }
+  }
+
+  func commands() throws -> [QueuedCommand] {
+    try reading {
+      guard isOpen else { throw TransactionReader.ended }
+      guard let replica = try tx.replica(meta.replica, entries: EntrySelection(scopes: [scope])) else { throw StoreError.noReplica(meta.replica) }
+      return replica.entries(in: scope).compactMap { entry in
+        entry.intent.command.map { QueuedCommand(gestureId: entry.gestureId, command: $0, canSupersede: meta.state == .anon && entry.isQueued && entry.n == nil) }
+      }
+    }
+  }
+
+  func opaqueID() throws -> String {
+    try reading { guard isOpen else { throw TransactionReader.ended }; return try core.identities.replicaID() }
   }
 
   // MARK: CommitContext

@@ -2,12 +2,12 @@ import { CONSTANTS } from "../core/constants.js";
 import { steadyTiming } from "../core/clock.js";
 import { scopeDigest } from "../core/digest.js";
 import { commit } from "../client/commit.js";
-import { epochChange, signIn } from "../client/lifecycle.js";
+import { epochChange, signIn, signOut } from "../client/lifecycle.js";
 import { Device, Replica } from "../client/replica.js";
 import { onPullResponse, pullRequest } from "../client/puller.js";
 import { nextPush, onPushResponse } from "../client/sender.js";
 import {
-  editPendingClaim, onClaimPushResponse, pendingClaimKey, queueClaim, reconcilePendingClaim,
+  editPendingClaim, onClaimPushResponse, pendingClaimKey, pendingClaimWork, queueClaim, reconcilePendingClaim,
 } from "../journal/client.js";
 import { nextDocumentStamp } from "../journal/product.js";
 import { pull } from "../server/pull.js";
@@ -21,24 +21,37 @@ export function runClaimEdit(input) {
   let device = new Device({ active: input.replica, replicas: [Replica.fresh({ replica: input.replica }).toJSON()] });
   let state = new ServerState(input.server);
   let gestures = 0;
+  const skewMs = input.skewMs ?? 0;
   const trace = [], ended = [], telemetry = [], events = [];
   const ctx = (at) => ({
-    registry: journalRegistry, device, actor: ACTOR, deviceNow: now + at,
+    registry: journalRegistry, device, actor: ACTOR, deviceNow: now + at + skewMs,
     limits: CONSTANTS, ended, telemetry, events, nextGestureId: () => `g${++gestures}`,
+    pendingDeviceWork: pendingClaimWork,
     newReplicaId: () => "rp_00000000000000000000000000000002",
     newActor: () => ACTOR,
   });
-  const snapshot = (op, value = null) => trace.push({ op, value, device: device.toJSON() });
+  const timing = (at) => steadyTiming(now + at + skewMs, now + at + skewMs);
+  const snapshot = (op, value = null) => trace.push({ op, value, device: structuredClone(device.toJSON()) });
+  const leaveAndReturn = (choice, at) => {
+    snapshot("signOutQuestion", signOut(device, ctx(at)));
+    snapshot("signOut", signOut(device, ctx(at), { choice }));
+    device = new Device(device.toJSON());
+    snapshot("signedOutRestart");
+    if (choice === "keep") snapshot("signIn", signIn(device, ctx(at + 1), {
+      account: "A", holdsRecords: { journal: input.occupied },
+    }));
+  };
+  const claimChanges = skewMs ? [{ op: "write", t: "journalState", id: "journalState", f: { firstPage: "retired" } }] : [];
   const queue = input.strategy === "eager" ? commit(device.activeReplica, ctx(0), "self/journal", [], {
     cmd: { name: "journal.claimPage", args: claim },
     predict: [{ op: "write", t: "page", id: day, x: { body: claim.body } }],
-  }) : queueClaim(device.activeReplica, ctx(0), claim);
+  }) : queueClaim(device.activeReplica, ctx(0), claim, claimChanges);
   snapshot("claimCommit", queue);
   signIn(device, ctx(1), {
     account: "A", holdsRecords: { journal: input.occupied },
     ...(input.occupied ? { decisions: { journal: "add" } } : {}),
   });
-  const request = nextPush(device.activeReplica, ctx(2));
+  let request = nextPush(device.activeReplica, ctx(2));
   snapshot("claimSent", request);
   if (input.strategy === "eager") {
     const stamp = nextDocumentStamp({ now: now + editAt, actor: ACTOR });
@@ -56,15 +69,32 @@ export function runClaimEdit(input) {
     device = new Device(device.toJSON());
     snapshot("restart");
   }
-  const served = push({ state, registry: journalRegistry, product: journalProduct,
+  if (input.signOut) {
+    leaveAndReturn(input.signOut, editAt + 1);
+    if (input.signOut === "discard") return { trace, device: device.toJSON(), server: state.toJSON(),
+      claimResponse: null, saveRequest: null, saveResponse: null, pending: null };
+    request = nextPush(device.activeReplica, ctx(editAt + 2));
+    snapshot("claimRetriedAfterSignIn", request);
+  }
+  let served = push({ state, registry: journalRegistry, product: journalProduct,
     account: "A", request, serverNow: now + claimAt });
   state = served.state;
+  if (skewMs) {
+    onClaimPushResponse(device.activeReplica, ctx(claimAt), request, served.response, timing(claimAt));
+    snapshot("skewResult", served.response);
+    device = new Device(device.toJSON());
+    request = nextPush(device.activeReplica, ctx(claimAt + 1));
+    snapshot("skewRetry", request);
+    served = push({ state, registry: journalRegistry, product: journalProduct,
+      account: "A", request, serverNow: now + claimAt + 1 });
+    state = served.state;
+  }
   const applyPull = (at) => {
     const request = pullRequest(device.activeReplica, journalRegistry, ["self/journal"]);
     const pulled = pull({ state, registry: journalRegistry, product: journalProduct,
       account: "A", request, serverNow: now + at });
     snapshot("pull", onPullResponse(device.activeReplica, ctx(at), request, pulled.response,
-      steadyTiming(now + at, now + at)));
+      timing(at)));
   };
   if (input.pullFirst) {
     applyPull(claimAt + 1);
@@ -73,7 +103,7 @@ export function runClaimEdit(input) {
   }
   (input.strategy === "eager" ? onPushResponse : onClaimPushResponse)(
     device.activeReplica, ctx(claimAt + 2), request, served.response,
-    steadyTiming(now + claimAt + 2, now + claimAt + 2));
+    timing(claimAt + 2));
   snapshot("claimResult", served.response);
   if (!input.pullFirst) {
     if (input.strategy !== "eager")
@@ -81,6 +111,10 @@ export function runClaimEdit(input) {
     applyPull(claimAt + 2);
   }
   if (input.restart) device = new Device(device.toJSON());
+  if (input.signOutAfterResult) {
+    leaveAndReturn("keep", saveAt - 2);
+    applyPull(saveAt - 1);
+  }
   if (input.epochChange) {
     state.epoch = "ep-2";
     epochChange(device.activeReplica, ctx(saveAt), "ep-2");
@@ -91,7 +125,7 @@ export function runClaimEdit(input) {
       account: "A", request: replayRequest, serverNow: now + saveAt });
     state = replayed.state;
     onClaimPushResponse(device.activeReplica, ctx(saveAt), replayRequest, replayed.response,
-      steadyTiming(now + saveAt, now + saveAt));
+      timing(saveAt));
     snapshot("epochReplayResult", replayed.response);
     applyPull(saveAt);
   }
@@ -113,7 +147,7 @@ export function runClaimEdit(input) {
     state = saved.state;
     saveResponse = saved.response;
     onPushResponse(device.activeReplica, ctx(saveAt), saveRequest, saveResponse,
-      steadyTiming(now + saveAt, now + saveAt));
+      timing(saveAt));
     snapshot("saveResult", saveResponse);
     applyPull(saveAt + 1);
   }
@@ -133,11 +167,16 @@ export function files() {
     ["prescribed eager save loses post-sign-in words at delayed claim admission", { strategy: "eager", occupied: true, server: occupied }],
     ["delayed occupied claim preserves typing across restart and resaves newer", { occupied: true, server: occupied, restart: true }],
     ["delayed empty-account claim preserves typing across restart", { occupied: false, server: empty, restart: true }],
+    ["Keep preserves delayed frozen claim and newer typing through sign-out and sign-in", { occupied: true, server: occupied, restart: true, signOut: "keep" }],
+    ["Keep preserves settled pending typing with no remaining claim outbox", { occupied: true, server: occupied, restart: true, signOutAfterResult: true, saveAt: base.saveAt + 10 }],
+    ["Discard purges delayed frozen claim and pending typing", { occupied: true, server: occupied, restart: true, signOut: "discard" }],
+    ["clock skew retry reconciles retained pending typing after recovery", { occupied: true, server: occupied, restart: true, skewMs: CONSTANTS.MAX_SKEW_MS + base.claimAt + 10_000 }],
     ["joined pull before result cannot release durable typing", { occupied: true, server: occupied, pullFirst: true, restart: true }],
     ["epoch change after claim resolution replays the same receipt without appending", { occupied: true, server: occupied, pullFirst: true, restart: true, epochChange: true }],
     ["failed reconciliation commit retains draft then retries once", { occupied: true, server: occupied, failCommit: true, restart: true }],
     ["pending edits replace anonymous body and explicitly clear account scale", { occupied: true, server: occupied, edit: { body: "Replacement signed-in words.", mood: null, energy: 0 } }],
     ["invitation dismissal while claim pending survives without a text edit", { occupied: true, server: occupied, edit: {}, retirements: { scales: "retired" }, restart: true }],
+    ["Keep preserves pending invitation dismissal through sign-out and sign-in", { occupied: true, server: occupied, edit: {}, retirements: { scales: "retired" }, restart: true, signOut: "keep" }],
     ["future account content stamp is observed only at reconciliation", { occupied: true, server: (() => {
       const s = structuredClone(occupied);
       s.rows["acct:A/journal"][0].f.documentStamp[0].ms = now + 10000000;

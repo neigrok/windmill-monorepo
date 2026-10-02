@@ -1,6 +1,20 @@
 -- Gym adoption schema; apply after schema.sql under the migration write freeze.
 -- Plain REST Postgres tests require schema.sql's ON DELETE actions and use a different database.
 
+create table if not exists gym_sync_adoptions (
+  user_id uuid primary key references users(id) on delete cascade,
+  migration_ms bigint not null check (migration_ms >= 0),
+  frozen_source jsonb not null check (jsonb_typeof(frozen_source) = 'object')
+);
+create or replace function gym_sync_adoption_immutable() returns trigger language plpgsql as $$
+begin
+  raise exception 'gym adoption source and migration clock are immutable';
+end;
+$$;
+drop trigger if exists gym_sync_adoption_immutable on gym_sync_adoptions;
+create trigger gym_sync_adoption_immutable before update on gym_sync_adoptions
+  for each row execute function gym_sync_adoption_immutable();
+
 alter table gym_routines
   add column if not exists seq bigint,
   add column if not exists rc bigint,

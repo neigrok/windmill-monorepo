@@ -71,7 +71,7 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym binding against registry v3 and composition.json. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the gym and journal bindings against registry v4 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
 `products/gym/sync/` binds gym's nine types and seven commands over its adopted tables. `windmill_server`,
@@ -83,6 +83,15 @@ Postgres cases use plain `schema.sql` at `DATABASE_URL`, admitted door cases the
 corpus runs over fakes and Postgres, and all five backfill vectors over Postgres. The backfill tool requires the
 adopted schema and migrates each account in one transaction; `deploy/gym-migration/` holds the offline
 rehearsal.
+
+`products/journal/sync/` binds `page`, `journalState`, `journal.savePage` and `journal.claimPage` over
+adopted journal tables. `platform/infra/SyncProducts` seals the gym + journal v4 catalog and injects it
+into the gym door; products remain independent. Journal REST uses its existing repositories and
+mounts no engine door. `db/journal_sync.sql` is test-only, applied after `schema.sql` in the isolated
+sync database. Admission and revision retention run over fakes and Postgres, and all journal migration
+vectors run over Postgres. The migration retains frozen input, exact receipt times and stable revision
+identities for its independent audit. `JournalFeed` announces committed winning pages to the existing
+watcher; watcher or live-feed failures are reported after commit.
 
 `test/e2e/gym_write_differential.py` runs the production composition with a test-only shared clock,
 creates and drops its own databases, and compares gym REST/MCP writes, retries and reads in two

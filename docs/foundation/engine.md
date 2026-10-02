@@ -1919,16 +1919,20 @@ Then, in one local transaction:
      sender flushes the outbox for at most `SIGNOUT_FLUSH_MS`, then stops for this replica. A
      request still in flight is abandoned: results that arrive are recorded in the dormant replica,
      or dropped with a deleted one.
-  2. The product's sign-out confirmation MUST state the count of ready and sent entries and offer
+  2. The product's sign-out confirmation MUST state the count of ready and sent entries plus durable
+     pending work held in product device rows, and offer
      Keep or Discard when any remain, and a plain confirm, which is Keep, when none do. The engine
-     exposes `unsentCount(replica)` as the ready and the sent counts: a sent entry may already have
-     landed. Keep covers every entry, counted or not. A Discard covers exactly the entries it
-     counted: the engine pins their local ids, and when they differ at the answer (a result, a commit
-     in another tab), it asks again with the new count.
+     exposes the ready, sent and pending counts: a sent entry may already have landed. A product
+     hook identifies its pending device-row keys; each such row counts as one additional work item.
+     Keep covers every entry and device row, counted or not. A Discard covers exactly the work it
+     counted: the engine pins entry local ids and pending device-row keys with their full-value JCS
+     SHA-256 digests, and when they differ at the answer (a result or another edit), it asks again
+     with the new count.
   3. The finish, in one local transaction. Acked entries resolve: the server holds them. On Keep:
-     delete A's confirmed rows, `SpentId` rows, cursors, `KnownScope` rows, staging and device rows,
-     and set `state := dormant`; remaining entries are sent on the next sign-in as A. On Discard:
-     delete the replica, and its entries end `discarded`. Discard removes them from this device; it
+     delete A's confirmed rows, `SpentId` rows, cursors, `KnownScope` rows and staging, preserve its
+     durable product device rows, and set `state := dormant`; remaining entries and pending work
+     resume on the next sign-in as A. On Discard:
+     delete the replica with its device rows, and its entries end `discarded`. Discard removes them from this device; it
      cannot recall a sent entry the server may already have admitted.
   4. The `anon` replica, created if absent, becomes the active one, and A's credential is deleted.
 
@@ -2748,9 +2752,15 @@ claimed document, latest full editor document, touched fields and cumulative fir
 While that day's claim is pending, every edit durably updates this record before saying saved here;
 it creates no `savePage` yet. The editor draws the latest retained document over the claim prediction,
 including after restart. Pulls, an `ok`, sign-in and an in-memory dirty flag cannot erase it.
+Sign-out Keep preserves pending claims, edits and retirements with that account's dormant work;
+they resume only when the same account signs in. Discard deletes them. The journal's pending-work
+hook counts each pending claim with touched fields or retained retirements as one additional
+unsaved work item, including an invitation-only edit or a claim whose outbox entry already resolved.
 Record the claim's successful result `(epoch, seq)` in the same local result transaction, before
 the generic engine can resolve/remove its entry. Retain refused claims and edits with an unsaved
 notice; never replace a pending claim with another claim that appends its text again.
+Recoverable `clock-skew` and `base-unknown` refusals do not mark the pending record terminal;
+their retries may still produce the successful result needed for reconciliation.
 
 Reconcile only when that result and a complete, digest-checked joined page in the same epoch are
 both durable: a live cursor without a partial-row key covers the result seq, with no boot staging,

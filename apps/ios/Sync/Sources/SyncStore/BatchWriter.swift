@@ -107,7 +107,7 @@ struct BatchWriter {
       try db.execute(sql: "DELETE FROM device_row WHERE replica = ? AND product = ?", arguments: [replica.value, product])
     case .purgeCaches:
       try db.execute(sql: "UPDATE row_set SET role = NULL WHERE replica = ? AND role IS NOT NULL", arguments: [replica.value])
-      for table in ["spent", "cursor", "known_scope", "device_row"] {
+      for table in ["spent", "cursor", "known_scope"] {
         try db.execute(sql: "DELETE FROM \(table) WHERE replica = ?", arguments: [replica.value])
       }
     }

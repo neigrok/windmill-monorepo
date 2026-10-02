@@ -110,6 +110,9 @@ struct TextBase {
 struct TextWrite {
   std::string text;
   TextBase base;
+  bool replacement = false;
+  bool archiveNonempty = false;
+  Json::Value archive;
 };
 
 // D-6 and §9.1: a record as a page carries it, and as §6.12 hashes it.

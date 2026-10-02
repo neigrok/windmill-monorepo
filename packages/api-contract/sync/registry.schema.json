@@ -107,7 +107,7 @@
           "uniqueItems": true
         },
         "device": {
-          "description": "The rows of the product's device scope `device/<product>` (D-4, §2.5 DeviceRow): never sent and never merged, moved at sign-in and deleted at sign-out (§7.10).",
+          "description": "The rows of the product's device scope `device/<product>` (D-4, §2.5 DeviceRow): never sent and never merged, moved at sign-in, retained with dormant account work on sign-out Keep and deleted on Discard (§7.10).",
           "type": "object",
           "propertyNames": {
             "$ref": "#/$defs/fieldName"

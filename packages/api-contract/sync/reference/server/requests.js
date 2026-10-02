@@ -10,6 +10,7 @@
 import { createHash } from 'node:crypto';
 import { CONSTANTS } from '../core/constants.js';
 import { jcs } from '../core/jcs.js';
+import { ownValue, setOwn } from '../core/maps.js';
 import { admit } from './admit.js';
 import { liveEventsOf } from './pull.js';
 
@@ -43,13 +44,13 @@ export function serverCall({ state, registry, product, account, requestId, tool,
 
   if (typeof requestId !== 'string' || requestId === '' || /[#\u0000]/.test(requestId)) return done(state, { s: 'refused', code: 'invalid' });
   const digest = callDigest(tool, args);
-  work.requests[account] ??= {};
-  const stored = work.requests[account][requestId];
+  if (!Object.hasOwn(work.requests, account)) setOwn(work.requests, account, {});
+  const stored = ownValue(work.requests[account], requestId);
   if (stored && stored.digest !== digest) return done(state, { s: 'refused', code: 'request-conflict' });
   if (stored?.state === 'done') return done(state, stored.result);
   if (stored && serverNow - stored.startedAt < limits.REQUEST_LEASE_MS) return done(state, { s: 'refused', code: 'request-running' });
   const row = stored ?? { requestId, digest, state: 'running', startedAt: serverNow, parts: [] };
-  work.requests[account][requestId] = row;
+  setOwn(work.requests[account], requestId, row);
   row.startedAt = serverNow;
 
   const first = row.parts.length + 1;
@@ -62,13 +63,13 @@ export function serverCall({ state, registry, product, account, requestId, tool,
     } else {
       if (transientAt === k) return done(k === first ? state : work, null);
       if (faultAt === k) {
-        work.requests[account][requestId] = row;
+        setOwn(work.requests[account], requestId, row);
         row.parts.push({ k, result: INTERNAL });
         Object.assign(row, { state: 'done', result: INTERNAL, startedAt: serverNow });
         return done(work, INTERNAL);
       }
       result = admitOne({ ...intent, gestureId: requestId });
-      work.requests[account][requestId] = row;
+      setOwn(work.requests[account], requestId, row);
       row.parts.push({ k, result });
       row.startedAt = serverNow;
       if (crashAfter === k) return done(work, null);

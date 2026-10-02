@@ -97,6 +97,10 @@ inline Json::Value gymAdmitVector(SyncWorld& world, const Json::Value& input) {
   return answer;
 }
 
+inline Json::Value journalAdmitVector(SyncWorld& world, const Json::Value& input) {
+  return admitVector(world, input);
+}
+
 // admit/requests.json: §6.3 for each call in order. `crashAfter: k` stops right after part k commits;
 // `transientAt: k` and `faultAt: k` fail admit k inside its own transaction (fake::FaultingStore), transiently
 // or as a fault, and the call stops at the answer Admission gives.

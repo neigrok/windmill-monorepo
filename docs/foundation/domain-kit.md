@@ -2134,6 +2134,14 @@ including replacements, deletions, zero and explicit null scales; the editor sho
 document over engine prediction. No ordinary same-day `savePage` is queued yet. Process restart,
 pull and sign-in preserve the record. Failed local commits retain the last durable version and
 keep newer editor input unsaved; a refused claim keeps its writing with an unsaved notice.
+Sign-out Keep retains the pending claim, latest edits and retirements in the account's dormant
+device rows and restores them on that account's next sign-in. Discard deletes them. Install
+`JournalWriting.resultWrites` and `JournalWriting.pendingWork` on the Store or test harness; the
+pending-work hook adds one unsaved work item per pending claim with touched fields or retained
+retirements to the sign-out count, even when its frozen claim entry already resolved. Discard pins
+each pending row's full value along with its key, so an intervening edit requires a new confirmation.
+Recoverable `clock-skew` and `base-unknown` refusals leave the pending claim available for retry
+and reconciliation rather than recording a terminal refusal.
 
 The command bridge records the successful claim result in its local result transaction before
 generic resolution can remove the outbox entry. The reconciliation action waits for both that

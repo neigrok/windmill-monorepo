@@ -346,12 +346,12 @@ TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_rep
   CHECK_EQ(notes.saveInsight(duplicate).note, original.note);
   CHECK_EQ(state()[0]["seq"].as<int>(), 2);
   engine::PgGymBackfill backfill{doortest::pool()};
-  const auto audited = backfill.audit(h.user.str());
+  const auto audited = backfill.auditCurrent(h.user.str());
   REQUIRE_EQ(audited.size(), 1U);
   CHECK(audited[0]["audit"].asBool());
   REQUIRE(notes.saveNote(Note{NoteId{"note_nextwrite1"}, h.user, "Next", "Other text"}).note);
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
 
   sync::SyncCatalog catalog{engine::registry()};
   engine::PgGym gym{engine::registry()};
@@ -375,7 +375,7 @@ TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_rep
   CHECK_EQ(refused->result["code"].asString(), "id-spent");
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
   CHECK_EQ(notes.notes(h.user).size(), 2U);
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   CHECK(h.failures.messages.empty());
 }
 
@@ -404,7 +404,7 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_alias_reservation_and_
   }
   CHECK_EQ(notes.saveInsight(duplicate).note, original.note);
   engine::PgGymBackfill backfill{doortest::pool()};
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   CHECK_EQ(h.failures.messages.size(), 1U);
 }
 
@@ -454,7 +454,7 @@ TEST(gym_record_engine_server_spent_batch_has_one_sequence_result_and_publicatio
   CHECK_EQ(repeated->result["seq"].asInt(), 1);
   CHECK_EQ(feed.events.size(), 1U);
   engine::PgGymBackfill backfill{doortest::pool()};
-  CHECK(backfill.audit(h.user.str())[0]["audit"].asBool());
+  CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   CHECK(h.failures.messages.empty());
 }
 

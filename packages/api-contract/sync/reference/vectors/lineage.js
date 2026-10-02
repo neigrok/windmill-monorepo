@@ -137,7 +137,7 @@ function signOuts() {
     { op: 'pushResponse', deviceNow: 5002, response: { status: 200, body: { serverTime: 5002, epoch: 'ep-1', as: 'A', lastN: 1, results: [{ n: 1, s: 'ok', seq: 2 }] } } },
   ];
   return [
-    stepsVector('sign-out with an empty outbox still waits for a finish; its confirm, Keep, purges the account\'s rows, cursors and device rows, leaves the replica dormant and starts an anon replica', {
+    stepsVector('sign-out with an empty outbox still waits for a finish; Keep purges account rows and cursors, retains device work, leaves the replica dormant and starts an anon replica', {
       device: device(BOUND, boundWith([])),
       ids: [NEW],
       steps: [{ op: 'signOut', deviceNow: 6000 }, { op: 'signOut', choice: 'keep', deviceNow: 6001 }],

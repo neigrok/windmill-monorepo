@@ -173,7 +173,7 @@ public enum Gym {
         "serverInternal": true,
       ],
     ],
-    "minVersion": 3,
+    "minVersion": 4,
     "products": [
       "gym": [
         "codes": [
@@ -619,6 +619,6 @@ public enum Gym {
         "type": "proposal",
       ],
     ],
-    "version": 3,
+    "version": 4,
   ]
 }

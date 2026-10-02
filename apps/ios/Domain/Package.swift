@@ -15,6 +15,7 @@ let package = Package(
     .library(name: "DomainKit", targets: ["DomainKit"]),
     .library(name: "DomainKitTesting", targets: ["DomainKitTesting"]),
     .library(name: "GymDomain", targets: ["GymDomain"]),
+    .library(name: "JournalDomain", targets: ["JournalDomain"]),
   ],
   dependencies: [
     .package(path: "../Sync"),
@@ -24,6 +25,7 @@ let package = Package(
     .target(name: "DomainKitNFC"),
     .target(name: "DomainKit", dependencies: ["DomainKitNFC", syncCore, syncAPI], swiftSettings: memberImportVisibility),
     .target(name: "DomainKitTesting", dependencies: ["DomainKit", syncCore, syncAPI, syncEngine, syncTesting]),
+    .target(name: "JournalDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .target(name: "GymDomain", dependencies: ["DomainKit", syncCore, syncAPI, syncSchema], swiftSettings: memberImportVisibility),
     .testTarget(name: "DomainKitTests", dependencies: ["DomainKit", syncCore, syncAPI, syncTesting], exclude: ["Attacks"]),
     .testTarget(
@@ -33,6 +35,7 @@ let package = Package(
       ]),
     .testTarget(
       name: "GymDomainTests", dependencies: ["GymDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncTesting]),
+    .testTarget(name: "JournalDomainTests", dependencies: ["JournalDomain", "DomainKit", "DomainKitTesting", syncCore, syncAPI, syncSchema, syncEngine, syncTesting, .product(name: "SyncReplica", package: "Sync"), .product(name: "SyncModelServer", package: "Sync"), .product(name: "SyncStore", package: "Sync")]),
     .testTarget(
       name: "LayeringTests",
       dependencies: [.product(name: "SwiftParser", package: "swift-syntax"), .product(name: "SwiftSyntax", package: "swift-syntax")],

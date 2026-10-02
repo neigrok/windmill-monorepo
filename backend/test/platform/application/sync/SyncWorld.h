@@ -7,6 +7,9 @@
 #include "products/probe/ProbeRegistry.h"
 #include "products/gym/sync/GymRegistry.h"
 #include "products/gym/sync/application/GymProduct.h"
+#include "products/journal/sync/JournalRegistry.h"
+#include "products/journal/sync/application/JournalProduct.h"
+#include "test/products/journal/sync/domain/JournalFakes.h"
 #include "test/products/gym/sync/domain/GymFakes.h"
 #include "products/probe/application/ProbeProduct.h"
 #include "test/platform/application/sync/SyncFakes.h"
@@ -152,17 +155,19 @@ private:
   std::optional<ServerClock> clock_;
 };
 
-// The engine over the in-memory fakes, bound to the probe product.
+// The engine over the in-memory probe, gym or journal binding.
 class FakeWorld final : public SyncWorld {
 public:
-  FakeWorld(bool gym = false) : catalog_(gym ? wm::gym::engine::registry() : probe::registry()), product_(receipts_), gymProduct_(gymState_), gym_(gym) {
+  FakeWorld(bool gym = false, bool journal = false) : catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), product_(receipts_), gymProduct_(gymState_), journalProduct_(journalState_), gym_(gym), journal_(journal) {
     std::map<std::string, TypeStore*> stores;
     for (const TypeDef& type : catalog_.registry().types()) {
-      if (gym_) types_.push_back(std::make_unique<wm::gym::engine::test::FakeGymType>(type));
+      if (journal_) types_.push_back(std::make_unique<wm::journal::engine::test::FakeJournalType>(type));
+      else if (gym_) types_.push_back(std::make_unique<wm::gym::engine::test::FakeGymType>(type));
       else types_.push_back(std::make_unique<fake::FakeTypeStore>(type, 1));
       stores.emplace(type.name, types_.back().get());
     }
-    if (gym_) gymProduct_.bindTo(catalog_, stores);
+    if (journal_) journalProduct_.bindTo(catalog_, stores);
+    else if (gym_) gymProduct_.bindTo(catalog_, stores);
     else product_.bindTo(catalog_, stores);
     catalog_.seal();
     seed(Json::Value(Json::objectValue));
@@ -200,6 +205,9 @@ public:
       for (const Json::Value& revision : state["revisions"][key]) {
         const RecordRef ref{storeKey(key), revision["t"].asString(), RecordId(revision["id"])};
         db.revisions[{ref, revision["field"].asString(), revision["rev"].asUInt64()}] = revision["text"].asString();
+        Json::Value metadata = revision;
+        for (const char* field : {"t", "id", "field", "rev", "text"}) metadata.removeMember(field);
+        if (!metadata.empty()) db.revisionMetadata[{ref, revision["field"].asString(), revision["rev"].asUInt64()}] = metadata;
       }
     }
     for (const std::string& replica : state["replicas"].getMemberNames()) {
@@ -229,6 +237,7 @@ public:
     }
     const Json::Value& product = state["product"];
     if (gym_) db.gym = product;
+    if (journal_) db.journal = product;
     for (const std::string& key : product["receipts"].getMemberNames()) {
       for (const std::string& called : product["receipts"][key].getMemberNames())
         db.startReceipts[{storeKey(key), called}] = product["receipts"][key][called].asString();
@@ -270,6 +279,8 @@ public:
       revision["field"] = field;
       revision["rev"] = Json::UInt64(rev);
       revision["text"] = text;
+      if (const auto metadata = db.revisionMetadata.find(key); metadata != db.revisionMetadata.end())
+        for (const auto& field : metadata->second.getMemberNames()) revision[field] = metadata->second[field];
       state["revisions"][aliasKey(ref.scope)].append(revision);
     }
     state["replicas"] = Json::Value(Json::objectValue);
@@ -287,6 +298,10 @@ public:
       state["product"] = db.gym;
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
     }
+    if (journal_) {
+      state["product"] = db.journal;
+      for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].empty()) state["product"].removeMember(key);
+    }
     dropEmpty(state);
     return state;
   }
@@ -299,7 +314,10 @@ private:
   probe::ProbeProduct product_;
   wm::gym::engine::test::FakeGymState gymState_;
   wm::gym::engine::GymProduct gymProduct_;
+  wm::journal::engine::test::FakeJournalState journalState_;
+  wm::journal::engine::JournalProduct journalProduct_;
   bool gym_;
+  bool journal_;
 };
 
 }

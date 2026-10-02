@@ -2,6 +2,7 @@
 // corpus/README.md states the same rules.
 
 import { isAlive } from '../core/rows.js';
+import { ownValue, setOwn } from '../core/maps.js';
 import { Refusal } from '../server/admit.js';
 
 export const TICK_AFTER_MS = 600_000;
@@ -23,7 +24,7 @@ export class ProbeProduct {
 
   isReplay(ctx, cmd) {
     if (cmd.name === 'probe.start') return Object.hasOwn(receipts(ctx, 'receipts'), cmd.args.id);
-    if (cmd.name === 'probe.copy') return receipts(ctx, 'copies')[cmd.args.dst] === cmd.args.src;
+    if (cmd.name === 'probe.copy') return ownValue(receipts(ctx, 'copies'), cmd.args.dst) === cmd.args.src;
     return false;
   }
 
@@ -55,10 +56,10 @@ export class ProbeProduct {
     const open = ctx.rowsOf('run').find(isOpen);
     if (open) {
       if (args.join !== true) throw new Refusal('invalid');
-      started[args.id] = open.id;
+      setOwn(started, args.id, open.id);
       return { deltas: [], write: [{ t: 'run', id: open.id, from: args.id, born: open.born }] };
     }
-    started[args.id] = args.id;
+    setOwn(started, args.id, args.id);
     const f = { startedAt: [args.startedAt, null] };
     const written = { startedAt: null };
     if (args.label !== undefined) {
@@ -89,13 +90,13 @@ export class ProbeProduct {
   // life. An unreadable source answers not-found alike whether absent, dead or private.
   copy(ctx, { src, dst }) {
     const copies = receipts(ctx, 'copies');
-    if (copies[dst] === src) {
+    if (ownValue(copies, dst) === src) {
       const board = ctx.stored('board', dst);
       return { deltas: [], write: board && isAlive(board) ? [{ t: 'board', id: dst, born: board.born }] : [] };
     }
     if (!ctx.readableTree(src)) throw new Refusal('not-found');
     if (ctx.idState('board', dst).state !== 'none') throw new Refusal('id-taken');
-    copies[dst] = src;
+    setOwn(copies, dst, src);
     const into = [];
     for (const row of ctx.treeRows(src)) {
       if (row.t === 'meta' && row.f?.title) into.push({ t: 'meta', id: row.id, f: { title: row.f.title } });
