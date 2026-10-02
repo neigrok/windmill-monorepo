@@ -137,8 +137,9 @@ the production `windmill_server` ignores the test clock environment. It seeds ma
 backfills the engine
 database, drives every write route and gym tool with retries, and interleaves reads. It stops both
 servers and drops both databases on success or failure. Python 3 and the Postgres client tools are
-required. CI uses `--image` for off-vs-on and builds origin/main in a temporary worktree inside
-the tested builder for main-vs-off. Both modes compare timestamps exactly; only independently
+required. CI runs off-vs-on with `--image`. main-vs-off compares against `origin/main`, so it is a
+gate run locally before a change to the gym doors merges, not in CI. Both modes compare timestamps
+exactly; only independently
 random generated identities use stable paired aliases (test/e2e/README.md).
 
 ```sh
