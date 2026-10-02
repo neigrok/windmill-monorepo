@@ -29,7 +29,7 @@ acceptance. Figma review tasks below need a fresh file inspection before editing
 
 ### Sync engine
 
-Spec: [Windmill sync engine](../foundation/engine.md), built in the server and the Swift client and adopted by no product app yet. Canon
+Spec: [Windmill sync engine](../foundation/engine.md), built in the server and the Swift client and adopted by the rebuilt iOS journal. Canon
 states the owner's rulings of 2026-09-26 on its lifecycle; each app keeps the behavior below until
 its product adopts the engine. The apps are rewritten onto the engine, not migrated: nothing today's
 apps store carries across.
@@ -115,21 +115,20 @@ apps store carries across.
 
 ## iOS
 
-`apps/ios` holds no product app, so no entry here compares canon with iOS code. First-run canon:
+`apps/ios/App` implements the journal first run on the engine; gym remains unbuilt. First-run canon:
 `guidelines/superapp-shell.md`, `guidelines/superapp-flow.md`, `gym/briefs/09-coach.md` and the Figma
 page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
-- **6v · iOS canon is unbuilt.** `apps/ios` holds the sync engine client, the domain kit and the
-  dev-only probe app; every iOS drawing and every iOS line of written canon describes a room no build
-  implements, the app icon (`brand-logo.md` lists none for iOS) and Sign in with Apple included.
+- **6v · iOS gym canon is unbuilt.** `apps/ios` holds the sync engine client, the domain kit, the
+  journal product app and the dev-only probe. Gym drawings and written canon describe a room no build
+  implements. The journal restores the previous TestFlight app's icon and bundle identifier.
   Where canon states the deleted app's code or behavior as current, restate it as the rebuild's
   requirement or drop it: `gym/briefs/09-coach.md` (`Proposal.swift`, `Ask.swift`, `ReviewGate`),
   `10-notes.md` (`.onMove`), `11-bodyweight.md` (the iOS sheet, chart, empty-window, refusal and
   `TrainingStore.weighIn` paragraphs), `13-gestures.md` (full swipe), `15-the-routine.md` (History
   and routine detail), `16-the-workout.md` and `17-set-targets.md` (5m), `19-connected-log.md`
   (`ConnectInvite`), `12-native-idiom.md` and `guidelines/superapp-shell.md` §8 (F4, 4j),
-  `journal/scales.md` (the iOS stroke, haptics and frames; 1j), `journal/journal.md` §11 and
-  `journal/onboarding.md` §2 (the journal room and its ink notes), and `gym/feedback-contract.md`
+  and `gym/feedback-contract.md`
   (iOS acceptance).
 - **6k · Backend: signed-out Coach.** Coach is account-only: `AskRation` keys an in-memory token
   bucket by account (`kAskPerDay` 10, `kAskBackToBack` 3; a deploy refills it) under the account's
@@ -172,6 +171,15 @@ page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?nod
   uses SwiftShader and cannot establish production frame timing.
 
 ## Journal
+
+- **iOS journal first run · R117.** The rebuilt app carries Journal only. Boards 02a and 21a/21b
+  draw a Gym choice; iOS omits that choice and its introduction until a working gym exists.
+  First-open boards 05 and 07j-a1/a5/a6 omit the mood and energy strip and use the shorter privacy
+  fact; iOS follows `journal/onboarding.md`: both optional scales are visible and the privacy
+  line is *Only you. No prompts, no fields, nothing to fill in — write a line or a page.*
+  Account controls appear only for a configured engine server; production sync is not live.
+  The room-switcher boards label their displayed first paragraph as 26 words; it has 20. iOS
+  counts the actual page text. AX3 keeps the longer privacy fact and scales in a scrollable page.
 
 - **First-open privacy fact.** The Figma board [`122:242`](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=122-242)
   says *Only you can read this.* It drifts from `journal/onboarding.md` §2's canon: *Only you. No

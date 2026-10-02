@@ -4,7 +4,7 @@ import Testing
 // The rules over the real apps/ios, its CI workflows and each app project that exists: the probe app's and, once built, the app's.
 @Suite struct RealTreeTests {
   static let world = Result { try World.read(root: Checkout.iosRoot, build: try RunningBuild.current.get()) }
-  static let apps = [AppProject.App.product, .probe].filter { FileManager.default.fileExists(atPath: Checkout.iosRoot.appending(path: $0.spec).path) }
+  static let apps = [AppProject.App.product, .product(at: "App/project.yml"), .probe].filter { FileManager.default.fileExists(atPath: Checkout.iosRoot.appending(path: $0.spec).path) }
 
   @Test func readsTheEngineAndTheKit() throws {
     #expect(Set(try Self.world.get().packages.map(\.placement.directory)).isSuperset(of: ["Sync", "Domain"]))
@@ -43,6 +43,7 @@ import Testing
 
   @Test(.enabled(if: Shell.isInstalled("xcodegen"), "XcodeGen is installed"), arguments: apps)
   func appResolvesThePinnedSettings(_ app: AppProject.App) throws {
-    #expect(try AppProject.findings(root: Checkout.iosRoot, app: app).sorted().map(\.description) == [])
+    let findings = try AppProject.findings(root: Checkout.iosRoot, app: app).sorted().map(\.description)
+    #expect(findings == [], "App settings: \(findings)")
   }
 }

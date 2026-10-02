@@ -3,6 +3,30 @@ import SyncAPI
 import SyncCore
 import SyncSchema
 
+public struct EditorDraft: Sendable {
+  public static let key = "pendingClaim:__editorDraft__"
+  public let day: LocalDay
+  public let document: PageDocument
+  public init(day: LocalDay, document: PageDocument) { self.day = day; self.document = document }
+  public init(json: JSON) throws {
+    guard let day = LocalDay(try json.member("day").asString()) else { throw JSONError.shape("invalid draft day") }
+    self.day = day; document = try PageDocument(json: json.member("document"))
+  }
+  public var json: JSON { ["day": .string(day.text), "document": .object(JSON.Object(uniqueKeysWithValues: document.fields.map { ($0.key, $0.value) }))] }
+}
+
+public struct PreserveEditorDraft: Action {
+  public typealias Refusal = JournalRefusal
+  public let scope = Journal.scope
+  public let draft: EditorDraft
+  public init(day: LocalDay, document: PageDocument) { draft = EditorDraft(day: day, document: document) }
+  public func load(_ read: Reader) throws -> Void {}
+  public func decide(_ loaded: Void, ids: IDSource) throws(Violation) -> Decision<Void, JournalRefusal> {
+    var plan = Plan(); plan.device(EditorDraft.key, draft.json)
+    return .write(plan)
+  }
+}
+
 public struct SavePageCommand: ServerCommand {
   public static let name = Journal.Commands.savePage
   public static let specs: [any ValueSpec] = [JournalRules.body]
@@ -81,7 +105,7 @@ public struct JournalWriteState: Sendable {
     moment = read.moment; actor = read.actor; anonymous = read.isAnonymous
     clock = try read.device("contentClock"); page = try read.confirmed(Page.self, ID(day))
     state = try read.repository(JournalState.self).find(ID(RecordID("journalState")), in: .drawn) ?? JournalState()
-    pending = try read.devices(prefix: "pendingClaim:").members.map { try PendingClaim(json: $0.value) }
+    pending = try read.devices(prefix: "pendingClaim:").members.filter { $0.key != EditorDraft.key }.map { try PendingClaim(json: $0.value) }
     commands = try read.commands(); checkpoint = try read.checkpoint()
   }
 }
@@ -109,7 +133,7 @@ public struct SavePage: Action {
     if document.mood != nil || document.energy != nil { retiring["scales"] = "retired" }
     if !loaded.anonymous, var pending = loaded.pending.first(where: { $0.day == day }) {
       pending.edit(document, retiring: retiring)
-      var plan = Plan(); plan.device(pending.key, pending.json)
+      var plan = Plan(); plan.device(pending.key, pending.json); plan.device(EditorDraft.key, nil)
       return .write(plan, pending.claimId)
     }
     if loaded.anonymous {
@@ -122,14 +146,14 @@ public struct SavePage: Action {
       plan.supersede(prior.map(\.gestureId))
       for pending in loaded.pending where pending.day == day { plan.device(pending.key, nil) }
       let pending = PendingClaim(day: day, claimId: claimId, document: document, retirements: retiring)
-      plan.device(pending.key, pending.json)
+      plan.device(pending.key, pending.json); plan.device(EditorDraft.key, nil)
       try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
       return .write(plan, claimId)
     }
     let stamp = try JournalWriting.stamp(loaded, observed: loaded.page?.values["documentStamp"])
     var plan = try Plan(running: SavePageCommand(day: day, document: document, stamp: stamp),
       predicting: [JournalWriting.prediction(day: day, document: document, stamp: stamp)])
-    plan.device("contentClock", ContentClock.pair(stamp))
+    plan.device("contentClock", ContentClock.pair(stamp)); plan.device(EditorDraft.key, nil)
     try JournalWriting.retire(retiring, in: &plan, at: loaded.moment)
     return .write(plan, nil)
   }
@@ -189,6 +213,7 @@ public enum JournalWriting {
   public static let pendingWork: PendingDeviceWork = { product, rows in
     guard product == "journal" else { return [] }
     return rows.members.compactMap { key, value in
+      if key == EditorDraft.key { return key }
       guard key.hasPrefix("pendingClaim:"), let pending = try? PendingClaim(json: value),
             !pending.touched.isEmpty || !pending.retirements.isEmpty else { return nil }
       return key

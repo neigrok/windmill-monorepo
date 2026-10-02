@@ -1,11 +1,18 @@
 #include "platform/adapters/oidc/IdToken.h"
+#include "platform/adapters/oidc/AppleOAuthClient.h"
+#include "platform/adapters/json/JsonText.h"
+#include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 
 #include "test/testing.h"
 
 #include <drogon/utils/Utilities.h>
+#include <openssl/evp.h>
+#include <openssl/rsa.h>
 
 #include <optional>
+#include <memory>
 #include <string>
+#include <vector>
 
 using namespace wm;
 
@@ -32,6 +39,73 @@ std::string token(const std::string& payload) {
 const std::string kGoogle =
     R"({"iss":"https://accounts.google.com","aud":"cli","sub":"1078","email":"sam@example.com",)"
     R"("email_verified":true,"name":"Sam Gold"})";
+
+struct SignedAppleToken {
+  std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> key{nullptr, &EVP_PKEY_free};
+  Json::Value keys{Json::objectValue};
+  Json::Value claims{Json::objectValue};
+  const UnixMs now = 1'700'000'000'000;
+  const std::string clientId = "works.windmill.app";
+  const std::string nonce = "random-nonce-retained-by-native-client";
+
+  SignedAppleToken() {
+    const std::unique_ptr<EVP_PKEY_CTX, decltype(&EVP_PKEY_CTX_free)> context(
+        EVP_PKEY_CTX_new_id(EVP_PKEY_RSA, nullptr), &EVP_PKEY_CTX_free);
+    EVP_PKEY* generated = nullptr;
+    if (!context || EVP_PKEY_keygen_init(context.get()) != 1 ||
+        EVP_PKEY_CTX_set_rsa_keygen_bits(context.get(), 2048) != 1 ||
+        EVP_PKEY_keygen(context.get(), &generated) != 1) return;
+    key.reset(generated);
+    const std::unique_ptr<RSA, decltype(&RSA_free)> rsa(EVP_PKEY_get1_RSA(key.get()), &RSA_free);
+    const BIGNUM* n = nullptr;
+    const BIGNUM* e = nullptr;
+    RSA_get0_key(rsa.get(), &n, &e, nullptr);
+    auto encoded = [](const BIGNUM* number) {
+      std::string bytes(BN_num_bytes(number), '\0');
+      BN_bn2bin(number, reinterpret_cast<unsigned char*>(bytes.data()));
+      return segment(bytes);
+    };
+    Json::Value publicKey(Json::objectValue);
+    publicKey["kid"] = "test-key";
+    publicKey["alg"] = "RS256";
+    publicKey["kty"] = "RSA";
+    publicKey["use"] = "sig";
+    publicKey["n"] = encoded(n);
+    publicKey["e"] = encoded(e);
+    keys["keys"] = Json::Value(Json::arrayValue);
+    keys["keys"].append(publicKey);
+    claims["iss"] = "https://appleid.apple.com";
+    claims["aud"] = clientId;
+    claims["sub"] = "stable-apple-subject";
+    claims["iat"] = static_cast<Json::UInt64>(now / 1000 - 10);
+    claims["exp"] = static_cast<Json::UInt64>(now / 1000 + 600);
+    OpenSslTokenGenerator tokens;
+    claims["nonce"] = tokens.digestOf(nonce);
+    claims["email"] = "sam@example.com";
+    claims["email_verified"] = "true";
+    claims["is_private_email"] = false;
+  }
+
+  std::string signedToken(const Json::Value& payload, const std::string& header =
+      R"({"alg":"RS256","kid":"test-key"})") const {
+    if (!key) return "";
+    const std::string input = segment(header) + "." + segment(dump(payload));
+    const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+    if (!context || EVP_DigestSignInit(context.get(), nullptr, EVP_sha256(), nullptr, key.get()) != 1) return "";
+    std::size_t size = 0;
+    if (EVP_DigestSign(context.get(), nullptr, &size,
+        reinterpret_cast<const unsigned char*>(input.data()), input.size()) != 1) return "";
+    std::string signature(size, '\0');
+    if (EVP_DigestSign(context.get(), reinterpret_cast<unsigned char*>(signature.data()), &size,
+        reinterpret_cast<const unsigned char*>(input.data()), input.size()) != 1) return "";
+    signature.resize(size);
+    return input + "." + segment(signature);
+  }
+
+  std::optional<ProviderIdentity> verify(const Json::Value& payload) const {
+    return AppleIdentityTokenVerifier::verifiedIdentity(signedToken(payload), nonce, clientId, keys, now);
+  }
+};
 
 }
 
@@ -109,4 +183,87 @@ TEST(id_token_a_verified_address_is_the_bool_or_the_word_and_nothing_else) {
   const std::optional<Json::Value> absent = idTokenClaims(token(R"({"sub":"1078"})"));
   REQUIRE(absent.has_value());
   CHECK_FALSE(verifiedClaim(*absent, "email_verified"));
+}
+
+TEST(native_apple_verifier_requires_enabled_configuration_and_verifies_a_signed_identity) {
+  AppleIdentityTokenVerifier disabled(false, "works.windmill.app");
+  AppleIdentityTokenVerifier missingClient(true, "");
+  CHECK_FALSE(disabled.configured());
+  CHECK_FALSE(missingClient.configured());
+  bool called = false;
+  disabled.verify("t", "n", [&](auto identity) { called = true; CHECK_FALSE(identity.has_value()); });
+  CHECK(called);
+  SignedAppleToken fixture;
+  REQUIRE(fixture.key);
+  const auto identity = fixture.verify(fixture.claims);
+  REQUIRE(identity.has_value());
+  CHECK(identity->provider == Provider::apple);
+  CHECK_EQ(identity->subject, std::string("stable-apple-subject"));
+  CHECK_EQ(identity->email.value, std::string("sam@example.com"));
+  CHECK(identity->emailVerified);
+  CHECK_FALSE(identity->relayEmail);
+  auto relay = fixture.claims;
+  relay["email"] = "sam@privaterelay.appleid.com";
+  relay["is_private_email"] = "true";
+  REQUIRE(fixture.verify(relay).has_value());
+  CHECK(fixture.verify(relay)->relayEmail);
+  auto subjectOnly = fixture.claims;
+  subjectOnly.removeMember("email");
+  subjectOnly.removeMember("email_verified");
+  REQUIRE(fixture.verify(subjectOnly).has_value());
+  CHECK_EQ(fixture.verify(subjectOnly)->email.value, std::string(""));
+}
+
+TEST(native_apple_verifier_refuses_bad_signatures_algorithms_keys_and_token_shapes) {
+  SignedAppleToken fixture;
+  REQUIRE(fixture.key);
+  const auto valid = fixture.signedToken(fixture.claims);
+  auto verify = [&](const std::string& token, const Json::Value& keys) {
+    return AppleIdentityTokenVerifier::verifiedIdentity(token, fixture.nonce, fixture.clientId, keys, fixture.now);
+  };
+  std::string tampered = valid;
+  tampered[tampered.rfind('.') + 1] = tampered[tampered.rfind('.') + 1] == 'A' ? 'B' : 'A';
+  CHECK_FALSE(verify(tampered, fixture.keys).has_value());
+  for (const std::string& malformed : {std::string(""), std::string("h.c.s"), valid + ".extra",
+      valid + "=", fixture.signedToken(fixture.claims, R"({"alg":"none","kid":"test-key"})"),
+      fixture.signedToken(fixture.claims, R"({"alg":"HS256","kid":"test-key"})"),
+      fixture.signedToken(fixture.claims, R"({"alg":"RS256","kid":"unknown"})"),
+      fixture.signedToken(fixture.claims, R"({"alg":"RS256","kid":"test-key","crit":["unknown"]})"),
+      fixture.signedToken(fixture.claims, R"({"alg":"RS256","alg":"RS256","kid":"test-key"})")}) {
+    CHECK_FALSE(verify(malformed, fixture.keys).has_value());
+  }
+  for (const std::string& field : {std::string("alg"), std::string("kty"), std::string("use"),
+                                  std::string("n"), std::string("e"), std::string("kid")}) {
+    auto bad = fixture.keys;
+    bad["keys"][0][field] = "invalid";
+    CHECK_FALSE(verify(valid, bad).has_value());
+  }
+  auto duplicate = fixture.keys;
+  duplicate["keys"].append(fixture.keys["keys"][0]);
+  CHECK_FALSE(verify(valid, duplicate).has_value());
+  CHECK_FALSE(verify(valid, Json::Value(Json::objectValue)).has_value());
+}
+
+TEST(native_apple_verifier_refuses_expired_foreign_unverified_or_nonce_mismatched_claims) {
+  SignedAppleToken fixture;
+  REQUIRE(fixture.key);
+  for (const std::string& field : {std::string("iss"), std::string("aud"), std::string("sub"),
+       std::string("nonce"), std::string("exp"), std::string("iat"), std::string("email_verified")}) {
+    auto missing = fixture.claims;
+    missing.removeMember(field);
+    CHECK_FALSE(fixture.verify(missing).has_value());
+    missing[field] = Json::Value(Json::arrayValue);
+    CHECK_FALSE(fixture.verify(missing).has_value());
+  }
+  for (const auto& [field, value] : std::vector<std::pair<std::string, Json::Value>>{
+      {"iss", "https://attacker.example"}, {"aud", "another-app"}, {"sub", ""},
+      {"email", "not-an-email"}, {"email_verified", false}, {"nonce", "wrong"},
+      {"exp", Json::UInt64(fixture.now / 1000)}, {"iat", Json::UInt64(fixture.now / 1000 + 61)},
+      {"nbf", Json::UInt64(fixture.now / 1000 + 1)}, {"exp", "1700000600"}}) {
+    auto bad = fixture.claims;
+    bad[field] = value;
+    CHECK_FALSE(fixture.verify(bad).has_value());
+  }
+  CHECK_FALSE(AppleIdentityTokenVerifier::verifiedIdentity(fixture.signedToken(fixture.claims),
+      "another-nonce", fixture.clientId, fixture.keys, fixture.now).has_value());
 }

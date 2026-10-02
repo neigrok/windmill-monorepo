@@ -3,6 +3,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 #include "platform/application/sync/SyncCatalog.h"
 #include "platform/ports/Clock.h"
+#include "platform/ports/ChangeFeed.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/journal/application/PageService.h"
 #include "products/journal/ports/JournalWriteDoor.h"
@@ -14,7 +15,7 @@ namespace wm::journal {
 class JournalDoor final : public JournalWriteDoor {
 public:
   JournalDoor(std::shared_ptr<PgPool>, Clock&, FailureReporter&, PageWatcher&,
-              std::shared_ptr<sync::SyncCatalog>);
+              std::shared_ptr<sync::SyncCatalog>, sync::ChangeFeed* = nullptr);
   ~JournalDoor() override;
   WriteOutcome savePage(const Page&) override;
   Json::Value claimPage(const UserId&, const Json::Value&) override;

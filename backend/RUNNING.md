@@ -47,6 +47,74 @@ finds it with no configuration. The default is `:8080`, which Docker Desktop usu
 Everything else is optional and each feature stays dark without its key — copy `.env.example` to
 `.env` and `set -a; source .env; set +a` before the binary.
 
+### Full engine server for the iOS simulator
+
+Run from `backend/`. This uses an isolated local database, both in-place adoption schemas and
+both backfills. Choose the port with `WM_ENGINE_PORT`; the simulator can reach
+`http://127.0.0.1:<port>`. `SYNC_ENABLED`, `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES`
+default off independently. The probe product and its dev endpoints are absent from this server.
+
+```sh
+WM_ENGINE_DB=wm_ios_engine
+WM_ENGINE_PORT=8088
+WM_ENGINE_BUILD=/private/tmp/claude-501/codex-ios-server/build
+createdb -h /tmp "$WM_ENGINE_DB"
+export DATABASE_URL="postgresql:///$WM_ENGINE_DB?host=/tmp"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/schema.sql -f db/gym_sync.sql -f db/journal_sync.sql
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+insert into users(id,email,name) values(gen_random_uuid(),'ios-dev@example.com','iOS Dev');
+insert into gym_preferences(user_id) select id from users where email='ios-dev@example.com';
+insert into journal_page(user_id,day,body,stamp_ms,stamp_counter,stamp_actor,updated_at)
+  select id,'2026-01-01','Local engine seed',1,0,'localdev',to_timestamp(0.001) from users where email='ios-dev@example.com';
+SQL
+"$WM_ENGINE_BUILD/windmill_gym_backfill"
+"$WM_ENGINE_BUILD/windmill_journal_backfill"
+"$WM_ENGINE_BUILD/windmill_gym_backfill" --audit
+"$WM_ENGINE_BUILD/windmill_journal_backfill" --audit
+RESEND_API_KEY= ANTHROPIC_API_KEY= OPENAI_API_KEY= JOURNAL_EMBEDDER_URL= \
+  SYNC_ENABLED=1 GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 \
+  WINDMILL_HOST=127.0.0.1 WINDMILL_APP_URL="http://127.0.0.1:$WM_ENGINE_PORT" \
+  PORT="$WM_ENGINE_PORT" "$WM_ENGINE_BUILD/windmill_server"
+```
+
+In a second terminal, seed a development code using the direct-database path, then verify through
+the normal app door. No Resend request or mail is needed. Repeat the SQL to issue a fresh code after
+the single-use credential expires or is consumed. Set the same database and port as above.
+
+```sh
+WM_ENGINE_DB=wm_ios_engine
+WM_ENGINE_PORT=8088
+export DATABASE_URL="postgresql:///$WM_ENGINE_DB?host=/tmp"
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 <<'SQL'
+insert into magic_links(token_hash,code_hash,email,created_ms,expires_ms)
+  select encode(sha256(convert_to(gen_random_uuid()::text,'UTF8')),'hex'),
+    encode(sha256(convert_to('483201','UTF8')),'hex'),'ios-dev@example.com',
+    (extract(epoch from clock_timestamp())*1000)::bigint,
+    (extract(epoch from clock_timestamp())*1000)::bigint+900000;
+SQL
+curl -sS "http://127.0.0.1:$WM_ENGINE_PORT/v1/auth/verify-code" \
+  -H 'Content-Type: application/json' \
+  -d '{"email":"ios-dev@example.com","code":"483201","sessionTransport":"bearer"}'
+```
+
+The response's `session` is the bearer secret and `user.id` is the engine account. The app stores
+the secret in its Keychain and sends `Authorization: Bearer <session>` with `Sync-Schema: 4` on
+hello, push and pull; live uses `/v1/sync/live?schema=4`. Existing web and Android callers omit
+`sessionTransport` and receive their existing bodies. Read [AUTH.md](AUTH.md) for native Apple
+configuration and its identity-token/nonce exchange. With `SYNC_ENABLED` off, all four sync routes
+return 404. Unadopted legacy history returns engine `503 unavailable`, or a push retry, rather than
+an empty product scope; an unavailable live subscription closes with code 1013.
+Both product write-freeze switches also block native engine pushes with a retry while leaving
+hello, pull and live subscriptions available.
+
+After the simulator run, stop the listener by its chosen port and remove the local database:
+
+```sh
+WM_ENGINE_PID=$(lsof -tiTCP:"$WM_ENGINE_PORT" -sTCP:LISTEN)
+if [ -n "$WM_ENGINE_PID" ]; then kill $WM_ENGINE_PID; fi
+dropdb -h /tmp "$WM_ENGINE_DB"
+```
+
 ## 5. Exercise it
 
 You need a session first. Signing in through the web app needs a working `RESEND_API_KEY`: without
@@ -130,8 +198,9 @@ and workout shares retain their existing tables; conversation deletion admits pr
 The journal engine door requires `journal_sync.sql` and adopted history; premature admission
 returns `503 journal-not-adopted`. The freeze returns `503 journal-frozen` from every journal
 mutation door and stops echo derivation, echo/nudge sweeps and provider-suppression writes.
-Journal reads retain their existing repository and REST wire contract. No production sync route
-is mounted. Enable gym and journal together only after their shared frozen rehearsal gates pass.
+Journal reads retain their existing repository and REST wire contract. `SYNC_ENABLED` accepts
+`1`, `true` or `on` and mounts the full gym + journal engine HTTP and live routes; it defaults off.
+Enable gym and journal together only after their shared frozen rehearsal gates pass.
 
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
@@ -226,7 +295,10 @@ The Docker build runs `ctest` with no database beside it, so its Postgres cases 
 `sync` and `adapters` tests in one `ctest` run under `WM_PG_TEST` against a Postgres 16 service with
 the same two-database setup above (`windmill_test` for REST, `windmill_sync_test` for sync), then
 serves the stage's own `windmill_server_probe` on the sync database and runs
-`test/e2e/deployment_conformance.mjs` against it.
+`test/e2e/deployment_conformance.mjs` against it. It also verifies all sync routes return 404 on
+`windmill_server` with the switch off, then serves it with `SYNC_ENABLED=1` on a separate
+plain + gym + journal database after both backfills. `WM_E2E_CATALOG=products` selects schema 4
+and both product scopes for the same direct and edge conformance suite.
 
 The domain suite's pattern fuzz matches the sync registry's `Pattern` against the JS reference
 (`packages/api-contract/sync/reference/core/registry.js`) on patterns and values the reference

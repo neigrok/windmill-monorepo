@@ -11,7 +11,6 @@
 
 #include <json/json.h>
 
-#include <array>
 #include <atomic>
 #include <cstdint>
 #include <functional>
@@ -126,8 +125,7 @@ public:
 private:
   class Attempt;
 
-  // §6.1 step 3.1: one of 256 mutexes striped by the scope key's hash. An admit holds exactly one, so
-  // striping costs an occasional false wait and never a deadlock.
+  // §6.1 step 3.1: the catalog's scope mutex, held across commit and publish by every admission door.
   std::unique_lock<std::timed_mutex> takeStripe(const ScopeKey& scope);
 
   const SyncCatalog& catalog_;
@@ -136,7 +134,6 @@ private:
   ServerClock& clock_;
   FailureReporter& failures_;
   Limits limits_;
-  std::array<std::timed_mutex, 256> stripes_;
 };
 
 }

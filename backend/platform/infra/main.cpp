@@ -79,6 +79,7 @@
 #include "products/journal/application/PageService.h"
 #include "products/journal/application/JournalSwitches.h"
 #include "products/journal/sync/adapters/postgres/JournalDoor.h"
+#include "products/journal/sync/application/JournalFeed.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -103,7 +104,6 @@
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 
-#ifdef WM_SYNC_PROBE
 #include "platform/adapters/http/SyncApi.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/adapters/ws/SyncSocket.h"
@@ -112,6 +112,7 @@
 #include "platform/application/sync/SyncCatalog.h"
 #include "platform/application/sync/SyncLive.h"
 #include "platform/application/sync/SyncService.h"
+#ifdef WM_SYNC_PROBE
 #include "products/probe/ProbeRegistry.h"
 #include "products/probe/adapters/http/DevApi.h"
 #include "products/probe/adapters/postgres/PgProbe.h"
@@ -132,6 +133,43 @@
 #include <typeinfo>
 
 namespace {
+struct SyncChanges : wm::sync::ChangeFeed {
+  explicit SyncChanges(std::shared_ptr<wm::sync::ChangeFeed> feed) : target(std::move(feed)) {}
+  std::shared_ptr<wm::sync::ChangeFeed> target;
+  void publish(const wm::sync::CommittedChange& change) override { target->publish(change); }
+};
+
+struct SyncEngine {
+  SyncEngine(std::shared_ptr<wm::sync::SyncCatalog> catalog, std::shared_ptr<wm::PgPool> pool,
+             wm::Clock& clock, wm::FailureReporter& errors, std::size_t workerCount, std::size_t queueCeiling)
+      : catalog(std::move(catalog)), store(std::move(pool), limits.lockTimeoutMs),
+        physicalClock(std::make_shared<wm::sync::PhysicalClock>(clock)),
+        live(std::make_shared<wm::sync::SyncLive>(*this->catalog, store, limits)),
+        changes{live}, admission(*this->catalog, store, changes, serverClock, errors, limits),
+        service(std::make_shared<wm::sync::SyncService>(*this->catalog, store, admission, *physicalClock)),
+        workers(std::make_shared<wm::WorkerPool>("sync", workerCount, queueCeiling)) {}
+
+  ~SyncEngine() { stop(); }
+  void stop() {
+    wm::sync::uninstallSyncSocket();
+    workers->stopAndJoin();
+    changes.target = live;
+    watcher.reset();
+  }
+
+  std::shared_ptr<wm::sync::SyncCatalog> catalog;
+  wm::sync::Limits limits;
+  wm::sync::PgSyncStore store;
+  wm::sync::ServerClock serverClock;
+  std::shared_ptr<wm::sync::PhysicalClock> physicalClock;
+  std::shared_ptr<wm::PageWatcher> watcher;
+  std::shared_ptr<wm::sync::SyncLive> live;
+  SyncChanges changes;
+  wm::sync::Admission admission;
+  std::shared_ptr<wm::sync::SyncService> service;
+  std::shared_ptr<wm::WorkerPool> workers;
+};
+
 // A retention window in days. Unset or unreadable keeps the built-in default; 0 or less means keep
 // forever, which the sweep honours by skipping that table.
 int envDays(const char* name, int fallback) {
@@ -267,9 +305,12 @@ int main() {
   auto appleClient = std::make_shared<AppleOAuthClient>(
       appleClientId ? appleClientId : "", appleTeamId ? appleTeamId : "", appleKeyId ? appleKeyId : "",
       applePrivateKey ? applePrivateKey : "");
+  const char* appleNativeEnabledEnv = std::getenv("APPLE_NATIVE_ENABLED");
+  auto appleNativeVerifier = std::make_shared<AppleIdentityTokenVerifier>(
+      appleNativeEnabledEnv && std::string(appleNativeEnabledEnv) == "1", appleClientId ? appleClientId : "");
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
   auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
-                                           googleClient, appBaseUrl, appleClient);
+                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
 
@@ -311,6 +352,22 @@ int main() {
   // Every LOG_* line teed to Sentry, installed before anything else logs so a failure during the
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
+
+  auto productsCatalog = sync::productCatalog();
+#ifdef WM_SYNC_PROBE
+  auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());
+  probe::PgProbe probeTables(probe::registry());
+  probeTables.bindTo(*syncCatalog);
+  syncCatalog->seal();
+#else
+  const char* syncEnabledEnv = std::getenv("SYNC_ENABLED");
+  const std::string syncEnabledFlag = syncEnabledEnv ? syncEnabledEnv : "";
+  auto syncCatalog = syncEnabledFlag == "1" || syncEnabledFlag == "true" || syncEnabledFlag == "on"
+      ? productsCatalog : nullptr;
+#endif
+  std::unique_ptr<SyncEngine> syncEngine;
+  if (syncCatalog)
+    syncEngine = std::make_unique<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
 
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
@@ -416,7 +473,8 @@ int main() {
   auto gymNotes = std::make_shared<gym::PgNotesRepository>(pool);
   auto gymBodyweight = std::make_shared<gym::PgBodyweightRepository>(pool);
   auto gymDoor = std::make_shared<gym::GymDoor>(pool, *systemClock, *sentry, *gymLog, *gymProgram,
-      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences, sync::productCatalog());
+      *gymCatalog, *gymNotes, *gymBodyweight, *gymPreferences, productsCatalog,
+      syncEngine ? syncEngine->live.get() : nullptr);
   auto gymTrainingService =
       std::make_shared<gym::TrainingService>(*gymLog, *gymProgram, *systemClock, *tokens, gymDoor.get());
   auto gymCatalogService = std::make_shared<gym::CatalogService>(*gymCatalog, gymDoor.get());
@@ -652,6 +710,12 @@ int main() {
       "/v1/auth/apple",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->apple(req, std::move(cb)); },
       {drogon::Post});
+  if (appleNativeVerifier->configured()) {
+    app.registerHandler(
+        "/v1/auth/apple/native",
+        [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->appleNative(req, std::move(cb)); },
+        {drogon::Post});
+  }
   // Folds this (empty) account into the one the magic link names.
   app.registerHandler(
       "/v1/auth/link",
@@ -878,8 +942,13 @@ int main() {
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
+  if (syncEngine) {
+    syncEngine->watcher = journalEchoDerivations;
+    syncEngine->changes.target = std::make_shared<journal::engine::JournalFeed>(
+        *journalEchoDerivations, *syncEngine->live);
+  }
   auto journalDoor = std::make_shared<journal::JournalDoor>(pool, *systemClock, *sentry,
-      *journalEchoDerivations, sync::productCatalog());
+      *journalEchoDerivations, productsCatalog, syncEngine ? syncEngine->live.get() : nullptr);
   auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get(), journalDoor.get());
   // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
@@ -914,43 +983,28 @@ int main() {
                        .appBaseUrl = appBaseUrl};
   gym::registerRoutes(app, gymDeps);
 
-#ifdef WM_SYNC_PROBE
-  // The dev-only endpoints use the probe registry. Production binds gym + journal internally
-  // and mounts none of /v1/sync.
-  const sync::Registry& syncRegistry = probe::registry();
-  const sync::Limits syncLimits;
-  sync::SyncCatalog syncCatalog(syncRegistry);
-  probe::PgProbe probeTables(syncRegistry);
-  probeTables.bindTo(syncCatalog);
-  syncCatalog.seal();
-  sync::PgSyncStore syncStore(pool, syncLimits.lockTimeoutMs);
-  sync::ServerClock serverClock;
-  auto physNow = std::make_shared<sync::PhysicalClock>(*systemClock);
-  auto syncLive = std::make_shared<sync::SyncLive>(syncCatalog, syncStore, syncLimits);
-  sync::Admission admission(syncCatalog, syncStore, *syncLive, serverClock, *sentry, syncLimits);
-  const std::string syncEpoch = [&syncStore] {
-    const std::unique_ptr<sync::SyncTxn> txn = syncStore.begin(sync::TxnMode::snapshot);
-    return syncStore.epoch(*txn);
-  }();
-  auto syncWorkers = std::make_shared<WorkerPool>("sync", kSyncWorkers, kSyncQueueCeiling);
-  auto syncService = std::make_shared<sync::SyncService>(syncCatalog, syncStore, admission, *physNow);
-  sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncService,
+  if (syncEngine) {
+    const auto& syncRegistry = syncCatalog->registry();
+    const auto txn = syncEngine->store.begin(sync::TxnMode::snapshot);
+    const std::string syncEpoch = syncEngine->store.epoch(*txn);
+    sync::registerSyncRoutes(app, std::make_shared<sync::SyncApi>(sync::SyncDeps{.service = syncEngine->service,
                                                                                .auth = authService,
-                                                                               .workers = syncWorkers,
-                                                                               .clock = physNow,
+                                                                               .workers = syncEngine->workers,
+                                                                               .clock = syncEngine->physicalClock,
                                                                                .minSchema = syncRegistry.minVersion(),
                                                                                .epoch = syncEpoch,
-                                                                               .limits = syncLimits}));
-  sync::installSyncSocket(sync::SyncSocketDeps{.live = syncLive,
-                                               .workers = syncWorkers,
+                                                                               .limits = syncEngine->limits}));
+    sync::installSyncSocket(sync::SyncSocketDeps{.live = syncEngine->live,
+                                               .workers = syncEngine->workers,
                                                .auth = authService,
                                                .sessions = liveSessions,
-                                               .clock = physNow,
+                                               .clock = syncEngine->physicalClock,
                                                .allowedOrigins = allowedOrigins,
                                                .minSchema = syncRegistry.minVersion(),
                                                .epoch = syncEpoch});
-  sync::linkSyncSocket();
-  probe::registerDevRoutes(app, std::make_shared<probe::DevApi>(*authService, *authRepo, *tokens, *systemClock, syncStore));
+  }
+#ifdef WM_SYNC_PROBE
+  probe::registerDevRoutes(app, std::make_shared<probe::DevApi>(*authService, *authRepo, *tokens, *systemClock, syncEngine->store));
 #endif
 
   // EVERY product that sends mail must appear in this list, or it keeps mailing an address the
@@ -983,5 +1037,6 @@ int main() {
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
   app.setThreadNum(ioThreads).run();
+  if (syncEngine) syncEngine->stop();
   return 0;
 }

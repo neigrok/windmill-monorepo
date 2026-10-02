@@ -110,7 +110,8 @@ and serialize with deployment. Operator steps live in `deploy/gym-migration/READ
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
-`windmill_server` mounts no `/v1/sync` route; both products' engine doors stay off until rollout, and the
+`windmill_server` mounts the gym + journal engine HTTP and live routes only with `SYNC_ENABLED`;
+the switch and both products' engine doors default off, and the
 Dockerfile fails the image if a probe symbol reaches it.
 
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the

@@ -93,7 +93,7 @@ void WorkerPool::stopAndJoin() {
     stopping_ = true;
   }
   wake_.notify_all();
-  for (std::thread& worker : workers_) worker.join();
+  for (std::thread& worker : workers_) if (worker.joinable()) worker.join();
 }
 
 struct WorkerPool::Strand::Backlog {

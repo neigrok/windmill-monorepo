@@ -75,6 +75,50 @@ void expireStateCookie(const drogon::HttpResponsePtr& response, const std::strin
   response->addCookie(std::move(cookie));
 }
 
+void respondApple(AuthService& auth, bool secure, const SessionCookieScopes& scopes,
+                  const std::optional<ProviderIdentity>& identity, const std::string& name,
+                  const std::optional<User>& caller, const SessionContext& ctx, HttpCallback& callback) {
+  if (!identity) {
+    callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+    return;
+  }
+  ProviderIdentity namedIdentity = *identity;
+  namedIdentity.name = name;
+
+  if (caller) {
+    const AuthService::AttachOutcome outcome = auth.attachIdentity(caller->id, namedIdentity);
+    if (outcome == AuthService::AttachOutcome::takenByAnother) {
+      callback(error(drogon::k409Conflict, "that Apple ID already opens another account",
+                     "identity-taken"));
+      return;
+    }
+    if (outcome == AuthService::AttachOutcome::refused) {
+      callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+      return;
+    }
+    Json::Value body(Json::objectValue);
+    body["user"] = userJson(*caller);
+    body["attached"] = true;
+    callback(jsonResponse(body));
+    return;
+  }
+
+  const std::optional<AuthService::ProviderSignIn> signIn = auth.completeProvider(namedIdentity, ctx);
+  if (!signIn) {
+    callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
+    return;
+  }
+  Json::Value body(Json::objectValue);
+  body["user"] = userJson(signIn->signedIn.user);
+  body["session"] = signIn->signedIn.sessionSecret;  // the app's Bearer credential
+  body["created"] = signIn->created;
+  // A relay address can never find the account this human has on the web; the client owns the decision.
+  body["privateEmail"] = signIn->privateEmail;
+  auto response = jsonResponse(body);
+  setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
+  callback(response);
+}
+
 // The OAuth `state` CSRF nonce, echoed in the authorize URL and stashed in a cookie; empty on an entropy failure.
 std::string randomState() {
   unsigned char buf[16];
@@ -101,10 +145,10 @@ std::string isoUtc(UnixMs ms) {
 
 AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
                  SessionCookieScopes cookieScopes, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl,
-                 std::shared_ptr<AppleOAuthClient> apple)
+                 std::shared_ptr<AppleOAuthClient> apple, std::shared_ptr<AppleIdentityVerifier> appleNative)
     : auth_(std::move(auth)), signupFork_(std::move(signupFork)), secureCookies_(secureCookies),
       cookieScopes_(std::move(cookieScopes)), google_(std::move(google)), appUrl_(std::move(appUrl)),
-      apple_(std::move(apple)) {}
+      apple_(std::move(apple)), appleNative_(std::move(appleNative)) {}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   std::shared_ptr<Json::Value> json = req->getJsonObject();
@@ -178,7 +222,8 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
     callback(jsonResponse(body, drogon::k410Gone));
     return;
   }
-  respondSignedIn(*completion.signedIn, completion.forkSource, callback);
+  respondSignedIn(*completion.signedIn, completion.forkSource, callback,
+                  (*json)["sessionTransport"].isString() && (*json)["sessionTransport"].asString() == "bearer");
 }
 
 void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
@@ -204,13 +249,15 @@ void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     callback(jsonResponse(body, drogon::k410Gone));
     return;
   }
-  respondSignedIn(*completion.signedIn, completion.forkSource, callback);
+  respondSignedIn(*completion.signedIn, completion.forkSource, callback,
+                  (*json)["sessionTransport"].isString() && (*json)["sessionTransport"].asString() == "bearer");
 }
 
 void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
-                              HttpCallback& callback) {
+                              HttpCallback& callback, bool bearerSession) {
   Json::Value body(Json::objectValue);
   body["user"] = userJson(signedIn.user);
+  if (bearerSession) body["session"] = signedIn.sessionSecret;
 
   // A failed plant degrades to a plain sign-in — the fork never blocks the door — and the port owns the logging.
   if (!forkSource.empty() && signupFork_) {
@@ -218,7 +265,6 @@ void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::
       body["forkedTree"] = *planted;
   }
 
-  // The session secret rides only in the cookie here, never the body.
   auto response = jsonResponse(body);
   setSessionCookie(response, signedIn.sessionSecret, secureCookies_, cookieScopes_);
   callback(response);
@@ -310,44 +356,30 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
   apple_->exchangeCode(
       code, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
              callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
-        if (!identity) {
-          callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
-          return;
-        }
-        identity->name = name;
+        respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
+      });
+}
 
-        if (caller) {
-          const AuthService::AttachOutcome outcome = auth->attachIdentity(caller->id, *identity);
-          if (outcome == AuthService::AttachOutcome::takenByAnother) {
-            callback(error(drogon::k409Conflict, "that Apple ID already opens another account",
-                           "identity-taken"));
-            return;
-          }
-          if (outcome == AuthService::AttachOutcome::refused) {
-            callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
-            return;
-          }
-          Json::Value body(Json::objectValue);
-          body["user"] = userJson(*caller);
-          body["attached"] = true;
-          callback(jsonResponse(body));
-          return;
-        }
-
-        const std::optional<AuthService::ProviderSignIn> signIn = auth->completeProvider(*identity, ctx);
-        if (!signIn) {
-          callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
-          return;
-        }
-        Json::Value body(Json::objectValue);
-        body["user"] = userJson(signIn->signedIn.user);
-        body["session"] = signIn->signedIn.sessionSecret;  // the app's Bearer credential
-        body["created"] = signIn->created;
-        // A relay address can never find the account this human has on the web; the client owns the decision.
-        body["privateEmail"] = signIn->privateEmail;
-        auto response = jsonResponse(body);
-        setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
-        callback(response);
+void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!appleNative_ || !appleNative_->configured()) {
+    callback(error(drogon::k404NotFound, "apple sign-in is not configured"));
+    return;
+  }
+  const std::shared_ptr<Json::Value> json = req->getJsonObject();
+  const std::string token = json && (*json)["identityToken"].isString() ? (*json)["identityToken"].asString() : "";
+  const std::string nonce = json && (*json)["nonce"].isString() ? (*json)["nonce"].asString() : "";
+  if (token.empty() || token.size() > 16384 || nonce.empty() || nonce.size() > 256) {
+    callback(error(drogon::k400BadRequest, "missing or invalid identity token or nonce"));
+    return;
+  }
+  std::string name = json && (*json)["name"].isString() ? (*json)["name"].asString() : "";
+  if (name.size() > 200) name.clear();
+  const SessionContext ctx = contextOf(req);
+  const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
+  appleNative_->verify(token, nonce,
+      [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
+       callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
+        respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
       });
 }
 

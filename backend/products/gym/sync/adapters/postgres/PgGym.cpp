@@ -5,6 +5,8 @@
 #include "platform/domain/sync/FractionalIndex.h"
 #include "products/gym/sync/domain/GymRules.h"
 #include "products/gym/sync/adapters/postgres/GymDoorHash.h"
+#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "products/gym/application/GymSwitches.h"
 
 #include <algorithm>
 #include <cctype>
@@ -406,22 +408,28 @@ void PgGymType::purge(SyncTxn& txn, const ScopeKey& scope) {
   sqlOf(txn).exec("delete from " + table_ + " where " + owner_ + "=$1::uuid", pqxx::params{scope.account().str()});
 }
 
-std::string PgGymType::adoptionPredicate() const {
+std::string PgGymType::adoptionPredicate(bool permitUnsetDefaults) const {
   std::string missing = "seq is null or seq<=0 or rc is null or ru is null";
   if (type_.identity == Identity::minted) missing += " or born is null";
   if (type_.life) missing += " or life_stamp is null";
   for (const auto& [name, field] : type_.fields) {
     if (field.kind == FieldKind::serial) continue;
-    missing += " or (" + physicalField(table_, id_, type_.name, name) + " and " + snake(name) + "_stamp is null)";
+    std::string present = physicalField(table_, id_, type_.name, name);
+    if (permitUnsetDefaults) {
+      if (name == "entries") present = "exists(select 1 from gym_routine_entries e where e.routine_id=" + table_ + "." + id_ + ")";
+      else if (name == "changes") present = "exists(select 1 from gym_proposal_changes c where c.proposal_id=" + table_ + "." + id_ + ")";
+      else if (name != "aliases") present = column(type_.name, name) + " is distinct from " + fallback(type_.name, name);
+    }
+    missing += " or (" + present + " and " + snake(name) + "_stamp is null)";
   }
-  if (type_.name == "note") missing += " or ord is null";
+  if (type_.name == "note" && !permitUnsetDefaults) missing += " or ord is null";
   return "(" + missing + ")";
 }
 
-bool PgGymType::needsAdoption(SyncTxn& txn, const ScopeKey& scope) {
+bool PgGymType::needsAdoption(SyncTxn& txn, const ScopeKey& scope, bool permitUnsetDefaults) {
   auto& sql = sqlOf(txn);
   const pqxx::params owner{scope.account().str()};
-  if (sql.exec("select exists(select 1 from " + table_ + " where " + owner_ + "=$1::uuid and " + adoptionPredicate() + ")", owner)[0][0].as<bool>()) return true;
+  if (sql.exec("select exists(select 1 from " + table_ + " where " + owner_ + "=$1::uuid and " + adoptionPredicate(permitUnsetDefaults) + ")", owner)[0][0].as<bool>()) return true;
   return type_.name == "exerciseName" && sql.exec("select exists(select 1 from gym_exercise_aliases a join gym_exercises e on e.id=a.exercise_id "
     "where a.user_id=$1::uuid and e.created_by is null and not exists(select 1 from gym_exercise_names n where n.user_id=a.user_id and n.exercise_id=a.exercise_id))", owner)[0][0].as<bool>();
 }
@@ -593,10 +601,32 @@ PgGym::PgGym(const Registry& registry) : product_(state_) {
     if (type.scope == RegistryScope{ScopeKind::product, "gym"}) stores_.push_back(std::make_unique<PgGymType>(type));
 }
 
-void PgGym::bindTo(SyncCatalog& catalog) {
+void PgGym::bindTo(SyncCatalog& catalog, bool checkAdoption) {
   std::map<std::string, TypeStore*> stores;
   for (const auto& store : stores_) stores.emplace(store->def().name, store.get());
   product_.bindTo(catalog, stores);
+  if (checkAdoption) catalog.bindReadiness("gym", *this);
+}
+
+void PgGym::requireReady(SyncTxn& txn, const ScopeKey& scope) {
+  try {
+    const auto rows = sqlOf(txn).exec(
+        "select exists(select 1 from gym_sync_adoptions where user_id=$1::uuid) as marker,"
+        " exists(select 1 from sync_scopes where key=$2 and state='alive') as scope",
+        pqxx::params{scope.account().str(), scope.text()});
+    const auto& status = rows[0];
+    if ((status["marker"].as<bool>() && !status["scope"].as<bool>()) || !PgGymBackfill::adopted(txn, scope, true))
+      throw ProductScopeUnavailable("gym account has not completed adoption");
+  } catch (const pqxx::undefined_column&) {
+    throw ProductScopeUnavailable("gym adoption schema is unavailable");
+  } catch (const pqxx::undefined_table&) {
+    throw ProductScopeUnavailable("gym adoption schema is unavailable");
+  }
+}
+
+void PgGym::requireWritable(SyncTxn& txn, const ScopeKey& scope) {
+  if (gymWriteFrozen()) throw ProductScopeUnavailable("gym writes are frozen");
+  requireReady(txn, scope);
 }
 
 }

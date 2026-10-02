@@ -65,7 +65,7 @@ Page pageOf(const Row& row) {
 struct JournalDoor::Impl {
   std::shared_ptr<sync::SyncCatalog> catalog;
   sync::PgSyncStore store;
-  sync::NullChangeFeed next;
+  sync::NullChangeFeed noFeed;
   engine::JournalFeed feed;
   sync::ServerClock stamps;
   sync::PhysicalClock now;
@@ -73,14 +73,14 @@ struct JournalDoor::Impl {
   WorkerPool workers{"journal-sync", 4, 256};
 
   Impl(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures, PageWatcher& watcher,
-       std::shared_ptr<sync::SyncCatalog> bound)
-      : catalog(std::move(bound)), store(std::move(pool), sync::Limits{}.lockTimeoutMs), feed(watcher, next),
+       std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed* next)
+      : catalog(std::move(bound)), store(std::move(pool), sync::Limits{}.lockTimeoutMs), feed(watcher, next ? *next : noFeed),
         now(clock), admission(*catalog, store, feed, stamps, failures) {}
 };
 
 JournalDoor::JournalDoor(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
-                         PageWatcher& watcher, std::shared_ptr<sync::SyncCatalog> catalog)
-    : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, watcher, std::move(catalog))) {}
+                         PageWatcher& watcher, std::shared_ptr<sync::SyncCatalog> catalog, sync::ChangeFeed* next)
+    : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, watcher, std::move(catalog), next)) {}
 
 JournalDoor::~JournalDoor() = default;
 

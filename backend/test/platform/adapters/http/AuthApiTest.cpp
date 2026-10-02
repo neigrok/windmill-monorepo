@@ -31,6 +31,18 @@ struct FakeSignupFork : SignupFork {
   }
 };
 
+struct FakeAppleVerifier : AppleIdentityVerifier {
+  bool enabled = true;
+  std::optional<ProviderIdentity> identity =
+      ProviderIdentity{Provider::apple, "apple-subject", Email{"sam@example.com"}, "", true, false};
+  std::vector<std::pair<std::string, std::string>> calls;
+  bool configured() const override { return enabled; }
+  void verify(const std::string& token, const std::string& nonce, Completion done) override {
+    calls.emplace_back(token, nonce);
+    done(identity);
+  }
+};
+
 struct Harness {
   FakeAuthRepository authRepo;
   FakeEmail email;
@@ -567,6 +579,48 @@ TEST(auth_verify_code_signs_in_with_the_same_cookie_the_link_door_mints) {
   CHECK_EQ((*me->getJsonObject())["user"]["email"].asString(), std::string("sam@example.com"));
 }
 
+TEST(auth_web_and_android_sign_in_keep_their_exact_body_and_cookie_bytes) {
+  const std::string expected = R"({"user":{"email":"sam@example.com","id":"u1","name":"sam"}})";
+  for (const bool byCode : {false, true}) {
+    for (const std::string& optIn : {std::string(""), std::string(R"(,"sessionTransport":"cookie")"),
+                                    std::string(R"(,"sessionTransport":true)")}) {
+      Harness h;
+      const std::string credential = byCode ? h.codeFor("sam@example.com") : h.linkFor("sam@example.com");
+      const std::string body = (byCode ? R"({"email":"sam@example.com","code":")" : kVerified) +
+                               credential + "\"" + optIn + "}";
+      const auto response = call(h, byCode ? &AuthApi::verifyCode : &AuthApi::verify,
+          request(drogon::Post, byCode ? "/v1/auth/verify-code" : "/v1/auth/verify", body));
+      CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+      CHECK_EQ(std::string(response->getBody()), expected);
+      CHECK_EQ(sessionCookieLines(response), std::vector<std::string>({
+          "wm_session=s2; Max-Age=7776000; Domain=" + kDomain + "; Path=/; SameSite=Lax; Secure; HttpOnly",
+          "wm_session=; Max-Age=0; Path=/; SameSite=Lax; Secure; HttpOnly"}));
+    }
+  }
+}
+
+TEST(auth_native_email_sign_in_returns_the_cookie_secret_in_the_body_and_authenticates_as_bearer) {
+  for (const bool byCode : {false, true}) {
+    Harness h;
+    h.fork->planted = "t_new";
+    const std::string credential = byCode ? h.codeFor("sam@example.com") : h.linkFor("sam@example.com", "t_source");
+    const std::string body = (byCode ? R"({"email":"sam@example.com","code":")" : kVerified) +
+                             credential + R"(","sessionTransport":"bearer"})";
+    const auto response = call(h, byCode ? &AuthApi::verifyCode : &AuthApi::verify,
+        request(drogon::Post, byCode ? "/v1/auth/verify-code" : "/v1/auth/verify", body));
+    CHECK_EQ(response->getStatusCode(), drogon::k200OK);
+    const auto out = *response->getJsonObject();
+    const std::string session = checkSessionCookies(response, true, kDomain, 7776000);
+    CHECK_EQ(out["session"].asString(), session);
+    if (!byCode) CHECK_EQ(out["forkedTree"].asString(), std::string("t_new"));
+    auto meRequest = request(drogon::Get, "/v1/me");
+    meRequest->addHeader("Authorization", "Bearer " + session);
+    const auto me = call(h, &AuthApi::me, meRequest);
+    CHECK_EQ(me->getStatusCode(), drogon::k200OK);
+    CHECK_EQ((*me->getJsonObject())["user"], out["user"]);
+  }
+}
+
 TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
   Harness h;
   const std::string code = h.codeFor("sam@example.com");
@@ -656,6 +710,84 @@ TEST(auth_the_apple_door_stays_shut_until_it_is_configured) {
   CHECK_EQ((*unconfigured->getJsonObject())["error"].asString(),
            std::string("apple sign-in is not configured"));
   CHECK(h.authRepo.identities.empty());
+}
+
+TEST(auth_native_apple_is_off_without_a_configured_verifier_and_rejects_bad_requests) {
+  Harness h;
+  const std::string body = R"({"identityToken":"signed-token","nonce":"raw-nonce"})";
+  CHECK_EQ(call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native", body))->getStatusCode(),
+           drogon::k404NotFound);
+  auto verifier = std::make_shared<FakeAppleVerifier>();
+  h.api = std::make_shared<AuthApi>(h.auth, h.fork, true, SessionCookieScopes{kDomain, ""}, nullptr,
+                                  kApp, nullptr, verifier);
+  for (const std::string& invalid : {std::string("{}"), std::string(R"({"identityToken":"t"})"),
+       std::string(R"({"identityToken":[],"nonce":"n"})"), std::string(R"({"identityToken":"t","nonce":5})"),
+       std::string("not json")}) {
+    CHECK_EQ(call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native", invalid))->getStatusCode(),
+             drogon::k400BadRequest);
+  }
+  CHECK(verifier->calls.empty());
+  verifier->identity.reset();
+  const auto refused = call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native", body));
+  CHECK_EQ(refused->getStatusCode(), drogon::k401Unauthorized);
+  CHECK_EQ(std::string(refused->getBody()), R"({"error":"apple sign-in could not be completed"})");
+  CHECK(h.authRepo.sessions.empty());
+  CHECK(h.authRepo.identities.empty());
+}
+
+TEST(auth_native_apple_returns_a_bearer_session_and_uses_the_stable_identity_binding) {
+  Harness h;
+  auto verifier = std::make_shared<FakeAppleVerifier>();
+  verifier->identity->email = Email{"relay@privaterelay.appleid.com"};
+  verifier->identity->relayEmail = true;
+  h.api = std::make_shared<AuthApi>(h.auth, h.fork, true, SessionCookieScopes{kDomain, ""}, nullptr,
+                                  kApp, nullptr, verifier);
+  const auto first = call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native",
+      R"({"identityToken":"signed-token","nonce":"raw-nonce","name":"Sam Gold"})"));
+  CHECK_EQ(first->getStatusCode(), drogon::k200OK);
+  const auto out = *first->getJsonObject();
+  CHECK_EQ(out["session"].asString(), checkSessionCookies(first, true, kDomain, 7776000));
+  CHECK(out["created"].asBool());
+  CHECK(out["privateEmail"].asBool());
+  CHECK_EQ(out["user"]["name"].asString(), std::string("Sam Gold"));
+  CHECK_EQ(verifier->calls, (std::vector<std::pair<std::string, std::string>>{{"signed-token", "raw-nonce"}}));
+  CHECK_EQ(h.authRepo.findIdentity(Provider::apple, "apple-subject")->str(), out["user"]["id"].asString());
+  verifier->identity->email = Email{""};
+  verifier->identity->emailVerified = false;
+  const auto again = call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native",
+      R"({"identityToken":"second-token","nonce":"fresh-nonce","name":"Changed"})"));
+  CHECK_EQ(again->getStatusCode(), drogon::k200OK);
+  const auto returning = *again->getJsonObject();
+  CHECK_EQ(returning["user"], out["user"]);
+  CHECK_FALSE(returning["created"].asBool());
+  CHECK(returning["privateEmail"].asBool());
+  CHECK_EQ(h.authRepo.usersById.size(), std::size_t{1});
+  auto meRequest = request(drogon::Get, "/v1/me");
+  meRequest->addHeader("Authorization", "Bearer " + returning["session"].asString());
+  CHECK_EQ((*call(h, &AuthApi::me, meRequest)->getJsonObject())["user"], out["user"]);
+}
+
+TEST(auth_native_apple_attaches_to_the_bearer_caller_and_never_moves_an_identity) {
+  Harness h;
+  const UserId caller = h.signIn("s-caller", "web@example.com");
+  auto verifier = std::make_shared<FakeAppleVerifier>();
+  h.api = std::make_shared<AuthApi>(h.auth, h.fork, true, SessionCookieScopes{kDomain, ""}, nullptr,
+                                  kApp, nullptr, verifier);
+  auto req = request(drogon::Post, "/v1/auth/apple/native", R"({"identityToken":"t","nonce":"n"})");
+  req->addHeader("Authorization", "Bearer s-caller");
+  const auto attached = call(h, &AuthApi::appleNative, req);
+  CHECK_EQ(attached->getStatusCode(), drogon::k200OK);
+  CHECK((*attached->getJsonObject())["attached"].asBool());
+  CHECK_EQ((*attached->getJsonObject())["user"]["id"].asString(), caller.str());
+  CHECK_FALSE((*attached->getJsonObject()).isMember("session"));
+  CHECK_EQ(h.authRepo.findIdentity(Provider::apple, "apple-subject")->str(), caller.str());
+  h.signIn("s-other", "other@example.com");
+  auto other = request(drogon::Post, "/v1/auth/apple/native", R"({"identityToken":"t","nonce":"n"})");
+  other->addHeader("Authorization", "Bearer s-other");
+  const auto refused = call(h, &AuthApi::appleNative, other);
+  CHECK_EQ(refused->getStatusCode(), drogon::k409Conflict);
+  CHECK_EQ((*refused->getJsonObject())["code"].asString(), std::string("identity-taken"));
+  CHECK_EQ(h.authRepo.findIdentity(Provider::apple, "apple-subject")->str(), caller.str());
 }
 
 TEST(auth_the_google_door_bounces_into_the_app_until_it_is_configured) {

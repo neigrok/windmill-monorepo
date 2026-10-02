@@ -28,7 +28,7 @@ public:
 
   std::vector<sync::Row> adoptionRows(sync::SyncTxn&, const sync::ScopeKey&, sync::Ms migrationTime);
   std::vector<sync::Row> adoptedRows(sync::SyncTxn&, const sync::ScopeKey&);
-  bool needsAdoption(sync::SyncTxn&, const sync::ScopeKey&);
+  bool needsAdoption(sync::SyncTxn&, const sync::ScopeKey&, bool permitUnsetDefaults = false);
   Seq greatestSeq(sync::SyncTxn&, const sync::ScopeKey&);
   void adopt(sync::SyncTxn&, const sync::ScopeKey&, const std::vector<sync::Row>&);
 
@@ -37,13 +37,15 @@ private:
   std::string table_;
   std::string owner_;
   std::string id_;
-  std::string adoptionPredicate() const;
+  std::string adoptionPredicate(bool permitUnsetDefaults = false) const;
 };
 
-class PgGym {
+class PgGym : public sync::ScopeReadiness {
 public:
   explicit PgGym(const sync::Registry& registry);
-  void bindTo(sync::SyncCatalog& catalog);
+  void bindTo(sync::SyncCatalog& catalog, bool checkAdoption = true);
+  void requireReady(sync::SyncTxn&, const sync::ScopeKey&) override;
+  void requireWritable(sync::SyncTxn&, const sync::ScopeKey&) override;
 
 private:
   PgGymState state_;

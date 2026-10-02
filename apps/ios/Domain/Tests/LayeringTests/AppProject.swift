@@ -188,7 +188,10 @@ enum AppProject {
     let groups = settings["SWIFT_WARNINGS_AS_WARNINGS_GROUPS"] ?? "", toolchain = settings["TOOLCHAINS"] ?? ""
     let unset = ["OTHER_SWIFT_FLAGS", "SWIFT_EXEC", "SWIFT_USE_INTEGRATED_DRIVER"].map { key in
       let value = (settings[key] ?? "").trimmingCharacters(in: .whitespaces)
-      return (!value.isEmpty, "\(key) \(value)")
+      // Xcode supplies this exact pair to every UI test bundle; written project flags remain forbidden.
+      let xcodeUITesting = kind == "com.apple.product-type.bundle.ui-testing" && key == "OTHER_SWIFT_FLAGS"
+        && value == "-module-alias Testing=_Testing_Unavailable -plugin-path \(settings["TOOLCHAIN_DIR"] ?? "")/usr/lib/swift/host/plugins/testing"
+      return (!value.isEmpty && !xcodeUITesting, "\(key) \(value)")
     }
     let checks = [
       (settings["SWIFT_VERSION"] != "6.0", "SWIFT_VERSION \(settings["SWIFT_VERSION"] ?? "unset")"),

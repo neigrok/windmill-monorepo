@@ -9,6 +9,8 @@
 #include "test/platform/application/sync/SyncWorld.h"
 #include "test/testing.h"
 
+#include <chrono>
+#include <future>
 #include <string>
 #include <variant>
 
@@ -68,6 +70,44 @@ Json::Value answeredOnly(const Json::Value& seeded, const Json::Value& intent, c
   return expected;
 }
 
+}
+
+TEST(admission_doors_share_the_scope_mutex_until_commit_publication_finishes) {
+  test::FakeWorld world;
+  struct HeldPublication final : ChangeFeed {
+    std::promise<void> committed;
+    std::promise<void> release;
+    void publish(const CommittedChange&) override {
+      committed.set_value();
+      release.get_future().wait();
+    }
+  } publication;
+  Limits limits;
+  limits.lockTimeoutMs = 5;
+  Admission native(world.catalog(), world.store(), publication, world.clock(), world.failures, limits);
+  Admission rest(world.catalog(), world.store(), world.feed, world.clock(), world.failures, limits);
+  const auto created = parseJson(R"({"scope":"self/probe","d":[{"t":"card","id":"card0001","born":null,"life":["alive",null],"f":{"title":["First",null]}}]})");
+  auto first = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    return native.admit(ServerOrigin{world.account("A"), std::nullopt}, created, 1'000'000);
+  });
+  publication.committed.get_future().wait();
+  auto changed = created;
+  changed["d"][0]["id"] = "card0002";
+  auto next = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    return rest.admit(ServerOrigin{world.account("A"), std::nullopt}, changed, 1'000'001);
+  });
+  const bool waitedForPublication = next.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+  publication.release.set_value();
+  const auto initial = first.get();
+  const auto second = next.get();
+  CHECK(waitedForPublication);
+  REQUIRE(std::holds_alternative<Admitted>(initial));
+  CHECK_EQ(std::get<Admitted>(initial).result["s"].asString(), "ok");
+  REQUIRE(std::holds_alternative<Retry>(second));
+  CHECK_EQ(std::get<Retry>(second).afterMs, Retry::kTransientMs);
+  CHECK_EQ(world.db().scopes.at(ScopeKey::product(world.account("A"), "probe")).seq, 1u);
 }
 
 TEST(admission_merges_a_text_past_the_work_bound_as_one_whole_conflict_and_marks_it_merged) {

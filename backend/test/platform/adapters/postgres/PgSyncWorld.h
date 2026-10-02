@@ -33,8 +33,9 @@ inline bool postgresEnabled() {
 class PgWorld final : public SyncWorld {
 public:
   PgWorld(bool gym = false, bool journal = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), journalProduct_(wm::journal::engine::registry()), catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym), journal_(journal) {
-    if (journal_) journalProduct_.bindTo(catalog_);
-    else if (gym_) gymProduct_.bindTo(catalog_);
+    // Corpus snapshots describe admitted engine state, including relational-only FK fixtures.
+    if (journal_) journalProduct_.bindTo(catalog_, false);
+    else if (gym_) gymProduct_.bindTo(catalog_, false);
     else probe_.bindTo(catalog_);
     catalog_.seal();
     resetClock(Json::Value(Json::objectValue));

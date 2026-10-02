@@ -73,6 +73,38 @@ safety cases apply only while frozen or before account adoption and are asserted
 Failure bodies, migration/audit reports and server logs remain in the printed temporary evidence
 directory. CI's Postgres job runs off-vs-on alongside gym's.
 
+## Legacy authentication
+
+`auth_differential.py` compares `origin/main` with the current production composition using two
+throwaway Postgres databases and persistent raw HTTP sockets on ports 18870–18871. It builds the
+baseline in an isolated shared mirror unless `--main-bin` supplies an already built baseline:
+
+```sh
+python3 backend/test/e2e/auth_differential.py \
+  --bin-dir /path/to/current/build \
+  --main-bin /path/to/origin-main/windmill_server
+```
+
+The baseline must have the identical test-only `SystemClock.h` and `WM_TEST_CLOCK=1` instrumentation;
+the current build uses `windmill_server_test_clock`. `--drogon-prefix` supplies the pinned Drogon
+prefix when the harness builds the baseline. `--maintenance-db` supplies a local Postgres URL with
+CREATE DATABASE permission. Both servers and both databases are removed even on failure; server
+cleanup resolves listeners by their allocated ports.
+
+The sequence covers email requests for web and `door=app`, malformed inputs, rate limits,
+unconfigured-provider failure, successful link/code verification, the legacy cookie transport
+options, unknown/expired credentials, wrong-code attempt exhaustion, replay, logout and token
+replay after logout. Every case runs with HTTP host-only cookies and HTTPS live/retired domains.
+No email provider is contacted: request persistence is checked, then the newest stored code digest
+is replaced with a known fixture for verification. Successful provider delivery is outside this
+local comparison. Native `sessionTransport=bearer` is a new opt-in and is outside the legacy corpus.
+
+Status and body bytes compare exactly. Set-Cookie field lines retain their original header case,
+spacing, attribute order, scope, flags and line endings; only the independently minted 43-byte live
+session secret is substituted. The minted secret must authenticate the same seeded account and
+exist in its database. Logout and failure cookies have no substitutions. Comparator tests reject
+body reformatting, cookie attribute changes, reordered lines and broader entropy normalization.
+
 ## Gym
 
 `gym_write_differential.py --bin-dir /path/to/build` creates two throwaway Postgres databases,

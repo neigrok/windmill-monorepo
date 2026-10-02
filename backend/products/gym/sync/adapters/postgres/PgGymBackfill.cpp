@@ -331,8 +331,8 @@ void auditFrozen(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
   }
 }
 
-Json::Value checkScope(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
-  if (!PgGymBackfill::adopted(txn, scope.key)) throw std::runtime_error("C.8 adoption audit failed: " + scope.key.text() + " has unadopted rows or required spent ids");
+Json::Value checkScope(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope, bool permitUnsetDefaults = false) {
+  if (!PgGymBackfill::adopted(txn, scope.key, permitUnsetDefaults)) throw std::runtime_error("C.8 adoption audit failed: " + scope.key.text() + " has unadopted rows or required spent ids");
   Digest256 digest;
   Seq greatest = 0;
   std::uint64_t rows = 0, spent = 0;
@@ -434,8 +434,8 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
     const ScopeKey key = ScopeKey::product(UserId(owner), "gym");
     if (!dryRun) sql.exec("select pg_advisory_xact_lock(hashtext('gym-backfill'),hashtext($1))", pqxx::params{owner});
     const auto existing = store.scope(*txn, key, dryRun ? RowLock::none : RowLock::noKeyUpdate);
-    if (existing && adopted(*txn, key)) {
-      Json::Value out = checkScope(*txn, store, *existing);
+    if (existing && adopted(*txn, key, true)) {
+      Json::Value out = checkScope(*txn, store, *existing, true);
       out["skipped"] = true;
       out["dryRun"] = dryRun;
       reports.push_back(std::move(out));
@@ -505,12 +505,12 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
   return reports;
 }
 
-bool PgGymBackfill::adopted(SyncTxn& txn, const ScopeKey& scope) {
+bool PgGymBackfill::adopted(SyncTxn& txn, const ScopeKey& scope, bool permitUnsetDefaults) {
   const auto current = sqlOf(txn).exec("select seq from sync_scopes where key=$1", pqxx::params{scope.text()});
   const Seq scopeSeq = current.empty() ? 0 : current[0][0].as<Seq>();
   for (const TypeDef& type : registry().types()) {
     PgGymType typeStore(type);
-    if (typeStore.needsAdoption(txn, scope)) return false;
+    if (typeStore.needsAdoption(txn, scope, permitUnsetDefaults)) return false;
     if (typeStore.greatestSeq(txn, scope) > scopeSeq) return false;
   }
   if (sqlOf(txn).exec("select exists(select 1 from sync_spent where scope_key=$1 and seq>$2)", pqxx::params{scope.text(), static_cast<std::int64_t>(scopeSeq)})[0][0].as<bool>()) return false;
@@ -541,7 +541,7 @@ std::vector<Json::Value> PgGymBackfill::auditCurrent(std::optional<std::string> 
   for (const auto& owner : accounts(*txn, account)) {
     const auto scope = store.scope(*txn, ScopeKey::product(UserId(owner), "gym"), RowLock::none);
     if (!scope) throw std::runtime_error("C.8 adoption audit failed: acct:" + owner + "/gym has eligible rows or spent ids but no scope");
-    reports.push_back(checkScope(*txn, store, *scope));
+    reports.push_back(checkScope(*txn, store, *scope, true));
   }
   return reports;
 }

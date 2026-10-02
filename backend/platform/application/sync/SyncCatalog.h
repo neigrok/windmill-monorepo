@@ -4,7 +4,9 @@
 #include "platform/domain/sync/Scope.h"
 #include "platform/ports/SyncType.h"
 
+#include <array>
 #include <map>
+#include <mutex>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -27,6 +29,7 @@ public:
 
   void bindType(TypeStore& store, TypeRules* rules = nullptr);
   void bindCommand(const std::string& name, SyncCommand& command);
+  void bindReadiness(const std::string& product, ScopeReadiness& readiness);
   void seal();
 
   const Registry& registry() const { return registry_; }
@@ -34,6 +37,9 @@ public:
   TypeStore& store(const std::string& type) const;
   TypeRules* rules(const std::string& type) const;
   SyncCommand& command(const std::string& name) const;
+  void requireReady(SyncTxn& txn, const ScopeKey& scope) const;
+  void requireWritable(SyncTxn& txn, const ScopeKey& scope) const;
+  std::timed_mutex& scopeMutex(const ScopeKey& scope) const;
 
   // The registry's types of one scope kind, in registry order.
   std::vector<const TypeDef*> typesIn(const RegistryScope& scope) const;
@@ -53,6 +59,8 @@ private:
   std::optional<Opening> opening_;
   std::map<std::string, TypeBinding> types_;
   std::map<std::string, SyncCommand*> commands_;
+  std::map<std::string, ScopeReadiness*> readiness_;
+  mutable std::array<std::timed_mutex, 256> scopeMutexes_;
   std::vector<const TypeDef*> applyOrder_;
   bool sealed_ = false;
 };

@@ -15,21 +15,23 @@ namespace wm::gym {
 struct GymDoor::Impl {
   std::shared_ptr<sync::SyncCatalog> catalog;
   sync::PgSyncStore store;
-  sync::NullChangeFeed feed;
+  sync::NullChangeFeed noFeed;
   sync::ServerClock stamps;
   sync::PhysicalClock now;
   sync::Admission admission;
   WorkerPool workers{"gym-sync", 4, 256};
 
-  Impl(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures, std::shared_ptr<sync::SyncCatalog> bound)
+  Impl(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
+       std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed* feed)
       : catalog(std::move(bound)), store(std::move(pool), sync::Limits{}.lockTimeoutMs), now(clock),
-        admission(*catalog, store, feed, stamps, failures) {}
+        admission(*catalog, store, feed ? *feed : noFeed, stamps, failures) {}
 };
 
 GymDoor::GymDoor(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
                  LogRepository& log, ProgramRepository& program, CatalogRepository& catalog,
-                 NotesRepository& notes, BodyweightRepository& bodyweight, PreferencesRepository& preferences, std::shared_ptr<sync::SyncCatalog> bound)
-    : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, std::move(bound))), clock_(clock), log_(log),
+                 NotesRepository& notes, BodyweightRepository& bodyweight, PreferencesRepository& preferences,
+                 std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed* feed)
+    : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, std::move(bound), feed)), clock_(clock), log_(log),
       program_(program), catalog_(catalog), notes_(notes), bodyweight_(bodyweight), preferences_(preferences) {}
 
 GymDoor::~GymDoor() = default;
@@ -93,7 +95,7 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
         std::optional<Json::Value> built;
         try {
-          if (!engine::PgGymBackfill::adopted(txn, sync::ScopeKey::product(user, "gym")))
+          if (!engine::PgGymBackfill::adopted(txn, sync::ScopeKey::product(user, "gym"), true))
             throw GymUnavailable("gym-not-adopted", "gym history must be adopted before engine writes are enabled");
           built = builder(txn);
         } catch (const InvalidTraining&) {

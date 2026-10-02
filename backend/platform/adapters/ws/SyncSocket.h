@@ -32,8 +32,8 @@ struct SyncSocketDeps {
 
 // Makes the controller live at /v1/sync/live and starts the session re-proof heartbeat. Call once, before app().run().
 void installSyncSocket(SyncSocketDeps deps);
-// Referenced from main so the static WS registration in SyncSocket.cpp is not dropped by the linker.
-void linkSyncSocket();
+// Stop the session heartbeat and release its dependencies after the app's IO loops stop.
+void uninstallSyncSocket();
 
 // The upgrade to /v1/sync/live?schema=<version>, before the connection upgrades, in this order:
 // 1. a stated origin off the allow-list → 403, since a WebSocket upgrade gets no CORS preflight;
@@ -51,7 +51,7 @@ public:
 // §9.5 WebSocket /v1/sync/live: a thin door onto SyncLive, which decides everything. Only ping is answered on the
 // IO thread; the open, sub, unsub and close run on the connection's strand of the worker pool. A socket keeps the
 // principal its upgrade was served as, and closes, never going on as anonymous, when its session stops resolving.
-class SyncSocket : public drogon::WebSocketController<SyncSocket> {
+class SyncSocket : public drogon::WebSocketController<SyncSocket, false> {
 public:
   void handleNewConnection(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn) override;
   void handleNewMessage(const drogon::WebSocketConnectionPtr& conn, std::string&& message, const drogon::WebSocketMessageType& type) override;

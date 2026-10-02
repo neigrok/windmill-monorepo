@@ -21,7 +21,7 @@ adapters/http/AuthApi               the REST surface + session cookie
 adapters/clock/SystemClock          wall clock (tests inject a fake)
 ```
 
-Secrets (link token, session token) travel in the URL / cookie; only their SHA-256 digest is stored,
+Secrets (link token, session token) travel in the URL / cookie or an opted-in native response body; only their SHA-256 digest is stored,
 so a database leak resurrects nothing.
 
 ## Endpoints
@@ -48,7 +48,9 @@ either spends it, and one mint is one unit of the 9-per-window budget whichever 
 
 ### `POST /v1/auth/verify` — complete a link
 
-Request `{ "token": "<the secret from the emailed URL>" }`
+Request `{ "token": "<the secret from the emailed URL>" }`. A client that keeps no cookie adds
+`"sessionTransport": "bearer"`; the successful body then also carries `"session": "<secret>"`.
+Omitting this opt-in leaves the web response unchanged, including every cookie line.
 
 | Result | Status | Body / effect |
 |---|---|---|
@@ -62,11 +64,12 @@ blocking the door.
 
 ### `POST /v1/auth/verify-code` — complete a code (the app door)
 
-Request `{ "email": "sam@example.com", "code": "483201" }`
+Request `{ "email": "sam@example.com", "code": "483201" }`. The iOS engine client adds
+`"sessionTransport": "bearer"` to receive the session secret in the successful response body.
 
 | Result | Status | Body / effect |
 |---|---|---|
-| Valid | `200` | `{ "user": {…} }` (+ `forkedTree` when one rode the row) + `Set-Cookie: wm_session=…` — byte-for-byte the `/v1/auth/verify` shape; the session secret is never in the body |
+| Valid | `200` | `{ "user": {…} }` (+ `forkedTree` when one rode the row) + `Set-Cookie: wm_session=…`; with `sessionTransport: "bearer"`, also `"session": "<secret>"` |
 | Wrong / expired / used / exhausted / unknown email | `410` | `{ "error": "That code has expired", "detail": "Codes work once and last 15 minutes.", "code": "expired" }` |
 | Missing email or code | `400` | `{ "error": "Missing code", "code": "bad_request" }` |
 
@@ -77,6 +80,11 @@ is the remedy. A right guess burns the row through the same atomic `consumed_ms`
 then runs the identical `mintSessionFor` tail (find-or-create, revival-in-grace, 90-day rolling
 session). Every failure collapses to the one 410 body, so the endpoint cannot be probed for which
 addresses hold pending codes or accounts.
+
+Only the exact string `"bearer"` opts in. Web and Android requests without it retain their exact
+serialized response body and cookie lines, covered by `AuthApiTest`. The secret in the native body
+is the live cookie's secret; store it in Keychain and send `Authorization: Bearer <secret>`.
+Native clients discard the cookies, including the expiry lines for retired cookie scopes.
 
 A 6-digit code has 10⁶ states, so the bound is the defense, not the digest at rest: 15-minute life,
 single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (10/min, burst 10, in
@@ -91,7 +99,7 @@ single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (1
 
 Drops the session, expires the cookie in every one of its scopes (Frontend integration), `204`.
 
-### `POST /v1/auth/apple` — the native door
+### `POST /v1/auth/apple` — the authorization-code door
 
 Request `{ "authorizationCode": "<from ASAuthorizationController>", "name": "Sam Gold" }`. The name
 is Apple's, and Apple sends it exactly once — on the first authorization for that Apple ID — so it
@@ -108,6 +116,32 @@ arrives here or never; it seeds a NEW account and never renames an existing one.
 `session` is the same secret as the cookie, returned in the body so a native client can keep it and
 send it as `Authorization: Bearer`. `created` **and** `privateEmail` together are the condition a
 client offers the link door on.
+
+### `POST /v1/auth/apple/native` — the identity-token door
+
+This route exists only with `APPLE_NATIVE_ENABLED=1` and a nonempty `APPLE_CLIENT_ID`; otherwise it
+is an ordinary `404`. Request
+`{ "identityToken": "<ASAuthorizationAppleIDCredential.identityToken as UTF-8>", "nonce": "<raw nonce>", "name": "Sam Gold" }`.
+Before authorization, generate a fresh cryptographically random nonce, retain it for this attempt,
+and set `ASAuthorizationAppleIDRequest.nonce` to its lowercase SHA-256 hex digest. Post the original
+nonce here. `name` is optional and seeds a new account only.
+
+The server fetches Apple's signing keys from `https://appleid.apple.com/auth/keys` over HTTPS and
+verifies the RS256 signature and key id, issuer, bundle-id audience, expiry, issue time, optional
+not-before time and hashed nonce. Client tokens never enter the payload-only parser used after a
+trusted authorization-code exchange. A malformed body answers `400`; rejected token, keys or
+provider response answers the same `401` as the authorization-code door. Successful bodies,
+cookie lines, subject resolution, relay-email flags and authenticated attachment behavior share
+that door's response pipeline. In particular, signed-out success includes `session` for Bearer use.
+
+A verified subject with no email may open its existing `user_identities` binding, but cannot create
+an account or bind a new door. Any supplied address must be verified. Normal Apple identity tokens
+include the email on subsequent authorizations too; only the name arrives once. See
+[Apple's authentication contract](https://developer.apple.com/documentation/signinwithapple/authenticating-users-with-sign-in-with-apple).
+
+`AppleIdentityVerifier` is an injected port. HTTP tests use a fake verifier, and verifier tests use
+locally generated RSA keys and a fixed clock; neither requires Apple secrets or an Apple network
+response. Production has no fake-verifier environment switch.
 
 ### `POST /v1/auth/link` — fold this account into the one the link names
 
@@ -152,8 +186,9 @@ account that already exists. `(provider, subject)` is the primary key, so a prov
 the address behind an account — an Apple relay rotated, a Google primary email moved — still
 resolves to the same user.
 
-Apple's Hide My Email returns `<opaque>@privaterelay.appleid.com`, and the name plus the real email
-arrive exactly once, on the first authorization. Every later sign-in carries only `sub`.
+Apple's Hide My Email returns `<opaque>@privaterelay.appleid.com`. The name arrives exactly once,
+on the first authorization; the email remains in subsequent identity tokens. A subject-only
+identity resolves only an already-bound door.
 
 ### The resolution ladder
 
@@ -233,6 +268,8 @@ fourth product adds one line to it.
 - The Android app signs in by code: mint with `door: "app"`, post the typed digits to
   `/v1/auth/verify-code`, capture the session from `Set-Cookie`. A pasted magic link still works through `/v1/auth/verify`
   (sign-in) or `/v1/auth/link` (the merge above).
+- The iOS engine client uses the same `door: "app"` mint, adds `sessionTransport: "bearer"` to
+  `/v1/auth/verify-code` or `/v1/auth/verify`, and captures `session` from the response body.
 - App Store guideline 5.1.1(v) requires in-app account deletion wherever Sign in with Apple ships;
   settings has close-with-grace.
 - Apple's `REVOKE` server-to-server notification unbinds a door, never an account. The identity row
@@ -284,22 +321,26 @@ fourth product adds one line to it.
 | `WINDMILL_ALLOWED_ORIGINS` | Extra credentialed-CORS origins, comma-separated | — |
 | `GOOGLE_CLIENT_ID` / `GOOGLE_CLIENT_SECRET` | Google sign-in; unset → the routes bounce to the app | — |
 | `APPLE_CLIENT_ID` | The bundle identifier Sign in with Apple is issued for | — |
+| `APPLE_NATIVE_ENABLED` | Mount the native Apple identity-token door when exactly `1` and `APPLE_CLIENT_ID` is configured | off |
 | `APPLE_TEAM_ID` · `APPLE_KEY_ID` | The team, and the id of the Sign-in-with-Apple key | — |
 | `APPLE_PRIVATE_KEY` | The `.p8` key's PEM contents, used to sign each ES256 client secret | — |
 
-Apple stays dark until all four land: `configured()` is false and `/v1/auth/apple` answers `404`
-rather than half-working. The client secret is minted per exchange (ES256, one-hour life) rather
-than stored, so there is no long-lived secret to rotate.
+The authorization-code door stays dark until all four Apple inputs land: `configured()` is false
+and `/v1/auth/apple` answers `404`. The client secret is minted per exchange (ES256, one-hour life)
+rather than stored. The native identity-token door needs the bundle identifier and explicit enable
+flag, plus outbound HTTPS to Apple's key endpoint; it does not need a team key or client secret.
 
 ### Apple sign-in activation
 
-No client offers Sign in with Apple: iOS carries no product app yet, and the deployment workflow and
-Compose service do not forward the four Apple environment variables.
+Compose defaults the native enable flag to `0` and the bundle identifier to empty. Deployment's
+environment renderer supplies neither input, so both Apple doors stay off in production.
 
-Activation requires an Apple Developer app identifier and key for `works.windmill.app`, the team's
-signing configuration and `com.apple.developer.applesignin` entitlement. Add all four inputs to the
-deployment secret bindings, environment renderer and Compose environment before an app offers the
-button. The private-key transport must preserve PEM newlines; the current renderer writes
+Native identity-token activation requires the Apple Developer app identifier for the app's actual
+bundle id, the team's signing configuration and `com.apple.developer.applesignin` entitlement.
+Configure `APPLE_CLIENT_ID` to that identifier and `APPLE_NATIVE_ENABLED=1` only on the intended
+server. The owner must bind these inputs into deployment's environment renderer before enabling
+production; Compose already carries them with off defaults. Authorization-code activation additionally requires the Apple team id, key id
+and `.p8` private key. Its transport must preserve PEM newlines; the current renderer writes
 single-line values. Setting GitHub secrets alone is insufficient because
 [deploy.yml](../.github/workflows/deploy.yml) replaces the server environment.
 

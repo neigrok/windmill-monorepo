@@ -1,7 +1,7 @@
 name: iOS CI
 
 # Tests and builds the Swift packages under apps/ios — the sync engine (Sync), the domain kit (Domain)
-# and the engine's public-surface test (SyncTestingSurface) — and builds the dev-only SyncProbe app for
+# and the engine's public-surface test (SyncTestingSurface) — and builds the Journal and dev-only SyncProbe apps for
 # the simulator; ships nothing. The corpus runners read
 # packages/api-contract/sync and packages/api-contract/domain-kit by walking up from #filePath, and the
 # SyncSchema target is generated from the registries there, so the whole repository is checked out and a
@@ -85,3 +85,10 @@ jobs:
       - name: Test the engine's public test surface from outside the engine package
         working-directory: apps/ios/SyncTestingSurface
         run: swift test --explicit-target-dependency-import-check error
+
+      - name: Build and test the Journal app
+        working-directory: apps/ios/App
+        run: |
+          xcodegen generate
+          xcodebuild build -project Windmill.xcodeproj -scheme Windmill -destination 'generic/platform=iOS Simulator'
+          xcodebuild test -project Windmill.xcodeproj -scheme Windmill -destination 'platform=iOS Simulator,name=iPhone 17'

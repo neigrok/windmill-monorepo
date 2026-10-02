@@ -58,7 +58,7 @@ jobs:
   # The builder stage the test job built and cached, run again against a Postgres service: the domain,
   # sync and adapters suites with their WM_PG_TEST cases, the domain suite's pattern fuzz over cases
   # the JS reference generated and answered for a fresh seed, and what engine.md asks of a deployment (§9.1's
-  # credential cases and §6.8's idle live socket) against its windmill_server_probe, directly and through the
+  # credential cases and §6.8's idle live socket) against windmill_server_probe and SYNC_ENABLED=1 windmill_server, through the
   # production Caddyfile over HTTP/1.1 and HTTP/2.
   postgres:
     needs: test
@@ -80,6 +80,7 @@ jobs:
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_test
       WM_SYNC_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_sync_test
+      WM_ENGINE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_deployment_test
     steps:
       - uses: actions/checkout@v5
         with:
@@ -94,12 +95,15 @@ jobs:
           load: true
           tags: windmill-backend-build
           cache-from: type=gha
-      - name: Prepare isolated REST and sync databases
+      - name: Prepare isolated REST, sync and deployment databases
         run: |
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
           createdb --maintenance-db="$DATABASE_URL" windmill_sync_test
           psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 \
             -f backend/db/schema.sql -f backend/db/probe.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql
+          createdb --maintenance-db="$DATABASE_URL" windmill_deployment_test
+          psql "$WM_ENGINE_DATABASE_URL" -v ON_ERROR_STOP=1 \
+            -f backend/db/schema.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql
       - uses: actions/setup-node@v5
         with:
           node-version: "20"
@@ -119,8 +123,45 @@ jobs:
           done
           docker logs probe
           exit 1
-      - name: Credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
+      - name: Probe credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
         run: WM_E2E_DB="$WM_SYNC_DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
+      - name: Prove windmill_server has no sync routes with SYNC_ENABLED unset
+        run: |
+          docker run -d --name engine-sync-off --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
+            -e PORT=18614 windmill-backend-build build/windmill_server
+          ready=0
+          for ((attempt=0; attempt<50; attempt++)); do
+            if curl -s -o /dev/null http://127.0.0.1:18614/v1/sync/hello; then
+              ready=1
+              break
+            fi
+            sleep 0.2
+          done
+          if [ "$ready" != 1 ]; then
+            docker logs engine-sync-off
+            exit 1
+          fi
+          WM_E2E_CATALOG=products PORT=18614 node backend/test/e2e/deployment_conformance.mjs --check-disabled
+          docker rm -f engine-sync-off
+      - name: Adopt the composed catalog's deployment accounts
+        run: |
+          WM_E2E_DB="$WM_ENGINE_DATABASE_URL" WM_E2E_CATALOG=products node backend/test/e2e/deployment_conformance.mjs --prepare-accounts
+          docker run --rm --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
+            windmill-backend-build build/windmill_gym_backfill
+          docker run --rm --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
+            windmill-backend-build build/windmill_journal_backfill
+      - name: Serve windmill_server with SYNC_ENABLED from the tested builder stage
+        run: |
+          docker run -d --name engine-sync --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
+            -e PORT=18614 -e SYNC_ENABLED=1 windmill-backend-build build/windmill_server
+          for ((attempt=0; attempt<50; attempt++)); do
+            curl -sf -o /dev/null -H 'Sync-Schema: 4' http://127.0.0.1:18614/v1/sync/hello && exit 0
+            sleep 0.2
+          done
+          docker logs engine-sync
+          exit 1
+      - name: Composed catalog credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
+        run: WM_E2E_DB="$WM_ENGINE_DATABASE_URL" WM_E2E_CATALOG=products PORT=18614 EDGE_PORT=18644 node backend/test/e2e/deployment_conformance.mjs
       - name: Serve two windmill_server processes from the tested builder stage and compare gym writes
         run: >-
           python3 backend/test/e2e/gym_write_differential.py
@@ -132,6 +173,12 @@ jobs:
           python3 backend/test/e2e/journal_write_differential.py
           --image windmill-backend-build --bin-dir build
           --maintenance-db "$DATABASE_URL"
+      - name: Stop deployment servers and drop throwaway databases
+        if: always()
+        run: |
+          docker rm -f probe engine-sync engine-sync-off || true
+          dropdb --if-exists --maintenance-db="$DATABASE_URL" windmill_deployment_test
+          dropdb --if-exists --maintenance-db="$DATABASE_URL" windmill_sync_test
 
   build-and-push:
     needs: [test, postgres]

@@ -30,6 +30,6 @@ Echo derivations, repair sweeps and nudge sweeps are quiescent; the diagnostic r
 work while frozen. REST reads retain their existing projections. Switches-off HLC-since reads use
 the original three-column ordering and compare byte-for-byte with origin/main; engine reads add
 the day tie-break for equal-HLC cohorts. Both frozen migration snapshots use that target engine
-read ordering and compare every response byte. `/v1/sync`
-remains unmounted in the production binary. Shared gym/journal adoption and restored-production
+read ordering and compare every response byte. `SYNC_ENABLED` defaults off and mounts `/v1/sync`
+over the shared gym + journal catalog when enabled. Shared gym/journal adoption and restored-production
 gates live in `deploy/gym-migration/README.md` and engine Appendix D.

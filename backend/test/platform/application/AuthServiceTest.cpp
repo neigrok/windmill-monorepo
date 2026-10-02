@@ -265,6 +265,26 @@ TEST(a_returning_relay_address_never_opens_a_third_account) {
   CHECK_EQ(h.repo.usersById.size(), 1u);
 }
 
+TEST(a_subject_only_apple_identity_opens_only_its_existing_binding) {
+  Harness h;
+  const UserId account = h.service.completeProvider(appleId("a-1", kRelay))->signedIn.user.id;
+  ProviderIdentity returning{Provider::apple, "a-1", Email{""}, "changed", false, false};
+  const auto signIn = h.service.completeProvider(returning);
+  REQUIRE(signIn.has_value());
+  CHECK_EQ(signIn->signedIn.user.id.str(), account.str());
+  CHECK_FALSE(signIn->created);
+  CHECK(signIn->privateEmail);
+  CHECK(h.service.attachIdentity(account, returning) == AuthService::AttachOutcome::alreadyMine);
+  ProviderIdentity unverified = appleId("a-1", kRelay);
+  unverified.emailVerified = false;
+  CHECK_FALSE(h.service.completeProvider(unverified).has_value());
+  CHECK(h.service.attachIdentity(account, unverified) == AuthService::AttachOutcome::refused);
+  returning.subject = "unknown";
+  CHECK_FALSE(h.service.completeProvider(returning).has_value());
+  CHECK(h.service.attachIdentity(account, returning) == AuthService::AttachOutcome::refused);
+  CHECK_EQ(h.repo.usersById.size(), std::size_t{1});
+}
+
 TEST(an_unverified_provider_address_is_refused_outright) {
   Harness h;
   ProviderIdentity unverified = googleId("g-1", "sam@example.com");

@@ -89,7 +89,8 @@ AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmai
 std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const ProviderIdentity& identity,
                                                                         const SessionContext& ctx) {
   const AddressTrust trust = trustOf(identity);
-  if (trust == AddressTrust::unusable || identity.subject.empty()) return std::nullopt;
+  const bool subjectOnlyApple = identity.provider == Provider::apple && identity.email.value.empty();
+  if (identity.subject.empty() || (trust == AddressTrust::unusable && !subjectOnlyApple)) return std::nullopt;
 
   const UnixMs now = clock_.nowMs();
   const bool privateEmail = trust == AddressTrust::appOnly;
@@ -99,9 +100,12 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
     if (const std::optional<User> user = repo_.findUserById(*bound)) {
       LOG_INFO << "auth: provider sign-in by bound door provider=" << toString(identity.provider)
                << " user=" << user->id.str();
-      return ProviderSignIn{mintSession(revived(*user), ctx, now), false, privateEmail};
+      return ProviderSignIn{mintSession(revived(*user), ctx, now), false,
+                            subjectOnlyApple ? isPrivateRelay(user->email) : privateEmail};
     }
   }
+
+  if (trust == AddressTrust::unusable) return std::nullopt;
 
   // No door bound: the verified address finds an account as a magic link would, and the door is
   // bound here. A provider's name is unvetted text and only seeds a NEW account, through the gate
@@ -120,12 +124,15 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
 
 AuthService::AttachOutcome AuthService::attachIdentity(const UserId& userId,
                                                        const ProviderIdentity& identity) {
-  if (trustOf(identity) == AddressTrust::unusable || identity.subject.empty())
+  const bool subjectOnlyApple = identity.provider == Provider::apple && identity.email.value.empty();
+  if (identity.subject.empty() || (trustOf(identity) == AddressTrust::unusable && !subjectOnlyApple))
     return AttachOutcome::refused;
 
   const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject);
   if (bound && *bound == userId) return AttachOutcome::alreadyMine;
   if (bound) return AttachOutcome::takenByAnother;  // a door opens one account; it is never stolen
+
+  if (trustOf(identity) == AddressTrust::unusable) return AttachOutcome::refused;
 
   repo_.bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
   LOG_INFO << "auth: provider door attached provider=" << toString(identity.provider)

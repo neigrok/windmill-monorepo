@@ -51,7 +51,7 @@ public struct JournalRoom: Sendable {
       let clean = complete && record?.isPending == false
       byDay[day] = Day(day: day, document: page.document, backup: isAnonymous ? .savedHere : clean ? .backedUp : .pending)
     }
-    for (_, value) in try read.devices(prefix: "pendingClaim:").members {
+    for (key, value) in try read.devices(prefix: "pendingClaim:").members where key != EditorDraft.key {
       let pending = try PendingClaim(json: value)
       if pending.latest.isWritten {
         byDay[pending.day] = Day(day: pending.day, document: pending.latest, backup: pending.refusal == nil ? .savedHere : .refused)

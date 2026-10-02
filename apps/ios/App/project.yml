@@ -1,0 +1,112 @@
+name: Windmill
+options:
+  bundleIdPrefix: works.windmill
+  deploymentTarget:
+    iOS: "18.0"
+packages:
+  WindmillSync:
+    path: ../Sync
+  WindmillDomain:
+    path: ../Domain
+targets:
+  Windmill:
+    type: application
+    platform: iOS
+    sources:
+      - Sources
+      - path: Resources
+        buildPhase: resources
+    dependencies:
+      - package: WindmillSync
+        product: SyncCore
+      - package: WindmillSync
+        product: SyncAPI
+      - package: WindmillSync
+        product: SyncSchema
+      - package: WindmillSync
+        product: SyncReplica
+      - package: WindmillSync
+        product: SyncStore
+      - package: WindmillSync
+        product: SyncEngine
+      - package: WindmillSync
+        product: SyncIOS
+      - package: WindmillSync
+        product: SyncModelServer
+      - package: WindmillDomain
+        product: DomainKit
+      - package: WindmillDomain
+        product: JournalDomain
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
+        MARKETING_VERSION: "0.2.0"
+        CURRENT_PROJECT_VERSION: "1"
+        CODE_SIGN_IDENTITY: "-"
+        CODE_SIGN_STYLE: Manual
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        TARGETED_DEVICE_FAMILY: "1"
+        WM_SERVER_BASE_URL: ""
+        WM_APPLE_SIGN_IN_ENABLED: "NO"
+    entitlements:
+      path: Generated/Windmill.entitlements
+      properties:
+        com.apple.developer.applesignin: [Default]
+    info:
+      path: Generated/Info.plist
+      properties:
+        CFBundleDisplayName: Windmill
+        ITSAppUsesNonExemptEncryption: false
+        WMServerBaseURL: $(WM_SERVER_BASE_URL)
+        WMAppleSignInEnabled: $(WM_APPLE_SIGN_IN_ENABLED)
+        UIUserInterfaceStyle: Dark
+        UILaunchScreen:
+          UIColorName: ShellCanvas
+        UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
+        NSAppTransportSecurity:
+          NSAllowsLocalNetworking: true
+        UIAppFonts:
+          - Inter-Regular.ttf
+          - Inter-SemiBold.ttf
+          - Nunito-ExtraBold.ttf
+          - JetBrainsMono-Regular.ttf
+          - Caveat-Regular.ttf
+    scheme:
+      testTargets: [WindmillTests, WindmillUITests]
+  WindmillTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources: [Tests]
+    dependencies:
+      - target: Windmill
+      - package: WindmillSync
+        product: SyncTesting
+      - package: WindmillSync
+        product: SyncModelServer
+      - package: WindmillDomain
+        product: DomainKitTesting
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.tests
+        GENERATE_INFOPLIST_FILE: "YES"
+        CODE_SIGNING_ALLOWED: "NO"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
+  WindmillUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources: [UITests]
+    dependencies:
+      - target: Windmill
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app.uitests
+        GENERATE_INFOPLIST_FILE: "YES"
+        CODE_SIGNING_ALLOWED: "NO"
+        SWIFT_VERSION: "6.0"
+        SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
+        SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration

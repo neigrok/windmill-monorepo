@@ -31,6 +31,8 @@ public:
   bool post(std::function<void()> job);
   bool stopping() const;
   std::size_t queued() const;
+  // Explicitly drain while the jobs' referenced state is still alive, even if adapters retain the pool.
+  void stopAndJoin();
 
   // Serial on the pool: one job at a time, in post order, and its jobs still run after the Strand is gone.
   class Strand {
@@ -49,7 +51,6 @@ public:
 
 private:
   void work();
-  void stopAndJoin();
 
   std::string name_;
   std::size_t queueCeiling_;

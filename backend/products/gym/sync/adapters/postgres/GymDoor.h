@@ -19,7 +19,7 @@ class GymDoor final : public GymWriteDoor {
 public:
   GymDoor(std::shared_ptr<PgPool>, Clock&, FailureReporter&, LogRepository&, ProgramRepository&,
           CatalogRepository&, NotesRepository&, BodyweightRepository&, PreferencesRepository&,
-          std::shared_ptr<sync::SyncCatalog>);
+          std::shared_ptr<sync::SyncCatalog>, sync::ChangeFeed* = nullptr);
   ~GymDoor() override;
   using Builder = std::function<std::optional<Json::Value>(sync::SyncTxn&)>;
   Json::Value execute(const UserId&, const std::string& tool, const Json::Value& args, const Builder&,

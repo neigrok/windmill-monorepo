@@ -98,15 +98,15 @@ std::vector<SyncLive::Wanted> SyncLive::watch(const LiveSocket& socket, const Js
   return wanted;
 }
 
-// One snapshot without row locks (§6.7 step 1) of the tree each tree or overlay ref answers as. A product scope
-// reads nothing: its account always reads it, absent or not.
+// One snapshot of the tree each tree or overlay ref answers as and each product's adoption boundary.
 std::map<ScopeKey, std::optional<ScopeRow>> SyncLive::readTrees(const std::vector<Wanted>& wanted) {
   std::map<ScopeKey, std::optional<ScopeRow>> trees;
   for (const Wanted& one : wanted) {
     if (one.key && one.key->kind() != ScopeKind::product) trees.emplace(one.key->governingTree(), std::nullopt);
   }
-  if (trees.empty()) return trees;
+  if (wanted.empty()) return trees;
   const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
+  for (const Wanted& one : wanted) if (one.key) catalog_.requireReady(*txn, *one.key);
   for (auto& [tree, row] : trees) row = store_.scope(*txn, tree, RowLock::none);
   return trees;
 }

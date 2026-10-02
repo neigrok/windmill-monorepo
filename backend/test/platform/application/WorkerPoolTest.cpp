@@ -31,6 +31,21 @@ struct CapturedCerr {
 
 }
 
+TEST(worker_pool_explicit_shutdown_drains_jobs_while_adapters_still_hold_the_pool) {
+  auto pool = std::make_shared<WorkerPool>("test", 2, 8);
+  auto adapterPool = pool;
+  std::atomic<int> completed{0};
+  for (int i = 0; i < 8; ++i) REQUIRE(pool->post([&completed] { ++completed; }));
+  pool->stopAndJoin();
+  CHECK_EQ(completed.load(), 8);
+  CHECK(pool->stopping());
+  CHECK_EQ(pool->queued(), 0u);
+  CHECK_FALSE(adapterPool->post([] {}));
+  pool.reset();
+  adapterPool->stopAndJoin();
+  adapterPool.reset();
+}
+
 TEST(worker_pool_jobs_run_on_blocking_threads_and_the_caller_is_not_one) {
   struct Seen {
     bool blocking;

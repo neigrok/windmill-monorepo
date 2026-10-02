@@ -145,6 +145,7 @@ private:
   AdmitOutcome admitUnderLock() {
     txn_ = store().begin(TxnMode::write);                                 // 3.2
     if (std::optional<OutOfTurn> out = lockOrigin()) return *out;         // 3.3
+    if (!builder_) a_.catalog_.requireWritable(*txn_, scope());
     lockScopes();                                                         // 3.4, 3.5
     lockFreshIds();                                                       // 3.6
     checkAccess();                                                        // 3.7
@@ -519,6 +520,7 @@ private:
   // row, done, in one transaction, unless the store already holds this admit's answer.
   AdmitOutcome answerFault(const std::exception& error) {
     const bool transient = dynamic_cast<const ScopeLockTimeout*>(&error) || dynamic_cast<const WorkerPoolStopping*>(&error) ||
+                           dynamic_cast<const ProductScopeUnavailable*>(&error) ||
                            a_.store_.classify(error) == FaultClass::transient;
     if (transient) return Retry{Retry::kTransientMs};
     report(error);
@@ -671,7 +673,7 @@ AdmitOutcome Admission::admitBuilt(const ServerOrigin& origin, const Json::Value
 }
 
 std::unique_lock<std::timed_mutex> Admission::takeStripe(const ScopeKey& scope) {
-  std::unique_lock<std::timed_mutex> stripe(stripes_[std::hash<std::string>{}(scope.text()) % stripes_.size()], std::defer_lock);
+  std::unique_lock<std::timed_mutex> stripe(catalog_.scopeMutex(scope), std::defer_lock);
   if (!stripe.try_lock_for(std::chrono::milliseconds(limits_.lockTimeoutMs))) throw ScopeLockTimeout("the scope " + scope.text() + " stayed locked");
   return stripe;
 }

@@ -20,7 +20,7 @@ public:
   std::vector<Json::Value> audit(std::optional<std::string> account = std::nullopt,
                                bool testCorruptions = false);
   std::vector<Json::Value> auditCurrent(std::optional<std::string> account = std::nullopt);
-  static bool adopted(sync::SyncTxn&, const sync::ScopeKey&);
+  static bool adopted(sync::SyncTxn&, const sync::ScopeKey&, bool permitUnsetDefaults = false);
 
 private:
   std::shared_ptr<PgPool> pool_;

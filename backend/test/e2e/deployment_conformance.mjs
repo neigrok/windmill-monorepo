@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// What engine.md asks of a deployment, against a running windmill_server_probe, first directly and then through the
+// What engine.md asks of a deployment, against windmill_server_probe or SYNC_ENABLED=1 windmill_server, directly and through the
 // production edge, Caddy from its image with backend/deploy/Caddyfile:
 // - §9.1 Credentials: every case of envelope/credentials.json on hello, pull, push and the live socket, over raw
 //   HTTP/1.1 to the origin, then through the edge over HTTP/1.1 and HTTP/2. Over HTTP/1.1 each runs on a connection of
@@ -8,13 +8,16 @@
 // - §6.8 the idle live socket: one socket to the origin and one through the edge say nothing for LIVE_PING_MS +
 //   LIVE_PONG_MS and a second more, and are still open; then each answers a `ping` with `pong` at once.
 //
-// Prereqs: a THROWAWAY Postgres holding db/schema.sql and db/probe.sql (this script rewrites its sessions for the
-// corpus's tokens), the probe server on it listening on every interface, Docker, curl with HTTP/2, and cmake.
+// Prereqs: a THROWAWAY Postgres holding schema.sql + probe.sql (default catalog), or schema.sql + gym_sync.sql +
+// journal_sync.sql (WM_E2E_CATALOG=products), the server listening on every interface, Docker, curl with HTTP/2, and cmake.
+// The script rewrites sessions for the corpus's tokens. Before starting the products server, run --prepare-accounts
+// against its database, then windmill_gym_backfill and windmill_journal_backfill. Preparation adds legacy product fixtures.
 //   DATABASE_URL="postgresql:///$WM_E2E_DB?host=/tmp" PORT=18613 ./build/windmill_server_probe
 // Run:  WM_E2E_DB=<database name or postgresql:// URL> PORT=18613 EDGE_PORT=18643 node test/e2e/deployment_conformance.mjs
 // EDGE_PORT is where the edge's HTTPS listens on 127.0.0.1; without it the edge runs are skipped and said so.
+// PORT=<port> node test/e2e/deployment_conformance.mjs --check-disabled proves all four routes are absent with SYNC_ENABLED off.
 
-import { execFileSync, spawnSync } from 'node:child_process';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import http2 from 'node:http2';
@@ -30,11 +33,24 @@ const caddyfile = path.join(backend, 'deploy/Caddyfile');
 const DB = process.env.WM_E2E_DB;
 const PORT = Number(process.env.PORT);
 const EDGE_PORT = process.env.EDGE_PORT ? Number(process.env.EDGE_PORT) : null;
-const SCHEMA = '2';
-if (!DB || !PORT) {
-  console.error('set WM_E2E_DB to a throwaway database (a name or a postgresql:// URL) and PORT to the probe server\'s port');
+const CATALOG = process.env.WM_E2E_CATALOG ?? 'probe';
+const PREPARE = process.argv.includes('--prepare-accounts');
+const CHECK_DISABLED = process.argv.includes('--check-disabled');
+if (!['probe', 'products'].includes(CATALOG) || process.argv.slice(2).some((arg) => !['--prepare-accounts', '--check-disabled'].includes(arg)) || (PREPARE && CHECK_DISABLED)) {
+  console.error('WM_E2E_CATALOG must be probe or products; use at most one of --prepare-accounts and --check-disabled');
   process.exit(2);
 }
+if ((!CHECK_DISABLED && !DB) || (!PREPARE && (!Number.isInteger(PORT) || PORT < 1 || PORT > 65535))) {
+  console.error('set WM_E2E_DB to a throwaway database (name or postgresql:// URL) and PORT to the server\'s port; preparation needs only the database, disabled checks only the port');
+  process.exit(2);
+}
+const registryFiles = CATALOG === 'probe' ? ['probe.registry.json'] : JSON.parse(readFileSync(path.resolve(backend, '../packages/api-contract/sync/composition.json'), 'utf8')).registries;
+const registries = registryFiles.map((file) => JSON.parse(readFileSync(path.resolve(backend, '../packages/api-contract/sync', file), 'utf8')));
+if (registries.some((registry) => registry.version !== registries[0].version || registry.minVersion !== registries[0].minVersion)) throw new Error('composition registries disagree on version');
+const SCHEMA = String(registries[0].version);
+const MIN_SCHEMA = registries[0].minVersion;
+const PRODUCTS = registries.flatMap((registry) => Object.keys(registry.products)).sort();
+const SCOPES = PRODUCTS.map((product) => `self/${product}`);
 
 const corpus = JSON.parse(readFileSync(corpusFile, 'utf8'));
 const results = { pass: 0, fail: 0 };
@@ -52,16 +68,26 @@ for (const vector of corpus) {
   if (JSON.stringify(vector.input.sessions) !== JSON.stringify(sessions)) throw new Error(`${vector.name}: another session table`);
 }
 const accountOf = {};
-for (const alias of new Set(Object.values(sessions))) {
-  const email = `credentials-conformance-${alias.toLowerCase()}@example.com`;
-  psql(`insert into users (id, email, name) values (gen_random_uuid(), '${email}', '${alias}') on conflict (email) do nothing`);
-  accountOf[alias] = psql(`select id from users where email = '${email}'`);
+if (!CHECK_DISABLED) {
+  for (const alias of new Set(Object.values(sessions))) {
+    const email = `credentials-conformance-${alias.toLowerCase()}@example.com`;
+    psql(`insert into users (id, email, name) values (gen_random_uuid(), '${email}', '${alias}') on conflict (email) do nothing`);
+    accountOf[alias] = psql(`select id from users where email = '${email}'`);
+    if (PREPARE && CATALOG === 'products') {
+      psql(`insert into gym_preferences(user_id) values('${accountOf[alias]}') on conflict do nothing`);
+      psql(`insert into journal_page(user_id,day,body) values('${accountOf[alias]}','2026-01-01','Deployment conformance') on conflict do nothing`);
+    }
+  }
+  for (const [token, alias] of Object.entries(sessions)) {
+    const digest = createHash('sha256').update(token).digest('hex');
+    psql(`delete from sessions where token_hash = '${digest}'`);
+    psql(`insert into sessions (token_hash, user_id, expires_ms) values ('${digest}', '${accountOf[alias]}', ${Date.now() + 3_600_000})`);
+  }
 }
 const aliasOf = Object.fromEntries(Object.entries(accountOf).map(([alias, id]) => [id, alias]));
-for (const [token, alias] of Object.entries(sessions)) {
-  const digest = createHash('sha256').update(token).digest('hex');
-  psql(`delete from sessions where token_hash = '${digest}'`);
-  psql(`insert into sessions (token_hash, user_id, expires_ms) values ('${digest}', '${accountOf[alias]}', ${Date.now() + 3_600_000})`);
+if (PREPARE) {
+  console.log(`prepared ${CATALOG} accounts: ${JSON.stringify(accountOf)}; run both product backfills before serving the products catalog`);
+  process.exit(0);
 }
 
 // ── requests ─────────────────────────────────────────────────────────────────────────────────────────────────────────
@@ -69,7 +95,7 @@ for (const [token, alias] of Object.entries(sessions)) {
 const replicaOf = Object.fromEntries(Object.keys(accountOf).map((alias) => [alias, `rp_${randomBytes(16).toString('hex')}`]));
 const pushBody = (vector) => {
   const alias = vector.expect.principal.account ?? 'A';
-  return JSON.stringify({ replica: replicaOf[alias], account: accountOf[alias], ackThrough: 0, intents: [] });
+  return JSON.stringify({ replica: replicaOf[alias] ?? 'rp_disabled', account: accountOf[alias] ?? 'disabled', ackThrough: 0, intents: [] });
 };
 const ENDPOINTS = {
   hello: { method: 'GET', path: '/v1/sync/hello', lines: [['Sync-Schema', SCHEMA]], body: () => '' },
@@ -77,7 +103,7 @@ const ENDPOINTS = {
     method: 'POST',
     path: '/v1/sync/pull',
     lines: [['Sync-Schema', SCHEMA], ['Content-Type', 'application/json']],
-    body: () => JSON.stringify({ scopes: [{ scope: 'self/probe', cursor: null }] }),
+    body: () => JSON.stringify({ scopes: SCOPES.map((scope) => ({ scope, cursor: null })) }),
   },
   push: { method: 'POST', path: '/v1/sync/push', lines: [['Sync-Schema', SCHEMA], ['Content-Type', 'application/json']], body: pushBody },
   live: {
@@ -269,7 +295,23 @@ async function served(endpoint, answer, connection) {
     } catch {}
     return `refused: 101 then ${text}`;
   }
-  if (endpoint !== 'live' && (answer.status === 200 || answer.status === 409) && envelope && 'as' in envelope) return `as:${aliasNamed(envelope.as)}`;
+  if (endpoint !== 'live' && (answer.status === 200 || answer.status === 409) && envelope && 'as' in envelope) {
+    if (endpoint === 'hello') {
+      if (envelope.schema !== Number(SCHEMA) || envelope.minSchema !== MIN_SCHEMA) return `refused: hello has schema ${envelope.schema}/${envelope.minSchema}, want ${SCHEMA}/${MIN_SCHEMA}`;
+      if (envelope.as === null) {
+        if ('holdsRecords' in envelope) return 'refused: anonymous hello has holdsRecords';
+      } else if (!envelope.holdsRecords || JSON.stringify(Object.keys(envelope.holdsRecords).sort()) !== JSON.stringify(PRODUCTS) || Object.values(envelope.holdsRecords).some((holds) => typeof holds !== 'boolean')) {
+        return `refused: hello does not declare the ${CATALOG} products`;
+      }
+    }
+    if (endpoint === 'pull') {
+      const kind = envelope.as === null ? 'not-found' : 'rows';
+      if (!Array.isArray(envelope.pages) || envelope.pages.length !== SCOPES.length || envelope.pages.some((page, i) => page.scope !== SCOPES[i] || page.kind !== kind)) {
+        return `refused: pull must answer ${JSON.stringify(SCOPES)} with ${kind} pages; prepare and backfill the products accounts`;
+      }
+    }
+    return `as:${aliasNamed(envelope.as)}`;
+  }
   return `refused ${answer.status}${envelope ? '' : ' bare'}`;
 }
 
@@ -447,7 +489,7 @@ async function idleLiveSockets(edges) {
   }
 }
 
-// ── the edge: the production Caddyfile, its upstream pointed at the probe server ────────────────────────────────────
+// ── the edge: the production Caddyfile, its upstream pointed at the selected server ─────────────────────────────────
 function startEdge() {
   execFileSync('cmake', [`-DCADDYFILE=${caddyfile}`, '-P', path.join(backend, 'test/deploy/caddyfile_forwards_credentials.cmake')], { stdio: 'inherit' });
   const production = readFileSync(caddyfile, 'utf8');
@@ -457,14 +499,30 @@ function startEdge() {
   writeFileSync(path.join(dir, 'Caddyfile'), production.replaceAll('reverse_proxy server:8080', `reverse_proxy host.docker.internal:${PORT}`));
   const name = `wm-credentials-edge-${EDGE_PORT}`;
   spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-  execFileSync('docker', ['run', '-d', '--name', name, '--add-host', 'host.docker.internal:host-gateway', '-p', `127.0.0.1:${EDGE_PORT}:443`,
+  const child = spawn('docker', ['run', '--rm', '--name', name, '--add-host', 'host.docker.internal:host-gateway', '-p', `127.0.0.1:${EDGE_PORT}:443`,
     '-e', 'DOMAIN_APP=localhost', '-e', 'DOMAIN_API=api.localhost', '-e', 'ACME_EMAIL=conformance@example.com', '-e', 'CF_IPS=0.0.0.0/0 ::/0',
     '-v', `${path.join(dir, 'Caddyfile')}:/etc/caddy/Caddyfile:ro`, 'caddy:2'], { stdio: 'ignore' });
-  console.log(`  ${execFileSync('docker', ['exec', name, 'caddy', 'version'], { encoding: 'utf8' }).trim().split(' ')[0]} in ${name}`);
-  return () => {
-    spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore' });
-    rmSync(dir, { recursive: true, force: true });
+  const closed = new Promise((resolve) => {
+    child.once('error', resolve);
+    child.once('close', resolve);
+  });
+  let stopping;
+  const stop = () => {
+    stopping ??= (async () => {
+      spawnSync('docker', ['rm', '-f', name], { stdio: 'ignore', timeout: 15_000 });
+      child.kill('SIGTERM');
+      await closed;
+      rmSync(dir, { recursive: true, force: true });
+      process.removeListener('SIGINT', interrupt);
+      process.removeListener('SIGTERM', terminate);
+    })();
+    return stopping;
   };
+  const interrupt = () => { void stop().finally(() => process.exit(130)); };
+  const terminate = () => { void stop().finally(() => process.exit(143)); };
+  process.once('SIGINT', interrupt);
+  process.once('SIGTERM', terminate);
+  return { stop, name };
 }
 
 async function edgeAnswers() {
@@ -477,20 +535,34 @@ async function edgeAnswers() {
   throw new Error('the edge never answered a hello');
 }
 
-console.log(`origin: 127.0.0.1:${PORT}, ${corpus.length} vectors`);
+if (CHECK_DISABLED) {
+  const vector = { input: { headers: [] }, expect: { principal: { account: null } } };
+  for (const endpoint of Object.keys(ENDPOINTS)) {
+    const connection = await Connection.open(false);
+    connection.write(requestBytes(endpoint, vector, `127.0.0.1:${PORT}`, true));
+    const answer = await connection.response();
+    check(answer?.status === 404, `SYNC_ENABLED off: ${endpoint} route absent${endpoint === 'live' ? ' (WebSocket upgrade)' : ''}`, `answered ${answer?.status}`);
+    connection.close();
+  }
+  console.log(`\n${results.pass} passed, ${results.fail} failed`);
+  process.exit(results.fail === 0 ? 0 : 1);
+}
+
+console.log(`origin: 127.0.0.1:${PORT}, ${CATALOG} catalog (schema ${SCHEMA}), ${corpus.length} vectors`);
 await runHttp1(false);
 if (EDGE_PORT) {
   console.log(`edge: the production Caddyfile on 127.0.0.1:${EDGE_PORT}`);
-  const stopEdge = startEdge();
+  const edge = startEdge();
   try {
     await edgeAnswers();
+    console.log(`  ${execFileSync('docker', ['exec', edge.name, 'caddy', 'version'], { encoding: 'utf8' }).trim().split(' ')[0]} in ${edge.name}`);
     await runHttp1(true);
     await fullBucket(true);
     await runHttp2();
     await liveOverHttp2();
     await idleLiveSockets([false, true]);
   } finally {
-    stopEdge();
+    await edge.stop();
   }
 } else {
   console.log('edge: skipped, EDGE_PORT unset');

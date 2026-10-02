@@ -1,8 +1,10 @@
 #pragma once
 
 #include "platform/domain/Auth.h"
+#include "platform/ports/AppleIdentityVerifier.h"
 
 #include <trantor/net/EventLoopThread.h>
+#include <json/json.h>
 
 #include <functional>
 #include <optional>
@@ -33,6 +35,21 @@ private:
   std::string teamId_;
   std::string keyId_;
   std::string privateKeyPem_;
+  trantor::EventLoopThread loop_;
+};
+
+class AppleIdentityTokenVerifier final : public AppleIdentityVerifier {
+public:
+  AppleIdentityTokenVerifier(bool enabled, std::string clientId);
+  bool configured() const override { return enabled_ && !clientId_.empty(); }
+  void verify(const std::string& identityToken, const std::string& nonce, Completion done) override;
+
+  static std::optional<ProviderIdentity> verifiedIdentity(const std::string& identityToken,
+      const std::string& nonce, const std::string& clientId, const Json::Value& keys, UnixMs now);
+
+private:
+  bool enabled_;
+  std::string clientId_;
   trantor::EventLoopThread loop_;
 };
 

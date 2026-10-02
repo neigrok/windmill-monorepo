@@ -2,6 +2,7 @@
 
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/Jcs.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -219,10 +220,43 @@ PgJournal::PgJournal(const Registry& registry) : product_(state_) {
   for (const TypeDef& type : registry.types()) if (type.scope == RegistryScope{ScopeKind::product, "journal"}) stores_.push_back(std::make_unique<PgJournalType>(type));
 }
 
-void PgJournal::bindTo(SyncCatalog& catalog) {
+void PgJournal::bindTo(SyncCatalog& catalog, bool checkAdoption) {
   std::map<std::string, TypeStore*> stores;
   for (const auto& store : stores_) stores.emplace(store->def().name, store.get());
   product_.bindTo(catalog, stores);
+  if (checkAdoption) catalog.bindReadiness("journal", *this);
+}
+
+void PgJournal::requireReady(SyncTxn& txn, const ScopeKey& scope) {
+  try {
+    const auto rows = sqlOf(txn).exec(
+        "select exists(select 1 from journal_sync_adoptions where user_id=$1::uuid) as marker,"
+        " exists(select 1 from sync_scopes where key=$2 and state='alive') as scope,"
+        " exists(select 1 from journal_page where user_id=$1::uuid and (seq is null or rc is null or ru is null"
+        " or mood_stamp is null or energy_stamp is null or source_stamp is null or document_stamp_stamp is null"
+        " or body_rev is null or body_merged is null)) as legacy_page,"
+        " exists(select 1 from journal_page_revision where user_id=$1::uuid and engine_rev is null) as legacy_revision,"
+        " exists(select 1 from journal_sync_state where user_id=$1::uuid and (seq is null or rc is null or ru is null)) as legacy_state,"
+        " exists(select 1 from journal_page where user_id=$1::uuid)"
+        " or exists(select 1 from journal_page_revision where user_id=$1::uuid)"
+        " or exists(select 1 from journal_sync_state where user_id=$1::uuid) as history,"
+        " exists(select 1 from journal_page_revision where user_id=$1::uuid and migration_id is not null) as frozen_revision",
+        pqxx::params{scope.account().str(), scope.text()});
+    const auto& status = rows[0];
+    if (status["legacy_page"].as<bool>() || status["legacy_revision"].as<bool>() || status["legacy_state"].as<bool>() ||
+        (!status["scope"].as<bool>() && (status["marker"].as<bool>() || status["history"].as<bool>())) ||
+        (!status["marker"].as<bool>() && status["frozen_revision"].as<bool>()))
+      throw ProductScopeUnavailable("journal account has not completed adoption");
+  } catch (const pqxx::undefined_column&) {
+    throw ProductScopeUnavailable("journal adoption schema is unavailable");
+  } catch (const pqxx::undefined_table&) {
+    throw ProductScopeUnavailable("journal adoption schema is unavailable");
+  }
+}
+
+void PgJournal::requireWritable(SyncTxn& txn, const ScopeKey& scope) {
+  if (journalWriteFrozen()) throw ProductScopeUnavailable("journal writes are frozen");
+  requireReady(txn, scope);
 }
 
 }

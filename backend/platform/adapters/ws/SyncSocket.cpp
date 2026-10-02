@@ -105,6 +105,7 @@ drogon::HttpResponsePtr forbidden() {
 
 void installSyncSocket(SyncSocketDeps deps) {
   g_installed = std::make_unique<Installed>(std::move(deps));
+  drogon::app().registerController(std::make_shared<SyncSocket>());
   Installed& installed = *g_installed;
   installed.reprove.start(kReproveEverySeconds, kReproveEverySeconds, [&installed] {
     installed.deps.workers->post([sessions = installed.deps.sessions, auth = installed.deps.auth, clock = installed.deps.clock] {
@@ -113,7 +114,7 @@ void installSyncSocket(SyncSocketDeps deps) {
   });
 }
 
-void linkSyncSocket() {}
+void uninstallSyncSocket() { g_installed.reset(); }
 
 void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::FilterCallback&& refuse, drogon::FilterChainCallback&& pass) {
   if (!g_installed) return pass();
@@ -204,8 +205,14 @@ void SyncSocket::handleNewMessage(const drogon::WebSocketConnectionPtr& conn, st
   // the client subscribes again after its pull.
   if (op != "sub" && op != "unsub") return;
   connection->strand.post([live = g_installed->deps.live, socket = connection->socket, scopes = frame["scopes"], sub = op == "sub"] {
-    if (sub) live->subscribe(*socket, scopes);
-    else live->unsubscribe(*socket, scopes);
+    try {
+      if (sub) live->subscribe(*socket, scopes);
+      else live->unsubscribe(*socket, scopes);
+    } catch (const std::exception& error) {
+      LOG_ERROR << "sync live subscription unavailable: " << error.what();
+      socket->close(kTryAgainLater);
+      live->close(*socket);
+    }
   });
 }
 

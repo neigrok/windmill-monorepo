@@ -14,9 +14,12 @@
 #include <openssl/ecdsa.h>
 #include <openssl/evp.h>
 #include <openssl/pem.h>
+#include <openssl/rsa.h>
+#include <openssl/sha.h>
 #include <trantor/utils/Logger.h>
 
 #include <chrono>
+#include <array>
 #include <memory>
 #include <utility>
 #include <vector>
@@ -102,6 +105,60 @@ std::optional<ProviderIdentity> identityFromIdToken(const std::string& idToken, 
   identity.relayEmail = verifiedClaim(*claims, "is_private_email");
   return identity;
 }
+
+std::string decodeSegment(const std::string& encoded) {
+  if (encoded.empty() || encoded.size() % 4 == 1) return {};
+  if (encoded.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_") !=
+      std::string::npos) return {};
+  std::string standard = encoded;
+  for (char& character : standard) {
+    if (character == '-') character = '+';
+    else if (character == '_') character = '/';
+  }
+  standard.append((4 - standard.size() % 4) % 4, '=');
+  std::string bytes = drogon::utils::base64Decode(standard);
+  return base64Url(bytes) == encoded ? bytes : std::string();
+}
+
+std::optional<Json::Value> segmentObject(const std::string& encoded) {
+  const std::string bytes = decodeSegment(encoded);
+  if (bytes.empty()) return std::nullopt;
+  Json::CharReaderBuilder builder;
+  builder["rejectDupKeys"] = true;
+  builder["failIfExtra"] = true;
+  const std::unique_ptr<Json::CharReader> reader(builder.newCharReader());
+  Json::Value object;
+  std::string errors;
+  try {
+    if (!reader->parse(bytes.data(), bytes.data() + bytes.size(), &object, &errors) || !object.isObject())
+      return std::nullopt;
+  } catch (const std::exception&) {
+    return std::nullopt;
+  }
+  return object;
+}
+
+bool verifiesRs256(const Json::Value& key, const std::string& signingInput, const std::string& signature) {
+  const std::string modulus = decodeSegment(stringClaim(key, "n"));
+  const std::string exponent = decodeSegment(stringClaim(key, "e"));
+  if (modulus.size() < 256 || modulus.size() > 512 || exponent.empty() || exponent.size() > 8) return false;
+  std::unique_ptr<BIGNUM, decltype(&BN_free)> n(
+      BN_bin2bn(reinterpret_cast<const unsigned char*>(modulus.data()), modulus.size(), nullptr), &BN_free);
+  std::unique_ptr<BIGNUM, decltype(&BN_free)> e(
+      BN_bin2bn(reinterpret_cast<const unsigned char*>(exponent.data()), exponent.size(), nullptr), &BN_free);
+  const std::unique_ptr<RSA, decltype(&RSA_free)> rsa(RSA_new(), &RSA_free);
+  if (!n || !e || !rsa || BN_num_bits(n.get()) < 2048 || RSA_set0_key(rsa.get(), n.get(), e.get(), nullptr) != 1)
+    return false;
+  n.release();
+  e.release();
+  const std::unique_ptr<EVP_PKEY, decltype(&EVP_PKEY_free)> publicKey(EVP_PKEY_new(), &EVP_PKEY_free);
+  if (!publicKey || EVP_PKEY_set1_RSA(publicKey.get(), rsa.get()) != 1) return false;
+  const std::unique_ptr<EVP_MD_CTX, decltype(&EVP_MD_CTX_free)> context(EVP_MD_CTX_new(), &EVP_MD_CTX_free);
+  if (!context || EVP_DigestVerifyInit(context.get(), nullptr, EVP_sha256(), nullptr, publicKey.get()) != 1)
+    return false;
+  return EVP_DigestVerify(context.get(), reinterpret_cast<const unsigned char*>(signature.data()),
+      signature.size(), reinterpret_cast<const unsigned char*>(signingInput.data()), signingInput.size()) == 1;
+}
 }
 
 AppleOAuthClient::AppleOAuthClient(std::string clientId, std::string teamId, std::string keyId,
@@ -176,6 +233,90 @@ void AppleOAuthClient::exchangeCode(const std::string& code,
         done(identityFromIdToken(idToken, clientId));
       },
       10.0);
+}
+
+AppleIdentityTokenVerifier::AppleIdentityTokenVerifier(bool enabled, std::string clientId)
+    : enabled_(enabled), clientId_(std::move(clientId)) {
+  if (configured()) loop_.run();
+}
+
+std::optional<ProviderIdentity> AppleIdentityTokenVerifier::verifiedIdentity(const std::string& identityToken,
+    const std::string& nonce, const std::string& clientId, const Json::Value& keys, UnixMs now) {
+  if (clientId.empty() || identityToken.size() > 16384 || nonce.empty() || nonce.size() > 256)
+    return std::nullopt;
+  const auto firstDot = identityToken.find('.');
+  if (firstDot == std::string::npos) return std::nullopt;
+  const auto secondDot = identityToken.find('.', firstDot + 1);
+  if (secondDot == std::string::npos || identityToken.find('.', secondDot + 1) != std::string::npos)
+    return std::nullopt;
+  const auto header = segmentObject(identityToken.substr(0, firstDot));
+  const auto claims = segmentObject(identityToken.substr(firstDot + 1, secondDot - firstDot - 1));
+  const std::string signature = decodeSegment(identityToken.substr(secondDot + 1));
+  if (!header || !claims || signature.empty() || stringClaim(*header, "alg") != "RS256" ||
+      header->isMember("crit")) return std::nullopt;
+  const std::string kid = stringClaim(*header, "kid");
+  if (kid.empty() || !keys.isObject() || !keys["keys"].isArray() || keys["keys"].size() > 16)
+    return std::nullopt;
+  const Json::Value* matched = nullptr;
+  for (const auto& key : keys["keys"]) {
+    if (!key.isObject() || stringClaim(key, "kid") != kid) continue;
+    if (matched || stringClaim(key, "kty") != "RSA" || stringClaim(key, "alg") != "RS256" ||
+        stringClaim(key, "use") != "sig") return std::nullopt;
+    matched = &key;
+  }
+  if (!matched || !verifiesRs256(*matched, identityToken.substr(0, secondDot), signature)) return std::nullopt;
+  if (stringClaim(*claims, "iss") != kIssuer || stringClaim(*claims, "aud") != clientId ||
+      !(*claims)["exp"].isUInt64() || !(*claims)["iat"].isUInt64()) return std::nullopt;
+  const auto nowSeconds = now / 1000;
+  const auto expires = (*claims)["exp"].asUInt64();
+  const auto issued = (*claims)["iat"].asUInt64();
+  if (expires <= nowSeconds || issued > nowSeconds + 60 || issued >= expires ||
+      (claims->isMember("nbf") && (!(*claims)["nbf"].isUInt64() || (*claims)["nbf"].asUInt64() > nowSeconds)))
+    return std::nullopt;
+  std::array<unsigned char, SHA256_DIGEST_LENGTH> digest{};
+  SHA256(reinterpret_cast<const unsigned char*>(nonce.data()), nonce.size(), digest.data());
+  const char* hex = "0123456789abcdef";
+  std::string nonceHash;
+  for (const auto byte : digest) {
+    nonceHash.push_back(hex[byte >> 4]);
+    nonceHash.push_back(hex[byte & 15]);
+  }
+  if (stringClaim(*claims, "nonce") != nonceHash) return std::nullopt;
+  const std::string subject = stringClaim(*claims, "sub");
+  if (subject.empty() || subject.size() > 255) return std::nullopt;
+  ProviderIdentity identity{Provider::apple, subject, Email{""}, "", false, false};
+  if (claims->isMember("email")) {
+    const auto email = parseEmail(stringClaim(*claims, "email"));
+    if (!email || !verifiedClaim(*claims, "email_verified")) return std::nullopt;
+    identity.email = *email;
+    identity.emailVerified = true;
+  }
+  identity.relayEmail = verifiedClaim(*claims, "is_private_email");
+  return identity;
+}
+
+void AppleIdentityTokenVerifier::verify(const std::string& identityToken, const std::string& nonce, Completion done) {
+  if (!configured()) {
+    done(std::nullopt);
+    return;
+  }
+  auto client = drogon::HttpClient::newHttpClient(kIssuer, loop_.getLoop());
+  auto req = drogon::HttpRequest::newHttpRequest();
+  req->setMethod(drogon::Get);
+  req->setPath("/auth/keys");
+  VendorCall call("apple", "keys");
+  client->sendRequest(req,
+      [client, clientId = clientId_, identityToken, nonce, call, done = std::move(done)](
+          drogon::ReqResult result, const drogon::HttpResponsePtr& response) mutable {
+        if (!call.succeeded(result, response)) {
+          done(std::nullopt);
+          return;
+        }
+        const auto keys = response->getJsonObject();
+        const UnixMs now = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::system_clock::now().time_since_epoch()).count();
+        done(keys ? verifiedIdentity(identityToken, nonce, clientId, *keys, now) : std::nullopt);
+      }, 10.0);
 }
 
 }
