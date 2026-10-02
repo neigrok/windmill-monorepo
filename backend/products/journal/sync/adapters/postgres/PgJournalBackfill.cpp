@@ -4,10 +4,12 @@
 #include "products/journal/sync/JournalRegistry.h"
 #include "products/journal/sync/domain/JournalRules.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
+#include "platform/application/sync/SyncService.h"
 #include "platform/domain/sync/Jcs.h"
 
 #include <algorithm>
 #include <map>
+#include <set>
 #include <stdexcept>
 
 namespace wm::journal::engine {
@@ -31,6 +33,8 @@ Json::Value stamp(const R& row) {
 
 void requireSchema(SyncTxn& txn) {
   auto& sql = sqlOf(txn);
+  const auto scales = sql.exec("select attname from pg_attribute where attrelid='journal_page'::regclass and attname in ('mood','energy') and not attnotnull and not attisdropped");
+  if (scales.size() != 2) throw std::runtime_error("journal adoption requires the current nullable 0..10 scale schema before the freeze");
   const std::map<std::string, std::map<std::string, std::string>> required{
     {"journal_page", {{"seq", "bigint"}, {"rc", "bigint"}, {"ru", "bigint"}, {"mood_stamp", "text"}, {"energy_stamp", "text"}, {"source_stamp", "text"}, {"document_stamp_stamp", "text"}, {"body_rev", "bigint"}, {"body_merged", "boolean"}}},
     {"journal_page_revision", {{"migration_id", "bigint"}, {"engine_rev", "bigint"}}},
@@ -44,7 +48,7 @@ void requireSchema(SyncTxn& txn) {
 }
 
 std::vector<std::string> accounts(SyncTxn& txn, const std::optional<std::string>& account) {
-  std::string query = "select user_id::text from (select user_id from journal_page union select user_id from journal_page_revision union select user_id from journal_sync_adoptions union select owner from sync_scopes where key='acct:'||owner::text||'/journal') owners";
+  std::string query = "select user_id::text from (select user_id from journal_page union select user_id from journal_page_revision union select user_id from journal_sync_state union select user_id from journal_sync_adoptions union select user_id from journal_claim_receipts union select user_id from journal_content_clock union select owner from sync_scopes where key='acct:'||owner::text||'/journal') owners";
   pqxx::params params;
   if (account) { query += " where user_id=$1::uuid"; params.append(*account); }
   query += " order by user_id";
@@ -209,13 +213,128 @@ Json::Value auditAccount(SyncTxn& txn, PgSyncStore& store, const std::string& ow
     throw std::runtime_error("journal adoption audit: spent ids or claim state");
   auto result = report(*scope, expected.size(), historical.size(), false);
   result["audit"] = true;
+  result["envelopeAudit"] = true;
+  result["computedDigest"] = digest.hex();
+  result["greatestSeq"] = Json::UInt64(seq);
   return result;
+}
+
+Json::Value auditCurrentAccount(SyncTxn& txn, PgSyncStore& store, const std::string& owner) {
+  const ScopeKey key = ScopeKey::product(UserId(owner), "journal");
+  const auto scope = store.scope(txn, key, RowLock::none);
+  if (!scope) throw std::runtime_error("journal adoption audit: missing scope");
+  Digest256 digest;
+  Seq greatest = sqlOf(txn).exec("select coalesce(max(engine_rev),0) from journal_page_revision where user_id=$1::uuid", pqxx::params{owner})[0][0].as<Seq>();
+  std::uint64_t count = 0;
+  for (const auto& type : registry().types()) {
+    PgJournalType rows(type);
+    for (const auto& row : rows.feed(txn, key, FeedQuery{})) {
+      greatest = std::max(greatest, row.seq);
+      digest = digest + rowHash(row.toJson());
+      ++count;
+    }
+  }
+  if (greatest != scope->seq || digest != scope->digest) throw std::runtime_error("journal adoption audit: current feed digest or greatest seq");
+  auto result = report(*scope, count, sqlOf(txn).exec("select count(*) from journal_page_revision where user_id=$1::uuid", pqxx::params{owner})[0][0].as<Seq>(), false);
+  result["audit"] = true;
+  result["computedDigest"] = digest.hex();
+  result["greatestSeq"] = Json::UInt64(greatest);
+  return result;
+}
+
+std::uint64_t testFrozenAudit(SyncTxn& txn, PgSyncStore& store, const std::string& owner) {
+  auto& sql = sqlOf(txn);
+  const auto marker = sql.exec("select migration_ms from journal_sync_adoptions where user_id=$1::uuid", pqxx::params{owner});
+  const std::string future = sql.quote(std::to_string(marker[0][0].as<Ms>() + Limits{}.maxSkewMs + 1) + ":0:srv");
+  std::vector<std::string> mutations;
+  for (const char* field : {"mood_stamp", "energy_stamp", "source_stamp", "document_stamp_stamp"})
+    mutations.push_back("update journal_page set " + std::string(field) + "=" + future + " where user_id=$1::uuid returning 1");
+  for (const char* field : {"placeholder_stamp", "privacy_line_stamp", "first_page_stamp", "scales_stamp"})
+    mutations.push_back("update journal_sync_state set " + std::string(field) + "=" + future + " where user_id=$1::uuid returning 1");
+  for (const char* table : {"journal_page", "journal_sync_state"}) for (const char* column : {"seq", "rc", "ru"})
+    mutations.push_back("update " + std::string(table) + " set " + column + "=" + column + "+1 where user_id=$1::uuid returning 1");
+  for (const std::string assignment : {"body_rev=body_rev+1", "body_merged=true", "updated_at=updated_at+interval '0.000001 seconds'"})
+    mutations.push_back("update journal_page set " + assignment + " where user_id=$1::uuid returning 1");
+  for (const std::string assignment : {"body=body||'corrupted'", "stamp_ms=stamp_ms+1", "superseded_at=superseded_at+interval '0.000001 seconds'"})
+    mutations.push_back("update journal_page_revision set " + assignment + " where user_id=$1::uuid returning 1");
+  std::uint64_t rejected = 0;
+  for (const auto& mutation : mutations) {
+    sql.exec("savepoint journal_audit_corruption");
+    if (!sql.exec(mutation, pqxx::params{owner}).empty()) {
+      const ScopeKey key = ScopeKey::product(UserId(owner), "journal");
+      auto candidate = *store.scope(txn, key, RowLock::noKeyUpdate);
+      candidate.digest = Digest256{};
+      candidate.seq = sql.exec("select coalesce(max(engine_rev),0) from journal_page_revision where user_id=$1::uuid", pqxx::params{owner})[0][0].as<Seq>();
+      for (const auto& type : registry().types()) {
+        PgJournalType rows(type);
+        for (const auto& row : rows.feed(txn, key, FeedQuery{})) {
+          candidate.seq = std::max(candidate.seq, row.seq);
+          candidate.digest = candidate.digest + rowHash(row.toJson());
+        }
+      }
+      store.saveScope(txn, candidate);
+      auditCurrentAccount(txn, store, owner);
+      bool refused = false;
+      try { auditAccount(txn, store, owner); }
+      catch (const std::runtime_error&) { refused = true; }
+      if (!refused) throw std::runtime_error("journal corruption audit did not reject " + mutation);
+      ++rejected;
+    }
+    sql.exec("rollback to savepoint journal_audit_corruption");
+    sql.exec("release savepoint journal_audit_corruption");
+  }
+  return rejected;
+}
+
+void auditBoot(PgSyncStore& store, std::vector<Json::Value>& reports) {
+  struct AuditClock : Clock { std::uint64_t nowMs() override { return 0; } } clock;
+  struct AuditFailures : FailureReporter {
+    void report(const std::string&, const std::string&, const std::string& detail) override {
+      throw std::runtime_error("journal boot audit: " + detail);
+    }
+  } failures;
+  PgJournal product(registry());
+  SyncCatalog catalog(registry());
+  product.bindTo(catalog);
+  catalog.seal();
+  NullChangeFeed feed;
+  ServerClock serverClock;
+  Admission admission(catalog, store, feed, serverClock, failures);
+  SyncService service(catalog, store, admission, clock);
+  for (auto& report : reports) {
+    Json::Value request(Json::objectValue);
+    request["scopes"][0]["scope"] = "self/journal";
+    request["scopes"][0]["cursor"] = Json::Value();
+    Digest256 digest;
+    std::uint64_t rows = 0;
+    std::set<std::string> cursors;
+    for (;;) {
+      const auto reply = service.pull(Credential::sent(UserId(report["account"].asString())), jcs(request));
+      if (reply.status != 200 || reply.body["pages"].size() != 1 || reply.body["pages"][0]["kind"] != "rows")
+        throw std::runtime_error("journal boot audit: pull did not return rows: " + jcs(reply.body));
+      const auto& page = reply.body["pages"][0];
+      for (const auto& row : page["rows"]) { digest = digest + rowHash(row); ++rows; }
+      if (page["seq"] != report["seq"] || page["digest"] != report["digest"])
+        throw std::runtime_error("journal boot audit: advertised head or digest");
+      const auto cursor = Cursor::decode(page["cursor"].asString());
+      if (!cursor) throw std::runtime_error("journal boot audit: invalid cursor");
+      if (!page["more"].asBool()) {
+        if (!cursor->live || cursor->key || cursor->seq != report["seq"].asUInt64() || rows != report["rows"].asUInt64() || digest.hex() != report["digest"].asString())
+          throw std::runtime_error("journal boot audit: final head, roster or digest");
+        break;
+      }
+      if (!cursors.insert(page["cursor"].asString()).second) throw std::runtime_error("journal boot audit: repeated cursor");
+      request["scopes"][0]["cursor"] = page["cursor"];
+    }
+    report["bootAudit"] = true;
+  }
 }
 
 }
 
 std::vector<Json::Value> PgJournalBackfill::run(Ms migrationTime, bool dryRun, std::optional<std::string> account,
-    const std::string& firstRunPolicy, std::optional<Json::Value> frozenInput) {
+    const std::string& firstRunPolicy, std::optional<Json::Value> frozenInput, bool resumeRecorded,
+    const std::function<void(const Json::Value&)>& onAccount) {
   if (firstRunPolicy != "retire-existing") throw std::runtime_error("journal first-run migration policy must be retire-existing");
   if (migrationTime >= (std::uint64_t(1) << 53)) throw std::runtime_error("invalid migration instant");
   PgSyncStore store(pool_, Limits{}.lockTimeoutMs);
@@ -238,15 +357,20 @@ std::vector<Json::Value> PgJournalBackfill::run(Ms migrationTime, bool dryRun, s
     const auto standing = store.scope(*txn, key, dryRun ? RowLock::none : RowLock::noKeyUpdate);
     const auto marker = sql.exec("select * from journal_sync_adoptions where user_id=$1::uuid", pqxx::params{owner});
     if (!marker.empty()) {
-      if (marker[0]["migration_ms"].as<Ms>() != migrationTime || marker[0]["first_run_policy"].as<std::string>() != firstRunPolicy ||
+      if ((!resumeRecorded && marker[0]["migration_ms"].as<Ms>() != migrationTime) || marker[0]["first_run_policy"].as<std::string>() != firstRunPolicy ||
           (frozenInput && marker[0]["manifest_digest"].as<std::string>() != sha256(jcs(*frozenInput)).hex()))
         throw std::runtime_error("journal adoption manifest differs");
       if (!standing) throw std::runtime_error("journal adoption marker exists without its scope");
       const auto frozen = parseJson(marker[0]["frozen_input"].as<std::string>());
-      reports.push_back(report(*standing, frozen["pages"].size() + (standing->seq > frozen["pages"].size() + frozen["revisions"].size()), frozen["revisions"].size(), false));
+      if (marker[0]["manifest_digest"].as<std::string>() != sha256(jcs(frozen)).hex()) throw std::runtime_error("journal adoption manifest differs");
+      const auto roster = sql.exec("select (select count(*) from journal_page where user_id=$1::uuid)+(select count(*) from journal_sync_state where user_id=$1::uuid), (select count(*) from journal_page_revision where user_id=$1::uuid)", pqxx::params{owner});
+      reports.push_back(report(*standing, roster[0][0].as<std::uint64_t>(), roster[0][1].as<std::uint64_t>(), false));
+      if (onAccount) onAccount(reports.back());
       continue;
     }
     if (standing) throw std::runtime_error("journal scope exists without an adoption marker");
+    if (!sql.exec("select 1 from journal_sync_state where user_id=$1::uuid union all select 1 from journal_claim_receipts where user_id=$1::uuid union all select 1 from journal_content_clock where user_id=$1::uuid", pqxx::params{owner}).empty())
+      throw std::runtime_error("journal engine state exists without an adoption marker");
     const Frozen frozen = freeze(*txn, owner);
     const Json::Value legacy = frozenInput ? *frozenInput : frozen.legacy;
     const Json::Value ordered = sortedLegacy(legacy);
@@ -305,16 +429,33 @@ std::vector<Json::Value> PgJournalBackfill::run(Ms migrationTime, bool dryRun, s
     auto result = report(scope, rows.size(), frozen.tuples.size(), true);
     result["dryRun"] = dryRun;
     reports.push_back(std::move(result));
+    if (onAccount) onAccount(reports.back());
   }
   return reports;
 }
 
-std::vector<Json::Value> PgJournalBackfill::audit(std::optional<std::string> account) {
+std::vector<Json::Value> PgJournalBackfill::audit(std::optional<std::string> account, bool testCorruptions) {
+  PgSyncStore store(pool_, Limits{}.lockTimeoutMs);
+  auto txn = store.begin(testCorruptions ? TxnMode::write : TxnMode::snapshot);
+  requireSchema(*txn);
+  std::vector<Json::Value> result;
+  for (const std::string& owner : accounts(*txn, account)) {
+    result.push_back(auditAccount(*txn, store, owner));
+    if (testCorruptions) result.back()["corruptionsRejected"] = Json::UInt64(testFrozenAudit(*txn, store, owner));
+  }
+  txn.reset();
+  auditBoot(store, result);
+  return result;
+}
+
+std::vector<Json::Value> PgJournalBackfill::auditCurrent(std::optional<std::string> account) {
   PgSyncStore store(pool_, Limits{}.lockTimeoutMs);
   auto txn = store.begin(TxnMode::snapshot);
   requireSchema(*txn);
   std::vector<Json::Value> result;
-  for (const std::string& owner : accounts(*txn, account)) result.push_back(auditAccount(*txn, store, owner));
+  for (const auto& owner : accounts(*txn, account)) result.push_back(auditCurrentAccount(*txn, store, owner));
+  txn.reset();
+  auditBoot(store, result);
   return result;
 }
 

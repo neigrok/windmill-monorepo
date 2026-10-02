@@ -1,4 +1,79 @@
-# Gym write differential
+# Production write differentials
+
+## Journal
+
+`journal_write_differential.py --mode off-vs-on --bin-dir /path/to/build` compares the production composition with
+`JOURNAL_ENGINE_WRITES=0` against the admitted writer after journal backfill. It creates and drops
+two isolated databases and runs `windmill_server_test_clock` on free ports in 18950–18999. The
+legacy side uses plain `schema.sql`; the admitted side additionally uses `journal_sync.sql`.
+`--maintenance-db` needs CREATE DATABASE permission; `--image` uses the tested CI builder for both
+servers and the backfill. Cleanup stops every server and drops every database even after failure.
+
+`--mode main-vs-off --drogon-prefix /path/to/pinned/drogon` is a local pre-merge gate, not a CI step.
+It builds `origin/main`'s `windmill_server` in its own build directory from a temporary worktree
+owned by a shared mirror, using the same baseline builder and cleanup as gym. The identical test
+clock header and its server compile definition are the only baseline changes; the SHA and patch
+remain in the temporary evidence directory. B runs this branch's test server with both journal
+switches off. Both databases use plain `schema.sql` with identical data. The full unfrozen REST
+sequence must compare byte-for-byte with zero allowed differences; admission audits, unadopted
+refusals and the freeze sequence run only in off-vs-on. Cleanup removes the baseline worktree and
+mirror as well as both servers and databases.
+Before seeding, this mode disables `journal_page` autovacuum in both disposable databases so
+independently timed automatic analysis cannot change the planner's order within HLC ties.
+
+The main-vs-off gate includes separate reverse-inserted and later-updated equal-HLC cohorts. The
+later cohort is updated through real REST saves in reverse day order. Each compares complete
+since reads, limit=1 and limit=2 responses and strict cursor exclusion. Cohort membership and
+stamps are asserted, while the baseline determines the tie order. Each limit=1 baseline must pick
+a different day from the day-ascending tie-break, ensuring these fixtures expose the regression.
+The report retains the observed full and limited orders. Off-engine reads keep main's three-HLC
+column query exactly; admitted reads add the day tie-break.
+
+Both servers explicitly set the journal/gym engine and freeze switches, vendor keys, echo embedder,
+owner list, nudge arming and admin tokens. They share the controlled C++ clock file and identical
+disposable SQL clocks used by the gym differential. Every paired request advances both clocks by
+1,000 ms and compares status, body and application headers exactly. No body values, timestamps,
+JSON formatting, field order, numeric encodings or generated identities are normalized. Each
+Content-Length is checked independently. Only Date, Connection and Keep-Alive are excluded.
+Comparator regression cases reject timestamp, field order, numeric encoding, array order, ETag,
+framing and switch drift. Immutability checks include each row's `xmin` and `ctid`, so a no-op
+UPDATE cannot pass as unchanged.
+
+The seed includes written, blank, empty and revisions-only accounts; null and zero scores; spoken
+source; `0:0:` and future content stamps; duplicate stamps; duplicate revision bodies; expired
+revisions and archive-time ties; echo pairs, nudge suppression and mail secrets. A dedicated
+1,002-page account crosses the HLC-since default 500 and maximum 1000 limits, numeric parsing
+boundaries and strict cursor endpoints before writes and under freeze. Before writes, the
+backfill's dry run and second run must leave all journal and sync rows unchanged. The independent
+frozen-source envelope audit and corruption rejection gate run immediately after adoption. After
+admitted writes, `--audit-current` independently checks feed digests, high sequences and real
+null-cursor boots.
+
+The sequence covers every registered journal write route and retries it with the same request ID:
+page replacement/defaults/normalization, strict stale and equal-stamp losses, HLC actor ties,
+calendar and UTF-8 byte limits, score-only and duplicate-body revisions, blank-page transitions,
+first admissions, every echo feedback/offer route, nudge settings/suppression/pause/unsubscribe,
+admin echo/nudge sweeps and transcription's signed-out, free-account and unconfigured-vendor
+refusals. Echo derivation and transcription vendors stay unconfigured; paid vendor successes are
+covered by their adapter tests. Every read route follows writes, including range, export,
+HLC-since precedence/limits and operator diagnostics. Retained legacy revision projections also
+compare exactly, including pruning to ten per day and removing expired history after insertion.
+
+Both servers restart with `JOURNAL_WRITE_FREEZE=1`; every registered mutation must return exactly
+503 `journal-frozen`, including malformed and unauthenticated requests. Reads still compare and
+all journal/sync rows must remain unchanged. A real signed shared Resend suppression webhook is
+also checked before and during freeze; its frozen 503 changes no suppression row. Source route
+inventory makes any uncovered read, write or frozen mutation fail. The production composition
+must return 404 for `/v1/sync/hello`.
+A separate admitted-side check confirms two `journal-not-adopted` refusals leave an unadopted
+account and its absent scope unchanged before adopting it.
+
+There are **no intended D-level differences** in either journal differential. The two 503
+safety cases apply only while frozen or before account adoption and are asserted separately.
+Failure bodies, migration/audit reports and server logs remain in the printed temporary evidence
+directory. CI's Postgres job runs off-vs-on alongside gym's.
+
+## Gym
 
 `gym_write_differential.py --bin-dir /path/to/build` creates two throwaway Postgres databases,
 seeds identical accounts and authentication (RUNNING.md §5), starts two real server
@@ -9,8 +84,8 @@ A uses only `schema.sql`; B also uses `gym_sync.sql`. All processes and database
 permission. The local build must include `windmill_server_test_clock`; production
 `windmill_server` never honours the test clock environment. CI passes the tested builder to `--image`;
 the script starts both server containers
-with host networking and runs the same backfill binary in that image. CI also runs the main
-comparison inside that builder with a read-only repository mount and a temporary baseline worktree.
+with host networking and runs the same backfill binary in that image. CI runs off-vs-on;
+main-vs-off is a local gate using a temporary baseline worktree.
 
 Before B is adopted, the legacy server creates and corrects an imported workout and deletes one
 of its sets. Its exact rows and legacy receipts are copied into B. The sequence replays that

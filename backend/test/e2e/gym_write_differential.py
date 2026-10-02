@@ -127,7 +127,8 @@ class Differential:
         environment = {"DATABASE_URL": database, "PORT": str(port), "GYM_ENGINE_WRITES": str(engine),
                        "WM_TEST_CLOCK_FILE": str(self.clock_file), "PGOPTIONS": "-c search_path=public,pg_catalog -c timezone=UTC",
                        "WINDMILL_HOST": "127.0.0.1",
-                       "GYM_WRITE_FREEZE": "0", "WINDMILL_APP_URL": "http://gym.test",
+                       "GYM_WRITE_FREEZE": "0", "JOURNAL_ENGINE_WRITES": "0", "JOURNAL_WRITE_FREEZE": "0",
+                       "WINDMILL_APP_URL": "http://gym.test",
                        "WINDMILL_API_URL": "http://gym.test", "ANTHROPIC_API_KEY": "",
                        "RESEND_API_KEY": "", "SENTRY_DSN": "", "AMPLITUDE_API_KEY": "",
                        "WINDMILL_MCP_TOKEN": "", "WINDMILL_COOKIE_DOMAIN": ""}

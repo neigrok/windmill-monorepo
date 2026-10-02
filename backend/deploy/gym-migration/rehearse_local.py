@@ -25,8 +25,9 @@ def main():
     backend = Path(__file__).resolve().parents[2]
     reports = []
     for case in ("plain", "early-engine"):
-        database = "wm_gym_rehearsal_" + str(time.time_ns())
-        environment = {**os.environ, "DATABASE_URL": args.maintenance_db, "GYM_ENGINE_WRITES": "0", "GYM_WRITE_FREEZE": "0"}
+        database = "wm_products_rehearsal_" + str(time.time_ns())
+        environment = {**os.environ, "DATABASE_URL": args.maintenance_db, "GYM_ENGINE_WRITES": "0", "GYM_WRITE_FREEZE": "0",
+                       "JOURNAL_ENGINE_WRITES": "0", "JOURNAL_WRITE_FREEZE": "0"}
         output = args.output / case
         output.mkdir()
         created = False
@@ -40,17 +41,20 @@ def main():
             run(["psql", environment["DATABASE_URL"], "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/schema.sql")],
                 environment, output / "schema.log")
             seed = run([str(args.bin_dir / "windmill_gym_rehearsal_seed")], environment, output / "seed.jsonl")
+            run([str(args.bin_dir / "windmill_journal_rehearsal_seed")], environment, output / "journal-seed.jsonl")
             early = None
             if case == "early-engine":
                 run(["psql", environment["DATABASE_URL"], "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/gym_sync.sql")],
                     environment, output / "adoption-schema.log")
+                run(["psql", environment["DATABASE_URL"], "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/journal_sync.sql")],
+                    environment, output / "journal-adoption-schema.log")
                 owner = next(row["account"] for row in map(json.loads, seed.splitlines()) if row["fixture"] == 1)
                 token = hashlib.sha256(b"gym-local-rehearsal").hexdigest()
                 psql(environment, f"INSERT INTO sessions(token_hash,user_id,expires_ms) VALUES ('{token}','{owner}',99999999999999)")
                 with socket.socket() as probe:
                     probe.bind(("127.0.0.1", 0))
                     port = probe.getsockname()[1]
-                server_env = {**environment, "GYM_ENGINE_WRITES": "1", "PORT": str(port), "WINDMILL_HOST": "127.0.0.1",
+                server_env = {**environment, "GYM_ENGINE_WRITES": "1", "JOURNAL_ENGINE_WRITES": "1", "PORT": str(port), "WINDMILL_HOST": "127.0.0.1",
                               "ANTHROPIC_API_KEY": "", "RESEND_API_KEY": "", "SENTRY_DSN": "", "AMPLITUDE_API_KEY": ""}
                 with (output / "early-server.log").open("wb") as log:
                     process = subprocess.Popen([str(args.bin_dir / "windmill_server")], cwd=output,
@@ -69,6 +73,13 @@ def main():
                     raise RuntimeError("early engine server did not start")
                 early = {"status": response.status, "body": json.loads(body)}
                 assert early["status"] == 503 and early["body"]["code"] == "gym-not-adopted", early
+                connection.request("PUT", "/v1/journal/page/2026-09-01",
+                                   body=json.dumps({"body": "Refuse unadopted history", "stamp": "1790856000001:0:rehearsal"}),
+                                   headers={"Cookie": "wm_session=gym-local-rehearsal", "Content-Type": "application/json"})
+                journal_response = connection.getresponse()
+                journal_early = {"status": journal_response.status, "body": json.loads(journal_response.read())}
+                assert journal_early["status"] == 503 and journal_early["body"]["code"] == "journal-not-adopted", journal_early
+                early["journal"] = journal_early
                 assert psql(environment, "SELECT count(*) FROM sync_scopes").strip() == b"0"
                 connection.close()
                 connection = None

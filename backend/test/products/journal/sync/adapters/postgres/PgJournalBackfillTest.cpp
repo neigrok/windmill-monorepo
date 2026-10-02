@@ -216,3 +216,28 @@ TEST(journal_backfill_preserves_receipt_timestamp_precision_and_refuses_changed_
   CHECK_EQ(jcs(databaseRows(world)), jcs(before));
   CHECK(backfill.audit(owner)[0]["audit"].asBool());
 }
+
+TEST(journal_backfill_recorded_resume_and_corruption_gate_leave_every_table_unchanged) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto input = migrationVectors()[0]["input"];
+  test::PgWorld world(false, true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  journal::engine::PgJournalBackfill backfill(pgTestPool());
+  const auto owner = world.account("A").str();
+  backfill.run(input["M"].asUInt64(), false, owner);
+  const auto adopted = databaseRows(world);
+  std::vector<Json::Value> emitted;
+  const auto resumed = backfill.run(input["M"].asUInt64() + 1, false, owner, "retire-existing", std::nullopt, true,
+      [&](const Json::Value& report) { emitted.push_back(report); });
+  CHECK_EQ(resumed.size(), std::size_t(1));
+  CHECK_EQ(jcs(emitted[0]), jcs(resumed[0]));
+  CHECK(!resumed[0]["changed"].asBool());
+  CHECK_EQ(jcs(databaseRows(world)), jcs(adopted));
+  const auto audit = backfill.audit(owner, true);
+  CHECK(audit[0]["envelopeAudit"].asBool());
+  CHECK(audit[0]["bootAudit"].asBool());
+  CHECK(audit[0]["corruptionsRejected"].asUInt64() > 0);
+  CHECK_EQ(jcs(databaseRows(world)), jcs(adopted));
+  CHECK(backfill.auditCurrent(owner)[0]["bootAudit"].asBool());
+}

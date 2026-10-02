@@ -2,7 +2,9 @@
 
 #include "platform/domain/Auth.h"
 
+#include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
 namespace wm {
@@ -24,6 +26,7 @@ struct MailSuppression {
 struct MailStream {
   std::string name;                             // "roadmap reminder", "journal nudge"
   std::shared_ptr<MailSuppression> suppression;
+  std::function<std::optional<std::string>()> writeRefusal;
 };
 
 }

@@ -2,6 +2,7 @@
 
 #include "products/journal/domain/Passage.h"
 #include "products/journal/domain/SpanReconcile.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -84,13 +85,13 @@ EchoExplanation EchoExplainer::explain(const UserId& user, const ExplainRequest&
     for (const StoredSpan& span : stored) texts.push_back(span.text);
     explained.passages = locateUnits(page->body, texts);
     explained.unitsFromStorage = true;
-  } else if (explained.segmenterConfigured) {
+  } else if (explained.segmenterConfigured && !journal::journalWriteFrozen()) {
     const Segmentation cut = segmenter_.unitsOf(user, page->body);
     explained.passages = cut.passages;
     explained.unitsDiscarded = cut.discarded;
     if (!cut.ok) explained.error = "segmenter: " + cut.failure;
   }
-  if (!explained.embedderConfigured || explained.passages.empty()) return explained;
+  if (journal::journalWriteFrozen() || !explained.embedderConfigured || explained.passages.empty()) return explained;
 
   // 2 — embed. The vendor call this door always pays for.
   std::vector<std::string> texts;

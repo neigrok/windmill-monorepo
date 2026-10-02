@@ -103,7 +103,8 @@ the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the
 The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases.
 The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. The engine `sync` suite
 reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql`, `db/gym_sync.sql` and `db/journal_sync.sql`.
-The gym adoption and backfill rehearsal is documented in [deploy/gym-migration/README.md](deploy/gym-migration/README.md).
+The combined gym and journal adoption rehearsal and cutover are documented in
+[deploy/gym-migration/README.md](deploy/gym-migration/README.md).
 Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` or `journal_sync.sql` to the
 legacy repository database: it removes the `ON DELETE` actions those repository tests require.
 The admitted gym door cases in `adapters` use `WM_SYNC_DATABASE_URL`, with real repositories and
@@ -125,27 +126,40 @@ require the adopted gym schema and metadata. The freeze refuses REST writes with
 MCP and Coach abilities with error results, and leaves staleness unchanged on reads. Conversations
 and workout shares retain their existing tables; conversation deletion admits proposal unlinking.
 
+`JOURNAL_ENGINE_WRITES` and `JOURNAL_WRITE_FREEZE` accept the same values and default off.
+The journal engine door requires `journal_sync.sql` and adopted history; premature admission
+returns `503 journal-not-adopted`. The freeze returns `503 journal-frozen` from every journal
+mutation door and stops echo derivation, echo/nudge sweeps and provider-suppression writes.
+Journal reads retain their existing repository and REST wire contract. No production sync route
+is mounted. Enable gym and journal together only after their shared frozen rehearsal gates pass.
+
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" GYM_ENGINE_WRITES=1 \
   ctest --test-dir build -R '^(mcp|adapters)$' -V
 ```
 
-The real-server write differential owns two fresh databases and two test server processes on
-free loopback ports 18900–18949. Both use the production composition with one controlled test clock;
+Each real-server write differential owns two fresh databases and two test server processes on
+free loopback ports (gym 18900–18949; journal 18950–18999). Both use the production composition with one controlled test clock;
 the production `windmill_server` ignores the test clock environment. It seeds matching session cookies and MCP keys,
 backfills the engine
-database, drives every write route and gym tool with retries, and interleaves reads. It stops both
+database, drives every write route and gym tool with retries, and interleaves reads. Each stops both
 servers and drops both databases on success or failure. Python 3 and the Postgres client tools are
-required. CI runs off-vs-on with `--image`. main-vs-off compares against `origin/main`, so it is a
-gate run locally before a change to the gym doors merges, not in CI. Both modes compare timestamps
-exactly; only independently
+required. CI runs off-vs-on with `--image`. Both products' main-vs-off modes build `origin/main` in
+a separate temporary worktree and build directory and keep the branch server's engine and freeze
+switches off. They are pre-merge gates run locally, not CI steps. Journal includes reverse-inserted
+and later-updated equal-HLC cohorts, checking full reads, limit=1 and strict cursor exclusion against
+main's exact response bytes. Both modes compare timestamps exactly; only gym's independently
 random generated identities use stable paired aliases (test/e2e/README.md).
 
 ```sh
 python3 test/e2e/gym_write_differential.py --mode off-vs-on --bin-dir build \
   --maintenance-db 'postgresql:///postgres?host=/tmp'
+python3 test/e2e/journal_write_differential.py --mode off-vs-on --bin-dir build \
+  --maintenance-db 'postgresql:///postgres?host=/tmp'
 python3 test/e2e/gym_write_differential.py --mode main-vs-off --bin-dir build \
+  --maintenance-db 'postgresql:///postgres?host=/tmp'
+python3 test/e2e/journal_write_differential.py --mode main-vs-off --bin-dir build \
   --maintenance-db 'postgresql:///postgres?host=/tmp'
 dropdb -h /tmp wm_rest_test
 dropdb -h /tmp wm_sync_test

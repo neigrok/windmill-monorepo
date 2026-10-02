@@ -1,4 +1,5 @@
 #include "products/journal/application/NudgeSweep.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -30,6 +31,11 @@ void NudgeSweep::start() {
   LOG_INFO << "journal nudge: heartbeat armed, first sweep in " << kFirstTickSeconds << "s ("
            << (arming().enabled ? "enabled" : "dark") << ", " << arming().allowlist.size()
            << " on the allowlist)";
+}
+
+MailSweepReport NudgeSweep::run(std::uint64_t nowMs, bool dryRun) {
+  if (journal::journalWriteFrozen()) return {};
+  return MailSweep::run(nowMs, dryRun);
 }
 
 void NudgeSweep::runAsync(std::uint64_t nowMs, bool dryRun,

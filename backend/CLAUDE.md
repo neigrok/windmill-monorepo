@@ -17,8 +17,8 @@ everywhere, plus `ws`/`mcp`/`llm`/`email` where a product needs them).
 
 Composition roots: `platform/infra/main.cpp` (REST, the collab socket and MCP in one process),
 `mcp_main.cpp` (stdio transport), `mcp_http_main.cpp` (standalone HTTP transport, for local runs),
-and the gym migration tools (`gym_backfill_main.cpp`, `gym_snapshot_main.cpp`,
-`gym_rehearsal_seed_main.cpp`; `deploy/gym-migration/README.md`).
+and the gym and journal migration tools (`{gym,journal}_{backfill,snapshot,rehearsal_seed}_main.cpp`;
+the combined rehearsal and cutover live in `deploy/gym-migration/README.md`).
 
 ## How a product plugs in
 
@@ -86,25 +86,31 @@ rehearsal.
 
 `products/journal/sync/` binds `page`, `journalState`, `journal.savePage` and `journal.claimPage` over
 adopted journal tables. `platform/infra/SyncProducts` seals the gym + journal v4 catalog and injects it
-into the gym door; products remain independent. Journal REST uses its existing repositories and
-mounts no engine door. `db/journal_sync.sql` is test-only, applied after `schema.sql` in the isolated
-sync database. Admission and revision retention run over fakes and Postgres, and all journal migration
+into both products' doors; products remain independent. `JOURNAL_ENGINE_WRITES` routes page writes
+through `ServerCall` and defaults off; reads and off-engine features keep their existing repositories.
+`JOURNAL_WRITE_FREEZE` defaults off and blocks journal mutations, echo/nudge workers and provider
+suppression. `db/journal_sync.sql` is applied after `schema.sql` in the isolated sync database and
+explicitly during frozen adoption; regular deployment does not apply it. Admission and revision
+retention run over fakes and Postgres, and all journal migration
 vectors run over Postgres. The migration retains frozen input, exact receipt times and stable revision
 identities for its independent audit. `JournalFeed` announces committed winning pages to the existing
 watcher; watcher or live-feed failures are reported after commit.
 
 `test/e2e/gym_write_differential.py` runs the production composition with a test-only shared clock,
 creates and drops its own databases, and compares gym REST/MCP writes, retries and reads in two
-modes: origin/main against switches-off, and switches-off against adopted engine writes. CI's
-Postgres job runs both from the tested builder image. Production ignores the test clock environment.
-The runtime ships `windmill_gym_backfill`,
-`windmill_gym_snapshot`, `gym_sync.sql` and the rehearsal; the probe symbol gate remains mandatory.
+modes: origin/main against switches-off, and switches-off against adopted engine writes.
+`test/e2e/journal_write_differential.py` compares origin/main against switches-off, and switches-off
+against adopted engine writes and the shared freeze. Both products' main-vs-off comparisons are
+local pre-merge gates. CI's Postgres job runs both products' off-vs-on
+comparisons from the tested builder image. Production ignores the test clock environment.
+The runtime ships both products' backfill and snapshot binaries, adoption schemas and the combined
+rehearsal; the probe symbol gate remains mandatory.
 The dispatch-only `gym-backup.yml` and `gym-rehearsal.yml` retain all production data on the VPS,
 and serialize with deployment. Operator steps live in `deploy/gym-migration/README.md`.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:
-`windmill_server` mounts no `/v1/sync` route; gym's engine doors stay off until rollout, and the
+`windmill_server` mounts no `/v1/sync` route; both products' engine doors stay off until rollout, and the
 Dockerfile fails the image if a probe symbol reaches it.
 
 `RUNNING.md` is the local walkthrough, `deploy/README.md` the production runbook. `SPEC.md` is the

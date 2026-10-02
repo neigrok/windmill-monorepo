@@ -4,6 +4,7 @@
 #include "products/journal/domain/SpanReconcile.h"
 
 #include <trantor/utils/Logger.h>
+#include "products/journal/application/JournalSwitches.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -93,6 +94,7 @@ PipelineVersions EchoSweep::versions() const {
 }
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
+  if (journal::journalWriteFrozen()) return EchoSweepReport{};
   EchoSweepReport report;
   // Any boundary missing is a no-op: no row is written and the page stays due.
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
@@ -119,6 +121,7 @@ EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) 
 }
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
+  if (journal::journalWriteFrozen()) return EchoSweepReport{};
   EchoSweepReport report;
   // Any boundary missing makes the whole pass a no-op rather than an error.
   if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;

@@ -6,6 +6,7 @@
 
 #include <pqxx/pqxx>
 
+#include <algorithm>
 #include <cstdlib>
 #include <optional>
 #include <string>
@@ -18,6 +19,18 @@ namespace {
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 
 const std::string kUser = "11111111-1111-1111-1111-111111111111";
+
+struct JournalEngineMode {
+  std::optional<std::string> previous;
+  explicit JournalEngineMode(bool enabled) {
+    if (const char* value = std::getenv("JOURNAL_ENGINE_WRITES")) previous = value;
+    setenv("JOURNAL_ENGINE_WRITES", enabled ? "1" : "0", 1);
+  }
+  ~JournalEngineMode() {
+    if (previous) setenv("JOURNAL_ENGINE_WRITES", previous->c_str(), 1);
+    else unsetenv("JOURNAL_ENGINE_WRITES");
+  }
+};
 
 void reset() {
   PgLease c{*pgTestPool()};
@@ -69,6 +82,52 @@ TEST(pg_journal_save_then_load_roundtrips_every_field) {
   CHECK(got->source == Source::spoken);
   CHECK_EQ(got->stamp.physicalMs, static_cast<std::uint64_t>(500));
   CHECK_EQ(got->stamp.actor, std::string("devZ"));
+}
+
+TEST(pg_journal_since_preserves_legacy_ties_off_and_orders_by_day_on) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  JournalEngineMode off(false);
+  reset();
+  PgJournalRepository repo{pgTestPool()};
+  const UserId user(kUser);
+  for (const char* day : {"2026-07-03", "2026-07-02", "2026-07-01"}) {
+    Page incoming(user, LocalDate(day));
+    incoming.body = day;
+    incoming.stamp = Hlc{500, 2, "same"};
+    repo.save(incoming);
+  }
+  for (int mutation = 0; mutation < 2; ++mutation) {
+    for (const int limit : {1, 2, 500}) {
+      std::vector<std::string> mainDays;
+      {
+        PgLease lease{*pgTestPool()};
+        pqxx::work sql{*lease};
+        const auto rows = sql.exec(
+            "SELECT user_id, day::text AS day, body, mood, energy, source, "
+            "stamp_ms, stamp_counter, stamp_actor, "
+            "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms "
+            "FROM journal_page WHERE user_id=$1::uuid "
+            "AND (stamp_ms, stamp_counter, stamp_actor) > ($2::bigint, $3::bigint, $4::text) "
+            "ORDER BY stamp_ms ASC, stamp_counter ASC, stamp_actor ASC LIMIT $5",
+            pqxx::params{kUser, 0LL, 0LL, "", limit});
+        for (const auto& row : rows) mainDays.push_back(row["day"].as<std::string>());
+      }
+      const auto legacy = repo.since(user, Hlc{0, 0, ""}, limit);
+      REQUIRE_EQ(legacy.size(), mainDays.size());
+      for (std::size_t index = 0; index < legacy.size(); ++index)
+        CHECK_EQ(legacy[index].day.iso(), mainDays[index]);
+      JournalEngineMode on(true);
+      const auto admitted = repo.since(user, Hlc{0, 0, ""}, limit);
+      REQUIRE_EQ(admitted.size(), static_cast<std::size_t>(std::min(limit, 3)));
+      for (std::size_t index = 0; index < admitted.size(); ++index)
+        CHECK_EQ(admitted[index].day.iso(), "2026-07-0" + std::to_string(index + 1));
+    }
+    CHECK(repo.since(user, Hlc{500, 2, "same"}, 500).empty());
+    PgLease lease{*pgTestPool()};
+    pqxx::work sql{*lease};
+    sql.exec("update journal_page set updated_at=now() where user_id=$1::uuid and day='2026-07-01'", pqxx::params{kUser});
+    sql.commit();
+  }
 }
 
 // 0 is an answer and null is silence, and the column has to keep them apart on both legs.

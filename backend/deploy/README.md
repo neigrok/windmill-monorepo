@@ -115,6 +115,10 @@ must be public.
   the server and `embedder-<sha>` images must exist.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied by the `migrate` one-shot on every
   deploy.
+  Product adoption is explicit, under one shared gym/journal freeze; follow
+  [the combined cutover runbook](gym-migration/README.md). All four engine-write/freeze switches
+  default to `0` in Compose and deployment variables. The dispatch-only backup and rehearsal
+  workflows cover both products without changing production data or switches.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
 
 ## Frontend

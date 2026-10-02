@@ -1,4 +1,4 @@
-name: Gym production backup
+name: Gym and journal production backup
 
 on:
   workflow_dispatch:
@@ -32,7 +32,7 @@ jobs:
           cd ~/windmill
           umask 077
           mkdir -p backups
-          backup="backups/gym-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
+          backup="backups/products-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
           partial="$backup.partial"
           trap 'rm -f "$partial"' EXIT
           docker compose exec -T db sh -ec \

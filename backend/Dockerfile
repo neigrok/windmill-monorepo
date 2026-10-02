@@ -56,7 +56,8 @@ COPY --from=contract sync/corpus /contract/sync/corpus
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
       --target windmill_server windmill_server_test_clock windmill_mcp_http windmill_server_probe \
-               windmill_gym_backfill windmill_gym_snapshot \
+               windmill_gym_backfill windmill_gym_snapshot windmill_gym_rehearsal_seed \
+               windmill_journal_backfill windmill_journal_snapshot windmill_journal_rehearsal_seed \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests
 
 # Tests are self-contained (in-memory fakes, no database) — run them in the build so a
@@ -65,12 +66,14 @@ RUN ctest --test-dir build --output-on-failure
 
 # Belt and braces: prove the binaries exist before we carry them to the runtime stage.
 RUN test -x build/windmill_server && test -x build/windmill_mcp_http \
- && test -x build/windmill_gym_backfill && test -x build/windmill_gym_snapshot
+ && test -x build/windmill_gym_backfill && test -x build/windmill_gym_snapshot \
+ && test -x build/windmill_journal_backfill && test -x build/windmill_journal_snapshot
 
 # The probe is the sync engine's test and dev product: it must never ship. windmill_server links no probe
-# code, and the runtime stage carries schema.sql and gym_sync.sql, never probe.sql.
+# code, and the runtime stage carries the product adoption schemas, never probe.sql.
 RUN ! nm -C build/windmill_server | grep -q 'wm::probe::'
-RUN ! nm -C build/windmill_gym_backfill build/windmill_gym_snapshot | grep -q 'wm::probe::'
+RUN ! nm -C build/windmill_gym_backfill build/windmill_gym_snapshot \
+            build/windmill_journal_backfill build/windmill_journal_snapshot | grep -q 'wm::probe::'
 
 ########################  runtime  ########################
 # Same Ubuntu 22.04 userland as the builder, so glibc/libstdc++ ABI matches exactly.
@@ -98,10 +101,14 @@ COPY --from=build /src/build/windmill_server   /usr/local/bin/windmill_server
 COPY --from=build /src/build/windmill_mcp_http  /usr/local/bin/windmill_mcp_http
 COPY --from=build /src/build/windmill_gym_backfill /usr/local/bin/windmill_gym_backfill
 COPY --from=build /src/build/windmill_gym_snapshot /usr/local/bin/windmill_gym_snapshot
+COPY --from=build /src/build/windmill_journal_backfill /usr/local/bin/windmill_journal_backfill
+COPY --from=build /src/build/windmill_journal_snapshot /usr/local/bin/windmill_journal_snapshot
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/db/gym_sync.sql          /app/db/gym_sync.sql
+COPY --from=build /src/db/journal_sync.sql      /app/db/journal_sync.sql
 COPY --from=build /src/deploy/gym-migration/rehearse.py /app/deploy/gym-migration/rehearse.py
 COPY --from=build /src/products/gym/routes.cpp  /app/products/gym/routes.cpp
+COPY --from=build /src/products/journal/routes.cpp /app/products/journal/routes.cpp
 
 WORKDIR /app
 EXPOSE 8080 8090

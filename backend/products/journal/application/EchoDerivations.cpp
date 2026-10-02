@@ -1,6 +1,7 @@
 #include "products/journal/application/EchoDerivations.h"
 
 #include <trantor/utils/Logger.h>
+#include "products/journal/application/JournalSwitches.h"
 
 #include <algorithm>
 #include <utility>
@@ -35,6 +36,7 @@ void EchoDerivations::start() {
 }
 
 void EchoDerivations::pageSaved(const UserId& user, const LocalDate& day, std::size_t bodyBytes) {
+  if (journal::journalWriteFrozen()) return;
   const std::uint64_t nowMs = clock_.nowMs();
   const std::string key = pageKey(user, day);
   std::lock_guard<std::mutex> guard{lock_};
@@ -67,6 +69,7 @@ void EchoDerivations::pageSaved(const UserId& user, const LocalDate& day, std::s
 }
 
 EchoLiveReport EchoDerivations::drain(std::uint64_t nowMs) {
+  if (journal::journalWriteFrozen()) return EchoLiveReport{};
   EchoLiveReport report;
 
   std::vector<Pending> ready;

@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <cstdint>
 #include <optional>
@@ -75,6 +76,10 @@ void NudgeApi::getSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to change your nudge"));
@@ -149,6 +154,10 @@ void NudgeApi::patchSettings(const drogon::HttpRequestPtr& req, HttpCallback&& c
 }
 
 void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   // Uncredentialed: the only authority is the per-send secret from the reader's own mail, and a
   // secret matching nothing gets the same 204, so this door cannot be asked whose nudges exist.
   const std::string secret = bearerOf(req);
@@ -160,6 +169,10 @@ void NudgeApi::pause(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 }
 
 void NudgeApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   // RFC 8058 one-click: the mail client POSTs this, so the secret rides the query. POST-only, so a
   // scanner that GETs every URL in a mail cannot unsubscribe anyone, and it answers the same whether
   // or not the secret matched.
@@ -172,6 +185,10 @@ void NudgeApi::unsubscribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
 }
 
 void NudgeApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   // Closed unless the deploy set an admin token; the compare is constant-time.
   const std::string header = req->getHeader("x-admin-token");
   const std::string presented = header.empty() ? req->getParameter("token") : header;

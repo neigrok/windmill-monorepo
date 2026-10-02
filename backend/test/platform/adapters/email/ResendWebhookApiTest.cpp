@@ -332,3 +332,25 @@ TEST(resend_webhook_every_failing_stream_is_named_in_the_one_500) {
   CHECK_EQ((*response->getJsonObject())["error"].asString(),
            std::string("not recorded: roadmap reminder, journal nudge"));
 }
+
+TEST(resend_webhook_frozen_product_requests_retry_before_any_suppression_write) {
+  Harness h;
+  bool frozen = true;
+  h.api = std::make_shared<ResendWebhookApi>(
+      std::vector<MailStream>{{"roadmap reminder", h.roadmap},
+        {"journal nudge", h.journal, [&]() -> std::optional<std::string> {
+          if (frozen) return "journal-frozen";
+          return std::nullopt;
+        }}}, h.clock, kSecret);
+  const auto event = signedDelivery(complainedBody("sam@example.com"));
+  const auto response = post(h, event);
+  CHECK_EQ(response->getStatusCode(), drogon::k503ServiceUnavailable);
+  CHECK_EQ((*response->getJsonObject())["error"].asString(), std::string("journal-frozen"));
+  CHECK(h.roadmap->stopped.empty());
+  CHECK(h.journal->stopped.empty());
+  CHECK_EQ(post(h, signedDelivery(bouncedBody("sam@example.com", "Transient")))->getStatusCode(), drogon::k200OK);
+  frozen = false;
+  CHECK_EQ(post(h, event)->getStatusCode(), drogon::k200OK);
+  CHECK_EQ(h.roadmap->stopped, kOnce);
+  CHECK_EQ(h.journal->stopped, kOnce);
+}

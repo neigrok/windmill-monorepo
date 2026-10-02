@@ -6,9 +6,10 @@ Product canon: `docs/design/journal/journal.md`. Layering rules: `backend/CLAUDE
 Journal has `domain/ · ports/ · application/ · adapters/{http,json,postgres,llm,email}` and mounts
 its REST routes through `journal::registerRoutes(app, JournalDeps&)`. The engine binding contract is
 [engine.md A.3](../../../docs/foundation/engine.md#a3-journal), with in-place adoption in Appendix D.
-The runtime currently uses `PageService` and `PgJournalRepository`; the journal engine binding and
-adoption tool are implementation obligations, not enabled production doors. iOS is the first engine
-surface. Web keeps its REST door and its existing wire contract.
+`JOURNAL_ENGINE_WRITES` defaults off: `PageService` uses `PgJournalRepository` until it is enabled,
+then sends normalized REST saves through `JournalDoor` and `ServerCall`. The internal claim and
+first-run state doors also use server-origin admission; they add no REST resource. iOS is the first
+engine surface. Web keeps its REST door and its existing wire contract. `/v1/sync` is unmounted.
 
 ## Scope
 
@@ -75,8 +76,10 @@ both scales share — `Page::mood` and `Page::energy` are `std::optional<Score>`
 
 ## Pages
 
-`PageService` holds `JournalRepository&` and an optional `PageWatcher*`. Reads (`page`, `range`,
-`since`, `all`) pass through; `write` upserts and returns the winning row.
+`PageService` holds `JournalRepository&`, an optional `PageWatcher*` and an optional `JournalWriteDoor*`.
+Reads (`page`, `range`, `since`, `all`) pass through. With `JOURNAL_ENGINE_WRITES` off, `write` upserts
+and returns the winning row; enabled, it admits `journal.savePage` and captures that winner under the
+scope lock before commit. `JournalFeed` announces only committed winning page changes.
 
 Convergence is last-writer-wins per day on an HLC stamp minted by the device's `HlcClock`, with no
 CRDT. `PgJournalRepository::save` locks the day `FOR UPDATE`, compares the full stamp
@@ -116,11 +119,21 @@ re-runs curation nor announces a page save. After adoption, the accepting comman
 legacy columns and revision trail in the admitting transaction. Only a committed winning save
 notifies `PageWatcher`, with the winning body length, as `PageService::write` does.
 
+`JOURNAL_WRITE_FREEZE` defaults off. Enabled, every journal mutation and admin sweep door returns
+503 with `code:"journal-frozen"`; the echo queue, echo repair pass and nudge pass do no work. The
+read-only echo diagnostic uses stored passages and skips vendor derivation while frozen. The shared
+Resend suppression door also refuses changes to journal nudge state. An engine writer refuses
+503 `journal-not-adopted` when legacy pages or revisions remain unadopted, when adoption schema is
+absent, or when a marker lacks its scope. It rolls back instead of creating an empty history scope.
+A fresh account's markerless scope is checked against its admitted row metadata, seq and digest;
+ranked state registers may remain unset until written.
+
 Before enabling engine writes, the adoption and its rehearsal gates must pass. Each account is
 adopted once under the write freeze shared with gym in one owner-chosen window, and the second
 run changes no row. Both products' adoption gates must pass and their admitted writers must be
 installed before the shared freeze ends. Every REST read door must
-return identical bytes across adoption; `feed` must recompute to the stored digest and round-trip
+return identical bytes across adoption under the target engine reader used by both frozen snapshots;
+the separate main-vs-off differential verifies the original switches-off reader. `feed` must recompute to the stored digest and round-trip
 the form `apply` stores. The live echo queue, echo repair sweep and nudge sweep must be quiescent
 for that comparison, as well as the mutation doors, since their outside-engine tables affect REST
 reads. Once enabled, web PUTs are server-origin `journal.savePage` intents; iOS saves use the
@@ -241,7 +254,8 @@ share route, page-delete route or MCP `ToolHost`.
 ### REST translation into the engine
 
 REST keeps its responses, status codes and normalization. Its error bodies are exactly
-`{"error":"<sentence>"}`: journal's current HTTP adapters emit no machine `code`. The REST builder
+`{"error":"<sentence>"}`. The new freeze and engine-availability refusals additionally carry a
+machine `code`; the freeze is checked before authentication or parsing. The REST builder otherwise
 authenticates and parses before admission, then builds the normalized full-page command. All
 winner reads, stale/equal checks and command construction that depend on the current row occur
 under the scope lock. Engine result envelopes, revisions, conflict flags and write maps are not
@@ -258,7 +272,7 @@ added to REST responses.
 | PUT with an unreadable page or malformed HLC | 400 `could not read that page`; non-object JSON and invalid `body`/`source`/`stamp` conversions take this path. |
 | PUT body over 131,072 UTF-8 bytes / engine `too-large` | 413 `that page is too long to store`, before storage, watcher or revision capture, even if its stamp would lose. |
 | Page GET, PUT, list or export without a caller | 401 `sign in to open your journal`, before date, cursor or JSON validation. |
-| `GET /v1/journal/pages?since=<hlc>&limit=<n>` | This branch takes precedence over `from`/`to` when `since` is nonempty. 200 `{pages:[…]}`, using full legacy HLC strictly greater than the cursor, ascending `(stamp_ms,stamp_counter,stamp_actor)`. Default limit 500; a fully parsed positive integer caps at 1000; other limits use 500. Bad HLC: 400 `bad cursor`. This is not an engine seq cursor. |
+| `GET /v1/journal/pages?since=<hlc>&limit=<n>` | This branch takes precedence over `from`/`to` when `since` is nonempty. 200 `{pages:[…]}`, using full legacy HLC strictly greater than the cursor. With engine writes off, the original query orders by `(stamp_ms,stamp_counter,stamp_actor)` only. Engine reads add `day` to make same-stamp cohorts deterministic through adoption and page updates. The cursor remains the HLC, so advancing it past a limited same-stamp cohort still excludes every page with that stamp. Default limit 500; a fully parsed positive integer caps at 1000; other limits use 500. Bad HLC: 400 `bad cursor`. This is not an engine seq cursor. |
 | `GET /v1/journal/pages?from=<day>&to=<day>` | Selected only when both values are nonempty and there is no nonempty `since`. 200 `{pages:[…]}`, inclusive endpoints, ascending day. Invalid endpoint: 400 `bad date`; a reversed valid range is empty. |
 | `GET /v1/journal/pages` or only one range endpoint | 200 `{pages:[…]}` containing all stored days, ascending day. A lone endpoint and a limit without `since` are ignored. |
 | `GET /v1/journal/export` | 200 `{pages:[…]}`, all stored days ascending day, with the same page wire shape; revisions remain invisible. |

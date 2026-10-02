@@ -127,6 +127,11 @@ jobs:
           --mode off-vs-on
           --image windmill-backend-build --bin-dir build
           --maintenance-db "$DATABASE_URL"
+      - name: Serve two windmill_server processes from the tested builder stage and compare journal writes
+        run: >-
+          python3 backend/test/e2e/journal_write_differential.py
+          --image windmill-backend-build --bin-dir build
+          --maintenance-db "$DATABASE_URL"
 
   build-and-push:
     needs: [test, postgres]

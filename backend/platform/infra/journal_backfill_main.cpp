@@ -1,0 +1,50 @@
+#include "products/journal/sync/adapters/postgres/PgJournalBackfill.h"
+#include "platform/domain/sync/Jcs.h"
+
+#include <chrono>
+#include <cstdlib>
+#include <iostream>
+
+int main(int argc, char** argv) {
+  const auto started = std::chrono::system_clock::now();
+  const auto migrationTime = static_cast<wm::sync::Ms>(std::chrono::duration_cast<std::chrono::milliseconds>(started.time_since_epoch()).count());
+  try {
+    bool dryRun = false, audit = false, auditCurrent = false, testCorruptions = false;
+    std::optional<std::string> account;
+    std::string policy = "retire-existing";
+    for (int i = 1; i < argc; ++i) {
+      const std::string arg = argv[i];
+      if (arg == "--help") {
+        std::cout << "windmill_journal_backfill [--dry-run | --audit [--test-corruptions] | --audit-current] [--account UUID] [--first-run-policy retire-existing]\nDATABASE_URL is required. Freeze all gym and journal writers, drain echo work and stop sweeps before migration. Recorded account manifests and clocks resume unchanged. Audit independently checks frozen envelopes, receipt precision, revisions and null-cursor boot; corruption checks roll back. --audit-current checks the current feed after admissions.\n";
+        return 0;
+      }
+      if (arg == "--dry-run") { dryRun = true; continue; }
+      if (arg == "--audit") { audit = true; continue; }
+      if (arg == "--audit-current") { auditCurrent = true; continue; }
+      if (arg == "--test-corruptions") { testCorruptions = true; continue; }
+      if (arg == "--account" && i + 1 < argc) { account = argv[++i]; continue; }
+      if (arg == "--first-run-policy" && i + 1 < argc) { policy = argv[++i]; continue; }
+      throw std::invalid_argument("unknown or incomplete argument: " + arg);
+    }
+    if (int(audit) + int(auditCurrent) + int(dryRun) > 1) throw std::invalid_argument("--audit, --audit-current and --dry-run are mutually exclusive");
+    if (testCorruptions && !audit) throw std::invalid_argument("--test-corruptions requires --audit");
+    if (policy != "retire-existing") throw std::invalid_argument("journal first-run migration policy must be retire-existing");
+    const char* url = std::getenv("DATABASE_URL");
+    if (!url || !*url) throw std::invalid_argument("DATABASE_URL is required");
+    wm::journal::engine::PgJournalBackfill backfill(std::make_shared<wm::PgPool>(url));
+    auto emit = [](const Json::Value& report) { std::cout << wm::sync::jcs(report) << '\n' << std::flush; };
+    if (audit) {
+      for (const auto& report : backfill.audit(account, testCorruptions)) emit(report);
+      return 0;
+    }
+    if (auditCurrent) {
+      for (const auto& report : backfill.auditCurrent(account)) emit(report);
+      return 0;
+    }
+    backfill.run(migrationTime, dryRun, account, policy, std::nullopt, true, emit);
+    return 0;
+  } catch (const std::exception& error) {
+    std::cerr << "journal backfill: " << error.what() << '\n';
+    return 1;
+  }
+}

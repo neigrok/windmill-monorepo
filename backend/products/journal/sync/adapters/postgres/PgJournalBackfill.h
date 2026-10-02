@@ -5,6 +5,7 @@
 #include "platform/ports/SyncStore.h"
 
 #include <memory>
+#include <functional>
 #include <optional>
 #include <vector>
 
@@ -16,8 +17,10 @@ public:
   std::vector<Json::Value> run(sync::Ms migrationTime, bool dryRun = false,
       std::optional<std::string> account = std::nullopt,
       const std::string& firstRunPolicy = "retire-existing",
-      std::optional<Json::Value> frozenInput = std::nullopt);
-  std::vector<Json::Value> audit(std::optional<std::string> account = std::nullopt);
+      std::optional<Json::Value> frozenInput = std::nullopt, bool resumeRecorded = false,
+      const std::function<void(const Json::Value&)>& onAccount = {});
+  std::vector<Json::Value> audit(std::optional<std::string> account = std::nullopt, bool testCorruptions = false);
+  std::vector<Json::Value> auditCurrent(std::optional<std::string> account = std::nullopt);
 
 private:
   std::shared_ptr<PgPool> pool_;

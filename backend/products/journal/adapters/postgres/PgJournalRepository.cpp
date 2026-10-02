@@ -1,6 +1,7 @@
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 
 #include "platform/adapters/postgres/PgPool.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <pqxx/pqxx>
 
@@ -115,15 +116,17 @@ std::vector<Page> PgJournalRepository::range(const UserId& user, const LocalDate
 }
 
 std::vector<Page> PgJournalRepository::since(const UserId& user, const Hlc& cursor, int limit) {
-  // The cursor advances on the full Hlc — (stamp_ms, stamp_counter, stamp_actor) — the same three
-  // fields the domain spaceship compares. The actor tiebreak makes the order total.
+  // Off-engine reads keep the legacy query; only admitted reads break equal-HLC ties by day.
+  const std::string order = journal::journalEngineWrites()
+      ? "ORDER BY stamp_ms ASC, stamp_counter ASC, stamp_actor ASC, day ASC LIMIT $5"
+      : "ORDER BY stamp_ms ASC, stamp_counter ASC, stamp_actor ASC LIMIT $5";
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result rows = txn.exec_params(
       "SELECT " + std::string(kPageColumns) +
           " FROM journal_page WHERE user_id = $1::uuid "
           "AND (stamp_ms, stamp_counter, stamp_actor) > ($2::bigint, $3::bigint, $4::text) "
-          "ORDER BY stamp_ms ASC, stamp_counter ASC, stamp_actor ASC LIMIT $5",
+          + order,
       user.str(), static_cast<long long>(cursor.physicalMs),
       static_cast<long long>(cursor.counter), cursor.actor, limit);
 
@@ -146,6 +149,9 @@ std::vector<Page> PgJournalRepository::all(const UserId& user) {
 }
 
 PageWrite PgJournalRepository::save(const Page& incoming) {
+  journal::requireJournalWrite();
+  if (journal::journalEngineWrites()) throw journal::JournalUnavailable("journal-engine-required",
+      "journal pages must be saved through admission");
   // Read-modify-write in one transaction: the row is locked FOR UPDATE so the revision capture sees
   // exactly the body this write is about to supersede.
   PgLease conn{*pool_};

@@ -77,6 +77,8 @@
 #include "products/journal/adapters/postgres/PgNudgeRepository.h"
 #include "products/journal/application/EchoDerivations.h"
 #include "products/journal/application/PageService.h"
+#include "products/journal/application/JournalSwitches.h"
+#include "products/journal/sync/adapters/postgres/JournalDoor.h"
 #include "products/journal/application/WarmEchoRepository.h"
 #include "products/journal/routes.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -876,7 +878,9 @@ int main() {
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
   journalEchoDerivations->start();
-  auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get());
+  auto journalDoor = std::make_shared<journal::JournalDoor>(pool, *systemClock, *sentry,
+      *journalEchoDerivations, sync::productCatalog());
+  auto pageService = std::make_shared<PageService>(*journalPages, journalEchoDerivations.get(), journalDoor.get());
   // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
@@ -954,7 +958,11 @@ int main() {
   // the secret FIRST, then register the endpoint in Resend, or every genuine delivery burns a retry.
   const char* resendWebhookSecretEnv = std::getenv("RESEND_WEBHOOK_SECRET");
   auto resendWebhookApi = std::make_shared<ResendWebhookApi>(
-      std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges}},
+      std::vector<MailStream>{{"roadmap reminder", reminderRepo}, {"journal nudge", journalNudges,
+          []() -> std::optional<std::string> {
+            if (journal::journalWriteFrozen()) return "journal-frozen";
+            return std::nullopt;
+          }}},
       systemClock, resendWebhookSecretEnv ? resendWebhookSecretEnv : "");
   app.registerHandler(
       "/v1/resend/webhook",

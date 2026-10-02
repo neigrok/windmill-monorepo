@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <chrono>
 #include <cstdint>
@@ -292,6 +293,10 @@ void EchoApi::listEchoes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
 
 void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                       const std::string& triggerDay, const std::string& matchDay) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
@@ -316,6 +321,10 @@ void EchoApi::dismiss(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& triggerDay) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to dismiss an echo"));
@@ -337,6 +346,10 @@ void EchoApi::dismissPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                            const std::string& triggerDay) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to retire an offer"));
@@ -358,6 +371,10 @@ void EchoApi::dismissOffer(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                          const std::string& triggerDay, const std::string& matchDay) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to mark an echo useful"));
@@ -380,6 +397,10 @@ void EchoApi::markUseful(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 
 void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                      const std::string& triggerDay, const std::string& matchDay) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in"));
@@ -401,6 +422,10 @@ void EchoApi::opened(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
 }
 
 void EchoApi::adminSweep(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   // Closed unless the deploy set an admin token; the compare is constant-time.
   const std::string header = req->getHeader("x-admin-token");
   const std::string presented = header.empty() ? req->getParameter("token") : header;

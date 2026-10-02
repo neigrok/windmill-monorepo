@@ -1,4 +1,4 @@
-name: Gym migration rehearsal
+name: Gym and journal migration rehearsal
 
 on:
   workflow_dispatch:
@@ -31,13 +31,13 @@ jobs:
             "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
           cd ~/windmill
           umask 077
-          backup=$(find backups -maxdepth 1 -type f -name 'gym-*.dump' -printf '%f\n' | LC_ALL=C sort | tail -1)
+          backup=$(find backups -maxdepth 1 -type f -name 'products-*.dump' -printf '%f\n' | LC_ALL=C sort | tail -1)
           test -n "$backup" || { printf 'FAIL no verified backup\n'; exit 1; }
           db=$(docker compose ps -q db)
           server=$(docker compose ps -q server)
           test -n "$db" && test -n "$server"
           image=$(docker inspect --format '{{.Image}}' "$server")
-          throwaway="gym_rehearsal_$(date -u +%Y%m%dT%H%M%S)_$$"
+          throwaway="products_rehearsal_$(date -u +%Y%m%dT%H%M%S)_$$"
           cleanup() {
             status=$?
             trap - EXIT HUP INT TERM
@@ -46,7 +46,7 @@ jobs:
               printf 'FAIL throwaway cleanup\n'
               status=1
             fi
-            if [ "$status" -ne 0 ]; then printf 'FAIL gym rehearsal\n'; fi
+            if [ "$status" -ne 0 ]; then printf 'FAIL gym and journal rehearsal\n'; fi
             exit "$status"
           }
           trap cleanup EXIT
@@ -57,15 +57,20 @@ jobs:
             'pg_restore --username="$POSTGRES_USER" --dbname="$1" --no-owner --no-privileges --exit-on-error' \
             sh "$throwaway" < "backups/$backup" > /dev/null 2>&1
           export PGUSER PGPASSWORD PGHOST PGDATABASE DATABASE_URL WINDMILL_APP_URL
+          export WINDMILL_OWNER_EMAILS JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST
           PGUSER=$(docker compose exec -T db printenv POSTGRES_USER)
           PGPASSWORD=$(docker compose exec -T db printenv POSTGRES_PASSWORD)
           PGHOST=127.0.0.1
           PGDATABASE="$throwaway"
           DATABASE_URL="host=127.0.0.1 dbname=$throwaway"
           WINDMILL_APP_URL=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$server" | sed -n 's/^WINDMILL_APP_URL=//p')
+          WINDMILL_OWNER_EMAILS=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$server" | sed -n 's/^WINDMILL_OWNER_EMAILS=//p')
+          JOURNAL_NUDGE_ENABLED=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$server" | sed -n 's/^JOURNAL_NUDGE_ENABLED=//p')
+          JOURNAL_NUDGE_ALLOWLIST=$(docker inspect --format '{{range .Config.Env}}{{println .}}{{end}}' "$server" | sed -n 's/^JOURNAL_NUDGE_ALLOWLIST=//p')
           docker run --rm --network "container:$db" \
             --tmpfs /evidence:rw,mode=700,uid=10001,gid=10001 \
             -e PGUSER -e PGPASSWORD -e PGHOST -e PGDATABASE -e DATABASE_URL -e WINDMILL_APP_URL \
+            -e WINDMILL_OWNER_EMAILS -e JOURNAL_NUDGE_ENABLED -e JOURNAL_NUDGE_ALLOWLIST \
             "$image" sh -ec '
               if python3 /app/deploy/gym-migration/rehearse.py --bin-dir /usr/local/bin \
                 --output /evidence/run --apply-adoption > /evidence/stdout 2> /evidence/stderr; then

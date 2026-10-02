@@ -177,6 +177,7 @@ add_library(windmill_journal_sync
   products/journal/sync/adapters/postgres/PgJournalBackfill.cpp)
 target_include_directories(windmill_journal_sync PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_journal_sync PUBLIC windmill_platform)
+target_link_libraries(windmill_journal PUBLIC windmill_journal_sync)
 wm_embed_registry(windmill_journal_sync wm::journal::engine registryText "${WM_API_CONTRACT_DIR}/sync/${WM_JOURNAL_REGISTRY}")
 
 add_library(windmill_product_sync platform/infra/SyncProducts.cpp)
@@ -414,6 +415,7 @@ target_sources(windmill_roadmap PRIVATE
 # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
 # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
 target_sources(windmill_journal PRIVATE
+  products/journal/sync/adapters/postgres/JournalDoor.cpp
   products/journal/adapters/email/ResendNudgeSender.cpp
   products/journal/adapters/json/PageJson.cpp
   products/journal/adapters/postgres/PgJournalRepository.cpp
@@ -477,6 +479,8 @@ target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmi
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
 add_test(NAME gym_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/gym_write_differential_test.py)
+add_test(NAME journal_differential COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/e2e/journal_write_differential_test.py)
 
 # The same server with the sync engine over the probe product (db/probe.sql): the test and dev stack's
 # server, never the image's. main.cpp refuses to start it where WINDMILL_APP_URL is https.
@@ -498,6 +502,15 @@ target_link_libraries(windmill_gym_snapshot PRIVATE windmill_gym)
 
 add_executable(windmill_gym_rehearsal_seed platform/infra/gym_rehearsal_seed_main.cpp)
 target_link_libraries(windmill_gym_rehearsal_seed PRIVATE windmill_gym)
+
+add_executable(windmill_journal_backfill platform/infra/journal_backfill_main.cpp)
+target_link_libraries(windmill_journal_backfill PRIVATE windmill_journal_sync)
+
+add_executable(windmill_journal_snapshot platform/infra/journal_snapshot_main.cpp)
+target_link_libraries(windmill_journal_snapshot PRIVATE windmill_journal)
+
+add_executable(windmill_journal_rehearsal_seed platform/infra/journal_rehearsal_seed_main.cpp)
+target_link_libraries(windmill_journal_rehearsal_seed PRIVATE windmill_journal)
 
 add_executable(windmill_mcp_tests
   test/http_main.cpp
@@ -537,6 +550,7 @@ add_executable(windmill_sync_tests
   test/products/gym/sync/adapters/postgres/PgGymTest.cpp
   test/products/gym/sync/adapters/postgres/PgGymBackfillTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalTest.cpp
+  test/products/journal/sync/adapters/postgres/JournalDoorTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalBackfillTest.cpp)
 target_sources(windmill_gym_sync PRIVATE
   products/gym/sync/adapters/postgres/PgGym.cpp
@@ -591,6 +605,7 @@ add_executable(windmill_adapters_tests
   test/products/roadmap/adapters/llm/AnthropicComposerTest.cpp
   test/products/roadmap/adapters/llm/AnthropicAgentTest.cpp
   test/products/journal/adapters/http/JournalApiTest.cpp
+  test/products/journal/adapters/http/JournalFreezeTest.cpp
   test/products/journal/adapters/http/NudgeApiTest.cpp
   test/products/journal/adapters/http/EchoApiTest.cpp
   test/products/journal/adapters/http/VoiceApiTest.cpp

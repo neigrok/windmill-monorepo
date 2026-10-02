@@ -46,6 +46,10 @@ services:
       embedder:
         condition: service_started
     environment:
+      GYM_ENGINE_WRITES: ${GYM_ENGINE_WRITES:-0}
+      GYM_WRITE_FREEZE: ${GYM_WRITE_FREEZE:-0}
+      JOURNAL_ENGINE_WRITES: ${JOURNAL_ENGINE_WRITES:-0}
+      JOURNAL_WRITE_FREEZE: ${JOURNAL_WRITE_FREEZE:-0}
       DATABASE_URL: postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
       PORT: "8080"
       RESEND_API_KEY: ${RESEND_API_KEY:-}

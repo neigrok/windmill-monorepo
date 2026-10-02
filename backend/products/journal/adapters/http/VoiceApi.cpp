@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "products/journal/application/JournalSwitches.h"
 
 #include <json/value.h>
 
@@ -48,6 +49,10 @@ VoiceApi::VoiceApi(std::shared_ptr<Transcriber> transcriber,
       auth_(std::move(auth)) {}
 
 void VoiceApi::transcribe(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
+  if (journal::journalWriteFrozen()) {
+    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
+    return;
+  }
   std::optional<User> caller = callerUserOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to talk"));
