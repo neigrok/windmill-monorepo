@@ -477,8 +477,6 @@ target_compile_definitions(windmill_server_test_clock PRIVATE WM_TEST_CLOCK=1)
 target_link_libraries(windmill_server_test_clock PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_product_sync)
 
 find_package(Python3 COMPONENTS Interpreter REQUIRED)
-add_test(NAME deploy_auth_env COMMAND ${Python3_EXECUTABLE}
-  ${CMAKE_SOURCE_DIR}/test/e2e/deploy_auth_env_test.py)
 add_test(NAME auth_differential COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/e2e/auth_differential_test.py)
 add_test(NAME gym_differential COMMAND ${Python3_EXECUTABLE}

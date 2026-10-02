@@ -125,6 +125,8 @@ jobs:
           exit 1
       - name: Probe credentials and the idle live socket, directly and through the production edge (engine.md §9.1, §6.8)
         run: WM_E2E_DB="$WM_SYNC_DATABASE_URL" PORT=18613 EDGE_PORT=18643 node backend/test/e2e/deployment_conformance.mjs
+      - name: deploy.yml forwards the native-auth and sync settings (it reads the repo, so it runs outside the image)
+        run: python3 backend/test/e2e/deploy_auth_env_test.py
       - name: Prove windmill_server has no sync routes with SYNC_ENABLED unset
         run: |
           docker run -d --name engine-sync-off --network host -e DATABASE_URL="$WM_ENGINE_DATABASE_URL" \
