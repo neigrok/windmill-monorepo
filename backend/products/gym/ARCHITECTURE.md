@@ -68,7 +68,12 @@ for server-origin admission on the sync worker pool. Reads use the repositories 
 
 `windmill_gym_backfill` adopts each account in one transaction, repairs incomplete scopes and skips only reconciled accounts,
 and preserves legacy receipts. The audit reconciles every eligible physical row and required spent
-id, including accounts without scopes. Engine doors refuse unadopted accounts with 503
+id, including accounts without scopes. Before gym cutover, `windmill_gym_backfill --audit` must
+also independently compare every adopted field, born and life envelope and each spent-id stamp
+with the recorded run's `M:0:srv`, and seq/rc/ru with the frozen per-account source derivation
+(engine Appendix C.8). It must reject deliberately corrupted future stamps and receipt fields even
+after the scope digest is recomputed; row reconciliation and digest consistency do not check the
+stamp base. Engine doors refuse unadopted accounts with 503
 `gym-not-adopted` and roll back a provisional scope. Coach note saves and immutable receipt
 snapshots commit together; duplicate insight IDs become spent in that same admission.
 `deploy/gym-migration/rehearse.py` proves frozen read equality,

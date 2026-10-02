@@ -17,9 +17,11 @@ continuous canvas, not a set of pages** — oldest at the top, today at the bott
 waiting where you left it. Scrolling up is going back.
 
 Two optional scales — mood and energy, each 0–10 — are the only structure the product asks
-for, and skipping them costs nothing. They are asked in words exactly once ever, on the first
-page saved ("How did today feel?" · "Mood is what you see when you zoom out to the year." ·
-skip), and after that they are a strip you may ignore forever.
+for, and skipping them costs nothing. Their strip is visible and unasked on first open. They are
+asked in words exactly once ever, on the first page saved ("How did today feel?" · "Mood is what
+you see when you zoom out to the year." · skip), and after that they are a strip you may ignore
+forever. A person arriving with written pages sees no re-onboarding, including no scale invitation
+(`onboarding.md` §1).
 
 Everything the product knows, it learned from what you already wrote.
 
@@ -56,7 +58,7 @@ to have something true to say when they look back.
 | Stillness | **The reading column never moves.** Above 1240px the echo margin's 300px is reserved space, held whether or not the panel has anything in it, and the measure centres in what is left. An echo arriving, leaving, or being scrolled past changes the panel's *content*; nothing may change the canvas's geometry, at any scroll speed |
 | Zoom | Read → Skim → Year is one continuous compression of the same canvas, never three screens. Mood is the only thing that survives to Year — **quantised to five bands** (`scales.md` §4) |
 | Gaps | **An unwritten day is not drawn at all** — the canvas is what you wrote, not a calendar with holes in it, and each marker's date shows the jump |
-| Today | The last block; writing happens inline at the bottom, not in a composer |
+| Today | The last block; writing happens inline at the bottom, not in a composer. Only today's body and scales are writable; past days stay read-only on web and native |
 | Mood & energy | **Two labelled rows, one per scale**, each a snapping scrubber over 0–10 — never a floating bar, never drawn twice on a screen. **0 is a real value**; unset is a separate state. **On phone the strip does not exist while the keyboard is up**; it arrives above the tab bar the instant the keyboard drops, fading in, never sliding. `scales.md` is canon for the control |
 | Voice | One control, in the top bar beside search on both surfaces; no `ONE` badge on the control. Recording sheet → plain editable text, "Audio discarded" stated |
 | Links | A URL in the writing is lamp and underlined wherever it appears, today included — under the composer it is paint on a layer over the field, so a tap still places the caret; on a past day it opens in a new tab. The grammar is conservative and shared by every surface (`packages/api-contract/journal-links.json`): an explicit `http(s)://` or a `www.`, never a bare `example.com`, because a false link inside a sentence is worse than a missed one. Nothing else in the writing is formatted — there is no markdown here |
@@ -200,5 +202,4 @@ reflections do not become steps, and the agent does not read your pages to plan 
 
 **Open**
 
-- Does a page seal at midnight (current answer: no)?
 - Is the day spine enough at 400+ pages, or does search need a home of its own?

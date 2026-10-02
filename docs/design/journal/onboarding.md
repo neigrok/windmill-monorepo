@@ -15,14 +15,19 @@ writing: the first keystroke or tap lifts them, and the room menu brings them ba
 at what is on that screen and works. The drawings are section *2b · Journal onboarding · Ink notes*
 of the Figma page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
+A person arriving with written pages sees no re-onboarding: the placeholder, privacy fact,
+first-page cue and scale invitation are retired. The mood and energy controls remain available
+and unasked.
+
 The product cannot demonstrate its value in a first session — an echo needs months, the week
 needs a week, the nudge needs a rhythm. The first run's only job is: **get one page written,
 and be worth reopening.**
 
 ## 2. Session one — the whole screen
 
-The canvas opens at today, cursor placed, keyboard **not** raised. Beside the ink notes, exactly
-two pieces of copy exist, and both retire permanently after the first save:
+The canvas opens at today, cursor placed, keyboard **not** raised. Only today's page is writable;
+past days stay read-only, as on web. Beside the ink notes, exactly two pieces of copy exist, and
+both retire permanently after the first save:
 
 | Element | Copy | Retires |
 |---|---|---|
@@ -104,8 +109,13 @@ it for good. Nothing counts declines.
 | **The week** | first Sunday with 3+ pages behind it |
 | **Search** | never announced — it lives in the chrome from day one and explains itself when used |
 
+**One invitation at a time.** Signed out, the quiet Keep row appears only after the mood and energy
+invitation is answered or dismissed. Signed-in pages never show Keep
+(`../guidelines/superapp-flow.md` §6).
+
 **Never during the first run:** Echoes (needs a corpus), sign-in (the shell's Keep offer comes
-only after the first kept page — `../guidelines/superapp-flow.md` §6), the notification
+only after the first kept page and the scale invitation is answered or dismissed —
+`../guidelines/superapp-flow.md` §6), the notification
 permission (asked *after* "yes", never before), and anything about the other rooms (the room
 menu lists them; the ink notes name the menu, not a room).
 
@@ -117,7 +127,8 @@ word from the tree (unlock, plant, quest, level). Journal drops the game metapho
 ## 4. Coming back — the canvas teaches itself
 
 Day two is where the model lands, and it must land **without copy**: yesterday sits above,
-today is at the bottom, scrolling up is going back.
+today is at the bottom, scrolling up is going back. Past days are read-only; writing and scale
+entry belong to today.
 
 - **A skipped day is not drawn at all** — the day markers' dates carry the jump, and nothing
   is coloured as failure because nothing is there to colour. There is no streak to break.
@@ -134,7 +145,9 @@ feature does not rely on a settings page to be honest.
 ## 6. What this requires of the build
 
 1. **First-run copy is state, not a flag on the page** — the placeholder and the Only-you line
-   retire per user, and must not reappear after reinstall on the same signed-in account.
+   retire per user, and must not reappear after reinstall on the same signed-in account. Adoption
+   uses `firstRunPolicy = retire-existing`: existing written pages retire the placeholder, privacy
+   fact, first-page cue and scale invitation; no native first-open invitation is replayed.
 2. **Trigger state must survive sign-in** (anonymous → claimed) so a user is never re-offered
    mood, talk, or the nudge because their local identity was adopted.
 3. **The nudge offer must be able to prove itself**: it needs the writing-hour histogram and a

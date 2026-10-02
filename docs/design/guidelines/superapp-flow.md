@@ -81,6 +81,8 @@ themselves.**
 - **Where it appears, signed out:** a quiet *Only on this phone* · **Keep it** row under a kept
   journal page and under the routines Coach created; on the gym finish receipt, **Keep this log**
   under *This log is only on this phone.*
+- **Journal shows one invitation at a time.** The quiet Keep row appears only after the optional
+  mood and energy invitation is answered or dismissed (`journal/onboarding.md` §3).
 - **The Keep sheet names the value in the room's words** — the work is backed up and open on the
   web. In Journal: *Keep your pages* · *They live only on this phone. Sign in to back them up and
   open them on the web.*
@@ -233,7 +235,5 @@ The backend dependencies of signed-out Coach are in `consistency.md` (6k–6n).
 
 ## 12. Held open
 
-- **Keep offer timing** in Journal: once mood and energy are answered, or straight after the first
-  kept page.
 - **The first signed-out finish receipt carries two offers**, Keep this log and Apple Health. Keep
   both, or move Apple Health to the second workout.

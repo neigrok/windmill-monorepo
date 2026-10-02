@@ -73,7 +73,8 @@ class Queues {
   }
 }
 
-export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, actor = ACTOR, steps, limits }) {
+export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, actor = ACTOR, steps, limits }, registryOverride = registry) {
+  const registry = registryOverride;
   assertReachable(deviceJson);
   let device = new Device(structuredClone(deviceJson));
   const ended = [];
@@ -92,7 +93,7 @@ export function runSteps({ device: deviceJson, ids, actors, forkGuards, draws, a
     const before = { device: device.toJSON(), ended: ended.length, telemetry: telemetry.length, events: events.length, queues: queues.snapshot(), gestures, current };
     const stepActor = step.actor ?? current;
     const ctx = {
-      registry,
+      registry: registryOverride,
       actor: stepActor,
       deviceNow: step.deviceNow ?? 0,
       ended,

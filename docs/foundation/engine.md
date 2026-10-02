@@ -7,8 +7,11 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 **Status:** Built in the C++ server (`backend/platform/**/sync*`), which only
 `windmill_server_probe` mounts, and in the Swift client (`apps/ios/Sync`);
-`packages/api-contract/sync/reference/` is the JS reference. No product has adopted it yet. Gym
-adopts its tables in place (Appendix C); every other product starts from empty stores.
+`packages/api-contract/sync/reference/` is the JS reference. Gym's server-origin doors are built
+behind a disabled switch; journal's binding is specified in A.3. The composed contract serves gym
+and journal together. Gym and journal adopt their tables in place (Appendices C and D); every other
+product starts from empty stores. The composition requires both bindings and regenerated clients
+before it can be deployed (§2.4).
 
 **In the engine:**
 - record identity, deletion and spent ids;
@@ -117,7 +120,7 @@ length (§2.4). A client draws a minted id again while it is taken (§4.4).
 | `const` | joins as `fww`; a client writes it only in the create |
 | `time` | a device-reported instant, an integer epoch ms; joins as `const`; clamped at admission (§10.4) |
 | `serial` | an integer assigned by the server at admission; clients never write or predict it |
-| `text` | a string merged by the server (§6.11); clients never join it |
+| `text` | a string merged by the server, or replaced by a command (§6.11); clients never join it |
 
 Every field also has:
 - a **writer**: `client`, or `server` (only the server writes it);
@@ -144,8 +147,8 @@ A text field carries `{text, base}` (§6.11). A minted or derived delta always c
 record. The intents of one gesture share one stamp and one `gestureId`.
 
 **D-15 Intent states and outcomes.** States: `held`, `ready`, `sent`, `acked`. Terminal outcomes:
-- `undone`: Undo, or a retire (§7.1 step 4), while held, and every dependent entry that the silent
-  fold of either empties (§7.3);
+- `undone`: Undo or retire while held, an anonymous gesture superseded before binding (§7.1
+  step 4), and every dependent entry that their silent fold empties (§7.3);
 - `resolved`: `ok`, and the scope's cursor covers it;
 - `refused`: a notice holds it;
 - `discarded`: the person discarded it (sign-out Discard, a lineage decision, or an explicit
@@ -274,7 +277,7 @@ Each table storing a synced type holds its typed columns as the truth, and:
   (§2.3 `purge`). Every referential consequence of a delete is a write by admission, in the same seq
   (Appendix A lists them). `apply` writes the consequences before it removes the parent's typed row,
   children first.
-- A table adopted in place (Appendix C) MAY take its scope from an existing column in place of
+- A table adopted in place (Appendices C and D) MAY take its scope from an existing column in place of
   `scope_key`, with the index `(<that column>, seq)`.
 
 ### §2.3 The `SyncType` port
@@ -689,18 +692,22 @@ the growth rule (§6.5). The client applies the same rule to `stored`, which cou
 the result `internal` is stored and `last_n` advances (§6.6).
 
 **INV-10 Hold durability.** A held gesture is sent iff neither Undo nor a retire (§7.1 step 4)
-removes it before release, the person does not discard it (§7.10), and it is not folded with a
+removes it before release, no anonymous replacement supersedes it before binding (§7.1 step 4),
+the person does not discard it (§7.10), and it is not folded with a
 record it depends on (§7.3, §7.7).
 Process death and in-app navigation, including an activity or scene recreation, never abandon it.
 The early releases, which end Undo, are leaving the app, sign-in and sign-out (§7.3, §7.10). After
 process death, the next engine start releases it.
 
 *Proof.*
-- Held entries are durable rows. They leave `held` only by `release`, `undo`, a retire, a discard
+- Held entries are durable rows. They leave `held` only by `release`, `undo`, a retire, a supersede, a discard
   or a fold (§7.1 step 4, §7.3, §7.7, §7.10).
 - `undo` succeeds, and a retire acts, only while every entry of the gesture is held. A retire acts
   in the retiring commit's own transaction, on command-free gestures that only remove records the
   commit names (§7.1 step 4).
+- Supersede is confined to complete unnumbered anonymous gestures. An anonymous replica has
+  never been bound or sent a product intent, and binding ends its eligibility; no transport
+  rewind can make sent work eligible. The replacement and removal commit together.
 - Release runs in every replica state: at `releaseAt` by an in-process timer, on leaving the app, at
   engine start, and at sign-in and sign-out.
 
@@ -738,8 +745,9 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
   are stored.
 - Server stamps are minted once per pass of §6.1 step 9, each one tick after observing stored
   stamps, the stamps of the intent's client deltas and an earlier pass's stamps, all bounded, by
-  induction from empty stores (§10.3), or from a scope gym's backfill adopted, whose every stamp is
-  its run's `M:0:srv` (Appendix C.9).
+  induction from empty stores (§10.3), or from an adopted scope, whose every envelope stamp is
+  its run's `M:0:srv` (Appendices C.9 and D.9). A product value representing a content clock is
+  not an envelope stamp and is never observed into the engine clock.
 - Recovery terminates. The `serverNow` of §6.1 step 2 never steps back within a server process
   (§10.2), so a stamp that passed the skew check once passes it again there. A step back of δ
   across a restart, or between server processes, costs a bounded number of extra refusals, one per
@@ -754,7 +762,7 @@ correct offset never mints a stamp that §6.1 step 2 refuses, and `clock-skew` r
     command has its result: a stamp it leaves above `admittedHigh` in a later entry is unsourced,
     and that entry's recovery lowers it to the recovered clock's reading, which passes (§7.7
     step 1.5).
-  - No source leaves the outbox unadmitted with a dependent behind it. An undo and a retire fold
+  - No source leaves the outbox unadmitted with a dependent behind it. An undo, retire and supersede fold
     their dependents silently (§7.3), none of which is numbered while its source is held (§7.4).
     A refusal folds the queued dependents and orphans the sent ones. An orphan's whole content is a
     source whose dependents are held back until its result: its `ok` admits their source, and its
@@ -769,8 +777,8 @@ checks stopped runs none until the app version changes.
 
 *Proof.*
 - The server's scope digest at every committed seq is the sum over the scope's alive rows at that
-  seq. It starts at 0, or, in a scope gym's backfill adopted, at the sum over the rows it adopted
-  (Appendix C.9), and the transaction that changes a row changes it (§6.12).
+  seq. It starts at 0, or, in an adopted scope, at the sum over the rows it adopted
+  (Appendices C.9 and D.9), and the transaction that changes a row changes it (§6.12).
 - A pull page reads its rows and its `(seq, digest)` in one snapshot (§6.7), and a live frame
   carries the digest committed with its seq, so a received `(N, d)` is the server's state at N.
 - The client changes its digest in every transaction that changes its confirmed rows, each chunk of
@@ -899,7 +907,7 @@ server-origin intent carries null stamps, which step 9 mints (§10.3).
      step 10 appends, observes their registers and ticks again; the write map carries the first
      pass's stamp.
    - `after = joinRecord(before, δ)` for each delta, in order.
-   - Text fields are merged (§6.11).
+   - Text fields are merged or replaced by a command's internal replacement (§6.11).
    - Each row the intent changes, in its scope or in one it creates, is measured as step 13 would
      store it, before step 11 gives a new record its serial: an encoding over `MAX_RECORD_BYTES` →
      `too-large`. Text bases do not count, and a row the intent leaves unchanged is not measured.
@@ -1028,6 +1036,16 @@ MCP tools, REST writes, tending and server-internal commands call
 - It resolves its own replays (Appendix A), comparing the raw arguments, or their digest, stored with
   its receipt, before the guards are checked (§6.1 step 7).
 - A command not in the registry is refused `invalid`.
+- A command MAY replace a text head: its internal text write is `{text, replace: true,
+  archiveNonempty: boolean, archive: metadata}`. This is a handler output, never an intent's wire
+  delta; a wire text write has only `text` and `base`, and any other member is refused `invalid`.
+  Replacement passes the field and
+  record bounds, writes `merged = false` and a new head rev at the admitting seq, and keeps the
+  previous head when that head has a rev, except an empty head when `archiveNonempty` is true.
+  `archive` holds the binding's revision metadata, which cannot replace its type, id, field, rev or
+  text. A replacement MUST accompany a
+  changed register or changed text, so it cannot mint a rev without a changed row. A binding MAY
+  retain revision metadata and prune revisions in the admitting transaction, as Appendix A states.
 
 ### §6.5 Caps
 
@@ -1144,6 +1162,11 @@ MUST be keyed by `(scope, seq)` and MUST NOT answer an admission.
 
 ### §6.11 Text merge
 
+A command's internal replacement (§6.4) bypasses base resolution and diff3. It stores the exact
+replacement text with `merged = false` and a head rev equal to the admitting seq; its binding
+decides whether to archive the outgoing head, including when the text is equal. Step 3's text bound
+and §6.1 step 9's record bound still apply. All other text writes follow the algorithm below.
+
 A text delta is `{text, base}`, where `base` is `{rev}` (a head revision of the field) or `{text}`.
 Let `head` be the stored text.
 
@@ -1215,7 +1238,7 @@ full (§7.9).
 exactly as `apply` stored its `after`, so the server hashes the form a page carries. Every row
 change is such a transaction: replica and server-origin admission, every command (`beforePull`
 commands included), and a command's writes into a scope it creates (§6.1 step 14); outside admission,
-only gym's backfill, which sets the digest of each scope it adopts (Appendix C.6). Every referential
+only the in-place backfills, which set the digest of each scope they adopt (Appendices C.6 and D.6). Every referential
 consequence (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a
 `feed` row. A governing create starts its scope at digest 0. Scope death changes no row, and a dead
 scope's digest is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads
@@ -1229,9 +1252,9 @@ entries and predictions never enter it.
 
 ## §7 Client algorithms
 
-### §7.1 `commit(scope, changes, opts) → {localIds, retired, stamp} | Refused | none`
+### §7.1 `commit(scope, changes, opts) → {localIds, retired, superseded?, stamp} | Refused | none`
 
-`opts = {atomic, hold, guard, retire, cmd, predict, local, gestureId}`. `commit` is a synchronous
+`opts = {atomic, hold, guard, retire, supersede, cmd, predict, local, gestureId}`. `commit` is a synchronous
 call on the local store. It MUST NOT be launched from a cancellable UI scope, and never awaits the
 network. It throws only before its local transaction commits, and every client API declares exactly
 three failures, told apart by where they arise:
@@ -1267,7 +1290,15 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
 3. **Stamp.** Read `meta.hlc`, `observe(hlcHigh)` and `s := tick()`. `s` is the gesture's stamp;
    each entry keeps it as `stamp`, and `commit` returns it as `stamp`. The clock is written back
    only when the commit is accepted (step 11); a refused commit writes no clock.
-4. **Retire, then deltas.** First the retire: `retire` lists records `(t, id)`, and every held
+4. **Supersede, retire, then deltas.** `supersede` lists distinct gesture ids whose complete effects the
+   new gesture replaces. It is allowed only in an anonymous replica, whose entries have never
+   been sent (§7.10). Each named gesture MUST exist in this replica and scope, and all of its
+   entries MUST be held or ready with `n` absent; otherwise throw before changing anything.
+   Remove those whole gestures and fold their dependents silently (§7.3), as for an undo.
+   Return their ids as `superseded`, in commit order, when any were named. The replacement MUST
+   carry every effect the product keeps, including monotone state writes: superseding does not
+   copy old deltas into the replacement. A refusal or failure of this commit supersedes nothing.
+   Then the retire: `retire` lists records `(t, id)`, and every held
    gesture of the scope that carries no command, and whose every delta removes (`life → dead`) one
    of them, ends `undone`, as `undo` ends it, its dependents folded silently (§7.3). `commit` returns
    their gesture ids as `retired`, in commit order; a commit refused at step 8 retires nothing. A
@@ -1310,13 +1341,16 @@ none. A gesture whose diff is empty still runs steps 2–11. One local transacti
    - A text change names the text it was edited from. The entry keeps that text in `baseTexts`.
      The delta's base is `{rev}` when that text is the confirmed text at that rev; otherwise
      `{text}`.
+   - A command prediction MAY include server-written lattice fields and text. Predicted text
+     folds locally as the proposed text, and is never sent as a delta or entered in the digest.
+     The command's confirmed row supplies its actual text and rev, through the result and pull.
 5. **Ids.** Minted ids come from a CSPRNG by the type's `mint`, or are seeded (D-8). Label-based
    derived ids come from `derive` (D-26).
 6. **Guards.** `guard` lists registers `(t, id, field)`, and guards exactly those: each becomes
    `(t, id, field, its stamp in stored)`, null when unset (D-19). Each listed field MUST be a
    lattice field of a type the commit's scope holds; any other throws: `life`, a text field, an
    undeclared field, or a field of a type another scope holds. A text field is never guarded: it
-   has no stamp, and merges instead (§6.11).
+   has no stamp; direct text edits merge instead (§6.11), and a command resolves its own condition.
 7. **Group.** `atomic`, `hold` or `cmd` → one intent; otherwise one intent per record. An intent
    changes a record at most once: changes that give one record two deltas, other than the move and
    update step 4 folds, throw. Each guard goes with the intent that writes its record; a guard on a
@@ -1354,7 +1388,7 @@ After the commit: notify tabs (§7.8), kick the sender, and schedule release tim
 Every committed gesture is sent as its own entries, in commit order: `commit` enqueues one entry per
 intent (§7.1 step 7), and the sender numbers ready entries in commit order, passing over held and
 held-back entries (§7.4). Before its result, an entry changes only by a fold (§7.3, §7.7 step 3), a
-restamp or a write map (§7.7).
+restamp or a write map (§7.7), or ends before binding by a supersede (§7.1 step 4).
 
 ### §7.3 Hold, release, undo
 
@@ -1364,11 +1398,12 @@ undo(gestureId): tx: if every entry of the gesture is held → delete them, fold
                  silently (below), return true; else return false
 ```
 
-**Silent fold.** An undo and a retire (§7.1 step 4) fold the dependents (§7.7 step 3) of the entries
+**Silent fold.** An undo, retire and supersede (§7.1 step 4) fold the dependents (§7.7 step 3) of the entries
 they end silently, in the same local transaction, with no notice: in every later held or ready entry,
 the dependent deltas are removed, with the guards on their records, and a dependent command with its
 prediction. An entry left empty ends `undone`. A dependent of a held entry is never numbered (§7.4),
-so a silent fold never meets a sent entry.
+so a silent fold never meets a sent entry. A supersede's source and its dependents are anonymous,
+and likewise have never been sent.
 
 - Release runs in every replica state.
 - **Triggers:**
@@ -1688,8 +1723,8 @@ notice of its own, as step 3 states):
    an entry with no dependent delta on that record. After this refusal the server refuses that entry
    `stale` (§6.1 step 7), the register it names never having been written. A guard on a register of
    a record a held entry creates names no stamp, unless a held-back entry wrote that register first:
-   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo
-   or a retire (§7.3) the guard holds in the first case, and in the second the fold empties that
+   guards read `stored` (§7.1 step 6), which holds held-back entries and no held ones. After an undo,
+   retire or supersede (§7.3) the guard holds in the first case, and in the second the fold empties that
    writer and the server refuses the guarding entry `stale`.
    - In a held or ready entry, the dependent deltas are removed, with the guards on their records,
      and a dependent command with its prediction. An entry left empty ends `refused`, in this
@@ -1973,7 +2008,7 @@ doubt (§7.9), whether or not its id changed.
 | `held` | retired by a commit (§7.1 step 4): no command, and every delta removes a record the commit names | `undone` |
 | `ready` | numbered | `sent` |
 | `ready` | at numbering, its one-intent body over `PUSH_MAX_BYTES` (grown since commit, §7.4) | `refused` (`too-large`, a notice, or none for an orphan) |
-| `held`, `ready` | emptied by the silent fold of an undo or a retire (§7.3) | `undone` (no notice) |
+| `held`, `ready` | anonymous gesture superseded (§7.1 step 4), or emptied by the silent fold of an undo, retire or supersede (§7.3) | `undone` (no notice) |
 | `held`, `ready` | folded as a dependent (§7.7) | `refused` (in the dependency's notice) |
 | `held`, `ready` | a write map merges its delete target into an existing record (§7.7) | `refused` (`target-merged`, a notice) |
 | `sent` | `ok` | `acked` |
@@ -2331,15 +2366,15 @@ server (C++), or client (JS, Swift, Kotlin).
 ### §11.1 Golden corpus: `packages/api-contract/sync/corpus/`
 
 The corpus runs against the probe product (`packages/api-contract/sync/probe.registry.json`), but
-for its `gym/` files, which run against gym's registry and binding (A.2) and gym's backfill
-(Appendix C). Its `README.md` states its conventions, and `constants.json` holds the constants its
+for its `gym/` and `journal/` files, which run against their product registries and bindings (A.2,
+A.3) and in-place backfills (Appendices C and D). Its `README.md` states its conventions, and `constants.json` holds the constants its
 vectors assume.
 
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
-| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`; the C++ server also `gym/backfill`, the store Appendix C adopts |
-| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}` |
+| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`, `journal/admit`, `journal/revisions`; the C++ server also `gym/backfill` and `journal/backfill`, the stores Appendices C and D adopt |
+| client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock` |
 
 Runners assert exact equality, comparing values by `jcs`.
 
@@ -2374,7 +2409,7 @@ run, and against the real server and Postgres nightly.
   (§7.5 step 2) and two batches of a push answer's results (§7.4) among them;
 - pull pages that end short of the head (`more`), with frames arriving between them;
 - clock error of ±10 min, and device clock jumps;
-- holds, undo, retire, leaving the app, and activity or scene recreation;
+- holds, undo, retire, supersede, leaving the app, and activity or scene recreation;
 - multiple tabs;
 - sign-in under each lineage outcome (silent add; signed-out decision, add or discard), an
   incomplete sign-in, and sign-out;
@@ -2634,16 +2669,172 @@ future day), `proposal-settled` and `proposal-superseded` (`gym.applyProposal`,
 
 ### A.3 Journal
 
-**Scope:** `self/journal`. **Surfaces:** web, iOS. **Primary types** (§9.2): `page`.
+**Scope:** `self/journal`. **Engine surface:** iOS. Web uses the REST server-origin door below.
+**Adoption:** the existing page and revision tables, in place (Appendix D).
+**Primary types** (§9.2): `page`. `journalState` never makes an account hold pages.
 
-| Type | Identity | Life | Fields |
+| Type | Identity | Life | Fields and rules |
 |---|---|---|---|
-| `page` | keyed (local date `YYYY-MM-DD`) | none; `visibleWhen: [body, mood, energy]` | `body` text ≤131 072 bytes; lww: `mood` an integer 0–10 or null, `energy` an integer 0–10 or null, `source` ∈ {typed, spoken} |
+| `page` | keyed (writer's local Gregorian day `YYYY-MM-DD`, years 0001–9999) | none; `visibleWhen: [body, mood, energy]` | server-written: `body` text ≤131 072 UTF-8 bytes; lww `mood`, `energy` integers 0–10 or null, `source` ∈ {typed, spoken}, `documentStamp` `{ms, counter, actor}` below. Written only by the two commands. A persisted blank row remains a REST resource and a feed row, though invisible to primary-record and canvas reads; there is no page delete. |
+| `journalState` | singleton `journalState` | none | client-written ranked `placeholder`, `privacyLine`, `firstPage`, `scales`, each pending (rank 0) or retired (rank 1), default pending. They only retire; a lower-ranked write cannot bring an invitation back. Not primary. |
 
-**Revisions.** Superseded heads are pruned in the admitting transaction to:
-- at most 10 per `(account, day)`;
-- at most 500 rows and 8 388 608 bytes per account;
-- nothing older than 90 days.
+**Page checks.** `check` refuses a page write not generated by its commands with `invalid`, from
+either origin. A day must actually exist in the Gregorian calendar, including century leap rules;
+shape alone is insufficient. Body bytes are verbatim: no trim, NFC, title or markdown conversion.
+U+0000 follows the engine's intent rule. Null means unanswered; zero is an answer. Engine arguments
+are strict; the REST builder normalizes its inputs as today's parser does.
+
+**Content stamp.** `documentStamp` is the full journal HLC as product data: unsigned safe `ms`,
+unsigned 32-bit `counter` and 1–64 printable ASCII bytes of `actor`, with `{ms: 0, counter: 0,
+actor: ""}` also allowed. Actors may contain `:`. Compare it lexicographically by ms, counter,
+then actor, exactly as D-1; it is never an envelope stamp. Future content stamps are allowed, as on
+REST. No engine HLC, `hlcHigh`, `admittedHigh`, recovery or digest clock observes this value. The
+native journal keeps a separate durable content clock, shared by its writers: observe the current
+page's content stamp, take the maximum of it, that clock and the commit's `now`, and tick with the
+writer's actor. Carry a counter overflow into ms; exhaustion of safe ms is a local save failure
+that keeps the writing. Persist its new clock only with the successful local commit. Its content
+stamp stays unchanged through transport retries, re-identification and envelope restamping.
+The clock's pair is the registry's `device/journal` row `contentClock`, `localOnly`, committed
+with the command. Its replica lifecycle is §7.10; it is distinct from the install's ink preference.
+
+**`journal.savePage`** (`day`, `body`, `mood`, `energy`, `source`, `stamp`), both origins:
+1. Validate the actual day and content stamp; invalid → `invalid`. A raw body over the text cap →
+   `too-large`, before considering whether its stamp loses.
+2. If a standing page has a content stamp ≥ `stamp`, answer `ok` with no writes: the whole stored
+   page wins, including on a tie. No revision, receipt time or watcher changes.
+3. Otherwise write all four document fields and `documentStamp` together. The lattice fields take
+   one fresh server envelope stamp, and body is an internal replacement (§6.4), never diff3, with
+   `archiveNonempty = true`. Even a scale-only save over nonempty body
+   archives that body's head and gives the replacement a new rev. The replacement uses
+   `archiveNonempty = true` and metadata holding the outgoing content stamp and `superseded_at`.
+   The write map names the new
+   lattice stamps. `apply` sets the legacy stamp columns to the content stamp and `updated_at` to
+   server time, in the same transaction as the row and digest; those columns are projections, not
+   additional lattice truth. After commit, notify the existing page watcher with the winning page
+   exactly once per accepted save; a no-op announces nothing.
+
+**`journal.claimPage`** (`day`, `body`, `mood`, `energy`, `source`, `claimId`), both origins:
+1. Validate as for a save, with a nonempty `claimId` of at most 128 bytes. Its durable receipt is
+   keyed `(scope, claimId)` and holds the raw arguments' digest and day. An equal call → `ok`, no
+   writes; a different call under that id → `claim-conflict`. Receipts live for the scope's lifetime
+   and are written in the admitting transaction, not a read cache.
+2. Read the account's day under the scope lock. Let `account` be its body or `""`, `here` the
+   anonymous body. If `account.trim()` is empty use `here`; else if `here.trim()` is empty use
+   `account`; else if `here` contains `account.trim()` use `here`; else use
+   `rtrim(account) + "\n\n" + ltrim(here)`. Here trim uses §6.11's ECMAScript whitespace set.
+   This joins account prose first, then the device's, and avoids the contained-body duplicate.
+3. An incoming null scale keeps the account's value, or null when absent; zero replaces it. Source
+   is the incoming source. If the joined body exceeds the cap → `too-large`, with no receipt or
+   partial state write. Mint a content stamp strictly above the account's stamp by the content
+   clock rule, with actor `srv`; exhaustion → `invalid`. Replace and archive as save step 3, and
+   store the receipt atomically. A retry after another device's edit never appends the claim twice.
+
+**Anonymous writing and claim.** Anonymous autosaves queue full `claimPage` snapshots, one current
+snapshot per day, with a CSPRNG `claimId` (at least 122 bits). The next autosave uses `supersede`
+(§7.1) for the day's prior anonymous gestures, and carries the full current document and every
+first-run retirement it keeps. Failed commits leave the prior snapshot queued. These commands do
+not leave the device before binding. Sign-in follows §7.10: automatic Add only when the account
+holds no primary pages; otherwise explicit Add or Discard. State-only entries do not make the
+account occupied. An Add sends the retained claim commands, which join on the server; a Discard
+discards their onboarding deltas too. Bound autosaves use `savePage` once that day's claim has been
+reconciled; they do not supersede sent work. Binding alone MUST NOT switch a pending claimed day
+to an ordinary stamped save: a save stamped at T+4 loses to a claim admitted at T+100, even when
+both answer `ok`. Its empty write map preserves neither the newer text nor a revision.
+
+The journal adapter commits a `localOnly` `device/journal` record keyed `pendingClaim:<claimId>`
+with each anonymous claim. Its CSPRNG identity avoids collisions when §7.10 moves device rows;
+anonymous supersession replaces that record atomically with the claim. It retains the frozen
+claimed document, latest full editor document, touched fields and cumulative first-run retirements.
+While that day's claim is pending, every edit durably updates this record before saying saved here;
+it creates no `savePage` yet. The editor draws the latest retained document over the claim prediction,
+including after restart. Pulls, an `ok`, sign-in and an in-memory dirty flag cannot erase it.
+Record the claim's successful result `(epoch, seq)` in the same local result transaction, before
+the generic engine can resolve/remove its entry. Retain refused claims and edits with an unsaved
+notice; never replace a pending claim with another claim that appends its text again.
+
+Reconcile only when that result and a complete, digest-checked joined page in the same epoch are
+both durable: a live cursor without a partial-row key covers the result seq, with no boot staging,
+behind flag or digest failure. Either arrival order is legal. In one local read-and-commit:
+
+- Preserve the confirmed account prose and replace the frozen anonymous contribution with the
+  latest edited contribution. If joined body equals the frozen body, use the latest body. Otherwise,
+  when it ends with `"\n\n" + ltrim(frozenBody)` and that body is nonblank, retain the preceding
+  account prefix and join the latest body using `claimPage` step 2. An emptied contribution keeps
+  the account prefix. If a concurrent rewrite prevents identifying that suffix, join the complete
+  confirmed body with the latest body by step 2, retaining both rather than guessing a deletion.
+- Untouched scales/source use the confirmed values; touched fields use the latest values, including
+  an explicit null that clears a scale. Retained first-run retirements accompany the save.
+- Observe the confirmed `documentStamp` and durable content clock and mint a content stamp
+  **strictly greater** than both using the commit's `now`. Enqueue the reconciled full `savePage`,
+  persist the new clock, and remove the pending record in that same transaction. Its durable outbox
+  now retains the edits. A failed commit or exhausted content clock leaves the pending record intact.
+
+An epoch change invalidates the covering proof, not the retained writing. If the engine has already
+resolved the claim entry, requeue its exact frozen arguments under the **same** claimId/receipt and
+clear the old result atomically; otherwise let its existing entry recover through §7.5/§7.11.
+Wait for the new result and covering pull before reconciliation. Receipt replay appends nothing.
+
+With no intervening page edits, confirmation removes the pending record and displays the joined
+row, committing any retained first-run retirements as a state delta in that same transaction.
+With page edits, backed up requires the reconciled save's result and covering pull; the claim's
+confirmation alone is insufficient. `journal/claim-edit.json` includes the T+4/T+100 loss as a
+negative control and the required delayed-admission, restart and reordered-response outcomes.
+
+**First run.** The UI follows [journal onboarding](../design/journal/onboarding.md) and
+[the shell flow](../design/guidelines/superapp-flow.md). Mood and energy are visible on first open,
+unasked. The privacy fact is "Only you. No prompts, no fields, nothing to fill in — write a line or
+a page." Native first run writes today's page only; past days remain read-only, as on web.
+A first keystroke retires `placeholder`; the first successful durable written-page commit retires
+`privacyLine` and `firstPage`, atomically with the page command. `scales` retires on the first
+answer or dismissal of its invitation, not just because the page was kept. The scale invitation
+appears after `firstPage` is retired; the controls are available from first open. A saved zero
+counts as an answer. The quiet Keep invitation
+appears only after the scale invitation is answered or dismissed, one invitation at a time.
+Signed-in pages never show Keep. State comes from the active replica's drawn row; a signed-in install
+waits for the account's first complete pull before concluding that it has no pages or retired
+copy. Appendix D retires all four first-run fields for accounts with written pages, so existing
+writers see no re-onboarding. A failed read is never an empty account. Ink notes use an install
+preference outside the engine, surviving sign-in and sign-out; they show automatically only once per install when the
+absence of written pages is known. Manual Show ink notes is a UI action. Geometry, keyboard,
+motion and invitation timing are canon, not registry fields.
+
+A page is written and visible when body is not `""`, or either scale is non-null; whitespace
+counts, as in the web cache. Such days sort oldest first, with today at the bottom and unwritten
+gaps absent. A blank persisted REST resource remains in the replica but neither appears in the
+canvas nor makes the account occupied. Local durability means saved here; backed up requires confirmation of the current page
+command and its server row. Pending or offline writing must never be labelled backed up. Failed
+or refused saves keep their text and state what is unsaved.
+
+**Revisions.** Keep every outgoing nonempty body, including duplicate text at different head revs.
+The revision table retains its outgoing content stamp and `superseded_at` as projection metadata.
+Only an insertion prunes, in that same admission: first to the newest 10 for the changed day,
+then to the newest prefix of at most 500 rows and 8 388 608 body bytes across the account, and
+remove rows older than 90 days (`superseded_at < serverNow − 90 days`). Equal times order by the
+stable retention ordinal of D.3, newest first. Saves over empty bodies, stale saves and pulls do
+not prune. No sweep changes this table. Revision bytes exclude metadata; revisions never enter
+the scope digest.
+
+**Server-origin door.** REST keeps every status, sentence and response shape of
+[journal ARCHITECTURE](../../backend/products/journal/ARCHITECTURE.md), **REST translation into the engine**. The PUT builder parses defaults and normalizes scores/source before calling `savePage`
+with the caller-supplied content stamp. The old HLC `since` cursor remains a REST cursor; it is not
+an engine seq cursor. Range, all-pages and export continue to read today's rows. The revision
+table, legacy stamp/time projections and watcher are written by `apply`, never by a second SQL
+page writer. A watcher failure cannot roll back an admitted page; today's repair sweep supplies
+the derived work. Web sign-in must ask Add/Discard before adding signed-out pages to an account
+that already holds pages; an empty account adopts silently. Web's current silent auto-claim into
+an occupied account is a known divergence owed a separate web fix in journal ARCHITECTURE.
+
+**Deferred features.** Echo spans, embeddings, pairs, curation, feedback and all their computation
+stay in today's tables and REST; no first-run iOS screen consumes them. Page admission still
+announces accepted page changes to their existing watcher. Nudge settings, delivery ledger and
+mail sweeps stay on REST; the adaptive rhythm is a device computation, and native first run has
+no nudge surface. Transcription stays REST and creates no page: later voice text saves with
+`source = spoken`, without audio in the engine. Search and threads are device computations;
+week/year/zoom are read models over pages; export stays its current REST door. None needs an
+extra synced type for first run, and native exposes no placeholder control for a deferred feature.
+
+**Codes:** `claim-conflict` (a different claim under the same receipt id); all other refusals use
+the engine's codes. No REST page endpoint adds an engine `code` member.
 
 ---
 
@@ -2676,7 +2867,7 @@ future day), `proposal-settled` and `proposal-superseded` (`gym.applyProposal`,
 ## Appendix C: Gym migration
 
 Gym adopts its tables in place: its records are the rows gym holds when the engine takes over its
-writes, and every account keeps its history. This is the engine's one migration; every other product
+writes, and every account keeps its history. Journal's adoption is Appendix D; every other product
 starts from empty stores.
 
 **C.1 Adoption.**
@@ -2761,14 +2952,19 @@ standing row of its type holds:
   gains an epoch when it holds none.
 
 **C.7 The run.**
-- Gym's writes are frozen first: every gym write — REST, MCP and the Coach's ability calls — answers
+- Gym and journal share one owner-chosen write-freeze window (D.7). Gym's writes are frozen first:
+  every gym write — REST, MCP and the Coach's ability calls — answers
   `503`, which Android's queue keeps; no engine replica exists yet; and no read settles staleness,
   since today's lazy close (gym ARCHITECTURE §4.2) is a write of a synced row: reads answer the rows
   as they stand until the freeze ends.
+- Record the run's M and retain an immutable per-account manifest of the frozen source rows,
+  receipts and projections before adopting them. The acceptance audit reads that source and M
+  independently of the adopted rows and of the backfill's generated output.
 - Each account's C.2 to C.6 is one transaction, which marks the scope adopted. An adopted scope is
   skipped, so a run resumes where it stopped, and a second run changes nothing.
 - The run writes rows without admission: it is the one row change outside admission (§6.12). After
-  it, gym's writes go through admission (A.2's doors), and the freeze ends.
+  both products' adoption gates pass and their admitted writers are installed, gym's writes go
+  through admission (A.2's doors), and the shared freeze ends.
 
 **C.8 Rehearsal gates.** The run is accepted, on a restored copy of production before production and
 on production after it, when:
@@ -2777,7 +2973,14 @@ on production after it, when:
    the freeze, so that no lazy close, door or replica writes between them;
 2. for every scope, the digest summed from `feed` equals the stored digest, and `scope.seq` is the
    greatest seq of its rows and spent ids;
-3. a second run changes no row of any table.
+3. an independent per-account audit against the frozen manifest and recorded M reconciles every
+   adopted row and required spent id, including accounts without scopes. Every born, life and
+   field-register envelope, including spent-id born and life stamps, equals exactly `M:0:srv`;
+   seq, rc and ru equal C.2–C.6's frozen derivation. Neither the candidate's stamps or digest nor
+   an idempotent rerun supplies the expected values. The audit MUST reject deliberately corrupted
+   output with a recomputed valid digest: future field, born, life and spent stamps, and changed
+   receipt fields. `windmill_gym_backfill --audit` must implement this gate before gym cutover;
+4. a second run changes no row of any table.
 
 The gates see neither the write path, which gym's REST and MCP contract tests gate, nor that the
 form `feed` returns is the form a later `apply` stores: gate 2 proves each digest consistent at the
@@ -2788,7 +2991,8 @@ admitted) proves it survives the first admission.
 base case is the state C.7 leaves, and the inductive steps are unchanged: from then on every row
 change is an admission (C.1, C.7).
 - **INV-14.** Base: every stamp the run stores is `M:0:srv`, `M` being the server clock's reading
-  as the run starts. That clock never steps back within the run's process (§10.2), so each stamp is
+  as the run starts; gate 3 audits that equality independently against the frozen source. That clock
+  never steps back within the run's process (§10.2), so each stamp is
   stored when `serverNow ≥ M`, inside the bound. Step: admission
   stores a client stamp only within the bound (§6.1 step 2), and mints a server stamp one tick after
   observing the stored stamps it overwrites (§10.3), which the base and the earlier steps bound. No
@@ -2810,3 +3014,173 @@ change is an admission (C.1, C.7).
   `position` is 0–9 and unique per account.
 - **INV-11.** Today's partial unique indexes held A.2's invariants before the run (one open session
   per account; one pending proposal per routine, door and connection), and the run changes neither.
+
+---
+
+## Appendix D: Journal migration
+
+Journal adopts its production tables in place. Every account keeps its pages, legacy content
+stamps, server receipt times and retained invisible revisions. No page is copied to an engine
+shadow table. This is the journal exception to the empty-stores premise, beside gym's Appendix C.
+
+**D.1 Adoption and envelope.**
+- Each account holding `journal_page` or `journal_page_revision` rows has one alive scope,
+  `acct:<A>/journal`. Accounts with neither need no scope until their first admission.
+- `page` is `journal_page`, keyed by its existing `(user_id, day)`. It gains idempotently: `seq`,
+  `rc`, `ru`, `mood_stamp`, `energy_stamp`, `source_stamp`, `document_stamp_stamp`, `body_rev` and
+  `body_merged`; the scope is taken from `user_id`, with index `(user_id, seq)` (§2.2).
+  There is no born, life or spent-id column. `body`, mood, energy and source remain the typed
+  truth. The value of `documentStamp` is the existing three HLC columns, not their envelope stamp.
+- `journalState` uses one companion table `journal_sync_state`, keyed by `user_id`, with its four
+  ranked values and their stamps, `seq`, `rc`, `ru`, and index `(user_id, seq)`. It is not a second
+  page store and exposes no new REST resource.
+- `journal_page_revision` stays the revision table. Before any UPDATE, a frozen manifest assigns
+  each retained row an immutable `migration_id`, its ordinal in ascending original `ctid` order
+  within the account. The table gains that identity and `engine_rev`; uniqueness is
+  `(user_id, engine_rev)`. There is no existing revision id to reuse. Preserve body, outgoing
+  HLC and `superseded_at`; no revision becomes a visible record or enters the digest.
+- The product's adoption marker holds account, the run's `M`, the first-run policy D.4 names,
+  and the immutable manifest digest;
+  it commits with that account's rows and scope. A native claim receipt table holds `(user_id,
+  claim_id, arguments_digest, day)` for A.3's `claimPage`. It is empty at migration and lives for
+  the scope's lifetime. Both tables are outside `feed`.
+- Account deletion keeps its cascades: it purges every account scope, revisions, state and claim
+  receipts (§2.3). There is no page-to-page foreign-key consequence or trigger to reproduce. A
+  schema statement, trigger or repair job MUST NOT write an adopted page's value or envelope
+  outside admission after the run; repeat bootstrap statements that transform page scores are
+  gated by the adoption state. Echo/nudge tables keep their current writers.
+
+**D.2 Stamps, values and receipt times.**
+- Read the server clock once at the start of the run: `M`, recorded with its immutable manifest.
+  Every envelope register of every adopted page and derived state row has stamp `M:0:srv`.
+  The run observes no legacy content HLC into the server clock. In particular a page carrying a
+  future `stamp_ms`, or `0:0:`, keeps that value without weakening INV-14.
+- Body is unchanged UTF-8 text. Mood and energy use today's read normalization: null or outside
+  0–10 reads null; source reads spoken only when stored spoken, otherwise typed. Preserve the
+  REST read, including null versus zero; do not repeat the schema's scale conversion. A historical
+  body beyond the admission cap is adopted as it stands, not discarded or truncated; the next
+  save is checked by A.3. An unrepresentable calendar date or malformed legacy HLC fails the
+  rehearsal rather than silently losing a row.
+- The page's `rc = ru = updated_at` as integer epoch ms, since this table has no creation time.
+  Its legacy `updated_at` is preserved with its existing database precision for REST's epoch
+  projection. The new state row has `rc = ru = M`. No stamp is derived from those receipt times.
+
+**D.3 Today's revisions and the engine text field.**
+- Reserve revisions 1, 2, … for every retained audit row, in ascending `migration_id` order across
+  the account, including duplicate bodies. Each maps to `(page, day, body, engine_rev, text)` and
+  retains its outgoing content stamp and archive time. These are synthetic engine revisions,
+  not content stamps. Their ordinal preserves today's `ctid` tie-break across days as well as
+  within a day, before envelope UPDATEs can change physical tuple locations.
+- After that reserved prefix, number page rows in ascending day order; each body's head has
+  `rev = page.seq` and `merged = false`. The head is exactly today's body, including empty text.
+  Number a derived `journalState` row last. Thus every historical rev is below every adopted
+  head, and no later head can collide with a historical rev. Revisions-only accounts keep the
+  reserved high seq even if no visible row stands there.
+- No migration-time pruning runs. An old row beyond 90 days remains until the next insertion,
+  as in today's repository. Later A.3 revision pruning orders equal `superseded_at` by rev
+  descending, which preserves the frozen original tuple order; new head revs exceed the entire
+  reserved prefix. Nothing relies on current physical `ctid` after adoption.
+- The backfill sends no page-watcher notification and re-derives no spans or echoes. Subsequent
+  admission writes body heads and audit revisions in this same table, preserving the old HLC/time
+  metadata beside the unique engine rev.
+
+**D.4 First-run state derivation.** `firstRunPolicy = retire-existing` is fixed for the run and
+recorded in its adoption marker. Omission uses that fixed value; any other supplied policy is
+refused. When the account has at least one written page (body not `""`, or a non-null normalized
+scale), create `journalState` with `placeholder`,
+`privacyLine`, `firstPage` and `scales` retired, so a person with written pages sees no
+re-onboarding. Retirement is not an inference of whether an invitation was answered. With only blank
+resources or only revisions, create no state row; all defaults read pending. Today's tables do
+not record a past dismissal for an account with no written page, and the run must not claim to
+recover one. An install's ink-notes flag remains outside the account data.
+
+**D.5 Outside the engine.** Retain every `journal_span`, `journal_echo`, dismissal, offer dismissal,
+signal and `journal_page_curation` row; every nudge setting, delivery decision, mail secret and
+provider-suppression value; and their REST routes. No table is emptied or translated into a page.
+The legacy body, stamp and updated-at projections keep their meaning for echo repair, search
+invalidation and the device's nudge rhythm. Transcription has no persisted page or audio to
+backfill. The archive times and legacy metadata are projections, not additional engine records.
+
+**D.6 Scope, seq and digest.**
+- `scope.seq` is the last seq D.3 allocated, including its reserved historical revision prefix.
+  No primary record is invented for an account with only revisions. Counters and `sync_spent`
+  remain empty: journal has no cap or life.
+- Compute the digest from the exact `feed` rows, including `journalState` when derived, using
+  §6.12. Historic revisions, claim receipts, adoption marker and REST-only projections are outside
+  it. `sync_meta` gains an epoch only when it holds none; the run does not reset gym's epoch.
+- The migration marker and scope creation are one transaction. A scope without its marker is
+  not evidence of successful migration: abort that account and investigate. A marker with a
+  different M, manifest or first-run policy is refused, not treated as an idempotent rerun.
+
+**D.7 The run.**
+1. Journal cutover shares gym's C.7 write freeze in one owner-chosen window. Freeze every journal
+   page writer before taking the manifest: REST writes, import/repair tools
+   and every schema transformation that could write pages. No native engine replica exists yet.
+   Page writes answer 503 for the window; local web data remains queued by its existing retry
+   path. Quiesce and drain the echo derivation queue, echo sweep and nudge sweep; freeze their
+   mutation/admin doors too for the read comparison. Work already in flight finishes before the
+   frozen snapshot. Although their tables stay outside the engine, their writes can change a
+   REST read. Read doors do no derivation while frozen.
+2. Capture the immutable manifest, content and original revision tuple ordering. For each account,
+   D.1–D.6 run in one transaction. A matching adopted marker is a no-op, so a stopped run resumes
+   account by account and a second run changes no row, manifest, stamp or epoch.
+3. Run D.8's gates, install the admitted page writer and keep the old SQL writer disabled. Once
+   gym's C.8 gates also pass and its admitted writers are installed, release the shared freeze
+   and restart the deferred workers. Admission is the only subsequent page
+   writer. After the first admission, rerunning the backfill uses its recorded manifest and
+   marker, never reinterprets newly admitted rows as legacy data.
+
+**D.8 Rehearsal gates.** Acceptance requires a restored production snapshot rehearsal before
+production, and verification on production under the same freeze:
+1. Every read door, for every account, returns identical bytes before and after: page GET, range,
+   all-pages, HLC-since at its cursor/limit boundaries, export, echoes, nudge settings and the
+   operator diagnostic reads. Cover empty/zero scores, blank resources, spoken source, future
+   stamps, duplicate content stamps on different days, expired audit rows and revision time ties.
+   The two readings use the same frozen data and credentials, and no worker runs between them.
+2. Every digest recomputed from `feed` equals the stored one; `scope.seq` equals the greatest of
+   row seqs and reserved historical revs. A null-cursor boot reaches that head and checks the
+   digest, even for a revisions-only scope.
+3. An independent per-account audit reads the frozen manifest, recorded M and first-run policy,
+   and reconciles every adopted page, derived state row and reserved historical revision. Every
+   envelope register equals exactly `M:0:srv`, including `documentStamp`'s envelope while its
+   legacy HLC remains a value. Page heads have the exact frozen body, D.3's rev and seq, and
+   `merged=false`; state seqs, all rc/ru receipt fields, page updated-at projections and historical
+   revision identities, bodies, outgoing HLCs and archive times equal D.2–D.4's frozen derivation.
+   Claim receipts are empty. The audit derives expected values from that independent source,
+   never from the candidate stamps, digest or a rerun's generated output. It MUST reject
+   deliberately corrupted output whose digest has been recomputed: envelopes replaced by a
+   legacy future stamp, changed head revs or merged flags, and changed receipt fields.
+4. A second run with the recorded manifest and M changes no row in any table. Interruptions before
+   and after an account commit leave either the untouched account or its complete adopted scope.
+
+These gates do not prove the next write. Binding acceptance additionally requires unchanged REST
+contract tests; an apply/feed hash round-trip for each type; strict whole-page stale/tie saves;
+score-only revision capture and all pruning bounds; one retry-safe claim and a refusing oversized
+join; and a page saved through either door that changes the same scope's seq/digest and announces
+only its committed winner. Backfill vectors model derivations, boot, read projections, digest and
+idempotence. Separate reference audit tests exercise frozen derivations and reject corrupted
+output despite a recomputed digest and a no-op rerun; worker quiescence, HTTP bytes and real
+database transactions require the rehearsal.
+
+**D.9 Invariants of an adopted journal scope.**
+- **INV-14.** Base: every envelope stamp is `M:0:srv`, stored when the monotone process clock is
+  at least M; gate 3 verifies the stamp base independently. Historic HLCs remain content values,
+  never inputs to the engine HLC. Step: every
+  admitted envelope stamp follows §6.1/§10.3. iOS ships after adoption, so no replica predates
+  that bounded base and clock-skew recovery terminates as in §5.
+- **INV-15.** Base: D.6 stores the sum over the exact feed rows in their adopting transaction,
+  under the full freeze, verified by gate 2. Revisions and REST projections are outside the sum.
+  Step: every subsequent change of a page or state row is admission and moves that sum in the
+  same transaction. Deferred workers change no feed row; a watcher announces only after commit.
+  The apply/feed round-trip gate proves the canonical row survives the first real write.
+- **INV-2.** Journal pages and state have no life and no delete, so the run creates no death or
+  spent id and terminality is vacuous. Account deletion purges the whole scope. A body cleared
+  by a newer save remains a resource; it never becomes an admitted death.
+- **INV-5.** Historical revs reserve a prefix, then rows receive one increasing pass. Admission
+  allocates above its high seq, and cannot reuse an old rev. A revisions-only scope has a seq gap
+  but its null-cursor boot still reaches the head with the empty-row digest.
+- **INV-8/INV-11.** There is no journal counter; today's unique `(user_id, day)` constraint keeps
+  one page per day. A claim's unique receipt and raw-arguments digest prevent duplicate additions.
+- **INV-3/6/10/16.** No engine replica predates adoption. Each starts from its first complete pull,
+  while the ranked state joins monotonically and the anonymous claim follows the existing lineage
+  decision and durable outbox rules.

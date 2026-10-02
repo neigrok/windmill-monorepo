@@ -5,7 +5,8 @@
 
 import { replaceRow } from '../core/digest.js';
 import { between } from '../core/fracindex.js';
-import { compareRecords, compactRow } from '../core/rows.js';
+import { jcs } from '../core/jcs.js';
+import { compareRecords, compactRow, recordKey, stampsOf } from '../core/rows.js';
 import { ServerState } from '../server/state.js';
 
 const SET_OF = (value) => value !== undefined && value !== null;
@@ -158,3 +159,81 @@ export function backfill({ state, registry, account, legacy, M }) {
   return new ServerState(next.toJSON());
 }
 
+// C.8's frozen-input audit is separate from the writer and its digest calculation.
+export function audit({ state, registry, account, legacy, M, seeds }) {
+  const key = `acct:${account}/gym`;
+  const check = (label, actual, expected) => {
+    if (jcs({ value: actual }) !== jcs({ value: expected })) throw new Error(`gym adoption audit: ${label}`);
+  };
+  const stamp = `${M}:0:srv`;
+  const expected = [];
+  const keysOf = (row, names) => names.filter((name) => row[name] !== null && row[name] !== undefined);
+  const hasAliases = (id) => (legacy.aliases ?? []).some((row) => row.exerciseId === id);
+  const add = (t, id, rc, ru, fields, minted = false, life = minted) =>
+    expected.push({ t, id, rc, ru, fields: fields.sort(), born: minted ? stamp : undefined, life: life ? ['alive', stamp] : undefined });
+  for (const row of legacy.routines ?? []) add('routine', row.id, row.createdAt, M,
+    [...keysOf(row, ['name', 'position', 'createdDoor']), 'entries'], true);
+  for (const row of legacy.exercises ?? []) add('exercise', row.id, row.createdAt, M,
+    [...keysOf(row, ['name', 'pattern', 'equipment', 'stepKg']), ...(hasAliases(row.id) ? ['aliases'] : [])], true);
+  const renamed = new Set([
+    ...(legacy.exerciseNames ?? []).map((row) => row.exerciseId),
+    ...(legacy.aliases ?? []).map((row) => row.exerciseId),
+  ]);
+  for (const id of renamed) {
+    if (!Object.hasOwn(seeds, id)) continue;
+    const name = (legacy.exerciseNames ?? []).find((row) => row.exerciseId === id);
+    const at = name?.updatedAt ?? M;
+    add('exerciseName', id, at, at,
+      [...keysOf(name ?? {}, ['name']), ...(hasAliases(id) ? ['aliases'] : [])]);
+  }
+  for (const row of legacy.sessions ?? []) add('session', row.id, M, M,
+    keysOf(row, ['routineId', 'historyRoutineId', 'plan', 'startedAt', 'finishedAt', 'closedBy', 'displayName']), true);
+  for (const row of legacy.sets ?? []) add('set', row.id, M, M,
+    keysOf(row, ['sessionId', 'exerciseId', 'weightKg', 'reps', 'kind', 'rpe', 'note', 'completedAt']), true);
+  for (const row of legacy.notes ?? []) add('note', row.id, row.createdAt, row.updatedAt,
+    [...keysOf(row, ['title', 'body']), 'ord'], true);
+  for (const row of legacy.bodyweight ?? []) add('weighin', row.dateLocal, row.updatedAt, row.updatedAt,
+    keysOf({ kg: row.weightKg, recordedAt: row.recordedAt }, ['kg', 'recordedAt']), false, true);
+  if (legacy.preferences) add('prefs', 'prefs', legacy.preferences.updatedAt, legacy.preferences.updatedAt,
+    keysOf(legacy.preferences, ['units', 'restSeconds', 'restSound', 'confirmHaptic', 'confirmSound']));
+  for (const row of legacy.proposals ?? []) add('proposal', row.id, row.createdAt, M,
+    [...keysOf(row, ['routineId', 'intent', 'proposedName', 'summary', 'door', 'connection', 'agent', 'threadId', 'state', 'supersededBy', 'settledAt']), 'changes'], true);
+  check('frozen row identities',
+    state.rowsOf(key).map(({ t, id }) => ({ t, id })).sort(compareRecords),
+    expected.map(({ t, id }) => ({ t, id })).sort(compareRecords));
+  for (const frozen of expected) {
+    const row = state.row(key, frozen.t, frozen.id);
+    const label = `${row.t}/${row.id}`;
+    check(`${label} register identities`, Object.keys(row.f ?? {}).sort(), frozen.fields);
+    check(`${label} born`, row.born, frozen.born);
+    check(`${label} life`, row.life, frozen.life);
+    for (const envelope of stampsOf(row)) check(`${label} envelope`, envelope, stamp);
+    check(`${label} rc`, row.rc, frozen.rc);
+    check(`${label} ru`, row.ru, frozen.ru);
+  }
+  const candidates = new Map(['set', 'session', 'routine', 'note'].map((t) => [t, new Set()]));
+  for (const row of legacy.setRevisions ?? []) if (row.deleted) candidates.get('set').add(row.setId);
+  for (const row of legacy.writeReceipts ?? []) if (row.kind === 'set' || row.kind === 'session') candidates.get(row.kind).add(row.id);
+  for (const id of legacy.routineCreations ?? []) candidates.get('routine').add(id);
+  for (const id of legacy.noteSaves ?? []) candidates.get('note').add(id);
+  const standing = new Set(expected.map((row) => recordKey(row.t, row.id)));
+  const spent = [];
+  for (const [t, ids] of candidates) for (const id of ids)
+    if (!standing.has(recordKey(t, id))) spent.push({ t, id });
+  check('frozen spent identities',
+    state.spentOf(key).map(({ t, id }) => ({ t, id })).sort(compareRecords),
+    spent.sort(compareRecords));
+  for (const entry of state.spentOf(key)) {
+    check(`${entry.t}/${entry.id} spent born`, entry.born, stamp);
+    check(`${entry.t}/${entry.id} spent life`, entry.lifeStamp, stamp);
+  }
+  if (!expected.length && !spent.length) {
+    check('empty account scope', state.scope(key), undefined);
+    return true;
+  }
+  const order = registry.types instanceof Map ? [...registry.types.keys()] : registry.types.map((type) => type.type);
+  [...expected, ...spent].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t) || compareRecords(a, b))
+    .forEach((row, index) => check(`${row.t}/${row.id} seq`, state.stored(key, row.t, row.id).seq, index + 1));
+  check('scope seq', state.scope(key)?.seq, expected.length + spent.length);
+  return true;
+}

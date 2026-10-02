@@ -8,7 +8,9 @@ reads them, and how the motion behaves.
 ## 1. The two scales
 
 Mood and energy, each **0–10**, are the only structure Journal asks for, and both are optional
-forever. Nothing asks for them, blocks on them, or counts a page without them as incomplete.
+forever. The controls are visible and unasked on first open; the optional invitation follows the
+first kept page (`onboarding.md` §3). Nothing requires them, blocks on them, or counts a page
+without them as incomplete. Only today's scales are writable; past days stay read-only.
 
 ## 2. The control
 

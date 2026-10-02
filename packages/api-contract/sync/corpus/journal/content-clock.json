@@ -1,0 +1,61 @@
+[
+  {
+    "name": "future payload observed independently",
+    "input": {
+      "pair": {
+        "ms": 0,
+        "counter": 0
+      },
+      "observed": {
+        "ms": 1760010000000,
+        "counter": 3,
+        "actor": "old:writer"
+      },
+      "now": 1760000000000,
+      "actor": "ios:writer"
+    },
+    "expect": {
+      "stamp": {
+        "ms": 1760010000000,
+        "counter": 4,
+        "actor": "ios:writer"
+      }
+    }
+  },
+  {
+    "name": "counter carry",
+    "input": {
+      "pair": {
+        "ms": 1760000000000,
+        "counter": 4294967295
+      },
+      "now": 1760000000000,
+      "actor": "ios:writer"
+    },
+    "expect": {
+      "stamp": {
+        "ms": 1760000000001,
+        "counter": 0,
+        "actor": "ios:writer"
+      }
+    }
+  },
+  {
+    "name": "physical advances",
+    "input": {
+      "pair": {
+        "ms": 1,
+        "counter": 9
+      },
+      "now": 1760000000000,
+      "actor": "ios:writer"
+    },
+    "expect": {
+      "stamp": {
+        "ms": 1760000000000,
+        "counter": 0,
+        "actor": "ios:writer"
+      }
+    }
+  }
+]

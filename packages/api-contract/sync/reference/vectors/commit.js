@@ -735,9 +735,45 @@ function retire() {
   ];
 }
 
+function supersede() {
+  const create = commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'First' } }]);
+  const replace = commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'Latest' } }], { supersede: ['g1'] }, 5001);
+  return [
+    stepsVector('anonymous ready whole gesture superseded before numbering', { device: device(anon()), steps: [create, replace] }),
+    stepsVector('anonymous held gesture superseded without waiting', { device: device(anon()), steps: [{ ...create, opts: { hold: true } }, replace] }),
+    stepsVector('supersede folds later minted-record updates and commands silently', {
+      device: device(anon()),
+      steps: [create,
+        commitStep('self/probe', [{ op: 'update', t: 'card', id: 'card0010', f: { title: 'Dependent' } }]),
+        replace],
+    }),
+    stepsVector('superseding multiple gestures follows commit order', {
+      device: device(anon()),
+      steps: [create,
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0011', f: { title: 'Second' } }]),
+        commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0012', f: { title: 'Full replacement' } }], { supersede: ['g2', 'g1'] })],
+    }),
+    stepsVector('supersede a gesture from another scope throws atomically', {
+      device: device(anon()),
+      steps: [create, commitStep(TREE, [{ op: 'write', t: 'meta', id: 'meta', f: { title: 'Other' } }], { supersede: ['g1'] })],
+    }),
+    stepsVector('supersede fails before a malformed replacement can remove source', {
+      device: device(anon()),
+      steps: [create, commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { unknown: 'bad' } }], { supersede: ['g1'] })],
+    }),
+    stepsVector('supersede too-large replacement leaves source and clock unchanged', {
+      device: device(anon()), limits: { PUSH_MAX_BYTES: 500 },
+      steps: [create, commitStep('self/probe', [{ op: 'create', t: 'card', id: 'card0010', f: { title: 'x'.repeat(800) } }], { supersede: ['g1'] })],
+    }),
+    stepsVector('bound-ready supersede is refused as a programming error', { device: device(bound()), steps: [create, replace] }),
+    stepsVector('unknown anonymous supersede gesture throws atomically', { device: device(anon()), steps: [replace] }),
+  ];
+}
+
 export function files() {
   return {
     'commit/retire.json': retire(),
+    'commit/supersede.json': supersede(),
     'commit/deltas.json': deltas(),
     'commit/ids.json': ids(),
     'commit/guards.json': guards(),

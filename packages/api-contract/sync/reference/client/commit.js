@@ -68,7 +68,7 @@ class DeltaBuilder {
     const type = this.typeOf(change);
     const current = this.drawnView.get(recordKey(change.t, change.id));
     const delta = { t: change.t, id: change.id };
-    if (change.op === 'create') {
+    if (change.op === 'create' && type.life) {
       delta.born = this.stamp;
       delta.life = ['alive', this.stamp];
     } else if (type.hasBorn) {
@@ -77,6 +77,8 @@ class DeltaBuilder {
     }
     const f = this.fields(type, change.f, change.op === 'create' ? undefined : current, { server: true });
     if (Object.keys(f).length) delta.f = f;
+    const x = this.texts(type, change.id, change.x, current, { server: true });
+    if (Object.keys(x).length) delta.x = x;
     return delta;
   }
 
@@ -227,10 +229,11 @@ class DeltaBuilder {
     return Object.fromEntries(Object.keys(out).sort().map((name) => [name, out[name]]));
   }
 
-  texts(type, id, values = {}, current) {
+  texts(type, id, values = {}, current, { server = false } = {}) {
     const out = {};
     for (const [name, raw] of Object.entries(values)) {
       if (type.field(name)?.kind !== 'text') throw new CommitError(`${type.type}.${name} is not a text field`);
+      if (type.field(name).writer === 'server' && !server) throw new CommitError(`${type.type}.${name} is written by the server`);
       const shown = current?.x?.[name] ?? '';
       const { text, from } = typeof raw === 'string' ? { text: raw, from: shown } : { text: raw.text, from: raw.from ?? shown };
       if (text === shown) continue;
@@ -345,6 +348,20 @@ function retiringEntries(replica, scope, retire) {
   return [...gestures.values()].filter((gesture) => gesture.every((entry) => entry.state === 'held' && entry.scope === scope && removes(entry))).flat();
 }
 
+// Anonymous snapshots have never crossed a door: their entire unnumbered gesture may be replaced.
+function supersedingEntries(replica, scope, gestureIds) {
+  if (!Array.isArray(gestureIds)) throw new CommitError('supersede names gestures as an array');
+  if (gestureIds.length === 0) return [];
+  if (replica.meta.state !== 'anon' || new Set(gestureIds).size !== gestureIds.length) throw new CommitError('supersede requires distinct anonymous gestures');
+  return gestureIds.flatMap((gestureId) => {
+    const entries = replica.entries().filter((entry) => entry.gestureId === gestureId);
+    if (entries.length === 0 || entries.some((entry) => entry.scope !== scope || !['held', 'ready'].includes(entry.state) || entry.n !== undefined)) {
+      throw new CommitError('supersede requires a whole never-numbered gesture in this scope');
+    }
+    return entries;
+  }).sort((a, b) => a.commitOrder - b.commitOrder);
+}
+
 // ctx: {registry, actor, deviceNow, ended, nextGestureId, draw, limits, device}; `device` holds every
 // replica a given `opts.gestureId` is checked against. `changes` is a list with its `opts`, answering
 // {localIds, retired, stamp} or {refused, detail?}; or the read-and-commit body, a function of the views,
@@ -382,8 +399,10 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   const stamp = clock.tick();
 
   const retiring = retiringEntries(replica, scope, opts.retire ?? []);
-  const folded = silentFoldOf(replica, registry, retiring.map((entry) => ({ entry, deltas: deltasOf(entry) })));
-  const gone = new Set([...retiring.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
+  const superseding = supersedingEntries(replica, scope, opts.supersede ?? []);
+  const ending = [...new Set([...retiring, ...superseding])];
+  const folded = silentFoldOf(replica, registry, ending.map((entry) => ({ entry, deltas: deltasOf(entry) })));
+  const gone = new Set([...ending.flatMap(deltasOf), ...folded.flatMap(({ entry, part }) => [...part.removed, ...(part.cmdGone ? entry.predict ?? [] : [])])]);
   const drawnView = drawn(replica, registry, scope, gone);
   const storedView = stored(replica, registry, scope, gone);
   const builder = new DeltaBuilder({ registry, replica, scope, stamp, physNow, drawnView, storedView, draw: ctx.draw });
@@ -407,6 +426,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
   }
 
   for (const entry of retiring) moveEntry(replica, ctx.ended, entry, 'retire');
+  for (const entry of superseding) if (replica.entry(entry.localId)) moveEntry(replica, ctx.ended, entry, 'silent-fold');
   foldSilently(replica, ctx.ended, folded);
   replica.meta.hlc = clock.pair;
   const firstOrder = replica.nextCommitOrder();
@@ -441,5 +461,7 @@ function commitGesture(replica, ctx, physNow, scope, changes, opts) {
     else replica.deviceRows(product)[key] = value;
   }
   replica.meta.hlcHigh = stamp;
-  return { localIds: entries.map((entry) => entry.localId), retired: [...new Set(retiring.map((entry) => entry.gestureId))], stamp };
+  const outcome = { localIds: entries.map((entry) => entry.localId), retired: [...new Set(retiring.map((entry) => entry.gestureId))], stamp };
+  if (superseding.length > 0) outcome.superseded = [...new Set(superseding.map((entry) => entry.gestureId))];
+  return outcome;
 }

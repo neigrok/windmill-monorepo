@@ -25,6 +25,12 @@ export class Refusal extends Error {
 
 const DELTA_KEYS = new Set(['t', 'id', 'life', 'born', 'f', 'x', 'v']);
 const INTENT_KEYS = new Set(['n', 'scope', 'd', 'guard', 'cmd', 'gestureId']);
+const TEXT_WRITE_KEYS = new Set(['text', 'base']);
+
+// A command's internal replacement; the public delta shape never accepts these markers.
+export function replacementText(text, { archiveNonempty = false, archive = {} } = {}) {
+  return { text, replace: true, archiveNonempty, archive };
+}
 
 function isObject(value) {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -142,7 +148,7 @@ class Admission {
     }
     for (const [name, write] of Object.entries(delta.x ?? {})) {
       const field = type.field(name);
-      if (!field || field.kind !== 'text' || !isObject(write) || typeof write.text !== 'string' || !isObject(write.base)) throw new Refusal('invalid');
+      if (!field || field.kind !== 'text' || !isObject(write) || Object.keys(write).some((key) => !TEXT_WRITE_KEYS.has(key)) || typeof write.text !== 'string' || !isObject(write.base)) throw new Refusal('invalid');
       if (!this.fromServer && field.writer === 'server') throw new Refusal('invalid');
       const byRev = Object.keys(write.base).length === 1 && Number.isSafeInteger(write.base.rev) && write.base.rev >= 0;
       const byText = Object.keys(write.base).length === 1 && typeof write.base.text === 'string';
@@ -391,6 +397,14 @@ class Admission {
     for (const [name, write] of Object.entries(change.delta.x ?? {})) {
       const field = change.type.field(name);
       const stored = before?.x?.[name] ?? { text: '', rev: 0, merged: false };
+      if (write.replace === true && change.source === 'command') {
+        if (lengthIn(field.unit, write.text) > field.max) throw new Refusal('too-large');
+        texts[name] = { text: write.text, rev: null, merged: false };
+        if (stored.rev > 0 && (!write.archiveNonempty || stored.text !== '')) {
+          revisions.push({ ...write.archive, t: change.delta.t, id: change.delta.id, field: name, rev: stored.rev, text: stored.text });
+        }
+        continue;
+      }
       const merge = mergeText({
         stored,
         base: write.base,
@@ -494,6 +508,12 @@ class Admission {
       scope.digest = replaceRow(scope.digest, typedBefore, typedAfter);
     }
     this.writes.push({ key: scopeKey, rows });
+    if (this.product.pruneRevisions && changed.some((record) => record.revisions.length > 0)) {
+      this.work.revisions[scopeKey] = this.product.pruneRevisions({
+        ...this.context(), scopeKey, revisions: this.work.revisions[scopeKey] ?? [],
+        archived: changed.flatMap((record) => record.revisions),
+      });
+    }
   }
 
   // Step 14: a command's writes into scopes this intent created, each at that scope's seq and digest.

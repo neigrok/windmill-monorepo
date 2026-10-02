@@ -1,0 +1,2900 @@
+[
+  {
+    "name": "latest snapshot state preserved, binds empty account",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "op": "view",
+          "scope": "self/journal",
+          "withHeld": true
+        },
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {
+            "journal": false
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 1760000000002
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000001:0:r_aaaaaaaaaaaa",
+          "superseded": [
+            "g1"
+          ]
+        },
+        {
+          "records": [
+            {
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "firstPage": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "placeholder": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "privacyLine": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "scales": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              }
+            },
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "energy": [
+                  null,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "mood": [
+                  0,
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "x": {
+                "body": "Latest words."
+              }
+            }
+          ],
+          "capCount": {}
+        },
+        {
+          "complete": true,
+          "due": []
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/journal",
+              "d": [
+                {
+                  "t": "journalState",
+                  "id": "journalState",
+                  "f": {
+                    "firstPage": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "placeholder": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "privacyLine": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "scales": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "journal.claimPage",
+                "args": {
+                  "day": "2026-10-01",
+                  "body": "Latest words.",
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed",
+                  "claimId": "claim_00000002"
+                }
+              },
+              "gestureId": "g2",
+              "n": 1
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 1760000000001,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/journal",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "Latest words.",
+                      "mood": 0,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000002"
+                    }
+                  },
+                  "gestureId": "g2",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        0,
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "Latest words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "8c629b9fee226232f59c8477912946d8c09a6721fb693a9808fadadcfeb788de"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "undone",
+          "event": "silent-fold"
+        }
+      ],
+      "telemetry": [],
+      "events": [],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760000000003,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "d72b0933760baeeac5f55b0a8a2058ef9336c063d18e31c96e9702a59f9036fa"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "firstPage": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "placeholder": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "privacyLine": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "scales": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 1,
+              "rc": 1760000000003,
+              "ru": 1760000000003
+            },
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1760000000003,
+                    "counter": 0,
+                    "actor": "srv"
+                  },
+                  "1760000000003:0:srv"
+                ],
+                "energy": [
+                  null,
+                  "1760000000003:0:srv"
+                ],
+                "mood": [
+                  0,
+                  "1760000000003:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000003:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "Latest words.",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1760000000003,
+              "ru": 1760000000003
+            }
+          ]
+        },
+        "replicas": {
+          "rp_00000000000000000000000000000001": {
+            "account": "A",
+            "lastN": 1
+          }
+        },
+        "results": {
+          "rp_00000000000000000000000000000001": [
+            {
+              "n": 1,
+              "digest": "8c629b9fee226232f59c8477912946d8c09a6721fb693a9808fadadcfeb788de",
+              "result": {
+                "s": "ok",
+                "seq": 1,
+                "write": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "mood": "1760000000003:0:srv",
+                      "energy": "1760000000003:0:srv",
+                      "source": "1760000000003:0:srv",
+                      "documentStamp": "1760000000003:0:srv"
+                    }
+                  }
+                ]
+              },
+              "faults": 0
+            }
+          ]
+        },
+        "product": {
+          "journalClaims": {
+            "acct:A/journal": {
+              "claim_00000002": {
+                "digest": "009a40156401e7189524f6a9faf74aeb811b2ebb368eeb31e4e0f85633168ea0",
+                "day": "2026-10-01",
+                "documentStamp": {
+                  "ms": 1760000000003,
+                  "counter": 0,
+                  "actor": "srv"
+                }
+              }
+            }
+          },
+          "journalContentClocks": {
+            "acct:A/journal": {
+              "server": {
+                "ms": 1760000000003,
+                "counter": 0
+              }
+            }
+          },
+          "journalPages": {
+            "acct:A/journal": {
+              "2026-10-01": {
+                "updatedAt": 1760000000003
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1760000000003,
+          "epoch": "ep-1",
+          "as": "A",
+          "lastN": 1,
+          "results": [
+            {
+              "n": 1,
+              "s": "ok",
+              "seq": 1,
+              "write": [
+                {
+                  "t": "page",
+                  "id": "2026-10-01",
+                  "f": {
+                    "mood": "1760000000003:0:srv",
+                    "energy": "1760000000003:0:srv",
+                    "source": "1760000000003:0:srv",
+                    "documentStamp": "1760000000003:0:srv"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "latest snapshot claims occupied account",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1"
+            ]
+          }
+        },
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {
+            "journal": true
+          },
+          "decisions": {
+            "journal": "add"
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 1760000000002
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 1,
+            "counters": {},
+            "digest": "f9bf06a8e39d9cf438d3e844b2985d9e2a9acae3216c6010d630e4f7ac0c2295"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1759999999800,
+                    "counter": 0,
+                    "actor": "old:writer"
+                  },
+                  "1759999999800:0:srv"
+                ],
+                "energy": [
+                  3,
+                  "1759999999800:0:srv"
+                ],
+                "mood": [
+                  6,
+                  "1759999999800:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1759999999800:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "Account words.",
+                  "rev": 1,
+                  "merged": false
+                }
+              },
+              "seq": 1,
+              "rc": 1759999999800,
+              "ru": 1759999999800
+            }
+          ]
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "localIds": [
+            "g2/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000001:0:r_aaaaaaaaaaaa",
+          "superseded": [
+            "g1"
+          ]
+        },
+        {
+          "complete": true,
+          "due": [
+            {
+              "kind": "signed-out",
+              "product": "journal",
+              "count": {
+                "journalState": 1,
+                "page": 1
+              },
+              "counted": [
+                "g2/0"
+              ]
+            }
+          ]
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/journal",
+              "d": [
+                {
+                  "t": "journalState",
+                  "id": "journalState",
+                  "f": {
+                    "firstPage": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "placeholder": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "privacyLine": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ],
+                    "scales": [
+                      "retired",
+                      "1760000000001:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "journal.claimPage",
+                "args": {
+                  "day": "2026-10-01",
+                  "body": "Latest words.",
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed",
+                  "claimId": "claim_00000002"
+                }
+              },
+              "gestureId": "g2",
+              "n": 1
+            }
+          ]
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 1760000000001,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000001:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g2/0",
+                "gestureId": "g2",
+                "lineage": "A",
+                "scope": "self/journal",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000001:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "retired",
+                          "1760000000001:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "Latest words.",
+                      "mood": 0,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000002"
+                    }
+                  },
+                  "gestureId": "g2",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        0,
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000001:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "Latest words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "8c629b9fee226232f59c8477912946d8c09a6721fb693a9808fadadcfeb788de"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [
+        {
+          "localId": "g1/0",
+          "outcome": "undone",
+          "event": "silent-fold"
+        }
+      ],
+      "telemetry": [],
+      "events": [],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 1760000000003,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 2,
+            "counters": {},
+            "digest": "25b3bde9292884c310cb11fb428f6ab48003d02847b971bdcc1afb99a8c27899"
+          }
+        },
+        "rows": {
+          "acct:A/journal": [
+            {
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "firstPage": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "placeholder": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "privacyLine": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ],
+                "scales": [
+                  "retired",
+                  "1760000000001:0:r_aaaaaaaaaaaa"
+                ]
+              },
+              "seq": 2,
+              "rc": 1760000000003,
+              "ru": 1760000000003
+            },
+            {
+              "t": "page",
+              "id": "2026-10-01",
+              "f": {
+                "documentStamp": [
+                  {
+                    "ms": 1760000000003,
+                    "counter": 0,
+                    "actor": "srv"
+                  },
+                  "1760000000003:0:srv"
+                ],
+                "energy": [
+                  3,
+                  "1760000000003:0:srv"
+                ],
+                "mood": [
+                  0,
+                  "1760000000003:0:srv"
+                ],
+                "source": [
+                  "typed",
+                  "1760000000003:0:srv"
+                ]
+              },
+              "x": {
+                "body": {
+                  "text": "Account words.\n\nLatest words.",
+                  "rev": 2,
+                  "merged": false
+                }
+              },
+              "seq": 2,
+              "rc": 1759999999800,
+              "ru": 1760000000003
+            }
+          ]
+        },
+        "revisions": {
+          "acct:A/journal": [
+            {
+              "archivedAt": 1760000000003,
+              "documentStamp": {
+                "ms": 1759999999800,
+                "counter": 0,
+                "actor": "old:writer"
+              },
+              "t": "page",
+              "id": "2026-10-01",
+              "field": "body",
+              "rev": 1,
+              "text": "Account words."
+            }
+          ]
+        },
+        "replicas": {
+          "rp_00000000000000000000000000000001": {
+            "account": "A",
+            "lastN": 1
+          }
+        },
+        "results": {
+          "rp_00000000000000000000000000000001": [
+            {
+              "n": 1,
+              "digest": "8c629b9fee226232f59c8477912946d8c09a6721fb693a9808fadadcfeb788de",
+              "result": {
+                "s": "ok",
+                "seq": 2,
+                "write": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "mood": "1760000000003:0:srv",
+                      "energy": "1760000000003:0:srv",
+                      "source": "1760000000003:0:srv",
+                      "documentStamp": "1760000000003:0:srv"
+                    }
+                  }
+                ]
+              },
+              "faults": 0
+            }
+          ]
+        },
+        "product": {
+          "journalClaims": {
+            "acct:A/journal": {
+              "claim_00000002": {
+                "digest": "009a40156401e7189524f6a9faf74aeb811b2ebb368eeb31e4e0f85633168ea0",
+                "day": "2026-10-01",
+                "documentStamp": {
+                  "ms": 1760000000003,
+                  "counter": 0,
+                  "actor": "srv"
+                }
+              }
+            }
+          },
+          "journalContentClocks": {
+            "acct:A/journal": {
+              "server": {
+                "ms": 1760000000003,
+                "counter": 0
+              }
+            }
+          },
+          "journalPages": {
+            "acct:A/journal": {
+              "2026-10-01": {
+                "updatedAt": 1760000000003
+              }
+            }
+          }
+        }
+      },
+      "response": {
+        "status": 200,
+        "body": {
+          "serverTime": 1760000000003,
+          "epoch": "ep-1",
+          "as": "A",
+          "lastN": 1,
+          "results": [
+            {
+              "n": 1,
+              "s": "ok",
+              "seq": 2,
+              "write": [
+                {
+                  "t": "page",
+                  "id": "2026-10-01",
+                  "f": {
+                    "mood": "1760000000003:0:srv",
+                    "energy": "1760000000003:0:srv",
+                    "source": "1760000000003:0:srv",
+                    "documentStamp": "1760000000003:0:srv"
+                  }
+                }
+              ]
+            }
+          ]
+        }
+      }
+    }
+  },
+  {
+    "name": "bound ready cannot supersede; throw leaves prior snapshot",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1"
+            ]
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/journal",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "pending",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "First words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000001"
+                    }
+                  },
+                  "gestureId": "g1"
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "First words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "missing gesture supersede atomic throw",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "absent"
+            ]
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/journal",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "pending",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "First words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000001"
+                    }
+                  },
+                  "gestureId": "g1"
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "First words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "duplicate gesture supersede atomic throw",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1",
+              "g1"
+            ]
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/journal",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "pending",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "First words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000001"
+                    }
+                  },
+                  "gestureId": "g1"
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "First words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "numbered bound entry cannot supersede",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "signIn",
+          "account": "A",
+          "holdsRecords": {
+            "journal": false
+          }
+        },
+        {
+          "op": "push",
+          "deviceNow": 1760000000002
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1"
+            ]
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "complete": true,
+          "due": []
+        },
+        {
+          "replica": "rp_00000000000000000000000000000001",
+          "account": "A",
+          "ackThrough": 0,
+          "intents": [
+            {
+              "scope": "self/journal",
+              "d": [
+                {
+                  "t": "journalState",
+                  "id": "journalState",
+                  "f": {
+                    "firstPage": [
+                      "retired",
+                      "1760000000000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "placeholder": [
+                      "retired",
+                      "1760000000000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "privacyLine": [
+                      "retired",
+                      "1760000000000:0:r_aaaaaaaaaaaa"
+                    ],
+                    "scales": [
+                      "pending",
+                      "1760000000000:0:r_aaaaaaaaaaaa"
+                    ]
+                  }
+                }
+              ],
+              "cmd": {
+                "name": "journal.claimPage",
+                "args": {
+                  "day": "2026-10-01",
+                  "body": "First words.",
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed",
+                  "claimId": "claim_00000001"
+                }
+              },
+              "gestureId": "g1",
+              "n": 1
+            }
+          ]
+        },
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 2,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/journal",
+                "state": "sent",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "pending",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "First words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000001"
+                    }
+                  },
+                  "gestureId": "g1",
+                  "n": 1
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "First words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ],
+                "n": 1,
+                "digest": "442a48dd0fb9da1fcd0c8fcf90e898e961518281800d8d8796bed36b1fa962cb"
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "malformed replacement leaves old snapshot",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "placeholder": "retired",
+                "privacyLine": "retired",
+                "firstPage": "retired",
+                "scales": "pending"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "First words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000001"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": null,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "First words."
+                }
+              }
+            ]
+          }
+        },
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000001,
+          "changes": [
+            {
+              "op": "write",
+              "t": "journalState",
+              "id": "journalState",
+              "f": {
+                "unknown": "retired"
+              }
+            }
+          ],
+          "opts": {
+            "cmd": {
+              "name": "journal.claimPage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "Latest words.",
+                "mood": 0,
+                "energy": null,
+                "source": "typed",
+                "claimId": "claim_00000002"
+              }
+            },
+            "predict": [
+              {
+                "op": "put",
+                "t": "page",
+                "id": "2026-10-01",
+                "f": {
+                  "mood": 0,
+                  "energy": null,
+                  "source": "typed"
+                },
+                "x": {
+                  "body": "Latest words."
+                }
+              }
+            ],
+            "supersede": [
+              "g1"
+            ]
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        },
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "anon",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "anon",
+                "scope": "self/journal",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "d": [
+                    {
+                      "t": "journalState",
+                      "id": "journalState",
+                      "f": {
+                        "firstPage": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "placeholder": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "privacyLine": [
+                          "retired",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ],
+                        "scales": [
+                          "pending",
+                          "1760000000000:0:r_aaaaaaaaaaaa"
+                        ]
+                      }
+                    }
+                  ],
+                  "cmd": {
+                    "name": "journal.claimPage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "First words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "claimId": "claim_00000001"
+                    }
+                  },
+                  "gestureId": "g1"
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "f": {
+                      "energy": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "mood": [
+                        null,
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ],
+                      "source": [
+                        "typed",
+                        "1760000000000:0:r_aaaaaaaaaaaa"
+                      ]
+                    },
+                    "x": {
+                      "body": {
+                        "text": "First words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ]
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "bound save atomically persists separate device content clock",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [],
+          "opts": {
+            "cmd": {
+              "name": "journal.savePage",
+              "args": {
+                "day": "2026-10-01",
+                "body": "New words.",
+                "mood": null,
+                "energy": null,
+                "source": "typed",
+                "stamp": {
+                  "ms": 1760010000000,
+                  "counter": 4,
+                  "actor": "ios:writer"
+                }
+              }
+            },
+            "predict": [
+              {
+                "op": "write",
+                "t": "page",
+                "id": "2026-10-01",
+                "x": {
+                  "body": "New words."
+                }
+              }
+            ],
+            "local": {
+              "contentClock": {
+                "ms": 1760010000000,
+                "counter": 4
+              }
+            }
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "localIds": [
+            "g1/0"
+          ],
+          "retired": [],
+          "stamp": "1760000000000:0:r_aaaaaaaaaaaa"
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 1760000000000,
+                "counter": 0
+              },
+              "hlcHigh": "1760000000000:0:r_aaaaaaaaaaaa",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            },
+            "outbox": [
+              {
+                "localId": "g1/0",
+                "gestureId": "g1",
+                "lineage": "A",
+                "scope": "self/journal",
+                "state": "ready",
+                "commitOrder": 1,
+                "releaseAt": 0,
+                "stamp": "1760000000000:0:r_aaaaaaaaaaaa",
+                "intent": {
+                  "scope": "self/journal",
+                  "cmd": {
+                    "name": "journal.savePage",
+                    "args": {
+                      "day": "2026-10-01",
+                      "body": "New words.",
+                      "mood": null,
+                      "energy": null,
+                      "source": "typed",
+                      "stamp": {
+                        "ms": 1760010000000,
+                        "counter": 4,
+                        "actor": "ios:writer"
+                      }
+                    }
+                  },
+                  "gestureId": "g1"
+                },
+                "predict": [
+                  {
+                    "t": "page",
+                    "id": "2026-10-01",
+                    "x": {
+                      "body": {
+                        "text": "New words.",
+                        "base": {
+                          "text": ""
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            ],
+            "device": {
+              "journal": {
+                "contentClock": {
+                  "ms": 1760010000000,
+                  "counter": 4
+                }
+              }
+            }
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  },
+  {
+    "name": "failed bound local commit keeps separate clock unchanged",
+    "input": {
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "steps": [
+        {
+          "op": "commit",
+          "scope": "self/journal",
+          "deviceNow": 1760000000000,
+          "changes": [
+            {
+              "op": "write",
+              "t": "page",
+              "id": "2026-10-01",
+              "x": {
+                "body": "forbidden"
+              }
+            }
+          ],
+          "opts": {
+            "local": {
+              "contentClock": {
+                "ms": 1760010000000,
+                "counter": 4
+              }
+            }
+          }
+        }
+      ],
+      "server": {
+        "epoch": "ep-1",
+        "clock": {
+          "ms": 0,
+          "counter": 0
+        },
+        "accounts": {
+          "A": {
+            "name": "Ann"
+          },
+          "B": {
+            "name": "Bob"
+          }
+        },
+        "scopes": {
+          "acct:A/journal": {
+            "kind": "product",
+            "owner": "A",
+            "state": "alive",
+            "seq": 0,
+            "counters": {},
+            "digest": "0000000000000000000000000000000000000000000000000000000000000000"
+          }
+        }
+      },
+      "serverNow": 1760000000003
+    },
+    "expect": {
+      "returns": [
+        {
+          "throws": true
+        }
+      ],
+      "device": {
+        "active": "rp_00000000000000000000000000000001",
+        "replicas": [
+          {
+            "meta": {
+              "replica": "rp_00000000000000000000000000000001",
+              "state": "bound",
+              "nextN": 1,
+              "hlc": {
+                "ms": 0,
+                "counter": 0
+              },
+              "hlcHigh": "0:0:",
+              "admittedHigh": "0:0:",
+              "serverOffsetMs": 0,
+              "offsetSamples": [],
+              "serverEpoch": null,
+              "ackThrough": 0,
+              "authPaused": false,
+              "account": "A"
+            }
+          }
+        ]
+      },
+      "ended": [],
+      "telemetry": [],
+      "events": []
+    }
+  }
+]

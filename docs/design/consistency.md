@@ -173,6 +173,11 @@ page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?nod
 
 ## Journal
 
+- **First-open privacy fact.** The Figma board [`122:242`](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=122-242)
+  says *Only you can read this.* It drifts from `journal/onboarding.md` §2's canon: *Only you. No
+  prompts, no fields, nothing to fill in — write a line or a page.* Align the board with written
+  canon; the fact retires after the first save.
+
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
   pending entry-frequency and focus/caret checks. Preserve independent optional integers 0–10,

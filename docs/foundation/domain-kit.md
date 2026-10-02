@@ -697,7 +697,7 @@ civil(days):                                                     // proleptic Gr
 daysSinceEpoch(y, m, d): the inverse of civil
 adding(days: n) := civil(daysSinceEpoch + n);  days(until: o) := o.daysSinceEpoch − daysSinceEpoch
 weekday := (daysSinceEpoch + 3) mod 7 + 1
-parse: exactly `DDDD-DD-DD`; 1 ≤ month ≤ 12; 1 ≤ day ≤ the month's length, February having 29 days
+parse: exactly `DDDD-DD-DD`; 1 ≤ year ≤ 9999; 1 ≤ month ≤ 12; 1 ≤ day ≤ the month's length, February having 29 days
        iff year mod 4 = 0 ∧ (year mod 100 ≠ 0 ∨ year mod 400 = 0); otherwise nil
 text: year, month and day zero-padded to 4, 2 and 2 digits
 ```
@@ -944,7 +944,7 @@ public struct Plan: Sendable {
 | Gesture option | Value |
 |---|---|
 | `changes` | the operations, in the order the plan made them |
-| `atomic` | true iff the plan writes more than one record |
+| `atomic` | true iff the plan's ordinary operations write more than one record; a command already groups its deltas into one atomic intent (engine §7.1 step 7) |
 | `hold` | true iff the plan is held |
 | `guards` | every lattice field a guarded update names, and every `guardRead` register |
 | `retire` | every keyed-with-life record the plan creates |
@@ -1677,9 +1677,6 @@ form, which the product's README states.
 | Vector cases | `packages/api-contract/<product>/domain/` | JSON |
 | Harness tests | domain tests | 5–15 each |
 
-Measured on the appendices (non-blank Swift lines, no imports or comments): the routine editor 68,
-gym notes 25, the journal page 45, and the gym refusal type and rule book, written once, 25.
-
 ### §16.2 Bug classes the kit removes
 
 What the kit makes impossible is its invariants (§13), each with the mechanism that holds it. These it
@@ -1999,151 +1996,160 @@ What the kit guarantees:
 ## Appendix C: Example: the journal page
 
 Illustrative. The canon is [journal](../design/journal/journal.md),
-[scales](../design/journal/scales.md) and engine A.3. A page is keyed by its local day, has no life,
-merges its body as text, and saves itself while the person writes.
+[scales](../design/journal/scales.md), [first run](../design/journal/onboarding.md) and engine A.3.
+iOS uses the engine; web uses the REST server-origin door over the same adopted rows. Journal has
+no Android surface.
 
-### C.1 Swift
+### C.1 The document and its command
 
-```swift
-public struct Page: Draftable {
-  public static let type = Journal.Types.page
-  public static let scope = Journal.scope
-  public static let savesGuarded = false
+`Page` is a read-only `Entity`, keyed by `ID(LocalDay)`, with no life. Its body is a server-written
+text field; mood, energy, source and `documentStamp` are server-written lattice fields. It is not
+`Writable`, `Draftable` or `Timestamped`. The editor holds an ordinary value containing the full
+body, mood, energy and source, and a dirty marker; `SaveDraft` does not save it.
 
-  public let id: ID<Page>
-  public var body: String
-  public var mood: Int?
-  public var energy: Int?
-  public var source: String
+A bound editor's `SavePage` action runs `journal.savePage`, with the complete document, after
+any pending same-day claim has followed C.3's reconciliation:
 
-  public init(id: ID<Page>, body: String = "", mood: Int? = nil, energy: Int? = nil, source: String = "typed") {
-    self.id = id; self.body = body; self.mood = mood; self.energy = energy; self.source = source
-  }
-  public init(_ r: Fields) throws(DecodeError) {
-    self.init(id: ID(r.id), body: r.text("body"), mood: try r.optionalInt("mood"),
-              energy: try r.optionalInt("energy"), source: try r.string("source", default: "typed"))
-  }
-  public var fields: [String: JSON] { ["body": .string(body), "mood": .of(mood), "energy": .of(energy), "source": .string(source)] }
-  public static let checks: [Check<Page>] = [
-    Check("body") { p, _ in p.body = try PageRules.body.apply(p.body, at: "body") },
-    Check("mood") { p, _ in p.mood = try PageRules.mood.apply(p.mood, at: "mood") },
-    Check("energy") { p, _ in p.energy = try PageRules.energy.apply(p.energy, at: "energy") },
-    Check("source") { p, _ in p.source = try PageRules.source.apply(p.source, at: "source") },
-  ]
-}
-
-public enum PageRules {
-  static let body   = TextSpec("page.body", unit: .bytes, min: 0, max: 131_072, trim: false, nfc: false)
-  static let mood   = NumberSpec("page.mood", min: 0, max: 10, integer: true)
-  static let energy = NumberSpec("page.energy", min: 0, max: 10, integer: true)
-  static let source = ChoiceSpec("page.source", values: ["spoken", "typed"])
-  public static let book = RuleBook(registry: SyncSchema.registry, entities: [Page.self],
-                                    rules: [.local(body), .local(mood), .local(energy), .local(source)])
-}
-
-public enum JournalRefusal: ProductRefusal, Equatable {
-  case invalid(Violation)
-  case bodyTooLong(Refused.Path)                              // page.size: a merged body over the bound
-  case other(Refused)
-  public init(_ v: Violation) { self = .invalid(v) }
-  public init(_ r: Refused) { self = r.code == .tooLarge ? .bodyTooLong(r.path) : .other(r) }
-  public var isGeneric: Bool { if case .other = self { return true }; return false }
-}
-
-public typealias SavePage = SaveDraft<Page, JournalRefusal>
-
-public func daysWritten(_ pages: [Page], from: LocalDay, through: LocalDay) -> [LocalDay] {
-  pages.filter { !TextSpec.isBlank($0.body) || $0.mood != nil || $0.energy != nil }
-    .compactMap(\.id.day).filter { $0 >= from && $0 <= through }.sorted()
-}
-```
-
-The page's view model (UI layer) saves at each pause in typing, on the main actor:
-
-```swift
-@MainActor final class PageModel {
-  let runner: ActionRunner
-  var draft: Draft<Page>                                     // the view edits `draft.current`
-  private(set) var notSaved: (any Error)? = nil              // drawn as "not saved", never as saved
-
-  init(runner: ActionRunner) throws {
-    self.runner = runner
-    draft = try Self.open(try runner.moment().today, runner)
-  }
-
-  func paused() {
-    guard draft.isDirty else { return }
-    switch runner.save(&draft, SavePage.self) {
-    case .saved: notSaved = nil
-    case .refused(let refusal): notSaved = refusal
-    case .failed(let error): notSaved = error
-    }
-  }
-
-  func show(_ day: LocalDay) throws {                         // another day's page
-    paused()
-    if !draft.isDirty { draft = try Self.open(day, runner) }  // a page that is not saved stays shown
-  }
-
-  func drawnChanged() throws {                                // another device's write arrived
-    if !draft.isDirty, let day = draft.id.day { draft = try Self.open(day, runner) }
-  }
-
-  static func open(_ day: LocalDay, _ runner: ActionRunner) throws -> Draft<Page> {
-    try runner.open(ID(day), orNew: Page(id: ID(day)))
+```json
+{
+  "name": "journal.savePage",
+  "args": {
+    "day": "2026-10-01",
+    "body": "The walk home was the best part.",
+    "mood": 0,
+    "energy": null,
+    "source": "typed",
+    "stamp": { "ms": 1790816400000, "counter": 0, "actor": "d-journal" }
   }
 }
 ```
 
-What the kit guarantees:
-- A first save on a day writes only the fields the person set, and its body merges from `""`: when
-  two devices start the same day apart, both texts survive (engine §6.11).
-- Each save's body is edited from the text the last save stored, so saves at each pause merge clean.
-- A refused or failed save leaves the page shown and marked not saved, with what was written kept;
-  the next pause saves it again. Moving to another day saves the page first.
-- A mood cleared to nil is written as `null`, so the page shows it unset on every device.
-- A page whose body another device extended while this one wrote merges both, since the body is
-  edited from its base and never guarded; a clean page then shows the merged text. A merge over the
-  bound returns as a `.bodyTooLong(.notice)`, whose `values(of:)` holds the body to offer back.
+The command's local checks follow A.3, in every editor and writer:
 
-### C.2 Kotlin sketch
+- `day` is a real Gregorian date, with years 0001–9999; a matching date-shaped string alone is
+  insufficient. It is the writer's local day, never the UTC day.
+- `body` is raw text of at most 131 072 UTF-8 bytes. Its book-bound `TextSpec` has `min: 0`,
+  `trim: false` and `nfc: false`; neither the command nor the editor trims or normalises it. A
+  whitespace-only body remains nonempty. The engine's string and U+0000 rules still apply.
+- Mood and energy are independently nullable integers 0–10. `0` is an answer; `null` clears an
+  answer. Every save sends both, including nulls, rather than sending only touched fields.
+- Source is `typed` or `spoken`, and each save sends it. `stamp` is the product's document HLC,
+  with A.3's domain and ordering; it is not an engine register stamp.
 
-```kotlin
-data class Page(override val id: Id<Page>, val body: String = "", val mood: Int? = null, val energy: Int? = null,
-                val source: String = "typed") : Writable<Page> {
-    override fun fields() = mapOf("body" to Json.of(body), "mood" to Json.of(mood), "energy" to Json.of(energy),
-                                  "source" to Json.of(source))
-    companion object : DraftType<Page> {
-        override val type = Journal.Types.PAGE
-        override val scope = Journal.SCOPE
-        override val savesGuarded = false
-        override fun decode(f: Fields) = Page(Id(f.id), f.text("body"), f.optionalInt("mood"), f.optionalInt("energy"),
-                                              f.string("source", default = "typed"))
-        override val checks = listOf(
-            Check<Page>("body") { p, _ -> p.copy(body = PageRules.body.apply(p.body, Path("body"))) },
-            Check<Page>("mood") { p, _ -> p.copy(mood = PageRules.mood.apply(p.mood, Path("mood"))) },
-            Check<Page>("energy") { p, _ -> p.copy(energy = PageRules.energy.apply(p.energy, Path("energy"))) },
-            Check<Page>("source") { p, _ -> p.copy(source = PageRules.source.apply(p.source, Path("source"))) },
-        )
-    }
-}
+The product keeps its content clock durably in device state. The action loads that clock, the
+moment and the page's `documentStamp`, advances the content clock beyond the documents it has
+observed, and commits its new clock with the command in the same local transaction. It does not
+use the engine HLC, admission stamp or text revision as the document clock. A failed commit
+advances neither clock nor document. Reopening, clock rollback and observing a remote winner
+cannot mint a document stamp below the one already observed.
 
-sealed interface JournalRefusal {
-    data class Invalid(val violation: Violation) : JournalRefusal
-    data class BodyTooLong(val path: Refused.Path) : JournalRefusal
-    data class Other(val refused: Refused) : JournalRefusal
-}
-object JournalRefusals : Refusals<JournalRefusal> {
-    override fun of(v: Violation) = JournalRefusal.Invalid(v)
-    override fun of(r: Refused) = if (r.code == RefusalCode.TOO_LARGE) JournalRefusal.BodyTooLong(r.path) else JournalRefusal.Other(r)
-    override fun isGeneric(f: JournalRefusal) = f is JournalRefusal.Other
-}
+`Plan(running:predicting:)` carries the command and a prediction for the page's full body, mood,
+energy, source and `documentStamp`. The prediction names no text base and requests no diff3 merge;
+ordinary deltas never write the page's server-written fields. Superseded text heads and REST
+metadata follow A.3 and the journal migration appendix. When the command resolves the editor
+reads the winner from the view; it preserves any input typed since that command was committed.
+A save of an older or equal document stamp may resolve without changing the account's page.
 
-```
+### C.2 Durable saving and the first run
 
-```kotlin
-class PageEditor(private val runner: ActionRunner, opened: Draft<Page>) {       // UI layer, main thread
-    var draft by mutableStateOf(opened); private set
-    fun paused(): SaveResult<JournalRefusal> = runner.save(draft, Page, JournalRefusals) { draft = it }
-}
-```
+The view model saves at pauses in typing and immediately when a scale changes, on the main actor.
+Native first run writes today's page only; past days remain read-only, as on web. It settles
+today's dirty value before showing another day or rolling over at midnight. A refusal or store
+failure keeps the unsaved input available and the editor shown. It never erases the input or
+reports backup merely because an action returned `committed`.
+
+`journalState` is a non-primary, client-written singleton. Its fields `placeholder`, `privacyLine`,
+`firstPage` and `scales` are ranked strings: `pending: 0`, `retired: 1`, default `pending`. Each
+retirement is monotone; a later device writing `pending` cannot re-offer it. This state follows the
+user through claim and reinstall, and does not make an account hold a journal page.
+Engine Appendix D fixes `firstRunPolicy = retire-existing`: an adopted account with written
+pages has all four fields retired and sees no re-onboarding.
+
+- Mood and energy are visible on first open, unasked; the invitation after keeping a page does
+  not control the scales' visibility.
+- First input retires `placeholder`; deleting that input does not bring the placeholder back.
+- The first durable written-page save retires `privacyLine` and `firstPage` in the same plan as the page
+  command. Its state delta, the bound save's content-clock device write and page command commit in one transaction;
+  the command and companion delta are one atomic intent, so a refusal cannot admit only the
+  retirement. The UI marks the first kept page only after that local transaction succeeds.
+  The privacy fact is "Only you. No prompts, no fields, nothing to fill in — write a line or a page."
+- The mood and energy invitation is due after the first page is kept, while `scales` is pending.
+  An answer or **Not now** retires `scales`; neither scale is required to keep a page.
+
+The once-per-install ink-note flag is app device settings, outside the replicated journal state.
+It survives sign-in. Automatic ink requires both that flag and established absence of pages; an
+unread account or a failed read never establishes absence. The layer takes no hits, keeps the
+first keystroke, and can be reopened from **Show ink notes** in Journal's room menu. Arrow frames,
+fonts, accessibility fallbacks and keyboard state belong to the UI.
+
+A save status names its real durability. Signed out, kept content is saved on this phone and the
+quiet Keep invitation appears only after the scale invitation is answered or dismissed, one
+invitation at a time; it opens the shell's sign-in door. Signed-in pages never show Keep.
+Signed in, locally committed content is still pending backup until the account confirms it;
+only then may the meta line say **backed up**.
+Offline or refused content keeps its truthful local/pending state. No page shows a spinner or a
+save button.
+
+Search, voice, echoes, nudges and the week have no controls or stub actions on this iOS surface.
+Their existing web computations, tables and REST doors remain as engine A.3 specifies. The page
+entity does not acquire fields for those features merely because web can derive them.
+
+### C.3 Joining work made signed out
+
+Sign-in follows engine §7.10 and the shell's Add/Discard rule. A room whose account already holds
+pages asks before adoption on web and native; an empty account adopts silently. Web's silent
+auto-claim into an occupied account is a known defect owed a separate web change, recorded in
+journal ARCHITECTURE. The UI names the page count from `anonCount.page`; the decision also covers
+`journalState` entries, and an unanswered question sends nothing. Work belonging to another
+account never joins. The editor retains the input and its first-run state while the shell
+completes this flow.
+
+A same-day claim must preserve the account's text and append the local text according to A.3's
+claim rule, with the incoming null scales preserving the account's answers. The ordinary
+`journal.savePage` last-writer rule alone cannot implement that promise. Journal's claim adapter
+uses `journal.claimPage`, its durable claim identity and receipt, so a retried adoption never
+appends the same text twice.
+
+While the replica is anonymous, the journal save action queues `journal.claimPage` with its full
+document and a durable `claimId`. Each newer snapshot for the same day supersedes the older,
+never-numbered claim gesture with engine `opts.supersede`. The replacement includes every already
+retired `journalState` field that the replaced gesture carried, so replacing a page does not
+restore first-run copy. The replacement and supersession commit together; a failed commit leaves
+the earlier snapshot and its state intact. The journal command bridge must expose this engine
+option to the action; the standard draft-save API does not supply it.
+
+Only the latest snapshot for each day reaches the account, after the shell's explicit **Add** or
+its silent adoption into an empty account. Engine §7.10 adopts those claim commands intact; no
+editor writes the account's page before that decision. Binding does not make a pending same-day
+claim safe to overwrite: a `savePage` stamped at T+4 is dominated by the claim's content stamp
+when it reaches admission at T+100. Both may answer `ok`, with no save write, revision or notice
+retaining the newer words. The action MUST follow engine A.3's pending-claim reconciliation rule.
+
+The claim's local commit also writes `pendingClaim:<claimId>` in `device/journal`, `localOnly`:
+the day, frozen claim document, latest full editor document, touched fields, cumulative first-run
+retirements and the eventual successful result's epoch/seq. Anonymous supersession replaces both
+claim and record atomically. Its unique claim key moves through Add without colliding with a
+returning account's device rows. While the claim is pending, edits update that record durably,
+including replacements, deletions, zero and explicit null scales; the editor shows the retained
+document over engine prediction. No ordinary same-day `savePage` is queued yet. Process restart,
+pull and sign-in preserve the record. Failed local commits retain the last durable version and
+keep newer editor input unsaved; a refused claim keeps its writing with an unsaved notice.
+
+The command bridge records the successful claim result in its local result transaction before
+generic resolution can remove the outbox entry. The reconciliation action waits for both that
+result and a complete joined confirmed row, with a same-epoch live cursor covering its seq and a
+successful digest check. Pull-before-result and result-before-pull both keep the latest typing.
+After an epoch change, A.3 replays the exact frozen claim under its same receipt when the engine
+has already resolved its entry, keeping the draft until the new result and covering pull.
+It follows A.3's exact frozen-contribution replacement/account-prefix rule, with the conservative
+account-first join when a concurrent rewrite makes the contribution ambiguous. Untouched fields
+come from the joined row; touched fields come from the retained document, so explicit null clears.
+
+In one read-and-commit the action observes the joined row's `documentStamp`, ticks the separate
+content clock strictly above it and the durable clock, queues the reconciled full `savePage` with
+its retained retirements, writes the new clock, and removes the pending record. The outbox then
+durably holds the latest words. A failed commit leaves the record available for retry. Only the
+reconciled save's result and covering pull justify **backed up**. If no edit followed the claim,
+its result and joined pull suffice; retire the record and commit any retained first-run retirements
+as a state delta in that transaction. Ordinary bound saves resume
+after this reconciliation. The delayed-admission end-to-end vectors are `journal/claim-edit.json`.

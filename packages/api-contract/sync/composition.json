@@ -1,4 +1,7 @@
 {
   "composition": "windmill",
-  "registries": ["gym.registry.json"]
+  "registries": [
+    "gym.registry.json",
+    "journal.registry.json"
+  ]
 }
