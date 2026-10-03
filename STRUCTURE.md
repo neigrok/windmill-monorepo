@@ -56,8 +56,8 @@ room machinery.
   and marketing surfaces consume that registry. Showcase reaches a product only through its
   `showcase.js` entry point; `test/shell-boundaries` checks those imports.
 - **Native:** Android products depend on `:platform`; Android implements gym. iOS holds the sync
-  engine client, which names no product, and the domain kit with gym's first domains on it; it
-  carries no product app yet.
+  engine client, which names no product, the domain kit with gym's first domains and journal's on it,
+  and the journal app (`apps/ios/App`, the journal first run), not yet released.
 
 Raw design tokens are mirrored in `web/src/styles/tokens/` and
 `apps/android/platform/src/main/kotlin/works/windmill/platform/design/Tokens.kt`. Edit them together.
