@@ -20,7 +20,7 @@ FROM ubuntu:22.04 AS build
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates git cmake make g++ pkg-config python3 postgresql-client \
+      ca-certificates git cmake make g++ pkg-config python3 python3-yaml postgresql-client \
       libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libc-ares-dev libbrotli-dev \
       libpq-dev libcurl4-openssl-dev \
  && rm -rf /var/lib/apt/lists/*
@@ -81,6 +81,7 @@ RUN ! nm -C build/windmill_gym_backfill build/windmill_gym_snapshot \
 # they still resolve at runtime (jsoncpp, tls, postgres, compression, dns, uuid, and curl's
 # own, which the curl package brings) — the exact set ldd reports against the built binary.
 FROM ubuntu:22.04 AS runtime
+LABEL io.windmill.schema-adoption-compatibility="gym-journal-v1"
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -107,6 +108,7 @@ COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/db/gym_sync.sql          /app/db/gym_sync.sql
 COPY --from=build /src/db/journal_sync.sql      /app/db/journal_sync.sql
 COPY --from=build /src/deploy/gym-migration/rehearse.py /app/deploy/gym-migration/rehearse.py
+COPY --from=build /src/deploy/gym-migration/schema-compatibility.sh /app/deploy/gym-migration/schema-compatibility.sh
 COPY --from=build /src/products/gym/routes.cpp  /app/products/gym/routes.cpp
 COPY --from=build /src/products/journal/routes.cpp /app/products/journal/routes.cpp
 

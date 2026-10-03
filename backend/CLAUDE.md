@@ -90,7 +90,7 @@ into both products' doors; products remain independent. `JOURNAL_ENGINE_WRITES` 
 through `ServerCall` and defaults off; reads and off-engine features keep their existing repositories.
 `JOURNAL_WRITE_FREEZE` defaults off and blocks journal mutations, echo/nudge workers and provider
 suppression. `db/journal_sync.sql` is applied after `schema.sql` in the isolated sync database and
-explicitly during frozen adoption; regular deployment does not apply it. Admission and revision
+explicitly during stopped-service adoption; regular deployment does not apply it. Admission and revision
 retention run over fakes and Postgres, and all journal migration
 vectors run over Postgres. The migration retains frozen input, exact receipt times and stable revision
 identities for its independent audit. `JournalFeed` announces committed winning pages to the existing
@@ -105,8 +105,16 @@ local pre-merge gates. CI's Postgres job runs both products' off-vs-on
 comparisons from the tested builder image. Production ignores the test clock environment.
 The runtime ships both products' backfill and snapshot binaries, adoption schemas and the combined
 rehearsal; the probe symbol gate remains mandatory.
-The dispatch-only `gym-backup.yml` and `gym-rehearsal.yml` retain all production data on the VPS,
-and serialize with deployment. Operator steps live in `deploy/gym-migration/README.md`.
+The dispatch-only `gym-backup.yml`, `gym-rehearsal.yml` and `products-cutover.yml` retain all
+production data on the VPS and serialize with backend and frontend deployments. Backup and rehearsal
+are optional preparation. One cutover workflow validates the compatible running image and repository switches,
+stops all compose database writers, takes a verified rollback backup, adopts and audits both
+products, and starts engine writes. The whole site, roadmap included, is down during this window.
+Failure before the persisted startup boundary restores the database and old configuration; once
+startup is attempted, recovery is forward-only. Fault fixtures run only on marked disposable restores.
+Ordinary deployment refuses engine writes on an unadopted/incomplete database and incompatible images on any adopted
+database before changing the live configuration or containers. Operator recovery and rerun
+instructions live in `deploy/gym-migration/README.md`.
 
 `products/probe/` is the engine's test and dev product (`probe.registry.json`, `db/probe.sql`) and the
 worked example of a product on the engine. Only the test binaries and `windmill_server_probe` link it:

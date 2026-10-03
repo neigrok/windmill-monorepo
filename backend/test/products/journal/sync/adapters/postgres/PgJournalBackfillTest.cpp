@@ -1,13 +1,18 @@
 #include "products/journal/sync/adapters/postgres/PgJournalBackfill.h"
 
 #include "products/journal/sync/domain/JournalRules.h"
+#include "products/journal/sync/adapters/json/JournalIntent.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/json/PageJson.h"
+#include "platform/application/WorkerPool.h"
 #include "test/SyncCorpus.h"
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
 
+#include <chrono>
 #include <filesystem>
 #include <fstream>
+#include <future>
+#include <thread>
 
 using namespace wm;
 using namespace wm::sync;
@@ -240,4 +245,69 @@ TEST(journal_backfill_recorded_resume_and_corruption_gate_leave_every_table_unch
   CHECK(audit[0]["corruptionsRejected"].asUInt64() > 0);
   CHECK_EQ(jcs(databaseRows(world)), jcs(adopted));
   CHECK(backfill.auditCurrent(owner)[0]["bootAudit"].asBool());
+}
+
+TEST(journal_backfill_online_audit_keeps_its_snapshot_across_a_concurrent_save) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  const auto input = migrationVectors()[0]["input"];
+  test::PgWorld world(false, true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto user = world.account("A");
+  journal::engine::PgJournalBackfill backfill(pgTestPool());
+  backfill.run(input["M"].asUInt64(), false, user.str());
+  const auto before = backfill.auditCurrent(user.str());
+
+  std::future<std::vector<Json::Value>> running;
+  auto hold = world.store().begin(TxnMode::write);
+  auto& sql = sqlOf(*hold);
+  sql.exec("lock journal_sync_adoptions in access exclusive mode");
+  running = std::async(std::launch::async, [&] { return backfill.auditCurrent(user.str()); });
+  bool blocked = false;
+  for (int attempt = 0; attempt < 200 && !blocked; ++attempt) {
+    blocked = sql.exec("select exists(select 1 from pg_stat_activity where pg_backend_pid()=any(pg_blocking_pids(pid)))")[0][0].as<bool>();
+    if (!blocked) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  REQUIRE(blocked);
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const auto raw = parseJson(R"({"body":"Concurrent save","stamp":"9000000000000:0:writer:phone"})");
+  const auto outcome = admission.admit(ServerOrigin{user, std::nullopt},
+      journal::engine::savePageIntent(raw, user, LocalDate("2026-10-01")), input["M"].asUInt64() + 1);
+  const auto* admitted = std::get_if<Admitted>(&outcome);
+  REQUIRE(admitted != nullptr);
+  REQUIRE_EQ(admitted->result["s"].asString(), "ok");
+  REQUIRE(!admitted->result["write"].empty());
+  hold->commit();
+  hold.reset();
+  const auto audited = running.get();
+  REQUIRE_EQ(audited.size(), 1u);
+  CHECK(audited[0]["audit"].asBool());
+  CHECK(audited[0]["bootAudit"].asBool());
+  CHECK_EQ(jcs(audited[0]), jcs(before[0]));
+  const auto after = backfill.auditCurrent(user.str());
+  CHECK(after[0]["seq"].asUInt64() > before[0]["seq"].asUInt64());
+  CHECK(after[0]["digest"] != before[0]["digest"]);
+}
+
+TEST(journal_backfill_online_audit_rejects_a_corrupted_digest) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto input = migrationVectors()[0]["input"];
+  test::PgWorld world(false, true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto owner = world.account("A").str();
+  journal::engine::PgJournalBackfill backfill(pgTestPool());
+  backfill.run(input["M"].asUInt64(), false, owner);
+  REQUIRE(backfill.auditCurrent(owner)[0]["audit"].asBool());
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    sqlOf(*txn).exec("update sync_scopes set digest=decode(repeat('00',32),'hex') where key=$1",
+        pqxx::params{ScopeKey::product(UserId(owner), "journal").text()});
+    txn->commit();
+  }
+  bool refused = false;
+  try { backfill.auditCurrent(owner); }
+  catch (const std::runtime_error& error) { refused = std::string(error.what()) == "journal adoption audit: current feed digest or greatest seq"; }
+  CHECK(refused);
 }

@@ -1,3 +1,4 @@
+-- windmill-schema-adoption-compatibility: gym-journal-v1
 -- Re-applied in order on every deploy: every statement must be idempotent. Grouped by FK
 -- dependency, so the per-product banners alternate.
 
@@ -687,12 +688,12 @@ create table if not exists journal_page (
 -- Both scales became 0..10 with null for unanswered (docs/design/journal/scales.md). Before that
 -- mood was 1..5, energy 1..3, and 0 was the unset sentinel. The old rows are remapped once: mood
 -- onto the odd positions (new = 2*old - 1), which is where the five shipped colour anchors sit, so
--- no migrated page changes colour on any glyph; energy onto the centre of each old third. The
--- remap is guarded on the column still being NOT NULL, which is true exactly once — a second run
--- would double the values it already moved. Constraint names verified against a live journal_page.
+-- no migrated page changes colour on any glyph; energy onto the centre of each old third.
+-- The legacy NOT NULL guard permits this remap once; adoption excludes it altogether.
 do $$
 begin
-  if exists (select 1 from information_schema.columns
+  if to_regclass('public.journal_sync_adoptions') is null and
+     exists (select 1 from information_schema.columns
              where table_schema = 'public' and table_name = 'journal_page'
                and column_name = 'mood' and is_nullable = 'NO') then
     alter table journal_page alter column mood   drop default;
@@ -707,10 +708,16 @@ begin
   end if;
 end $$;
 
-alter table journal_page drop constraint if exists journal_page_mood_check;
-alter table journal_page drop constraint if exists journal_page_energy_check;
-alter table journal_page add constraint journal_page_mood_check   check (mood   between 0 and 10);
-alter table journal_page add constraint journal_page_energy_check check (energy between 0 and 10);
+do $$ begin
+  if not exists (select 1 from pg_constraint
+                 where conrelid = 'journal_page'::regclass and conname = 'journal_page_mood_check') then
+    alter table journal_page add constraint journal_page_mood_check check (mood between 0 and 10);
+  end if;
+  if not exists (select 1 from pg_constraint
+                 where conrelid = 'journal_page'::regclass and conname = 'journal_page_energy_check') then
+    alter table journal_page add constraint journal_page_energy_check check (energy between 0 and 10);
+  end if;
+end $$;
 
 create index if not exists journal_page_user_day on journal_page (user_id, day);
 create index if not exists journal_page_user_stamp on journal_page (user_id, stamp_ms, stamp_counter);
@@ -1226,16 +1233,21 @@ create table if not exists gym_correction_receipts (
 );
 create index if not exists gym_correction_receipts_owner on gym_correction_receipts(user_id);
 alter table gym_sessions add column if not exists history_routine_id text;
-update gym_sessions set history_routine_id = routine_id
-  where history_routine_id is null and routine_id is not null;
 create or replace function gym_preserve_routine_identity() returns trigger language plpgsql as $$
 begin
   if NEW.routine_id is not null then NEW.history_routine_id := NEW.routine_id; end if;
   return NEW;
 end;
 $$;
-create or replace trigger gym_session_routine_identity before insert or update of routine_id on gym_sessions
-  for each row execute function gym_preserve_routine_identity();
+-- Adoption gives routine_id and history_routine_id independent registers and removes this trigger.
+do $$ begin
+  if to_regclass('public.gym_sync_adoptions') is null then
+    update gym_sessions set history_routine_id = routine_id
+      where history_routine_id is null and routine_id is not null;
+    create or replace trigger gym_session_routine_identity before insert or update of routine_id on gym_sessions
+      for each row execute function gym_preserve_routine_identity();
+  end if;
+end $$;
 
 create table if not exists gym_log_shares (
   id text primary key,

@@ -40,8 +40,17 @@ int main(int argc, char** argv) {
     }
     backfill.run(migrationTime, dryRun, account, emit);
     return 0;
+  } catch (const pqxx::sql_error& error) {
+    std::cerr << "gym backfill: database operation failed (SQLSTATE " << error.sqlstate() << ")\n";
+    return 1;
   } catch (const std::exception& error) {
-    std::cerr << "gym backfill: " << error.what() << '\n';
+    const std::string detail = error.what();
+    const char* reason = "operation failed";
+    if (detail.starts_with("C.8 digest/seq audit failed: ")) reason = "current feed digest or greatest seq mismatch";
+    else if (detail.starts_with("C.8 frozen adoption audit failed: ")) reason = "frozen adoption validation failed";
+    else if (detail.starts_with("C.8 adoption audit failed: ")) reason = "unadopted rows, spent ids or missing scope/source";
+    else if (detail.starts_with("C.1 ")) reason = "adoption schema missing or incompatible";
+    std::cerr << "gym backfill: " << reason << '\n';
     return 1;
   }
 }

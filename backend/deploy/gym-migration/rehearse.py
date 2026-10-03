@@ -34,19 +34,21 @@ def offline(environment):
                      "datname=current_database() AND backend_type='client backend' "
                      "AND pid<>pg_backend_pid();").strip())
     if count:
-        raise RuntimeError(f"write freeze requires an offline database; {count} other client connections exist")
+        raise RuntimeError(f"migration requires stopped writers; {count} other client connections exist")
 
 
 def quote_identifier(value):
     return '"' + value.replace('"', '""') + '"'
 
 
-def database_dump(environment, directory):
+def database_dump(environment, directory, table_pattern=None):
     directory.mkdir()
+    pattern = table_pattern.replace("'", "''") if table_pattern else None
+    table_filter = f"AND tablename ~ '{pattern}' " if pattern else ""
     rows = psql(environment,
                 "SELECT json_build_array(schemaname,tablename)::text FROM pg_tables "
                 "WHERE schemaname NOT IN ('pg_catalog','information_schema') "
-                "AND schemaname NOT LIKE 'pg_toast%' ORDER BY schemaname,tablename;")
+                "AND schemaname NOT LIKE 'pg_toast%' " + table_filter + "ORDER BY schemaname,tablename;")
     manifest = []
     for line in rows.splitlines():
         schema, table = json.loads(line)
@@ -57,10 +59,11 @@ def database_dump(environment, directory):
                     "ORDER BY to_jsonb(t)::text COLLATE \"C\";")
         (directory / name).write_bytes(data)
         manifest.append({"table": relation, "file": name, "rows": len(data.splitlines())})
+    sequence_filter = f"AND sequence_name ~ '{pattern}' " if pattern else ""
     sequences = psql(environment,
                      "SELECT json_build_array(sequence_schema,sequence_name)::text FROM information_schema.sequences "
                      "WHERE sequence_schema NOT IN ('pg_catalog','information_schema') "
-                     "ORDER BY sequence_schema,sequence_name;")
+                     + sequence_filter + "ORDER BY sequence_schema,sequence_name;")
     for line in sequences.splitlines():
         schema, sequence = json.loads(line)
         relation = quote_identifier(schema) + "." + quote_identifier(sequence)
@@ -92,7 +95,25 @@ def route_inventory(source):
                                  text, re.DOTALL)))
 
 
+def disposable_fixtures(environment):
+    allowed = psql(environment, "SELECT current_database() ~ "
+                   "'^(products_rehearsal_|wm_products_rehearsal_|windmill_gym_rehearsal$)' "
+                   "AND coalesce(shobj_description(oid,'pg_database'),'') = "
+                   "'windmill-rehearsal-disposable' FROM pg_database WHERE datname=current_database();")
+    if allowed.strip() != b"t":
+        raise RuntimeError("fixture DDL requires a marked disposable rehearsal database; production is refused")
+
+
+def no_fixture_objects(environment):
+    count = psql(environment, "SELECT (SELECT count(*) FROM pg_trigger WHERE "
+                 "tgname LIKE 'wm_journal_rehearsal_pause_%') + "
+                 "(SELECT count(*) FROM pg_proc WHERE proname LIKE 'wm_journal_rehearsal_pause_%');")
+    if count.strip() != b"0":
+        raise RuntimeError("known rehearsal fixture objects exist; investigate before migration")
+
+
 def interrupted_account(environment, binary, owner, output):
+    disposable_fixtures(environment)
     owner = str(uuid.UUID(owner))
     name = "wm_journal_rehearsal_pause_" + uuid.uuid4().hex
     identifier = quote_identifier(name)
@@ -144,6 +165,7 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="new directory for evidence")
     parser.add_argument("--now-ms", type=int, help="one clock instant shared by both read snapshots")
     parser.add_argument("--apply-adoption", action="store_true", help="apply both adoption schemas after the first read snapshots")
+    parser.add_argument("--disposable-fixtures", action="store_true", help="run fault fixtures only on a marked throwaway database")
     args = parser.parse_args()
     environment = dict(os.environ)
     database = environment.get("DATABASE_URL", "")
@@ -161,10 +183,15 @@ def main():
         if not binary.is_file() or not os.access(binary, os.X_OK):
             parser.error(f"missing executable: {binary}")
     backend = Path(__file__).resolve().parents[2]
+    schema_guard = backend / "deploy/gym-migration/schema-compatibility.sh"
+    run(["bash", str(schema_guard), "check-image", str(backend / "db/schema.sql")], environment)
     now = args.now_ms if args.now_ms is not None else int(time.time() * 1000)
     if now <= 0:
         parser.error("--now-ms must be positive")
     args.output.mkdir(parents=True)
+    no_fixture_objects(environment)
+    if args.disposable_fixtures:
+        disposable_fixtures(environment)
     offline(environment)
     baseline = database_dump(environment, args.output / "data-before-snapshot")
     before = {}
@@ -195,10 +222,10 @@ def main():
     run([str(binaries["windmill_gym_backfill"])], environment, args.output / "gym-migration.jsonl")
     journal_candidates = [json.loads(line) for line in (args.output / "journal-dry-run.jsonl").read_text().splitlines()]
     interruption_owner = next((row["account"] for row in journal_candidates if row["changed"] and row["rows"] > 0), None)
-    if interruption_owner:
+    if interruption_owner and args.disposable_fixtures:
         interrupted_account(environment, binaries["windmill_journal_backfill"], interruption_owner, args.output)
     journal_owners = [row["account"] for row in journal_candidates]
-    if journal_owners:
+    if journal_owners and args.disposable_fixtures:
         # A completed account survives an interruption; the remainder resumes in the full run.
         run([str(binaries["windmill_journal_backfill"]), "--account", journal_owners[0]], environment,
             args.output / "journal-account-prefix.jsonl")
@@ -220,12 +247,14 @@ def main():
     negative_audit = {}
     for product in products:
         run([str(binaries[f"windmill_{product}_backfill"]), "--audit"], environment, args.output / f"{product}-audit.jsonl")
-        run([str(binaries[f"windmill_{product}_backfill"]), "--audit", "--test-corruptions"], environment,
-            args.output / f"{product}-corruption-audit.jsonl")
         audit[product] = [json.loads(line) for line in (args.output / f"{product}-audit.jsonl").read_text().splitlines()]
-        negative_audit[product] = [json.loads(line) for line in (args.output / f"{product}-corruption-audit.jsonl").read_text().splitlines()]
-        if any(not row["envelopeAudit"] or row["corruptionsRejected"] == 0 for row in negative_audit[product]):
-            raise RuntimeError(f"a migrated {product} scope did not reject recomputed-digest corruptions")
+        negative_audit[product] = []
+        if args.disposable_fixtures:
+            run([str(binaries[f"windmill_{product}_backfill"]), "--audit", "--test-corruptions"], environment,
+                args.output / f"{product}-corruption-audit.jsonl")
+            negative_audit[product] = [json.loads(line) for line in (args.output / f"{product}-corruption-audit.jsonl").read_text().splitlines()]
+            if any(not row["envelopeAudit"] or row["corruptionsRejected"] == 0 for row in negative_audit[product]):
+                raise RuntimeError(f"a migrated {product} scope did not reject recomputed-digest corruptions")
         if product == "journal" and any(not row["bootAudit"] for row in audit[product]):
             raise RuntimeError("a migrated journal scope did not complete null-cursor boot")
     offline(environment)
@@ -240,12 +269,36 @@ def main():
     offline(environment)
     database_dump(environment, args.output / "data-after-second-run")
     data_files = equal_files(args.output / "data-migrated", args.output / "data-after-second-run", "second runs changed table rows or sequences")
-    adopted_pages = psql(environment, "SELECT jsonb_build_object('row',to_jsonb(t),'xmin',t.xmin::text)::text FROM journal_page t ORDER BY user_id,day;")
-    run(["psql", "--dbname", database, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/schema.sql")],
+    catalog_sql = """
+      SELECT jsonb_build_object('kind','constraint','table',r.relname,'name',c.conname,
+        'oid',c.oid,'definition',pg_get_constraintdef(c.oid),'validated',c.convalidated)::text
+      FROM pg_constraint c JOIN pg_class r ON r.oid=c.conrelid
+      JOIN pg_namespace n ON n.oid=r.relnamespace
+      WHERE n.nspname='public' AND r.relname ~ '^(gym_|journal_)'
+      UNION ALL
+      SELECT jsonb_build_object('kind','trigger','table',r.relname,'name',t.tgname,
+        'oid',t.oid,'definition',pg_get_triggerdef(t.oid),'enabled',t.tgenabled)::text
+      FROM pg_trigger t JOIN pg_class r ON r.oid=t.tgrelid
+      JOIN pg_namespace n ON n.oid=r.relnamespace
+      WHERE n.nspname='public' AND r.relname ~ '^(gym_|journal_)'
+      ORDER BY 1;
+    """
+    adopted_catalog = psql(environment, catalog_sql)
+    (args.output / "bootstrap-catalog-before.jsonl").write_bytes(adopted_catalog)
+    database_dump(environment, args.output / "data-before-bootstrap", "^(gym_|journal_|sync_)")
+    run(["bash", str(schema_guard), "apply", database, str(backend / "db/schema.sql")],
         environment, args.output / "bootstrap-rerun.log")
-    if adopted_pages != psql(environment, "SELECT jsonb_build_object('row',to_jsonb(t),'xmin',t.xmin::text)::text FROM journal_page t ORDER BY user_id,day;"):
-        raise RuntimeError("schema bootstrap rerun changed adopted journal pages")
-    run([str(binaries["windmill_journal_backfill"]), "--audit"], environment, args.output / "journal-bootstrap-audit.jsonl")
+    bootstrap_catalog = psql(environment, catalog_sql)
+    (args.output / "bootstrap-catalog-after.jsonl").write_bytes(bootstrap_catalog)
+    if adopted_catalog != bootstrap_catalog:
+        raise RuntimeError("schema bootstrap rerun changed adopted gym/journal catalog")
+    for product in products:
+        run([str(binaries[f"windmill_{product}_backfill"]), "--audit"], environment,
+            args.output / f"{product}-bootstrap-audit.jsonl")
+    offline(environment)
+    database_dump(environment, args.output / "data-after-bootstrap", "^(gym_|journal_|sync_)")
+    equal_files(args.output / "data-before-bootstrap", args.output / "data-after-bootstrap",
+                "schema bootstrap rerun changed adopted table rows or sequences")
     per_product = {product: {"accounts": before[product]["accounts"], "responses": before[product]["responses"],
                             "restGetRoutes": len(routes[product]), "mcpReadTools": len(before[product].get("mcpReadTools", [])),
                             "auditedScopes": len(audit[product]),
@@ -262,8 +315,9 @@ def main():
               "tableRowsAndSequencesFilesCompared": data_files,
               "tables": len([row for row in migrated if "table" in row]),
               "initialTableRows": sum(row.get("rows", 0) for row in baseline),
-              "journalBootstrapUnchanged": True, "journalAccountResume": bool(journal_owners),
-              "journalBeforeCommitInterruption": bool(interruption_owner),
+              "gymBootstrapUnchanged": True, "journalBootstrapUnchanged": True,
+              "bootstrapCatalogUnchanged": True, "journalAccountResume": bool(journal_owners) and args.disposable_fixtures,
+              "journalBeforeCommitInterruption": bool(interruption_owner) and args.disposable_fixtures,
               "products": per_product, "nowMs": now}
     (args.output / "result.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
     print(json.dumps(report, sort_keys=True))

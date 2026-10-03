@@ -14,6 +14,8 @@ on:
       - 'packages/api-contract/sync/corpus/**'
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/products-cutover.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
   pull_request:
@@ -25,6 +27,8 @@ on:
       - 'packages/api-contract/sync/corpus/**'
       - 'packages/api-contract/sync/reference/core/**'
       - '.github/workflows/backend.yml'
+      - '.github/workflows/deploy.yml'
+      - '.github/workflows/products-cutover.yml'
       - '!backend/**/*.md'
       - '!services/embedder/**/*.md'
   workflow_dispatch:
@@ -77,10 +81,24 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 12
+      # The builder's PG14 pg_dump reads both catalog snapshots and real rollback archives.
+      migration-postgres:
+        image: postgres:14
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: products_migration_test
+        ports:
+          - 5433:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 12
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_test
       WM_SYNC_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_sync_test
       WM_ENGINE_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/windmill_deployment_test
+      WM_MIGRATION_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5433/products_migration_test
     steps:
       - uses: actions/checkout@v5
         with:
@@ -104,6 +122,21 @@ jobs:
           createdb --maintenance-db="$DATABASE_URL" windmill_deployment_test
           psql "$WM_ENGINE_DATABASE_URL" -v ON_ERROR_STOP=1 \
             -f backend/db/schema.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql
+      - name: Preserve fresh and adopted catalogs when deployment re-applies schema.sql
+        run: |
+          git show 4b18960d5d24855750a77f7904d8ea7b341a03b7:backend/db/schema.sql > "$RUNNER_TEMP/origin-schema.sql"
+          docker run --rm --network host -e DATABASE_URL="$WM_MIGRATION_TEST_DATABASE_URL" \
+            -v "$RUNNER_TEMP/origin-schema.sql:/origin-schema.sql:ro" windmill-backend-build \
+            python3 test/deploy/schema_reapplication_test.py --bin-dir build \
+            --origin-schema /origin-schema.sql --maintenance-db "$WM_MIGRATION_TEST_DATABASE_URL"
+      - name: Exercise production cutover, rollback, killed-script recovery and deploy refusals
+        run: |
+          docker run --rm --network host -e DATABASE_URL="$WM_MIGRATION_TEST_DATABASE_URL" \
+            -v "$GITHUB_WORKSPACE/.github/workflows/deploy.yml:/deploy.yml:ro" \
+            -v "$GITHUB_WORKSPACE/.github/workflows/products-cutover.yml:/products-cutover.yml:ro" \
+            windmill-backend-build python3 test/deploy/products_cutover_test.py --bin-dir build \
+            --maintenance-db "$WM_MIGRATION_TEST_DATABASE_URL" --deploy-workflow /deploy.yml \
+            --cutover-workflow /products-cutover.yml
       - uses: actions/setup-node@v5
         with:
           node-version: "20"

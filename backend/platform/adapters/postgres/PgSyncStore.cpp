@@ -102,11 +102,14 @@ std::string spentKeyset(pqxx::params& params, const TypeDef& type, const FeedQue
 
 }
 
-PgSyncTxn::PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs) : lease_(pool) {
+PgSyncTxn::PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs,
+                     const std::optional<std::string>& snapshot) : lease_(pool) {
   if (mode == TxnMode::snapshot) {
     txn_ = std::make_unique<pqxx::transaction<pqxx::isolation_level::repeatable_read, pqxx::write_policy::read_only>>(*lease_);
+    if (snapshot) txn_->exec("set transaction snapshot " + txn_->quote(*snapshot));
     return;
   }
+  if (snapshot) throw std::logic_error("an exported snapshot store cannot start a write transaction");
   txn_ = std::make_unique<pqxx::work>(*lease_);
   txn_->exec("set local lock_timeout = '" + std::to_string(lockTimeoutMs) + "ms'");
 }
@@ -147,10 +150,12 @@ std::string idOrder(const std::string& column, bool tupleIds) {
   return "(to_json(" + column + ")::text) collate \"C\"";
 }
 
-PgSyncStore::PgSyncStore(std::shared_ptr<PgPool> pool, std::uint64_t lockTimeoutMs) : pool_(std::move(pool)), lockTimeoutMs_(lockTimeoutMs) {}
+PgSyncStore::PgSyncStore(std::shared_ptr<PgPool> pool, std::uint64_t lockTimeoutMs,
+                       std::optional<std::string> snapshot)
+    : pool_(std::move(pool)), lockTimeoutMs_(lockTimeoutMs), snapshot_(std::move(snapshot)) {}
 
 std::unique_ptr<SyncTxn> PgSyncStore::begin(TxnMode mode) {
-  return std::make_unique<PgSyncTxn>(*pool_, mode, lockTimeoutMs_);
+  return std::make_unique<PgSyncTxn>(*pool_, mode, lockTimeoutMs_, snapshot_);
 }
 
 FaultClass PgSyncStore::classify(const std::exception& error) const {

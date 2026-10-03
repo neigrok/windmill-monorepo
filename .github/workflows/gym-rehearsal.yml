@@ -38,6 +38,8 @@ jobs:
             db=$(docker compose ps -q db)
             server=$(docker compose ps -q server)
             test -n "$db" && test -n "$server"
+            sha256sum --check --status "backups/$backup.sha256"
+            docker compose exec -T db pg_restore --list < "backups/$backup" > /dev/null
             image=$(docker inspect --format '{{.Image}}' "$server")
             throwaway="products_rehearsal_$(date -u +%Y%m%dT%H%M%S)_$$"
             cleanup() {
@@ -58,6 +60,9 @@ jobs:
             docker compose exec -T db sh -ec \
               'pg_restore --username="$POSTGRES_USER" --dbname="$1" --no-owner --no-privileges --exit-on-error' \
               sh "$throwaway" < "backups/$backup" > /dev/null 2>&1
+            docker compose exec -T db sh -ec \
+              'psql --username="$POSTGRES_USER" --dbname=postgres -Xq -v ON_ERROR_STOP=1 -v database="$1" -c "COMMENT ON DATABASE \"$1\" IS '\''windmill-rehearsal-disposable'\''"' \
+              sh "$throwaway" > /dev/null 2>&1
             export PGUSER PGPASSWORD PGHOST PGDATABASE DATABASE_URL WINDMILL_APP_URL
             export WINDMILL_OWNER_EMAILS JOURNAL_NUDGE_ENABLED JOURNAL_NUDGE_ALLOWLIST
             PGUSER=$(docker compose exec -T db printenv POSTGRES_USER)
@@ -75,7 +80,7 @@ jobs:
               -e WINDMILL_OWNER_EMAILS -e JOURNAL_NUDGE_ENABLED -e JOURNAL_NUDGE_ALLOWLIST \
               "$image" sh -ec '
                 if python3 /app/deploy/gym-migration/rehearse.py --bin-dir /usr/local/bin \
-                  --output /evidence/run --apply-adoption > /evidence/stdout 2> /evidence/stderr; then
+                  --output /evidence/run --apply-adoption --disposable-fixtures > /evidence/stdout 2> /evidence/stderr; then
                   python3 -c '\''import json; r=json.load(open("/evidence/run/result.json")); print(json.dumps({k:v for k,v in r.items() if k != "nowMs"},sort_keys=True))'\''
                 else
                   printf "FAIL rehearsal gates\n"

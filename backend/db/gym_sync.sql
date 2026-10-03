@@ -1,4 +1,4 @@
--- Gym adoption schema; apply after schema.sql under the migration write freeze.
+-- Gym adoption schema; apply after schema.sql with every database writer stopped.
 -- Plain REST Postgres tests require schema.sql's ON DELETE actions and use a different database.
 
 create table if not exists gym_sync_adoptions (

@@ -289,8 +289,8 @@ std::uint64_t testFrozenAudit(SyncTxn& txn, PgSyncStore& store, const std::strin
 void auditBoot(PgSyncStore& store, std::vector<Json::Value>& reports) {
   struct AuditClock : Clock { std::uint64_t nowMs() override { return 0; } } clock;
   struct AuditFailures : FailureReporter {
-    void report(const std::string&, const std::string&, const std::string& detail) override {
-      throw std::runtime_error("journal boot audit: " + detail);
+    void report(const std::string&, const std::string&, const std::string&) override {
+      throw std::runtime_error("journal boot audit: engine failure");
     }
   } failures;
   PgJournal product(registry());
@@ -311,7 +311,7 @@ void auditBoot(PgSyncStore& store, std::vector<Json::Value>& reports) {
     for (;;) {
       const auto reply = service.pull(Credential::sent(UserId(report["account"].asString())), jcs(request));
       if (reply.status != 200 || reply.body["pages"].size() != 1 || reply.body["pages"][0]["kind"] != "rows")
-        throw std::runtime_error("journal boot audit: pull did not return rows: " + jcs(reply.body));
+        throw std::runtime_error("journal boot audit: pull did not return rows");
       const auto& page = reply.body["pages"][0];
       for (const auto& row : page["rows"]) { digest = digest + rowHash(row); ++rows; }
       if (page["seq"] != report["seq"] || page["digest"] != report["digest"])
@@ -454,8 +454,9 @@ std::vector<Json::Value> PgJournalBackfill::auditCurrent(std::optional<std::stri
   requireSchema(*txn);
   std::vector<Json::Value> result;
   for (const auto& owner : accounts(*txn, account)) result.push_back(auditCurrentAccount(*txn, store, owner));
-  txn.reset();
-  auditBoot(store, result);
+  const auto snapshot = sqlOf(*txn).exec("select pg_export_snapshot()")[0][0].as<std::string>();
+  PgSyncStore bootStore(pool_, Limits{}.lockTimeoutMs, snapshot);
+  auditBoot(bootStore, result);
   return result;
 }
 

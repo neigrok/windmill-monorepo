@@ -235,9 +235,12 @@ dropdb -h /tmp wm_sync_test
 ```
 
 See [test/e2e/README.md](test/e2e/README.md) for the exact normalization and intended differences.
-The migration binaries and rehearsal ship in the runtime image. Dispatch the one-time production
-backup and restored-copy rehearsal as described in
-[deploy/gym-migration/README.md](deploy/gym-migration/README.md); neither workflow runs on push.
+The migration binaries and rehearsal ship in the runtime image. Optional production backup and
+restored-copy rehearsal prepare the dispatch-only `products-cutover.yml`, described in
+[deploy/gym-migration/README.md](deploy/gym-migration/README.md). Cutover stops every database writer
+and takes its rollback backup before adopting both products. The whole site, roadmap included, is
+down for a few minutes. Failure before the persisted startup boundary restores the old database and
+configuration; recovery is forward-only once startup is attempted. None of these workflows runs on push.
 
 `windmill_server_probe` is `windmill_server` with the sync engine mounted over the probe product, for
 that throwaway database only; it refuses to start where `WINDMILL_APP_URL` is https. It also mounts the

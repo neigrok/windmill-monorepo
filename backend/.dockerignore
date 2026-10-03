@@ -13,10 +13,14 @@ cmake-build-*/
 .idea/
 .claude/
 uploads/
-# Caddy's deploy test and the offline gym rehearsal are build inputs.
+# Only the image's migration tools and deployment test inputs enter the build.
 deploy/*
 !deploy/Caddyfile
+!deploy/docker-compose.yml
+!deploy/deploy-production.sh
 !deploy/gym-migration/
 deploy/gym-migration/*
 !deploy/gym-migration/rehearse.py
+!deploy/gym-migration/schema-compatibility.sh
+!deploy/gym-migration/cutover-production.sh
 *.md

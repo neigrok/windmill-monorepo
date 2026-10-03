@@ -115,13 +115,23 @@ must be public.
   the server and `embedder-<sha>` images must exist.
 - **Migrations**: `db/schema.sql` is idempotent and re-applied by the `migrate` one-shot on every
   deploy.
-  Product adoption is explicit, under one shared gym/journal freeze; follow
+  Product adoption uses one explicit stop-the-world workflow; follow
   [the combined cutover runbook](gym-migration/README.md). `SYNC_ENABLED` defaults to `0` and
   exposes the composed gym + journal engine only when enabled. Native Apple identity-token
   exchange also defaults off (`APPLE_NATIVE_ENABLED=0`); [AUTH.md](../AUTH.md) names its audience
   and app configuration. All four engine-write/freeze switches
   default to `0` in Compose and deployment variables. The dispatch-only backup and rehearsal
-  workflows cover both products without changing production data or switches.
+  workflows cover both products without changing production data or switches. The dispatch-only
+  `products-cutover.yml` stops all compose database writers, takes a new verified rollback backup,
+  adopts and audits both products, and starts engine writes in the same run. **The whole site,
+  roadmap included, is down for the few minutes it takes.** Failure before the persisted startup
+  boundary restores the backup and old configuration. Once startup is attempted, recovery is
+  forward-only and no automatic restore occurs. Cutover and adopted-database deployments require
+  the image's `gym-journal-v1` compatibility declaration and matching bundled schema marker. Ordinary deploy
+  refuses engine writes without complete adoption, either engine writer disabled after adoption,
+  and incompatible images on adopted databases
+  before changing the live `.env`, compose files or containers. Production runs no fault fixtures;
+  the final schema reapply checks both products' catalogs and digest audits.
 - **DB shell**: `docker compose exec db psql -U windmill windmill`.
 
 ## Frontend

@@ -90,13 +90,33 @@ fits naturally, and leave the surrounding area better than the scope demanded.
 
 - In if-else, return early rather than assigning to a variable.
 
+## Observability
+
+Every surface tells us what broke and what people did, never what they wrote.
+
+- Report technical failures to Sentry: the backend through `FailureReporter` and `LOG_*` (forwarded as Sentry
+  Logs); Android and iOS through the Sentry SDK; web through `web/src/telemetry/sentry.js`.
+- Send product events to Amplitude only through the first-party `POST /v1/events` intake; no client ships an
+  Amplitude key.
+- On every backend write path — REST, MCP, Coach, `/v1/sync`, server-origin doors, commands, tools, background
+  jobs — log one structured line per write (operation, product, door, outcome or refusal code, duration) and
+  report unexpected failures to Sentry under a static operation name. Expected refusals are log lines, not Issues.
+- Clients report failures at their boundaries (transport, storage, sync, auth) and emit an event for each
+  user-visible step of a flow.
+- Never send user content or secrets: journal text, mood values, workout and note names, Coach questions and
+  answers, emails, tokens, bodies, raw exception messages. Event properties are allowlisted, bounded labels.
+- A change is not done until its failures report and its steps emit events, listed in the surface's
+  observability doc.
+
 ## Workflow
 
 - Act autonomously; do not wait for approval on work that follows from the plan.
 - Stage changes at the end of a phase. Commit and push the monorepo once a phase is implemented,
   reviewed and verified — house-voice messages, `Co-Authored-By` footer.
-- Every wave goes through the gauntlet before it ships: adversarial review of the diff → one fix
-  pass → e2e on the local stack (`.claude/skills/verify`) → push.
+- Every wave goes through the gauntlet before it ships: adversarial review of the diff (correctness,
+  privacy, and observability: when this fails in production, what will we see?) → one fix pass → e2e
+  on the local stack (`.claude/skills/verify`), which also checks that the change's logs, Sentry reports and
+  events arrive → push.
 - Parallelize implementation across subagents: disjoint file territories, contract pinned in both
   prompts.
 - For unbiased architecture advice, spin up an agent with no access to the code.

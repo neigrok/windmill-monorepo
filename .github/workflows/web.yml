@@ -22,8 +22,8 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: web-deploy-${{ github.ref }}
-  cancel-in-progress: true
+  group: deploy-vps
+  cancel-in-progress: false
 
 defaults:
   run:

@@ -1,4 +1,4 @@
--- Explicit Appendix D adoption after schema.sql, under the shared gym/journal freeze.
+-- Explicit Appendix D adoption after schema.sql, with every database writer stopped.
 -- Tests apply it only in WM_SYNC_DATABASE_URL; regular deployment does not apply it.
 alter table journal_page add column if not exists seq bigint;
 alter table journal_page add column if not exists rc bigint;

@@ -43,8 +43,17 @@ int main(int argc, char** argv) {
     }
     backfill.run(migrationTime, dryRun, account, policy, std::nullopt, true, emit);
     return 0;
+  } catch (const pqxx::sql_error& error) {
+    std::cerr << "journal backfill: database operation failed (SQLSTATE " << error.sqlstate() << ")\n";
+    return 1;
   } catch (const std::exception& error) {
-    std::cerr << "journal backfill: " << error.what() << '\n';
+    const std::string detail = error.what();
+    const char* reason = "operation failed";
+    if (detail == "journal adoption audit: current feed digest or greatest seq") reason = "current feed digest or greatest seq mismatch";
+    else if (detail.starts_with("journal boot audit: ")) reason = "boot feed validation failed";
+    else if (detail.starts_with("journal adoption audit: ")) reason = "frozen adoption validation failed";
+    else if (detail.starts_with("D.1 adoption schema ") || detail.starts_with("journal adoption requires ")) reason = "adoption schema missing or incompatible";
+    std::cerr << "journal backfill: " << reason << '\n';
     return 1;
   }
 }

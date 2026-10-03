@@ -38,6 +38,7 @@ def main():
             created = True
             # libpq accepts an explicit dbname overriding the maintenance URL's database.
             environment["DATABASE_URL"] = "dbname=" + args.maintenance_db + " dbname=" + database
+            psql(environment, f"COMMENT ON DATABASE \"{database}\" IS 'windmill-rehearsal-disposable';")
             run(["psql", environment["DATABASE_URL"], "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/schema.sql")],
                 environment, output / "schema.log")
             seed = run([str(args.bin_dir / "windmill_gym_rehearsal_seed")], environment, output / "seed.jsonl")
@@ -90,7 +91,7 @@ def main():
                 psql(environment, f"INSERT INTO sync_scopes(key,kind,owner) VALUES ('acct:{owner}/gym','product','{owner}')")
                 (output / "early-engine.json").write_text(json.dumps(early, indent=2) + "\n")
             command = ["python3", str(Path(__file__).with_name("rehearse.py")), "--bin-dir", str(args.bin_dir),
-                       "--output", str(output / "evidence")]
+                       "--output", str(output / "evidence"), "--disposable-fixtures"]
             if case == "plain": command.append("--apply-adoption")
             run(command, environment, output / "rehearsal.log")
             result = json.loads((output / "evidence/result.json").read_text())

@@ -31,9 +31,22 @@ services:
         condition: service_healthy
     environment:
       PGCONNECT_TIMEOUT: "10"
-    command: >
-      psql "postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill"
-      -v ON_ERROR_STOP=1 -f /app/db/schema.sql
+    command:
+      - bash
+      - -ec
+      - |
+        if [ -f /app/deploy/gym-migration/schema-compatibility.sh ]; then
+          exec bash /app/deploy/gym-migration/schema-compatibility.sh apply "$$1" /app/db/schema.sql
+        fi
+        adopted=$$(psql "$$1" -XAtq -v ON_ERROR_STOP=1 -c \
+          "SELECT to_regclass('public.gym_sync_adoptions') IS NOT NULL OR to_regclass('public.journal_sync_adoptions') IS NOT NULL")
+        if [ "$$adopted" = t ]; then
+          echo "schema is not adoption-compatible; adopted database requires a compatible image" >&2
+          exit 1
+        fi
+        exec psql "$$1" -Xq -v ON_ERROR_STOP=1 -f /app/db/schema.sql
+      - schema
+      - postgresql://windmill:${POSTGRES_PASSWORD}@db:5432/windmill
 
   server:
     image: ghcr.io/neigrok/windmill-monorepo:${IMAGE_TAG:-latest}

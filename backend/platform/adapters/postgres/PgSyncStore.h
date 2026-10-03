@@ -17,7 +17,8 @@ namespace wm::sync {
 // COMMITTED with the engine's lock_timeout; a snapshot is REPEATABLE READ READ ONLY and takes no row locks.
 class PgSyncTxn final : public SyncTxn {
 public:
-  PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs);
+  PgSyncTxn(PgPool& pool, TxnMode mode, std::uint64_t lockTimeoutMs,
+            const std::optional<std::string>& snapshot = std::nullopt);
   void commit() override;
   pqxx::transaction_base& sql() { return *txn_; }
   // Product receipts can snapshot materialized rows in this transaction. A failure rolls back
@@ -49,7 +50,9 @@ std::string idOrder(const std::string& column, bool tupleIds);
 // The engine's own tables (§2.1) in Postgres.
 class PgSyncStore final : public SyncStore {
 public:
-  PgSyncStore(std::shared_ptr<PgPool> pool, std::uint64_t lockTimeoutMs);
+  // An exported snapshot stays valid while its source transaction remains open.
+  PgSyncStore(std::shared_ptr<PgPool> pool, std::uint64_t lockTimeoutMs,
+              std::optional<std::string> snapshot = std::nullopt);
 
   std::unique_ptr<SyncTxn> begin(TxnMode mode) override;
   // Transient: a lost connection, an exhausted pool, serialization failure (40001), deadlock (40P01),
@@ -87,6 +90,7 @@ public:
 private:
   std::shared_ptr<PgPool> pool_;
   std::uint64_t lockTimeoutMs_;
+  std::optional<std::string> snapshot_;
 };
 
 }

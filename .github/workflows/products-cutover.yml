@@ -1,0 +1,65 @@
+name: Gym and journal production cutover
+
+on:
+  workflow_dispatch:
+    inputs:
+      confirm:
+        description: Type cut over gym and journal to cut over production
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  cutover:
+    runs-on: ubuntu-latest
+    timeout-minutes: 90
+    steps:
+      - name: Validate production confirmation and deployment switches
+        env:
+          CONFIRM: ${{ inputs.confirm }}
+          GYM_ENGINE_WRITES: ${{ vars.GYM_ENGINE_WRITES || '0' }}
+          JOURNAL_ENGINE_WRITES: ${{ vars.JOURNAL_ENGINE_WRITES || '0' }}
+          GYM_WRITE_FREEZE: ${{ vars.GYM_WRITE_FREEZE || '0' }}
+          JOURNAL_WRITE_FREEZE: ${{ vars.JOURNAL_WRITE_FREEZE || '0' }}
+          SYNC_ENABLED: ${{ vars.SYNC_ENABLED || '0' }}
+        run: |
+          set -euo pipefail
+          if [ "$CONFIRM" != 'cut over gym and journal' ] ||
+             [ "$GYM_ENGINE_WRITES" != 1 ] || [ "$JOURNAL_ENGINE_WRITES" != 1 ] ||
+             [ "$GYM_WRITE_FREEZE" != 0 ] || [ "$JOURNAL_WRITE_FREEZE" != 0 ] ||
+             [ "$SYNC_ENABLED" != 0 ]; then
+            printf 'FAIL production confirmation or deployment switches\n'
+            exit 1
+          fi
+      - uses: actions/checkout@v5
+      - name: Stop writers, back up, adopt both products, and start engine writes
+        env:
+          SSH_KEY: ${{ secrets.SSH_KEY }}
+          SSH_HOST: ${{ secrets.SSH_HOST }}
+          SSH_USER: ${{ secrets.SSH_USER }}
+          SSH_PORT: ${{ secrets.SSH_PORT }}
+        run: |
+          set -euo pipefail
+          key=$(mktemp)
+          trap 'rm -f "$key"' EXIT
+          printf '%s\n' "$SSH_KEY" > "$key"
+          chmod 600 "$key"
+          scp -q -i "$key" -P "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/gym-migration/cutover-production.sh \
+            "$SSH_USER@$SSH_HOST:windmill/products-cutover.sh"
+          # Values are constants only after the repository variables passed the exact guards above.
+          ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
+            "$SSH_USER@$SSH_HOST" \
+            'GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 GYM_WRITE_FREEZE=0 JOURNAL_WRITE_FREEZE=0 SYNC_ENABLED=0 bash -seuo pipefail' <<'REMOTE'
+          main() {
+            cd ~/windmill
+            bash products-cutover.sh
+          }
+          main < /dev/null
+          REMOTE

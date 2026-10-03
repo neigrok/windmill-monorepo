@@ -1,11 +1,15 @@
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "platform/application/WorkerPool.h"
 
 #include "test/SyncCorpus.h"
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
 
+#include <chrono>
+#include <future>
 #include <map>
 #include <set>
 #include <string>
+#include <thread>
 
 using namespace wm;
 using namespace wm::sync;
@@ -516,4 +520,71 @@ TEST(gym_backfill_recreates_a_missing_scope_for_fully_enveloped_rows_without_res
   CHECK_FALSE(actual[0]["skipped"].asBool());
   CHECK_EQ(jcs(world.dump()["rows"]), jcs(before));
   CHECK(backfill.audit(owner)[0]["audit"].asBool());
+}
+
+TEST(gym_backfill_online_audit_keeps_its_snapshot_across_a_concurrent_set) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  BlockingThread::Mark blocking;
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[0]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto user = world.account("A");
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  backfill.run(input["M"].asUInt64(), false, user.str());
+  const auto before = backfill.auditCurrent(user.str());
+
+  std::future<std::vector<Json::Value>> running;
+  auto hold = world.store().begin(TxnMode::write);
+  auto& sql = sqlOf(*hold);
+  sql.exec("lock gym_sync_adoptions in access exclusive mode");
+  running = std::async(std::launch::async, [&] { return backfill.auditCurrent(user.str()); });
+  bool blocked = false;
+  for (int attempt = 0; attempt < 200 && !blocked; ++attempt) {
+    blocked = sql.exec("select exists(select 1 from pg_stat_activity where pg_backend_pid()=any(pg_blocking_pids(pid)))")[0][0].as<bool>();
+    if (!blocked) std::this_thread::sleep_for(std::chrono::milliseconds(5));
+  }
+  REQUIRE(blocked);
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  auto intent = parseJson(R"({"scope":"self/gym","d":[{"t":"set","id":"set00000001","f":{"reps":[7,null]}}]})");
+  intent["d"][0]["born"] = std::to_string(input["M"].asUInt64()) + ":0:srv";
+  const auto outcome = admission.admit(ServerOrigin{user, std::nullopt}, intent, input["M"].asUInt64() + 1);
+  const auto* admitted = std::get_if<Admitted>(&outcome);
+  REQUIRE(admitted != nullptr);
+  REQUIRE_EQ(admitted->result["s"].asString(), "ok");
+  REQUIRE(admitted->result["seq"].asUInt64() > before[0]["seq"].asUInt64());
+  REQUIRE_EQ(sql.exec("select reps from gym_sets where user_id=$1::uuid and id='set00000001'", pqxx::params{user.str()})[0][0].as<int>(), 7);
+  hold->commit();
+  hold.reset();
+  const auto audited = running.get();
+  REQUIRE_EQ(audited.size(), 1u);
+  CHECK(audited[0]["audit"].asBool());
+  CHECK_EQ(jcs(audited[0]), jcs(before[0]));
+  const auto after = backfill.auditCurrent(user.str());
+  CHECK(after[0]["seq"].asUInt64() > before[0]["seq"].asUInt64());
+  CHECK(after[0]["digest"] != before[0]["digest"]);
+}
+
+TEST(gym_backfill_online_audit_rejects_a_corrupted_digest) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  const auto vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/backfill.json");
+  const auto& input = vectors[0]["input"];
+  test::PgWorld world(true);
+  world.seed(input["state"]);
+  seedLegacy(world, input);
+  const auto owner = world.account("A").str();
+  gym::engine::PgGymBackfill backfill(pgTestPool());
+  backfill.run(input["M"].asUInt64(), false, owner);
+  REQUIRE(backfill.auditCurrent(owner)[0]["audit"].asBool());
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    sqlOf(*txn).exec("update sync_scopes set digest=decode(repeat('00',32),'hex') where key=$1",
+        pqxx::params{ScopeKey::product(UserId(owner), "gym").text()});
+    txn->commit();
+  }
+  bool refused = false;
+  try { backfill.auditCurrent(owner); }
+  catch (const std::runtime_error& error) { refused = std::string(error.what()).starts_with("C.8 digest/seq audit failed: "); }
+  CHECK(refused);
 }

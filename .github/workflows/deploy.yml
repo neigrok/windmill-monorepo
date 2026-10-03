@@ -160,31 +160,17 @@ jobs:
 
           $SSH "$SSH_USER@$SSH_HOST" 'mkdir -p ~/windmill'
           scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
-            backend/deploy/docker-compose.yml backend/deploy/Caddyfile rendered.env \
+            backend/deploy/deploy-production.sh rendered.env \
             "$SSH_USER@$SSH_HOST:windmill/"
+          scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/docker-compose.yml "$SSH_USER@$SSH_HOST:windmill/docker-compose.next.yml"
+          scp -i deploy_key -P "${PORT}" -o StrictHostKeyChecking=accept-new \
+            backend/deploy/Caddyfile "$SSH_USER@$SSH_HOST:windmill/Caddyfile.next"
 
           $SSH "$SSH_USER@$SSH_HOST" 'bash -seu' <<'REMOTE'
-          cd ~/windmill
-          # The DB password is bound to the initialized Postgres volume: a host value wins over the
-          # rendered one, which is only the fallback for a first bring-up on an empty volume.
-          prior_pg=
-          [ -f .env ] && prior_pg=$(grep -E '^POSTGRES_PASSWORD=' .env | head -1 | cut -d= -f2- || true)
-          [ -f .env ] && cp .env .env.bak || true
-          mv rendered.env .env
-          if [ -n "$prior_pg" ]; then
-            grep -v '^POSTGRES_PASSWORD=' .env > .env.tmp
-            printf 'POSTGRES_PASSWORD=%s\n' "$prior_pg" >> .env.tmp
-            mv .env.tmp .env
-          fi
-          if ! docker compose config -q; then
-            echo "rendered .env fails compose validation — restoring the previous .env, nothing deployed"
-            [ -f .env.bak ] && mv .env.bak .env
-            exit 1
-          fi
-          docker compose pull
-          docker compose up -d
-          # The Caddyfile is bind-mounted, so `up -d` won't recreate caddy on a content-only change.
-          docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile || docker compose restart caddy
-          rm -f .env.bak
-          echo "deployed: .env rendered (DB password preserved), image pulled, stack up + caddy reloaded"
+          main() {
+            cd ~/windmill
+            bash deploy-production.sh
+          }
+          main < /dev/null
           REMOTE
