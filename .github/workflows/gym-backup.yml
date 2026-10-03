@@ -29,18 +29,22 @@ jobs:
           chmod 600 "$key"
           ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "$SSH_USER@$SSH_HOST" 'bash -seuo pipefail' <<'REMOTE'
-          cd ~/windmill
-          umask 077
-          mkdir -p backups
-          backup="backups/products-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
-          partial="$backup.partial"
-          trap 'rm -f "$partial"' EXIT
-          docker compose exec -T db sh -ec \
-            'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$partial"
-          test -s "$partial"
-          docker compose exec -T db pg_restore --list < "$partial" > /dev/null
-          mv "$partial" "$backup"
-          printf 'PASS backup verified: %s/%s\n' "$PWD" "$backup"
-          printf 'bytes: %s\n' "$(wc -c < "$backup")"
-          sha256sum "$backup"
+          # The whole script is read before it runs, and nothing it starts can read the rest of it from stdin.
+          main() {
+            cd ~/windmill
+            umask 077
+            mkdir -p backups
+            backup="backups/products-$(date -u +%Y%m%dT%H%M%SZ)-$$.dump"
+            partial="$backup.partial"
+            trap 'rm -f "$partial"' EXIT
+            docker compose exec -T db sh -ec \
+              'pg_dump --username="$POSTGRES_USER" --dbname="$POSTGRES_DB" --format=custom' > "$partial"
+            test -s "$partial"
+            docker compose exec -T db pg_restore --list < "$partial" > /dev/null
+            mv "$partial" "$backup"
+            printf 'PASS backup verified: %s/%s\n' "$PWD" "$backup"
+            printf 'bytes: %s\n' "$(wc -c < "$backup")"
+            sha256sum "$backup"
+          }
+          main < /dev/null
           REMOTE
