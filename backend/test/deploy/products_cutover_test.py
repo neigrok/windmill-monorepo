@@ -568,9 +568,14 @@ class CutoverTest:
         with output.open("wb") as stdout, errors.open("wb") as stderr:
             process = subprocess.Popen(["bash", str(executable), *([str(work)] if script == SCRIPT else [])], cwd=work,
                 env=environment, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, start_new_session=True)
-            state = json.loads(state_path.read_text())
-            state["scriptPid"] = process.pid
-            state_path.write_text(json.dumps(state))
+            # The script's first shim call can already be reading state; write it as the shims do.
+            with Path(str(state_path) + ".lock").open("a") as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                state = json.loads(state_path.read_text())
+                state["scriptPid"] = process.pid
+                temporary = Path(str(state_path) + ".pid.tmp")
+                temporary.write_text(json.dumps(state))
+                os.replace(temporary, state_path)
             try:
                 status = process.wait(timeout=240)
             except subprocess.TimeoutExpired:
