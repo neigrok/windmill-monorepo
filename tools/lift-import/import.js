@@ -70,7 +70,10 @@ async function main() {
 
   const catalog = await client.exercises();
   if (catalog.length === 0) throw new ImportRefusal('the catalog came back empty — wrong server, or the seed never ran');
-  const { resolved, unresolved } = resolveNames(distinctExerciseNames(document), catalog, overrides);
+  const namesToResolve = distinctExerciseNames({
+    sessions: document.sessions.filter((session) => !Array.isArray(session?.sets) || session.sets.length <= 200),
+  });
+  const { resolved, unresolved } = resolveNames(namesToResolve, catalog, overrides);
 
   // An unmatched or ambiguous name stops the run with nothing written.
   if (unresolved.length > 0) {
@@ -85,13 +88,13 @@ async function main() {
 
   if (args.dryRun) {
     process.stdout.write('\ndry run — nothing was written, to the log or to disk.\n');
-    return 0;
+    return plan.counts.sessionsSkippedTooManySets > 0 ? 1 : 0;
   }
 
   const written = await writeCorpus(client, plan.sessions);
   reportWritten(written);
   await writeFile(args.mappingPath, `${JSON.stringify(mappingDocument(document, catalog, resolved, [], overrides), null, 2)}\n`);
-  return written.failures.length > 0 ? 1 : 0;
+  return written.failures.length > 0 || plan.counts.sessionsSkippedTooManySets > 0 ? 1 : 0;
 }
 
 async function readMapping(path) {
@@ -136,41 +139,35 @@ function mappingDocument(document, catalog, resolved, unresolved, overrides) {
   };
 }
 
-// Start, append sets in completedAt order, then close: a set appended to a finished session is
-// refused 409.
-async function writeCorpus(client, sessions) {
+export async function writeCorpus(client, sessions) {
   const written = { sessions: 0, sets: 0, setsReplayed: 0, sessionsReplayed: 0, failures: [] };
   for (const session of sessions) {
-    let started;
     try {
-      started = await client.startSession(session.id, session.startedAt);
-    } catch (failure) {
-      written.failures.push({ label: session.label, at: 'start', reason: describe(failure), lostSets: session.sets.length });
-      continue;
-    }
-    // A reply naming a different session means a workout is in progress and every set here would
-    // land in it, so stop.
-    if (started?.id !== session.id)
-      throw new ImportRefusal(
-        `the account has an open session (${started?.id}) — starting an import session joined it instead.\n`
-        + `Finish it first: POST /v1/gym/sessions/${started?.id}/finish {"finishedAt": <epoch-ms>}`);
-    if (started.finishedAt) written.sessionsReplayed += 1;
-
-    for (const set of session.sets) {
-      try {
-        const stored = await client.appendSet(session.id, set);
-        if (stored?.id === set.id) written.sets += 1;
-        if (started.finishedAt) written.setsReplayed += 1;
-      } catch (failure) {
-        written.failures.push({ label: `${session.label} · ${set.exerciseId}`, at: 'set', reason: describe(failure), lostSets: 1 });
+      const { status, body } = await client.importSession({
+        id: session.id,
+        startedAt: session.startedAt,
+        finishedAt: session.finishedAt,
+        sets: session.sets,
+      });
+      if (status === 201) {
+        written.sessions += 1;
+        written.sets += body.sets.length;
+      } else {
+        written.sessionsReplayed += 1;
+        written.setsReplayed += body.sets.length;
       }
-    }
-
-    try {
-      await client.finishSession(session.id, session.finishedAt);
-      written.sessions += 1;
     } catch (failure) {
-      written.failures.push({ label: session.label, at: 'finish', reason: describe(failure), lostSets: 0 });
+      if (failure instanceof GymRefusal && failure.status === 409 && failure.code === 'session-id-taken') {
+        written.failures.push({
+          label: session.label,
+          reason: 'already exists from an earlier, interrupted import — not re-imported'
+            + ` (409 session-id-taken; id ${session.id}; date ${new Date(session.startedAt).toISOString()})`,
+          lostSets: session.sets.length,
+          reviewExisting: true,
+        });
+        continue;
+      }
+      written.failures.push({ label: session.label, reason: describe(failure), lostSets: session.sets.length });
     }
   }
   return written;
@@ -207,6 +204,7 @@ function reportPlan(plan, resolved, args) {
     ['sessions whose every set was refused', counts.sessionsSkippedEverySetRefused],
     ['sessions unreadable (bad id or start instant)', counts.sessionsSkippedUnreadable],
     ['sessions holding a duplicate id', counts.sessionsSkippedDuplicateId],
+    ['sessions over the 200-set import limit (entire workout refused)', counts.sessionsSkippedTooManySets],
     ['sets unreadable (bad id)', counts.setsSkippedUnreadable],
     ['sets holding a duplicate id', counts.setsSkippedDuplicateId],
     ['sets naming an unresolved movement', counts.setsSkippedUnresolvedName],
@@ -222,36 +220,36 @@ function reportPlan(plan, resolved, args) {
   process.stdout.write('\nrepaired\n');
   process.stdout.write(`  ${String(counts.sessionsFinishedFromLastSet).padStart(5)}  abandoned sessions closed at their last set\n`);
   process.stdout.write(`  ${String(counts.sessionsFinishRepaired).padStart(5)}  sessions whose finish instant could not close them, closed at their last set\n`);
-  process.stdout.write(`  ${String(counts.setsWeightRounded).padStart(5)}  weights that will round to two decimals in the store\n`);
+  process.stdout.write(`  ${String(counts.setsWeightRounded).padStart(5)}  weights rounded to two decimals for import\n`);
 
   if (skips.length === 0) return;
   process.stdout.write(`\nevery row refused or repaired, one by one (${skips.length})\n`);
-  for (const skip of skips.slice(0, 40))
+  for (const skip of skips)
     process.stdout.write(`  ${skip.scope === 'session' ? 'session' : 'set    '}  ${skip.label} — ${skip.reason}`
       + `${skip.lostSets > 0 ? ` (${skip.lostSets} sets go with it)` : ''}\n`);
-  if (skips.length > 40) process.stdout.write(`  … and ${skips.length - 40} more\n`);
 }
 
 function reportWritten(written) {
   process.stdout.write('\nwritten\n');
-  process.stdout.write(`  ${written.sessions} sessions closed · ${written.sets} sets present in the log\n`);
+  process.stdout.write(`  ${written.sessions} sessions imported · ${written.sets} sets imported\n`);
   if (written.sessionsReplayed > 0)
-    process.stdout.write(`  ${written.sessionsReplayed} of those sessions were already there — ${written.setsReplayed} sets replayed onto their stored rows\n`);
+    process.stdout.write(`  ${written.sessionsReplayed} sessions already imported · ${written.setsReplayed} sets currently present in replayed workouts\n`);
   if (written.failures.length === 0) {
-    process.stdout.write('  nothing was lost\n');
+    process.stdout.write('  every planned workout was accepted\n');
     return;
   }
-  process.stdout.write(`\n${written.failures.length} write${written.failures.length === 1 ? '' : 's'} the server refused\n`);
+  process.stdout.write(`\n${written.failures.length} workout import${written.failures.length === 1 ? '' : 's'} failed\n`);
   for (const failure of written.failures)
-    process.stdout.write(`  ${failure.at.padEnd(6)}  ${failure.label} — ${failure.reason}`
-      + `${failure.lostSets > 0 ? ` (${failure.lostSets} sets not written)` : ''}\n`);
+    process.stdout.write(`  ${failure.label} — ${failure.reason}`
+      + (failure.reviewExisting ? ' — review the existing workout\n'
+        : ` (${failure.lostSets} sets not confirmed; rerun the same export)\n`));
 }
 
 // Run only when this file IS the command, so a test can import parseArgs without firing the import.
 if (process.argv[1] === fileURLToPath(import.meta.url))
   main()
-    .then((code) => process.exit(code))
+    .then((code) => { process.exitCode = code; })
     .catch((failure) => {
       process.stderr.write(`\n${failure instanceof ImportRefusal ? failure.message : (failure.stack ?? String(failure))}\n`);
-      process.exit(1);
+      process.exitCode = 1;
     });

@@ -154,6 +154,7 @@ export function planSessions(document, resolved) {
     sessionsSkippedEverySetRefused: 0,
     sessionsSkippedUnreadable: 0,
     sessionsSkippedDuplicateId: 0,
+    sessionsSkippedTooManySets: 0,
     sessionsFinishedFromLastSet: 0,
     sessionsFinishRepaired: 0,
     setsTotal: 0,
@@ -173,6 +174,12 @@ export function planSessions(document, resolved) {
     counts.sessionsTotal += 1;
     const rawSets = Array.isArray(raw?.sets) ? raw.sets : [];
     const label = `${raw?.name ?? 'unnamed'} (${raw?.id ?? 'no id'})`;
+    if (rawSets.length > 200) {
+      counts.sessionsSkippedTooManySets += 1;
+      counts.setsTotal += rawSets.length;
+      skips.push({ scope: 'session', label, reason: `${rawSets.length} sets exceeds the 200-set import limit — entire workout refused`, lostSets: rawSets.length });
+      continue;
+    }
 
     let sessionId;
     try {
@@ -238,15 +245,25 @@ export function planSessions(document, resolved) {
         skips.push({ scope: 'set', label: setLabel, reason: `completedAt is not an instant: ${rawSet?.completedAt}` });
         continue;
       }
-      // The store is numeric(6,2): a third decimal is rounded on the way in, so count it.
-      if (Math.abs(rawSet.weight * 100 - Math.round(rawSet.weight * 100)) > 1e-9)
-        counts.setsWeightRounded += 1;
+      // Round the decimal digits as integers, so binary multiplication cannot move a half-cent tie.
+      const [mantissa, exponent = '0'] = Math.abs(rawSet.weight).toString().split('e');
+      const [whole, fraction = ''] = mantissa.split('.');
+      const digits = BigInt(whole + fraction);
+      const scale = fraction.length - Number(exponent) - 2;
+      let cents;
+      if (scale <= 0) cents = digits * 10n ** BigInt(-scale);
+      else {
+        const divisor = 10n ** BigInt(scale);
+        cents = (digits + divisor / 2n) / divisor;
+      }
+      const weightKg = Number(rawSet.weight < 0 ? -cents : cents) / 100;
+      if (weightKg !== rawSet.weight) counts.setsWeightRounded += 1;
 
       seenSetIds.add(setId);
       sets.push({
         id: setId,
         exerciseId,
-        weightKg: rawSet.weight,
+        weightKg,
         reps: rawSet.reps,
         completedAt: rawSet.completedAt,
       });

@@ -236,14 +236,66 @@ describe('the bands the store enforces', () => {
     strictEqual(plan.counts.setsPlanned, 0);
   });
 
-  it('counts a weight the numeric(6,2) column will round', () => {
+  it('rounds a weight to the two decimals accepted by the import door', () => {
     const plan = planOf([liftSession({ sets: [set({ weight: 82.567 })] })]);
     strictEqual(plan.counts.setsWeightRounded, 1);
     strictEqual(plan.counts.setsPlanned, 1);
+    strictEqual(plan.sessions[0].sets[0].weightKg, 82.57);
+  });
+
+  it('rounds negative half-cent ties away from zero as the store does', () => {
+    const plan = planOf([liftSession({ sets: [set({ weight: -22.125 })] })]);
+    strictEqual(plan.counts.setsWeightRounded, 1);
+    strictEqual(plan.sessions[0].sets[0].weightKg, -22.13);
+  });
+
+  for (const [weight, expected] of [[1.005, 1.01], [-1.005, -1.01], [10.075, 10.08], [-10.075, -10.08]]) {
+    it(`rounds the decimal half-cent tie ${weight} to ${expected}`, () => {
+      const plan = planOf([liftSession({ sets: [set({ weight })] })]);
+      strictEqual(plan.counts.setsWeightRounded, 1);
+      strictEqual(plan.sessions[0].sets[0].weightKg, expected);
+    });
+  }
+
+  it('rounds scientific notation and normalizes zero without changing exact cents', () => {
+    for (const [weight, expected, rounded] of [
+      [1e-7, 0, 1], [-1e-7, 0, 1], [Number.MIN_VALUE, 0, 1], [-Number.MIN_VALUE, 0, 1],
+      [1.004999999999999, 1, 1], [-1.004999999999999, -1, 1],
+      [0, 0, 0], [-0, 0, 0], [10.07, 10.07, 0], [-500, -500, 0], [500, 500, 0],
+    ]) {
+      const plan = planOf([liftSession({ sets: [set({ weight })] })]);
+      strictEqual(plan.counts.setsWeightRounded, rounded);
+      strictEqual(plan.sessions[0].sets[0].weightKg, expected);
+    }
   });
 });
 
 describe('the session rules', () => {
+  it('plans a workout with exactly 200 sets', () => {
+    const sets = Array.from({ length: 200 }, (_, i) => set({ id: i.toString(16).padStart(32, '0') }));
+    const plan = planOf([liftSession({ sets })]);
+    strictEqual(plan.counts.sessionsSkippedTooManySets, 0);
+    strictEqual(plan.sessions.length, 1);
+    strictEqual(plan.sessions[0].sets.length, 200);
+    strictEqual(plan.counts.setsPlanned, 200);
+  });
+
+  it('refuses an entire 201-set workout before filtering invalid rows and continues planning', () => {
+    const sets = Array.from({ length: 201 }, () => set({ reps: 0 }));
+    const oversized = liftSession({ name: 'Too large', sets });
+    const next = liftSession({ id: uuidC });
+    const plan = planOf([oversized, next]);
+    strictEqual(plan.counts.sessionsSkippedTooManySets, 1);
+    strictEqual(plan.counts.setsSkippedRepsOutOfBand, 0);
+    strictEqual(plan.counts.setsTotal, 202);
+    strictEqual(plan.counts.setsPlanned, 1);
+    deepStrictEqual(plan.sessions.map((session) => session.id), [windmillId('ses_', uuidC)]);
+    deepStrictEqual(plan.skips, [{
+      scope: 'session', label: `Too large (${uuidA})`,
+      reason: '201 sets exceeds the 200-set import limit — entire workout refused', lostSets: 201,
+    }]);
+  });
+
   it('skips a setless session — an accidental Finish is not history', () => {
     const plan = planOf([liftSession({ sets: [] })]);
     deepStrictEqual(plan.sessions, []);

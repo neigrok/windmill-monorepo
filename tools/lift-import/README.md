@@ -16,7 +16,7 @@ node tools/lift-import/import.js --export ~/Downloads/lift-export.json \
 | `--mapping <file>` | the exercise-name mapping — default `tools/lift-import/mapping.json` |
 | `--dry-run` | resolve the names, print the whole summary, write nothing anywhere |
 
-Exit codes: `0` clean · `1` the server refused a write (each one is named in the summary) ·
+Exit codes: `0` clean · `1` an import failed, a workout exceeded 200 sets, or setup failed (named in the summary or error) ·
 `2` an exercise name could not be resolved, and nothing was written.
 
 ## The export
@@ -41,18 +41,35 @@ seconds. Weight is kilograms and **may be negative**: band-assisted work logs on
 ## Re-running is safe
 
 Every Windmill id is derived from the Lift UUID — `ses_` / `set_` + the UUID lowercased with dashes
-stripped — and gym's write path is idempotent by client-minted id, so a replayed `POST` no-ops and
-hands back the stored row. An interrupted run can simply be run again.
+stripped. Each planned workout sends one `POST /v1/gym/sessions/import` with
+`{id, startedAt, finishedAt, sets}`; sets are ordered by `completedAt`. The entire finished workout
+is written atomically, leaving an open workout untouched. `201 {session, sets}` confirms a new
+import; the identical body again returns `200 {session, sets}` with the workout's current rows.
+The summary counts new imports separately from replays, including any later corrections or deletions.
 
-Per session: start, append the sets in `completedAt` order, then finish. Appending a new set to a
-finished session is refused `409`.
+A timeout, dropped connection (including during the reply body), or `5xx` retries the exact same
+serialized body, up to four attempts with a 15-second deadline per attempt. A run interrupted while
+using the atomic import door can be run again with the unchanged export and mapping. Changing an
+accepted workout's body under its derived id is refused `409`; a deleted workout stays deleted.
 
-If the account has a workout open, a start would join it and every set would land in the wrong
-workout, so the tool stops before writing anything and names the session to finish first.
+`409 session-id-taken` is reported as "already exists from an earlier, interrupted import — not
+re-imported", with the derived session id and start date. The workout is left untouched, other workouts
+continue, and the run exits `1` with a summary for the owner to review. This code also covers a changed
+payload or an id reserved elsewhere: for this refusal, the supported doors cannot establish ownership,
+inspect the existing sets, or distinguish those cases. They cannot repair a partial workout left by the old importer.
+Rerunning that refused workout will not resolve the conflict; review the existing workout instead.
+
+`4xx` refusals are terminal for that workout and the run continues. A span crossing a finished
+workout returns `409 session-overlap`, naming the conflicting session. Future times and sets outside
+the workout's start/finish interval are refused. A workout with more than 200 source sets is reported
+and skipped in its entirety, before filtering rows; it is never split or trimmed to fit. Transport
+failures can leave a committed import without a received reply, so the summary says "not confirmed"
+and an unchanged rerun resolves it safely. The only other API call is `GET /v1/gym/exercises`.
 
 ## The names
 
-Windmill's catalog has a stable slug id per movement; Lift's exercise is free text. Names fold by
+Windmill's catalog has a stable slug id per movement; Lift's exercise is free text. Names from workouts
+within the 200-set limit fold by
 one normal form (case, punctuation, spacing, plurals) onto `GET /v1/gym/exercises`, and exactly one
 match resolves. A name that matches nothing or matches two is written to `mapping.json` with the
 candidates that were considered, and the run stops having written nothing:
@@ -75,14 +92,16 @@ Refused (counted, listed row by row):
 - a session with no sets
 - a session whose every set was refused
 - a session or set id that is not a Lift UUID, or that the export holds twice
+- a workout with more than 200 source sets (the whole workout is skipped)
 
 Repaired (counted, and said out loud):
 
 - a session with `finishedAt: null` is closed at its last set's instant, mirroring gym's own
   auto-close rule. A finish running backwards against its own start gets the same treatment.
-- a weight with more than two decimals rounds in the `numeric(6,2)` column.
+- a weight with more than two decimals is explicitly rounded to two decimals before import,
+  matching the store's rounding, including negative half-cent ties.
 
-Not carried: the session's `name` and `templateId`. There is no column for them.
+Not carried: the session's `name` and `templateId`; this importer does not map them to Windmill fields.
 
 ## Tests
 
@@ -91,5 +110,7 @@ cd tools/lift-import && node --test test/
 ```
 
 Dependency-free — Node's built-in `fetch` and `node:test`. `plan.js` carries the pure logic;
-`client.js` carries the retry rule (4xx terminal, 5xx and a dropped connection retried).
+`client.js` carries the retry rule and deadlines. The suite covers stalled headers and bodies,
+disconnections, exhausted retries, terminal refusals, reserved-id reporting, workout continuation, replay counts,
+the 200-set boundary, and CLI output draining before exit.
 `.github/workflows/tools.yml` runs the suite.
