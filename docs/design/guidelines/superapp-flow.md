@@ -5,7 +5,8 @@ how a person gets into the iOS app, what works before they have an account, and 
 first run must be. The drawings of record, including the state matrix and the flow map, are the Figma
 page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2).
 
-Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is
+The four-screen introduction a fresh install shows once before Where to start? is
+`onboarding.md`. Other surfaces: web auth is `roadmap/guidelines/auth.md`; the roadmap's first run is
 `roadmap/guidelines/front-door.md` and `starter-quests.md`; Journal's first run is
 `journal/onboarding.md`; Android's gym is `gym/android-delivery.md`. Two parts of this doc hold on
 every surface: signing in with work already on the device (§6) and signing out with changes the
@@ -24,8 +25,10 @@ lists every screen in both states; where they differ, both boards are drawn side
 ## 2. Launch
 
 - **The launch screen is the first screen's ground colour, nothing else.** No logo, no splash.
-- **A cold launch with no last room on the phone** — the first launch, or the first after signing
-  out — opens **Where to start?**.
+- **The first launch of a fresh install** — nothing on the phone, no account, not a deep link —
+  shows the **four-screen introduction once** (`onboarding.md`), then **Where to start?**.
+- **A cold launch with no last room on the phone** after that — including the first after signing
+  out — opens **Where to start?** directly.
 - **A signed-in cold launch skips it** and reopens the last room. A signed-out launch after the
   first reopens the last room too.
 - A deep link opens its room directly.
@@ -39,7 +42,8 @@ lists every screen in both states; where they differ, both boards are drawn side
   tonight's page* · *Log today's training*. One tap opens that room's first run and makes it the
   last room.
 - **A quiet Sign in** under the doors, for someone returning on a new phone (§4).
-- **No account wall, no skip, no permissions, no carousel.**
+- **No account wall, no skip, no permissions.** The introduction before this screen is the
+  journey's one carousel (`onboarding.md`); Where to start? itself has none.
 - After a sign-out it adds one line, once: *Signed out. Nothing of yours is left on this phone.*
   When the person kept unconfirmed changes (§7), the line says so instead: *Signed out. 3 changes
   your account hasn't confirmed stay on this phone until you sign back in.*
@@ -175,9 +179,11 @@ is the only sign-out confirmation.
 
 > **One prompt · one tap to something real · nothing to dismiss.**
 
-- **At most two screens before the core action**: Where to start?, then the room.
-- The first run **is the real surface** with its opening move filled in. No carousels, no progress
-  dots, no "you're all set" screen.
+- **At most two screens before the core action, after the once-ever introduction**: Where to
+  start?, then the room. The introduction is the owner's accepted exception (2026-10-04): four
+  pages and a page control, shown once per device, skippable from every page (`onboarding.md`).
+- The first run **is the real surface** with its opening move filled in. No carousel, no progress
+  dots, no "you're all set" screen inside a room.
 - Every first run can reach a real thing with zero agent calls: beside Coach's starters, Gym keeps
   **Just log** and **Build it myself**.
 
@@ -233,6 +239,8 @@ plus an SF Symbols Draw On check. No congratulation copy, no celebration, no cou
    its own**, before anything is sent.
 7. **An Apple sign-in that finds no account creates nothing until *Already on Windmill?* is
    answered** (`account-linking.md` §3, §8).
+8. **The introduction's shown-once flag is per device**, survives app updates and sign-in, and is
+   not reset by sign-out (`onboarding.md` §9).
 
 The backend dependencies of signed-out Coach are in `consistency.md` (6k–6n).
 

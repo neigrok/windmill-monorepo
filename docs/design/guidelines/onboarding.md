@@ -4,7 +4,9 @@ The once-ever introduction on the two phones: one screen for Windmill, one for e
 picture and a few words each. Companion to `superapp-flow.md` (the iOS journey, which the pager
 precedes) and `gym/android-delivery.md` (the Android room it precedes). The drawings of record are
 the Figma page [Onboarding · 2026-10-04](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=209-2)
-in the Design System file; the open decisions are in §10 and ledger `consistency.md` § Onboarding.
+in the Design System file. Decided by the owner on 2026-10-04: direction A · Three rooms, iOS page 4
+leads to Where to start?, About Windmill in You and the account sheet, and the four screens are the
+accepted exception to `superapp-flow.md` §3 and §8. Drift is ledger `consistency.md` § Onboarding.
 
 ---
 
@@ -36,11 +38,11 @@ Drawn in section *0 · Placement* (`209:62`).
 - **Exit:** page 4's primary **Get started** lands on Where to start? (iOS) or Gym's first open
   (Android). The pager does not pick a room.
 
-This is a deliberate exception to `superapp-flow.md` §3 (no carousel) and §8 (at most two screens
-before the core action): it adds one once-ever screen in front of Where to start?. Those lines are
-rewritten in the wave that builds this; until the owner decides, the disagreement is ledger 8a.
+The introduction is the journey's one carousel and its one page control, and the two screens
+`superapp-flow.md` §8 allows before the core action are counted after it — the owner's accepted
+exception (2026-10-04), stated in `superapp-flow.md` §2, §3 and §8.
 
-## 3. The four screens — Direction A · Three rooms (recommended)
+## 3. The four screens — Three rooms
 
 Boards: iOS dark `212:2` `212:78` `212:140` `212:203`; iOS light `213:371` `213:385` `213:402`
 `213:419`; Android Instrument `213:626` `213:694` `213:748` `213:803`; Android Daylight `214:792`
@@ -62,12 +64,9 @@ On iOS the pictures sit in cards on the family ground; the ground never changes 
 Android the ground is gym's own palette because Android draws no shell between rooms
 (`superapp-shell.md`); the cards keep each product's palette.
 
-**Direction B · Posters** (`213:190` `213:232` `213:287` `213:329`; light `214:612` `214:635`
-`214:670` `214:691`) is the drawn alternative: one question, one object, centred, on each product's
-full-bleed palette so a swipe changes the whole screen's colour. Its strings are in §4. A is
-recommended because the question is "what is it?", and a fragment of the real thing answers it faster
-than a metaphor — and the person then recognises the room they land in. B's question headlines drop
-into A's layout unchanged if the owner prefers them.
+Considered and not chosen: *B · Posters* — one question, one object, centred on each product's
+full-bleed palette. Its boards stay on the page, labelled not chosen (`213:190` `213:232` `213:287`
+`213:329`; light `214:612` `214:635` `214:670` `214:691`), and nothing is built from them.
 
 ## 4. Every string
 
@@ -75,7 +74,7 @@ Chrome on first paint is counted against the forty-word decision window of `text
 picture's own words — node names, the composed page, the fixture — are content and are listed
 separately. Casing is sentence case; the eyebrows are mono small caps.
 
-### Direction A
+### The strings
 
 | Page | Element | String | Words |
 |---|---|---|---|
@@ -143,17 +142,6 @@ style. The table is the truth of 2026-10-04: `STRUCTURE.md` names the surfaces, 
 the journal (`apps/ios/App`). When the iOS gym room ships, its row becomes *In this app* on iOS and
 *On the web and iPhone* on Android, in that release.
 
-### Direction B
-
-| Page | Title | Body | First paint |
-|---|---|---|---|
-| 1 | Grow, one day at a time. | A skill tree, a nightly page and a training log. One account, and you can start without one. | 27 |
-| 2 | What are you learning? | Draw it as a skill tree. Each step opens the next. | 21 |
-| 3 | How was today? | A page a night, in your own words. Nothing is graded or shared. | 24 |
-| 4 | What did you lift? | Log the set. Next time, your numbers are already there. | 22 |
-
-Eyebrows, tags, Skip and the primaries are Direction A's.
-
 ## 5. The pictures
 
 The pictures are the ownable part: a living glimpse of each product, drawn from the product's own
@@ -182,7 +170,7 @@ Onboarding* (`209:69`): `_Glimpse / Roadmap` `210:2`, `_Glimpse / Journal` `210:
   verdigris **Log set** pill.
 - **The mark.** Page 1's wordmark is the exact `web/public/brand-mark.svg` beside *Windmill* in
   Baloo 2 Bold terracotta. It keeps its colours on both grounds and is never animated
-  (`brand-logo.md`). Direction B's page 1 uses the stacked lockup, mark at 132 pt.
+  (`brand-logo.md`).
 
 ## 6. Motion
 
@@ -246,7 +234,7 @@ Nothing counts skips. No page is required reading.
    sign-out, and is read before the first frame so the launch screen's ground is the pager's.
 2. **iOS:** `TabView(.page)` with the system page control, Skip as a plain `Button` top-right, the
    primary `.borderedProminent` terracotta at 52 pt above the home indicator; an **About Windmill**
-   row in You (`superapp-shell.md` §6, ledger 8b) that presents the same pager as a sheet.
+   row in You (`superapp-shell.md` §6) that presents the same pager as a sheet.
 3. **Android:** `HorizontalPager` with `PagerState`, a Row of 8 dp dots (Material 3 ships no page
    indicator), `TextButton` Skip in a 64 dp `TopAppBar`, a 56 dp filled `Button` with 16 dp corners
    above the gesture inset, predictive Back; an **About Windmill** destination from the account sheet
@@ -257,12 +245,3 @@ Nothing counts skips. No page is required reading.
    moves a product.
 6. **Accessibility of §7** is tested on devices in both modes: reading order, the single-element
    glimpses, the largest text sizes.
-
-## 10. Held open — the owner decides
-
-- Direction A or B, or A with B's question headlines.
-- The exception to `superapp-flow.md` §3 and §8 (ledger 8a). On yes, §2 of that doc opens the pager
-  once before Where to start?, §3 loses *no carousel*, and §8 counts its two screens after the
-  introduction. On no, this document is retired.
-- Whether page 4's iOS exit should land in Journal directly, the only room in the app today, rather
-  than on Where to start?.

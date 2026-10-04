@@ -21,7 +21,8 @@ belongs to the room. Gym keeps its own tabs — **Routines · The log · Coach**
 
 1. **The room menu** at the top-left (§3).
 2. **You** (§6).
-3. The screens before a room: **Where to start?** and **Bringing it back** (`superapp-flow.md`).
+3. The screens before a room: the once-ever **introduction** (`onboarding.md`), **Where to
+   start?** and **Bringing it back** (`superapp-flow.md`).
 4. **The Keep sheet**, the one sign-in door (`superapp-flow.md` §6).
 
 Nothing else. There is no hub, no capsule, no switcher sheet, no sheet that introduces the other
@@ -71,10 +72,12 @@ room's appearance stays inside the room.
 
 - **Signed out:** *Not signed in · Everything lives on this phone*, the Apple/email door
   (`superapp-flow.md` §6), **On this phone** with each room's real counts, Settings
-  (Appearance and each room's settings), and **Erase data**.
+  (Appearance and each room's settings), **About Windmill** (the four-screen introduction again,
+  as a sheet — `onboarding.md` §2), and **Erase data**.
 - **Signed in:** the name and how they signed in, **How you sign in** (the account's doors, where
   Apple is added and removed — `account-linking.md` §5), **Your data** (Backup with its state, On
-  the web), Settings, **Sign out** (`superapp-flow.md` §7) and **Delete account**.
+  the web), Settings, **About Windmill**, **Sign out** (`superapp-flow.md` §7) and **Delete
+  account**.
 
 **Windmill One** is one shared plan for actively requested AI assistance; credits do not pay for
 passive Echoes or ordinary product use. Purchasing is closed and allowance quantities remain a
@@ -169,8 +172,9 @@ ROOM MENU   the room name, top-left · native Menu · Journal · Gym · You
             never a count or a badge
 ACCOUNT     trailing account button on a room's root · opens You
 RETIRED     hub · capsule · switcher sheet · house sheet · shell gestures
-YOU         signed out: the door, On this phone, Erase data · no Windmill One
-            signed in: How you sign in, Backup, On the web, Sign out, Delete account · always clay
+YOU         signed out: the door, On this phone, About Windmill, Erase data · no Windmill One
+            signed in: How you sign in, Backup, On the web, About Windmill, Sign out, Delete account
+            always clay · About Windmill replays the introduction as a sheet
 APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
             its menu line · its skin reported outward once
 AI REQUESTS account-metered · iOS Coach: 5 questions per phone, once, without an account
