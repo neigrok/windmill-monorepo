@@ -20,7 +20,7 @@ FROM ubuntu:22.04 AS build
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
-      ca-certificates git cmake make g++ pkg-config python3 python3-yaml postgresql-client \
+      ca-certificates curl git cmake make g++ pkg-config python3 python3-yaml postgresql-client \
       libjsoncpp-dev uuid-dev zlib1g-dev libssl-dev libc-ares-dev libbrotli-dev \
       libpq-dev libcurl4-openssl-dev \
  && rm -rf /var/lib/apt/lists/*
