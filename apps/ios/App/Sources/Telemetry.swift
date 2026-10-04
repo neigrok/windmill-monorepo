@@ -36,15 +36,15 @@ nonisolated enum TelemetryPrivacy {
     "journal_line_saved", "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error"
   ]
   static let labels: [String: Set<String>] = [
-    "screen": ["welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out"],
-    "action": ["open_journal", "show_ink", "dismiss_ink", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined"],
-    "outcome": ["ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous"],
-    "method": ["GET", "POST", "email", "apple"],
+    "screen": ["welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24a", "24b", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
+    "action": ["open_journal", "show_ink", "dismiss_ink", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
+    "outcome": ["ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous", "linked"],
+    "method": ["GET", "POST", "DELETE", "email", "apple"],
     "day_kind": ["today"],
     "scope_kind": ["product", "tree", "overlay", "unknown"],
-    "route": ["/v1/auth", "/v1/sync", "/v1/events"],
+    "route": ["/v1/auth", "/v1/me", "/v1/sync", "/v1/events"],
     "failure_kind": ["offline", "timeout", "transport", "http", "decode", "encode", "storage", "keychain", "unexpected", "admission", "digest_reset", "doubt_exhausted", "overflow", "rejected", "tls", "sqlite", "digest_mismatch", "malformed", "unexpected_admission", "backoff_exhausted"],
-    "operation": ["auth_request_code", "auth_verify_code", "auth_apple", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
+    "operation": ["auth_request_code", "auth_verify_code", "auth_apple", "auth_apple_create", "auth_methods", "auth_apple_remove", "auth_logout", "auth_restore", "app_open", "journal_read", "journal_save", "journal_draft", "journal_choice", "auth_sign_in", "auth_sign_out", "auth_adopt", "telemetry_storage", "telemetry_delivery", "telemetry_overflow", "telemetry_rejected", "sync_hello", "sync_push", "sync_pull", "sync_live", "sync_live_send", "sync_live_receive", "sync_digest", "sync_admission", "sync_doubt", "storage_open", "storage_read", "storage_write", "storage_prepare", "storage_fork_guard", "keychain_read", "keychain_save", "keychain_delete", "keychain_accounts"]
   ]
 
   static func properties(_ input: [String: String], durationMs: Int64? = nil) -> [String: EventValue] {

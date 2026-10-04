@@ -36,6 +36,21 @@ final class JournalModel {
   var email = ""
   var code = ""
   var codeSentAt: Date?
+  var appleTicket: AppleTicket?
+  var appleOrigin: Sheet = .keep
+  var appleReceiptEmail = ""
+  var appleLinkedReceipt = false
+  @ObservationIgnored var appleAuthorization: ((SessionToken?) async throws -> AppleAuthResponse)?
+  var pendingSignIn: PendingSignIn?
+  var authRetryAt = Date.distantPast
+  var signInMethods: [SignInMethod] = []
+  var methodsGeneration = 0
+  var accountEmail = ""
+  var identityTaken = false
+  var removingApple = false
+  var authSuccess = 0
+  var authSelection = 0
+  var authBusyIndicator = false
   var working = false
   var accountTransition = false
   var syncStarted = false
@@ -47,7 +62,29 @@ final class JournalModel {
   @ObservationIgnored var timerTask: Task<Void, Never>?
   var editorDay: LocalDay
 
-  enum Sheet: String, Identifiable { case keep, address, code, you, adoption, discardAdoption, signOut; var id: String { rawValue } }
+  enum Sheet: String, Identifiable {
+    case keep, address, code, you, adoption, discardAdoption, signOut
+    case appleQuestion = "23a", appleAddress = "23b", appleAdded = "23c", appleNoAccount, appleExpired, authPending
+    var id: String { rawValue }
+    var telemetryName: String {
+      switch self {
+      case .discardAdoption: "discard_adoption"
+      case .signOut: "sign_out"
+      case .appleNoAccount: "apple_no_account"
+      case .appleExpired: "apple_expired"
+      case .authPending: "auth_pending"
+      default: rawValue
+      }
+    }
+  }
+
+  struct PendingSignIn {
+    let identity: AuthIdentity
+    let method: String
+    let linked: Bool
+    var needsAppleAttachment: Bool
+    var receiptPending: Bool
+  }
 
   init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
     self.telemetry = telemetry
@@ -59,7 +96,13 @@ final class JournalModel {
     welcome = !preferences.bool(forKey: "journalOpened")
     keepDismissed = preferences.bool(forKey: "keepDismissed")
     refresh()
+    if let account { accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? "" }
     if account != nil || room?.stance == .holding { welcome = false }
+    if let runtime, let pending = try runtime.store.read({ try $0.device().meta.pendingSignIn }), let token = runtime.tokens.token(for: pending) {
+      let identity = AuthIdentity(account: pending, token: token, name: accountName, email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
+      pendingSignIn = PendingSignIn(identity: identity, method: preferences.string(forKey: "pendingAuthMethod") ?? "email", linked: preferences.bool(forKey: "pendingAuthLinked"), needsAppleAttachment: false, receiptPending: false)
+      sheet = .authPending; welcome = false
+    }
   }
 
   var today: LocalDay { (try? runner.moment().today) ?? editorDay }
@@ -70,7 +113,8 @@ final class JournalModel {
   var keepDue: Bool { !editing && account == nil && room?.keepDue == true && !keepDismissed && !scalesDue }
   var canSignIn: Bool { runtime?.settings.baseURL != nil || runtime?.settings.modelServer == true }
   var authPaused: Bool { runtime?.engine.status.authPaused == true }
-  var editorReadOnly: Bool { working || accountTransition || signInSession?.isComplete == false || signOutSession != nil }
+  var compactAccountSheet: Bool { [.keep, .appleQuestion, .appleNoAccount, .appleExpired].contains(sheet) }
+  var editorReadOnly: Bool { working || accountTransition || pendingSignIn != nil || signInSession?.isComplete == false || signOutSession != nil }
   var backup: String {
     if authPaused { return "backup paused" }
     if dirty || readFailed { return "not saved" }
@@ -115,6 +159,8 @@ final class JournalModel {
         try? await Task.sleep(for: .milliseconds(350))
         guard let self, !Task.isCancelled else { return }
         self.refresh()
+        self.expireAppleTicket()
+        if self.pendingSignIn != nil, !self.working, self.authRetryAt <= Date() { await self.retryAuthenticatedSignIn() }
         if !self.syncStarted && !self.dirty { await self.resumeBackup() }
         await self.runtime?.revokeSignedOutSessions()
       }
@@ -122,7 +168,7 @@ final class JournalModel {
   }
 
   func resumeBackup() async {
-    guard !accountTransition, let runtime else { return }
+    guard !accountTransition, pendingSignIn == nil, let runtime else { return }
     accountTransition = true; editing = false
     defer { accountTransition = false }
     if dirty, !save() { return }
@@ -252,10 +298,88 @@ final class JournalModel {
   func dismissSheet() {
     if keepSheetPresented { dismissKeep() }
     keepSheetPresented = false
+    appleTicket = nil; appleLinkedReceipt = false; error = nil
+    if pendingSignIn == nil { appleAuthorization = nil }
+  }
+
+  var appleSessionToken: SessionToken? {
+    guard !authPaused, let account else { return nil }
+    return runtime?.tokens.token(for: account)
+  }
+
+  func useAppleAccount() {
+    guard !expireAppleTicket() else { return }
+    choose("use_account", screen: "23a"); authSelection += 1
+    code = ""; error = nil; sheet = .appleAddress
+  }
+
+  func closeAppleStep() {
+    choose("close", screen: sheet?.telemetryName ?? "23a")
+    appleTicket = nil; appleAuthorization = nil; error = nil; sheet = appleOrigin
+  }
+
+  @discardableResult func expireAppleTicket() -> Bool {
+    guard !working, pendingSignIn == nil, let ticket = appleTicket, ticket.expiresAt <= Date() else { return false }
+    appleTicket = nil; appleAuthorization = nil; error = nil; sheet = .appleExpired
+    return true
+  }
+
+  func showAuthError(_ failure: any Error, appleFlow: Bool = false) {
+    if let refusal = failure as? AuthRefusal {
+      if refusal.code == "apple-ticket-expired" { appleTicket = nil; appleAuthorization = nil; error = nil; sheet = .appleExpired; return }
+      if refusal.code == "no-account" { error = nil; sheet = .appleNoAccount; return }
+      if refusal.code == "identity-taken" { identityTaken = true; screenViewed("24d"); error = nil; return }
+    }
+    let offline = (failure as? AuthRefusal)?.code == "offline" || (failure as? URLError).map {
+      [.notConnectedToInternet, .cannotFindHost, .cannotConnectToHost, .dnsLookupFailed, .networkConnectionLost].contains($0.code)
+    } == true
+    error = offline && (appleFlow || appleTicket != nil) ? AuthRefusal.offline.message : failure.localizedDescription
+  }
+
+  func createAppleAccount() async {
+    guard !working, pendingSignIn == nil, !expireAppleTicket(), let ticket = appleTicket, let auth = runtime?.auth else { return }
+    guard account == nil else { error = "Sign in to the same account to resume backup. Your pages stay with this account."; return }
+    choose("create_account", screen: sheet == .appleNoAccount ? "apple_no_account" : "23a"); authSelection += 1
+    working = true; accountTransition = true; error = nil
+    defer { working = false; accountTransition = false }
+    do {
+      let identity = try await auth.createApple(ticket: ticket)
+      appleLinkedReceipt = false
+      try await acceptAuthenticatedSignIn(identity, method: "apple")
+    } catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error) }
+  }
+
+  func loadSignInMethods() async {
+    guard let token = appleSessionToken, let auth = runtime?.auth else { return }
+    let current = account
+    methodsGeneration += 1
+    let generation = methodsGeneration
+    do {
+      let methods = try await auth.signInMethods(token: token)
+      guard account == current, methodsGeneration == generation else { return }
+      signInMethods = methods
+      accountEmail = methods.first(where: { $0.kind == "email" })?.email ?? accountEmail
+      if let account { preferences.set(accountEmail, forKey: "accountEmail:\(account)") }
+      screenViewed(methods.contains(where: { $0.kind == "apple" }) ? "24b" : "24a")
+    } catch { if account == current, methodsGeneration == generation { showAuthError(error) } }
+  }
+
+  func removeApple() async {
+    guard !working, let token = appleSessionToken, let auth = runtime?.auth else { return }
+    choose("remove_apple", screen: "24c")
+    methodsGeneration += 1
+    working = true; error = nil
+    defer { working = false }
+    do { try await auth.removeApple(token: token); signInMethods.removeAll { $0.kind == "apple" }; screenViewed("24a") }
+    catch { showAuthError(error) }
   }
 
   func sendCode() async {
-    guard !working, let auth = runtime?.auth else { return }
+    guard !working, pendingSignIn == nil, let auth = runtime?.auth else { return }
+    if expireAppleTicket() { return }
+    if appleTicket != nil, account != nil, !accountEmail.isEmpty, email.lowercased() != accountEmail.lowercased() {
+      error = "Sign in to the same account to resume backup. Your pages stay with this account."; return
+    }
     if sheet == .code, let sent = codeSentAt, Date().timeIntervalSince(sent) < 30 { return }
     if sheet == .code { choose("resend", screen: "code") }
     telemetry.event("auth_code_requested", properties: ["method": "email"])
@@ -265,21 +389,88 @@ final class JournalModel {
       try await auth.requestCode(email: email)
       telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "ok"])
       codeSentAt = Date(); code = ""; sheet = .code
-    } catch { telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "failed"]); self.error = error.localizedDescription }
+    } catch { telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "failed"]); showAuthError(error) }
   }
 
   func verifyCode() async {
-    guard !working, code.count == 6, let auth = runtime?.auth else { return }
+    guard !working, pendingSignIn == nil, code.count == 6, let auth = runtime?.auth else { return }
+    if expireAppleTicket() { return }
+    if appleTicket != nil, account != nil, !accountEmail.isEmpty, email.lowercased() != accountEmail.lowercased() {
+      error = "Sign in to the same account to resume backup. Your pages stay with this account."; return
+    }
     working = true; error = nil
-    defer { working = false }
+    authBusyIndicator = false
+    let indicator = Task { [weak self] in
+      try? await Task.sleep(for: .milliseconds(800))
+      if !Task.isCancelled { self?.authBusyIndicator = true }
+    }
+    defer { indicator.cancel(); authBusyIndicator = false; working = false }
     accountTransition = true; editing = false
     defer { accountTransition = false }
-    telemetry.event("auth_sign_in_started", properties: ["method": "email"])
-    do { try await signIn(try await auth.verifyCode(email: email, code: code)); telemetry.event("auth_signed_in", properties: ["method": "email", "outcome": "ok"]) }
-    catch { telemetry.event("auth_signed_in", properties: ["method": "email", "outcome": "failed"]); self.error = error.localizedDescription }
+    let method = appleTicket == nil ? "email" : "apple"
+    telemetry.event("auth_sign_in_started", properties: ["method": method])
+    do {
+      let reauthenticatingApple = appleTicket != nil && account != nil
+      let identity = try await auth.verifyCode(email: email, code: code, appleTicket: reauthenticatingApple ? nil : appleTicket)
+      try await acceptAuthenticatedSignIn(identity, method: method, attachApple: reauthenticatingApple)
+    }
+    catch { telemetry.event("auth_signed_in", properties: ["method": method, "outcome": "failed"]); showAuthError(error) }
   }
 
-  func signIn(_ identity: AuthIdentity) async throws {
+  func acceptAuthenticatedSignIn(_ identity: AuthIdentity, method: String, attachApple: Bool = false) async throws {
+    if let current = account, !current.utf8.elementsEqual(identity.account.utf8) {
+      try? await runtime?.auth.logout(token: identity.token)
+      throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
+    }
+    pendingSignIn = PendingSignIn(identity: identity, method: method, linked: identity.appleAttached || attachApple, needsAppleAttachment: attachApple, receiptPending: identity.appleAttached || attachApple)
+    preferences.set(method, forKey: "pendingAuthMethod")
+    preferences.set(identity.appleAttached || attachApple, forKey: "pendingAuthLinked")
+    appleTicket = nil
+    await continueAuthenticatedSignIn()
+  }
+
+  func retryAuthenticatedSignIn() async {
+    guard !working, pendingSignIn != nil else { return }
+    working = true; accountTransition = true; error = nil
+    defer { working = false; accountTransition = false }
+    await continueAuthenticatedSignIn()
+  }
+
+  func continueAuthenticatedSignIn() async {
+    guard var pending = pendingSignIn else { return }
+    let reauthenticating = pending.needsAppleAttachment
+    do {
+      if pending.needsAppleAttachment {
+        try await signIn(pending.identity, presentResult: false)
+        guard let authorize = appleAuthorization, case .attached = try await authorize(pending.identity.token) else { throw URLError(.cannotParseResponse) }
+        pending.needsAppleAttachment = false; pendingSignIn = pending; appleAuthorization = nil
+      }
+      if pending.receiptPending {
+        pending.receiptPending = false; pendingSignIn = pending
+        appleReceiptEmail = pending.identity.email.nilIfEmpty ?? email
+        appleLinkedReceipt = true; sheet = .appleAdded; authSuccess += 1
+        try await Task.sleep(for: .milliseconds(1200))
+      }
+      if reauthenticating { presentSignInResult() }
+      else { try await signIn(pending.identity) }
+      pendingSignIn = nil; appleAuthorization = nil; error = nil
+      preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
+      telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": pending.linked ? "linked" : "ok"])
+    } catch {
+      telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": "failed"])
+      if let refusal = error as? AuthRefusal, pending.needsAppleAttachment, refusal.code != "offline" {
+        pendingSignIn = nil; appleAuthorization = nil; sheet = .you; showAuthError(error)
+        preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
+        return
+      }
+      authRetryAt = Date().addingTimeInterval(5); sheet = .authPending
+      if (error as? EngineError) == .unreachable || (error as? AuthRefusal)?.code == "offline" || error is URLError {
+        self.error = "Can't reach windmill.works. Your pages are safe on this phone. Try again to finish signing in."
+      } else { self.error = error.localizedDescription }
+    }
+  }
+
+  func signIn(_ identity: AuthIdentity, presentResult: Bool = true) async throws {
     guard let runtime else { return }
     accountTransition = true; editing = false
     defer { accountTransition = false }
@@ -289,9 +480,17 @@ final class JournalModel {
       throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
     }
     accountName = identity.name
+    accountEmail = identity.email.nilIfEmpty ?? email
+    preferences.set(accountEmail, forKey: "accountEmail:\(identity.account)")
+    signInMethods = []
+    methodsGeneration += 1
     do { signInSession = try await runtime.engine.signIn(account: identity.account, token: identity.token) }
     catch { reportBoundary("auth_sign_in", error: error); throw error }
     runtime.updateTelemetryIdentity()
+    if presentResult { presentSignInResult() }
+  }
+
+  func presentSignInResult() {
     if signInSession?.isComplete == false { sheet = .adoption }
     else { sheet = nil; welcome = false; refresh() }
   }
@@ -346,6 +545,7 @@ final class JournalModel {
       telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
       signOutSession = nil; signInSession = nil
       sheet = nil; account = nil; document = PageDocument(); dirty = false; editing = false; error = nil
+      appleTicket = nil; signInMethods = []; accountEmail = ""; appleLinkedReceipt = false
       inkVisible = false; keepDismissed = false; welcome = true; refresh()
       preferences.set(false, forKey: "keepDismissed")
       await runtime.revokeSignedOutSessions(force: true)
@@ -355,13 +555,31 @@ final class JournalModel {
     } catch { reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }; self.error = error.localizedDescription }
   }
 
-  func authenticateApple(_ identity: () async throws -> AuthIdentity) async {
-    guard !working else { return }
+  func authenticateApple(_ authorize: @escaping (SessionToken?) async throws -> AppleAuthResponse) async {
+    guard !working, pendingSignIn == nil else { return }
+    let attaching = appleSessionToken != nil
+    appleTicket = nil; appleAuthorization = nil; appleLinkedReceipt = false
+    if sheet == .keep || sheet == .you { appleOrigin = sheet ?? .keep }
     working = true; accountTransition = true; editing = false; error = nil
     defer { working = false; accountTransition = false }
     telemetry.event("auth_sign_in_started", properties: ["method": "apple"])
-    do { try await signIn(identity()); telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "ok"]) }
-    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); self.error = error.localizedDescription }
+    do {
+      switch try await authorize(appleSessionToken) {
+      case .ticket(let ticket):
+        guard !attaching else { throw URLError(.cannotParseResponse) }
+        appleTicket = ticket; error = nil
+        if account != nil { appleAuthorization = authorize; email = accountEmail; sheet = .appleAddress }
+        else { sheet = .appleQuestion }
+      case .signedIn(let identity):
+        guard !attaching else { throw URLError(.cannotParseResponse) }
+        try await acceptAuthenticatedSignIn(identity, method: "apple")
+      case .attached:
+        guard attaching else { throw URLError(.cannotParseResponse) }
+        await loadSignInMethods(); authSuccess += 1; sheet = .you
+        telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "linked"])
+      }
+    }
+    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); showAuthError(error, appleFlow: !attaching) }
   }
 
   func reportBoundary(_ operation: String, error: any Error) {

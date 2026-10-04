@@ -17,6 +17,19 @@ An actual Apple ID on a device is required for the production Apple flow.
 
 Debug simulator launches support `-model-server` for the full engine model transport. It supplies
 email code `482913` and a fake Apple identity; these authentication shortcuts are absent in Release.
+An unbound fake Apple identity returns a memory-only ticket before any account or session exists.
+`-apple-fixture linking` uses a relay address; `offline` loses connectivity after Apple authorization;
+`expired` advances that ticket past its 15-minute lifetime; `taken` binds Apple to an account with
+data; `empty` binds it to an empty account whose door can move. Boards `23-start`, `23a`–`23d` and
+`24a`–`24d` seed the existing email account through the real engine. `23-start` opens Keep for full
+interaction; `23c` holds the linked receipt for screenshot inspection. A new address plus a valid
+code exercises `no-account`; wrong digits exercise the collapsed code refusal. `hello-failure` fails
+the first authenticated engine hello after an Apple ticket, so Try again exercises recovery without
+reusing the consumed ticket. `-restore-board` retains the board database and skips reseeding for
+relaunch content checks. The model also
+supports subject/email matches, spent/unknown tickets, code reuse and a concurrent subject-binding
+race in `AppleLinkingTests`. All writes and reads use the existing auth diagnostics with bounded
+labels; no fixture secret enters telemetry.
 `-board <PNG stem>` isolates a fixed-date fixture using the real journal actions and engine.
 `-scenario <name> -report <absolute JSON path>` exercises anonymous writing, Keep, email sign-in,
 backup, session revocation, same-account reauthentication, sign-out Keep, and a second sign-in. A local

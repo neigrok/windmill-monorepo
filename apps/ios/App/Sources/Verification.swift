@@ -13,6 +13,29 @@ enum BoardFixture {
     model.welcome = board.hasPrefix("01") || board.hasPrefix("02")
     guard !model.welcome else { return }
     model.preferences.set(true, forKey: "journalOpened")
+    if board.hasPrefix("23") || board.hasPrefix("24"), let runtime = model.runtime, let server = runtime.auth.fake {
+      let identity = server.identity(email: "sam@example.com")
+      try? await model.signIn(identity)
+      model.type("An earlier page in Sam's account."); model.save(); model.done()
+      await runtime.engine.start(); try? await AppScenario.backedUp(model)
+      if board.hasPrefix("24") {
+        model.sheet = .you; await model.loadSignInMethods()
+        if board == "24b" || board == "24c" {
+          await model.authenticateApple { token in try runtime.auth.authorizeFakeApple(token: token) }
+          if board == "24c" { model.removingApple = true }
+        }
+        if board == "24d" {
+          server.state.withLock { state in
+            state.appleDoors[state.appleSubject] = "model-other@example.com"
+            state.dataAccounts.insert("model-other@example.com")
+          }
+          await model.authenticateApple { token in try runtime.auth.authorizeFakeApple(token: token) }
+        }
+        return
+      }
+      await model.beginSignOut(); await model.finishSignOut(.discard)
+      model.welcome = false; model.preferences.set(true, forKey: "journalOpened")
+    }
     if board.hasPrefix("05") || board.contains("a1-") || board.contains("a5-") || board.contains("a6-") || board.contains("a2-") {
       model.inkVisible = !board.hasPrefix("05")
       model.preferences.set(true, forKey: "inkShown")
@@ -49,6 +72,23 @@ enum BoardFixture {
       await runtime.engine.start(); model.refresh(); model.sheet = .you
     }
     if board.hasPrefix("14") { model.keep() }
+    if board.hasPrefix("23"), let runtime = model.runtime {
+      model.keep()
+      if board != "23-start" {
+        await model.authenticateApple { token in try runtime.auth.authorizeFakeApple(token: token) }
+        if board == "23b" || board == "23c" || board == "23d" {
+          model.useAppleAccount(); model.email = "sam@example.com"
+          if board == "23c", let ticket = model.appleTicket {
+            try? await runtime.auth.requestCode(email: model.email)
+            if let identity = try? await runtime.auth.verifyCode(email: model.email, code: "482913", appleTicket: ticket) {
+              model.appleTicket = nil; model.appleReceiptEmail = identity.email; model.code = "482913"
+              model.appleLinkedReceipt = true; model.sheet = .appleAdded
+            }
+          }
+          if board == "23d" { await model.sendCode(); model.code = "482913"; await model.verifyCode() }
+        }
+      }
+    }
     if board.hasPrefix("15") {
       model.email = "you@example.com"; model.codeSentAt = Date(); model.sheet = .code
     }

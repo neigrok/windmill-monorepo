@@ -14,7 +14,7 @@ struct JournalScreen: View {
       ZStack(alignment: .topLeading) {
         JournalBackdrop()
         VStack(spacing: 0) {
-          if model.sheet != .keep { header.padding(.horizontal, 16).padding(.top, 6) }
+          if !model.compactAccountSheet { header.padding(.horizontal, 16).padding(.top, 6) }
           ScrollView {
             VStack(alignment: .leading, spacing: 40) {
               ForEach(model.room?.days.filter { $0.day < model.today } ?? [], id: \.day) { day in
@@ -28,9 +28,9 @@ struct JournalScreen: View {
               today(width: geo.size.width - 48)
             }.padding(.horizontal, 24)
               .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
-              .padding(.bottom, focused || model.sheet == .keep ? 18 : (geo.size.height < 700 ? 12 : 92))
-              .frame(minHeight: max(0, geo.size.height - 56 - (model.sheet == .keep ? 350 : 0)), alignment: .bottom)
-          }.defaultScrollAnchor(model.sheet == .keep || (typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
+              .padding(.bottom, focused || model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92))
+              .frame(minHeight: max(0, geo.size.height - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
+          }.defaultScrollAnchor(model.compactAccountSheet || (typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
             .onTapGesture { model.liftInk() }
         }
         if model.roomMenu { roomMenu.padding(.leading, 16).padding(.top, 58) }
@@ -69,7 +69,7 @@ struct JournalScreen: View {
   func today(width: CGFloat) -> some View {
     VStack(alignment: .leading, spacing: 0) {
       HStack(spacing: 6) {
-        Text(date(model.editorDay) + (model.words > 0 ? " · \(model.words) WORDS" : "") + (focused || model.backup.isEmpty ? "" : " · \(model.backup)"))
+        Text(date(model.editorDay) + (model.words > 0 ? " · \(model.words) \(model.words == 1 ? "WORD" : "WORDS")" : "") + (focused || model.backup.isEmpty ? "" : " · \(model.backup)"))
           .font(Design.mono()).tracking(0.7).foregroundStyle(Design.dim)
         if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
       }.inkAnchor("date").padding(.bottom, 16)

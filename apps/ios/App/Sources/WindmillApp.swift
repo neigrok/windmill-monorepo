@@ -40,7 +40,7 @@ struct WindmillApp: App {
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, let suite { preferences.removePersistentDomain(forName: suite) }
           let created = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
-          if let board = settings.board { await BoardFixture.prepare(board, model: created) }
+          if let board = settings.board, !settings.restoreBoard { await BoardFixture.prepare(board, model: created) }
           model = created
           await created.start()
           if settings.scenario != nil { await AppScenario.run(model: created) }

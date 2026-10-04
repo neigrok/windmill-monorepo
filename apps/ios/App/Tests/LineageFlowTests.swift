@@ -13,13 +13,13 @@ import Synchronization
 @testable import Windmill
 
 @Suite @MainActor struct LineageFlowTests {
-  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore()) throws -> JournalModel {
+  func fixture(_ transport: JournalModelTransport, syncTransport: (any SyncTransport)? = nil, tokens: InMemoryTokenStore = InMemoryTokenStore(), revocations: InMemoryTokenStore = InMemoryTokenStore(), auth: NativeAuth? = nil) throws -> JournalModel {
     let store = try Store.inMemory(registry: SyncSchema.registry, commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
     let engine = try SyncEngine(config: EngineConfig(appVersion: "test", surface: .ios), store: store,
                                 transport: syncTransport ?? transport, tokens: tokens, forkGuard: InMemoryForkGuardStore(),
                                 clock: .system, random: SeededRandomSource(seed: 17), connectivity: SwitchedConnectivity())
     let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
-    let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations)
+    let runtime = AppRuntime(settings: AppSettings(arguments: ["app", "-model-server"]), store: store, engine: engine, auth: auth ?? NativeAuth(baseURL: nil, fake: transport), runner: runner, tokens: tokens, revocations: revocations)
     return try JournalModel(runner: runner, preferences: UserDefaults(suiteName: UUID().uuidString)!, runtime: runtime)
   }
 
@@ -264,7 +264,7 @@ import Synchronization
     #expect(model.authPaused)
     let gate = TransportGate()
     let reauthentication = Task {
-      await model.authenticateApple { await gate.wait(); return try runtime.auth.fakeApple() }
+      await model.authenticateApple { _ in await gate.wait(); return .signedIn(try runtime.auth.fakeApple()) }
     }
     await gate.untilWaiting(); model.type("During Apple verification")
     #expect(model.editorReadOnly && model.document.body == "Apple account writing")

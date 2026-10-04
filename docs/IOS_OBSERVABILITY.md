@@ -32,7 +32,8 @@ first-party intake proves storage, not asynchronous Amplitude receipt.
 Sentry starts before session or SQLite storage reads. The SDK captures native crashes. Handled
 reports cover HTTP/transport and successful-body decoding, journal storage and drafts, SQLite
 reads/writes, protected-storage preparation, fork-guard I/O, Keychain reads/writes/deletions and
-enumeration, session restoration, code authentication, adoption and sign-out. The sync engine
+enumeration, session restoration, code authentication, Apple ticket creation/linking, sign-in-method
+reads, Apple removal, adoption and sign-out. The sync engine
 reports unexpected admission results, digest resets and doubts that reach the backoff ceiling,
 once per doubt episode. Engine and app runtime adapters enqueue static diagnostics through
 `BoundedTelemetry`: a serial utility worker invokes the sink outside engine/writer/publisher locks.
@@ -41,16 +42,17 @@ sink cannot delay commits/subscriptions or enter adaptive writer timing.
 HTTP owns transport reports; the engine's deadline uses the same invocation
 diagnostics to avoid a second report and retains the failure kind in pull/push outcome metrics.
 
-HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/sync` or `/v1/events`), a static
+HTTP failures carry method, coarse route family (`/v1/auth`, `/v1/me`, `/v1/sync` or `/v1/events`), a static
 operation, `failure_kind`, optional numeric status label and `duration_ms`. Duration uses a monotonic
 clock through response consumption and decoding. Sync outcomes also cover application of the reply
-to the local store. Expected statuses 400, 401, 403, 404, 409, 422 and 429 are product/API metrics,
+to the local store. Expected statuses 400, 401, 403, 404, 409, 410, 422 and 429 are product/API metrics,
 not Sentry Issues. Offline/DNS/connect failures are metrics; cancellation is quiet. Timeouts, TLS,
 unexpected HTTP responses and decoding failures are reportable. No URL, dynamic identifier, query
 string, authorization header or response body enters telemetry.
 
 The promise is **Only you.** Never send journal text, text length, mood or energy values, email
-addresses, session tokens or response bodies. Product properties pass a finite allowlist of labels;
+addresses, Apple subjects/tickets/identity tokens, session tokens or response bodies. Apple tickets
+live in memory only and are cleared on dismissal, expiry or completion. Product properties pass a finite allowlist of labels;
 unknown event names, property names and label values are discarded. Duration is the only numeric
 product property and is clamped to 0–86,400,000 ms. Version/build/release metadata is bounded.
 
@@ -72,16 +74,24 @@ was answered or declined; neither the scale name nor its value is recorded.
 | Application | `app_started`, `app_foregrounded`, `app_backgrounded` | common metadata |
 | Authentication | `auth_restore` | outcome: anonymous, signed_in, paused, failed |
 | Email code | `auth_code_requested`, `auth_code_sent` | method: email; outcome: ok, failed |
-| Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, failed, cancelled |
+| Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, linked, failed, cancelled; linked follows a code link or signed-in attach |
 | Sign-out | `auth_signed_out` | outcome: ok |
-| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, keep, address, code, you, adoption, discard_adoption, sign_out |
-| Choices | `first_run_choice` | screen; action: open_journal, show_ink, dismiss_ink, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out |
+| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
+| Choices | `first_run_choice` | screen; action: open_journal, show_ink, dismiss_ink, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms; optional coarse scope_kind |
 
 Screen and choice events also record visits when the same screens are revisited after first run.
+Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth_verify_code`,
+`auth_methods` and `auth_apple_remove`. Removal uses method `DELETE`; reading methods uses `GET`.
+The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
+A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
+`auth_pending` marks authenticated sign-in awaiting engine recovery; `retry` resumes the retained
+identity without repeating code verification or ticket creation. Retries also run after a five-second
+delay while the app is open. Paused Apple linking validates the verified account id before bearer
+attachment. Apple removal treats HTTP 404 as already removed, alongside 204.
 No page counts, record IDs, dates, text, scale values or account identity are included in properties.
 The wire schema is `{sessionKey, platform: "ios", events: [{id, name, clientMs, props}]}`.
 UUID event IDs and the session key persist across relaunch and retries.
