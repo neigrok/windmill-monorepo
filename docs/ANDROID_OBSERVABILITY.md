@@ -47,6 +47,9 @@ budget for the backend's bounded sequence of model/tool calls. An intervening pr
 shorter limit.
 
 Handled storage, synchronization, notification, authentication and UI boundary failures also report.
+The first-launch onboarding gate reports unreadable workout presence, unreadable first-launch state
+and failed launch-marker writes under the static operation `onboarding_storage`; failed inspection or
+flag persistence skips automatic onboarding rather than treating an unknown phone as empty.
 Session decoding and Keystore failures use a bootstrap Sentry sink, available before account storage
 is read. HTTP failures are owned by the shared transport, so workout stores do not report them twice.
 SDK exception deduplication is disabled because the transport's malformed exception is a singleton;
@@ -70,10 +73,26 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Application | `app_started`, `app_foregrounded`, `app_backgrounded` | version, build, release |
 | Authentication | `auth_restore`, `auth_code_requested`, `auth_code_sent`, `auth_sign_in_started`, `auth_signed_in`, `auth_signed_out` | outcome, method |
 | Navigation | `gym_screen_viewed` | screen |
+| Motion settings | technical failure `onboarding_motion_settings` | static operation; motion falls back to reduced |
+| Brand onboarding | `onboarding_opened`, `onboarding_page_viewed`, `onboarding_action`, `onboarding_exited` | state, screen, action, outcome |
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | storage |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, storage, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms, network_phase |
+
+Onboarding records first launch and replay from **About Windmill**. It emits an open, each settled
+page, navigation actions and an exit. `state` is `first_launch` or `replay`; `screen` is `windmill`,
+`roadmap`, `journal` or `gym`; `action` is `next`, `back`, `swipe` or `adjust`; exit `outcome` is
+`skipped`, `completed`, `back` or `closed`. Open events accept only state, page events state/screen,
+actions state/screen/action and exits state/screen/outcome, alongside the common build metadata.
+Other `onboarding_*` event names are rejected. Other property keys and values outside these finite
+sets are dropped, even when syntactically valid labels. No picture, page copy or workout content
+enters these events.
+
+Exits are terminal: completing or dismissing the pager, an external route replacing it, or the
+activity finishing. Home and screen lock emit application lifecycle events without closing the
+onboarding flow. Configuration changes retain an eligible introduction; restored state after
+process death consults the persisted launch marker and does not reopen a consumed introduction.
 
 ## Delivery and limits
 
@@ -111,7 +130,8 @@ python3 -m unittest discover -s tools/tests -v
 
 `AndroidTelemetryTest` exercises the real Sentry SDK and first-party HTTP transport against local
 collectors. `EventQueueTest` covers retry identity, restart recovery, account isolation, offline
-suppression and one delivery report per failure streak. HTTP tests cover concurrent diagnostics,
+suppression, one delivery report per failure streak and exact onboarding names/finite properties.
+HTTP tests cover concurrent diagnostics,
 listener composition, timeouts and response decoding. Release-tool tests cover signing custody,
 provenance and telemetry configuration.
 

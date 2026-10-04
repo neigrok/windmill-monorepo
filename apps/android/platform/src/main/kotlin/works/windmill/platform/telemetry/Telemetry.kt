@@ -20,11 +20,38 @@ val LocalTelemetry = staticCompositionLocalOf<Telemetry> { Telemetry.None }
 
 object TelemetryPolicy {
     private val label = Regex("[a-zA-Z0-9_.:/-]{1,80}")
+    private val eventLabel = Regex("[a-z0-9_]{1,64}")
     private val keys = setOf(
         "operation", "outcome", "failure_kind", "status", "storage", "cap", "action",
         "method", "route", "state", "release", "environment", "platform",
         "app_version", "build", "duration_ms", "network_phase", "screen",
     )
+    private val commonEventKeys = setOf("platform", "app_version", "build", "release", "environment")
+    private val onboardingStates = setOf("first_launch", "replay")
+    private val onboardingScreens = setOf("windmill", "roadmap", "journal", "gym")
+    private val onboardingEvents = mapOf(
+        "onboarding_opened" to mapOf("state" to onboardingStates),
+        "onboarding_page_viewed" to mapOf("state" to onboardingStates, "screen" to onboardingScreens),
+        "onboarding_action" to mapOf(
+            "state" to onboardingStates, "screen" to onboardingScreens,
+            "action" to setOf("next", "back", "swipe", "adjust"),
+        ),
+        "onboarding_exited" to mapOf(
+            "state" to onboardingStates, "screen" to onboardingScreens,
+            "outcome" to setOf("skipped", "completed", "back", "closed"),
+        ),
+    )
+
+    fun eventName(name: String): Boolean = eventLabel.matches(name) &&
+        (!name.startsWith("onboarding_") || name in onboardingEvents)
+
+    fun eventProperties(name: String, properties: Map<String, String>): Map<String, String> {
+        if (!name.startsWith("onboarding_")) return properties(properties)
+        val schema = onboardingEvents[name] ?: return emptyMap()
+        return properties(properties.filter { (key, value) ->
+            key in commonEventKeys || value in schema[key].orEmpty()
+        })
+    }
 
     fun properties(properties: Map<String, String>): Map<String, String> {
         var bytes = 2

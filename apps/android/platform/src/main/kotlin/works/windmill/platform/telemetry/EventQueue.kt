@@ -103,7 +103,7 @@ class EventQueue(
     }
 
     fun add(name: String, properties: Map<String, String>) = synchronized(lock) {
-        if (!Regex("[a-z0-9_]{1,64}").matches(name)) {
+        if (!TelemetryPolicy.eventName(name)) {
             failure("telemetry_event_name", IllegalArgumentException("Invalid event name"), emptyMap())
             return@synchronized
         }
@@ -112,7 +112,7 @@ class EventQueue(
             overflowReported = true
             return@synchronized
         }
-        val props = TelemetryPolicy.properties(properties).mapValues { (key, value) ->
+        val props = TelemetryPolicy.eventProperties(name, properties).mapValues { (key, value) ->
             if (key == "duration_ms") JsonPrimitive(value.toLongOrNull()?.coerceAtLeast(0) ?: 0) else JsonPrimitive(value)
         }
         val event = EventIn(UUID.randomUUID().toString(), name, now(), props)

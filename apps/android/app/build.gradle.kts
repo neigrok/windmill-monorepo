@@ -84,6 +84,8 @@ android {
         compose = true
         buildConfig = true
     }
+
+    testOptions { unitTests.isIncludeAndroidResources = true }
 }
 
 kotlin {
@@ -96,4 +98,8 @@ dependencies {
     implementation(project(":platform"))
     implementation(project(":gym"))
     implementation(libs.androidx.activity.compose)
+    testImplementation(libs.junit)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.compose.ui.test.junit4)
+    testImplementation(libs.compose.ui.test.manifest)
 }

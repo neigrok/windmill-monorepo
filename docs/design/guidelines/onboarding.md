@@ -189,8 +189,9 @@ Beats and curves are `motion-language.md`'s; nothing here invents motion.
 - A beat plays once per visit to a page; coming back replays it. Leaving mid-beat snaps it to its end
   state (150 ms fade).
 - **Reduce Motion / animator scale 0:** cross-fades only. No rise, no travel head (the edge
-  cross-fades lit in 150 ms), the halo frozen at α .28, the check appears without draw-on, the
-  caret still blinks.
+  cross-fades lit in 150 ms), the halo frozen at α .28, the check appears without draw-on. The
+  caret still blinks under iOS Reduce Motion, as the system caret does; at Android animator scale 0
+  it holds still.
 - **Haptics.** iOS: `.sensoryFeedback(.selection)` when a page settles; nothing on Skip or Next.
   Android: none (`gym/android-delivery.md`: no tab haptics, and none on the pager).
 

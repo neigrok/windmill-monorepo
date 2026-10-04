@@ -39,6 +39,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         private set
     lateinit var gym: GymRuntime
         private set
+    lateinit var onboardingLaunch: OnboardingLaunch
+        private set
     override lateinit var workoutNotifications: WorkoutNotifications
         private set
 
@@ -55,6 +57,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         if (telemetryEnabled) telemetry = AndroidTelemetry(this, baseUrl, release, environment, BuildConfig.VERSION_NAME,
             BuildConfig.VERSION_CODE.toString(), owner, sessions::read, scope)
         telemetry.event("app_started")
+        onboardingLaunch = OnboardingLaunch(this, telemetry)
         val clock = AndroidWorkoutClock(this, telemetry = telemetry)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry)
         val store = TrainingStore(

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="onboarding_brand">Windmill</string>
+    <string name="onboarding_skip">Skip</string>
+    <string name="onboarding_next">Next</string>
+    <string name="onboarding_start">Get started</string>
+    <string name="onboarding_done">Done</string>
+    <string name="onboarding_back">Back</string>
+    <string name="onboarding_about">About Windmill</string>
+    <string name="onboarding_title_windmill">Three ways to grow.</string>
+    <string name="onboarding_body_windmill">One account keeps them together. You can start without one.</string>
+    <string name="onboarding_title_roadmap">Map what you\'re learning.</string>
+    <string name="onboarding_body_roadmap">Your goal as a skill tree. Each step opens the next, and you watch it grow.</string>
+    <string name="onboarding_title_journal">A page a night.</string>
+    <string name="onboarding_body_journal">Write a line or a page, in your own words. Nothing is graded or shared.</string>
+    <string name="onboarding_title_gym">Log the set.</string>
+    <string name="onboarding_body_gym">Two taps a set, and next time your numbers are already there.</string>
+    <string name="onboarding_roadmap_where">On the web</string>
+    <string name="onboarding_journal_where">On the web</string>
+    <string name="onboarding_gym_where">In this app</string>
+    <string name="onboarding_example_windmill">Example of three rooms: Roadmap, Journal, Gym</string>
+    <string name="onboarding_example_roadmap">Example of a skill tree: Learn to sail, three steps open, three locked</string>
+    <string name="onboarding_example_journal">Example of a journal page: yesterday above, tonight below, mood and energy unasked</string>
+    <string name="onboarding_example_gym">Example of a set being logged: squat, 100 kilograms for 5</string>
+    <string name="onboarding_page">Page %1$d of 4</string>
+    <string name="onboarding_previous_page">Previous page</string>
+    <string name="onboarding_next_page">Next page</string>
+</resources>
