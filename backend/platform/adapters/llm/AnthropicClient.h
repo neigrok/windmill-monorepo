@@ -10,6 +10,7 @@
 
 #include <trantor/net/EventLoopThread.h>
 
+#include <atomic>
 #include <functional>
 #include <memory>
 #include <optional>
@@ -72,6 +73,8 @@ MessagesReply readMessagesReply(int status, const std::string& body);
 class AnthropicClient : public MessagesApi {
 public:
   explicit AnthropicClient(std::string apiKey);
+  ~AnthropicClient();
+  void stop();
 
   bool configured() const override { return !apiKey_.empty(); }
   MessagesReply send(const MessagesRequest& request) override;
@@ -79,6 +82,7 @@ public:
 private:
   std::string apiKey_;
   trantor::EventLoopThread loop_;
+  std::atomic<bool> stopped_{false};
 };
 
 // --- Metering ---
@@ -99,8 +103,10 @@ using ModelCall = std::function<std::optional<Json::Value>(const Json::Value& re
 // `frame` carries who/product/operation/run and the wrapper adds the iteration number, the outcome
 // and the reply's `usage`. Over the fuse it refuses without calling, answers nullopt, and reports
 // the first trip through `report` under "ai.fuse", once.
+// onDenied names each refused invocation, including trips already reported.
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
-                  std::function<void(const std::string& where, const std::string& detail)> report);
+                  std::function<void(const std::string& where, const std::string& detail)> report,
+                  std::function<void()> onDenied = {});
 
 }

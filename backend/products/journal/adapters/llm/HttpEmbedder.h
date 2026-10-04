@@ -15,6 +15,16 @@ namespace wm {
 // echo sweep is a no-op, not an error.
 class HttpEmbedder : public Embedder {
 public:
+  ~HttpEmbedder() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   explicit HttpEmbedder(std::string baseUrl);
 
   bool configured() const override;
@@ -29,6 +39,7 @@ private:
   std::string prefix_;   // any path a reverse proxy mounted us under, "" in the usual case
   mutable std::mutex mutex_;
   mutable std::string version_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

@@ -1,3 +1,5 @@
+#include "platform/application/WriteObservation.h"
+
 #include "products/roadmap/adapters/llm/AnthropicAgent.h"
 
 #include "platform/adapters/http/VendorCall.h"
@@ -12,6 +14,7 @@
 #include <array>
 #include <future>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <string_view>
 #include <utility>
@@ -339,36 +342,38 @@ AnthropicAgent::AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReport
   loop_.run();
 }
 
-AgentReporter AnthropicAgent::reporter() const {
-  return [failures = failures_](const std::string& where, const std::string& detail) {
-    LOG_ERROR << where << ": " << detail;
-    if (failures) failures->report("tend", where, detail);
-  };
-}
-
 bool AnthropicAgent::configured() const { return !apiKey_.empty(); }
 
 AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, const UserId& caller,
                                  ToolHost& tools,
                                  const std::function<void(const AgentStep&)>& onStep) {
-  const AgentReporter report = reporter();
+  WriteObservation observation{"roadmap.tend.model", "roadmap", "background", "", failures_.get()};
+  WriteContext context{observation};
+  std::string refusal;
+  const AgentReporter report = [&](const std::string& where, const std::string& detail) {
+    if (where == "ai.fuse") return;
+    if (detail == "the model stopped early (stop_reason: refusal)") refusal = "refused";
+    if (!refusal.empty()) return;
+    observation.reportFailure(std::runtime_error("tending model failed"));
+  };
   if (apiKey_.empty()) {
     AgentOutcome out;
     out.error = "agent not configured (no API key)";
-    report("agent.run", out.error);
+    out.outcomeCode = "not_configured";
+    observation.finish(out.outcomeCode);
     return out;
   }
 
   // One blocking HTTPS round-trip on the private loop thread; run() blocks on the future.
   const std::string apiKey = apiKey_;
   trantor::EventLoop* loop = loop_.getLoop();
-  const MessagesCall call = [apiKey, loop](const Json::Value& request) -> std::optional<Json::Value> {
+  const MessagesCall call = [apiKey, loop, &refusal](const Json::Value& request) -> std::optional<Json::Value> {
     auto promise = std::make_shared<std::promise<std::optional<Json::Value>>>();
     std::future<std::optional<Json::Value>> future = promise->get_future();
     // Trantor forbids driving a loop from any thread but its own, and creating the client or
     // sending the request from this worker thread FATALs the process: marshal EVERY client + loop
     // touch onto the loop thread.
-    loop->queueInLoop([apiKey, loop, request, promise]() {
+    loop->queueInLoop([apiKey, loop, request, promise, &refusal]() {
       auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop);
       auto req = drogon::HttpRequest::newHttpRequest();
       req->setMethod(drogon::Post);
@@ -381,9 +386,11 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
       VendorCall call("anthropic", "tend");
       client->sendRequest(
           req,
-          [client, call, promise](drogon::ReqResult result,
+          [client, call, promise, &refusal](drogon::ReqResult result,
                                   const drogon::HttpResponsePtr& resp) mutable {
             if (!call.succeeded(result, resp)) {
+              if (resp && (resp->getStatusCode() == drogon::k429TooManyRequests || static_cast<int>(resp->getStatusCode()) == 529))
+                refusal = "rate_limited";
               promise->set_value(std::nullopt);
               return;
             }
@@ -409,8 +416,20 @@ AgentOutcome AnthropicAgent::run(const std::string& prompt, const TreeId& tree, 
   frame.model = kModel;
   frame.runId = newRunId("tend");
 
-  return driveAgent(prompt, tree, caller, tools,
-                    metered(call, frame, fuse_, usage_, report), onStep, report);
+  try {
+    auto outcome = driveAgent(prompt, tree, caller, tools,
+                             metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; }),
+                             onStep, report);
+    outcome.outcomeCode = refusal;
+    observation.finish(outcome.ok ? "ok" : refusal.empty() ? "failed" : refusal);
+    return outcome;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
+  }
 }
 
 }

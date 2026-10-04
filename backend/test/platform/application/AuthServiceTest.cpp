@@ -1,9 +1,12 @@
 #include "platform/application/AuthService.h"
 #include "platform/application/LiveSessions.h"
+#include "platform/application/WriteObservation.h"
 #include "test/platform/Fakes.h"
 #include "test/testing.h"
 
 #include <stdexcept>
+#include <memory>
+#include <typeinfo>
 #include <string>
 #include <vector>
 
@@ -141,6 +144,69 @@ TEST(revalidate_accepts_a_live_session_and_refuses_a_signed_out_one) {
 
   h.service.signOut(session);
   CHECK_FALSE(h.service.revalidate(digest).has_value());
+}
+
+TEST(authenticated_refresh_logs_only_a_committed_update_or_failure) {
+  struct RefreshRepo : FakeAuthRepository {
+    enum class Result { none, updated, failed } result = Result::none;
+    bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+                        const std::string& userAgent, const std::string& ip) override {
+      if (result == Result::failed) throw std::runtime_error("PRIVATE_AUTH_TOKEN user@example.com");
+      if (result == Result::none) return false;
+      return FakeAuthRepository::refreshSession(digest, expiresAt, seenAt, userAgent, ip);
+    }
+  } repo;
+  struct Reporter : FailureReporter {
+    std::vector<std::string> requestIds;
+    std::vector<std::string> types;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product,
+                     const std::string& door, const std::string& outcome,
+                     const std::string& requestId, const std::string& type) override {
+      CHECK_EQ(operation, std::string("auth.session.refresh"));
+      CHECK_EQ(product, std::string("platform"));
+      CHECK_EQ(door, std::string("server-origin"));
+      CHECK_EQ(outcome, std::string("failed"));
+      requestIds.push_back(requestId);
+      types.push_back(type);
+    }
+  };
+  FakeOAuthRepository oauthRepo;
+  FakeEmail email;
+  FakeTokens tokens;
+  FakeClock clock;
+  OAuthService oauth{oauthRepo, tokens, clock};
+  FakeAccountFootprint footprint;
+  FakeSessionRevocations revocations;
+  AuthService service{repo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works"};
+  const User user = repo.createUser(*parseEmail("private@example.com"), "PRIVATE_ACCOUNT_NAME");
+  repo.insertSession("d1", user.id, sessionExpiry(clock.now), "", "", clock.now);
+
+  auto reporter = std::make_shared<Reporter>();
+  std::vector<WriteCompletion> completions;
+  installWriteReporter(reporter);
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  CHECK(service.authenticate("s1").has_value());
+  CHECK(completions.empty());
+  repo.result = RefreshRepo::Result::updated;
+  CHECK(service.authenticate("s1").has_value());
+  repo.result = RefreshRepo::Result::failed;
+  bool threw = false;
+  try { service.authenticate("s1"); }
+  catch (const std::runtime_error&) { threw = true; }
+  installWriteSink({});
+  installWriteReporter({});
+
+  CHECK(threw);
+  REQUIRE_EQ(completions.size(), 2u);
+  CHECK_EQ(completions[0].operation, std::string("auth.session.refresh"));
+  CHECK_EQ(completions[0].outcome, std::string("ok"));
+  CHECK(completions[0].severity == WriteSeverity::debug);
+  CHECK_EQ(completions[1].outcome, std::string("failed"));
+  CHECK(completions[1].severity == WriteSeverity::error);
+  REQUIRE_EQ(reporter->requestIds.size(), 1u);
+  CHECK_EQ(reporter->requestIds[0], completions[1].requestId);
+  CHECK_EQ(reporter->types[0], std::string(typeid(std::runtime_error).name()));
 }
 
 TEST(revalidate_refuses_a_closed_account) {

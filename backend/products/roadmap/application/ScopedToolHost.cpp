@@ -1,4 +1,7 @@
 #include "products/roadmap/application/ScopedToolHost.h"
+#include "platform/application/WriteObservation.h"
+
+#include <memory>
 
 #include <optional>
 #include <set>
@@ -29,36 +32,55 @@ std::vector<ToolDeclaration> ScopedToolHost::declareTools() const {
 
 ToolResult ScopedToolHost::callTool(const std::string& name, const Json::Value& arguments,
                                     const ToolCaller& caller) {
-  if (crossTreeTools().find(name) != crossTreeTools().end())
-    return ToolResult::failure("tending edits a single tree — " + name + " is out of its reach");
-  const auto declared = byName_.find(name);
-  if (declared == byName_.end()) return ToolResult::failure(name + ": " + noSuchToolSentence());
-  // The agent's own arguments are checked, before the forced treeId joins them.
-  if (std::optional<std::string> unknown = undeclaredArgument(declared->second, arguments))
-    return ToolResult::failure(name + ": " + *unknown);
-  // Force the target: whatever treeId the agent supplied (or was steered to supply) is overwritten,
-  // so the edit can only ever land on the tree being tended.
-  Json::Value scopedArgs = arguments;
-  scopedArgs["treeId"] = scope_.str();
-  ToolResult result = inner_.callTool(name, scopedArgs, caller);
-
-  // Record what this call planted, from the tool's own result. create_node echoes the one id it
-  // minted; import_subgraph plants every incoming node that wasn't already there. Only those two
-  // CREATE, so a modify tool's echoed id is never captured.
-  if (!result.isError) {
-    if (name == "create_node") {
-      const std::string id = result.payload.get("id", "").asString();
-      if (!id.empty()) created_.push_back(id);
-    } else if (name == "import_subgraph" && !result.payload.get("dryRun", Json::Value(false)).asBool()) {
-      std::set<std::string> collided;
-      for (const Json::Value& c : result.payload["nodeCollisions"]) collided.insert(c.asString());
-      for (const Json::Value& node : scopedArgs["nodes"]) {
-        const std::string id = node.get("id", "").asString();
-        if (!id.empty() && !collided.count(id)) created_.push_back(id);
-      }
-    }
+  const auto declaration = byName_.find(name);
+  std::unique_ptr<WriteObservation> observation;
+  std::unique_ptr<WriteContext> context;
+  if (declaration != byName_.end() && declaration->second.access != Access::read) {
+    observation = std::make_unique<WriteObservation>("roadmap." + declaration->first, "roadmap", "Coach");
+    context = std::make_unique<WriteContext>(*observation);
   }
-  return result;
+  try {
+    const ToolResult result = [&]() {
+      if (crossTreeTools().find(name) != crossTreeTools().end())
+        return ToolResult::failure("tending edits a single tree — " + name + " is out of its reach");
+      const auto declared = byName_.find(name);
+      if (declared == byName_.end()) return ToolResult::failure(name + ": " + noSuchToolSentence());
+      // The agent's own arguments are checked, before the forced treeId joins them.
+      if (std::optional<std::string> unknown = undeclaredArgument(declared->second, arguments))
+        return ToolResult::failure(name + ": " + *unknown);
+      // Force the target: whatever treeId the agent supplied (or was steered to supply) is overwritten,
+      // so the edit can only ever land on the tree being tended.
+      Json::Value scopedArgs = arguments;
+      scopedArgs["treeId"] = scope_.str();
+      ToolResult result = inner_.callTool(name, scopedArgs, caller);
+
+      // Record what this call planted, from the tool's own result. create_node echoes the one id it
+      // minted; import_subgraph plants every incoming node that wasn't already there. Only those two
+      // CREATE, so a modify tool's echoed id is never captured.
+      if (!result.isError) {
+        if (name == "create_node") {
+          const std::string id = result.payload.get("id", "").asString();
+          if (!id.empty()) created_.push_back(id);
+        } else if (name == "import_subgraph" && !result.payload.get("dryRun", Json::Value(false)).asBool()) {
+          std::set<std::string> collided;
+          for (const Json::Value& c : result.payload["nodeCollisions"]) collided.insert(c.asString());
+          for (const Json::Value& node : scopedArgs["nodes"]) {
+            const std::string id = node.get("id", "").asString();
+            if (!id.empty() && !collided.count(id)) created_.push_back(id);
+          }
+        }
+      }
+      return result;
+    }();
+    if (observation) observation->finish(toolWriteOutcome(result));
+    return result;
+  } catch (const std::exception& error) {
+    if (observation) observation->fail(error);
+    throw;
+  } catch (...) {
+    if (observation) observation->failUnknown();
+    throw;
+  }
 }
 
 }

@@ -1,4 +1,5 @@
 #include "platform/adapters/sentry/SentryClient.h"
+#include "platform/application/WriteObservation.h"
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
@@ -8,7 +9,10 @@
 #include <trantor/utils/Logger.h>
 
 #include <chrono>
+#include <future>
 #include <random>
+#include <stdexcept>
+#include <typeinfo>
 #include <utility>
 
 namespace wm {
@@ -75,7 +79,46 @@ SentryClient::SentryClient(const std::string& dsn, std::string environment, std:
   // One client for the life of the process, not one per envelope.
   client_ = drogon::HttpClient::newHttpClient("https://" + host_, loop_.getLoop());
   // The timer is what makes a quiet server still report: a batch that never fills would sit in memory.
-  loop_.getLoop()->runEvery(kLogFlushSeconds, [this] { flushLogs(); });
+  logTimer_ = loop_.getLoop()->runEvery(kLogFlushSeconds, [this] { flushLogs(); });
+}
+
+SentryClient::~SentryClient() {
+  stopping_ = true;
+  if (enabled_) {
+    std::promise<void> cancelled;
+    auto ready = cancelled.get_future();
+    loop_.getLoop()->queueInLoop([this, &cancelled] {
+      loop_.getLoop()->invalidateTimer(logTimer_);
+      cancelled.set_value();
+    });
+    ready.wait();
+  }
+  {
+    std::unique_lock lock(pendingMutex_);
+    pendingChanged_.wait_for(lock, std::chrono::seconds(11), [this] { return pending_ == 0; });
+  }
+  std::promise<void> released;
+  auto ready = released.get_future();
+  loop_.getLoop()->queueInLoop([this, &released] {
+    std::shared_ptr<drogon::HttpClient> client;
+    {
+      std::lock_guard lock(pendingMutex_);
+      client.swap(client_);
+    }
+    client.reset();
+    released.set_value();
+  });
+  ready.wait();
+}
+
+void SentryClient::drain() {
+  if (!enabled_ || onReportingThread()) return;
+  std::promise<void> flushed;
+  auto ready = flushed.get_future();
+  loop_.getLoop()->queueInLoop([this, &flushed] { flushLogs(); flushed.set_value(); });
+  ready.wait();
+  std::unique_lock lock(pendingMutex_);
+  pendingChanged_.wait_for(lock, std::chrono::seconds(11), [this] { return pending_ == 0; });
 }
 
 bool SentryClient::allow() {
@@ -106,20 +149,54 @@ Json::Value SentryClient::newEvent(const std::string& id, const std::string& kin
 }
 
 void SentryClient::report(const std::string& kind, const std::string& where,
-                          const std::string& detail) {
-  if (!enabled_ || !allow()) return;
+                          const std::string&) {
+  if (where == "ai.fuse") return;
+  const std::string requestId = currentWriteRequestId();
+  if (!requestId.empty()) {
+    if (claimWriteIssue()) reportWrite(where, kind, "handled", "failed", requestId, typeid(std::runtime_error).name());
+    return;
+  }
+  if (stopping_ || !enabled_ || !allow()) return;
   const std::string id = hex32();
   Json::Value event = newEvent(id, kind);
   event["transaction"] = where;
-  // Grouped by the operation that failed, with the reason as the readable body. `detail` is
-  // metadata by contract (ports/FailureReporter) — never anything the user wrote.
-  event["message"]["formatted"] = where + ": " + detail;
+  event["message"]["formatted"] = where + ": unexpected operation failure";
+  ship(id, event);
+}
+
+Json::Value SentryClient::writeEvent(const std::string& operation, const std::string& product,
+                                    const std::string& door, const std::string& outcome,
+                                    const std::string& requestId, const std::string& exceptionType) {
+  Json::Value event(Json::objectValue);
+  event["transaction"] = operation;
+  event["tags"]["operation"] = operation;
+  event["tags"]["product"] = product;
+  event["tags"]["door"] = door;
+  event["tags"]["outcome"] = outcome;
+  event["tags"]["request_id"] = requestId;
+  event["fingerprint"].append(operation);
+  event["fingerprint"].append(exceptionType);
+  Json::Value exception(Json::objectValue);
+  exception["type"] = exceptionType;
+  exception["value"] = "unexpected operation failure";
+  event["exception"]["values"].append(exception);
+  return event;
+}
+
+void SentryClient::reportWrite(const std::string& operation, const std::string& product,
+                               const std::string& door, const std::string& outcome,
+                               const std::string& requestId, const std::string& exceptionType) {
+  if (stopping_ || !enabled_ || !allow()) return;
+  const std::string id = hex32();
+  Json::Value event = newEvent(id, product);
+  const Json::Value write = writeEvent(operation, product, door, outcome, requestId, exceptionType);
+  for (const std::string& key : write.getMemberNames()) event[key] = write[key];
   ship(id, event);
 }
 
 void SentryClient::captureException(const std::string& kind, const std::string& method,
-                                    const std::string& path, const std::string& message) {
-  if (!enabled_ || !allow()) return;
+                                    const std::string& path, const std::string&) {
+  if (stopping_ || !enabled_ || !allow()) return;
 
   const std::string id = hex32();
   Json::Value event = newEvent(id, kind);
@@ -128,7 +205,7 @@ void SentryClient::captureException(const std::string& kind, const std::string& 
   event["request"]["url"] = path;
   Json::Value value(Json::objectValue);
   value["type"] = kind.empty() ? std::string("Exception") : kind;
-  value["value"] = message;
+  value["value"] = "unexpected request exception";
   event["exception"]["values"].append(value);
   ship(id, event);
 }
@@ -146,7 +223,13 @@ void SentryClient::ship(const std::string& id, const Json::Value& event) {
 
 // One envelope, one POST. Events and logs differ only in the items above this line.
 void SentryClient::post(std::string body) {
-  if (!client_) return;
+  std::shared_ptr<drogon::HttpClient> client;
+  {
+    std::lock_guard lock(pendingMutex_);
+    if (!client_ || stopping_) return;
+    client = client_;
+    ++pending_;
+  }
   auto req = drogon::HttpRequest::newHttpRequest();
   req->setMethod(drogon::Post);
   req->setPath("/api/" + projectId_ + "/envelope/");
@@ -157,12 +240,17 @@ void SentryClient::post(std::string body) {
 
   // Async on the private loop: the calling handler thread is freed the instant this returns, and a
   // failed report only logs — it can never re-enter the exception path it was reporting.
-  client_->sendRequest(
+  client->sendRequest(
       req,
-      [](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
+      [this](drogon::ReqResult result, const drogon::HttpResponsePtr& resp) {
         const int status = resp ? static_cast<int>(resp->getStatusCode()) : 0;
         if (result != drogon::ReqResult::Ok || status < 200 || status >= 300)
           LOG_ERROR << "Sentry capture failed (status " << status << ")";
+        {
+          std::lock_guard lock(pendingMutex_);
+          --pending_;
+        }
+        pendingChanged_.notify_all();
       },
       10.0);
 }
@@ -172,7 +260,7 @@ bool SentryClient::onReportingThread() const {
 }
 
 void SentryClient::log(Level level, std::string body, std::string source) {
-  if (!enabled_ || body.empty()) return;
+  if (stopping_ || !enabled_ || body.empty()) return;
 
   Json::Value item(Json::objectValue);
   item["timestamp"] =

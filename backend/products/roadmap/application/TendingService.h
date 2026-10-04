@@ -12,7 +12,10 @@
 #include <trantor/net/EventLoopThreadPool.h>
 
 #include <cstdint>
+#include "platform/application/WriteObservation.h"
+
 #include <optional>
+#include <mutex>
 #include <string>
 
 namespace wm {
@@ -24,6 +27,8 @@ class TendingService {
 public:
   TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHost& tools, Clock& clock,
                  TokenGenerator& tokens, Entitlements& entitlements, bool enabled);
+  ~TendingService();
+  void stop();
 
   // Validate → persist → hand off → return. A refusal is persisted as a `refused` run and returned
   // without ever starting work; otherwise a `running` run is persisted and its id returned
@@ -42,7 +47,7 @@ private:
   TendRun refuse(const TreeId& tree, const UserId& caller, const std::string& prompt,
                  TendRefusal reason);
   TendingAllowance allowanceAt(const UserId& caller, const std::string& email, std::uint64_t nowMs);
-  void execute(TendRun run);
+  void execute(TendRun run, const std::shared_ptr<WriteObservation>& observation);
   std::uint64_t seqOf(const TreeId& tree, const UserId& caller);
 
   TendRunRepository& runs_;
@@ -52,6 +57,7 @@ private:
   TokenGenerator& tokens_;
   Entitlements& entitlements_;
   bool enabled_;
+  std::once_flag stopped_;
   trantor::EventLoopThreadPool workers_;
 };
 

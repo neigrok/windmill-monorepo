@@ -28,16 +28,29 @@ public:
     heartbeat_.start(kFirstTickSeconds, kPeriodSeconds, [this] { run(); });
   }
 
+  void stop() { heartbeat_.stop(); }
+
   RetentionReport run() {
-    RetentionReport report;
-    const bool ran = mutex_.underSweepLock([&] { report = store_.purge(windows_, clock_.nowMs()); });
-    if (!ran) return RetentionReport{};
-    if (report.rows() == 0) return report;
-    LOG_INFO << "retention: removed " << report.events << " events, " << report.feedback
-             << " feedback, " << report.serverErrors << " server errors, " << report.oauthCodes
-             << " oauth codes, " << report.oauthTokens << " oauth tokens, " << report.oauthClients
-             << " unattached oauth clients";
-    return report;
+    WriteObservation observation{"platform.retention", "platform", "background"};
+    WriteContext context{observation};
+    try {
+      RetentionReport report;
+      const bool ran = mutex_.underSweepLock([&] { report = store_.purge(windows_, clock_.nowMs()); });
+      if (!ran || report.rows() == 0) { observation.skip(); return report; }
+      observation.wrote();
+      LOG_INFO << "retention: removed " << report.events << " events, " << report.feedback
+               << " feedback, " << report.serverErrors << " server errors, " << report.oauthCodes
+               << " oauth codes, " << report.oauthTokens << " oauth tokens, " << report.oauthClients
+               << " unattached oauth clients";
+      observation.finish();
+      return report;
+    } catch (const std::exception& error) {
+      observation.fail(error);
+      throw;
+    } catch (...) {
+      observation.failUnknown();
+      throw;
+    }
   }
 
 private:

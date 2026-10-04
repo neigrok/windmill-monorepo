@@ -21,6 +21,7 @@ struct ToolResult {
   Json::Value payload{Json::nullValue};
   Json::Value structured{Json::nullValue};
   bool isError = false;
+  std::string outcomeCode;
 
   static ToolResult text(const std::string& body) {
     ToolResult out;
@@ -38,12 +39,18 @@ struct ToolResult {
     return out;
   }
 
-  static ToolResult failure(const std::string& message) {
+  static ToolResult failure(const std::string& message, std::string outcomeCode = "refused") {
     ToolResult out = text(message);
     out.isError = true;
+    out.outcomeCode = std::move(outcomeCode);
     return out;
   }
 };
+
+inline std::string toolWriteOutcome(const ToolResult& result) {
+  if (!result.outcomeCode.empty()) return result.outcomeCode;
+  return result.isError ? "refused" : "ok";
+}
 
 // What a product authors for one tool, and the facts the wire annotations and the grant gate are
 // both derived from. `wire()` is the `tools/list` entry an agent reads: the descriptor plus the MCP

@@ -26,13 +26,13 @@ public:
 
   // The first tick is jittered a minute or so past boot so a crash loop cannot hammer the database.
   void start();
+  void stop() { heartbeat_.stop(); }
 
   // Queued onto the sweep's own loop, so no drogon IO thread parks on a batch and an operator's
   // sweep serialises behind the heartbeat's rather than racing it.
   void runAsync(std::uint64_t nowMs, bool dryRun, std::function<void(MailSweepReport)> done);
 
 private:
-  std::string name() const override { return "reminders"; }
   int batch() const override { return kSweepBatch; }
   std::vector<DueUser> dueNow(std::uint64_t nowMs, int limit) override;
   // A week nobody can read must be claimed anyway, or its owner keeps the oldest pointer in the

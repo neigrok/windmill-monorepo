@@ -35,7 +35,7 @@ bool HttpEmbedder::rememberVersion(const std::string& reported) const {
     return true;
   }
 
-  LOG_ERROR << "journal embedder changed model mid-sweep: " << version_ << " -> " << reported;
+  LOG_ERROR << "journal embedder changed model mid-sweep";
   version_ = reported;
   return false;
 }

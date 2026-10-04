@@ -64,3 +64,14 @@ TEST(pg_auth_deleting_an_account_answers_every_session_its_row_took_with_it) {
   CHECK(repo.findSession("pgtest-eve-1").has_value());
   CHECK(repo.deleteUser(UserId{kFold}).empty());
 }
+
+TEST(pg_auth_refresh_answers_whether_the_session_row_was_updated) {
+  if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
+  reset();
+  PgAuthRepository repo{pgTestPool()};
+  repo.insertSession("pgtest-refresh", UserId{kSam}, 9'000'000'000'000, "", "", 1);
+  CHECK(repo.refreshSession("pgtest-refresh", 9'000'000'000'001, 2, "", ""));
+  CHECK_FALSE(repo.refreshSession("pgtest-no-session", 9'000'000'000'001, 2, "", ""));
+  REQUIRE(repo.findSession("pgtest-refresh").has_value());
+  CHECK_EQ(repo.findSession("pgtest-refresh")->expiresAt, 9'000'000'000'001ULL);
+}

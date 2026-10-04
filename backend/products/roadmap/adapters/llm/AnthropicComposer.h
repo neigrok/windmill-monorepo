@@ -1,6 +1,9 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/adapters/llm/AnthropicClient.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/roadmap/ports/PlanComposer.h"
 
@@ -61,6 +64,16 @@ private:
 // connection.
 class AnthropicComposer : public PlanComposer {
 public:
+  ~AnthropicComposer() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   // The reporter, the fuse and the sink are optional (null = do nothing).
   explicit AnthropicComposer(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                              std::shared_ptr<AiFuse> fuse = nullptr,
@@ -74,12 +87,14 @@ public:
                                       std::function<void(bool)> onDone) override;
 
 private:
-  AnthropicStreamParser::Reporter reporter() const;
+  AnthropicStreamParser::Reporter reporter(const std::shared_ptr<WriteObservation>& observation,
+                                           const std::shared_ptr<std::string>& refusal) const;
 
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

@@ -96,6 +96,46 @@ TEST(an_unwired_embedder_makes_the_whole_pass_a_no_op) {
   CHECK_EQ(echoes.outcomes.size(), std::size_t{0});
 }
 
+TEST(echo_background_noops_are_silent_and_committed_curation_is_observed) {
+  struct CommittedEchoes : FakeEchoRepository {
+    void recordCuration(const UserId& user, const LocalDate& day,
+                        const CurationOutcome& outcome) override {
+      FakeEchoRepository::recordCuration(user, day, outcome);
+      markCurrentWrite();
+    }
+  } echoes;
+  FakeSegmenter segmenter;
+  FakeEmbedder embedder;
+  FakeCurator curator;
+  FakeClock clock;
+  SweepLedger ledger;
+  EchoSweep sweep = sweepOver(echoes, segmenter, embedder, curator, clock, ledger);
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  sweep.run(kNow - kDay);
+  armReachingBack(echoes, embedder);
+  embedder.isConfigured = false;
+  sweep.derivePage(uid("u1"), ld(kNewDay));
+  embedder.isConfigured = true;
+  ledger.spend(1'000'000'000'000LL);
+  sweep.derivePage(uid("u1"), ld(kNewDay));
+  ledger.spend(0);
+  const bool noopsSilent = completions.empty();
+  sweep.derivePage(uid("u1"), ld(kNewDay));
+  const auto wrote = completions.size();
+  sweep.derivePage(uid("u1"), ld(kNewDay));
+  installWriteSink({});
+
+  CHECK(noopsSilent);
+  CHECK_EQ(wrote, 2u);
+  REQUIRE_EQ(completions.size(), 2u);
+  CHECK_EQ(completions[0].operation, std::string("journal.echo.derive"));
+  CHECK_EQ(completions[1].operation, std::string("journal.echo.derive_page"));
+  CHECK_EQ(completions[0].requestId, completions[1].requestId);
+  CHECK_EQ(completions[0].outcome, std::string("ok"));
+  CHECK_EQ(completions[1].outcome, std::string("ok"));
+}
+
 TEST(an_unwired_curator_makes_the_whole_pass_a_no_op) {
   FakeEchoRepository echoes;
   FakeEmbedder embedder;

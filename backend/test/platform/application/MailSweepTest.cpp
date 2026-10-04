@@ -75,7 +75,6 @@ public:
   std::map<std::string, std::string> pauseDigests;
 
 private:
-  std::string name() const override { return "tiny"; }
   int batch() const override { return 7; }
   std::vector<Slot> dueNow(std::uint64_t, int limit) override {
     askedLimit = limit;
@@ -411,4 +410,50 @@ TEST(retention_sweep_deletes_nothing_when_another_process_holds_the_lock) {
   CHECK_FALSE(report.ran);
   CHECK_EQ(report.rows(), 0);
   CHECK_EQ(store.passes, 0);
+}
+
+TEST(mail_sweep_no_due_slots_dry_run_and_claim_races_do_not_emit_write_logs) {
+  FakeMutex mutex;
+  FakeTokens tokens;
+  TinySweep sweep{mutex, tokens, MailArming{}};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  sweep.run(kNow, false);
+  sweep.due = {{UserId{"u1"}, "slot1"}};
+  sweep.run(kNow, true);
+  sweep.ownedElsewhere.insert("u1");
+  sweep.run(kNow, false);
+  mutex.lockFree = false;
+  sweep.run(kNow, false);
+  installWriteSink({});
+  CHECK(completions.empty());
+}
+
+TEST(retention_sweep_no_deletions_is_silent_and_committed_deletions_reach_parent_job) {
+  FakeRetentionStore store;
+  FakeMutex mutex;
+  FakeClock clock;
+  RetentionSweep sweep{store, mutex, clock, RetentionWindows{}};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  sweep.run();
+  const bool idleSilent = completions.empty();
+  std::uint64_t writes = 0;
+  {
+    WriteObservation job{"background.retention", "platform", "background"};
+    WriteContext context{job};
+    store.answer = RetentionReport{true, 2};
+    sweep.run();
+    writes = job.writeCount();
+    job.finish();
+  }
+  installWriteSink({});
+  CHECK(idleSilent);
+  CHECK_EQ(writes, 1u);
+  REQUIRE_EQ(completions.size(), 2u);
+  CHECK_EQ(completions[0].operation, std::string("platform.retention"));
+  CHECK_EQ(completions[1].operation, std::string("background.retention"));
+  CHECK_EQ(completions[0].requestId, completions[1].requestId);
+  CHECK(completions[0].severity == WriteSeverity::debug);
+  CHECK(completions[1].severity == WriteSeverity::info);
 }

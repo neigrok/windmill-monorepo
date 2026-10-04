@@ -58,6 +58,7 @@ public:
             Clock& clock, Entitlements& entitlements, SelectionRules rules, SweepBudget budget);
 
   void start();
+  void stop() { heartbeat_.stop(); }
 
   // `sinceMs` decides which users to scan and nothing else; the rest is decided by corpus stamps.
   // `rejudgeAll` takes every page of every scanned writer rather than the ones the stamps say are
@@ -76,6 +77,8 @@ private:
   CurationOutcome derive(const UserId& user, const DuePage& page, std::uint64_t corpusStamp,
                          EchoSweepReport& report);
 
+  CurationOutcome settlePage(const UserId& user, const DuePage& page,
+                            std::uint64_t corpusStamp, EchoSweepReport& report);
   PipelineVersions versions() const;
 
   EchoRepository& echoes_;

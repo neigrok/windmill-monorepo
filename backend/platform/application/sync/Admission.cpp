@@ -1,6 +1,7 @@
 #include "platform/application/sync/Admission.h"
 
 #include "platform/application/WorkerPool.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/domain/sync/Admit.h"
 #include "platform/domain/sync/Shape.h"
@@ -11,7 +12,7 @@
 #include <map>
 #include <memory>
 #include <set>
-#include <typeinfo>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
@@ -63,9 +64,44 @@ public:
         origin_(origin),
         wire_(wire),
         now_(now),
-        caller_{std::visit([](const auto& o) { return o.account; }, origin), std::holds_alternative<ServerOrigin>(origin)}, builder_(builder) {}
+        caller_{std::visit([](const auto& o) { return o.account; }, origin), std::holds_alternative<ServerOrigin>(origin)}, builder_(builder),
+        observation_("sync.admit", a_.catalog_.observationProduct(wire, caller_.account), caller_.server ? "server-origin" : "sync", "", &a_.failures_),
+        context_(observation_) {
+    if (!builder_) observeCommand(wire);
+  }
 
   AdmitOutcome run() {
+    try {
+      requireBlockingThread();
+      AdmitOutcome outcome = runAttempt();
+      finishPending();
+      complete(outcome);
+      return outcome;
+    } catch (const ServerBuildAborted& aborted) {
+      finishPending();
+      if (commandObservation_) commandObservation_->finish(aborted.outcome);
+      observation_.finish(aborted.outcome);
+      std::rethrow_exception(aborted.error);
+    } catch (const std::exception& error) {
+      finishPending();
+      if (commandObservation_) commandObservation_->fail(error);
+      observation_.fail(error);
+      throw;
+    } catch (...) {
+      finishPending();
+      if (commandObservation_) commandObservation_->failUnknown();
+      observation_.failUnknown();
+      throw;
+    }
+  }
+
+private:
+  void finishPending() {
+    if (digestObservation_) digestObservation_->finish(code::requestConflict);
+    if (publicationObservation_) publicationObservation_->finish();
+  }
+
+  AdmitOutcome runAttempt() {
     if (std::optional<AdmitOutcome> answered = answeredCall()) return *answered;
     try {
       shaped_.emplace(shapeIntent(registry_, wire_, Sender{caller_.account, caller_.server}, now_, a_.limits_.maxSkewMs));
@@ -80,9 +116,9 @@ public:
         stripe = a_.takeStripe(shaped_->scope);
         clock_ = a_.clock_.copy();
         return admitUnderLock();
-      } catch (const ServerBuildAborted& aborted) {
+      } catch (const ServerBuildAborted&) {
         txn_.reset();
-        std::rethrow_exception(aborted.error);
+        throw;
       } catch (const Refusal& refusal) {
         txn_.reset();
         return answerRefusal(refusal.refused);
@@ -95,6 +131,7 @@ public:
     return outcome;
   }
 
+public:
   const Locked& lock(const std::string& type, const RecordId& id) override {
     lockRecords(scope(), {{type, id}});
     return records_.at(RecordRef{scope(), type, id});
@@ -115,6 +152,35 @@ public:
   }
 
 private:
+  void observeCommand(const Json::Value& wire) {
+    if (!wire.isObject() || !wire["cmd"].isObject() || !wire["cmd"]["name"].isString()) return;
+    if (commandObservation_) return;
+    const std::string operation = a_.catalog_.commandOperation(wire["cmd"]["name"].asString());
+    commandObservation_ = std::make_unique<WriteObservation>(operation, a_.catalog_.observationProduct(wire, caller_.account), "command", "", &a_.failures_);
+  }
+
+  void observeDigestMismatch() {
+    if (digestObservation_) return;
+    digestObservation_ = std::make_unique<WriteObservation>("sync.call.digest", a_.catalog_.observationProduct(wire_, caller_.account), "server-origin");
+  }
+
+  void complete(const AdmitOutcome& outcome) {
+    const std::string result = std::visit([this](const auto& answer) -> std::string {
+      using Answer = std::decay_t<decltype(answer)>;
+      if constexpr (std::is_same_v<Answer, Admitted> || std::is_same_v<Answer, CallAnswered> || std::is_same_v<Answer, Replayed>) {
+        return a_.catalog_.observationOutcome(answer.result);
+      } else if constexpr (std::is_same_v<Answer, OutOfTurn>) {
+        if (answer.turn == Turn::foreign) return "replica-foreign";
+        if (answer.turn == Turn::gap) return "gap";
+        return "ok";
+      } else {
+        return "unavailable";
+      }
+    }, outcome);
+    if (commandObservation_) commandObservation_->finish(result);
+    observation_.finish(result);
+  }
+
   const ScopeKey& scope() const { return shaped_->scope; }
   const Intent& intent() const { return shaped_->intent; }
   SyncStore& store() { return a_.store_; }
@@ -160,6 +226,7 @@ private:
       }
       if (built) {
         builtWire_ = *built;
+        observeCommand(*builtWire_);
         Shaped shaped = shapeIntent(registry_, *builtWire_, Sender{caller_.account, true}, now_, a_.limits_.maxSkewMs);
         if (shaped.scope != scope()) throw Refusal(code::invalid);
         shaped_ = std::move(shaped);
@@ -281,7 +348,10 @@ private:
     }
     const std::optional<RequestRow> stored = store().request(*txn_, caller_.account, partId(part));
     if (!stored || !stored->result) return std::nullopt;
-    if (stored->digest != part.digest) return CallAnswered{refusedResult(Refused{code::requestConflict, {}})};
+    if (stored->digest != part.digest) {
+      observeDigestMismatch();
+      return CallAnswered{refusedResult(Refused{code::requestConflict, {}})};
+    }
     return Replayed{*stored->result};
   }
 
@@ -289,7 +359,10 @@ private:
   std::optional<Json::Value> callAnswer(const CallPart& part) {
     const std::optional<RequestRow> row = store().request(*txn_, caller_.account, part.requestId);
     if (!row) return std::nullopt;
-    if (row->digest != part.digest) return refusedResult(Refused{code::requestConflict, {}});
+    if (row->digest != part.digest) {
+      observeDigestMismatch();
+      return refusedResult(Refused{code::requestConflict, {}});
+    }
     if (!row->running && row->result) return *row->result;
     if (now_ < row->startedAt + a_.limits_.requestLeaseMs) return refusedResult(Refused{code::requestRunning, {}});
     return std::nullopt;
@@ -488,11 +561,17 @@ private:
     }
     CommittedChange change{store().epoch(*txn_), std::move(published_), std::move(killed_)};
     txn_->commit();
+    observation_.wrote();
     a_.clock_.fold(clock_.state());
+    publicationObservation_ = std::make_unique<WriteObservation>("sync.publish", a_.catalog_.observationProduct(scope().registryScope()), "background", "", &a_.failures_);
+    WriteContext publicationContext(*publicationObservation_);
     try {
       a_.feed_.publish(change);
     } catch (const std::exception& error) {
-      report(error);
+      publicationObservation_->reportFailure(error);
+    } catch (...) {
+      publicationObservation_->reportUnknownFailure();
+      throw;
     }
   }
 
@@ -556,10 +635,8 @@ private:
   }
 
   void report(const std::exception& error) {
-    try {
-      a_.failures_.report("sync.fault", "sync.admit", std::string("type=") + typeid(error).name());
-    } catch (const std::exception&) {
-    }
+    if (commandObservation_) commandObservation_->reportFailure(error);
+    observation_.reportFailure(error);
   }
 
   CommandCtx commandCtx() {
@@ -643,6 +720,11 @@ private:
   const Ms now_;
   const Caller caller_;
   const ServerBuilder* builder_;
+  WriteObservation observation_;
+  WriteContext context_;
+  std::unique_ptr<WriteObservation> commandObservation_;
+  std::unique_ptr<WriteObservation> publicationObservation_;
+  std::unique_ptr<WriteObservation> digestObservation_;
   HlcClock clock_{"srv"};
   std::optional<Shaped> shaped_;
   std::unique_ptr<SyncTxn> txn_;
@@ -662,12 +744,10 @@ Admission::Admission(const SyncCatalog& catalog, SyncStore& store, ChangeFeed& f
     : catalog_(catalog), store_(store), feed_(feed), clock_(clock), failures_(failures), limits_(limits) {}
 
 AdmitOutcome Admission::admit(const Origin& origin, const Json::Value& intent, Ms serverNow) {
-  requireBlockingThread();
   return Attempt(*this, origin, intent, serverNow).run();
 }
 
 AdmitOutcome Admission::admitBuilt(const ServerOrigin& origin, const Json::Value& scopeIntent, Ms serverNow, const ServerBuilder& builder) {
-  requireBlockingThread();
   const Origin server = origin;
   return Attempt(*this, server, scopeIntent, serverNow, &builder).run();
 }

@@ -45,7 +45,7 @@ class JournalDifferential(Differential):
         self.equal_hlc_cohorts = {}
         source = (BACKEND / "products/journal/routes.cpp").read_text()
         self.inventory = [(verb.upper(), route) for route, verb in re.findall(
-            r'app\.registerHandler\(\s*"([^"]+)"[\s\S]*?\{drogon::(Get|Post|Put|Patch|Delete)\}\);', source)]
+            r'(?:app|routes)\.registerHandler\(\s*"([^"]+)"[\s\S]*?\{drogon::(Get|Post|Put|Patch|Delete)\}\);', source)]
         self.declared = set(self.inventory)
         assert self.declared, "journal route inventory is empty"
 

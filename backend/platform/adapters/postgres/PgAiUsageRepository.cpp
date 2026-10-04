@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/postgres/PgAiUsageRepository.h"
 
 #include <pqxx/pqxx>
@@ -21,45 +22,42 @@ constexpr const char* kUnpriced = "count(*) filter (where cost_nanos is null)";
 PgAiUsageRepository::PgAiUsageRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
 
 void PgAiUsageRepository::record(const AiSpend& spend) noexcept {
-  // Guarded whole: this sink is called after the answer is already in hand, and the port's
-  // `noexcept` is only honest because of this catch.
   try {
-    const std::optional<long long> cost = costNanos(spend.model, spend.tokens);
-    // Two costs. `cost_nanos` is what we KNOW and is null when we do not. `cost_floor_nanos` is what
-    // the CEILINGS read and is never null: an unknown model is charged the dearest rate we know.
-    const long long floorCost = floorCostNanos(spend.model, spend.tokens);
+    observeWrite("ai.usage.record", "platform", "background", [&] {
+      const std::optional<long long> cost = costNanos(spend.model, spend.tokens);
+      // Two costs. `cost_nanos` is what we KNOW and is null when we do not. `cost_floor_nanos` is what
+      // the CEILINGS read and is never null: an unknown model is charged the dearest rate we know.
+      const long long floorCost = floorCostNanos(spend.model, spend.tokens);
 
-    pqxx::params params;
-    if (spend.user) params.append(spend.user->str());
-    else params.append();
-    params.append(spend.product);
-    params.append(spend.operation);
-    params.append(spend.runId);
-    params.append(spend.iteration);
-    params.append(spend.model);
-    params.append(spend.outcome);
-    params.append(spend.tokens.input);
-    params.append(spend.tokens.output);
-    params.append(spend.tokens.cacheRead);
-    params.append(spend.tokens.cacheWrite);
-    if (cost) params.append(*cost);
-    else params.append();
-    params.append(floorCost);
+      pqxx::params params;
+      if (spend.user) params.append(spend.user->str());
+      else params.append();
+      params.append(spend.product);
+      params.append(spend.operation);
+      params.append(spend.runId);
+      params.append(spend.iteration);
+      params.append(spend.model);
+      params.append(spend.outcome);
+      params.append(spend.tokens.input);
+      params.append(spend.tokens.output);
+      params.append(spend.tokens.cacheRead);
+      params.append(spend.tokens.cacheWrite);
+      if (cost) params.append(*cost);
+      else params.append();
+      params.append(floorCost);
 
-    PgLease conn{*pool_};
-    pqxx::work txn{*conn};
-    txn.exec("INSERT INTO ai_usage "
-             "(user_id, product, operation, run_id, iteration, model, outcome, "
-             "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nanos, "
-             "cost_floor_nanos) "
-             "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
-             params);
-    txn.commit();
-  } catch (const std::exception& e) {
-    LOG_ERROR << "ai_usage row dropped: " << e.what();
-  } catch (...) {
-    LOG_ERROR << "ai_usage row dropped";
-  }
+      PgLease conn{*pool_};
+      pqxx::work txn{*conn};
+      txn.exec("INSERT INTO ai_usage "
+               "(user_id, product, operation, run_id, iteration, model, outcome, "
+               "input_tokens, output_tokens, cache_read_tokens, cache_write_tokens, cost_nanos, "
+               "cost_floor_nanos) "
+               "VALUES ($1::uuid, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)",
+               params);
+      txn.commit();
+      markCurrentWrite();
+    });
+  } catch (...) {}
 }
 
 long long PgAiUsageRepository::spentSinceNanos(const UserId& user, const std::string& product,

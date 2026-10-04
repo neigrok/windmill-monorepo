@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #include "platform/application/AuthService.h"
 
 #include <trantor/utils/Logger.h>
@@ -211,7 +212,20 @@ std::optional<User> AuthService::revalidate(const std::string& digest, const Ses
   const std::optional<User> user = repo_.findUserById(session->user);
   if (!user || user->deletedAt) return std::nullopt;  // unknown or closed account cannot act
 
-  repo_.refreshSession(digest, sessionExpiry(now), now, ctx.userAgent, ctx.ip);  // rolling + self-heal
+  WriteObservation observation{"auth.session.refresh", "platform", "server-origin"};
+  WriteContext context{observation};
+  try {
+    if (repo_.refreshSession(digest, sessionExpiry(now), now, ctx.userAgent, ctx.ip)) {
+      observation.wrote();
+      observation.finish();
+    } else observation.skip();
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
+  }
   return user;
 }
 

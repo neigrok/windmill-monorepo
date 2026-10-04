@@ -1,6 +1,7 @@
 #include "products/roadmap/adapters/auth/ForkSignup.h"
 
 #include <trantor/utils/Logger.h>
+#include "platform/application/WriteObservation.h"
 
 namespace wm {
 
@@ -15,13 +16,17 @@ std::optional<ForkDescription> ForkSignup::describe(const std::string& source) {
 }
 
 std::optional<std::string> ForkSignup::plant(const std::string& source, const UserId& user) {
+  WriteObservation observation("roadmap.signup.fork", "roadmap", "server-origin");
+  WriteContext context(observation);
   try {
     ForkService::Result r = fork_.fork(TreeId{source}, "", "", user);
-    if (r.outcome == ForkService::Outcome::forked) return r.data.id.str();
-    LOG_WARN << "pending fork of " << source << " dropped: source missing or id taken";
+    if (r.outcome == ForkService::Outcome::forked) { observation.finish(); return r.data.id.str(); }
+    observation.finish("source-missing-or-id-taken");
+    LOG_WARN << "pending signup fork refused";
     return std::nullopt;
   } catch (const std::exception& e) {
-    LOG_ERROR << "pending fork of " << source << " failed: " << e.what();
+    observation.fail(e);
+    LOG_ERROR << "pending signup fork failed";
     return std::nullopt;
   }
 }

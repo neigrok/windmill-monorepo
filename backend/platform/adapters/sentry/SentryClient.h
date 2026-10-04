@@ -6,6 +6,8 @@
 #include <trantor/net/EventLoopThread.h>
 
 #include <cstdint>
+#include <atomic>
+#include <condition_variable>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -24,6 +26,7 @@ class SentryClient : public FailureReporter {
 public:
   explicit SentryClient(const std::string& dsn, std::string environment = "production",
                         std::string release = "");
+  ~SentryClient();
 
   void captureException(const std::string& kind, const std::string& method, const std::string& path,
                         const std::string& message);
@@ -31,6 +34,13 @@ public:
   // The handled half (ports/FailureReporter): a failure the user saw that never threw, so drogon's
   // exception handler never sees it. Same envelope, same cap, level error.
   void report(const std::string& kind, const std::string& where, const std::string& detail) override;
+  void reportWrite(const std::string& operation, const std::string& product,
+                   const std::string& door, const std::string& outcome,
+                   const std::string& requestId, const std::string& exceptionType) override;
+  static Json::Value writeEvent(const std::string& operation, const std::string& product,
+                                const std::string& door, const std::string& outcome,
+                                const std::string& requestId, const std::string& exceptionType);
+  void drain();
 
   // The server's own log lines, as Sentry structured logs (envelope item type `log`). Buffered
   // rather than one POST per line; flushed on a timer, or early once a batch fills.
@@ -67,6 +77,11 @@ private:
   std::mutex logMutex_;
   std::vector<Json::Value> logItems_;
   std::int64_t logDropped_ = 0;
+  std::mutex pendingMutex_;
+  std::condition_variable pendingChanged_;
+  int pending_ = 0;
+  std::atomic<bool> stopping_{false};
+  std::uint64_t logTimer_ = 0;
 
   trantor::EventLoopThread loop_;
 };

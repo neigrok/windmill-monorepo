@@ -496,3 +496,31 @@ TEST(metered_charges_the_fuse_what_each_turn_cost) {
   // Sonnet: 3000 nanos in, 15000 out, cache reads a tenth of input.
   CHECK_EQ(fuse->trailingNanos(nowMs()), 1000 * 3'000 + 100 * 15'000 + 2000 * 300);
 }
+
+TEST(metered_denial_signal_names_each_invocation_and_clears_on_recovery) {
+  const auto at = nowMs();
+  auto fuse = std::make_shared<AiFuse>(1000, 1000);
+  fuse->spent(2000, at + 1000);
+  int calls = 0;
+  int denials = 0;
+  int reports = 0;
+  const auto call = metered([&](const Json::Value&) -> std::optional<Json::Value> {
+    ++calls;
+    return std::nullopt;
+  }, tendFrame(), fuse, nullptr, [&](const std::string& where, const std::string&) {
+    CHECK_EQ(where, std::string("ai.fuse"));
+    ++reports;
+  }, [&] { ++denials; });
+
+  CHECK_FALSE(call(Json::Value{}).has_value());
+  CHECK_FALSE(call(Json::Value{}).has_value());
+  CHECK_EQ(calls, 0);
+  CHECK_EQ(denials, 2);
+  CHECK_EQ(reports, 1);
+  CHECK_EQ(fuse->trailingNanos(at + 2001), 0);
+  CHECK(fuse->tripped());
+  CHECK_FALSE(call(Json::Value{}).has_value());
+  CHECK_EQ(calls, 1);
+  CHECK_EQ(denials, 2);
+  CHECK_EQ(reports, 1);
+}

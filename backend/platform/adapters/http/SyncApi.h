@@ -49,7 +49,7 @@ public:
 private:
   // Posts `work` to the pool, which answers with `work`'s reply, or 503 when `work` throws. The pool refusing `work`
   // answers 503 as well.
-  void onWorker(Reply&& reply, std::function<SyncReply()> work);
+  void onWorker(const drogon::HttpRequestPtr& req, Reply&& reply, std::function<SyncReply()> work);
   // §9.1's first check, on the version the header Sync-Schema carries.
   std::optional<SyncReply> versionRefusal(const drogon::HttpRequestPtr& req) const;
   // The credentials the request's header lines send as received, each token resolved to its session's account; the

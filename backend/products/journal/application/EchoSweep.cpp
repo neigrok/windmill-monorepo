@@ -13,6 +13,7 @@
 #include <optional>
 #include <set>
 #include <string>
+#include <stdexcept>
 #include <utility>
 #include <vector>
 
@@ -45,17 +46,13 @@ EchoSweep::EchoSweep(EchoRepository& echoes, Segmenter& segmenter, Embedder& emb
                      SelectionRules rules, SweepBudget budget)
     : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), clock_(clock),
       entitlements_(entitlements), rules_(std::move(rules)), budget_(budget),
-      heartbeat_("journal-echo") {}
+      heartbeat_("journal-echo", "journal") {}
 
 void EchoSweep::start() {
   heartbeat_.start(kEchoFirstTickSeconds, kEchoTickSeconds, [this] {
     const std::uint64_t now = clock_.nowMs();
     const EchoSweepReport report = run(now - kEchoLookbackMs);
-    // Logged whenever anybody was SCANNED, not only when a page was derived. The old gate was the
-    // three outcome counters, so the passes worth reading were exactly the silent ones: every writer
-    // out of AI budget, or every trigger a refrain, printed nothing at all and looked identical to a
-    // quiet night. `usersOverAiBudget` was in the line and unreachable in the one case it names.
-    if (report.usersScanned > 0)
+    if (report.pagesDerived > 0 || report.pagesFailed > 0 || report.pagesRefused > 0)
       LOG_INFO << "journal echo: " << report.usersScanned << " users, " << report.pagesDerived
                << " pages, " << report.passagesEmbedded << " passages, " << report.echoesWritten
                << " echoes, " << report.triggersSkippedRefrain << " refrains, "
@@ -78,10 +75,10 @@ void EchoSweep::runAsync(std::uint64_t sinceMs, std::function<void(EchoSweepRepo
     try {
       done(run(sinceMs, rejudgeAll));
     } catch (const std::exception& error) {
-      LOG_ERROR << "journal echo sweep failed: " << error.what();
+      reportCurrentWriteFailure(error);
       done(EchoSweepReport{});
     } catch (...) {
-      LOG_ERROR << "journal echo sweep failed";
+      reportCurrentUnknownWriteFailure();
       done(EchoSweepReport{});
     }
   });
@@ -94,89 +91,141 @@ PipelineVersions EchoSweep::versions() const {
 }
 
 EchoSweepReport EchoSweep::derivePage(const UserId& user, const LocalDate& day) {
-  if (journal::journalWriteFrozen()) return EchoSweepReport{};
-  EchoSweepReport report;
-  // Any boundary missing is a no-op: no row is written and the page stays due.
-  if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
-  ++report.usersScanned;
+  WriteObservation observation{"journal.echo.derive_page", "journal", "background"};
+  WriteContext context{observation};
+  const auto writes = observation.writeCount();
+  try {
+    if (journal::journalWriteFrozen()) {
+      observation.skip();
+      return EchoSweepReport{};
+    }
+    EchoSweepReport report;
+    // Any boundary missing is a no-op: no row is written and the page stays due.
+    if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) {
+      observation.skip();
+      return report;
+    }
+    ++report.usersScanned;
 
-  if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
-    ++report.usersOverAiBudget;
+    if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
+      ++report.usersOverAiBudget;
+      observation.skip();
+      return report;
+    }
+
+    const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
+    const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
+    if (!page) { observation.skip(); return report; }
+
+    CurationOutcome outcome = settlePage(user, *page, corpusStamp, report);
+    countPage(report, outcome.status);
+    if (report.pagesFailed > 0) observation.finish("failed");
+    else if (observation.writeCount() == writes) observation.skip();
+    else observation.finish(report.pagesRefused > 0 ? "refused" : "ok");
     return report;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
   }
-
-  const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
-  const std::optional<DuePage> page = echoes_.duePage(user, day, corpusStamp, versions());
-  if (!page) return report;
-
-  CurationOutcome outcome = derive(user, *page, corpusStamp, report);
-  // A SETTLED page was handled end to end by this build, so it records the whole pipeline. An
-  // unsettled one keeps only the versions the steps it actually completed wrote, so the work
-  // already paid for is not bought again — and so a refused page, which is settled, is never
-  // reopened by a version it does not carry.
-  if (isSettled(outcome.status)) outcome.versions = versions();
-  echoes_.recordCuration(user, page->day, outcome);
-  countPage(report, outcome.status);
-  return report;
 }
 
 EchoSweepReport EchoSweep::run(std::uint64_t sinceMs, bool rejudgeAll) {
-  if (journal::journalWriteFrozen()) return EchoSweepReport{};
-  EchoSweepReport report;
-  // Any boundary missing makes the whole pass a no-op rather than an error.
-  if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) return report;
-
-  for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
-    ++report.usersScanned;
-    const UserId& user = due.user;
-
-    // The background bucket, asked once per user. Dry means skipped, not failed: no stamp advances
-    // and every page is still owed next pass.
-    if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
-      ++report.usersOverAiBudget;
-      continue;
+  WriteObservation observation{"journal.echo.sweep", "journal", "background"};
+  WriteContext context{observation};
+  const auto writes = observation.writeCount();
+  try {
+    EchoSweepReport report;
+    if (journal::journalWriteFrozen()) { observation.skip(); return report; }
+    // Any boundary missing makes the whole pass a no-op rather than an error.
+    if (!segmenter_.configured() || !embedder_.configured() || !curator_.configured()) {
+      observation.skip();
+      return report;
     }
 
-    // Read once and carried through the user's whole pass.
-    const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
+    for (const EchoUser& due : echoes_.activeSince(sinceMs)) {
+      ++report.usersScanned;
+      const UserId& user = due.user;
 
-    std::vector<DuePage> pages =
-        rejudgeAll ? echoes_.allPages(user) : echoes_.duePages(user, corpusStamp, versions());
-    if (static_cast<int>(pages.size()) > budget_.pagesPerUser) {
-      report.pagesOverBudget += static_cast<int>(pages.size()) - budget_.pagesPerUser;
-      pages.erase(pages.begin() + budget_.pagesPerUser, pages.end());
-    }
+      // The background bucket, asked once per user. Dry means skipped, not failed: no stamp advances
+      // and every page is still owed next pass.
+      if (!entitlements_.sweepAllowanceFor(user, "journal").allows()) {
+        ++report.usersOverAiBudget;
+        continue;
+      }
 
-    // A page derived this pass may have moved text other pages reach into, so the reverse edge is
-    // walked in the same pass, budgeted.
-    std::set<std::string> queued;
-    for (const DuePage& page : pages) queued.insert(page.day.iso());
+      // Read once and carried through the user's whole pass.
+      const std::uint64_t corpusStamp = echoes_.corpusStamp(user);
 
-    for (std::size_t i = 0; i < pages.size(); ++i) {
-      const DuePage page = pages[i];
-      CurationOutcome outcome = derive(user, page, corpusStamp, report);
-      if (isSettled(outcome.status)) outcome.versions = versions();   // see derivePage
-      echoes_.recordCuration(user, page.day, outcome);
-      countPage(report, outcome.status);
-      // Walked on settled, not on success: a refused page replaced its own spans before the
-      // curator was ever asked.
-      if (!isSettled(outcome.status)) continue;
+      std::vector<DuePage> pages =
+          rejudgeAll ? echoes_.allPages(user) : echoes_.duePages(user, corpusStamp, versions());
+      if (static_cast<int>(pages.size()) > budget_.pagesPerUser) {
+        report.pagesOverBudget += static_cast<int>(pages.size()) - budget_.pagesPerUser;
+        pages.erase(pages.begin() + budget_.pagesPerUser, pages.end());
+      }
 
-      int enqueued = 0;
-      for (const LocalDate& inbound : echoes_.inboundPages(user, page.day)) {
-        if (enqueued >= budget_.inboundPerPage) break;
-        if (!queued.insert(inbound.iso()).second) continue;
-        // Read here because duePages did not name it: its own body never moved. A day the writer
-        // has no page on is skipped.
-        const std::optional<DuePage> body = echoes_.pageAt(user, inbound);
-        if (!body) continue;
-        pages.push_back(*body);
-        ++enqueued;
-        ++report.inboundEnqueued;
+      // A page derived this pass may have moved text other pages reach into, so the reverse edge is
+      // walked in the same pass, budgeted.
+      std::set<std::string> queued;
+      for (const DuePage& page : pages) queued.insert(page.day.iso());
+
+      for (std::size_t i = 0; i < pages.size(); ++i) {
+        const DuePage page = pages[i];
+        CurationOutcome outcome = settlePage(user, page, corpusStamp, report);
+        countPage(report, outcome.status);
+        // Walked on settled, not on success: a refused page replaced its own spans before the
+        // curator was ever asked.
+        if (!isSettled(outcome.status)) continue;
+
+        int enqueued = 0;
+        for (const LocalDate& inbound : echoes_.inboundPages(user, page.day)) {
+          if (enqueued >= budget_.inboundPerPage) break;
+          if (!queued.insert(inbound.iso()).second) continue;
+          // Read here because duePages did not name it: its own body never moved. A day the writer
+          // has no page on is skipped.
+          const std::optional<DuePage> body = echoes_.pageAt(user, inbound);
+          if (!body) continue;
+          pages.push_back(*body);
+          ++enqueued;
+          ++report.inboundEnqueued;
+        }
       }
     }
+    if (report.pagesFailed > 0) observation.finish("failed");
+    else if (observation.writeCount() == writes) observation.skip();
+    else observation.finish(report.pagesRefused > 0 ? "refused" : "ok");
+    return report;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
   }
-  return report;
+}
+
+CurationOutcome EchoSweep::settlePage(const UserId& user, const DuePage& page,
+                                     std::uint64_t corpusStamp, EchoSweepReport& report) {
+  WriteObservation observation{"journal.echo.derive", "journal", "background"};
+  WriteContext context{observation};
+  try {
+    CurationOutcome outcome = derive(user, page, corpusStamp, report);
+    if (isSettled(outcome.status)) outcome.versions = versions();
+    echoes_.recordCuration(user, page.day, outcome);
+    if (isSuccess(outcome.status)) observation.finish();
+    else if (outcome.status == CurationStatus::rateLimited) observation.finish("rate_limited");
+    else if (outcome.status == CurationStatus::refused) observation.finish("refused");
+    else observation.fail(std::runtime_error("echo derivation failed"));
+    return outcome;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
+  }
 }
 
 CurationOutcome EchoSweep::derive(const UserId& user, const DuePage& page,

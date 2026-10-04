@@ -35,7 +35,7 @@ void installAccessLog(drogon::HttpAppFramework& app) {
 
   app.registerPostHandlingAdvice([](const drogon::HttpRequestPtr& req,
                                     const drogon::HttpResponsePtr& resp) {
-    const std::string path = req->path();
+    const std::string path = req->matchedPathPattern().empty() ? std::string("unmatched") : std::string(req->matchedPathPattern());
     const int status = static_cast<int>(resp->getStatusCode());
 
     long long micros = -1;

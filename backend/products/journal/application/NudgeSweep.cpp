@@ -17,8 +17,8 @@ constexpr int kNudgeSweepBatch = 200;
 
 NudgeSweep::NudgeSweep(NudgeRepository& nudges, NudgeMailSender& mail, TokenGenerator& tokens,
                        Clock& clock, MailArming arming, std::string appBaseUrl)
-    : MailSweep(nudges, tokens, std::move(arming)), nudges_(nudges), mail_(mail), clock_(clock),
-      appBaseUrl_(std::move(appBaseUrl)), heartbeat_("journal-nudge") {}
+    : MailSweep(nudges, tokens, std::move(arming), "journal.nudge.sweep", "journal"), nudges_(nudges), mail_(mail), clock_(clock),
+      appBaseUrl_(std::move(appBaseUrl)), heartbeat_("journal-nudge", "journal") {}
 
 void NudgeSweep::start() {
   heartbeat_.start(kFirstTickSeconds, kTickSeconds, [this] {
@@ -34,7 +34,9 @@ void NudgeSweep::start() {
 }
 
 MailSweepReport NudgeSweep::run(std::uint64_t nowMs, bool dryRun) {
-  if (journal::journalWriteFrozen()) return {};
+  if (journal::journalWriteFrozen()) {
+    return {};
+  }
   return MailSweep::run(nowMs, dryRun);
 }
 
@@ -45,10 +47,10 @@ void NudgeSweep::runAsync(std::uint64_t nowMs, bool dryRun,
     try {
       done(run(nowMs, dryRun));
     } catch (const std::exception& error) {
-      LOG_ERROR << "journal nudge sweep failed: " << error.what();
+      reportCurrentWriteFailure(error);
       done(MailSweepReport{});
     } catch (...) {
-      LOG_ERROR << "journal nudge sweep failed";
+      reportCurrentUnknownWriteFailure();
       done(MailSweepReport{});
     }
   });

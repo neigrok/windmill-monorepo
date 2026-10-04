@@ -1,4 +1,5 @@
 #include "platform/adapters/http/EventsApi.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -115,7 +116,11 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     if (event) accepted.push_back(std::move(*event));
   }
   if (!accepted.empty()) {
-    const auto reportFailure = [&](const std::string& where) {
+    const auto reportFailure = [&](const std::string& where, const std::exception& exception) {
+      if (!currentWriteRequestId().empty()) {
+        reportCurrentWriteFailure(exception);
+        return;
+      }
       LOG_ERROR << "event batch failed at " << where;
       if (!failures_) return;
       try {
@@ -130,8 +135,8 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
         return;
       }
       events_->append(sessionKey.asString(), caller, accepted);
-    } catch (const std::exception&) {
-      reportFailure("events.persist");
+    } catch (const std::exception& failure) {
+      reportFailure("events.persist", failure);
       callback(error(drogon::k500InternalServerError, "events not recorded"));
       return;
     }
@@ -139,8 +144,8 @@ void EventsApi::ingest(const drogon::HttpRequestPtr& req, HttpCallback&& callbac
     if (amplitude_) {
       try {
         amplitude_->forward(sessionKey.asString(), caller, accepted);
-      } catch (const std::exception&) {
-        reportFailure("amplitude.forward");
+      } catch (const std::exception& failure) {
+        reportFailure("amplitude.forward", failure);
       }
     }
   }

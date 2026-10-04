@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/domain/Ids.h"
 #include "platform/ports/EventRepository.h"
 #include "platform/ports/FailureReporter.h"
@@ -25,6 +27,16 @@ Json::Value amplitudeEvents(const std::string& sessionKey, const std::optional<U
 // pass api.eu.amplitude.com for an EU-region project, since the wrong region silently drops events.
 class AmplitudeClient {
 public:
+  ~AmplitudeClient() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   explicit AmplitudeClient(std::string apiKey, std::string host = "api2.amplitude.com",
                            std::shared_ptr<FailureReporter> failures = nullptr);
 
@@ -38,6 +50,7 @@ private:
   std::string apiKey_;
   std::string host_;
   std::shared_ptr<FailureReporter> failures_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

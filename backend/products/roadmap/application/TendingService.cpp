@@ -29,6 +29,15 @@ TendingService::TendingService(TendRunRepository& runs, PlanAgent& agent, ToolHo
   workers_.start();
 }
 
+TendingService::~TendingService() { stop(); }
+
+void TendingService::stop() {
+  std::call_once(stopped_, [this] {
+    for (auto* loop : workers_.getLoops()) loop->queueInLoop([loop] { loop->quit(); });
+    workers_.wait();
+  });
+}
+
 TendRun TendingService::start(const TreeId& tree, const UserId& caller, const std::string& email,
                               const std::string& prompt) {
   // The pipeline the contract pins, top to bottom: an unusable prompt, then a dark feature, then a
@@ -55,7 +64,8 @@ TendRun TendingService::start(const TreeId& tree, const UserId& caller, const st
 
   // The service is a process-lifetime singleton, so capturing `this` is safe for as long as the pool
   // (a member) lives.
-  workers_.getNextLoop()->queueInLoop([this, run] { execute(run); });
+  auto observation = std::make_shared<WriteObservation>("roadmap.tend.run", "roadmap", "background");
+  workers_.getNextLoop()->queueInLoop([this, run, observation] { execute(run, observation); });
   return run;
 }
 
@@ -99,7 +109,9 @@ TendingAllowance TendingService::allowanceAt(const UserId& caller, const std::st
   return TendingAllowance{plan, monthlyLimitFor(plan), used};
 }
 
-void TendingService::execute(TendRun run) {
+void TendingService::execute(TendRun run, const std::shared_ptr<WriteObservation>& observation) {
+  WriteContext context{*observation};
+  std::string outcomeCode;
   // The crash guard: whatever happens below, the worker thread must survive to serve the next run.
   try {
     run.seqFrom = seqOf(run.tree, run.user);  // the tree's head before the agent writes anything
@@ -112,24 +124,30 @@ void TendingService::execute(TendRun run) {
       const AgentOutcome outcome =
           agent_.run(run.prompt, run.tree, run.user, scoped, [](const AgentStep&) {});
       run.status = outcome.ok ? TendStatus::done : TendStatus::failed;
+      if (!outcome.ok && outcome.outcomeCode.empty())
+        observation->reportFailure(std::runtime_error("tending agent failed"));
+      outcomeCode = outcome.outcomeCode;
       run.summary = outcome.summary;
       run.detail = outcome.ok ? outcome.detail : outcome.error;  // the error is diagnostic, not a receipt
       run.edits = outcome.edits;
       run.createdNodeIds = scoped.createdNodeIds();  // the authoritative set the receipt's Undo reverts
     } catch (const std::exception& error) {
+      observation->reportFailure(error);
       run.status = TendStatus::failed;
       run.detail = error.what();
     } catch (...) {
+      observation->reportUnknownFailure();
       run.status = TendStatus::failed;
       run.detail = "unknown error";
     }
     run.seqTo = seqOf(run.tree, run.user);  // the far end of the footprint — captured on any outcome
     run.finishedAtMs = clock_.nowMs();
     runs_.save(run);
+    observation->finish(!outcomeCode.empty() ? outcomeCode : run.status == TendStatus::failed ? "failed" : "ok");
   } catch (const std::exception& error) {
-    LOG_ERROR << "tend run " << run.id << " could not be finalized: " << error.what();
+    observation->fail(error);
   } catch (...) {
-    LOG_ERROR << "tend run " << run.id << " could not be finalized";
+    observation->failUnknown();
   }
 }
 

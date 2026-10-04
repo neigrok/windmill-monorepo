@@ -1,6 +1,8 @@
 #include "products/roadmap/application/ScopedToolHost.h"
 
 #include "test/testing.h"
+#include "platform/application/WriteObservation.h"
+#include "products/roadmap/adapters/mcp/RoadmapToolCatalog.h"
 
 #include <algorithm>
 #include <initializer_list>
@@ -209,4 +211,32 @@ TEST(scoped_tool_host_lets_a_declared_argument_through_and_still_forces_the_tree
   REQUIRE_EQ(inner.calls.size(), std::size_t{1});
   CHECK_EQ(inner.calls[0].args["label"].asString(), std::string("Step"));
   CHECK_EQ(inner.calls[0].args["treeId"].asString(), std::string("t_target"));
+}
+
+TEST(every_scoped_roadmap_write_tool_is_instrumented_from_the_catalog) {
+  struct CatalogHost : ToolHost {
+    std::vector<ToolDeclaration> declareTools() const override { return roadmapToolCatalog(); }
+    ToolResult callTool(const std::string&, const Json::Value&, const ToolCaller&) override {
+      return ToolResult::failure("PRIVATE_ROADMAP_LABEL", "refused");
+    }
+  } inner;
+  ScopedToolHost scoped{inner, TreeId{"tree"}};
+  const ToolCaller caller{UserId{"user"}, ToolScope::everything()};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  std::size_t writes = 0;
+  for (const auto& declaration : scoped.declareTools()) {
+    if (declaration.access == Access::read) continue;
+    ++writes;
+    const auto before = completions.size();
+    CHECK(scoped.callTool(declaration.name(), Json::Value(Json::objectValue), caller).isError);
+    CHECK_EQ(completions.size(), before + 1);
+    if (completions.size() != before + 1) continue;
+    CHECK_EQ(completions.back().operation, "roadmap." + declaration.name());
+    CHECK_EQ(completions.back().product, std::string("roadmap"));
+    CHECK_EQ(completions.back().door, std::string("Coach"));
+    CHECK_EQ(completions.back().outcome, std::string("refused"));
+  }
+  installWriteSink({});
+  CHECK(writes > 0);
 }

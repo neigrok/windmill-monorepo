@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include <trantor/net/EventLoopThread.h>
 
 #include <functional>
@@ -20,6 +22,16 @@ struct PaddleCheckout {
 // checkout. An empty API key makes configured() false and every checkout a no-op.
 class PaddleApiClient {
 public:
+  ~PaddleApiClient() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   PaddleApiClient(std::string apiKey, const std::string& environment);
 
   bool configured() const { return !apiKey_.empty(); }
@@ -40,6 +52,7 @@ private:
 
   std::string apiKey_;
   std::string host_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

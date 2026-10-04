@@ -1,6 +1,7 @@
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/application/GymSwitches.h"
 #include "products/gym/ports/GymWriteDoor.h"
+#include "platform/application/WriteObservation.h"
 
 #include <utility>
 
@@ -15,7 +16,7 @@ void settleOpen(LogRepository& log, GymWriteDoor* door, const UserId& user, std:
   if (!open) return;
   std::optional<std::uint64_t> closeAt = autoCloseAt(*open, log.lastActivity(open->id), nowMs);
   if (!closeAt) return;
-  log.close(open->id, *closeAt, ClosedBy::stale);
+  observeWrite("gym.close_stale", "gym", "background", [&] { log.close(open->id, *closeAt, ClosedBy::stale); });
 }
 
 // The caller's own row under this id resolves first, so a replay is idempotent; the open session

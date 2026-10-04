@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/paddle/BillingApi.h"
 
 #include "platform/adapters/http/Caller.h"
@@ -132,7 +133,8 @@ void BillingApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     }
     // Anything else is subscribed but not mirrored — acknowledge it rather than retry forever.
   } catch (const std::exception& e) {
-    LOG_ERROR << "paddle webhook failed: " << e.what();
+    reportCurrentWriteFailure(e);
+    LOG_ERROR << "paddle webhook failed: " << "unexpected storage exception";
     callback(error(drogon::k500InternalServerError, "not recorded"));
     return;
   }

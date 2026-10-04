@@ -125,6 +125,8 @@ public:
   AskService(TrainingService& training, AskThreadRepository& threads, Clock& clock, AskAgent& agent,
              GymTools& gymTools, Entitlements& entitlements,
              std::shared_ptr<FailureReporter> failures = nullptr);
+  ~AskService();
+  void stop();
 
   // Whether this deployment can answer at all; main.cpp reads it to decide whether the route exists.
   bool configured() const;
@@ -141,7 +143,7 @@ private:
   struct Job;
   void admit(const std::shared_ptr<Job>& job);
   void run(const std::shared_ptr<Job>& job);
-  void fail(const std::shared_ptr<Job>& job);
+  void fail(const std::shared_ptr<Job>& job, const std::exception& error);
   void finish(const std::shared_ptr<Job>& job);
   TrainingService& training_;
   AskThreadRepository& threads_;
@@ -156,6 +158,7 @@ private:
   std::atomic<unsigned> admissionCount_{0};
   std::array<bool, 2> workerBusy_{};
   std::unordered_map<std::string, std::shared_ptr<Job>> active_;
+  std::once_flag stopped_;
   trantor::EventLoopThreadPool workers_{2};
   trantor::EventLoopThreadPool admissions_{1};
   trantor::EventLoopThreadPool readers_{2};

@@ -20,13 +20,12 @@ std::string pageKey(const UserId& user, const LocalDate& day) {
 }
 
 EchoDerivations::EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationRules rules)
-    : sweep_(sweep), clock_(clock), rules_(std::move(rules)), heartbeat_("journal-echo-live") {}
+    : sweep_(sweep), clock_(clock), rules_(std::move(rules)), heartbeat_("journal-echo-live", "journal") {}
 
 void EchoDerivations::start() {
   heartbeat_.start(kDrainFirstTickSeconds, kDrainTickSeconds, [this] {
     const EchoLiveReport report = drain(clock_.nowMs());
-    if (report.derived > 0 || report.failed > 0 || report.refused > 0 || report.deferred > 0 ||
-        report.queueFull > 0)
+    if (report.derived > 0 || report.failed > 0 || report.refused > 0)
       LOG_INFO << "journal echo live: " << report.derived << " derived, " << report.failed
                << " failed, " << report.refused << " refused, " << report.deferred
                << " deferred to the repair pass, " << report.skippedOverBudget << " over AI budget, "

@@ -19,8 +19,8 @@ constexpr int kFirstTickJitterSeconds = 30;
 ReminderSweep::ReminderSweep(ReminderRepository& reminders, ReminderMailSender& mail,
                              TokenGenerator& tokens, Clock& clock, MailArming arming,
                              std::string appBaseUrl)
-    : MailSweep(reminders, tokens, std::move(arming)), reminders_(reminders), mail_(mail),
-      clock_(clock), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder") {}
+    : MailSweep(reminders, tokens, std::move(arming), "roadmap.reminder.sweep", "roadmap"), reminders_(reminders), mail_(mail),
+      clock_(clock), appBaseUrl_(std::move(appBaseUrl)), heartbeat_("reminder", "roadmap") {}
 
 void ReminderSweep::start() {
   std::random_device entropy;
@@ -44,10 +44,10 @@ void ReminderSweep::runAsync(std::uint64_t nowMs, bool dryRun,
     try {
       done(run(nowMs, dryRun));
     } catch (const std::exception& error) {
-      LOG_ERROR << "reminder sweep failed: " << error.what();
+      reportCurrentWriteFailure(error);
       done(MailSweepReport{});
     } catch (...) {
-      LOG_ERROR << "reminder sweep failed";
+      reportCurrentUnknownWriteFailure();
       done(MailSweepReport{});
     }
   });
@@ -68,10 +68,10 @@ ReminderDecision ReminderSweep::decideFor(const DueUser& due, std::uint64_t nowM
     candidate.trees = reminders_.readinessFor(due.user);
     return decide(candidate, nowMs);
   } catch (const std::exception& error) {
-    LOG_ERROR << "reminders: " << due.user.str() << " could not be read: " << error.what();
+    reportCurrentWriteFailure(error);
     return ReminderDecision{ReminderOutcome::skip, SkipReason::loadFailed, {}};
   } catch (...) {
-    LOG_ERROR << "reminders: " << due.user.str() << " could not be read";
+    reportCurrentUnknownWriteFailure();
     return ReminderDecision{ReminderOutcome::skip, SkipReason::loadFailed, {}};
   }
 }

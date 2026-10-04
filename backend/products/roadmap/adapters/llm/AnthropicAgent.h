@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/adapters/llm/AnthropicClient.h"
 #include "platform/ports/FailureReporter.h"
 #include "products/roadmap/ports/PlanAgent.h"
@@ -41,6 +43,16 @@ AgentOutcome driveAgent(const std::string& prompt, const TreeId& tree, const Use
 // tending worker blocks on a future rather than parking a server request loop.
 class AnthropicAgent : public PlanAgent {
 public:
+  ~AnthropicAgent() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   // The reporter, the fuse and the sink are optional (null = do nothing).
   explicit AnthropicAgent(std::string apiKey, std::shared_ptr<FailureReporter> failures = nullptr,
                           std::shared_ptr<AiFuse> fuse = nullptr,
@@ -53,12 +65,12 @@ public:
 
 private:
   // The reporter owns everything it needs: a run settles long after the caller may be gone.
-  AgentReporter reporter() const;
 
   std::string apiKey_;
   std::shared_ptr<FailureReporter> failures_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

@@ -3,6 +3,7 @@
 #include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "platform/adapters/postgres/PgPool.h"
+#include "platform/application/WriteObservation.h"
 
 #include <pqxx/pqxx>
 
@@ -18,12 +19,13 @@ void PgOpLog::append(const TreeId& tree, const AppliedOp& op) {
   std::string payload = dump(commandPayload(op.command));
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params(
+  const pqxx::result appended = txn.exec_params(
       "INSERT INTO tree_ops (tree_id, seq, actor_id, op_id, kind, payload, hlc) "
       "VALUES ($1, $2, $3, $4, $5, $6::jsonb, $7) ON CONFLICT (tree_id, op_id) DO NOTHING",
       tree.str(), static_cast<long long>(op.seq), op.actor.str(), op.opId,
       commandKind(op.command), payload, toString(op.hlc));
   txn.commit();
+  if (appended.affected_rows() != 0) markCurrentWrite();
 }
 
 std::vector<AppliedOp> PgOpLog::since(const TreeId& tree, Seq afterSeq) const {

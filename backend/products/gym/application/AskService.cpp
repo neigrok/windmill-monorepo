@@ -1,5 +1,6 @@
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/GymSwitches.h"
+#include "platform/application/WriteObservation.h"
 
 #include "products/gym/adapters/mcp/GymToolCatalog.h"
 
@@ -38,6 +39,28 @@ std::optional<std::string> unknownArgument(const Json::Value& inputSchema,
     return "unknown argument \"" + key + "\". This tool takes: " + declaredArguments(inputSchema) + ".";
   }
   return std::nullopt;
+}
+
+const char* askOutcome(AskRefusal refusal) {
+  switch (refusal) {
+    case AskRefusal::none: return "ok";
+    case AskRefusal::frozen: return "gym-frozen";
+    case AskRefusal::threadMalformed:
+    case AskRefusal::questionEmpty:
+    case AskRefusal::questionTooLong:
+    case AskRefusal::questionUnstorable: return "http_400";
+    case AskRefusal::threadTaken: return "ask-thread-taken";
+    case AskRefusal::requestMalformed: return "ask-request-malformed";
+    case AskRefusal::requestConflict: return "ask-request-conflict";
+    case AskRefusal::generationActive: return "ask-generation-active";
+    case AskRefusal::busy: return "ask-busy";
+    case AskRefusal::attachmentInvalid: return "ask-attachment-invalid";
+    case AskRefusal::notConfigured: return "ask-not-configured";
+    case AskRefusal::sessionOpen: return "ask-session-open";
+    case AskRefusal::dailyLimit: return "ask-daily-limit";
+    case AskRefusal::outOfBudget: return "ask-out-of-budget";
+  }
+  return "refused";
 }
 
 // After this long idle any bucket is full whatever it held, so it can be forgotten.
@@ -104,8 +127,25 @@ void AskTools::recover(const ToolCaller& caller, bool allowWrite) {
       repository_->saveOperation(caller.user, thread_, generation_->id, operation);
     }
     if (!operation.result) {
-      operation.result = inner_.callTool(operation.name, operation.arguments, caller,
-          ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+      const auto declarations = inner_.declareTools();
+      const auto declared = std::find_if(declarations.begin(), declarations.end(), [&](const auto& tool) {
+        return tool.name() == operation.name && tool.access != Access::read;
+      });
+      const std::string operationName = declared == declarations.end() ? "gym.coach.recover" :
+          "gym." + declared->name();
+      WriteObservation observation{operationName, "gym", "Coach"};
+      WriteContext context{observation};
+      try {
+        operation.result = inner_.callTool(operation.name, operation.arguments, caller,
+            ProposalSource{ProposalDoor::ask, "", "", thread_}, read_);
+        observation.finish(toolWriteOutcome(*operation.result));
+      } catch (const std::exception& error) {
+        observation.fail(error);
+        throw;
+      } catch (...) {
+        observation.failUnknown();
+        throw;
+      }
       repository_->saveOperation(caller.user, thread_, generation_->id, operation);
     }
     observe(*operation.result, operation.name, operation.id);
@@ -125,17 +165,39 @@ std::vector<ToolDeclaration> AskTools::declareTools() const {
 
 ToolResult AskTools::callTool(const std::string& name, const Json::Value& arguments,
                               const ToolCaller& caller) {
-  if (gymWriteFrozen())
-    for (const auto& tool : inner_.declareTools())
-      if (tool.name() == name && tool.access != Access::read)
-        return ToolResult::failure(name + ": gym-frozen: gym writes are temporarily frozen");
-  if (repository_) {
-    const auto current = repository_->generation(caller.user, thread_, generation_->requestId);
-    if (current && current->stopRequested) return ToolResult::failure("Coach was stopped before this action");
+  const auto declarations = inner_.declareTools();
+  const auto declared = std::find_if(declarations.begin(), declarations.end(), [&](const auto& tool) {
+    return tool.name() == name;
+  });
+  std::unique_ptr<WriteObservation> observation;
+  std::unique_ptr<WriteContext> context;
+  if (declared != declarations.end() && declared->access != Access::read) {
+    observation = std::make_unique<WriteObservation>("gym." + declared->name(), "gym", "Coach");
+    context = std::make_unique<WriteContext>(*observation);
   }
-  ToolResult outcome = dispatch(name, arguments, caller);
-  steps_.push_back(AskStep{name, outcome.isError});
-  return outcome;
+  try {
+    const ToolResult result = [&]() {
+      if (gymWriteFrozen())
+        for (const auto& tool : declarations)
+          if (tool.name() == name && tool.access != Access::read)
+            return ToolResult::failure(name + ": gym-frozen: gym writes are temporarily frozen", "gym-frozen");
+      if (repository_) {
+        const auto current = repository_->generation(caller.user, thread_, generation_->requestId);
+        if (current && current->stopRequested) return ToolResult::failure("Coach was stopped before this action");
+      }
+      ToolResult outcome = dispatch(name, arguments, caller);
+      steps_.push_back(AskStep{name, outcome.isError});
+      return outcome;
+    }();
+    if (observation) observation->finish(toolWriteOutcome(result));
+    return result;
+  } catch (const std::exception& error) {
+    if (observation) observation->fail(error);
+    throw;
+  } catch (...) {
+    if (observation) observation->failUnknown();
+    throw;
+  }
 }
 
 ToolResult AskTools::dispatch(const std::string& name, const Json::Value& arguments,
@@ -227,6 +289,19 @@ AskService::AskService(TrainingService& training, AskThreadRepository& threads, 
 
 bool AskService::configured() const { return agent_.configured(); }
 
+AskService::~AskService() { stop(); }
+
+void AskService::stop() {
+  std::call_once(stopped_, [this] {
+    for (auto* loop : admissions_.getLoops()) loop->queueInLoop([loop] { loop->quit(); });
+    admissions_.wait();
+    for (auto* loop : workers_.getLoops()) loop->queueInLoop([loop] { loop->quit(); });
+    workers_.wait();
+    for (auto* loop : readers_.getLoops()) loop->queueInLoop([loop] { loop->quit(); });
+    readers_.wait();
+  });
+}
+
 void AskService::readGeneration(const UserId& user, const ThreadId& thread, const std::string& requestId,
                                 std::function<void(bool, std::optional<AskGeneration>)> done) {
   readers_.getNextLoop()->queueInLoop([this, user, thread, requestId, done = std::move(done)] {
@@ -238,33 +313,39 @@ void AskService::readGeneration(const UserId& user, const ThreadId& thread, cons
 }
 
 std::optional<AskGeneration> AskService::stop(const UserId& user, const ThreadId& thread, const std::string& requestId) {
-  requireGymWrite();
-  auto generation = threads_.stopGeneration(user, thread, requestId);
-  if (!generation || generation->status != "running") return generation;
-  auto lease = threads_.tryLease(user, thread);
-  if (!lease) return generation;
-  generation = threads_.generation(user, thread, requestId);
-  if (!generation || generation->status != "running") return generation;
-  AskTools tools(gymTools_, thread, &threads_, &*generation);
-  const ToolCaller caller{user, ToolScope({{"gym", Access::read}, {"gym", Access::write}})};
-  tools.recover(caller, false);
-  generation->status = "stopped";
-  generation->stopRequested = true;
-  if (!tools.steps().empty() || !tools.proposals().empty()) {
-    if (!generation->receipt) generation->receipt = AnswerReceipt{};
-    for (const auto& step : tools.steps()) {
-      if (std::find(generation->steps.begin(), generation->steps.end(), step) == generation->steps.end())
-        generation->steps.push_back(step);
-      auto& steps = generation->receipt->steps;
-      if (std::find(steps.begin(), steps.end(), step) == steps.end()) steps.push_back(step);
-    }
-    for (const auto& proposal : tools.proposals()) {
-      auto& proposals = generation->receipt->proposals;
-      if (std::find(proposals.begin(), proposals.end(), proposal) == proposals.end()) proposals.push_back(proposal);
-    }
+  if (gymWriteFrozen()) {
+    WriteObservation observation{"ask.stop", "gym", "Coach"};
+    observation.finish("gym-frozen");
+    requireGymWrite();
   }
-  threads_.saveGeneration(user, thread, *generation);
-  return generation;
+  return observeWrite("ask.stop", "gym", "Coach", [&]() {
+    auto generation = threads_.stopGeneration(user, thread, requestId);
+    if (!generation || generation->status != "running") return generation;
+    auto lease = threads_.tryLease(user, thread);
+    if (!lease) return generation;
+    generation = threads_.generation(user, thread, requestId);
+    if (!generation || generation->status != "running") return generation;
+    AskTools tools(gymTools_, thread, &threads_, &*generation);
+    const ToolCaller caller{user, ToolScope({{"gym", Access::read}, {"gym", Access::write}})};
+    tools.recover(caller, false);
+    generation->status = "stopped";
+    generation->stopRequested = true;
+    if (!tools.steps().empty() || !tools.proposals().empty()) {
+      if (!generation->receipt) generation->receipt = AnswerReceipt{};
+      for (const auto& step : tools.steps()) {
+        if (std::find(generation->steps.begin(), generation->steps.end(), step) == generation->steps.end())
+          generation->steps.push_back(step);
+        auto& steps = generation->receipt->steps;
+        if (std::find(steps.begin(), steps.end(), step) == steps.end()) steps.push_back(step);
+      }
+      for (const auto& proposal : tools.proposals()) {
+        auto& proposals = generation->receipt->proposals;
+        if (std::find(proposals.begin(), proposals.end(), proposal) == proposals.end()) proposals.push_back(proposal);
+      }
+    }
+    threads_.saveGeneration(user, thread, *generation);
+    return generation;
+  });
 }
 
 struct AskService::Job {
@@ -282,14 +363,21 @@ struct AskService::Job {
   bool overlap = false;
   bool duplicate = false;
   bool charged = false;
-  bool reported = false;
   std::string where = "ask.setup";
   std::vector<CoachImage> images;
   ThreadOpenOutcome opened{std::nullopt, ThreadOpenError::none};
+  std::shared_ptr<WriteObservation> observation;
 };
 
 void AskService::ask(const UserId& caller, const std::string& email, const ThreadId& thread,
                      std::string question, std::function<void(AskReply)> done, std::string requestId, std::vector<std::string> attachmentIds) {
+  auto observation = std::make_shared<WriteObservation>("ask.run", "gym", "Coach", "", failures_.get());
+  WriteContext context{*observation};
+  done = [done = std::move(done), observation](AskReply reply) {
+    observation->finish(reply.refusal != AskRefusal::none ? askOutcome(reply.refusal) :
+                        !reply.answer.outcomeCode.empty() ? reply.answer.outcomeCode : reply.answer.ok || (reply.generation && reply.generation->status == "running") ? "ok" : "failed");
+    done(std::move(reply));
+  };
   if (gymWriteFrozen()) { done(AskReply{AskRefusal::frozen}); return; }
   if (!wellFormedId(thread.str())) { done(AskReply{AskRefusal::threadMalformed}); return; }
   if (!requestId.empty() && !wellFormedId(requestId)) { done(AskReply{AskRefusal::requestMalformed}); return; }
@@ -304,6 +392,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
   }
   if (requestId.empty()) requestId = drogon::utils::getUuid();
   auto job = std::make_shared<Job>(Job{caller, email, thread, std::move(question), std::move(requestId), std::move(attachmentIds), std::move(done)});
+  job->observation = observation;
   std::lock_guard lock(admissionMutex_);
   const auto active = active_.find(thread.str());
   if (active != active_.end()) {
@@ -326,6 +415,7 @@ void AskService::ask(const UserId& caller, const std::string& email, const Threa
 }
 
 void AskService::admit(const std::shared_ptr<Job>& job) {
+  WriteContext context{*job->observation};
   const auto& caller = job->caller;
   const auto& email = job->email;
   const auto& thread = job->thread;
@@ -403,11 +493,17 @@ void AskService::admit(const std::shared_ptr<Job>& job) {
     repository.saveGeneration(caller, thread, *generation);
 
     workers_.getLoop(*job->worker)->queueInLoop([this, job] { run(job); });
-  } catch (const std::bad_alloc&) { throw; }
-  catch (const std::exception&) { fail(job); finish(job); }
+  } catch (const std::bad_alloc& error) { job->observation->reportFailure(error); throw; }
+  catch (const std::exception& error) { fail(job, error); finish(job); }
+  catch (...) {
+    job->observation->reportUnknownFailure();
+    fail(job, std::runtime_error("unknown Coach failure"));
+    finish(job);
+  }
 }
 
 void AskService::run(const std::shared_ptr<Job>& job) {
+  WriteContext context{*job->observation};
   const auto& caller = job->caller;
   const auto& thread = job->thread;
   const auto& question = job->question;
@@ -415,7 +511,6 @@ void AskService::run(const std::shared_ptr<Job>& job) {
   auto& generation = job->generation;
   auto& reply = job->reply;
   auto& charged = job->charged;
-  auto& reported = job->reported;
   auto& where = job->where;
   auto& images = job->images;
   auto& opened = job->opened;
@@ -477,14 +572,13 @@ void AskService::run(const std::shared_ptr<Job>& job) {
     };
     where = "ask.run";
     try { reply.answer = agent_.answer(turns, actor, hands, control); }
-    catch (const std::bad_alloc&) { throw; }
-    catch (const std::exception&) {
+    catch (const std::bad_alloc& error) { job->observation->reportFailure(error); throw; }
+    catch (const std::exception& error) {
       reply.answer.error = "Coach failed at ask.run";
-      if (failures_) {
-        reported = true;
-        try { failures_->report("gym-ask", "ask.run", "unexpected exception while answering Coach"); }
-        catch (const std::exception&) { LOG_ERROR << "gym ask failure report dropped"; }
-      }
+      job->observation->reportFailure(error);
+    } catch (...) {
+      reply.answer.error = "Coach failed at ask.run";
+      job->observation->reportUnknownFailure();
     }
     if (reply.answer.modelTurns == 0) { perAccount_.giveBack(caller.str()); charged = false; }
     const auto last = repository.generation(caller, thread, requestId);
@@ -498,12 +592,17 @@ void AskService::run(const std::shared_ptr<Job>& job) {
     where = "ask.persist";
     repository.saveGeneration(caller, thread, *generation);
 
-  } catch (const std::bad_alloc&) { throw; }
-  catch (const std::exception&) { fail(job); }
+  } catch (const std::bad_alloc& error) { job->observation->reportFailure(error); throw; }
+  catch (const std::exception& error) { fail(job, error); }
+  catch (...) {
+    job->observation->reportUnknownFailure();
+    fail(job, std::runtime_error("unknown Coach failure"));
+  }
   finish(job);
 }
 
-void AskService::fail(const std::shared_ptr<Job>& job) {
+void AskService::fail(const std::shared_ptr<Job>& job, const std::exception& error) {
+  job->observation->reportFailure(error);
   if (job->charged && job->reply.answer.modelTurns == 0) perAccount_.giveBack(job->caller.str());
   job->reply.answer.ok = false;
   job->reply.answer.error = "Coach failed at " + job->where;
@@ -511,11 +610,7 @@ void AskService::fail(const std::shared_ptr<Job>& job) {
     job->generation->status = "failed";
     try { threads_.saveGeneration(job->caller, job->thread, *job->generation); } catch (const std::exception&) {}
   }
-  LOG_ERROR << job->reply.answer.error;
-  if (!job->reported && failures_) {
-    try { failures_->report("gym-ask", job->where, "unexpected exception while answering Coach"); }
-    catch (const std::exception&) { LOG_ERROR << "gym ask failure report dropped"; }
-  }
+
 }
 
 void AskService::finish(const std::shared_ptr<Job>& job) {

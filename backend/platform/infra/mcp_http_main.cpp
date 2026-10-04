@@ -1,6 +1,9 @@
 #include "platform/adapters/clock/SystemClock.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/http/WriteRoutes.h"
+#include "platform/adapters/sentry/ObservedTool.h"
+#include "platform/adapters/sentry/LogTee.h"
 #include "platform/adapters/http/RateLimiter.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
 #include "platform/adapters/mcp/McpHttpEndpoint.h"
@@ -34,7 +37,7 @@ std::string env(const char* key, const std::string& fallback) {
 }
 }
 
-int main() {
+static int runMcpHttp(wm::ObservabilityLifetime& lifetime) {
   using namespace wm;
 
   const std::string connString = env("DATABASE_URL", "postgresql://localhost/windmill");
@@ -59,6 +62,7 @@ int main() {
   auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<NullPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
+  lifetime.watch(registry, trees, oplog, bus);
   auto progress = std::make_shared<ProgressService>(*progressRepo);
   auto registryTokens = std::make_shared<OpenSslTokenGenerator>();
   const Hlc genesis{1, 0, "genesis"};
@@ -82,6 +86,12 @@ int main() {
 
   auto& app = drogon::app();
   configureJsonReplies(app);
+  installPrivacySafeExceptionHandler(app);
+  WriteRoutes routes(app, "platform", "mcp");
+  app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+    beginWriteRequest(req);
+    return nullptr;
+  });
 
   // Per-client rate ceiling keyed on Caddy's X-Forwarded-For, before routing; preflight skips it.
   auto mcpLimiter = std::make_shared<RateLimiter>(20.0, 40.0);  // ~20 req/s/client, burst 40
@@ -93,6 +103,7 @@ int main() {
         auto resp = drogon::HttpResponse::newHttpResponse();
         resp->setStatusCode(drogon::k429TooManyRequests);
         resp->setBody("rate limited");
+        finishWriteRequest(req, resp);
         return resp;
       });
 
@@ -107,25 +118,25 @@ int main() {
         response->addHeader("Vary", "Origin");
       });
 
-  app.registerHandler(
+  routes.registerWriteHandler("mcp.transport",
       path,
       [endpoint](const drogon::HttpRequestPtr& req, McpHttpCallback&& cb) {
         endpoint->handlePost(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       path,
       [endpoint](const drogon::HttpRequestPtr& req, McpHttpCallback&& cb) {
         endpoint->handleGet(req, std::move(cb));
       },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerWriteHandler("mcp.session.delete",
       path,
       [endpoint](const drogon::HttpRequestPtr& req, McpHttpCallback&& cb) {
         endpoint->handleDelete(req, std::move(cb));
       },
       {drogon::Delete});
-  app.registerHandler(
+  routes.registerHandler(
       path,
       [](const drogon::HttpRequestPtr&, McpHttpCallback&& cb) {
         auto response = drogon::HttpResponse::newHttpResponse();
@@ -139,7 +150,7 @@ int main() {
       {drogon::Options});
 
   // OAuth Protected Resource Metadata (RFC 9728). Public, unauthenticated.
-  app.registerHandler(
+  routes.registerHandler(
       "/.well-known/oauth-protected-resource",
       [resource, authServer](const drogon::HttpRequestPtr&, McpHttpCallback&& cb) {
         Json::Value metadata(Json::objectValue);
@@ -154,7 +165,7 @@ int main() {
       },
       {drogon::Get});
 
-  app.registerHandler(
+  routes.registerHandler(
       "/healthz",
       [](const drogon::HttpRequestPtr&, McpHttpCallback&& cb) {
         auto response = drogon::HttpResponse::newHttpResponse();
@@ -164,12 +175,29 @@ int main() {
       },
       {drogon::Get});
 
-  LOG_INFO << "windmill-mcp-http listening on " << host << ":" << port << path
-           << " (db=" << redactDbUrl(connString) << ", resource=" << resource
-           << ", oauth_issuer=" << authServer << ", fallback_token=" << (mcpToken.empty() ? "off" : "on") << ")";
+  LOG_INFO << "windmill-mcp-http listening on port=" << port
+           << " fallback_token=" << (mcpToken.empty() ? "off" : "on");
   app.setClientMaxBodySize(2 * 1024 * 1024);
   app.setClientMaxMemoryBodySize(1 * 1024 * 1024);
   app.setMaxConnectionNum(20000);
   app.addListener(host, port).setThreadNum(threads).run();
   return 0;
+}
+
+
+int main() {
+  using namespace wm;
+  installToolObservability();
+  ObservabilityLifetime lifetime;
+  try {
+    return runMcpHttp(lifetime);
+  } catch (const std::exception& error) {
+    WriteObservation observation("mcp.http.lifecycle", "platform", "mcp");
+    observation.fail(error);
+    return 1;
+  } catch (...) {
+    WriteObservation observation("mcp.http.lifecycle", "platform", "mcp");
+    observation.failUnknown();
+    return 1;
+  }
 }

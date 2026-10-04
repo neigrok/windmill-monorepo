@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/domain/Auth.h"
 #include "platform/ports/AppleIdentityVerifier.h"
 
@@ -20,6 +22,16 @@ namespace wm {
 // the id_token; it reaches us through the request body or not at all.
 class AppleOAuthClient {
 public:
+  ~AppleOAuthClient() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   AppleOAuthClient(std::string clientId, std::string teamId, std::string keyId, std::string privateKeyPem);
 
   bool configured() const {
@@ -35,11 +47,22 @@ private:
   std::string teamId_;
   std::string keyId_;
   std::string privateKeyPem_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 
 class AppleIdentityTokenVerifier final : public AppleIdentityVerifier {
 public:
+  ~AppleIdentityTokenVerifier() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   AppleIdentityTokenVerifier(bool enabled, std::string clientId);
   bool configured() const override { return enabled_ && !clientId_.empty(); }
   void verify(const std::string& identityToken, const std::string& nonce, Completion done) override;
@@ -50,6 +73,7 @@ public:
 private:
   bool enabled_;
   std::string clientId_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

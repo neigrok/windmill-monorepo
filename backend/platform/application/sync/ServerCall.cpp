@@ -1,5 +1,6 @@
 #include "platform/application/sync/ServerCall.h"
 
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/Wire.h"
 
 #include <utility>
@@ -26,9 +27,9 @@ std::string serverGesture() {
 }
 
 ServerCall::ServerCall(Admission& admission, SyncStore& store, UserId account, std::optional<std::string> requestId, const std::string& tool,
-                       const Json::Value& args)
+                       const Json::Value& args, std::string product)
     : admission_(admission), store_(store), account_(std::move(account)), requestId_(std::move(requestId)), digest_(callDigest(tool, args)),
-      gestureId_(requestId_.value_or(serverGesture())) {}
+      gestureId_(requestId_.value_or(serverGesture())), product_(std::move(product)) {}
 
 AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
   ++k_;
@@ -36,6 +37,8 @@ AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
   if (!requestId_) return admission_.admit(ServerOrigin{account_, std::nullopt}, intent, serverNow);
   // A call's parts are stored under `<requestId>#k`, so a requestId holding '#' could name another call's part.
   if (requestId_->empty() || requestId_->find_first_of(std::string("#\0", 2)) != std::string::npos) {
+    WriteObservation invalid("sync.server_call.admit", product_, "server-origin");
+    invalid.finish("invalid");
     return CallAnswered{refusedResult(Refused{code::invalid, {}})};
   }
   intent["gestureId"] = *requestId_;
@@ -47,8 +50,11 @@ AdmitOutcome ServerCall::admit(Json::Value intent, Ms serverNow) {
 
 AdmitOutcome ServerCall::admitBuilt(Json::Value scopeIntent, Ms serverNow, const Admission::ServerBuilder& builder) {
   ++k_;
-  if (requestId_ && (requestId_->empty() || requestId_->find_first_of(std::string("#\0", 2)) != std::string::npos))
+  if (requestId_ && (requestId_->empty() || requestId_->find_first_of(std::string("#\0", 2)) != std::string::npos)) {
+    WriteObservation invalid("sync.server_call.admit", product_, "server-origin");
+    invalid.finish("invalid");
     return CallAnswered{refusedResult(Refused{code::invalid, {}})};
+  }
   scopeIntent["gestureId"] = gestureId_;
   const auto build = [&](SyncTxn& txn) -> std::optional<Json::Value> {
     auto built = builder(txn);
@@ -64,12 +70,14 @@ AdmitOutcome ServerCall::admitBuilt(Json::Value scopeIntent, Ms serverNow, const
 
 void ServerCall::finish(const Json::Value& result, Ms serverNow) {
   if (!requestId_) return;
-  std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
-  store_.lockRequest(*txn, account_, *requestId_);
-  const std::optional<RequestRow> call = store_.request(*txn, account_, *requestId_);
-  if (!call || call->digest != digest_ || !call->running) return;
-  store_.putRequest(*txn, account_, RequestRow{*requestId_, digest_, false, result, serverNow});
-  txn->commit();
+  observeWrite("sync.server_call.finish", product_, "server-origin", [&] {
+    std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
+    store_.lockRequest(*txn, account_, *requestId_);
+    const std::optional<RequestRow> call = store_.request(*txn, account_, *requestId_);
+    if (!call || call->digest != digest_ || !call->running) return;
+    store_.putRequest(*txn, account_, RequestRow{*requestId_, digest_, false, result, serverNow});
+    txn->commit();
+  });
 }
 
 }

@@ -8,6 +8,8 @@
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/GymRegistry.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <future>
 
 namespace wm::gym {
@@ -86,10 +88,18 @@ bool GymDoor::recordTaken(sync::SyncTxn& txn, const UserId& user, const std::str
 
 Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const Json::Value& args,
                              const Builder& builder, std::optional<std::string> requestId) {
-  requireGymWrite();
+  auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
+  WriteContext context(*observation);
+  try {
+    requireGymWrite();
+  } catch (const GymUnavailable& refused) {
+    observation->finish(refused.code);
+    throw;
+  }
   auto answer = std::make_shared<std::promise<Json::Value>>();
   auto future = answer->get_future();
-  const bool posted = impl_->workers.post([&, answer, requestId = std::move(requestId)] {
+  const bool posted = impl_->workers.post([&, answer, requestId = std::move(requestId), observation] {
+    WriteContext workerContext(*observation);
     try {
       requireGymWrite();
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
@@ -99,11 +109,11 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
             throw GymUnavailable("gym-not-adopted", "gym history must be adopted before engine writes are enabled");
           built = builder(txn);
         } catch (const InvalidTraining&) {
-          throw sync::ServerBuildAborted{std::current_exception()};
-        } catch (const GymUnavailable&) {
-          throw sync::ServerBuildAborted{std::current_exception()};
+          throw sync::ServerBuildAborted{std::current_exception(), "invalid"};
+        } catch (const GymUnavailable& refused) {
+          throw sync::ServerBuildAborted{std::current_exception(), refused.code};
         } catch (const pqxx::undefined_column&) {
-          throw sync::ServerBuildAborted{std::make_exception_ptr(GymUnavailable("gym-not-adopted", "gym adoption schema must be applied before engine writes are enabled"))};
+          throw sync::ServerBuildAborted{std::make_exception_ptr(GymUnavailable("gym-not-adopted", "gym adoption schema must be applied before engine writes are enabled")), "gym-not-adopted"};
         }
         if (!built) return std::nullopt;
         const sync::ScopeKey scope = sync::ScopeKey::product(user, "gym");
@@ -119,7 +129,7 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
         }
         return built;
       };
-      sync::ServerCall call(impl_->admission, impl_->store, user, requestId, tool, args);
+      sync::ServerCall call(impl_->admission, impl_->store, user, requestId, tool, args, "gym");
       Json::Value placeholder = intent();
       placeholder["cmd"]["name"] = "gym.closeStale";
       placeholder["cmd"]["args"] = Json::Value(Json::objectValue);
@@ -131,12 +141,26 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
       if (const auto* answered = std::get_if<sync::CallAnswered>(&outcome)) result = answered->result;
       if (result.isNull()) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
       call.finish(result, now);
+      observation->finish(impl_->catalog->observationOutcome(result));
       answer->set_value(std::move(result));
+    } catch (const GymUnavailable& refused) {
+      observation->finish(refused.code);
+      answer->set_exception(std::current_exception());
+    } catch (const InvalidTraining&) {
+      observation->finish("invalid");
+      answer->set_exception(std::current_exception());
+    } catch (const std::exception& error) {
+      observation->fail(error);
+      answer->set_exception(std::current_exception());
     } catch (...) {
+      observation->failUnknown();
       answer->set_exception(std::current_exception());
     }
   });
-  if (!posted) throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
+  if (!posted) {
+    observation->finish("gym-engine-busy");
+    throw GymUnavailable("gym-engine-busy", "gym engine is temporarily unavailable");
+  }
   return future.get();
 }
 

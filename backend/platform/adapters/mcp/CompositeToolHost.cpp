@@ -1,4 +1,5 @@
 #include "platform/adapters/mcp/CompositeToolHost.h"
+#include "platform/application/WriteObservation.h"
 
 #include <algorithm>
 #include <optional>
@@ -148,12 +149,28 @@ ToolResult CompositeToolHost::callTool(const std::string& name, const Json::Valu
 
   const Registered& tool = tools_[entry->second];
   const ToolDeclaration& declared = tool.declaration;
-  if (!caller.scope.allows(declared.product, declared.access))
-    return ToolResult::failure(name + ": " + notGrantedSentence(declared.product, declared.access));
-  if (std::optional<std::string> unknown = undeclaredArgument(declared, arguments))
-    return ToolResult::failure(name + ": " + *unknown);
-
-  return tool.host->callTool(declared.name(), arguments, caller);
+  const auto run = [&] {
+    if (!caller.scope.allows(declared.product, declared.access))
+      return ToolResult::failure(name + ": " + notGrantedSentence(declared.product, declared.access), "not-granted");
+    if (std::optional<std::string> unknown = undeclaredArgument(declared, arguments))
+      return ToolResult::failure(name + ": " + *unknown, "invalid-arguments");
+    return tool.host->callTool(declared.name(), arguments, caller);
+  };
+  if (declared.access == Access::read) return run();
+  WriteObservation observation("mcp." + tool.publicName, declared.product, "mcp");
+  observation.ownInfo();
+  WriteContext context(observation);
+  try {
+    ToolResult result = run();
+    observation.finish(toolWriteOutcome(result));
+    return result;
+  } catch (const std::exception& error) {
+    observation.fail(error);
+    throw;
+  } catch (...) {
+    observation.failUnknown();
+    throw;
+  }
 }
 
 ServerInfo windmillServerInfo(const CompositeToolHost& tools, const std::string& build) {

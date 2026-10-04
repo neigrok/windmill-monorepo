@@ -20,7 +20,7 @@ namespace wm::sync {
 class ServerCall {
 public:
   ServerCall(Admission& admission, SyncStore& store, UserId account, std::optional<std::string> requestId, const std::string& tool,
-             const Json::Value& args);
+             const Json::Value& args, std::string product = "platform");
 
   // The call's next admit. A part a run of the call stored before is replayed: it answers Admitted with that
   // result, and nothing is admitted or written. The call stops at an answer the lookup gave it whole
@@ -41,6 +41,7 @@ private:
   std::optional<std::string> requestId_;
   Digest256 digest_;
   std::string gestureId_;
+  std::string product_;
   int k_ = 0;
   bool ran_ = false;  // an admit of this call committed: the call was looked up
 };

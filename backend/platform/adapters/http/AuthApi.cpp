@@ -2,6 +2,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/http/WriteRoutes.h"
 #include "platform/adapters/http/RateLimiter.h"  // clientIp
 
 #include <drogon/Cookie.h>
@@ -314,7 +315,7 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
 
   const SessionContext ctx = contextOf(req);
   google_->exchangeCode(
-      code, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, appUrl = appUrl_,
+      code, observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, appUrl = appUrl_,
              callback = std::move(callback), ctx](std::optional<ProviderIdentity> identity) mutable {
         const std::optional<AuthService::ProviderSignIn> signIn =
             identity ? auth->completeProvider(*identity, ctx) : std::nullopt;
@@ -328,7 +329,7 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
         setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
         expireStateCookie(response, scopes.live());
         callback(response);
-      });
+      }));
 }
 
 // Apple's native door: the app posts { authorizationCode, name? } and the session comes back as JSON
@@ -354,10 +355,10 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
   const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
 
   apple_->exchangeCode(
-      code, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
+      code, observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
              callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
-      });
+      }));
 }
 
 void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
@@ -377,10 +378,10 @@ void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& call
   const SessionContext ctx = contextOf(req);
   const std::optional<User> caller = auth_->authenticate(sessionSecretOf(req), ctx);
   appleNative_->verify(token, nonce,
-      [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
+      observedHttpCallback(req, [auth = auth_, secure = secureCookies_, scopes = cookieScopes_, name, caller, ctx,
        callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
-      });
+      }));
 }
 
 // The link door: the caller's account folds into the one this magic link names, carrying its

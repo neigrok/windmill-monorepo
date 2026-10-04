@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/mcp/RoadmapTools.h"
+#include "platform/application/WriteObservation.h"
 
 #include "products/roadmap/adapters/json/CommandJson.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
@@ -1285,13 +1286,11 @@ ToolResult RoadmapTools::callTool(const std::string& name, const Json::Value& ar
   try {
     ToolResult outcome = dispatch(name, arguments, caller);
     if (!outcome.isError) return outcome;
-    return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
+    return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString(), toolWriteOutcome(outcome));
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die rather than answer
   } catch (const std::exception& error) {
-    // Detail goes to the log, never the model's context; stderr, because on stdio transport stdout
-    // is the protocol channel.
-    std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
+    reportCurrentWriteFailure(error);
     return ToolResult::failure(name + ": that call failed inside the server. The outcome may be uncertain; "
                                "read the affected records before retrying. The detail is in the server log.");
   }

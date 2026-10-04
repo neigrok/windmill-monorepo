@@ -37,6 +37,10 @@ public:
   TypeStore& store(const std::string& type) const;
   TypeRules* rules(const std::string& type) const;
   SyncCommand& command(const std::string& name) const;
+  std::string commandOperation(const std::string& name) const;
+  std::string observationProduct(const RegistryScope& scope) const;
+  std::string observationProduct(const Json::Value& intent, const UserId& caller) const;
+  std::string observationOutcome(const Json::Value& result) const;
   void requireReady(SyncTxn& txn, const ScopeKey& scope) const;
   void requireWritable(SyncTxn& txn, const ScopeKey& scope) const;
   std::timed_mutex& scopeMutex(const ScopeKey& scope) const;

@@ -1,6 +1,9 @@
 #include "products/gym/adapters/llm/AnthropicAsk.h"
 
 #include "platform/adapters/llm/AnthropicStream.h"
+#include "platform/application/WriteObservation.h"
+
+#include <stdexcept>
 #include <drogon/utils/Utilities.h>
 #include "platform/adapters/llm/AnthropicClient.h"
 
@@ -206,24 +209,37 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
 
 AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCaller& caller,
                                ToolHost& tools, const AskControl& control) {
-  const AgentReport report = [failures = failures_](const std::string& where,
+  std::string refusal;
+  const AgentReport report = [failures = failures_, &refusal](const std::string& where,
                                                     const std::string& detail) {
-    LOG_ERROR << where << ": " << detail;
-    if (failures) failures->report("gym-ask", where, detail);
+    if (where == "ai.fuse") return;
+    if (detail == "the model stopped early (stop_reason: refusal)") refusal = "refused";
+    if (!refusal.empty()) return;
+    const std::runtime_error failure("Coach model failed");
+    if (!currentWriteRequestId().empty()) {
+      reportCurrentWriteFailure(failure);
+      return;
+    }
+    WriteObservation observation{"ask.run", "gym", "Coach", "", failures.get()};
+    observation.fail(failure);
   };
 
   if (apiKey_.empty()) {
     AskAnswer out;
     out.error = "Coach is not configured (no API key)";
-    report("ask.run", out.error);
+    out.outcomeCode = "ask-not-configured";
     return out;
   }
 
   std::string transcript;
-  const AskCall call = [this, &control, &transcript](const Json::Value& request) {
+  const AskCall call = [this, &control, &transcript, &refusal](const Json::Value& request) {
     auto reply = streamAnthropicMessage(apiKey_, baseUrl_, request, [&](const std::string& text) {
       if (control.text) control.text(transcript + text);
-    }, control.continueRun);
+    }, control.continueRun, [&](const Json::Value& diagnostic) {
+      if (diagnostic["httpStatus"].asInt() == 429 || diagnostic["httpStatus"].asInt() == 529 ||
+          diagnostic["providerError"].asString() == "rate_limit_error")
+        refusal = "rate_limited";
+    });
     if (reply) appendToolRoundText(transcript, *reply);
     return reply;
   };
@@ -236,7 +252,11 @@ AskAnswer AnthropicAsk::answer(const std::vector<AskTurn>& turns, const ToolCall
   frame.model = kModel;
   frame.runId = newRunId("ask");
 
-  return driveAsk(turns, caller, tools, metered(call, frame, fuse_, usage_, report), report, control);
+  auto answer = driveAsk(turns, caller, tools,
+                         metered(call, frame, fuse_, usage_, report, [&] { refusal = "ai-fuse"; }),
+                         report, control);
+  answer.outcomeCode = refusal;
+  return answer;
 }
 
 }

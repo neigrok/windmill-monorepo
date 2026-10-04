@@ -564,10 +564,10 @@ class Differential:
         self.write("DELETE", "/threads/thread_seed", expected=204)
         self.write("POST", "/ask", {"threadId": "thread_missing", "requestId": "request_missing", "question": "Hello"}, expected=404)
         assert self.tools == self.declared_tools, ("tool coverage", self.declared_tools - self.tools)
-        routes = re.findall(r'app\.registerHandler\(\s*"([^"]+)"(?:(?!app\.registerHandler).)*?\{drogon::(Post|Put|Patch|Delete)\}\)', (BACKEND / "products/gym/routes.cpp").read_text(), re.S)
+        routes = re.findall(r'(?:app|routes)\.registerHandler\(\s*"([^"]+)"(?:(?!(?:app|routes)\.registerHandler).)*?\{drogon::(Post|Put|Patch|Delete)\}\)', (BACKEND / "products/gym/routes.cpp").read_text(), re.S)
         missing = [(method, route) for route, method in routes if not any(verb == method.upper() and re.fullmatch(re.sub(r'\{[^}]+\}', '[^/]+', route), target) for verb, target in self.routes)]
         assert not missing, ("write route coverage", missing)
-        read_routes = re.findall(r'app\.registerHandler\(\s*"([^"]+)"(?:(?!app\.registerHandler).)*?\{drogon::Get\}\)', (BACKEND / "products/gym/routes.cpp").read_text(), re.S)
+        read_routes = re.findall(r'(?:app|routes)\.registerHandler\(\s*"([^"]+)"(?:(?!(?:app|routes)\.registerHandler).)*?\{drogon::Get\}\)', (BACKEND / "products/gym/routes.cpp").read_text(), re.S)
         missing_reads = [route for route in read_routes if not any(re.fullmatch(re.sub(r'\{[^}]+\}', '[^/]+', route), target) for target in self.read_routes)]
         assert not missing_reads, ("read route coverage", missing_reads)
         self.intended_differences(routine)

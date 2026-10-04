@@ -12,7 +12,7 @@
 namespace wm {
 
 RoomRegistry::RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus)
-    : repo_(repo), ops_(ops), bus_(bus), heartbeat_("rooms") {
+    : repo_(repo), ops_(ops), bus_(bus), heartbeat_("rooms", "roadmap") {
   heartbeat_.start(kSweepSeconds, kSweepSeconds, [this] { sweep(kIdleFor); });
 }
 
@@ -77,11 +77,16 @@ void RoomRegistry::evict(const TreeId& id) {
 // stay queued for the room's next save, where the op log's (tree_id, op_id) uniqueness absorbs
 // a row that committed before its connection dropped.
 void RoomRegistry::land(const TreeId& id, TreeRoom& room) {
+  if (room.pendingOps().empty()) return;
+  WriteObservation observation{"roadmap.oplog.flush", "roadmap", "background"};
+  WriteContext context{observation};
+  const auto writes = observation.writeCount();
   try {
     room.landPendingOps(ops_);
+    if (observation.writeCount() == writes) observation.skip();
+    else observation.finish();
   } catch (const std::exception& error) {
-    LOG_ERROR << "tree " << id.str() << ": " << room.pendingOps().size()
-              << " op rows did not land (" << error.what() << "); they retry on the next persist";
+    observation.fail(error);
   }
 }
 

@@ -127,8 +127,16 @@ MessagesReply readMessagesReply(int status, const std::string& body) {
 
 AnthropicClient::AnthropicClient(std::string apiKey) : apiKey_(std::move(apiKey)) { loop_.run(); }
 
+AnthropicClient::~AnthropicClient() { stop(); }
+
+void AnthropicClient::stop() {
+  if (stopped_.exchange(true)) return;
+  loop_.getLoop()->queueInLoop([this] { loop_.getLoop()->quit(); });
+  loop_.wait();
+}
+
 MessagesReply AnthropicClient::send(const MessagesRequest& request) {
-  if (apiKey_.empty()) return {false, MessagesFailure::transport, {}};
+  if (apiKey_.empty() || stopped_) return {false, MessagesFailure::transport, {}};
 
   auto client = drogon::HttpClient::newHttpClient(kAnthropicBaseUrl, loop_.getLoop());
   auto req = drogon::HttpRequest::newHttpRequest();
@@ -174,10 +182,11 @@ void meterSpend(AiSpend spend, const std::shared_ptr<AiFuse>& fuse,
 
 ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
                   std::shared_ptr<UsageSink> usage,
-                  std::function<void(const std::string&, const std::string&)> report) {
+                  std::function<void(const std::string&, const std::string&)> report,
+                  std::function<void()> onDenied) {
   auto turn = std::make_shared<int>(0);
   return [inner = std::move(inner), frame = std::move(frame), fuse = std::move(fuse),
-          usage = std::move(usage), report = std::move(report),
+          usage = std::move(usage), report = std::move(report), onDenied = std::move(onDenied),
           turn](const Json::Value& request) -> std::optional<Json::Value> {
     AiSpend spend = frame;
 
@@ -186,6 +195,7 @@ ModelCall metered(ModelCall inner, AiSpend frame, std::shared_ptr<AiFuse> fuse,
     if (fuse) {
       const bool alreadyReported = fuse->tripped();
       if (!fuse->allows(nowMs())) {
+        if (onDenied) onDenied();
         if (report && !alreadyReported)
           report("ai.fuse", "over the hourly spend ceiling — refusing " + spend.product + " " +
                                 spend.operation + " calls until the window clears");

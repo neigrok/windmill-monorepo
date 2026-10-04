@@ -23,6 +23,7 @@ namespace wm {
 class RoomRegistry {
 public:
   RoomRegistry(TreeRepository& repo, OpLog& ops, PresenceBus& bus);
+  void stop() { heartbeat_.stop(); }
 
   // nullptr means no such tree; a throw means infrastructure failure, whose detail must be logged
   // and never surfaced (a pqxx message carries a host, a port, a role).

@@ -1,4 +1,5 @@
 #include "products/gym/adapters/mcp/GymTools.h"
+#include "platform/application/WriteObservation.h"
 #include "products/gym/application/GymSwitches.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
@@ -685,7 +686,7 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
       if (tool.name() == name && tool.access != Access::read) requireGymWrite();
     ToolResult outcome = dispatch(name, arguments, caller.user, source, served);
     // A refusal served nothing, so it counts nothing; the throw paths below skip the merge too.
-    if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString());
+    if (outcome.isError) return ToolResult::failure(name + ": " + outcome.content[0]["text"].asString(), toolWriteOutcome(outcome));
     const bool batchRead = name == "get_sessions" || name == "get_last_times";
     const bool structured = batchRead || name == "log_sets" || name == "import_session";
     if (served.tally().anything() && outcome.payload.isObject()) {
@@ -707,13 +708,12 @@ ToolResult GymTools::callTool(const std::string& name, const Json::Value& argume
   } catch (const std::bad_alloc&) {
     throw;  // not a tool failure: an exhausted process must die rather than answer
   } catch (const GymUnavailable& unavailable) {
-    return ToolResult::failure(name + ": " + unavailable.code + ": " + unavailable.what());
+    return ToolResult::failure(name + ": " + unavailable.code + ": " + unavailable.what(), unavailable.code);
   } catch (const InvalidTraining& malformed) {
     // Validation failures unwind any open repository transaction without committing it.
-    return ToolResult::failure(name + ": " + malformed.what());
+    return ToolResult::failure(name + ": " + malformed.what(), "invalid-arguments");
   } catch (const std::exception& error) {
-    // stderr, not stdout: on the stdio transport stdout is the protocol channel.
-    std::cerr << "mcp tool " << name << " failed: " << error.what() << "\n";
+    reportCurrentWriteFailure(error);
     return ToolResult::failure(name + ": that call failed inside the server; the detail is in the "
                                "server log. Read the workout back before retrying a write, and "
                                "reuse the SAME id if you do.");

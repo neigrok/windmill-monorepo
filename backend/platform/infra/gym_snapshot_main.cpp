@@ -1,3 +1,5 @@
+#include "platform/adapters/sentry/ObservedTool.h"
+
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
@@ -55,8 +57,8 @@ public:
     if (!account || digest != credentialDigest) return std::nullopt;
     return StoredSession{*account, kMaxInstantMs};
   }
-  void refreshSession(const std::string&, UnixMs, UnixMs, const std::string&,
-                      const std::string&) override {}
+  bool refreshSession(const std::string&, UnixMs, UnixMs, const std::string&,
+                      const std::string&) override { return false; }
 };
 
 struct NoEmail : EmailSender {
@@ -212,273 +214,281 @@ std::vector<std::string> strings(PgPool& pool, const std::string& sql, const std
 }
 
 int main(int argc, char** argv) {
-  try {
-    std::filesystem::path output;
-    std::string requestedAccount;
-    std::uint64_t now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    for (int i = 1; i < argc; ++i) {
-      const std::string flag = argv[i];
-      if (flag == "--help") {
-        std::cout << "windmill_gym_snapshot --output DIR [--account UUID] [--now-ms EPOCH_MS]\n";
-        return 0;
-      }
-      if (i + 1 == argc) throw std::runtime_error("missing value for " + flag);
-      if (flag == "--output") output = argv[++i];
-      else if (flag == "--account") requestedAccount = argv[++i];
-      else if (flag == "--now-ms") now = std::stoull(argv[++i]);
-      else throw std::runtime_error("unknown flag: " + flag);
-    }
-    if (output.empty()) throw std::runtime_error("--output is required");
-    if (std::filesystem::exists(output) && !std::filesystem::is_empty(output))
-      throw std::runtime_error("snapshot output directory must be empty");
-    const char* database = std::getenv("DATABASE_URL");
-    if (!database || !*database) throw std::runtime_error("DATABASE_URL is required");
-    configureJsonReplies(drogon::app());
-    auto pool = std::make_shared<PgPool>(database, 1);
-    {
-      PgLease connection{*pool};
-      pqxx::nontransaction transaction{*connection};
-      transaction.exec("SET default_transaction_read_only = on");
-      transaction.exec("SET timezone = 'UTC'");
-    }
-    SnapshotClock clock{now};
-    OpenSslTokenGenerator tokens;
-    SnapshotAuth authRepository{pool};
-    authRepository.credentialDigest = tokens.digestOf("offline-gym-snapshot");
-    NoEmail email;
-    NoFootprint footprint;
-    NoRevocations revocations;
-    PgOAuthRepository oauthRepository{pool};
-    OAuthService oauth{oauthRepository, tokens, clock};
-    const char* appUrl = std::getenv("WINDMILL_APP_URL");
-    const std::string baseUrl = appUrl && *appUrl ? appUrl : "https://windmill.works";
-    auto auth = std::make_shared<AuthService>(authRepository, email, tokens, clock, oauth,
-                                           footprint, revocations, baseUrl);
-    FrozenLog logRepository{pool};
-    PgCatalogRepository catalogRepository{pool};
-    PgProgramRepository programRepository{pool};
-    PgPreferencesRepository preferencesRepository{pool};
-    PgNotesRepository notesRepository{pool};
-    PgBodyweightRepository bodyweightRepository{pool};
-    PgAskThreadRepository threadRepository{pool};
-    auto trainingService = std::make_shared<TrainingService>(logRepository, programRepository, clock, tokens);
-    auto catalogService = std::make_shared<CatalogService>(catalogRepository);
-    auto programService = std::make_shared<ProgramService>(programRepository, clock);
-    auto preferencesService = std::make_shared<PreferencesService>(preferencesRepository);
-    auto notesService = std::make_shared<NotesService>(notesRepository, clock);
-    auto bodyweightService = std::make_shared<BodyweightService>(bodyweightRepository);
-    auto threadService = std::make_shared<ThreadService>(threadRepository, clock);
-    TrainingApi training{trainingService, auth, baseUrl};
-    CatalogApi catalog{catalogService, trainingService, auth};
-    ProgramApi program{programService, auth};
-    PreferencesApi preferences{preferencesService, auth};
-    NotesApi notes{notesService, auth};
-    BodyweightApi bodyweight{bodyweightService, auth, clock};
-    ThreadsApi threads{threadService, auth};
-    GymTools host{*trainingService, *catalogService, *programService, *notesService, *bodyweightService, baseUrl};
-    auto accounts = strings(*pool,
-        "SELECT id::text FROM users WHERE ($1 = '' OR id::text = $1) ORDER BY id::text COLLATE \"C\"",
-        requestedAccount);
-    if (!requestedAccount.empty() && accounts.empty()) throw std::runtime_error("account does not exist");
-    Snapshot snapshot{output};
-    std::filesystem::create_directories(output);
-    for (const std::string& account : accounts) {
-      snapshot.account = account;
-      authRepository.account = UserId{account};
-      const auto owner = authRepository.findUserById(UserId{account});
-      if (!owner) throw std::runtime_error("snapshot account disappeared");
-      snapshot.closedAccount = owner->deletedAt.has_value();
-      const auto beforeCount = snapshot.count;
-      snapshot.get(catalog, &CatalogApi::listExercises, "/v1/gym/exercises", "/v1/gym/exercises", {});
-      snapshot.get(training, &TrainingApi::lastSets, "/v1/gym/exercises/last", "/v1/gym/exercises/last", {});
-      snapshot.get(training, &TrainingApi::listSessions, "/v1/gym/sessions", "/v1/gym/sessions", {});
-      snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", {});
-      snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", {{"projection", "progress"}, {"timeZone", "Asia/Dubai"}});
-      snapshot.get(training, &TrainingApi::listLogShares, "/v1/gym/log-shares", "/v1/gym/log-shares", {});
-      snapshot.get(training, &TrainingApi::stats, "/v1/gym/stats", "/v1/gym/stats", {});
-      snapshot.get(program, &ProgramApi::listRoutines, "/v1/gym/routines", "/v1/gym/routines", {});
-      snapshot.get(program, &ProgramApi::listProposals, "/v1/gym/proposals", "/v1/gym/proposals", {});
-      snapshot.get(program, &ProgramApi::listProposals, "/v1/gym/proposals", "/v1/gym/proposals", {{"state", "pending"}});
-      snapshot.get(preferences, &PreferencesApi::preferences, "/v1/gym/preferences", "/v1/gym/preferences", {});
-      snapshot.get(notes, &NotesApi::listNotes, "/v1/gym/notes", "/v1/gym/notes", {});
-      snapshot.get(bodyweight, &BodyweightApi::listEntries, "/v1/gym/bodyweight", "/v1/gym/bodyweight", {});
-      snapshot.get(threads, &ThreadsApi::listThreads, "/v1/gym/threads", "/v1/gym/threads", {});
-
-      auto sessionIds = strings(*pool, "SELECT id FROM gym_sessions WHERE user_id = $1::uuid ORDER BY started_at DESC, id DESC", account);
-      if (sessionIds.empty()) sessionIds.push_back("ses_missing_snapshot");
-      for (const auto& id : sessionIds) {
-        snapshot.get(training, &TrainingApi::getSession, "/v1/gym/sessions/{id}", "/v1/gym/sessions/" + id, {}, id);
-        snapshot.get(training, &TrainingApi::reviewSession, "/v1/gym/sessions/{id}/review", "/v1/gym/sessions/" + id + "/review", {}, id);
-        snapshot.call(host, "get_session", argument("sessionId", id));
-        auto review = argument("sessionId", id);
-        review["review"] = true;
-        snapshot.call(host, "get_session", review);
-      }
-      for (const std::string mode : {"sessions", "history", "history-progress"}) {
-        const bool history = mode != "sessions";
-        Params params{{"limit", "200"}};
-        if (mode == "history-progress") {
-          params["projection"] = "progress";
-          params["timeZone"] = "Asia/Dubai";
+  return wm::runObservedTool("gym.snapshot", "gym", [&](wm::WriteObservation& observation) {
+    bool validated = false;
+    const char* validationOutcome = "invalid-arguments";
+    try {
+      std::filesystem::path output;
+      std::string requestedAccount;
+      std::uint64_t now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count());
+      for (int i = 1; i < argc; ++i) {
+        const std::string flag = argv[i];
+        if (flag == "--help") {
+          std::cout << "windmill_gym_snapshot --output DIR [--account UUID] [--now-ms EPOCH_MS]\n";
+          return 0;
         }
-        std::set<std::string> seen;
-        for (;;) {
-          const auto response = history
-              ? snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", params)
-              : snapshot.get(training, &TrainingApi::listSessions, "/v1/gym/sessions", "/v1/gym/sessions", params);
-          if (!history) {
-            Json::Value args(Json::objectValue);
-            args["limit"] = 200;
-            if (params.count("before")) {
-              args["before"] = Json::UInt64(std::stoull(params.at("before")));
-              args["beforeId"] = params.at("beforeId");
-            }
-            snapshot.call(host, "list_sessions", args);
+        if (i + 1 == argc) throw std::runtime_error("missing value for " + flag);
+        if (flag == "--output") output = argv[++i];
+        else if (flag == "--account") requestedAccount = argv[++i];
+        else if (flag == "--now-ms") now = std::stoull(argv[++i]);
+        else throw std::runtime_error("unknown flag: " + flag);
+      }
+      if (output.empty()) throw std::runtime_error("--output is required");
+      if (std::filesystem::exists(output) && !std::filesystem::is_empty(output))
+        throw std::runtime_error("snapshot output directory must be empty");
+      validationOutcome = "not-configured";
+      const char* database = std::getenv("DATABASE_URL");
+      if (!database || !*database) throw std::runtime_error("DATABASE_URL is required");
+      validated = true;
+      configureJsonReplies(drogon::app());
+      auto pool = std::make_shared<PgPool>(database, 1);
+      {
+        PgLease connection{*pool};
+        pqxx::nontransaction transaction{*connection};
+        transaction.exec("SET default_transaction_read_only = on");
+        transaction.exec("SET timezone = 'UTC'");
+      }
+      SnapshotClock clock{now};
+      OpenSslTokenGenerator tokens;
+      SnapshotAuth authRepository{pool};
+      authRepository.credentialDigest = tokens.digestOf("offline-gym-snapshot");
+      NoEmail email;
+      NoFootprint footprint;
+      NoRevocations revocations;
+      PgOAuthRepository oauthRepository{pool};
+      OAuthService oauth{oauthRepository, tokens, clock};
+      const char* appUrl = std::getenv("WINDMILL_APP_URL");
+      const std::string baseUrl = appUrl && *appUrl ? appUrl : "https://windmill.works";
+      auto auth = std::make_shared<AuthService>(authRepository, email, tokens, clock, oauth,
+                                             footprint, revocations, baseUrl);
+      FrozenLog logRepository{pool};
+      PgCatalogRepository catalogRepository{pool};
+      PgProgramRepository programRepository{pool};
+      PgPreferencesRepository preferencesRepository{pool};
+      PgNotesRepository notesRepository{pool};
+      PgBodyweightRepository bodyweightRepository{pool};
+      PgAskThreadRepository threadRepository{pool};
+      auto trainingService = std::make_shared<TrainingService>(logRepository, programRepository, clock, tokens);
+      auto catalogService = std::make_shared<CatalogService>(catalogRepository);
+      auto programService = std::make_shared<ProgramService>(programRepository, clock);
+      auto preferencesService = std::make_shared<PreferencesService>(preferencesRepository);
+      auto notesService = std::make_shared<NotesService>(notesRepository, clock);
+      auto bodyweightService = std::make_shared<BodyweightService>(bodyweightRepository);
+      auto threadService = std::make_shared<ThreadService>(threadRepository, clock);
+      TrainingApi training{trainingService, auth, baseUrl};
+      CatalogApi catalog{catalogService, trainingService, auth};
+      ProgramApi program{programService, auth};
+      PreferencesApi preferences{preferencesService, auth};
+      NotesApi notes{notesService, auth};
+      BodyweightApi bodyweight{bodyweightService, auth, clock};
+      ThreadsApi threads{threadService, auth};
+      GymTools host{*trainingService, *catalogService, *programService, *notesService, *bodyweightService, baseUrl};
+      auto accounts = strings(*pool,
+          "SELECT id::text FROM users WHERE ($1 = '' OR id::text = $1) ORDER BY id::text COLLATE \"C\"",
+          requestedAccount);
+      if (!requestedAccount.empty() && accounts.empty()) throw std::runtime_error("account does not exist");
+      Snapshot snapshot{output};
+      std::filesystem::create_directories(output);
+      for (const std::string& account : accounts) {
+        snapshot.account = account;
+        authRepository.account = UserId{account};
+        const auto owner = authRepository.findUserById(UserId{account});
+        if (!owner) throw std::runtime_error("snapshot account disappeared");
+        snapshot.closedAccount = owner->deletedAt.has_value();
+        const auto beforeCount = snapshot.count;
+        snapshot.get(catalog, &CatalogApi::listExercises, "/v1/gym/exercises", "/v1/gym/exercises", {});
+        snapshot.get(training, &TrainingApi::lastSets, "/v1/gym/exercises/last", "/v1/gym/exercises/last", {});
+        snapshot.get(training, &TrainingApi::listSessions, "/v1/gym/sessions", "/v1/gym/sessions", {});
+        snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", {});
+        snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", {{"projection", "progress"}, {"timeZone", "Asia/Dubai"}});
+        snapshot.get(training, &TrainingApi::listLogShares, "/v1/gym/log-shares", "/v1/gym/log-shares", {});
+        snapshot.get(training, &TrainingApi::stats, "/v1/gym/stats", "/v1/gym/stats", {});
+        snapshot.get(program, &ProgramApi::listRoutines, "/v1/gym/routines", "/v1/gym/routines", {});
+        snapshot.get(program, &ProgramApi::listProposals, "/v1/gym/proposals", "/v1/gym/proposals", {});
+        snapshot.get(program, &ProgramApi::listProposals, "/v1/gym/proposals", "/v1/gym/proposals", {{"state", "pending"}});
+        snapshot.get(preferences, &PreferencesApi::preferences, "/v1/gym/preferences", "/v1/gym/preferences", {});
+        snapshot.get(notes, &NotesApi::listNotes, "/v1/gym/notes", "/v1/gym/notes", {});
+        snapshot.get(bodyweight, &BodyweightApi::listEntries, "/v1/gym/bodyweight", "/v1/gym/bodyweight", {});
+        snapshot.get(threads, &ThreadsApi::listThreads, "/v1/gym/threads", "/v1/gym/threads", {});
+
+        auto sessionIds = strings(*pool, "SELECT id FROM gym_sessions WHERE user_id = $1::uuid ORDER BY started_at DESC, id DESC", account);
+        if (sessionIds.empty()) sessionIds.push_back("ses_missing_snapshot");
+        for (const auto& id : sessionIds) {
+          snapshot.get(training, &TrainingApi::getSession, "/v1/gym/sessions/{id}", "/v1/gym/sessions/" + id, {}, id);
+          snapshot.get(training, &TrainingApi::reviewSession, "/v1/gym/sessions/{id}/review", "/v1/gym/sessions/" + id + "/review", {}, id);
+          snapshot.call(host, "get_session", argument("sessionId", id));
+          auto review = argument("sessionId", id);
+          review["review"] = true;
+          snapshot.call(host, "get_session", review);
+        }
+        for (const std::string mode : {"sessions", "history", "history-progress"}) {
+          const bool history = mode != "sessions";
+          Params params{{"limit", "200"}};
+          if (mode == "history-progress") {
+            params["projection"] = "progress";
+            params["timeZone"] = "Asia/Dubai";
           }
-          const auto body = response->getJsonObject();
-          if (!body || !(*body)["sessions"].isArray()) break;
-          const auto& rows = (*body)["sessions"];
-          if (history ? !(*body)["next"].isObject() : rows.size() < 200) break;
-          const auto& last = rows[rows.size() - 1];
-          const std::string id = last["id"].asString();
-          if (!seen.insert(id).second) throw std::runtime_error("repeated workout cursor");
-          params["before"] = std::to_string(last["startedAt"].asUInt64());
-          params["beforeId"] = id;
-        }
-      }
-      auto exercises = catalogRepository.catalog(UserId{account});
-      if (exercises.empty()) {
-        const std::string missing = "ex_missing_snapshot";
-        snapshot.get(catalog, &CatalogApi::exerciseRecord, "/v1/gym/exercises/{id}/record",
-            "/v1/gym/exercises/" + missing + "/record", {}, missing);
-        snapshot.get(training, &TrainingApi::lastTime, "/v1/gym/last", "/v1/gym/last", {{"exercise", missing}});
-        snapshot.call(host, "last_time", argument("exerciseId", missing));
-      }
-      for (const auto& exercise : exercises) {
-        const std::string id = exercise.id.str();
-        snapshot.get(catalog, &CatalogApi::exerciseRecord, "/v1/gym/exercises/{id}/record", "/v1/gym/exercises/" + id + "/record", {}, id);
-        snapshot.get(training, &TrainingApi::lastTime, "/v1/gym/last", "/v1/gym/last", {{"exercise", id}});
-        snapshot.call(host, "last_time", argument("exerciseId", id));
-        snapshot.call(host, "get_stats", argument("exerciseId", id));
-      }
-      auto routines = strings(*pool, "SELECT id FROM gym_routines WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
-      if (routines.empty()) routines.push_back("rt_missing_snapshot");
-      for (const auto& id : routines) {
-        snapshot.get(program, &ProgramApi::getRoutine, "/v1/gym/routines/{id}", "/v1/gym/routines/" + id, {}, id);
-        snapshot.call(host, "list_routines", argument("routineId", id));
-      }
-      auto proposals = strings(*pool, "SELECT id FROM gym_proposals WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
-      if (proposals.empty()) proposals.push_back("prop_missing_snapshot");
-      for (const auto& id : proposals)
-        snapshot.get(program, &ProgramApi::getProposal, "/v1/gym/proposals/{id}", "/v1/gym/proposals/" + id, {}, id);
-
-      auto threadIds = strings(*pool, "SELECT id FROM gym_ask_threads WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
-      if (threadIds.empty()) threadIds.push_back("thr_missing_snapshot");
-      for (const auto& id : threadIds) {
-        snapshot.get(threads, &ThreadsApi::getThread, "/v1/gym/threads/{id}", "/v1/gym/threads/" + id, {}, id);
-        auto attachments = strings(*pool, "SELECT id FROM gym_ask_attachments WHERE user_id = $1::uuid AND thread_id = $2 ORDER BY id COLLATE \"C\"", account, id);
-        if (attachments.empty()) attachments.push_back("img_missing_snapshot");
-        for (const auto& image : attachments)
-          snapshot.get(threads, &ThreadsApi::getImage, "/v1/gym/threads/{thread}/attachments/{id}", "/v1/gym/threads/" + id + "/attachments/" + image, {}, id, image);
-        std::uint64_t before = 0;
-        std::set<std::string> seen;
-        for (;;) {
-          Params params{{"limit", "200"}};
-          if (before) params["before"] = std::to_string(before);
-          const auto response = snapshot.get(threads, &ThreadsApi::getThread, "/v1/gym/threads/{id}", "/v1/gym/threads/" + id, params, id);
-          const auto body = response->getJsonObject();
-          if (!body || !(*body)["nextCursor"].isString()) break;
-          const auto next = (*body)["nextCursor"].asString();
-          if (next.empty()) break;
-          if (!seen.insert(next).second) throw std::runtime_error("repeated message cursor");
-          before = std::stoull(next);
-        }
-      }
-      std::string cursor;
-      std::set<std::string> seen;
-      for (;;) {
-        Params params{{"limit", "200"}};
-        if (!cursor.empty()) params["cursor"] = cursor;
-        const auto response = snapshot.get(threads, &ThreadsApi::listThreads, "/v1/gym/threads", "/v1/gym/threads", params);
-        const auto body = response->getJsonObject();
-        if (!body || !(*body)["nextCursor"].isString()) break;
-        cursor = (*body)["nextCursor"].asString();
-        if (cursor.empty()) break;
-        if (!seen.insert(cursor).second) throw std::runtime_error("repeated thread cursor");
-      }
-      auto shares = strings(*pool, "SELECT token FROM gym_session_shares WHERE user_id = $1::uuid ORDER BY token COLLATE \"C\"", account);
-      if (shares.empty()) shares.push_back("missing-snapshot-share");
-      for (const auto& token : shares)
-        snapshot.get(training, &TrainingApi::sharedSession, "/v1/gym/shared/{token}", "/v1/gym/shared/" + token, {}, token);
-      auto logShares = strings(*pool, "SELECT token FROM gym_log_shares WHERE user_id = $1::uuid ORDER BY token COLLATE \"C\"", account);
-      if (logShares.empty()) logShares.push_back("missing-snapshot-log-share");
-      for (const auto& token : logShares) {
-        snapshot.get(training, &TrainingApi::sharedHistory, "/v1/gym/shared-logs/{token}", "/v1/gym/shared-logs/" + token, {}, token);
-        for (bool progress : {false, true}) {
-          Params params{{"limit", "200"}};
-          if (progress) params["projection"] = "progress";
           std::set<std::string> seen;
           for (;;) {
-            const auto response = snapshot.get(training, &TrainingApi::sharedHistory,
-                "/v1/gym/shared-logs/{token}", "/v1/gym/shared-logs/" + token, params, token);
+            const auto response = history
+                ? snapshot.get(training, &TrainingApi::history, "/v1/gym/history", "/v1/gym/history", params)
+                : snapshot.get(training, &TrainingApi::listSessions, "/v1/gym/sessions", "/v1/gym/sessions", params);
+            if (!history) {
+              Json::Value args(Json::objectValue);
+              args["limit"] = 200;
+              if (params.count("before")) {
+                args["before"] = Json::UInt64(std::stoull(params.at("before")));
+                args["beforeId"] = params.at("beforeId");
+              }
+              snapshot.call(host, "list_sessions", args);
+            }
             const auto body = response->getJsonObject();
-            if (!body || !(*body)["next"].isObject()) break;
-            const auto& next = (*body)["next"];
-            const std::string id = next["beforeId"].asString();
-            if (!seen.insert(id).second) throw std::runtime_error("repeated share cursor");
-            params["before"] = std::to_string(next["before"].asUInt64());
+            if (!body || !(*body)["sessions"].isArray()) break;
+            const auto& rows = (*body)["sessions"];
+            if (history ? !(*body)["next"].isObject() : rows.size() < 200) break;
+            const auto& last = rows[rows.size() - 1];
+            const std::string id = last["id"].asString();
+            if (!seen.insert(id).second) throw std::runtime_error("repeated workout cursor");
+            params["before"] = std::to_string(last["startedAt"].asUInt64());
             params["beforeId"] = id;
           }
         }
-      }
-
-      for (const auto& declaration : host.declareTools()) {
-        if (declaration.access != Access::read) continue;
-        const std::string name = declaration.name();
-        if (name == "get_session" || name == "last_time") continue;
-        if (name == "get_sessions" || name == "get_last_times") {
-          const auto& ids = name == "get_sessions" ? sessionIds : routines;
-          std::vector<std::string> exerciseIds;
-          if (name == "get_last_times") {
-            for (const auto& exercise : exercises) exerciseIds.push_back(exercise.id.str());
-            if (exerciseIds.empty()) exerciseIds.push_back("ex_missing_snapshot");
-          }
-          const auto& batch = name == "get_sessions" ? ids : exerciseIds;
-          for (std::size_t start = 0; start < batch.size(); start += 50) {
-            Json::Value args(Json::objectValue);
-            const char* key = name == "get_sessions" ? "sessionIds" : "exerciseIds";
-            args[key] = Json::Value(Json::arrayValue);
-            for (std::size_t i = start; i < std::min(start + 50, batch.size()); ++i) args[key].append(batch[i]);
-            if (name == "get_sessions") args["review"] = true;
-            snapshot.call(host, name, args);
-          }
-          continue;
+        auto exercises = catalogRepository.catalog(UserId{account});
+        if (exercises.empty()) {
+          const std::string missing = "ex_missing_snapshot";
+          snapshot.get(catalog, &CatalogApi::exerciseRecord, "/v1/gym/exercises/{id}/record",
+              "/v1/gym/exercises/" + missing + "/record", {}, missing);
+          snapshot.get(training, &TrainingApi::lastTime, "/v1/gym/last", "/v1/gym/last", {{"exercise", missing}});
+          snapshot.call(host, "last_time", argument("exerciseId", missing));
         }
-        if (name != "list_exercises" && name != "list_sessions" && name != "list_routines" &&
-            name != "get_stats" && name != "list_notes" && name != "list_bodyweight")
-          throw std::runtime_error("snapshot has no request for read tool: " + name);
-        snapshot.call(host, name, Json::Value(Json::objectValue));
+        for (const auto& exercise : exercises) {
+          const std::string id = exercise.id.str();
+          snapshot.get(catalog, &CatalogApi::exerciseRecord, "/v1/gym/exercises/{id}/record", "/v1/gym/exercises/" + id + "/record", {}, id);
+          snapshot.get(training, &TrainingApi::lastTime, "/v1/gym/last", "/v1/gym/last", {{"exercise", id}});
+          snapshot.call(host, "last_time", argument("exerciseId", id));
+          snapshot.call(host, "get_stats", argument("exerciseId", id));
+        }
+        auto routines = strings(*pool, "SELECT id FROM gym_routines WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
+        if (routines.empty()) routines.push_back("rt_missing_snapshot");
+        for (const auto& id : routines) {
+          snapshot.get(program, &ProgramApi::getRoutine, "/v1/gym/routines/{id}", "/v1/gym/routines/" + id, {}, id);
+          snapshot.call(host, "list_routines", argument("routineId", id));
+        }
+        auto proposals = strings(*pool, "SELECT id FROM gym_proposals WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
+        if (proposals.empty()) proposals.push_back("prop_missing_snapshot");
+        for (const auto& id : proposals)
+          snapshot.get(program, &ProgramApi::getProposal, "/v1/gym/proposals/{id}", "/v1/gym/proposals/" + id, {}, id);
+
+        auto threadIds = strings(*pool, "SELECT id FROM gym_ask_threads WHERE user_id = $1::uuid ORDER BY id COLLATE \"C\"", account);
+        if (threadIds.empty()) threadIds.push_back("thr_missing_snapshot");
+        for (const auto& id : threadIds) {
+          snapshot.get(threads, &ThreadsApi::getThread, "/v1/gym/threads/{id}", "/v1/gym/threads/" + id, {}, id);
+          auto attachments = strings(*pool, "SELECT id FROM gym_ask_attachments WHERE user_id = $1::uuid AND thread_id = $2 ORDER BY id COLLATE \"C\"", account, id);
+          if (attachments.empty()) attachments.push_back("img_missing_snapshot");
+          for (const auto& image : attachments)
+            snapshot.get(threads, &ThreadsApi::getImage, "/v1/gym/threads/{thread}/attachments/{id}", "/v1/gym/threads/" + id + "/attachments/" + image, {}, id, image);
+          std::uint64_t before = 0;
+          std::set<std::string> seen;
+          for (;;) {
+            Params params{{"limit", "200"}};
+            if (before) params["before"] = std::to_string(before);
+            const auto response = snapshot.get(threads, &ThreadsApi::getThread, "/v1/gym/threads/{id}", "/v1/gym/threads/" + id, params, id);
+            const auto body = response->getJsonObject();
+            if (!body || !(*body)["nextCursor"].isString()) break;
+            const auto next = (*body)["nextCursor"].asString();
+            if (next.empty()) break;
+            if (!seen.insert(next).second) throw std::runtime_error("repeated message cursor");
+            before = std::stoull(next);
+          }
+        }
+        std::string cursor;
+        std::set<std::string> seen;
+        for (;;) {
+          Params params{{"limit", "200"}};
+          if (!cursor.empty()) params["cursor"] = cursor;
+          const auto response = snapshot.get(threads, &ThreadsApi::listThreads, "/v1/gym/threads", "/v1/gym/threads", params);
+          const auto body = response->getJsonObject();
+          if (!body || !(*body)["nextCursor"].isString()) break;
+          cursor = (*body)["nextCursor"].asString();
+          if (cursor.empty()) break;
+          if (!seen.insert(cursor).second) throw std::runtime_error("repeated thread cursor");
+        }
+        auto shares = strings(*pool, "SELECT token FROM gym_session_shares WHERE user_id = $1::uuid ORDER BY token COLLATE \"C\"", account);
+        if (shares.empty()) shares.push_back("missing-snapshot-share");
+        for (const auto& token : shares)
+          snapshot.get(training, &TrainingApi::sharedSession, "/v1/gym/shared/{token}", "/v1/gym/shared/" + token, {}, token);
+        auto logShares = strings(*pool, "SELECT token FROM gym_log_shares WHERE user_id = $1::uuid ORDER BY token COLLATE \"C\"", account);
+        if (logShares.empty()) logShares.push_back("missing-snapshot-log-share");
+        for (const auto& token : logShares) {
+          snapshot.get(training, &TrainingApi::sharedHistory, "/v1/gym/shared-logs/{token}", "/v1/gym/shared-logs/" + token, {}, token);
+          for (bool progress : {false, true}) {
+            Params params{{"limit", "200"}};
+            if (progress) params["projection"] = "progress";
+            std::set<std::string> seen;
+            for (;;) {
+              const auto response = snapshot.get(training, &TrainingApi::sharedHistory,
+                  "/v1/gym/shared-logs/{token}", "/v1/gym/shared-logs/" + token, params, token);
+              const auto body = response->getJsonObject();
+              if (!body || !(*body)["next"].isObject()) break;
+              const auto& next = (*body)["next"];
+              const std::string id = next["beforeId"].asString();
+              if (!seen.insert(id).second) throw std::runtime_error("repeated share cursor");
+              params["before"] = std::to_string(next["before"].asUInt64());
+              params["beforeId"] = id;
+            }
+          }
+        }
+
+        for (const auto& declaration : host.declareTools()) {
+          if (declaration.access != Access::read) continue;
+          const std::string name = declaration.name();
+          if (name == "get_session" || name == "last_time") continue;
+          if (name == "get_sessions" || name == "get_last_times") {
+            const auto& ids = name == "get_sessions" ? sessionIds : routines;
+            std::vector<std::string> exerciseIds;
+            if (name == "get_last_times") {
+              for (const auto& exercise : exercises) exerciseIds.push_back(exercise.id.str());
+              if (exerciseIds.empty()) exerciseIds.push_back("ex_missing_snapshot");
+            }
+            const auto& batch = name == "get_sessions" ? ids : exerciseIds;
+            for (std::size_t start = 0; start < batch.size(); start += 50) {
+              Json::Value args(Json::objectValue);
+              const char* key = name == "get_sessions" ? "sessionIds" : "exerciseIds";
+              args[key] = Json::Value(Json::arrayValue);
+              for (std::size_t i = start; i < std::min(start + 50, batch.size()); ++i) args[key].append(batch[i]);
+              if (name == "get_sessions") args["review"] = true;
+              snapshot.call(host, name, args);
+            }
+            continue;
+          }
+          if (name != "list_exercises" && name != "list_sessions" && name != "list_routines" &&
+              name != "get_stats" && name != "list_notes" && name != "list_bodyweight")
+            throw std::runtime_error("snapshot has no request for read tool: " + name);
+          snapshot.call(host, name, Json::Value(Json::objectValue));
+        }
+        Json::Value report(Json::objectValue);
+        report["account"] = account;
+        report["responses"] = Json::UInt64(snapshot.count - beforeCount);
+        std::cout << dump(report) << '\n';
       }
-      Json::Value report(Json::objectValue);
-      report["account"] = account;
-      report["responses"] = Json::UInt64(snapshot.count - beforeCount);
-      std::cout << dump(report) << '\n';
+      Json::Value inventory(Json::objectValue);
+      inventory["nowMs"] = Json::UInt64(now);
+      inventory["accounts"] = Json::UInt64(accounts.size());
+      inventory["responses"] = Json::UInt64(snapshot.count);
+      inventory["restGetRoutes"] = Json::Value(Json::arrayValue);
+      inventory["mcpReadTools"] = Json::Value(Json::arrayValue);
+      for (const auto& route : snapshot.routes) inventory["restGetRoutes"].append(route);
+      for (const auto& tool : snapshot.tools) inventory["mcpReadTools"].append(tool);
+      write(output / "inventory.json", dump(inventory) + "\n");
+      write(output / "manifest.json", dump(snapshot.manifest) + "\n");
+      std::cout << dump(inventory) << '\n';
+      return 0;
+    } catch (const std::exception& error) {
+      if (!validated) observation.finish(validationOutcome);
+      else observation.reportFailure(error);
+      std::cerr << "gym snapshot: operation failed" << '\n';
+      return 1;
     }
-    Json::Value inventory(Json::objectValue);
-    inventory["nowMs"] = Json::UInt64(now);
-    inventory["accounts"] = Json::UInt64(accounts.size());
-    inventory["responses"] = Json::UInt64(snapshot.count);
-    inventory["restGetRoutes"] = Json::Value(Json::arrayValue);
-    inventory["mcpReadTools"] = Json::Value(Json::arrayValue);
-    for (const auto& route : snapshot.routes) inventory["restGetRoutes"].append(route);
-    for (const auto& tool : snapshot.tools) inventory["mcpReadTools"].append(tool);
-    write(output / "inventory.json", dump(inventory) + "\n");
-    write(output / "manifest.json", dump(snapshot.manifest) + "\n");
-    std::cout << dump(inventory) << '\n';
-    return 0;
-  } catch (const std::exception& error) {
-    std::cerr << "gym snapshot: " << error.what() << '\n';
-    return 1;
-  }
+  });
 }

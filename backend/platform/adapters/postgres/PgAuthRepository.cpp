@@ -230,16 +230,17 @@ std::optional<StoredSession> PgAuthRepository::findSession(const std::string& di
                        static_cast<UnixMs>(row["expires_ms"].as<long long>())};
 }
 
-void PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+bool PgAuthRepository::refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                                      const std::string& userAgent, const std::string& ip) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
-  txn.exec_params(
+  const pqxx::result updated = txn.exec_params(
       "UPDATE sessions SET expires_ms = $2, last_seen_ms = $3, "
       "user_agent = coalesce(nullif($4, ''), user_agent), ip = coalesce(nullif($5, ''), ip) "
       "WHERE token_hash = $1",
       digest, static_cast<long long>(expiresAt), static_cast<long long>(seenAt), userAgent, ip);
   txn.commit();
+  return updated.affected_rows() != 0;
 }
 
 void PgAuthRepository::deleteSession(const std::string& digest) {

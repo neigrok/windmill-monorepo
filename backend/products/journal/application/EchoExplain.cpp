@@ -19,7 +19,7 @@ namespace wm {
 EchoExplainer::EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder,
                              Curator& curator, PageService& pages)
     : echoes_(echoes), segmenter_(segmenter), embedder_(embedder), curator_(curator), pages_(pages),
-      heartbeat_("journal-echo-explain") {}
+      heartbeat_("journal-echo-explain", "journal") {}
 
 void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& request,
                                  std::function<void(EchoExplanation)> done) {
@@ -28,11 +28,12 @@ void EchoExplainer::explainAsync(const UserId& user, const ExplainRequest& reque
     try {
       done(explain(user, request));
     } catch (const std::exception& error) {
-      LOG_ERROR << "journal echo explain failed: " << error.what();
+      reportCurrentWriteFailure(error);
       EchoExplanation failed;
       failed.error = error.what();
       done(failed);
     } catch (...) {
+      reportCurrentUnknownWriteFailure();
       EchoExplanation failed;
       failed.error = "explain failed";
       done(failed);

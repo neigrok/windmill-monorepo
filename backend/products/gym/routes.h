@@ -14,6 +14,7 @@
 #include <drogon/HttpAppFramework.h>
 
 #include <memory>
+#include <functional>
 
 namespace wm::gym {
 
@@ -42,6 +43,7 @@ struct GymDeps {
   std::shared_ptr<Clock> clock;
   std::shared_ptr<AskService> askService;  // null (or unconfigured) ⇒ no /v1/gym/ask route exists
   std::string appBaseUrl;                  // the browser app's origin — a workout share's link
+  std::function<void(std::function<void()>)> onShutdown;
 };
 
 // Mounts the gym product on the shared app: every /v1/gym/* route. All of them are owner-scoped

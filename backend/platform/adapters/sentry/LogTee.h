@@ -2,33 +2,46 @@
 
 #include "platform/adapters/sentry/SentryClient.h"
 
+#include <chrono>
 #include <cstddef>
+#include <cstdio>
+#include <functional>
 #include <memory>
 #include <string>
+#include <thread>
 
 namespace wm {
 
-// Every LOG_* in this backend — ours and Drogon's own — passes through one trantor output function.
-// The tee keeps stdout as it was and forwards a copy to Sentry.
 struct TrantorLine {
   SentryClient::Level level;
-  std::string body;    // the message, prefix and source suffix removed
-  std::string source;  // "file.cc:42" when trantor appended one
+  std::string body;
+  std::string source;
 };
 
 TrantorLine parseTrantorLine(const char* msg, std::size_t len);
-
-// One trantor message as ONE physical line: any embedded CR/LF escaped, and exactly one trailing
-// newline, in ONE buffer so the whole record reaches stdout in a single write. (Body and newline as
-// two stdio calls take the FILE lock twice, and another thread's line lands in the gap.)
 std::string oneLine(const char* msg, std::size_t len);
-
-// Installs the output function. Lines below `minimum` are written to stdout and not forwarded.
-// Anything logged on the client's own loop thread is never forwarded, so a failed send reporting
-// itself cannot feed the buffer it failed to drain.
-void installLogTee(std::shared_ptr<SentryClient> sentry, SentryClient::Level minimum);
-
-// Parses SENTRY_LOG_LEVEL. Unknown or unset reads as `info`.
 SentryClient::Level logLevelFromEnv(const char* value);
+
+class AsyncLogQueue {
+public:
+  using Overflow = std::function<void(std::uint64_t)>;
+  AsyncLogQueue(int outputFd, Overflow overflow = {}, std::size_t capacity = 1024,
+                std::chrono::milliseconds interval = std::chrono::seconds(5), int emergencyFd = -1);
+  ~AsyncLogQueue();
+  void push(std::string line);
+  bool drain(std::chrono::milliseconds timeout = std::chrono::seconds(1));
+  bool stop(std::chrono::milliseconds timeout = std::chrono::seconds(2));
+  std::uint64_t dropped() const;
+  void emergencyDump(int signal) noexcept;
+private:
+  struct State;
+  std::unique_ptr<State> state_;
+  std::thread writer_;
+};
+
+void installLogTee(std::shared_ptr<SentryClient> sentry, SentryClient::Level minimum,
+                   std::FILE* output = stdout);
+bool drainLogTee(std::chrono::milliseconds timeout = std::chrono::seconds(1));
+bool stopLogTee(std::chrono::milliseconds timeout = std::chrono::seconds(2));
 
 }

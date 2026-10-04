@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/http/FeedbackApi.h"
 
 #include "platform/adapters/http/Caller.h"
@@ -79,7 +80,8 @@ void FeedbackApi::submit(const drogon::HttpRequestPtr& req, HttpCallback&& callb
   try {
     feedback_->insert(sessionKey, caller, trimmed, email, context);
   } catch (const std::exception& e) {
-    LOG_ERROR << "feedback dropped at storage: " << e.what();
+    reportCurrentWriteFailure(e);
+    LOG_ERROR << "feedback dropped at storage: " << "unexpected storage exception";
     callback(error(drogon::k500InternalServerError, "feedback not recorded"));
     return;
   }

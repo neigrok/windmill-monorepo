@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/email/ResendWebhookApi.h"
 
 #include "platform/adapters/email/ResendSignature.h"
@@ -70,7 +71,7 @@ void ResendWebhookApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&&
   try {
     json = req->getJsonObject();
   } catch (const std::exception& e) {
-    LOG_DEBUG << "resend webhook: verified body would not parse: " << e.what();
+    LOG_DEBUG << "resend webhook: verified body would not parse: " << "unexpected storage exception";
     json.reset();
   }
   if (!json || !json->isObject()) {
@@ -109,7 +110,8 @@ void ResendWebhookApi::webhook(const drogon::HttpRequestPtr& req, HttpCallback&&
       if (stream.suppression->stopMailing(*recipient))
         LOG_INFO << "resend webhook: " << stream.name << " stopped after " << feedback.eventType;
     } catch (const std::exception& e) {
-      LOG_ERROR << "resend webhook: " << stream.name << " not stopped: " << e.what();
+      reportCurrentWriteFailure(e);
+      LOG_ERROR << "resend webhook: " << stream.name << " not stopped: " << "unexpected storage exception";
       unwritten = unwritten.empty() ? stream.name : unwritten + ", " + stream.name;
     }
   }

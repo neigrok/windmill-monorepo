@@ -214,14 +214,15 @@ struct FakeAuthRepository : AuthRepository {
     if (it == sessions.end()) return std::nullopt;
     return StoredSession{it->second.user, it->second.expiresAt};
   }
-  void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+  bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                       const std::string& userAgent, const std::string& ip) override {
     auto it = sessions.find(digest);
-    if (it == sessions.end()) return;
+    if (it == sessions.end()) return false;
     it->second.expiresAt = expiresAt;
     it->second.lastSeenMs = seenAt;
     if (!userAgent.empty()) it->second.userAgent = userAgent;  // heal only when the request carries it
     if (!ip.empty()) it->second.ip = ip;
+    return true;
   }
   void deleteSession(const std::string& digest) override { sessions.erase(digest); }
 

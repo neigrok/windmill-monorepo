@@ -25,6 +25,7 @@ struct AgentOutcome {
   std::string detail;    // the why, on demand
   std::string error;     // set when ok is false; diagnostic, never shown raw to a reader
   int edits = 0;
+  std::string outcomeCode;
 };
 
 struct PlanAgent {

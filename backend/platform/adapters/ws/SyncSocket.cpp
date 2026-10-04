@@ -1,4 +1,5 @@
 #include "platform/adapters/ws/SyncSocket.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/http/SyncApi.h"
 
@@ -55,7 +56,8 @@ public:
       if (closed_ || !conn || !conn->connected()) return;
       conn->send(text);
     } catch (const std::exception& error) {
-      LOG_ERROR << "sync live dropped a frame: " << error.what();
+      reportCurrentWriteFailure(error);
+      LOG_ERROR << "sync live dropped a frame: " << "unexpected sync socket exception";
     }
   }
 
@@ -121,7 +123,7 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
   const SyncSocketDeps& deps = g_installed->deps;
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !deps.allowedOrigins.contains(origin)) {
-    LOG_WARN << "sync live upgrade refused: origin " << origin << " is not allow-listed";
+    LOG_WARN << "sync live upgrade refused: origin is not allow-listed";
     return refuse(forbidden());
   }
   const Json::Value envelope = SyncReply::envelope(deps.clock->nowMs(), deps.epoch);
@@ -139,7 +141,7 @@ void SyncUpgradeGate::doFilter(const drogon::HttpRequestPtr& req, drogon::Filter
       if (credential.fails()) refusal = SyncReply::unauthenticated(envelope);
       else upgrade.principal = credential.servedAs();
     } catch (const std::exception& error) {
-      LOG_ERROR << "sync live upgrade could not resolve its credential: " << error.what();
+      LOG_ERROR << "sync live upgrade could not resolve its credential: " << "unexpected sync socket exception";
       refusal = SyncReply::unavailable(envelope);
     }
     loop->queueInLoop([req, refuse, pass, refusal, upgrade] {
@@ -209,7 +211,7 @@ void SyncSocket::handleNewMessage(const drogon::WebSocketConnectionPtr& conn, st
       if (sub) live->subscribe(*socket, scopes);
       else live->unsubscribe(*socket, scopes);
     } catch (const std::exception& error) {
-      LOG_ERROR << "sync live subscription unavailable: " << error.what();
+      LOG_ERROR << "sync live subscription unavailable: " << "unexpected sync socket exception";
       socket->close(kTryAgainLater);
       live->close(*socket);
     }

@@ -8,6 +8,8 @@
 #include "products/journal/sync/adapters/json/JournalIntent.h"
 #include "products/journal/sync/application/JournalFeed.h"
 
+#include "platform/application/WriteObservation.h"
+
 #include <future>
 #include <algorithm>
 
@@ -85,11 +87,19 @@ JournalDoor::JournalDoor(std::shared_ptr<PgPool> pool, Clock& clock, FailureRepo
 JournalDoor::~JournalDoor() = default;
 
 Json::Value JournalDoor::execute(const UserId& user, const Json::Value& intent, WriteOutcome* written) {
-  requireJournalWrite();
-  if (!journalEngineWrites()) throw JournalUnavailable("journal-engine-disabled", "journal engine writes are disabled");
+  auto observation = std::make_shared<WriteObservation>("journal.server_call", "journal", "server-origin");
+  WriteContext context(*observation);
+  try {
+    requireJournalWrite();
+    if (!journalEngineWrites()) throw JournalUnavailable("journal-engine-disabled", "journal engine writes are disabled");
+  } catch (const JournalUnavailable& refused) {
+    observation->finish(refused.code);
+    throw;
+  }
   auto answer = std::make_shared<std::promise<Json::Value>>();
   auto future = answer->get_future();
-  const bool posted = impl_->workers.post([&, answer] {
+  const bool posted = impl_->workers.post([&, answer, observation] {
+    WriteContext workerContext(*observation);
     try {
       requireJournalWrite();
       try {
@@ -98,7 +108,7 @@ Json::Value JournalDoor::execute(const UserId& user, const Json::Value& intent, 
       } catch (const pqxx::undefined_column&) { throw notAdopted(); }
       catch (const pqxx::undefined_table&) { throw notAdopted(); }
       sync::ServerCall call(impl_->admission, impl_->store, user, std::nullopt,
-          intent.isMember("cmd") ? intent["cmd"]["name"].asString() : "journalState", intent);
+          intent.isMember("cmd") ? intent["cmd"]["name"].asString() : "journalState", intent, "journal");
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
         try {
           requireJournalWrite();
@@ -137,9 +147,9 @@ Json::Value JournalDoor::execute(const UserId& user, const Json::Value& intent, 
             });
           }
           return intent;
-        } catch (const JournalUnavailable&) { throw sync::ServerBuildAborted{std::current_exception()}; }
-        catch (const pqxx::undefined_column&) { throw sync::ServerBuildAborted{std::make_exception_ptr(notAdopted())}; }
-        catch (const pqxx::undefined_table&) { throw sync::ServerBuildAborted{std::make_exception_ptr(notAdopted())}; }
+        } catch (const JournalUnavailable& refused) { throw sync::ServerBuildAborted{std::current_exception(), refused.code}; }
+        catch (const pqxx::undefined_column&) { throw sync::ServerBuildAborted{std::make_exception_ptr(notAdopted()), "journal-not-adopted"}; }
+        catch (const pqxx::undefined_table&) { throw sync::ServerBuildAborted{std::make_exception_ptr(notAdopted()), "journal-not-adopted"}; }
       };
       const auto now = impl_->now.nowMs();
       const auto outcome = call.admitBuilt(intent, now, build);
@@ -149,10 +159,23 @@ Json::Value JournalDoor::execute(const UserId& user, const Json::Value& intent, 
       if (const auto* answered = std::get_if<sync::CallAnswered>(&outcome)) result = answered->result;
       if (result.isNull()) throw JournalUnavailable("journal-engine-busy", "journal engine is temporarily unavailable");
       call.finish(result, now);
+      observation->finish(impl_->catalog->observationOutcome(result));
       answer->set_value(std::move(result));
-    } catch (...) { answer->set_exception(std::current_exception()); }
+    } catch (const JournalUnavailable& refused) {
+      observation->finish(refused.code);
+      answer->set_exception(std::current_exception());
+    } catch (const std::exception& error) {
+      observation->fail(error);
+      answer->set_exception(std::current_exception());
+    } catch (...) {
+      observation->failUnknown();
+      answer->set_exception(std::current_exception());
+    }
   });
-  if (!posted) throw JournalUnavailable("journal-engine-busy", "journal engine is temporarily unavailable");
+  if (!posted) {
+    observation->finish("journal-engine-busy");
+    throw JournalUnavailable("journal-engine-busy", "journal engine is temporarily unavailable");
+  }
   return future.get();
 }
 

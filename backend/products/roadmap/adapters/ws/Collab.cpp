@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/ws/Collab.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/http/Caller.h"
 
@@ -40,6 +41,9 @@ UserId actorOf(const drogon::WebSocketConnectionPtr& conn) {
 }
 
 void send(const drogon::WebSocketConnectionPtr& conn, const Json::Value& frame) {
+  if (frame["t"] == "reject" && frame["code"].isString())
+    finishCurrentWriteRefusal(frame["code"].asString());
+  if (frame["t"] == "skew") finishCurrentWriteRefusal("clock-ahead");
   if (conn->connected()) conn->send(dump(frame));
 }
 
@@ -54,6 +58,7 @@ Json::Value rejectFrame(const std::string& treeId, const char* code, const std::
 }
 
 void setCollab(std::shared_ptr<Collab> collab) { g_collab = std::move(collab); }
+void stopCollab() { if (g_collab) g_collab->stop(); }
 Collab* collab() { return g_collab.get(); }
 
 Collab::Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
@@ -83,7 +88,7 @@ void Collab::onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketCo
   // A WebSocket upgrade gets no CORS preflight: a stated origin must be allow-listed.
   const std::string origin = req->getHeader("origin");
   if (!origin.empty() && !allowedOrigins_.count(origin)) {
-    LOG_WARN << "ws upgrade refused: origin " << origin << " is not allow-listed";
+    LOG_WARN << "ws upgrade refused: origin is not allow-listed";
     // Set a context before closing: drogon may still deliver a queued frame, and handlers read it unchecked.
     conn->setContext(std::make_shared<Principal>(UserId{"u0"}, false, "", "", 0));
     conn->forceClose();
@@ -126,7 +131,11 @@ bool Collab::overRate(const drogon::WebSocketConnectionPtr& conn) {
 }
 
 void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text) {
-  if (overRate(conn)) return;  // a flooding connection's frames are dropped before parse
+  if (overRate(conn)) {
+    WriteObservation observation("roadmap.ws.frame", "roadmap", "websocket");
+    observation.finish("rate_limited");
+    return;
+  }  // a flooding connection's frames are dropped before parse
   // Drogon does not wrap WS callbacks: an exception escaping here aborts the process.
   try {
     Json::Value frame = parse(text);
@@ -135,11 +144,20 @@ void Collab::onMessage(const drogon::WebSocketConnectionPtr& conn, const std::st
     if (type == "ping") { Json::Value pong(Json::objectValue); pong["t"] = "pong"; send(conn, pong); return; }
     std::string treeId = frame.get("treeId", "").asString();
     if (type == "subscribe") return subscribe(conn, treeId, frame);
-    if (type == "subgraph") return subgraphFrame(conn, treeId, frame);
-    if (type == "progress") return progress(conn, treeId, frame);
+    if (type == "subgraph" || type == "progress") {
+      WriteObservation observation(type == "subgraph" ? "roadmap.ws.subgraph" : "roadmap.ws.progress", "roadmap", "websocket");
+      WriteContext context(observation);
+      try {
+        if (type == "subgraph") subgraphFrame(conn, treeId, frame);
+        else progress(conn, treeId, frame);
+        observation.finish();
+      } catch (const std::exception& error) { observation.fail(error); throw; }
+      return;
+    }
+
     if (type == "presence") { presence_.update(conn, TreeId{treeId}, frame); return; }
   } catch (const std::exception& error) {
-    LOG_ERROR << "dropped malformed ws frame: " << error.what();
+    LOG_ERROR << "dropped malformed ws frame";
   }
 }
 
@@ -184,7 +202,8 @@ void Collab::subscribe(const drogon::WebSocketConnectionPtr& conn, const std::st
       frame["seq"] = static_cast<Json::Int64>(room->head());
     } catch (const std::exception& error) {
       // An infrastructure failure is never the socket's to relay.
-      LOG_ERROR << "collab join " << treeId << " failed: " << error.what();
+      reportCurrentWriteFailure(error);
+      LOG_ERROR << "collab join failed";
       send(conn, rejectFrame(treeId, kServerError, "the server could not open this tree"));
       return;
     }
@@ -236,6 +255,7 @@ void Collab::subgraphFrame(const drogon::WebSocketConnectionPtr& conn, const std
   if (!stillAuthorized(conn)) {
     Json::Value reject = rejectFrame(treeId, kSignInRequired, "sign in to edit");
     reject["frameId"] = frameId;
+    finishCurrentWriteRefusal(kSignInRequired);
     send(conn, reject);
     return;
   }
@@ -362,7 +382,8 @@ void Collab::progress(const drogon::WebSocketConnectionPtr& conn, const std::str
       TreeRoom* room = registry_.open(TreeId{treeId});
       if (!room) return refuse(kNoSuchTree, "no such tree \"" + treeId + "\"");
       for (ProgressWrite& write : writes) write.prerequisites = room->prerequisitesOf(write.node);
-    } catch (const std::exception&) {
+    } catch (const std::exception& error) {
+      reportCurrentWriteFailure(error);
       return;  // an infrastructure failure — its detail is not the socket's to carry
     }
   }

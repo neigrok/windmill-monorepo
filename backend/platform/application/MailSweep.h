@@ -4,6 +4,7 @@
 #include "platform/domain/MailArming.h"
 #include "platform/ports/SweepMutex.h"
 #include "platform/ports/TokenGenerator.h"
+#include "platform/application/WriteObservation.h"
 
 #include <trantor/utils/Logger.h>
 
@@ -49,65 +50,93 @@ public:
   // `dryRun` rehearses every decision and claims nothing. Blocking: never call from a request
   // thread.
   MailSweepReport run(std::uint64_t nowMs, bool dryRun) {
-    MailSweepReport report;
-    report.ran = mutex_.underSweepLock([&] {
-      for (const Due& due : dueNow(nowMs, batch())) {
-        ++report.due;
-        try {
-          const Decision decision = decideFor(due, nowMs);
-          const SweepVerdict verdict = verdictOf(decision);
-          if (verdict == SweepVerdict::unreadable) ++report.errors;
+    WriteObservation observation{operation_, product_, "background"};
+    WriteContext context{observation};
+    const auto writes = observation.writeCount();
+    try {
+      MailSweepReport report;
+      report.ran = mutex_.underSweepLock([&] {
+        for (const Due& due : dueNow(nowMs, batch())) {
+          ++report.due;
+          WriteObservation slot{operation_ + ".slot", product_, "background"};
+          WriteContext slotContext{slot};
+          const auto slotWrites = slot.writeCount();
+          try {
+            const Decision decision = decideFor(due, nowMs);
+            const SweepVerdict verdict = verdictOf(decision);
+            if (verdict == SweepVerdict::unreadable) ++report.errors;
 
-          if (dryRun) {
-            if (verdict == SweepVerdict::send) ++report.wouldSend;
-            else ++report.skipped;
-            continue;
+            if (dryRun) {
+              if (verdict == SweepVerdict::send) ++report.wouldSend;
+              else ++report.skipped;
+              if (verdict == SweepVerdict::unreadable) slot.finish("failed");
+              else slot.skip();
+              continue;
+            }
+
+            // Losing this race means another sweep owns the slot.
+            if (!claim(due, decision)) {
+              if (slot.writeCount() == slotWrites) slot.skip();
+              else slot.finish("already_claimed");
+              continue;
+            }
+            slot.wrote();
+            ++report.claimed;
+            if (verdict != SweepVerdict::send) {
+              ++report.skipped;
+              slot.finish(verdict == SweepVerdict::unreadable ? "failed" : "skipped");
+              continue;
+            }
+
+            // Arming is checked at SEND time, never at decide time, so arming later cannot
+            // double-mail a claimed slot.
+            if (!arming_.allows(due.user)) {
+              close(due, ClosedAs::held);
+              ++report.held;
+              slot.finish("held");
+              continue;
+            }
+
+            // Store the fresh pause credential only once its mail left, or a failed send kills the
+            // pause link in the last one.
+            const MintedToken pause = tokens_.mint();
+            const bool delivered = deliver(due, decision, pause.secret);
+            if (delivered) storePause(due.user, pause.digest);
+            close(due, delivered ? ClosedAs::delivered : ClosedAs::refused);
+            if (delivered) ++report.sent;
+            else ++report.failed;
+            slot.finish(delivered ? "ok" : "provider_refused");
+          } catch (const std::exception& error) {
+            ++report.errors;
+            slot.fail(error);
+          } catch (...) {
+            ++report.errors;
+            slot.failUnknown();
           }
-
-          // Losing this race means another sweep owns the slot.
-          if (!claim(due, decision)) continue;
-          ++report.claimed;
-          if (verdict != SweepVerdict::send) {
-            ++report.skipped;
-            continue;
-          }
-
-          // Arming is checked at SEND time, never at decide time, so arming later cannot
-          // double-mail a claimed slot.
-          if (!arming_.allows(due.user)) {
-            close(due, ClosedAs::held);
-            ++report.held;
-            continue;
-          }
-
-          // Store the fresh pause credential only once its mail left, or a failed send kills the
-          // pause link in the last one.
-          const MintedToken pause = tokens_.mint();
-          const bool delivered = deliver(due, decision, pause.secret);
-          if (delivered) storePause(due.user, pause.digest);
-          close(due, delivered ? ClosedAs::delivered : ClosedAs::refused);
-          if (delivered) ++report.sent;
-          else ++report.failed;
-        } catch (const std::exception& error) {
-          ++report.errors;
-          LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot: " << error.what();
-        } catch (...) {
-          ++report.errors;
-          LOG_ERROR << name() << ": " << due.user.str() << " skipped this slot";
         }
-      }
-    });
-    return report;
+      });
+      if (report.errors > 0) observation.finish("failed");
+      else if (observation.writeCount() == writes) observation.skip();
+      else observation.finish();
+      return report;
+    } catch (const std::exception& error) {
+      observation.fail(error);
+      throw;
+    } catch (...) {
+      observation.failUnknown();
+      throw;
+    }
   }
 
   const MailArming& arming() const { return arming_; }
 
 protected:
-  MailSweep(SweepMutex& mutex, TokenGenerator& tokens, MailArming arming)
-      : mutex_(mutex), tokens_(tokens), arming_(std::move(arming)) {}
+  MailSweep(SweepMutex& mutex, TokenGenerator& tokens, MailArming arming,
+            std::string operation = "mail.sweep", std::string product = "platform")
+      : mutex_(mutex), tokens_(tokens), arming_(std::move(arming)),
+        operation_(std::move(operation)), product_(std::move(product)) {}
 
 private:
-  virtual std::string name() const = 0;   // the log prefix: "reminders", "journal nudge"
   virtual int batch() const = 0;          // the ceiling on one pass, and so the fleet's send rate
   virtual std::vector<Due> dueNow(std::uint64_t nowMs, int limit) = 0;
   // May throw: costs this user this slot, counted in `errors`.
@@ -135,6 +164,8 @@ private:
   SweepMutex& mutex_;
   TokenGenerator& tokens_;
   MailArming arming_;
+  std::string operation_;
+  std::string product_;
 };
 
 }

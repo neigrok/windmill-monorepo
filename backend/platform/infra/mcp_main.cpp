@@ -1,4 +1,5 @@
 #include "platform/adapters/clock/SystemClock.h"
+#include "platform/adapters/sentry/ObservedTool.h"
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "platform/adapters/mcp/CompositeToolHost.h"
@@ -15,6 +16,9 @@
 #include "products/roadmap/ports/PresenceBus.h"
 
 #include <cstdlib>
+#include <cstdio>
+#include <exception>
+#include <typeinfo>
 #include <iostream>
 #include <string>
 
@@ -35,7 +39,7 @@ Json::Value parseError() {
 }
 }
 
-int main() {
+static int runMcp() {
   using namespace wm;
 
   const char* url = std::getenv("DATABASE_URL");
@@ -63,7 +67,7 @@ int main() {
   const ToolCaller actor{caller, ToolScope::everything()};
 
   // stdout is the protocol channel — everything else goes to stderr.
-  std::cerr << "windmill-mcp ready (stdio; db=" << redactDbUrl(connString) << ", user=" << caller.str() << ")\n";
+  std::cerr << "windmill-mcp ready (stdio)\n";
 
   std::string line;
   while (std::getline(std::cin, line)) {
@@ -73,7 +77,33 @@ int main() {
       reply(parseError());
       continue;
     }
-    if (std::optional<Json::Value> response = server.handle(message, actor)) reply(*response);
+    try {
+      if (std::optional<Json::Value> response = server.handle(message, actor)) reply(*response);
+    } catch (const std::exception& error) {
+      std::fprintf(stderr, "MCP write failed; type=%s\n", typeid(error).name());
+      return 1;
+    } catch (...) {
+      std::fprintf(stderr, "MCP write failed; type=UnknownException\n");
+      return 1;
+    }
   }
   return 0;
+}
+
+
+int main() {
+  using namespace wm;
+  installToolObservability(true);
+  ObservabilityLifetime lifetime;
+  try {
+    return runMcp();
+  } catch (const std::exception& error) {
+    WriteObservation observation("mcp.stdio.lifecycle", "platform", "mcp");
+    observation.fail(error);
+    return 1;
+  } catch (...) {
+    WriteObservation observation("mcp.stdio.lifecycle", "platform", "mcp");
+    observation.failUnknown();
+    return 1;
+  }
 }

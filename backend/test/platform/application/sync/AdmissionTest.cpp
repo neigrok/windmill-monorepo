@@ -1,6 +1,9 @@
 #include "platform/application/sync/Admission.h"
 
 #include "platform/application/WorkerPool.h"
+#include "platform/application/WriteObservation.h"
+#include "platform/application/sync/ServerCall.h"
+#include "platform/application/sync/SyncService.h"
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Wire.h"
@@ -10,9 +13,12 @@
 #include "test/testing.h"
 
 #include <chrono>
+#include <atomic>
 #include <future>
 #include <string>
+#include <typeinfo>
 #include <variant>
+#include <vector>
 
 // What the golden corpus does not pin about Admission: the text merge's work bound below MERGE_WORK_CELLS, a base
 // rev that is a double past the safe integers, a string holding U+0000, a replica binding a push's 409 took away or
@@ -23,6 +29,12 @@ using namespace wm;
 using namespace wm::sync;
 
 namespace {
+
+struct WriteCapture {
+  std::vector<WriteCompletion> completed;
+  WriteCapture() { installWriteSink([this](const WriteCompletion& write) { completed.push_back(write); }); }
+  ~WriteCapture() { installWriteSink({}); }
+};
 
 // A's overlay of tree b_00000001 with mark oak's memo "red blue" at rev 1, and A's replica bound at n 0.
 Json::Value markedOverlay() {
@@ -42,6 +54,208 @@ Json::Value markedOverlay() {
         "tree:b_00000001": [{"t": "tag", "id": "oak", "life": ["alive", "2100:0:r_aaaaaaaaaaaa"], "born": "2100:0:r_aaaaaaaaaaaa",
             "seq": 1, "rc": 1000, "ru": 1000}]},
       "replicas": {"rp_0000000000000000000000000000000a": {"account": "A", "lastN": 0}}})");
+}
+
+TEST(every_registered_sync_command_logs_one_bounded_command_and_admission_outcome) {
+  BlockingThread::Mark blocking;
+  for (int product = 0; product != 3; ++product) {
+    test::FakeWorld world(product == 1, product == 2);
+    Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+    for (const CommandDef& command : world.catalog().registry().commands()) {
+      WriteCapture capture;
+      Json::Value intent(Json::objectValue);
+      intent["scope"] = "self/" + command.scope.product;
+      intent["cmd"]["name"] = command.name;
+      intent["cmd"]["args"]["private_content"] = "PRIVATE-JOURNAL-WORKOUT-TOKEN";
+      const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+      REQUIRE(std::holds_alternative<Admitted>(outcome));
+      CHECK_EQ(jcs(std::get<Admitted>(outcome).result), R"({"code":"invalid","s":"refused"})");
+      REQUIRE_EQ(capture.completed.size(), 2u);
+      const auto& observed = capture.completed[0];
+      CHECK_EQ(observed.operation, "sync.command." + command.name);
+      CHECK_EQ(observed.product, command.scope.product);
+      CHECK_EQ(observed.door, "command");
+      CHECK_EQ(observed.outcome, "invalid");
+      CHECK(observed.durationMs >= 0);
+      CHECK_FALSE(observed.requestId.empty());
+      CHECK_EQ(capture.completed[1].operation, "sync.admit");
+      CHECK_EQ(capture.completed[1].product, command.scope.product);
+      CHECK_EQ(capture.completed[1].door, "server-origin");
+      CHECK_EQ(capture.completed[1].outcome, "invalid");
+      CHECK_EQ(capture.completed[1].requestId, observed.requestId);
+      CHECK_EQ(world.catalog().commandOperation(command.name), observed.operation);
+      CHECK(world.failures.reports.empty());
+    }
+  }
+}
+
+TEST(sync_observability_bounds_unknown_operations_products_and_refusal_codes) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  WriteCapture capture;
+  auto intent = parseJson(R"({"scope":"self/PRIVATE-TOKEN","cmd":{"name":"PRIVATE-JOURNAL","args":{}}})");
+  const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  REQUIRE_EQ(capture.completed.size(), 2u);
+  CHECK_EQ(capture.completed[0].operation, "sync.command.unknown");
+  CHECK_EQ(capture.completed[0].product, "platform");
+  CHECK_EQ(capture.completed[0].outcome, "invalid");
+  CHECK_EQ(capture.completed[1].operation, "sync.admit");
+  CHECK_EQ(capture.completed[1].product, "platform");
+  CHECK_EQ(capture.completed[1].outcome, "invalid");
+  CHECK_EQ(world.catalog().observationOutcome(parseJson(R"({"s":"refused","code":"PRIVATE-EXCEPTION"})")), "failed");
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(sync_invariant_failures_report_static_operation_type_and_request_id_without_messages) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  struct InvariantFailure final : SyncCommand {
+    bool isReplay(CommandCtx&) override { return false; }
+    CommandOutcome run(CommandCtx&) override { throw std::logic_error("PRIVATE-JOURNAL-TOKEN-EMAIL"); }
+  } command;
+  SyncCatalog catalog(world.catalog().registry());
+  for (const TypeDef& type : catalog.registry().types()) catalog.bindType(world.catalog().store(type.name));
+  for (const CommandDef& def : catalog.registry().commands()) catalog.bindCommand(def.name, command);
+  catalog.seal();
+  Admission admission(catalog, world.store(), world.feed, world.clock(), world.failures);
+  WriteCapture capture;
+  const auto intent = parseJson(R"({"scope":"self/probe","cmd":{"name":"probe.tick","args":{}}})");
+  WriteContext request("internal-request-1");
+  const auto outcome = admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  CHECK_EQ(jcs(std::get<Admitted>(outcome).result), R"({"code":"internal","s":"refused"})");
+  REQUIRE_EQ(world.failures.reports.size(), 1u);
+  const auto& report = world.failures.reports.front();
+  CHECK(report.find("sync.command.probe.tick") != std::string::npos);
+  CHECK(report.find(typeid(std::logic_error).name()) != std::string::npos);
+  CHECK(report.find("internal-request-1") != std::string::npos);
+  CHECK(report.find("PRIVATE") == std::string::npos);
+  REQUIRE_EQ(capture.completed.size(), 2u);
+  CHECK_EQ(capture.completed[0].operation, "sync.command.probe.tick");
+  CHECK_EQ(capture.completed[0].outcome, "failed");
+  CHECK_EQ(capture.completed[1].operation, "sync.admit");
+  CHECK_EQ(capture.completed[1].outcome, "failed");
+  CHECK_EQ(capture.completed[0].requestId, "internal-request-1");
+  CHECK_EQ(capture.completed[1].requestId, "internal-request-1");
+}
+
+TEST(sync_server_builder_refusals_preserve_the_original_exception_and_report_no_issue) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  WriteCapture capture;
+  const auto intent = parseJson(R"({"scope":"self/probe","cmd":{"name":"probe.tick","args":{}}})");
+  bool refused = false;
+  try {
+    admission.admitBuilt(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000,
+        [](SyncTxn&) -> std::optional<Json::Value> {
+          throw ServerBuildAborted{std::make_exception_ptr(std::invalid_argument("PRIVATE-CONTENT")), "cap"};
+        });
+  } catch (const std::invalid_argument& error) {
+    refused = std::string(error.what()) == "PRIVATE-CONTENT";
+  }
+  CHECK(refused);
+  CHECK(world.failures.reports.empty());
+  REQUIRE_EQ(capture.completed.size(), 1u);
+  CHECK_EQ(capture.completed[0].operation, "sync.admit");
+  CHECK_EQ(capture.completed[0].outcome, "cap");
+}
+
+TEST(sync_builder_logs_the_built_command_at_commit_instead_of_its_scope_placeholder) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  WriteCapture capture;
+  const auto placeholder = parseJson(R"({"scope":"self/probe","cmd":{"name":"probe.tick","args":{}}})");
+  const auto built = parseJson(R"({"scope":"self/probe","cmd":{"name":"probe.start","args":{"id":"run00001","label":"PRIVATE","startedAt":1000000,"join":false}}})");
+  const auto outcome = admission.admitBuilt(ServerOrigin{world.account("A"), std::nullopt}, placeholder, 1'000'000,
+      [&](SyncTxn&) -> std::optional<Json::Value> { return built; });
+  REQUIRE(std::holds_alternative<Admitted>(outcome));
+  CHECK_EQ(std::get<Admitted>(outcome).result["s"].asString(), "ok");
+  REQUIRE_EQ(capture.completed.size(), 3u);
+  CHECK_EQ(capture.completed[0].operation, "sync.publish");
+  CHECK_EQ(capture.completed[0].outcome, "ok");
+  CHECK_EQ(capture.completed[1].operation, "sync.command.probe.start");
+  CHECK_EQ(capture.completed[1].product, "probe");
+  CHECK_EQ(capture.completed[1].door, "command");
+  CHECK_EQ(capture.completed[1].outcome, "ok");
+  CHECK_EQ(capture.completed[2].operation, "sync.admit");
+  CHECK_EQ(capture.completed[2].outcome, "ok");
+  CHECK_EQ(capture.completed[0].requestId, capture.completed[1].requestId);
+  CHECK_EQ(capture.completed[1].requestId, capture.completed[2].requestId);
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(sync_scope_cursor_reset_logs_bounded_product_and_outcome_without_cursor_content) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), world.store(), admission, clock);
+  WriteCapture capture;
+  const auto reply = service.pull(Credential::sent(world.account("A")),
+      R"({"scopes":[{"scope":"self/probe","cursor":"PRIVATE-CURSOR-TOKEN"}]})");
+  CHECK_EQ(reply.status, 200);
+  CHECK_EQ(reply.body["pages"][0]["kind"].asString(), "reset");
+  REQUIRE_EQ(capture.completed.size(), 1u);
+  CHECK_EQ(capture.completed[0].operation, "sync.scope.pull");
+  CHECK_EQ(capture.completed[0].product, "probe");
+  CHECK_EQ(capture.completed[0].door, "sync");
+  CHECK_EQ(capture.completed[0].outcome, "reset");
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(sync_replica_replay_digest_mismatch_logs_without_intent_content_or_replica_id) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  wm::fake::FakeClock clock;
+  clock.now = 1'000'000;
+  SyncService service(world.catalog(), world.store(), admission, clock);
+  TimeBudget budget(60'000);
+  auto push = parseJson(R"({"replica":"rp_0000000000000000000000000000000a","account":"A","ackThrough":0,"intents":[{"n":1,"scope":"self/probe","d":[{"t":"card","id":"card0001","born":"2000:0:r_aaaaaaaaaaaa","life":["alive","2000:0:r_aaaaaaaaaaaa"],"f":{"title":["One","2000:0:r_aaaaaaaaaaaa"]}}]}]})");
+  const auto first = service.push(Credential::sent(world.account("A")), jcs(push), budget);
+  CHECK_EQ(first.body["results"][0]["s"].asString(), "ok");
+  push["intents"][0]["d"][0]["f"]["title"][0] = "PRIVATE";
+  WriteCapture capture;
+  const auto forked = service.push(Credential::sent(world.account("A")), jcs(push), budget);
+  CHECK_EQ(forked.status, 409);
+  CHECK_EQ(forked.body["error"].asString(), "replica-forked");
+  REQUIRE_EQ(capture.completed.size(), 1u);
+  CHECK_EQ(capture.completed[0].operation, "sync.intent.digest");
+  CHECK_EQ(capture.completed[0].product, "probe");
+  CHECK_EQ(capture.completed[0].door, "sync");
+  CHECK_EQ(capture.completed[0].outcome, "replica-forked");
+  CHECK(capture.completed[0].requestId != push["replica"].asString());
+  CHECK(world.failures.reports.empty());
+}
+
+TEST(sync_call_replay_digest_mismatch_logs_without_call_arguments_or_user_request_id) {
+  BlockingThread::Mark blocking;
+  test::FakeWorld world;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
+  const auto intent = parseJson(R"({"scope":"self/probe","d":[{"t":"card","id":"card0001","born":null,"life":["alive",null],"f":{"title":["One",null]}}]})");
+  ServerCall original(admission, world.store(), world.account("A"), "PRIVATE-REQUEST-ID", "cards.add", {}, "probe");
+  const auto first = original.admit(intent, 1'000'000);
+  REQUIRE(std::holds_alternative<Admitted>(first));
+  WriteCapture capture;
+  ServerCall changed(admission, world.store(), world.account("A"), "PRIVATE-REQUEST-ID", "cards.add", Json::Value("PRIVATE-ARGUMENTS"), "probe");
+  const auto conflicting = changed.admit(intent, 1'000'000);
+  REQUIRE(std::holds_alternative<CallAnswered>(conflicting));
+  CHECK_EQ(std::get<CallAnswered>(conflicting).result["code"].asString(), "request-conflict");
+  REQUIRE_EQ(capture.completed.size(), 2u);
+  CHECK_EQ(capture.completed[0].operation, "sync.call.digest");
+  CHECK_EQ(capture.completed[0].product, "probe");
+  CHECK_EQ(capture.completed[0].door, "server-origin");
+  CHECK_EQ(capture.completed[0].outcome, "request-conflict");
+  CHECK_EQ(capture.completed[1].operation, "sync.admit");
+  CHECK_EQ(capture.completed[1].outcome, "request-conflict");
+  CHECK(capture.completed[0].requestId != "PRIVATE-REQUEST-ID");
+  CHECK_EQ(capture.completed[0].requestId, capture.completed[1].requestId);
+  CHECK(world.failures.reports.empty());
 }
 
 // Mark oak's memo write in A's overlay.
@@ -108,6 +322,48 @@ TEST(admission_doors_share_the_scope_mutex_until_commit_publication_finishes) {
   REQUIRE(std::holds_alternative<Retry>(second));
   CHECK_EQ(std::get<Retry>(second).afterMs, Retry::kTransientMs);
   CHECK_EQ(world.db().scopes.at(ScopeKey::product(world.account("A"), "probe")).seq, 1u);
+}
+
+TEST(admission_releases_the_scope_mutex_before_publication_completion_reaches_a_blocking_sink) {
+  test::FakeWorld world;
+  Limits limits;
+  limits.lockTimeoutMs = 5;
+  Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures, limits);
+  std::promise<void> logged;
+  auto loggedFuture = logged.get_future();
+  std::promise<void> release;
+  auto releaseFuture = release.get_future();
+  std::atomic<bool> held{false};
+  WriteCapture capture;
+  installWriteSink([&](const WriteCompletion& completed) {
+    if (completed.operation != "sync.publish" || held.exchange(true)) return;
+    logged.set_value();
+    releaseFuture.wait();
+  });
+  const auto intent = parseJson(R"({"scope":"self/probe","d":[{"t":"card","id":"card0001","born":null,"life":["alive",null],"f":{"title":["First",null]}}]})");
+  auto first = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    return admission.admit(ServerOrigin{world.account("A"), std::nullopt}, intent, 1'000'000);
+  });
+  const bool loggingBlocked = loggedFuture.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+  auto next = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    auto nextIntent = intent;
+    nextIntent["d"][0]["id"] = "card0002";
+    return admission.admit(ServerOrigin{world.account("A"), std::nullopt}, nextIntent, 1'000'001);
+  });
+  const bool nextFinished = next.wait_for(std::chrono::milliseconds(500)) == std::future_status::ready;
+  release.set_value();
+  const auto initial = first.get();
+  const auto second = next.get();
+  CHECK(loggingBlocked);
+  CHECK(nextFinished);
+  REQUIRE(std::holds_alternative<Admitted>(initial));
+  CHECK_EQ(std::get<Admitted>(initial).result["s"].asString(), "ok");
+  REQUIRE(std::holds_alternative<Admitted>(second));
+  CHECK_EQ(std::get<Admitted>(second).result["s"].asString(), "ok");
+  CHECK_EQ(world.db().scopes.at(ScopeKey::product(world.account("A"), "probe")).seq, 2u);
+  CHECK(world.failures.reports.empty());
 }
 
 TEST(admission_merges_a_text_past_the_work_bound_as_one_whole_conflict_and_marks_it_merged) {

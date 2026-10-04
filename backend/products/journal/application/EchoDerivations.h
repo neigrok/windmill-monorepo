@@ -54,6 +54,7 @@ public:
   EchoDerivations(EchoSweep& sweep, Clock& clock, LiveDerivationRules rules);
 
   void start();
+  void stop() { heartbeat_.stop(); }
 
   // The first save opens a pending entry; every save after it pushes the ready instant out again,
   // unless the text has grown by `materialBytes` since the entry opened.

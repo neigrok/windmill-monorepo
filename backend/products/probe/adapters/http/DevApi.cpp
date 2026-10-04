@@ -1,4 +1,5 @@
 #include "products/probe/adapters/http/DevApi.h"
+#include "platform/adapters/http/WriteRoutes.h"
 
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/http/RateLimiter.h"  // clientIp
@@ -46,9 +47,10 @@ void DevApi::regenerateEpoch(Reply&& reply) {
 }
 
 void registerDevRoutes(drogon::HttpAppFramework& app, const std::shared_ptr<DevApi>& api) {
-  app.registerHandler(
+  WriteRoutes routes(app, "probe", "rest");
+  routes.registerHandler(
       "/v1/dev/sign-in", [api](const drogon::HttpRequestPtr& req, DevApi::Reply&& reply) { api->signIn(req, std::move(reply)); }, {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/dev/sync/epoch", [api](const drogon::HttpRequestPtr&, DevApi::Reply&& reply) { api->regenerateEpoch(std::move(reply)); }, {drogon::Post});
 }
 

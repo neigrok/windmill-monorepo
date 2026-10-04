@@ -19,6 +19,8 @@
 #include <cctype>
 #include <cstdlib>
 #include <memory>
+#include <stdexcept>
+#include <string_view>
 #include <utility>
 
 namespace wm {
@@ -348,10 +350,19 @@ AnthropicComposer::AnthropicComposer(std::string apiKey, std::shared_ptr<Failure
   loop_.run();
 }
 
-AnthropicStreamParser::Reporter AnthropicComposer::reporter() const {
-  return [failures = failures_](const std::string& where, const std::string& detail) {
-    LOG_ERROR << where << ": " << detail;
-    if (failures) failures->report("compose", where, detail);
+AnthropicStreamParser::Reporter AnthropicComposer::reporter(
+    const std::shared_ptr<WriteObservation>& observation,
+    const std::shared_ptr<std::string>& refusal) const {
+  return [observation, refusal](const std::string&, const std::string& detail) {
+    if (detail == "stopped early (stop_reason: refusal)") *refusal = "refused";
+    constexpr std::string_view prefix = "upstream error event: ";
+    if (detail.starts_with(prefix)) {
+      const auto error = frameJson(detail.substr(prefix.size()));
+      if (error && (*error)["error"]["type"].isString() &&
+          (*error)["error"]["type"].asString() == "rate_limit_error") *refusal = "rate_limited";
+    }
+    if (!refusal->empty()) return;
+    observation->reportFailure(std::runtime_error("compose model failed"));
   };
 }
 
@@ -359,8 +370,17 @@ bool AnthropicComposer::configured() const { return !apiKey_.empty(); }
 
 void AnthropicComposer::compose(const std::string& text,
                                 std::function<void(std::optional<std::string>)> done) {
+  auto observation = std::make_shared<WriteObservation>("roadmap.compose.buffered", "roadmap", "REST", "", failures_.get());
+  WriteContext context{*observation};
+  auto refusal = std::make_shared<std::string>();
+  done = [observation, refusal, done = std::move(done)](std::optional<std::string> reply) {
+    if (!reply && refusal->empty()) observation->reportFailure(std::runtime_error("compose model failed"));
+    observation->finish(reply ? "ok" : refusal->empty() ? "failed" : *refusal);
+    done(std::move(reply));
+  };
   // The paste cap and the fuse are checked before a socket is opened.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
+    *refusal = apiKey_.empty() ? "not_configured" : text.size() > kMaxPasteBytes ? "invalid-arguments" : "ai-fuse";
     done(std::nullopt);
     return;
   }
@@ -378,73 +398,85 @@ void AnthropicComposer::compose(const std::string& text,
   VendorCall call("anthropic", "compose");
   client->sendRequest(
       req,
-      [client, call, report = reporter(), fuse = fuse_, usage = usage_, done = std::move(done)](
+      [client, call, observation, refusal, report = reporter(observation, refusal), fuse = fuse_, usage = usage_, done = std::move(done)](
           drogon::ReqResult result, const drogon::HttpResponsePtr& resp) mutable {
-        // `user` stays empty: the birth canvas has no account behind it yet.
-        const auto record = [&fuse, &usage](const char* outcome, const TokenUse& tokens) {
-          AiSpend spend;
-          spend.product = "roadmap";
-          spend.operation = "compose";
-          spend.runId = newRunId("compose");
-          spend.model = kModel;
-          spend.outcome = outcome;
-          spend.tokens = tokens;
-          meterSpend(spend, fuse, usage);
-        };
+        WriteContext context{*observation};
+        try {
+          // `user` stays empty: the birth canvas has no account behind it yet.
+          const auto record = [&fuse, &usage](const char* outcome, const TokenUse& tokens) {
+            AiSpend spend;
+            spend.product = "roadmap";
+            spend.operation = "compose";
+            spend.runId = newRunId("compose");
+            spend.model = kModel;
+            spend.outcome = outcome;
+            spend.tokens = tokens;
+            meterSpend(spend, fuse, usage);
+          };
 
-        if (!call.succeeded(result, resp)) {
-          record(AiOutcome::transport, TokenUse{});
+          if (!call.succeeded(result, resp)) {
+            if (resp && (static_cast<int>(resp->getStatusCode()) == 429 || static_cast<int>(resp->getStatusCode()) == 529))
+              *refusal = "rate_limited";
+            record(AiOutcome::transport, TokenUse{});
+            done(std::nullopt);
+            return;
+          }
+
+          std::shared_ptr<Json::Value> reply = resp->getJsonObject();
+          if (!reply) {
+            report("compose.buffered", "unreadable reply");
+            record(AiOutcome::schemaInvalid, TokenUse{});
+            done(std::nullopt);
+            return;
+          }
+
+          // Counted the moment the reply parses: a plan thrown away below still cost what it cost.
+          const Json::Value& stopReason = (*reply)["stop_reason"];
+          const std::string reason = stopReason.isString() ? stopReason.asString() : std::string();
+          record(reason == "end_turn"  ? AiOutcome::ok
+                 : reason == "refusal" ? AiOutcome::refused
+                                       : AiOutcome::truncated,
+                 tokensFrom((*reply)["usage"]));
+
+          if (!(*reply)["content"].isArray() || (*reply)["content"].empty()) {
+            report("compose.buffered", "unreadable reply");
+            done(std::nullopt);
+            return;
+          }
+
+          // The plan is the first text block.
+          std::string raw;
+          for (const Json::Value& block : (*reply)["content"]) {
+            if (block["text"].isString()) { raw = block["text"].asString(); break; }
+          }
+          if (raw.empty()) {
+            report("compose.buffered", "reply carried no text block");
+            done(std::nullopt);
+            return;
+          }
+
+          if (reason != "end_turn") {
+            if (reason == "refusal") *refusal = "refused";
+            // Any early stop means a truncated plan: never replace the paste with half of one.
+            report("compose.buffered",
+                   "stopped early (stop_reason: " + (reason.empty() ? std::string("missing") : reason) + ")");
+            done(std::nullopt);
+            return;
+          }
+
+          const std::string plan = strippedPlan(raw);
+          if (plan.empty()) {
+            done(std::nullopt);
+            return;
+          }
+          done(plan);
+        } catch (const std::exception& error) {
+          observation->reportFailure(error);
           done(std::nullopt);
-          return;
-        }
-
-        std::shared_ptr<Json::Value> reply = resp->getJsonObject();
-        if (!reply) {
-          report("compose.buffered", "unreadable reply");
-          record(AiOutcome::schemaInvalid, TokenUse{});
+        } catch (...) {
+          observation->reportUnknownFailure();
           done(std::nullopt);
-          return;
         }
-
-        // Counted the moment the reply parses: a plan thrown away below still cost what it cost.
-        const Json::Value& stopReason = (*reply)["stop_reason"];
-        const std::string reason = stopReason.isString() ? stopReason.asString() : std::string();
-        record(reason == "end_turn"  ? AiOutcome::ok
-               : reason == "refusal" ? AiOutcome::refused
-                                     : AiOutcome::truncated,
-               tokensFrom((*reply)["usage"]));
-
-        if (!(*reply)["content"].isArray() || (*reply)["content"].empty()) {
-          report("compose.buffered", "unreadable reply");
-          done(std::nullopt);
-          return;
-        }
-
-        // The plan is the first text block.
-        std::string raw;
-        for (const Json::Value& block : (*reply)["content"]) {
-          if (block["text"].isString()) { raw = block["text"].asString(); break; }
-        }
-        if (raw.empty()) {
-          report("compose.buffered", "reply carried no text block");
-          done(std::nullopt);
-          return;
-        }
-
-        if (reason != "end_turn") {
-          // Any early stop means a truncated plan: never replace the paste with half of one.
-          report("compose.buffered",
-                 "stopped early (stop_reason: " + (reason.empty() ? std::string("missing") : reason) + ")");
-          done(std::nullopt);
-          return;
-        }
-
-        const std::string plan = strippedPlan(raw);
-        if (plan.empty()) {
-          done(std::nullopt);
-          return;
-        }
-        done(plan);
       },
       40.0);
 }
@@ -453,8 +485,12 @@ std::function<void()> AnthropicComposer::composeStream(
     const std::string& text,
     std::function<void(const std::string&)> onDelta,
     std::function<void(bool)> onDone) {
+  auto observation = std::make_shared<WriteObservation>("roadmap.compose.stream", "roadmap", "REST", "", failures_.get());
+  WriteContext context{*observation};
+  auto refusal = std::make_shared<std::string>();
   // Nothing is spent here, so nothing is recorded.
   if (apiKey_.empty() || text.size() > kMaxPasteBytes || (fuse_ && !fuse_->allows(nowMs()))) {
+    observation->finish(apiKey_.empty() ? "not_configured" : text.size() > kMaxPasteBytes ? "invalid-arguments" : "ai-fuse");
     onDone(false);
     return []() {};
   }
@@ -484,14 +520,26 @@ std::function<void()> AnthropicComposer::composeStream(
   // The reporter holds the shared_ptr, not `this`: a stream can settle after the caller is gone.
   call->parser = std::make_unique<AnthropicStreamParser>(
       std::move(onDelta),
-      [weak, onDone = std::move(onDone)](bool ok) {
-        if (auto call = weak.lock()) {
-          call->finished = ok;
-          call->hangUp();
+      [weak, observation, refusal, onDone = std::move(onDone)](bool ok) {
+        WriteContext context{*observation};
+        try {
+          if (auto call = weak.lock()) {
+            if (call->parser->status() == 429 || call->parser->status() == 529) *refusal = "rate_limited";
+            call->finished = ok;
+            call->hangUp();
+          }
+        } catch (const std::exception& error) {
+          observation->reportFailure(error);
+          ok = false;
+        } catch (...) {
+          observation->reportUnknownFailure();
+          ok = false;
         }
+        if (!ok && refusal->empty()) observation->reportFailure(std::runtime_error("compose stream failed"));
+        observation->finish(ok ? "ok" : refusal->empty() ? "failed" : *refusal);
         onDone(ok);
       },
-      reporter());
+      reporter(observation, refusal));
 
   call->loop->runInLoop([call, weak]() {
     if (call->settled) return;

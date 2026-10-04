@@ -9,7 +9,11 @@
 #include "platform/adapters/email/ResendEmailSender.h"
 #include "platform/adapters/email/ResendWebhookApi.h"
 #include "platform/adapters/http/AccessLog.h"
+#include "platform/adapters/http/WriteRoutes.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/sentry/LogTee.h"
+#include "platform/adapters/sentry/ObservedTool.h"
+#include "products/roadmap/adapters/ws/Collab.h"
 #include "platform/adapters/sentry/SentryClient.h"
 #include "platform/adapters/http/AuthApi.h"
 #include "products/roadmap/adapters/auth/ForkSignup.h"
@@ -183,7 +187,7 @@ int envDays(const char* name, int fallback) {
 }
 }
 
-int main() {
+static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::SentryClient>& reporter) {
   using namespace wm;
 
 #ifdef WM_SYNC_PROBE
@@ -212,6 +216,12 @@ int main() {
   auto oplog = std::make_shared<PgOpLog>(pool);
   auto bus = std::make_shared<WsPresenceBus>();
   auto registry = std::make_shared<RoomRegistry>(*trees, *oplog, *bus);
+  lifetime.onStop([registry, bus] {
+    registry->whenAccessChanges({});
+    bus->setReadGate({});
+    setCollab(nullptr);
+  }, trees, oplog);
+  lifetime.watch(registry, trees, oplog, bus);
   auto presence = std::make_shared<PresenceHub>();
 
   // The session rides in an HttpOnly cookie whose Secure flag and scopes follow the deployment: the live Domain, and
@@ -225,8 +235,8 @@ int main() {
   std::optional<SessionCookieScopes> cookieScopes;
   try {
     cookieScopes.emplace(cookieDomainEnv ? cookieDomainEnv : "", retiredCookieDomainsEnv ? retiredCookieDomainsEnv : "");
-  } catch (const std::invalid_argument& refused) {
-    std::fprintf(stderr, "refusing to start: %s (WINDMILL_COOKIE_DOMAIN, WINDMILL_COOKIE_RETIRED_DOMAINS)\n", refused.what());
+  } catch (const std::invalid_argument&) {
+    std::fprintf(stderr, "refusing to start: invalid cookie domain configuration (WINDMILL_COOKIE_DOMAIN, WINDMILL_COOKIE_RETIRED_DOMAINS)\n");
     return 1;
   }
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
@@ -234,6 +244,7 @@ int main() {
   auto authRepo = std::make_shared<PgAuthRepository>(pool);
   auto resendClient = std::make_shared<ResendClient>(
       resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
+  lifetime.watch(resendClient);
   auto emailSender = std::make_shared<ResendEmailSender>(*resendClient);
   auto tokens = std::make_shared<OpenSslTokenGenerator>();
   auto systemClock = std::make_shared<SystemClock>();
@@ -308,6 +319,9 @@ int main() {
   const char* appleNativeEnabledEnv = std::getenv("APPLE_NATIVE_ENABLED");
   auto appleNativeVerifier = std::make_shared<AppleIdentityTokenVerifier>(
       appleNativeEnabledEnv && std::string(appleNativeEnabledEnv) == "1", appleClientId ? appleClientId : "");
+  lifetime.watch(googleClient);
+  lifetime.watch(appleClient);
+  lifetime.watch(appleNativeVerifier);
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
   auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
                                            googleClient, appBaseUrl, appleClient, appleNativeVerifier);
@@ -349,9 +363,24 @@ int main() {
                                                sentryEnv ? sentryEnv : "production",
                                                sentryRelease ? sentryRelease : "");
 
+  reporter = sentry;
+  auto& app = drogon::app();
+  configureJsonReplies(app);
+  installPrivacySafeExceptionHandler(app, [serverErrors, sentry](const std::exception& error,
+      const drogon::HttpRequestPtr& request) {
+    const std::string method = loggableField(request->getMethodString());
+    const std::string path = request->matchedPathPattern().empty() ? "unmatched" :
+        std::string(request->matchedPathPattern());
+    const std::string message = "unexpected request exception; type=" + std::string(typeid(error).name());
+    try { serverErrors->insert(method, path, 500, message); }
+    catch (...) { LOG_ERROR << "server_errors insert dropped"; }
+    if (!beginWriteRequest(request)) sentry->captureException(typeid(error).name(), method, path, message);
+  }, true);
+
   // Every LOG_* line teed to Sentry, installed before anything else logs so a failure during the
   // rest of this composition is already on the wire. SENTRY_LOG_LEVEL (default info) is the volume.
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
+  installWriteReporter(sentry);
 
   auto productsCatalog = sync::productCatalog();
 #ifdef WM_SYNC_PROBE
@@ -365,9 +394,11 @@ int main() {
   auto syncCatalog = syncEnabledFlag == "1" || syncEnabledFlag == "true" || syncEnabledFlag == "on"
       ? productsCatalog : nullptr;
 #endif
-  std::unique_ptr<SyncEngine> syncEngine;
-  if (syncCatalog)
-    syncEngine = std::make_unique<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
+  std::shared_ptr<SyncEngine> syncEngine;
+  if (syncCatalog) {
+    syncEngine = std::make_shared<SyncEngine>(syncCatalog, pool, *systemClock, *sentry, kSyncWorkers, kSyncQueueCeiling);
+    lifetime.watch(syncEngine, systemClock, sentry);
+  }
 
   // Accepted funnel events forward to Amplitude with the session-resolved user_id when
   // AMPLITUDE_API_KEY is set. AMPLITUDE_HOST overrides the region (api.eu.amplitude.com for EU).
@@ -377,6 +408,7 @@ int main() {
       amplitudeKey ? amplitudeKey : "",
       (amplitudeHost && *amplitudeHost) ? amplitudeHost : "api2.amplitude.com", sentry);  // set-but-empty → default
   // What every LLM adapter is handed: the ledger, written first, mirrored to Amplitude.
+  lifetime.watch(amplitude);
   std::shared_ptr<UsageSink> aiSpendSink =
       std::make_shared<AmplitudeUsageSink>(aiUsageRepo, amplitude);
 
@@ -395,6 +427,7 @@ int main() {
   const char* paddlePriceId = std::getenv("PADDLE_PRICE_ID");
   auto paddleClient = std::make_shared<PaddleApiClient>(paddleApiKey ? paddleApiKey : "",
                                                         paddleEnv ? paddleEnv : "sandbox");
+  lifetime.watch(paddleClient);
   auto billingApi = std::make_shared<BillingApi>(*subscriptionRepo, authService, *systemClock,
                                                  paddleWebhookSecret ? paddleWebhookSecret : "",
                                                  paddleClient, paddlePriceId ? paddlePriceId : "");
@@ -410,11 +443,13 @@ int main() {
                                                        "retention");
   auto retentionSweep =
       std::make_shared<RetentionSweep>(*retentionStore, *retentionLock, *systemClock, retention);
+  lifetime.watch(retentionSweep, retentionStore, retentionLock, systemClock);
   retentionSweep->start();
 
   // No ANTHROPIC_API_KEY leaves /v1/compose answering 503.
   const char* anthropicKey = std::getenv("ANTHROPIC_API_KEY");
   auto composer = std::make_shared<AnthropicComposer>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
+  lifetime.watch(composer);
 
   // MCP runs in this process, so agent edits go through the same RoomRegistry as REST and the
   // socket. Tokens are audience-bound to the MCP resource URL, which defaults to this host.
@@ -439,14 +474,34 @@ int main() {
   const std::string tendingEnabledFlag = tendingEnabledEnv ? tendingEnabledEnv : "";
   auto tendRuns = std::make_shared<PgTendRunRepository>(pool);
   // Runs before the server accepts traffic, so every `running` row is orphaned and safe to fail.
-  if (const int reaped = tendRuns->failOrphanedRuns(); reaped > 0)
-    LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
+  {
+    WriteObservation observation("roadmap.tend.reap", "roadmap", "background");
+    WriteContext context(observation);
+    try {
+      const int reaped = tendRuns->failOrphanedRuns();
+      if (reaped == 0) observation.skip();
+      else {
+        observation.wrote();
+        observation.finish();
+        LOG_INFO << "tending: reaped " << reaped << " run(s) stranded by a restart";
+      }
+    } catch (const std::exception& error) {
+      observation.fail(error);
+      throw;
+    } catch (...) {
+      observation.failUnknown();
+      throw;
+    }
+  }
   auto tendingAgent = std::make_shared<AnthropicAgent>(anthropicKey ? anthropicKey : "", sentry, aiFuse, aiSpendSink);
+  lifetime.watch(tendingAgent);
   const bool tendingEnabled =
       (tendingEnabledFlag == "true" || tendingEnabledFlag == "1") && tendingAgent->configured();
   auto tendingService = std::make_shared<TendingService>(*tendRuns, *tendingAgent, *mcpTools,
                                                          *systemClock, *tokens, *entitlements,
                                                          tendingEnabled);
+  lifetime.watch(tendingService, tendRuns, tendingAgent, mcpTools, systemClock, tokens, entitlements,
+                 subscriptionRepo, aiUsageRepo, registry, progressService, progress, treeRegistry, trees, bus);
 
   // Weekly reminders, on a dedicated thread — never a drogon request loop, which must not block on
   // libpqxx. Dark twice over: REMINDERS_ENABLED must say so AND the user be named in
@@ -461,6 +516,7 @@ int main() {
   auto reminderMail = std::make_shared<ResendReminderSender>(*resendClient);
   auto reminderSweep = std::make_shared<ReminderSweep>(*reminderRepo, *reminderMail, *tokens,
                                                        *systemClock, reminderArming, appBaseUrl);
+  lifetime.watch(reminderSweep, reminderRepo, reminderMail, tokens, systemClock, resendClient);
   reminderSweep->start();
 
   // Built here because its tools are part of the MCP surface below, constructed once before the
@@ -492,6 +548,9 @@ int main() {
       std::getenv("COACH_ANTHROPIC_BASE_URL") ? std::getenv("COACH_ANTHROPIC_BASE_URL") : kAnthropicBaseUrl);
   auto gymAsk = std::make_shared<gym::AskService>(*gymTrainingService, *gymThreads, *systemClock, *gymAskAgent,
                                                *gymTools, *entitlements, sentry);
+  lifetime.watch(gymAsk, gymTrainingService, gymThreads, systemClock, gymAskAgent, gymTools, entitlements,
+                 subscriptionRepo, aiUsageRepo, gymLog, gymProgramService, gymProgram, gymCatalogService, gymCatalog,
+                 gymNotesService, gymNotes, gymBodyweightService, gymBodyweight, tokens, gymDoor, gymPreferences);
 
   // Every product's module behind one host, filtered by the grant the credential carries. A
   // duplicate tool name across two products refuses to boot. Tending is deliberately NOT given this
@@ -534,37 +593,16 @@ int main() {
     }
   }
 
-  auto& app = drogon::app();
-  configureJsonReplies(app);
+  WriteRoutes routes(app, "platform");
+  WriteRoutes mcpRoutes(app, "platform", "mcp");
+  app.registerSyncAdvice([](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
+    beginWriteRequest(req);
+    return nullptr;
+  });
 
   // Registered first, so it wraps everything registered after it.
   installAccessLog(app);
 
-  // Exception messages may contain SQL values or user content; only their type reaches diagnostics.
-  app.setExceptionHandler([serverErrors, sentry](const std::exception& e, const drogon::HttpRequestPtr& req,
-                                                 std::function<void(const drogon::HttpResponsePtr&)>&& callback) {
-    const std::string method = loggableField(req->getMethodString());
-    const std::string path = loggableField(req->matchedPathPattern().empty()
-        ? redactedPath(req->getPath()) : std::string(req->matchedPathPattern()));
-    const std::string message = "unexpected request exception; type=" +
-                                loggableField(typeid(e).name());
-    LOG_ERROR << "uncaught exception on " << method << " " << path << ": " << message;
-    try {
-      serverErrors->insert(method, path, 500, message);
-    } catch (const std::exception&) {
-      LOG_ERROR << "server_errors insert dropped";
-    }
-    try {
-      sentry->captureException("uncaught", method, path, message);
-    } catch (const std::exception&) {
-      LOG_ERROR << "sentry capture dropped";
-    }
-    Json::Value body(Json::objectValue);
-    body["error"] = "internal error";
-    auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
-    resp->setStatusCode(drogon::k500InternalServerError);
-    callback(resp);
-  });
 
   // Allow-Credentials only ever rides an allow-listed Origin, never a reflected one.
   auto writeCors = [allowedOrigins](const drogon::HttpRequestPtr& req, const drogon::HttpResponsePtr& resp) {
@@ -633,6 +671,7 @@ int main() {
         auto resp = drogon::HttpResponse::newHttpJsonResponse(body);
         resp->setStatusCode(drogon::k429TooManyRequests);
         writeCors(req, resp);  // short-circuits post-handling, so dress the 429 for CORS here
+        finishWriteRequest(req, resp);
         return resp;
       });
 
@@ -655,37 +694,37 @@ int main() {
         resp->addHeader("Vary", "Origin");
       });
 
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/magic-link",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->requestLink(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/verify",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->verify(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/verify-code",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->verifyCode(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/paddle/webhook",
       [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         billingApi->webhook(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/billing/checkout",
       [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         billingApi->startCheckout(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/subscription",
       [billingApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         billingApi->mySubscription(req, std::move(cb));
@@ -693,62 +732,62 @@ int main() {
       {drogon::Get});
 
   // Redirects, not fetches, so no CORS.
-  app.registerHandler(
+  routes.registerWriteHandler("auth.google.start",
       "/v1/auth/google/start",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->googleStart(req, std::move(cb));
       },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerWriteHandler("auth.google.callback",
       "/v1/auth/google/callback",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->googleCallback(req, std::move(cb));
       },
       {drogon::Get});
   // Called while already signed in, this attaches the door instead of resolving an account.
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/apple",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->apple(req, std::move(cb)); },
       {drogon::Post});
   if (appleNativeVerifier->configured()) {
-    app.registerHandler(
+    routes.registerHandler(
         "/v1/auth/apple/native",
         [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->appleNative(req, std::move(cb)); },
         {drogon::Post});
   }
   // Folds this (empty) account into the one the magic link names.
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/link",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->link(req, std::move(cb)); },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/auth/logout",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         authApi->logout(req, std::move(cb));
       },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/me",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->me(req, std::move(cb)); },
       {drogon::Get});
 
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/me",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->patchMe(req, std::move(cb)); },
       {drogon::Patch});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/me",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->deleteMe(req, std::move(cb)); },
       {drogon::Delete});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/sessions",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->listSessions(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/sessions",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->signOutEverywhere(req, std::move(cb)); },
       {drogon::Delete});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/sessions/{id}",
       [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         authApi->revokeSession(req, std::move(cb), id);
@@ -756,15 +795,15 @@ int main() {
       {drogon::Delete});
 
   // Mint returns the secret once; list is metadata only.
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/mcp-keys",
       [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpKeyApi->createKey(req, std::move(cb)); },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/mcp-keys",
       [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpKeyApi->listKeys(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/mcp-keys/{id}",
       [mcpKeyApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         mcpKeyApi->revokeKey(req, std::move(cb), id);
@@ -778,38 +817,38 @@ int main() {
                                      "/.well-known/oauth-authorization-server/mcp",
                                      "/.well-known/openid-configuration",
                                      "/.well-known/openid-configuration/mcp"}) {
-    app.registerHandler(
+    routes.registerHandler(
         asMetadataPath,
         [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->metadata(req, std::move(cb)); },
         {drogon::Get});
   }
-  app.registerHandler(
+  routes.registerHandler(
       "/oauth/register",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->registerClient(req, std::move(cb)); },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerWriteHandler("oauth.authorize",
       "/oauth/authorize",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->authorize(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerHandler(
       "/oauth/token",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->token(req, std::move(cb)); },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/oauth/client",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->clientInfo(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/oauth/decision",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->decision(req, std::move(cb)); },
       {drogon::Post});
 
   // Separate from the session list above, so pulling a tool never signs a device out.
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/oauth/grants",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { oauthApi->listGrants(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/oauth/grants/{clientId}",
       [oauthApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& clientId) {
         oauthApi->disconnectGrant(req, std::move(cb), clientId);
@@ -819,33 +858,33 @@ int main() {
 
 
 
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/events",
       [eventsApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { eventsApi->ingest(req, std::move(cb)); },
       {drogon::Post});
 
 
   // Anonymous allowed.
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/feedback",
       [feedbackApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { feedbackApi->submit(req, std::move(cb)); },
       {drogon::Post});
 
 
   // Its own preflight, advertising the MCP headers the generic one skips.
-  app.registerHandler(
+  mcpRoutes.registerWriteHandler("mcp.transport",
       mcpPath,
       [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handlePost(req, std::move(cb)); },
       {drogon::Post});
-  app.registerHandler(
+  routes.registerHandler(
       mcpPath,
       [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handleGet(req, std::move(cb)); },
       {drogon::Get});
-  app.registerHandler(
+  mcpRoutes.registerWriteHandler("mcp.session.delete",
       mcpPath,
       [mcpEndpoint](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { mcpEndpoint->handleDelete(req, std::move(cb)); },
       {drogon::Delete});
-  app.registerHandler(
+  routes.registerHandler(
       mcpPath,
       [](const drogon::HttpRequestPtr&, HttpCallback&& cb) {
         auto resp = drogon::HttpResponse::newHttpResponse();
@@ -871,8 +910,8 @@ int main() {
     metadata["bearer_methods_supported"] = methods;
     cb(drogon::HttpResponse::newHttpJsonResponse(metadata));
   };
-  app.registerHandler("/.well-known/oauth-protected-resource", protectedResourceMetadata, {drogon::Get});
-  app.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
+  routes.registerHandler("/.well-known/oauth-protected-resource", protectedResourceMetadata, {drogon::Get});
+  routes.registerHandler("/.well-known/oauth-protected-resource/mcp", protectedResourceMetadata, {drogon::Get});
 
   RoadmapDeps roadmapDeps{
       .registry = registry, .trees = trees, .progress = progress, .progressService = progressService,
@@ -883,6 +922,9 @@ int main() {
       .tokens = tokens, .clock = systemClock,
       .remindersAdminToken = remindersAdminEnv ? remindersAdminEnv : "", .composer = composer,
       .allowedOrigins = allowedOrigins};
+  lifetime.onStop([] { stopCollab(); }, registry, oplog, bus, progressService, progress, authService,
+                  presence, systemClock, authRepo, emailSender, resendClient, tokens, oauthService, oauthRepo,
+                  accountFootprint, liveSessions);
   registerRoutes(app, roadmapDeps);
 
   auto journalPages = std::make_shared<PgJournalRepository>(pool);
@@ -899,6 +941,7 @@ int main() {
   auto journalNudgeMail = std::make_shared<ResendNudgeSender>(*resendClient);
   auto journalNudgeSweep = std::make_shared<NudgeSweep>(*journalNudges, *journalNudgeMail, *tokens,
                                                         *systemClock, journalNudgeArming, appBaseUrl);
+  lifetime.watch(journalNudgeSweep, journalNudges, journalNudgeMail, tokens, systemClock, resendClient);
   journalNudgeSweep->start();
   // Any boundary unwired makes an echo pass a no-op: NullEmbedder and NullCurator answer
   // configured() false. This used to add that the sidecar must run the same weights the browser
@@ -907,26 +950,28 @@ int main() {
   // any client, the browser embeds page bodies on the device, and the two indexes never meet.
   const char* embedderUrlEnv = std::getenv("JOURNAL_EMBEDDER_URL");
   std::shared_ptr<Embedder> journalEmbedder;
-  if (embedderUrlEnv && *embedderUrlEnv)
-    journalEmbedder = std::make_shared<HttpEmbedder>(embedderUrlEnv);
-  else
+  if (embedderUrlEnv && *embedderUrlEnv) {
+    auto transport = std::make_shared<HttpEmbedder>(embedderUrlEnv);
+    lifetime.watch(transport);
+    journalEmbedder = transport;
+  } else
     journalEmbedder = std::make_shared<NullEmbedder>();
 
   const char* anthropicKeyEnv = std::getenv("ANTHROPIC_API_KEY");
   std::shared_ptr<Curator> journalCurator;
-  if (anthropicKeyEnv && *anthropicKeyEnv)
-    journalCurator = std::make_shared<AnthropicCurator>(
-        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-sonnet-5", "low",
-        aiFuse, aiSpendSink);
-  else
+  if (anthropicKeyEnv && *anthropicKeyEnv) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+    lifetime.watch(transport);
+    journalCurator = std::make_shared<AnthropicCurator>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
+  } else
     journalCurator = std::make_shared<NullCurator>();
   // Without an Anthropic key, the line-and-sentence rule cuts the page instead.
   std::shared_ptr<Segmenter> journalSegmenter;
-  if (anthropicKeyEnv && *anthropicKeyEnv)
-    journalSegmenter = std::make_shared<AnthropicSegmenter>(
-        std::make_shared<AnthropicClient>(anthropicKeyEnv), "claude-sonnet-5", "low", aiFuse,
-        aiSpendSink);
-  else
+  if (anthropicKeyEnv && *anthropicKeyEnv) {
+    auto transport = std::make_shared<AnthropicClient>(anthropicKeyEnv);
+    lifetime.watch(transport);
+    journalSegmenter = std::make_shared<AnthropicSegmenter>(transport, "claude-sonnet-5", "low", aiFuse, aiSpendSink);
+  } else
     journalSegmenter = std::make_shared<RuleSegmenter>();
   auto journalSpans = std::make_shared<PgEchoRepository>(pool);
   // The live path, the repair pass and the read layer must all hold this one object, or one of them
@@ -937,10 +982,13 @@ int main() {
                                                       *journalEmbedder, *journalCurator,
                                                       *systemClock, *entitlements,
                                                       SelectionRules{}, SweepBudget{});
+  lifetime.watch(journalEchoSweep, journalEchoes, journalSpans, journalSegmenter, journalEmbedder,
+                 journalCurator, systemClock, entitlements, subscriptionRepo, aiUsageRepo);
   journalEchoSweep->start();
   // Derives on its own thread, never a drogon request thread: a curator call is seconds long.
   auto journalEchoDerivations =
       std::make_shared<EchoDerivations>(*journalEchoSweep, *systemClock, LiveDerivationRules{});
+  lifetime.watch(journalEchoDerivations, journalEchoSweep, systemClock);
   journalEchoDerivations->start();
   if (syncEngine) {
     syncEngine->watcher = journalEchoDerivations;
@@ -953,13 +1001,16 @@ int main() {
   // Writes nothing; holds the same corpus, embedder and curator the live path does.
   auto journalEchoExplainer = std::make_shared<EchoExplainer>(
       *journalEchoes, *journalSegmenter, *journalEmbedder, *journalCurator, *pageService);
+  lifetime.watch(journalEchoExplainer, journalEchoes, journalSegmenter, journalEmbedder, journalCurator,
+                 pageService, journalPages, journalDoor);
   // Without OPENAI_API_KEY the transcriber is null and the endpoint answers 503.
   const char* openaiKeyEnv = std::getenv("OPENAI_API_KEY");
   std::shared_ptr<Transcriber> journalTranscriber;
-  if (openaiKeyEnv && *openaiKeyEnv)
-    journalTranscriber =
-        std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink);
-  else journalTranscriber = std::make_shared<NullTranscriber>();
+  if (openaiKeyEnv && *openaiKeyEnv) {
+    auto transport = std::make_shared<OpenAiTranscriber>(openaiKeyEnv, "gpt-4o-transcribe", aiFuse, aiSpendSink);
+    lifetime.watch(transport);
+    journalTranscriber = transport;
+  } else journalTranscriber = std::make_shared<NullTranscriber>();
   journal::JournalDeps journalDeps{.pageService = pageService, .authService = authService,
                                    .nudges = journalNudges, .nudgeSweep = journalNudgeSweep,
                                    .tokens = tokens, .clock = systemClock,
@@ -980,7 +1031,8 @@ int main() {
                        .authService = authService,
                        .clock = systemClock,
                        .askService = gymAsk,
-                       .appBaseUrl = appBaseUrl};
+                       .appBaseUrl = appBaseUrl,
+                       .onShutdown = [&lifetime](std::function<void()> stop) { lifetime.onStop(std::move(stop)); }};
   gym::registerRoutes(app, gymDeps);
 
   if (syncEngine) {
@@ -1018,7 +1070,7 @@ int main() {
             return std::nullopt;
           }}},
       systemClock, resendWebhookSecretEnv ? resendWebhookSecretEnv : "");
-  app.registerHandler(
+  routes.registerHandler(
       "/v1/resend/webhook",
       [resendWebhookApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         resendWebhookApi->webhook(req, std::move(cb));
@@ -1037,6 +1089,28 @@ int main() {
   const std::string listenHost = listenHostEnv && *listenHostEnv ? listenHostEnv : "0.0.0.0";
   app.addListener(listenHost, port);
   app.setThreadNum(ioThreads).run();
-  if (syncEngine) syncEngine->stop();
   return 0;
+}
+
+
+int main() {
+  using namespace wm;
+  std::shared_ptr<SentryClient> reporter;
+  ObservabilityLifetime lifetime([&reporter] {
+    stopLogTee();
+    installWriteReporter({});
+    if (reporter) reporter->drain();
+  });
+  WriteContext context(writeRequestId());
+  try {
+    return runServer(lifetime, reporter);
+  } catch (const std::exception& error) {
+    WriteObservation observation("server.lifecycle", "platform", "background");
+    observation.fail(error);
+    return 1;
+  } catch (...) {
+    WriteObservation observation("server.lifecycle", "platform", "background");
+    observation.failUnknown();
+    return 1;
+  }
 }

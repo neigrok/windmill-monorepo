@@ -1,5 +1,6 @@
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/ThreadService.h"
+#include "platform/application/WriteObservation.h"
 
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "products/gym/adapters/llm/AnthropicAsk.h"
@@ -14,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+#include <typeinfo>
 
 using namespace wm;
 using namespace wm::fake;
@@ -25,6 +27,18 @@ namespace {
 struct RecordedFailures : FailureReporter {
   std::vector<std::string> events;
   bool throwReport = false;
+  std::vector<std::string> requestIds;
+  std::vector<std::string> doors;
+
+  void reportWrite(const std::string& operation, const std::string& product,
+                   const std::string& door, const std::string& outcome,
+                   const std::string& requestId, const std::string& exceptionType) override {
+    events.push_back(product + " | " + operation + " | " + exceptionType);
+    requestIds.push_back(requestId);
+    doors.push_back(door);
+    CHECK_EQ(outcome, std::string("failed"));
+    if (throwReport) throw std::runtime_error("reporter unavailable");
+  }
 
   void report(const std::string& kind, const std::string& where,
               const std::string& detail) override {
@@ -552,7 +566,7 @@ TEST(a_run_that_threw_answers_the_lifter_rather_than_taking_the_process_with_it)
   CHECK_EQ(thrown.answer.answer, std::string(""));
   CHECK_EQ(thrown.answer.error, std::string("Coach failed at ask.run"));
   CHECK_EQ(h.failures->events, (std::vector<std::string>{
-      "gym-ask | ask.run | unexpected exception while answering Coach"}));
+      std::string("gym | ask.run | ") + typeid(std::runtime_error).name()}));
 
   h.agent.throwsUp = false;
   for (int attempt = 0; attempt < 3; ++attempt)
@@ -597,9 +611,9 @@ TEST(coach_worker_persistence_failures_reply_and_report_once_without_private_exc
   CHECK_EQ(cleanup.answer.error, std::string("Coach failed at ask.persist"));
   CHECK_FALSE(both.answer.ok);
   CHECK_EQ(h.failures->events, (std::vector<std::string>{
-      "gym-ask | ask.persist | unexpected exception while answering Coach",
-      "gym-ask | ask.persist | unexpected exception while answering Coach",
-      "gym-ask | ask.run | unexpected exception while answering Coach"}));
+      std::string("gym | ask.run | ") + typeid(std::runtime_error).name(),
+      std::string("gym | ask.run | ") + typeid(std::runtime_error).name(),
+      std::string("gym | ask.run | ") + typeid(std::runtime_error).name()}));
 }
 
 TEST(a_failure_reporter_cannot_prevent_coach_from_replying) {
@@ -614,7 +628,7 @@ TEST(a_failure_reporter_cannot_prevent_coach_from_replying) {
   REQUIRE_EQ(h.repo.db.threadRows.size(), 1u);
   CHECK_EQ(h.repo.db.threadRows.front().generation->status, std::string("failed"));
   CHECK_EQ(h.failures->events, (std::vector<std::string>{
-      "gym-ask | ask.run | unexpected exception while answering Coach"}));
+      std::string("gym | ask.run | ") + typeid(std::runtime_error).name()}));
 }
 
 // The question is taken AFTER every other rung, so a refusal that answered nothing costs nothing.
@@ -1378,4 +1392,53 @@ TEST(coach_corrected_note_attempt_clears_its_prior_error_before_the_write_can_co
   CHECK_EQ(stopped->receipt->steps, stopped->steps);
   CHECK(h.repo.db.noteRows.empty());
   CHECK_EQ(h.agent.runs, 0);
+}
+
+TEST(coach_write_completion_and_issue_share_request_without_private_content) {
+  Harness h;
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  h.agent.throwsUp = true;
+  const AskReply reply = h.question("PRIVATE_COACH_QUESTION");
+  installWriteSink({});
+
+  CHECK_FALSE(reply.answer.ok);
+  REQUIRE_EQ(completions.size(), 1u);
+  CHECK_EQ(completions.front().operation, std::string("ask.run"));
+  CHECK_EQ(completions.front().product, std::string("gym"));
+  CHECK_EQ(completions.front().door, std::string("Coach"));
+  CHECK_EQ(completions.front().outcome, std::string("failed"));
+  CHECK(completions.front().durationMs >= 0);
+  REQUIRE_EQ(h.failures->requestIds.size(), 1u);
+  CHECK_EQ(completions.front().requestId, h.failures->requestIds.front());
+  CHECK_EQ(h.failures->doors.front(), std::string("Coach"));
+  CHECK_EQ(h.failures->events.front(), std::string("gym | ask.run | ") + typeid(std::runtime_error).name());
+  CHECK(h.failures->events.front().find("PRIVATE_COACH_QUESTION") == std::string::npos);
+  CHECK(h.failures->events.front().find("the vendor sent") == std::string::npos);
+}
+
+TEST(every_declared_coach_write_tool_has_one_completion_even_when_refused) {
+  Harness h;
+  AskGeneration generation{"generation", "request", "PRIVATE_COACH_QUESTION"};
+  AskTools tools{h.gymTools, ThreadId{"thr_00000001"}, &h.repo.threads, &generation};
+  const ToolCaller reader{h.lifter, ToolScope({{"gym", Access::read}})};
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  std::size_t writes = 0;
+  for (const auto& declaration : tools.declareTools()) {
+    if (declaration.access == Access::read) continue;
+    ++writes;
+    const auto before = completions.size();
+    const ToolResult reply = tools.callTool(declaration.name(), Json::Value(Json::objectValue), reader);
+    CHECK(reply.isError);
+    CHECK_EQ(completions.size(), before + 1);
+    if (completions.size() != before + 1) continue;
+    CHECK_EQ(completions.back().operation, "gym." + declaration.name());
+    CHECK_EQ(completions.back().product, std::string("gym"));
+    CHECK_EQ(completions.back().door, std::string("Coach"));
+    CHECK_EQ(completions.back().outcome, std::string("refused"));
+    CHECK_FALSE(completions.back().requestId.empty());
+  }
+  installWriteSink({});
+  CHECK_EQ(writes, 4u);
 }

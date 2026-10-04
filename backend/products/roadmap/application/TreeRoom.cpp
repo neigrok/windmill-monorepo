@@ -8,7 +8,7 @@ namespace wm {
 
 TreeRoom::~TreeRoom() {
   if (pendingOps_.empty()) return;
-  LOG_WARN << pendingOps_.size() << " op rows for " << id_.str() << " never landed";
+  LOG_WARN << "room operation rows not committed count=" << pendingOps_.size();
 }
 
 TreeRoom::TreeRoom(TreeId id, Lww<std::string> title, LooseGraph graph, Legend legend, Seq head,

@@ -40,13 +40,13 @@ TEST(access_log_admits_an_unmeasured_request_instead_of_inventing_a_duration) {
   CHECK_EQ(accessLine("GET", "/v1/me", 200, -1, ""), std::string("http GET /v1/me 200 ?ms caller=anon"));
 }
 
-// The token in `/v1/gym/shared/{token}` is a live capability, so the line keeps enough to tie two reads of one link together and no more.
+// Capability credentials are omitted in full.
 TEST(access_log_cuts_a_capability_token_out_of_the_path_it_rides_in) {
   CHECK_EQ(accessLine("GET", "/v1/gym/shared/9hvKmReOUhBljovMD9kFkralo4JNiL9DjEnNIjWWkF8", 200,
                       2'300, ""),
-           std::string("http GET /v1/gym/shared/9hvKmReO~redacted 200 2.3ms caller=anon"));
+           std::string("http GET /v1/gym/shared/{token} 200 2.3ms caller=anon"));
   CHECK_EQ(redactedPath("/v1/gym/shared/9hvKmReOUhBljovMD9kFkralo4JNiL9DjEnNIjWWkF8"),
-           std::string("/v1/gym/shared/9hvKmReO~redacted"));
+           std::string("/v1/gym/shared/{token}"));
 
   CHECK_EQ(redactedPath("/v1/gym/sessions/s_8f3/sets"), std::string("/v1/gym/sessions/s_8f3/sets"));
   CHECK_EQ(redactedPath("/v1/gym/shared/"), std::string("/v1/gym/shared/"));
@@ -75,10 +75,9 @@ TEST(access_log_redacts_a_capability_token_however_the_caller_cased_the_route) {
   const std::string token = "9hvKmReOUhBljovMD9kFkralo4JNiL9DjEnNIjWWkF8";
 
   CHECK_EQ(redactedPath("/V1/GYM/SHARED/" + token),
-           std::string("/V1/GYM/SHARED/9hvKmReO~redacted"));
-  CHECK_EQ(redactedPath("/v1/Gym/Shared/" + token), std::string("/v1/Gym/Shared/9hvKmReO~redacted"));
-  // The kept prefix is spliced out of the ORIGINAL, so the token's own casing is never altered.
-  CHECK_EQ(redactedPath("/V1/gym/SHARED/AbCdEfGhIjKl"), std::string("/V1/gym/SHARED/AbCdEfGh~redacted"));
+           std::string("/V1/GYM/SHARED/{token}"));
+  CHECK_EQ(redactedPath("/v1/Gym/Shared/" + token), std::string("/v1/Gym/Shared/{token}"));
+  CHECK_EQ(redactedPath("/V1/gym/SHARED/AbCdEfGhIjKl"), std::string("/V1/gym/SHARED/{token}"));
 }
 
 TEST(access_log_caps_a_field_a_stranger_can_make_as_long_as_they_like) {

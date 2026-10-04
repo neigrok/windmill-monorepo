@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/domain/Auth.h"
 
 #include <trantor/net/EventLoopThread.h>
@@ -17,6 +19,16 @@ namespace wm {
 // and the sign-in routes stay shut.
 class GoogleOAuthClient {
 public:
+  ~GoogleOAuthClient() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   GoogleOAuthClient(std::string clientId, std::string clientSecret, std::string redirectUri);
 
   bool configured() const { return !clientId_.empty() && !clientSecret_.empty(); }
@@ -27,6 +39,7 @@ private:
   std::string clientId_;
   std::string clientSecret_;
   std::string redirectUri_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

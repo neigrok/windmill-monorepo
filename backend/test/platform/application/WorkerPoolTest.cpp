@@ -376,3 +376,82 @@ TEST(heartbeat_pass_runs_on_a_blocking_thread) {
 
   CHECK(blocking.get());
 }
+
+TEST(background_queue_reports_once_keeps_private_exception_out_and_continues) {
+  struct Reporter : FailureReporter {
+    std::vector<std::string> operations;
+    std::vector<std::string> requestIds;
+    std::vector<std::string> types;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product,
+                     const std::string& door, const std::string& outcome,
+                     const std::string& requestId, const std::string& type) override {
+      CHECK_EQ(product, std::string("platform"));
+      CHECK_EQ(door, std::string("background"));
+      CHECK_EQ(outcome, std::string("failed"));
+      operations.push_back(operation);
+      requestIds.push_back(requestId);
+      types.push_back(type);
+    }
+  };
+  auto reporter = std::make_shared<Reporter>();
+  installWriteReporter(reporter);
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  std::promise<void> continued;
+  auto future = continued.get_future();
+  {
+    Heartbeat heartbeat{"privacy-test"};
+    heartbeat.queue([] { throw std::runtime_error("PRIVATE_BACKGROUND_CONTENT token email@example.com"); });
+    heartbeat.queue([&] { markCurrentWrite(); continued.set_value(); });
+    future.get();
+  }
+  installWriteSink({});
+  installWriteReporter({});
+
+  REQUIRE_EQ(completions.size(), 2u);
+  CHECK_EQ(completions[0].operation, std::string("background.privacy-test"));
+  CHECK_EQ(completions[0].outcome, std::string("failed"));
+  CHECK_EQ(completions[1].outcome, std::string("ok"));
+  REQUIRE_EQ(reporter->operations.size(), 1u);
+  CHECK_EQ(reporter->operations[0], completions[0].operation);
+  CHECK_EQ(reporter->requestIds[0], completions[0].requestId);
+  CHECK_EQ(reporter->types[0], std::string(typeid(std::runtime_error).name()));
+  CHECK(reporter->types[0].find("PRIVATE_BACKGROUND_CONTENT") == std::string::npos);
+  CHECK(completions[0].durationMs >= 0);
+}
+
+TEST(heartbeat_idle_tick_and_queued_read_complete_without_write_logs) {
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  std::promise<void> tick;
+  auto ticked = tick.get_future();
+  {
+    Heartbeat heartbeat{"ws-readers"};
+    heartbeat.start(0, 3600, [&] { tick.set_value(); });
+    ticked.get();
+    heartbeat.queue([] {});
+    heartbeat.stop();
+    heartbeat.stop();
+    heartbeat.queue([] { markCurrentWrite(); });
+  }
+  installWriteSink({});
+  CHECK(completions.empty());
+}
+
+TEST(heartbeat_drains_queued_mutations_before_explicit_shutdown) {
+  std::vector<WriteCompletion> completions;
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  {
+    Heartbeat heartbeat{"journal-echo-live", "journal"};
+    heartbeat.queue([] { markCurrentWrite(); });
+    heartbeat.queue([] {});
+    heartbeat.stop();
+    heartbeat.stop();
+  }
+  installWriteSink({});
+  REQUIRE_EQ(completions.size(), 1u);
+  CHECK_EQ(completions[0].operation, std::string("background.journal-echo-live"));
+  CHECK_EQ(completions[0].product, std::string("journal"));
+  CHECK_EQ(completions[0].outcome, std::string("ok"));
+}

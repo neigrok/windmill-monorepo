@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/postgres/PgReminderRepository.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/roadmap/domain/GraphState.h"
@@ -224,8 +225,9 @@ bool PgReminderRepository::claimWeek(const UserId& user, const std::string& slot
       user.str(), slotDate,
       decision.outcome == ReminderOutcome::send ? "sent" : "skipped",
       skipReasonName(decision.reason), treeId, decision.content.readyCount);
-  txn.exec_params(std::string(kAdvanceNextSlot), user.str(), slotDate);
+  const pqxx::result advanced = txn.exec_params(std::string(kAdvanceNextSlot), user.str(), slotDate);
   txn.commit();
+  if (!claimed.empty() || advanced.affected_rows() != 0) markCurrentWrite();
   return !claimed.empty();
 }
 

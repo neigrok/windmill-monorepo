@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/domain/Auth.h"
 
 #include <json/json.h>
@@ -31,6 +33,16 @@ Json::Value reminderUnsubscribeHeaders(const std::string& unsubscribeUrl);
 // loop — true on a 2xx, false on any failure or timeout.
 class ResendClient {
 public:
+  ~ResendClient() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   ResendClient(std::string apiKey, std::string from);
 
   void send(const Email& to, const std::string& templateId, const Json::Value& variables,
@@ -39,6 +51,7 @@ public:
 private:
   std::string apiKey_;
   std::string from_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

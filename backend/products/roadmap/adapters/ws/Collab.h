@@ -33,6 +33,8 @@ public:
   Collab(RoomRegistry& registry, OpLog& ops, WsPresenceBus& bus,
          ProgressService& progress, AuthService& auth, PresenceHub& presence, Clock& clock,
          std::set<std::string> allowedOrigins);
+  ~Collab() { stop(); }
+  void stop() { reprove_.stop(); }
 
   void onOpen(const drogon::HttpRequestPtr& req, const drogon::WebSocketConnectionPtr& conn);
   void onMessage(const drogon::WebSocketConnectionPtr& conn, const std::string& text);
@@ -67,17 +69,16 @@ private:
   std::set<std::string> allowedOrigins_;
 
   static constexpr double kReproveEverySeconds = 15.0;
-  // Last, so it destructs first: its destructor joins the sweeper, which must happen while the
-  // bus, the registry and the presence roster are still alive.
-  Heartbeat reprove_;
   std::atomic<std::uint64_t> actorSeq_{0};
 
   struct WsRate { double tokens; std::chrono::steady_clock::time_point seen; };
   std::mutex wsMutex_;
   std::unordered_map<const void*, WsRate> wsRate_;
+  Heartbeat reprove_;
 };
 
 void setCollab(std::shared_ptr<Collab> collab);
+void stopCollab();
 Collab* collab();
 
 }

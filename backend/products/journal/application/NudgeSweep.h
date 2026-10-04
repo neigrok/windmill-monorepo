@@ -25,6 +25,7 @@ public:
              MailArming arming, std::string appBaseUrl);
 
   void start();                                          // arm the ticker (fixed first tick, then periodic)
+  void stop() { heartbeat_.stop(); }
   MailSweepReport run(std::uint64_t nowMs, bool dryRun);
 
   // Queued onto the sweep's own loop, which also serialises an operator's pass behind the
@@ -32,7 +33,6 @@ public:
   void runAsync(std::uint64_t nowMs, bool dryRun, std::function<void(MailSweepReport)> done);
 
 private:
-  std::string name() const override { return "journal nudge"; }
   int batch() const override;
   std::vector<NudgeDueUser> dueNow(std::uint64_t nowMs, int limit) override;
   NudgeDecision decideFor(const NudgeDueUser& due, std::uint64_t nowMs) override;

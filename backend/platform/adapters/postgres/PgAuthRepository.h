@@ -40,7 +40,7 @@ public:
   void insertSession(const std::string& digest, const UserId& user, UnixMs expiresAt,
                      const std::string& userAgent, const std::string& ip, UnixMs seenAt) override;
   std::optional<StoredSession> findSession(const std::string& digest) override;
-  void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+  bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                       const std::string& userAgent, const std::string& ip) override;
   void deleteSession(const std::string& digest) override;
 

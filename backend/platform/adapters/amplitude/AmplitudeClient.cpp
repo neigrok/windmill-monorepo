@@ -1,6 +1,8 @@
 #include "platform/adapters/amplitude/AmplitudeClient.h"
 
 #include "platform/adapters/http/VendorCall.h"
+#include "platform/application/WriteObservation.h"
+#include <stdexcept>
 
 #include <drogon/HttpClient.h>
 #include <drogon/HttpRequest.h>
@@ -29,12 +31,14 @@ Json::Value propsObject(const std::string& props) {
 }
 
 void sendBatch(const drogon::HttpClientPtr& client, const drogon::HttpRequestPtr& request,
-                const std::shared_ptr<FailureReporter>& failures, int attemptsLeft) {
+                const std::shared_ptr<FailureReporter>& failures, int attemptsLeft,
+                const std::shared_ptr<WriteObservation>& observation) {
   VendorCall call("amplitude", "forward");
   client->sendRequest(request,
-      [client, request, failures, attemptsLeft, call](drogon::ReqResult result,
+      [client, request, failures, attemptsLeft, call, observation](drogon::ReqResult result,
                                                     const drogon::HttpResponsePtr& response) mutable {
-        if (call.succeeded(result, response)) return;
+        WriteContext context(*observation);
+        if (call.succeeded(result, response)) { observation->finish(); return; }
         const int status = response ? static_cast<int>(response->getStatusCode()) : 0;
         const bool transient = result != drogon::ReqResult::Ok || !response ||
                                status == 429 || status >= 500;
@@ -47,18 +51,16 @@ void sendBatch(const drogon::HttpClientPtr& client, const drogon::HttpRequestPtr
             if (parsed.ec == std::errc{} && parsed.ptr == header.data() + header.size() && seconds >= 0)
               delay = std::min(seconds, 30);
           }
-          client->getLoop()->runAfter(delay, [client, request, failures, attemptsLeft] {
-            sendBatch(client, request, failures, attemptsLeft - 1);
+          client->getLoop()->runAfter(delay, [client, request, failures, attemptsLeft, observation] {
+            sendBatch(client, request, failures, attemptsLeft - 1, observation);
           });
           return;
         }
-        if (!failures) return;
-        try {
-          failures->report("telemetry", "amplitude.forward",
-                           "Amplitude delivery failed; status=" + std::to_string(status));
-        } catch (const std::exception&) {
-          LOG_ERROR << "amplitude failure report dropped";
+        if (status >= 400 && status < 500) {
+          observation->finish(status == 429 ? "rate_limited" : "http_" + std::to_string(status));
+          return;
         }
+        observation->fail(std::runtime_error("Amplitude delivery failed"));
       }, 10.0);
 }
 }
@@ -114,7 +116,8 @@ void AmplitudeClient::forward(const std::string& sessionKey, const std::optional
   req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
   req->setBody(body);
 
-  sendBatch(client, req, failures_, 3);
+  auto observation = std::make_shared<WriteObservation>("amplitude.forward", "platform", "background", "", failures_.get());
+  sendBatch(client, req, failures_, 3, observation);
 }
 
 }

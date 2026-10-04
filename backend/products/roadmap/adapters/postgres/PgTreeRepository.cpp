@@ -1,4 +1,5 @@
 #include "products/roadmap/adapters/postgres/PgTreeRepository.h"
+#include "platform/application/WriteObservation.h"
 
 #include "products/roadmap/adapters/json/TreeJson.h"
 #include "platform/adapters/postgres/PgPool.h"
@@ -267,6 +268,7 @@ void PgTreeRepository::save(const TreeId& tree, const GraphState& state, const L
       static_cast<long long>(title.stamp.physicalMs), static_cast<long long>(title.stamp.counter));
   upsertSlice(txn, tree, state, legend);  // only the dirty slice — never the whole tree
   txn.commit();
+  markCurrentWrite();
 }
 
 void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const LegendState& legend,

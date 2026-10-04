@@ -1,3 +1,4 @@
+#include "platform/application/WriteObservation.h"
 #pragma once
 
 #include "platform/adapters/postgres/PgPool.h"
@@ -53,7 +54,8 @@ private:
                                "the fleet lock is stranded and this engine has stopped sweeping";
         return;
       } catch (const std::exception& error) {
-        LOG_ERROR << name << ": the sweep lock could not be handed back: " << error.what();
+    reportCurrentWriteFailure(error);
+        LOG_ERROR << name << ": the sweep lock could not be handed back: " << "unexpected storage exception";
       } catch (...) {
         LOG_ERROR << name << ": the sweep lock could not be handed back";
       }

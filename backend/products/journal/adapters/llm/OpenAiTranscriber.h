@@ -1,5 +1,7 @@
 #pragma once
 
+#include <mutex>
+
 #include "platform/domain/AiFuse.h"
 #include "platform/ports/AiUsageRepository.h"
 #include "products/journal/ports/Transcriber.h"
@@ -16,6 +18,16 @@ namespace wm {
 // The fuse and the sink default to null, the no-op.
 class OpenAiTranscriber : public Transcriber {
  public:
+  ~OpenAiTranscriber() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      loop_.run();
+      auto* loop = loop_.getLoop();
+      loop->queueInLoop([loop] { loop->quit(); });
+      loop_.wait();
+    });
+  }
+
   explicit OpenAiTranscriber(std::string apiKey, std::string model = "gpt-4o-transcribe",
                              std::shared_ptr<AiFuse> fuse = nullptr,
                              std::shared_ptr<UsageSink> usage = nullptr);
@@ -29,6 +41,7 @@ class OpenAiTranscriber : public Transcriber {
   std::string model_;
   std::shared_ptr<AiFuse> fuse_;
   std::shared_ptr<UsageSink> usage_;
+  std::once_flag stopped_;
   trantor::EventLoopThread loop_;
 };
 

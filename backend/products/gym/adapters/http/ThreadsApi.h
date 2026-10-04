@@ -11,6 +11,7 @@
 #include <atomic>
 #include <trantor/net/EventLoopThreadPool.h>
 #include <memory>
+#include <mutex>
 #include <string>
 
 namespace wm::gym {
@@ -21,6 +22,13 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 class ThreadsApi {
 public:
   ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<AuthService> auth, std::shared_ptr<AskService> ask = nullptr);
+  ~ThreadsApi() { stop(); }
+  void stop() {
+    std::call_once(stopped_, [this] {
+      for (auto* loop : uploads_.getLoops()) loop->queueInLoop([loop] { loop->quit(); });
+      uploads_.wait();
+    });
+  }
 
   void listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb);     // GET  /v1/gym/threads
   void getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
@@ -37,6 +45,7 @@ private:
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<AskService> ask_;
   std::atomic<unsigned> uploadCount_{0};
+  std::once_flag stopped_;
   trantor::EventLoopThreadPool uploads_{2};
 };
 

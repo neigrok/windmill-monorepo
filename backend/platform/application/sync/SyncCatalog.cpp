@@ -1,5 +1,6 @@
 #include "platform/application/sync/SyncCatalog.h"
 
+#include <algorithm>
 #include <functional>
 #include <set>
 
@@ -71,6 +72,36 @@ TypeRules* SyncCatalog::rules(const std::string& type) const {
 SyncCommand& SyncCatalog::command(const std::string& name) const {
   requireSealed();
   return *commands_.at(name);
+}
+
+std::string SyncCatalog::commandOperation(const std::string& name) const {
+  requireSealed();
+  const auto bound = commands_.find(name);
+  return bound == commands_.end() ? "sync.command.unknown" : "sync.command." + bound->first;
+}
+
+std::string SyncCatalog::observationProduct(const RegistryScope& scope) const {
+  if (scope.kind == ScopeKind::product) return registry_.products().contains(scope.product) ? scope.product : "platform";
+  const TypeDef* governing = registry_.governingType();
+  return governing ? governing->scope.product : "platform";
+}
+
+std::string SyncCatalog::observationProduct(const Json::Value& intent, const UserId& caller) const {
+  if (!intent.isObject() || !intent["scope"].isString()) return "platform";
+  const std::optional<ScopeKey> scope = resolve(registry_, intent["scope"].asString(), caller);
+  return scope ? observationProduct(scope->registryScope()) : "platform";
+}
+
+std::string SyncCatalog::observationOutcome(const Json::Value& result) const {
+  if (!result.isObject() || !result["s"].isString()) return "failed";
+  if (result["s"].asString() == "ok") return "ok";
+  if (!result["code"].isString()) return "failed";
+  const std::string refusal = result["code"].asString();
+  if (code::isEngine(refusal)) return refusal == code::internal ? "failed" : refusal;
+  for (const auto& [name, product] : registry_.products()) {
+    if (std::find(product.codes.begin(), product.codes.end(), refusal) != product.codes.end()) return refusal;
+  }
+  return "failed";
 }
 
 void SyncCatalog::requireReady(SyncTxn& txn, const ScopeKey& scope) const {

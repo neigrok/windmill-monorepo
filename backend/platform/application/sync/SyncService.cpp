@@ -1,5 +1,6 @@
 #include "platform/application/sync/SyncService.h"
 
+#include "platform/application/WriteObservation.h"
 #include "platform/domain/sync/Jcs.h"
 #include "platform/domain/sync/Record.h"
 #include "platform/domain/sync/Registry.h"
@@ -90,8 +91,8 @@ std::optional<ScopeFacts> factsOf(const std::optional<ScopeRow>& row) {
 // prune what it acknowledged. Each step is a short transaction of its own, and none is open across an admission.
 class ReplicaPush {
 public:
-  ReplicaPush(SyncStore& store, Admission& admission, UserId account, const Json::Value& request, Ms serverNow)
-      : store_(store), admission_(admission), account_(std::move(account)), request_(request), replica_(request["replica"].asString()),
+  ReplicaPush(const SyncCatalog& catalog, SyncStore& store, Admission& admission, UserId account, const Json::Value& request, Ms serverNow)
+      : catalog_(catalog), store_(store), admission_(admission), account_(std::move(account)), request_(request), replica_(request["replica"].asString()),
         serverNow_(serverNow) {}
 
   SyncReply run(PushBudget& budget, Json::Value body) {
@@ -131,7 +132,7 @@ public:
       }
       if (turn == Turn::foreign) return conflict(std::move(body), "replica-foreign");
       if (turn == Turn::gap) return conflict(std::move(body), "gap");
-      const std::optional<Json::Value> stored = storedAnswer(n, digest);
+      const std::optional<Json::Value> stored = storedAnswer(n, digest, *intent);
       if (!stored) return conflict(std::move(body), "replica-forked");
       results.append(numbered(n, *stored));
     }
@@ -187,10 +188,15 @@ private:
 
   // The result stored for n, unless the row is gone, still only tallies faults, or holds another intent: the
   // replica was forked or restored.
-  std::optional<Json::Value> storedAnswer(std::uint64_t n, const Digest256& digest) {
+  std::optional<Json::Value> storedAnswer(std::uint64_t n, const Digest256& digest, const Json::Value& intent) {
     const std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::snapshot);
     const std::optional<StoredResult> stored = store_.storedResult(*txn, replica_, n);
-    if (!stored || !stored->result || stored->digest != digest) return std::nullopt;
+    if (!stored || !stored->result) return std::nullopt;
+    if (stored->digest != digest) {
+      WriteObservation mismatch("sync.intent.digest", catalog_.observationProduct(intent, account_), "sync");
+      mismatch.finish("replica-forked");
+      return std::nullopt;
+    }
     return stored->result;
   }
 
@@ -220,6 +226,7 @@ private:
     return row->lastN;
   }
 
+  const SyncCatalog& catalog_;
   SyncStore& store_;
   Admission& admission_;
   const UserId account_;
@@ -390,9 +397,28 @@ public:
   Json::Value page(const Json::Value& wanted) {
     const std::string ref = wanted["scope"].asString();
     const std::optional<ScopeKey> key = resolve(catalog_.registry(), ref, caller_);
-    if (!key) return answered(ref, "not-found");
-    runBeforePull(ref, *key);
-    return pageOf(ref, *key, wanted["cursor"]);
+    WriteObservation observation("sync.scope.pull", key ? catalog_.observationProduct(key->registryScope()) : "platform", "sync");
+    WriteContext context(observation);
+    try {
+      if (!key) {
+        observation.finish("not-found");
+        return answered(ref, "not-found");
+      }
+      runBeforePull(ref, *key);
+      Json::Value page = pageOf(ref, *key, wanted["cursor"]);
+      const std::string kind = page["kind"].asString();
+      observation.finish(kind == "rows" ? "ok" : kind);
+      return page;
+    } catch (const ProductScopeUnavailable&) {
+      observation.finish("unavailable");
+      throw;
+    } catch (const std::exception& error) {
+      observation.fail(error);
+      throw;
+    } catch (...) {
+      observation.failUnknown();
+      throw;
+    }
   }
 
 private:
@@ -569,7 +595,7 @@ SyncReply SyncService::push(const Credential& credential, std::string_view body,
   const std::optional<Json::Value> request = parsed(body);
   if (!request || !isPushRequest(*request)) return SyncReply::refused(400, std::move(answer), "malformed");
   if ((*request)["intents"].size() > limits.pushMaxIntents) return SyncReply::refused(413, std::move(answer), "request-too-large");
-  return ReplicaPush(store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
+  return ReplicaPush(catalog_, store_, admission_, *caller, *request, serverNow).run(budget, std::move(answer));
 }
 
 SyncReply SyncService::pull(const Credential& credential, std::string_view body) {

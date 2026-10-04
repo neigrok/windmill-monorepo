@@ -82,7 +82,8 @@ struct AuthRepository {
   virtual std::optional<StoredSession> findSession(const std::string& digest) = 0;
   // Rolls the window forward, stamps last_seen, and heals user_agent/ip when non-empty
   // (empty leaves the stored value).
-  virtual void refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
+  // True only when a session row was updated.
+  virtual bool refreshSession(const std::string& digest, UnixMs expiresAt, UnixMs seenAt,
                               const std::string& userAgent, const std::string& ip) = 0;
   virtual void deleteSession(const std::string& digest) = 0;
 

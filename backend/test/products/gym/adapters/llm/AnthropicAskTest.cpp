@@ -7,6 +7,12 @@
 #include <string>
 #include <utility>
 #include <vector>
+#include <thread>
+#include <stdexcept>
+#include <typeinfo>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <unistd.h>
 
 using namespace wm;
 using namespace wm::gym;
@@ -423,4 +429,80 @@ TEST(coach_opening_image_is_a_base64_content_block_before_the_question) {
   image["source"]["data"] = "cG5n";
   CHECK_EQ(messages[0]["content"][0], image);
   CHECK_EQ(messages[0]["content"][1]["type"].asString(), std::string("text"));
+}
+
+TEST(coach_fuse_recovery_reports_later_transport_and_malformed_failures) {
+  struct Reporter : FailureReporter {
+    std::vector<std::string> requestIds;
+    std::vector<std::string> types;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& operation, const std::string& product,
+                     const std::string& door, const std::string& outcome,
+                     const std::string& requestId, const std::string& type) override {
+      CHECK_EQ(operation, std::string("ask.run"));
+      CHECK_EQ(product, std::string("gym"));
+      CHECK_EQ(door, std::string("Coach"));
+      CHECK_EQ(outcome, std::string("failed"));
+      requestIds.push_back(requestId);
+      types.push_back(type);
+    }
+  };
+  auto reporter = std::make_shared<Reporter>();
+  const auto at = nowMs();
+  auto fuse = std::make_shared<AiFuse>(1000, 1000);
+  fuse->spent(2000, at + 1000);
+  FakeToolHost host;
+  AnthropicAsk denied{"PRIVATE_API_KEY", reporter, fuse, nullptr, "http://127.0.0.1:1"};
+  const auto refusal = denied.answer(question("PRIVATE_QUESTION"), asked(), host);
+  CHECK_FALSE(refusal.ok);
+  CHECK_EQ(refusal.outcomeCode, std::string("ai-fuse"));
+  CHECK(reporter->requestIds.empty());
+  CHECK_EQ(fuse->trailingNanos(at + 2001), 0);
+  CHECK(fuse->tripped());
+
+  for (const int status : {503, 200}) {
+    const int listener = ::socket(AF_INET, SOCK_STREAM, 0);
+    REQUIRE(listener >= 0);
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    REQUIRE_EQ(::bind(listener, reinterpret_cast<const sockaddr*>(&address), sizeof(address)), 0);
+    socklen_t size = sizeof(address);
+    REQUIRE_EQ(::getsockname(listener, reinterpret_cast<sockaddr*>(&address), &size), 0);
+    REQUIRE_EQ(::listen(listener, 1), 0);
+    const std::string body = status == 200 ? "data: {PRIVATE_MALFORMED_REPLY}\n\n" : "PRIVATE_VENDOR_RESPONSE";
+    const std::string response = "HTTP/1.1 " + std::to_string(status) + " Fixture\r\nContent-Length: " +
+        std::to_string(body.size()) + "\r\nConnection: close\r\n\r\n" + body;
+    std::thread server([listener, response] {
+      const int peer = ::accept(listener, nullptr, nullptr);
+      if (peer < 0) return;
+      std::string request;
+      char buffer[16 * 1024];
+      for (;;) {
+        const auto read = ::recv(peer, buffer, sizeof(buffer), 0);
+        if (read <= 0) break;
+        request.append(buffer, static_cast<std::size_t>(read));
+        const auto headers = request.find("\r\n\r\n");
+        if (headers == std::string::npos) continue;
+        const auto length = request.find("Content-Length:");
+        const auto payload = length == std::string::npos ? 0 : std::stoull(request.substr(length + 15));
+        if (request.size() >= headers + 4 + payload) break;
+      }
+      ::send(peer, response.data(), response.size(), 0);
+      ::close(peer);
+    });
+    const std::string baseUrl = "http://127.0.0.1:" + std::to_string(ntohs(address.sin_port));
+    AnthropicAsk recovered{"PRIVATE_API_KEY", reporter, fuse, nullptr, baseUrl};
+    const auto failure = recovered.answer(question("PRIVATE_QUESTION"), asked(), host);
+    server.join();
+    ::close(listener);
+    CHECK_FALSE(failure.ok);
+    CHECK(failure.outcomeCode.empty());
+  }
+  REQUIRE_EQ(reporter->requestIds.size(), 2u);
+  CHECK(reporter->requestIds[0] != reporter->requestIds[1]);
+  for (const auto& type : reporter->types) {
+    CHECK_EQ(type, std::string(typeid(std::runtime_error).name()));
+    CHECK(type.find("PRIVATE_") == std::string::npos);
+  }
 }

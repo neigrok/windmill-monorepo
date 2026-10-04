@@ -4,6 +4,7 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/http/WriteRoutes.h"
 #include "products/gym/adapters/json/TrainingJson.h"
 
 #include <optional>
@@ -151,7 +152,10 @@ void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
     drogon::HttpResponsePtr response;
     try { response = upload(); }
     catch (const GymUnavailable& unavailable) { response = error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()); }
-    catch (const std::exception&) { response = error(drogon::k503ServiceUnavailable, "photo could not be saved; try again shortly"); }
+    catch (const std::exception& failure) {
+      writeHttpFailure(req, failure);
+      response = error(drogon::k503ServiceUnavailable, "photo could not be saved; try again shortly");
+    }
     --uploadCount_;
     cb(response);
   });

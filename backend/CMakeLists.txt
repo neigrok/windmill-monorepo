@@ -74,6 +74,7 @@ add_library(windmill_platform
   platform/application/LiveSessions.cpp
   platform/application/OAuthService.cpp
   platform/application/McpKeyService.cpp
+  platform/application/WriteObservation.cpp
   platform/application/WorkerPool.cpp
   platform/application/sync/SyncCatalog.cpp
   platform/application/sync/Admission.cpp
@@ -357,6 +358,8 @@ target_sources(windmill_platform PRIVATE
   platform/adapters/oidc/AppleOAuthClient.cpp
   platform/adapters/sentry/SentryClient.cpp
   platform/adapters/sentry/LogTee.cpp
+  platform/adapters/http/WriteRoutes.cpp
+  platform/adapters/sentry/ObservedTool.cpp
   platform/adapters/http/AccessLog.cpp
   platform/adapters/http/LogFormat.cpp
   platform/adapters/amplitude/AmplitudeClient.cpp
@@ -499,6 +502,10 @@ target_link_libraries(windmill_mcp_http PRIVATE windmill_roadmap)
 add_executable(windmill_gym_backfill platform/infra/gym_backfill_main.cpp)
 target_link_libraries(windmill_gym_backfill PRIVATE windmill_gym_sync)
 
+add_test(NAME log_lifecycle COMMAND ${Python3_EXECUTABLE}
+  ${CMAKE_SOURCE_DIR}/test/platform/adapters/sentry/log_lifecycle_test.py
+  $<TARGET_FILE:windmill_mcp> $<TARGET_FILE:windmill_gym_backfill>)
+
 add_executable(windmill_gym_snapshot platform/infra/gym_snapshot_main.cpp)
 target_link_libraries(windmill_gym_snapshot PRIVATE windmill_gym)
 
@@ -572,7 +579,10 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/http/FeedbackApiTest.cpp
   test/platform/adapters/http/RateLimiterTest.cpp
   test/platform/adapters/http/VendorCallTest.cpp
+  test/platform/application/WriteObservationTest.cpp
+  test/platform/adapters/http/WriteRoutesTest.cpp
   test/platform/adapters/http/AccessLogTest.cpp
+  test/platform/adapters/http/LogFormatTest.cpp
   test/third_party/drogon/PatchesTest.cpp
   test/platform/adapters/crypto/OpenSslTokenGeneratorTest.cpp
   test/platform/adapters/email/ResendEmailSenderTest.cpp
@@ -580,6 +590,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/email/ResendWebhookApiTest.cpp
   test/platform/adapters/oidc/IdTokenTest.cpp
   test/platform/adapters/sentry/LogTeeTest.cpp
+  test/platform/adapters/sentry/ObservedToolTest.cpp
   test/platform/adapters/paddle/PaddleSignatureTest.cpp
   test/platform/adapters/paddle/BillingApiTest.cpp
   test/platform/adapters/amplitude/AmplitudeUsageSinkTest.cpp

@@ -55,7 +55,7 @@ COPY --from=contract sync/corpus /contract/sync/corpus
 # test suite. Every suite ctest registers must be listed, or ctest fails on a missing executable, not a red test.
 RUN cmake -S . -B build -DCMAKE_BUILD_TYPE=Release -DWM_API_CONTRACT_DIR=/contract -DWM_DROGON_PREFIX=/opt/drogon \
  && cmake --build build -j"$(nproc)" \
-      --target windmill_server windmill_server_test_clock windmill_mcp_http windmill_server_probe \
+      --target windmill_server windmill_server_test_clock windmill_mcp windmill_mcp_http windmill_server_probe \
                windmill_gym_backfill windmill_gym_snapshot windmill_gym_rehearsal_seed \
                windmill_journal_backfill windmill_journal_snapshot windmill_journal_rehearsal_seed \
                windmill_domain_tests windmill_mcp_tests windmill_adapters_tests windmill_sync_tests

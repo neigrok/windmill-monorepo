@@ -18,9 +18,9 @@ std::string tookMs(long long micros);
 // capped, and says so where it cuts, because the line is teed to Sentry as an event body.
 std::string loggableField(const std::string& value);
 
-// The path with any capability secret in it cut to a short prefix — useless as a credential, long
-// enough to tie two reads of one link together. A table: /v1/gym/shared is the only route today
-// whose PATH carries a secret; every other rides the query string, which the access line drops.
+// Capability segments become placeholders; query strings and fragments are omitted.
 std::string redactedPath(const std::string& path);
+std::string privacySafeLogBody(const std::string& body, const std::string& source);
+std::string privacySafeLogSource(const std::string& source);
 
 }

@@ -1,4 +1,5 @@
 #include "products/journal/adapters/postgres/PgEchoRepository.h"
+#include "platform/application/WriteObservation.h"
 
 #include "platform/adapters/postgres/PgPool.h"
 #include "products/journal/domain/Passage.h"
@@ -548,6 +549,7 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
         user.str(), day.iso(), statusText(outcome.status), outcome.error, outcome.versions.segment,
         outcome.versions.embed);
     txn.commit();
+    markCurrentWrite();
     return;
   }
 
@@ -567,6 +569,7 @@ void PgEchoRepository::recordCuration(const UserId& user, const LocalDate& day,
       static_cast<long long>(outcome.corpusStamp), statusText(outcome.status), outcome.error,
       outcome.versions.segment, outcome.versions.embed, outcome.versions.judge);
   txn.commit();
+  markCurrentWrite();
 }
 
 std::vector<LocalDate> PgEchoRepository::inboundPages(const UserId& user,

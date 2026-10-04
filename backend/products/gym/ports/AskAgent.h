@@ -36,6 +36,7 @@ struct AskAnswer {
   std::vector<AskStep> steps;
   // Billed vendor round trips this run took; the day's ration is given back only when it is 0.
   int modelTurns = 0;
+  std::string outcomeCode;
 };
 
 struct AskAgent {

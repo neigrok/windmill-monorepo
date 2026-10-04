@@ -59,6 +59,7 @@ class EchoExplainer {
 public:
   EchoExplainer(EchoRepository& echoes, Segmenter& segmenter, Embedder& embedder, Curator& curator,
                 PageService& pages);
+  void stop() { heartbeat_.stop(); }
 
   EchoExplanation explain(const UserId& user, const ExplainRequest& request);
 

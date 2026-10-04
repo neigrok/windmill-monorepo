@@ -58,6 +58,7 @@ struct ScopeLockTimeout : std::runtime_error {
 
 struct ServerBuildAborted {
   std::exception_ptr error;
+  std::string outcome = "invalid";
 };
 
 // §6.3: the k-th admit of a server-origin call that carries a requestId, and the call's digest. `looksUp` marks

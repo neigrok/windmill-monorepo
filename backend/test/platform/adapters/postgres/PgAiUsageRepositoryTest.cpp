@@ -1,6 +1,7 @@
 #include "platform/adapters/postgres/PgAiUsageRepository.h"
 
 #include "platform/domain/AiUsage.h"
+#include "platform/application/WriteObservation.h"
 #include "test/PgTestPool.h"
 #include "test/testing.h"
 
@@ -9,6 +10,8 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include <thread>
+#include <typeinfo>
 
 // Opt-in integration test: needs a live local Postgres with the schema applied and WM_PG_TEST set; otherwise every case reports skip. It seeds its own rows.
 using namespace wm;
@@ -297,4 +300,59 @@ TEST(pg_ai_usage_passive_operations_are_separate_from_active_allowance_and_retai
   REQUIRE_EQ(spenders.size(), 1u);
   CHECK_EQ(spenders[0].costNanos, 21'000'000);
   CHECK_EQ(spenders[0].calls, 7);
+}
+
+TEST(pg_ai_usage_noexcept_private_loop_failure_has_own_correlated_issue) {
+  struct Reporter : FailureReporter {
+    std::string operation;
+    std::string product;
+    std::string door;
+    std::string outcome;
+    std::string requestId;
+    std::string exceptionType;
+    int issues = 0;
+    void report(const std::string&, const std::string&, const std::string&) override {}
+    void reportWrite(const std::string& op, const std::string& p, const std::string& d,
+                     const std::string& out, const std::string& id, const std::string& type) override {
+      ++issues;
+      operation = op;
+      product = p;
+      door = d;
+      outcome = out;
+      requestId = id;
+      exceptionType = type;
+    }
+  };
+  auto reporter = std::make_shared<Reporter>();
+  std::vector<WriteCompletion> completions;
+  installWriteReporter(reporter);
+  installWriteSink([&](const WriteCompletion& completion) { completions.push_back(completion); });
+  auto pool = std::make_shared<PgPool>("host=/private/tmp/codex-obs-absent-postgres dbname=PRIVATE_DATABASE user=PRIVATE_USER password=PRIVATE_TOKEN connect_timeout=1");
+  PgAiUsageRepository repo{pool};
+  AiSpend row = spend("PRIVATE_PRODUCT", "PRIVATE_MODEL", "PRIVATE_ACCOUNT", TokenUse{});
+  row.operation = "PRIVATE_OPERATION";
+  row.runId = "PRIVATE_RUN";
+  std::thread worker([&] {
+    CHECK(currentWriteRequestId().empty());
+    repo.record(row);
+  });
+  worker.join();
+  installWriteSink({});
+  installWriteReporter({});
+
+  CHECK_EQ(reporter->issues, 1);
+  REQUIRE_EQ(completions.size(), 1u);
+  CHECK_EQ(completions[0].operation, std::string("ai.usage.record"));
+  CHECK_EQ(completions[0].product, std::string("platform"));
+  CHECK_EQ(completions[0].door, std::string("background"));
+  CHECK_EQ(completions[0].outcome, std::string("failed"));
+  CHECK_EQ(reporter->operation, completions[0].operation);
+  CHECK_EQ(reporter->product, completions[0].product);
+  CHECK_EQ(reporter->door, completions[0].door);
+  CHECK_EQ(reporter->outcome, completions[0].outcome);
+  CHECK_EQ(reporter->requestId, completions[0].requestId);
+  CHECK_EQ(reporter->exceptionType, std::string(typeid(pqxx::broken_connection).name()));
+  CHECK_FALSE(reporter->requestId.empty());
+  CHECK(reporter->exceptionType.find("PRIVATE_") == std::string::npos);
+  CHECK(completions[0].operation.find("PRIVATE_") == std::string::npos);
 }

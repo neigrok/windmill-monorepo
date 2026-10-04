@@ -1,3 +1,5 @@
+#include "platform/adapters/sentry/ObservedTool.h"
+
 #include "platform/adapters/crypto/OpenSslTokenGenerator.h"
 #include "platform/adapters/http/JsonReply.h"
 #include "platform/adapters/postgres/PgAuthRepository.h"
@@ -42,8 +44,8 @@ public:
     if (!account || digest != credentialDigest) return std::nullopt;
     return StoredSession{*account, 9'007'199'254'740'991ULL};
   }
-  void refreshSession(const std::string&, UnixMs, UnixMs, const std::string&,
-                      const std::string&) override {}
+  bool refreshSession(const std::string&, UnixMs, UnixMs, const std::string&,
+                      const std::string&) override { return false; }
 };
 
 struct NoEmail : EmailSender {
@@ -192,134 +194,142 @@ std::vector<std::string> strings(PgPool& pool, const std::string& query, const s
 }
 
 int main(int argc, char** argv) {
-  try {
-    std::filesystem::path output;
-    std::string requestedAccount;
-    std::uint64_t now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
-        std::chrono::system_clock::now().time_since_epoch()).count());
-    for (int i = 1; i < argc; ++i) {
-      const std::string flag = argv[i];
-      if (flag == "--help") {
-        std::cout << "windmill_journal_snapshot --output DIR [--account UUID] [--now-ms EPOCH_MS]\n";
-        return 0;
+  return wm::runObservedTool("journal.snapshot", "journal", [&](wm::WriteObservation& observation) {
+    bool validated = false;
+    const char* validationOutcome = "invalid-arguments";
+    try {
+      std::filesystem::path output;
+      std::string requestedAccount;
+      std::uint64_t now = static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::milliseconds>(
+          std::chrono::system_clock::now().time_since_epoch()).count());
+      for (int i = 1; i < argc; ++i) {
+        const std::string flag = argv[i];
+        if (flag == "--help") {
+          std::cout << "windmill_journal_snapshot --output DIR [--account UUID] [--now-ms EPOCH_MS]\n";
+          return 0;
+        }
+        if (i + 1 == argc) throw std::runtime_error("missing value for " + flag);
+        if (flag == "--output") output = argv[++i];
+        else if (flag == "--account") requestedAccount = argv[++i];
+        else if (flag == "--now-ms") now = std::stoull(argv[++i]);
+        else throw std::runtime_error("unknown flag: " + flag);
       }
-      if (i + 1 == argc) throw std::runtime_error("missing value for " + flag);
-      if (flag == "--output") output = argv[++i];
-      else if (flag == "--account") requestedAccount = argv[++i];
-      else if (flag == "--now-ms") now = std::stoull(argv[++i]);
-      else throw std::runtime_error("unknown flag: " + flag);
-    }
-    if (output.empty()) throw std::runtime_error("--output is required");
-    if (std::filesystem::exists(output) && !std::filesystem::is_empty(output))
-      throw std::runtime_error("snapshot output directory must be empty");
-    const char* database = std::getenv("DATABASE_URL");
-    if (!database || !*database) throw std::runtime_error("DATABASE_URL is required");
-    // Compare the target engine's deterministic equal-HLC order on both sides
-    // of adoption; the legacy query's physical tie order can change on UPDATE.
-    if (setenv("JOURNAL_WRITE_FREEZE", "1", 1) != 0 ||
-        setenv("JOURNAL_ENGINE_WRITES", "1", 1) != 0)
-      throw std::runtime_error("could not select frozen journal engine read ordering");
-    configureJsonReplies(drogon::app());
-    auto pool = std::make_shared<PgPool>(database, 1);
-    {
-      PgLease connection{*pool};
-      pqxx::nontransaction transaction{*connection};
-      transaction.exec("SET default_transaction_read_only = on");
-      transaction.exec("SET timezone = 'UTC'");
-    }
-    auto clock = std::make_shared<SnapshotClock>(now);
-    auto tokens = std::make_shared<OpenSslTokenGenerator>();
-    SnapshotAuth authRepository{pool};
-    authRepository.credentialDigest = tokens->digestOf("offline-journal-snapshot");
-    NoEmail email;
-    NoFootprint footprint;
-    NoRevocations revocations;
-    PgOAuthRepository oauthRepository{pool};
-    OAuthService oauth{oauthRepository, *tokens, *clock};
-    const char* appUrl = std::getenv("WINDMILL_APP_URL");
-    const std::string baseUrl = appUrl && *appUrl ? appUrl : "https://windmill.works";
-    auto auth = std::make_shared<AuthService>(authRepository, email, *tokens, *clock, oauth,
-                                            footprint, revocations, baseUrl);
-    PgJournalRepository pageRepository{pool};
-    auto pages = std::make_shared<PageService>(pageRepository);
-    auto echoes = std::make_shared<PgEchoRepository>(pool);
-    auto nudges = std::make_shared<PgNudgeRepository>(pool);
-    NoNudgeSender nudgeMail;
-    const char* nudgeEnabled = std::getenv("JOURNAL_NUDGE_ENABLED");
-    const char* nudgeAllowlist = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
-    const std::string enabledFlag = nudgeEnabled ? nudgeEnabled : "";
-    auto nudgeSweep = std::make_shared<NudgeSweep>(*nudges, nudgeMail, *tokens, *clock,
-        MailArming(enabledFlag == "true" || enabledFlag == "1", nudgeAllowlist ? nudgeAllowlist : ""), baseUrl);
-    PgSubscriptionRepository subscriptions{pool};
-    PgAiUsageRepository usage{pool};
-    const char* owners = std::getenv("WINDMILL_OWNER_EMAILS");
-    auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, owners ? owners : "");
-    RuleSegmenter segmenter;
-    NoEmbedder embedder;
-    NoCurator curator;
-    auto explainer = std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator, *pages);
-    JournalApi journal{pages, auth};
-    EchoApi echo{echoes, nullptr, explainer, auth, entitlements, "offline-journal-admin"};
-    NudgeApi nudge{nudges, nudgeSweep, auth, tokens, clock, "offline-journal-admin"};
-    const auto accounts = strings(*pool,
-        "SELECT id::text FROM users WHERE ($1 = '' OR id::text = $1) ORDER BY id::text COLLATE \"C\"", requestedAccount);
-    if (!requestedAccount.empty() && accounts.empty()) throw std::runtime_error("account does not exist");
-    Snapshot snapshot{output};
-    std::filesystem::create_directories(output);
-    for (const auto& account : accounts) {
-      snapshot.account = account;
-      authRepository.account = UserId{account};
-      const auto owner = authRepository.findUserById(UserId{account});
-      if (!owner) throw std::runtime_error("snapshot account disappeared");
-      snapshot.closedAccount = owner->deletedAt.has_value();
-      const auto beforeCount = snapshot.count;
-      auto days = strings(*pool, "SELECT day::text FROM journal_page WHERE user_id=$1::uuid ORDER BY day", account);
-      if (std::find(days.begin(), days.end(), "9999-12-31") == days.end()) days.push_back("9999-12-31");
-      snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {});
-      snapshot.get(journal, &JournalApi::exportAll, "/v1/journal/export", "/v1/journal/export", {});
-      snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"from", "0001-01-01"}, {"to", "9999-12-31"}});
-      snapshot.get(nudge, &NudgeApi::getSettings, "/v1/journal/nudge", "/v1/journal/nudge", {});
-      snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {});
-      for (const auto& day : days) {
-        snapshot.get(journal, &JournalApi::getPage, "/v1/journal/page/{date}", "/v1/journal/page/" + day, {}, day);
-        snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"from", day}, {"to", day}});
-        snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {{"from", day}, {"to", day}});
-        snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/" + day, {}, day);
+      if (output.empty()) throw std::runtime_error("--output is required");
+      if (std::filesystem::exists(output) && !std::filesystem::is_empty(output))
+        throw std::runtime_error("snapshot output directory must be empty");
+      validationOutcome = "not-configured";
+      const char* database = std::getenv("DATABASE_URL");
+      if (!database || !*database) throw std::runtime_error("DATABASE_URL is required");
+      validated = true;
+      // Compare the target engine's deterministic equal-HLC order on both sides
+      // of adoption; the legacy query's physical tie order can change on UPDATE.
+      if (setenv("JOURNAL_WRITE_FREEZE", "1", 1) != 0 ||
+          setenv("JOURNAL_ENGINE_WRITES", "1", 1) != 0)
+        throw std::runtime_error("could not select frozen journal engine read ordering");
+      configureJsonReplies(drogon::app());
+      auto pool = std::make_shared<PgPool>(database, 1);
+      {
+        PgLease connection{*pool};
+        pqxx::nontransaction transaction{*connection};
+        transaction.exec("SET default_transaction_read_only = on");
+        transaction.exec("SET timezone = 'UTC'");
       }
-      auto cursors = strings(*pool, "SELECT DISTINCT (stamp_ms::text||':'||stamp_counter::text||':'||stamp_actor) COLLATE \"C\" AS cursor FROM journal_page WHERE user_id=$1::uuid ORDER BY cursor", account);
-      for (const char* boundary : {"0:0:", "9007199254740991:0:snapshot"})
-        if (std::find(cursors.begin(), cursors.end(), boundary) == cursors.end()) cursors.push_back(boundary);
-      for (const auto& cursor : cursors) for (const char* limit : {"1", "2", "499", "500", "999", "1000", "1001", "0", "bad"})
-        snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"since", cursor}, {"limit", limit}});
-      snapshot.authenticated = false;
-      snapshot.get(journal, &JournalApi::getPage, "/v1/journal/page/{date}", "/v1/journal/page/9999-12-31", {}, std::string("9999-12-31"));
-      snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {});
-      snapshot.get(journal, &JournalApi::exportAll, "/v1/journal/export", "/v1/journal/export", {});
-      snapshot.get(nudge, &NudgeApi::getSettings, "/v1/journal/nudge", "/v1/journal/nudge", {});
-      snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {});
-      snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/9999-12-31", {}, std::string("9999-12-31"));
-      snapshot.authenticated = true;
-      snapshot.adminAuthorized = false;
-      snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/9999-12-31", {}, std::string("9999-12-31"));
-      snapshot.adminAuthorized = true;
-      Json::Value report(Json::objectValue);
-      report["account"] = account;
-      report["responses"] = Json::UInt64(snapshot.count - beforeCount);
-      std::cout << dump(report) << '\n';
+      auto clock = std::make_shared<SnapshotClock>(now);
+      auto tokens = std::make_shared<OpenSslTokenGenerator>();
+      SnapshotAuth authRepository{pool};
+      authRepository.credentialDigest = tokens->digestOf("offline-journal-snapshot");
+      NoEmail email;
+      NoFootprint footprint;
+      NoRevocations revocations;
+      PgOAuthRepository oauthRepository{pool};
+      OAuthService oauth{oauthRepository, *tokens, *clock};
+      const char* appUrl = std::getenv("WINDMILL_APP_URL");
+      const std::string baseUrl = appUrl && *appUrl ? appUrl : "https://windmill.works";
+      auto auth = std::make_shared<AuthService>(authRepository, email, *tokens, *clock, oauth,
+                                              footprint, revocations, baseUrl);
+      PgJournalRepository pageRepository{pool};
+      auto pages = std::make_shared<PageService>(pageRepository);
+      auto echoes = std::make_shared<PgEchoRepository>(pool);
+      auto nudges = std::make_shared<PgNudgeRepository>(pool);
+      NoNudgeSender nudgeMail;
+      const char* nudgeEnabled = std::getenv("JOURNAL_NUDGE_ENABLED");
+      const char* nudgeAllowlist = std::getenv("JOURNAL_NUDGE_ALLOWLIST");
+      const std::string enabledFlag = nudgeEnabled ? nudgeEnabled : "";
+      auto nudgeSweep = std::make_shared<NudgeSweep>(*nudges, nudgeMail, *tokens, *clock,
+          MailArming(enabledFlag == "true" || enabledFlag == "1", nudgeAllowlist ? nudgeAllowlist : ""), baseUrl);
+      PgSubscriptionRepository subscriptions{pool};
+      PgAiUsageRepository usage{pool};
+      const char* owners = std::getenv("WINDMILL_OWNER_EMAILS");
+      auto entitlements = std::make_shared<Entitlements>(subscriptions, usage, owners ? owners : "");
+      RuleSegmenter segmenter;
+      NoEmbedder embedder;
+      NoCurator curator;
+      auto explainer = std::make_shared<EchoExplainer>(*echoes, segmenter, embedder, curator, *pages);
+      JournalApi journal{pages, auth};
+      EchoApi echo{echoes, nullptr, explainer, auth, entitlements, "offline-journal-admin"};
+      NudgeApi nudge{nudges, nudgeSweep, auth, tokens, clock, "offline-journal-admin"};
+      const auto accounts = strings(*pool,
+          "SELECT id::text FROM users WHERE ($1 = '' OR id::text = $1) ORDER BY id::text COLLATE \"C\"", requestedAccount);
+      if (!requestedAccount.empty() && accounts.empty()) throw std::runtime_error("account does not exist");
+      Snapshot snapshot{output};
+      std::filesystem::create_directories(output);
+      for (const auto& account : accounts) {
+        snapshot.account = account;
+        authRepository.account = UserId{account};
+        const auto owner = authRepository.findUserById(UserId{account});
+        if (!owner) throw std::runtime_error("snapshot account disappeared");
+        snapshot.closedAccount = owner->deletedAt.has_value();
+        const auto beforeCount = snapshot.count;
+        auto days = strings(*pool, "SELECT day::text FROM journal_page WHERE user_id=$1::uuid ORDER BY day", account);
+        if (std::find(days.begin(), days.end(), "9999-12-31") == days.end()) days.push_back("9999-12-31");
+        snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {});
+        snapshot.get(journal, &JournalApi::exportAll, "/v1/journal/export", "/v1/journal/export", {});
+        snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"from", "0001-01-01"}, {"to", "9999-12-31"}});
+        snapshot.get(nudge, &NudgeApi::getSettings, "/v1/journal/nudge", "/v1/journal/nudge", {});
+        snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {});
+        for (const auto& day : days) {
+          snapshot.get(journal, &JournalApi::getPage, "/v1/journal/page/{date}", "/v1/journal/page/" + day, {}, day);
+          snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"from", day}, {"to", day}});
+          snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {{"from", day}, {"to", day}});
+          snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/" + day, {}, day);
+        }
+        auto cursors = strings(*pool, "SELECT DISTINCT (stamp_ms::text||':'||stamp_counter::text||':'||stamp_actor) COLLATE \"C\" AS cursor FROM journal_page WHERE user_id=$1::uuid ORDER BY cursor", account);
+        for (const char* boundary : {"0:0:", "9007199254740991:0:snapshot"})
+          if (std::find(cursors.begin(), cursors.end(), boundary) == cursors.end()) cursors.push_back(boundary);
+        for (const auto& cursor : cursors) for (const char* limit : {"1", "2", "499", "500", "999", "1000", "1001", "0", "bad"})
+          snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {{"since", cursor}, {"limit", limit}});
+        snapshot.authenticated = false;
+        snapshot.get(journal, &JournalApi::getPage, "/v1/journal/page/{date}", "/v1/journal/page/9999-12-31", {}, std::string("9999-12-31"));
+        snapshot.get(journal, &JournalApi::listPages, "/v1/journal/pages", "/v1/journal/pages", {});
+        snapshot.get(journal, &JournalApi::exportAll, "/v1/journal/export", "/v1/journal/export", {});
+        snapshot.get(nudge, &NudgeApi::getSettings, "/v1/journal/nudge", "/v1/journal/nudge", {});
+        snapshot.get(echo, &EchoApi::listEchoes, "/v1/journal/echoes", "/v1/journal/echoes", {});
+        snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/9999-12-31", {}, std::string("9999-12-31"));
+        snapshot.authenticated = true;
+        snapshot.adminAuthorized = false;
+        snapshot.get(echo, &EchoApi::explainPage, "/v1/admin/journal/echo/explain/{day}", "/v1/admin/journal/echo/explain/9999-12-31", {}, std::string("9999-12-31"));
+        snapshot.adminAuthorized = true;
+        Json::Value report(Json::objectValue);
+        report["account"] = account;
+        report["responses"] = Json::UInt64(snapshot.count - beforeCount);
+        std::cout << dump(report) << '\n';
+      }
+      Json::Value inventory(Json::objectValue);
+      inventory["nowMs"] = Json::UInt64(now);
+      inventory["sinceOrder"] = "hlc-day";
+      inventory["accounts"] = Json::UInt64(accounts.size());
+      inventory["responses"] = Json::UInt64(snapshot.count);
+      inventory["restGetRoutes"] = Json::Value(Json::arrayValue);
+      for (const auto& route : snapshot.routes) inventory["restGetRoutes"].append(route);
+      write(output / "inventory.json", dump(inventory) + "\n");
+      write(output / "manifest.json", dump(snapshot.manifest) + "\n");
+      std::cout << dump(inventory) << '\n';
+      return 0;
+    } catch (const std::exception& error) {
+      if (!validated) observation.finish(validationOutcome);
+      else observation.reportFailure(error);
+      std::cerr << "journal snapshot: operation failed" << '\n';
+      return 1;
     }
-    Json::Value inventory(Json::objectValue);
-    inventory["nowMs"] = Json::UInt64(now);
-    inventory["sinceOrder"] = "hlc-day";
-    inventory["accounts"] = Json::UInt64(accounts.size());
-    inventory["responses"] = Json::UInt64(snapshot.count);
-    inventory["restGetRoutes"] = Json::Value(Json::arrayValue);
-    for (const auto& route : snapshot.routes) inventory["restGetRoutes"].append(route);
-    write(output / "inventory.json", dump(inventory) + "\n");
-    write(output / "manifest.json", dump(snapshot.manifest) + "\n");
-    std::cout << dump(inventory) << '\n';
-    return 0;
-  } catch (const std::exception& error) {
-    std::cerr << "journal snapshot: " << error.what() << '\n';
-    return 1;
-  }
+  });
 }
