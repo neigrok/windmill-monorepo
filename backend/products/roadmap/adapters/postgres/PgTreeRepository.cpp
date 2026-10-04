@@ -7,6 +7,7 @@
 #include "products/roadmap/domain/LooseGraph.h"
 
 #include <pqxx/pqxx>
+#include <stdexcept>
 
 namespace wm {
 
@@ -275,6 +276,8 @@ void PgTreeRepository::create(const TreeId& tree, const GraphState& state, const
                               const std::string& title, const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", owner.str()).empty())
+    throw std::runtime_error("account no longer exists");
   try {
     txn.exec_params("INSERT INTO trees (id, title, head_seq, owner_id) VALUES ($1, $2, 0, $3::uuid)",
                     tree.str(), title, owner.str());
@@ -409,6 +412,8 @@ void PgTreeRepository::fork(const TreeId& newTree, const TreeId& source, const G
                            const LegendState& legend, const std::string& title, const UserId& owner) {
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", owner.str()).empty())
+    throw std::runtime_error("account no longer exists");
   try {
     txn.exec_params(
         "INSERT INTO trees (id, title, head_seq, forked_from, owner_id) VALUES ($1, $2, 0, $3, $4::uuid)",

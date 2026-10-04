@@ -64,10 +64,14 @@ AuthService::Completion AuthService::completeLink(const std::string& linkSecret,
 
 AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmail,
                                                       const std::string& code,
-                                                      const SessionContext& ctx) {
+                                                      const SessionContext& ctx,
+                                                      const std::optional<std::string>& appleTicket) {
+  const UnixMs now = clock_.nowMs();
+  const std::string ticketDigest = appleTicket ? tokens_.digestOf(*appleTicket) : "";
+  if (appleTicket && !repo_.findAppleTicket(ticketDigest, now))
+    return {CodeVerdict::noLiveCode, std::nullopt, "", AppleTicketOutcome::expired};
   const std::optional<Email> email = parseEmail(rawEmail);
   if (!email) return {CodeVerdict::noLiveCode, std::nullopt, ""};
-  const UnixMs now = clock_.nowMs();
 
   // The newest live row is the code for this address: a resend supersedes the one before it.
   const std::optional<StoredSignInCode> stored =
@@ -82,8 +86,18 @@ AuthService::CodeCompletion AuthService::completeCode(const std::string& rawEmai
   if (verdict != CodeVerdict::valid) return {verdict, std::nullopt, ""};
 
   // Either credential burns the one row.
+  if (appleTicket) {
+    const auto target = repo_.findUserByEmail(*email);
+    const auto session = tokens_.mint();
+    const auto result = repo_.redeemAppleTicket(ticketDigest, now, target ? std::optional<UserId>{target->id} : std::nullopt,
+                                               "", session.digest, sessionExpiry(now), ctx.userAgent, ctx.ip, stored->linkDigest);
+    if (result.outcome == AppleTicketOutcome::codeRefused)
+      return {CodeVerdict::noLiveCode, std::nullopt, ""};
+    if (result.outcome != AppleTicketOutcome::completed)
+      return {verdict, std::nullopt, "", result.outcome};
+    return {verdict, SignedIn{*result.user, session.secret}, stored->forkSource, result.outcome, true};
+  }
   if (!repo_.consumeLink(stored->linkDigest, now)) return {CodeVerdict::noLiveCode, std::nullopt, ""};
-
   return {verdict, mintSessionFor(*email, nameFromEmail(*email), ctx, now), stored->forkSource};
 }
 
@@ -123,6 +137,48 @@ std::optional<AuthService::ProviderSignIn> AuthService::completeProvider(const P
   return ProviderSignIn{signedIn, created, privateEmail};
 }
 
+AuthService::AppleStart AuthService::beginApple(const ProviderIdentity& identity, const SessionContext& ctx) {
+  if (identity.provider != Provider::apple || identity.subject.empty()) return {};
+  const bool subjectOnly = identity.email.value.empty();
+  const AddressTrust trust = trustOf(identity);
+  if (trust == AddressTrust::unusable && !subjectOnly) return {};
+  const UnixMs now = clock_.nowMs();
+  auto account = repo_.findIdentity(Provider::apple, identity.subject);
+  auto user = account ? repo_.findUserById(*account) : std::nullopt;
+  if (!user && trust != AddressTrust::unusable) user = repo_.findUserByEmail(identity.email);
+  if (user) {
+    const auto session = tokens_.mint();
+    const auto signedIn = repo_.signInApple(identity, user->id, session.digest, sessionExpiry(now), ctx.userAgent, ctx.ip, now);
+    if (!signedIn) return {};
+    return {ProviderSignIn{SignedIn{*signedIn, session.secret}, false,
+        subjectOnly ? isPrivateRelay(user->email) : trust == AddressTrust::appOnly}};
+  }
+  if (trust == AddressTrust::unusable) return {};
+  const auto ticket = tokens_.mint();
+  ProviderIdentity stored = identity;
+  stored.name = parseName(identity.name).value_or("");
+  stored.relayEmail = trust == AddressTrust::appOnly;
+  const UnixMs expiresAt = appleTicketExpiry(now);
+  repo_.insertAppleTicket(ticket.digest, {stored, expiresAt});
+  return {std::nullopt, ticket.secret, expiresAt};
+}
+
+AuthService::AppleCreation AuthService::createApple(const std::string& ticket, const SessionContext& ctx) {
+  const UnixMs now = clock_.nowMs();
+  const std::string digest = tokens_.digestOf(ticket);
+  const auto stored = repo_.findAppleTicket(digest, now);
+  if (!stored) return {AppleTicketOutcome::expired, std::nullopt};
+  const auto session = tokens_.mint();
+  const auto result = repo_.redeemAppleTicket(digest, now, std::nullopt,
+      stored->identity.name.empty() ? nameFromEmail(stored->identity.email) : stored->identity.name,
+      session.digest, sessionExpiry(now), ctx.userAgent, ctx.ip);
+  if (result.outcome != AppleTicketOutcome::completed) return {result.outcome, std::nullopt};
+  return {result.outcome, ProviderSignIn{SignedIn{*result.user, session.secret}, result.created, stored->identity.relayEmail}};
+}
+
+std::vector<SignInMethod> AuthService::signInMethods(const UserId& userId) { return repo_.signInMethods(userId); }
+bool AuthService::removeApple(const UserId& userId) { return repo_.unbindIdentity(Provider::apple, userId); }
+
 AuthService::AttachOutcome AuthService::attachIdentity(const UserId& userId,
                                                        const ProviderIdentity& identity) {
   const bool subjectOnlyApple = identity.provider == Provider::apple && identity.email.value.empty();
@@ -131,11 +187,19 @@ AuthService::AttachOutcome AuthService::attachIdentity(const UserId& userId,
 
   const std::optional<UserId> bound = repo_.findIdentity(identity.provider, identity.subject);
   if (bound && *bound == userId) return AttachOutcome::alreadyMine;
-  if (bound) return AttachOutcome::takenByAnother;  // a door opens one account; it is never stolen
+  if (bound) {
+    if (identity.provider != Provider::apple || footprint_.anyData(*bound)) return AttachOutcome::takenByAnother;
+    const auto revoked = repo_.takeOverIdentity(identity, *bound, userId);
+    if (!revoked) return AttachOutcome::takenByAnother;
+    revocations_.revoked(*revoked);
+    return AttachOutcome::attached;
+  }
 
   if (trustOf(identity) == AddressTrust::unusable) return AttachOutcome::refused;
 
-  repo_.bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
+  if (identity.provider == Provider::apple) {
+    if (!repo_.tryBindIdentity(identity, userId)) return AttachOutcome::takenByAnother;
+  } else repo_.bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
   LOG_INFO << "auth: provider door attached provider=" << toString(identity.provider)
            << " user=" << userId.str();
   return AttachOutcome::attached;

@@ -214,6 +214,8 @@ server writes are authentication refresh or lazy settlement.
 | `GET /v1/auth/google/start` (platform; rest) | `auth.google.start` | completion; bounded refusal or result | unexpected |
 | `GET /v1/auth/google/callback` (platform; rest) | `auth.google.callback` | completion; bounded refusal or result | unexpected |
 | `POST /v1/auth/apple` (platform; rest) | `platform.POST.v1.auth.apple` | completion; bounded refusal or result | unexpected |
+| `POST /v1/auth/apple/create` (platform; rest) | `platform.POST.v1.auth.apple.create` | completion; bounded refusal or result | unexpected |
+| `DELETE /v1/me/sign-in-methods/apple` (platform; rest) | `platform.DELETE.v1.me.sign.in.methods.apple` | completion; bounded refusal or result | unexpected |
 | `POST /v1/auth/apple/native` (platform; rest) | `platform.POST.v1.auth.apple.native` | completion; bounded refusal or result | unexpected |
 | `POST /v1/auth/link` (platform; rest) | `platform.POST.v1.auth.link` | completion; bounded refusal or result | unexpected |
 | `POST /v1/auth/logout` (platform; rest) | `platform.POST.v1.auth.logout` | completion; bounded refusal or result | unexpected |

@@ -30,8 +30,30 @@ def compare(responses, label, minted=False):
             assert sum(map(len, secrets)) == 1, (label, "expected one live session cookie", cookies)
             assert len(next(secret[0] for secret in secrets if secret)) == 43, (label, "bad session entropy")
             cookies = [SESSION.sub(b"auth-differential-session", line) for line in cookies]
+        if cookies and cookies[0].lower().startswith(b"set-cookie: wm_session=") and all(
+                line.startswith(b"Set-Cookie: wm_session=; Max-Age=0;") for line in cookies[1:]):
+            cookies = [cookies[0], *sorted(cookies[1:])]
         normalized.append((status, body, cookies))
     assert normalized[0] == normalized[1], (label, normalized)
+
+
+def pinned_auth_changes(responses, target, status):
+    left, right = responses
+    if target == "/v1/auth/verify-code" and status == 410:
+        old = {"error": "That code has expired", "detail": "Codes work once and last 15 minutes.", "code": "expired"}
+        new = {"error": "That code didn't work", "detail": "Check the digits, or send a fresh one.", "code": "expired"}
+        assert json.loads(left[1]) == old, left
+        assert json.loads(right[1]) == new, right
+        migrated = left[1].replace(b"That code has expired", b"That code didn't work").replace(
+            b"Codes work once and last 15 minutes.", b"Check the digits, or send a fresh one.")
+        return [(left[0], migrated, left[2]), right]
+    if target == "/v1/me" and status == 200:
+        old, new = json.loads(left[1]), json.loads(right[1])
+        assert new == {**old, "signInMethods": [{"kind": "email", "email": old["user"]["email"]}]}, new
+        prefix = b'"signInMethods":[{"email":' + json.dumps(old["user"]["email"]).encode() + b',"kind":"email"}],'
+        assert right[1].count(prefix) == 1, right
+        return [left, (right[0], right[1].replace(prefix, b"", 1), right[2])]
+    return responses
 
 
 class Connection:
@@ -152,7 +174,7 @@ class AuthDifferential(Differential):
             responses.append(connection.request(method, target, body, headers))
         label = f"{method} {target} #{self.requests + 1}"
         assert [response[0] for response in responses] == [expected, expected], (label, responses)
-        compare(responses, label, minted)
+        compare(pinned_auth_changes(responses, target, expected), label, minted)
         if minted:
             for side, (_, _, cookies) in enumerate(responses):
                 self.tokens[side] = next(SESSION.search(line).group().decode() for line in cookies if SESSION.search(line))
@@ -223,8 +245,8 @@ class AuthDifferential(Differential):
                         self.pair("POST", "/v1/auth/verify-code", {"email": EMAIL, "code": CODE}, 410)
                 self.pair("POST", "/v1/auth/logout", expected=204)
             self.stop_servers()
-        return {"passed": True, "pairedRequests": self.requests, "bodies": "exact bytes",
-                "setCookie": "raw header bytes; only a freshly minted 43-byte session secret is substituted",
+        return {"passed": True, "pairedRequests": self.requests, "bodies": "exact bytes except explicitly verified pinned code copy and signInMethods addition",
+                "setCookie": "raw header bytes; fresh 43-byte session substituted; live cookie first, unordered retired lines sorted",
                 "configurations": ["HTTP host-only", "HTTPS live and retired domains"],
                 "mail": "unconfigured local provider returns 502; persisted request codes verified"}
 

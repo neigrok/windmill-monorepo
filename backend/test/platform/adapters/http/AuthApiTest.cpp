@@ -61,7 +61,7 @@ struct Harness {
   explicit Harness(bool secure = true, SessionCookieScopes scopes = {kDomain, ""},
                    std::shared_ptr<GoogleOAuthClient> googleClient = nullptr)
       : google(std::move(googleClient)),
-        api(std::make_shared<AuthApi>(auth, fork, secure, std::move(scopes), google, kApp)) {}
+        api(std::make_shared<AuthApi>(auth, fork, secure, std::move(scopes), google, kApp, nullptr, nullptr, std::set<std::string>{kApp})) {}
 
   UserId signIn(const std::string& sessionSecret, const std::string& address = "sam@example.com") {
     User user = authRepo.createUser(Email{address}, "sam");
@@ -90,9 +90,13 @@ drogon::HttpRequestPtr request(drogon::HttpMethod method, const std::string& pat
   req->setPath(path);
   if (!body.empty()) {
     req->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+    req->addHeader("Content-Type", "application/json");
     req->setBody(body);
   }
-  if (!session.empty()) req->addCookie("wm_session", session);
+  if (!session.empty()) {
+    req->addCookie("wm_session", session);
+    req->addHeader("Origin", kApp);
+  }
   return req;
 }
 
@@ -631,8 +635,8 @@ TEST(auth_every_code_refusal_is_the_same_410_and_mints_nothing) {
                    R"({"email":"sam@example.com","code":"999999"})"));
   CHECK_EQ(wrong->getStatusCode(), drogon::k410Gone);
   const Json::Value gone = *wrong->getJsonObject();
-  CHECK_EQ(gone["error"].asString(), std::string("That code has expired"));
-  CHECK_EQ(gone["detail"].asString(), std::string("Codes work once and last 15 minutes."));
+  CHECK_EQ(gone["error"].asString(), std::string("That code didn't work"));
+  CHECK_EQ(gone["detail"].asString(), std::string("Check the digits, or send a fresh one."));
   CHECK_EQ(gone["code"].asString(), std::string("expired"));
   CHECK(sessionCookieLines(wrong).empty());
 
@@ -745,8 +749,13 @@ TEST(auth_native_apple_returns_a_bearer_session_and_uses_the_stable_identity_bin
   const auto first = call(h, &AuthApi::appleNative, request(drogon::Post, "/v1/auth/apple/native",
       R"({"identityToken":"signed-token","nonce":"raw-nonce","name":"Sam Gold"})"));
   CHECK_EQ(first->getStatusCode(), drogon::k200OK);
-  const auto out = *first->getJsonObject();
-  CHECK_EQ(out["session"].asString(), checkSessionCookies(first, true, kDomain, 7776000));
+  const auto ticket = (*first->getJsonObject())["appleTicket"].asString();
+  REQUIRE(!ticket.empty());
+  CHECK(sessionCookieLines(first).empty());
+  const auto created = call(h, &AuthApi::appleCreate, request(drogon::Post, "/v1/auth/apple/create",
+      R"({"appleTicket":")" + ticket + "\"}") );
+  const auto out = *created->getJsonObject();
+  CHECK_EQ(out["session"].asString(), checkSessionCookies(created, true, kDomain, 7776000));
   CHECK(out["created"].asBool());
   CHECK(out["privateEmail"].asBool());
   CHECK_EQ(out["user"]["name"].asString(), std::string("Sam Gold"));
@@ -767,7 +776,7 @@ TEST(auth_native_apple_returns_a_bearer_session_and_uses_the_stable_identity_bin
   CHECK_EQ((*call(h, &AuthApi::me, meRequest)->getJsonObject())["user"], out["user"]);
 }
 
-TEST(auth_native_apple_attaches_to_the_bearer_caller_and_never_moves_an_identity) {
+TEST(auth_native_apple_attaches_to_the_bearer_caller_and_preserves_an_account_with_data) {
   Harness h;
   const UserId caller = h.signIn("s-caller", "web@example.com");
   auto verifier = std::make_shared<FakeAppleVerifier>();
@@ -781,6 +790,7 @@ TEST(auth_native_apple_attaches_to_the_bearer_caller_and_never_moves_an_identity
   CHECK_EQ((*attached->getJsonObject())["user"]["id"].asString(), caller.str());
   CHECK_FALSE((*attached->getJsonObject()).isMember("session"));
   CHECK_EQ(h.authRepo.findIdentity(Provider::apple, "apple-subject")->str(), caller.str());
+  h.footprint.withData.insert(caller.str());
   h.signIn("s-other", "other@example.com");
   auto other = request(drogon::Post, "/v1/auth/apple/native", R"({"identityToken":"t","nonce":"n"})");
   other->addHeader("Authorization", "Bearer s-other");

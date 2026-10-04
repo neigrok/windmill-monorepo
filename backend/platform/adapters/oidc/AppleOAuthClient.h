@@ -22,7 +22,7 @@ namespace wm {
 // the id_token; it reaches us through the request body or not at all.
 class AppleOAuthClient {
 public:
-  ~AppleOAuthClient() { stop(); }
+  virtual ~AppleOAuthClient() { stop(); }
   void stop() {
     std::call_once(stopped_, [this] {
       loop_.run();
@@ -34,10 +34,10 @@ public:
 
   AppleOAuthClient(std::string clientId, std::string teamId, std::string keyId, std::string privateKeyPem);
 
-  bool configured() const {
+  virtual bool configured() const {
     return !clientId_.empty() && !teamId_.empty() && !keyId_.empty() && !privateKeyPem_.empty();
   }
-  void exchangeCode(const std::string& code, std::function<void(std::optional<ProviderIdentity>)> done);
+  virtual void exchangeCode(const std::string& code, std::function<void(std::optional<ProviderIdentity>)> done);
 
 private:
   // The per-exchange ES256 client secret, or empty if the .p8 key won't load or sign.

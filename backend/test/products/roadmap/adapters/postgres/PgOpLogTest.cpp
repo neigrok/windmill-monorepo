@@ -40,6 +40,7 @@ struct DroppingPgOpLog : OpLog {
 void reset() {
   PgLease conn{*pgTestPool()};
   pqxx::work txn{*conn};
+  txn.exec_params("INSERT INTO users(id,email) VALUES($1::uuid,'pg-op-log@example.test') ON CONFLICT(id) DO NOTHING", kOwner.str());
   for (const char* table : {"tree_ops", "tree_nodes", "tree_edges", "tree_kinds"})
     txn.exec_params(std::string("DELETE FROM ") + table + " WHERE tree_id = $1", kTree.str());
   txn.exec_params("DELETE FROM trees WHERE id = $1", kTree.str());

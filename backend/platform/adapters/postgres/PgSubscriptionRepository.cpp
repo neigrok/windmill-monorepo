@@ -3,6 +3,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
+#include <stdexcept>
 
 #include <string_view>
 
@@ -64,6 +65,8 @@ void PgSubscriptionRepository::upsertSubscription(const PaddleSubscription& subs
   // carries no custom_data) must never erase the binding we already know.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (!subscription.userId.empty() && txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", subscription.userId).empty())
+    throw std::runtime_error("account no longer exists");
   // The trailing WHERE is the staleness guard: a retry of an OLDER event must not overwrite state a
   // NEWER one wrote. A row with no recorded time, or an event carrying none, still applies.
   txn.exec("INSERT INTO paddle_subscriptions "

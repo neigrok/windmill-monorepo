@@ -107,6 +107,10 @@ struct FakeAuthRepository : AuthRepository {
   std::map<std::string, User> usersById;            // id     -> user
   // (provider, subject) -> user, exactly the real table's primary key.
   std::map<std::pair<std::string, std::string>, UserId> identities;
+  std::map<std::pair<std::string, std::string>, SignInMethod> identityMethods;
+  std::map<std::string, StoredAppleTicket> appleTickets;
+  std::set<std::string> spentAppleTickets;
+  bool refuseTakeOver = false;
   int nextUserId = 0;
   int nextSessionId = 0;
 
@@ -152,8 +156,86 @@ struct FakeAuthRepository : AuthRepository {
     return it->second;
   }
   void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
-                    const std::string&) override {
+                    const std::string& email) override {
     identities.insert_or_assign({toString(provider), subject}, userId);
+    identityMethods.insert_or_assign({toString(provider), subject}, SignInMethod{provider, email, isPrivateRelay(Email{email})});
+  }
+  bool tryBindIdentity(const ProviderIdentity& identity, const UserId& userId) override {
+    const auto owner = findIdentity(identity.provider, identity.subject);
+    if (owner) return *owner == userId;
+    bindIdentity(identity.provider, identity.subject, userId, identity.email.value);
+    identityMethods.at({toString(identity.provider), identity.subject}).relay = trustOf(identity) == AddressTrust::appOnly;
+    return true;
+  }
+  std::optional<User> signInApple(const ProviderIdentity& identity, const UserId& userId,
+      const std::string& sessionDigest, UnixMs expiresAt, const std::string& userAgent,
+      const std::string& ip, UnixMs now) override {
+    auto user = findUserById(userId);
+    const auto owner = findIdentity(Provider::apple, identity.subject);
+    if (!user || (owner && *owner != userId)) return std::nullopt;
+    insertSession(sessionDigest, userId, expiresAt, userAgent, ip, now);
+    tryBindIdentity(identity, userId);
+    if (user->deletedAt) { reviveUser(userId); user->deletedAt = std::nullopt; }
+    return user;
+  }
+  std::vector<SignInMethod> signInMethods(const UserId& userId) override {
+    std::vector<SignInMethod> out;
+    for (const auto& [key, owner] : identities)
+      if (owner == userId && identityMethods.count(key)) out.push_back(identityMethods.at(key));
+    return out;
+  }
+  bool unbindIdentity(Provider provider, const UserId& userId) override {
+    bool removed = false;
+    for (auto row = identities.begin(); row != identities.end();) {
+      if (row->second == userId && row->first.first == toString(provider)) {
+        identityMethods.erase(row->first);
+        row = identities.erase(row);
+        removed = true;
+      } else ++row;
+    }
+    return removed;
+  }
+  std::optional<std::vector<std::string>> takeOverIdentity(
+      const ProviderIdentity& identity, const UserId& from, const UserId& to) override {
+    if (refuseTakeOver || findIdentity(identity.provider, identity.subject) != std::optional<UserId>{from}) return std::nullopt;
+    identities.at({toString(identity.provider), identity.subject}) = to;
+    return deleteUser(from);
+  }
+  void insertAppleTicket(const std::string& digest, const StoredAppleTicket& ticket) override {
+    appleTickets.insert_or_assign(digest, ticket);
+  }
+  std::optional<StoredAppleTicket> findAppleTicket(const std::string& digest, UnixMs now) override {
+    const auto row = appleTickets.find(digest);
+    if (row == appleTickets.end() || spentAppleTickets.count(digest) || now >= row->second.expiresAt) return std::nullopt;
+    return row->second;
+  }
+  AppleTicketResult redeemAppleTicket(const std::string& digest, UnixMs now,
+      const std::optional<UserId>& target, const std::string& name, const std::string& sessionDigest,
+      UnixMs expiresAt, const std::string& userAgent, const std::string& ip,
+      const std::string& codeLinkDigest = "") override {
+    const auto ticket = findAppleTicket(digest, now);
+    if (!ticket) return {AppleTicketOutcome::expired, std::nullopt};
+    if (!codeLinkDigest.empty()) {
+      if (!consumeLink(codeLinkDigest, now)) return {AppleTicketOutcome::codeRefused, std::nullopt};
+      if (!target) return {AppleTicketOutcome::noAccount, std::nullopt};
+    }
+    auto user = target ? findUserById(*target) : findUserByEmail(ticket->identity.email);
+    if (const auto bound = findIdentity(Provider::apple, ticket->identity.subject))
+      if (!user || *bound != user->id) return {AppleTicketOutcome::identityTaken, std::nullopt};
+    if (target && !user) return {AppleTicketOutcome::noAccount, std::nullopt};
+    if (!target && user) {
+      spentAppleTickets.insert(digest);
+      return {AppleTicketOutcome::expired, std::nullopt};
+    }
+    const bool created = !user;
+    if (!user) user = createUser(ticket->identity.email, name);
+    if (user->deletedAt) { reviveUser(user->id); user->deletedAt = std::nullopt; }
+    tryBindIdentity(ticket->identity, user->id);
+    insertSession(sessionDigest, user->id, expiresAt, userAgent, ip, now);
+    spentAppleTickets.insert(digest);
+    if (created) for (const auto& [key, stored] : appleTickets)
+      if (stored.identity.subject == ticket->identity.subject) spentAppleTickets.insert(key);
+    return {AppleTicketOutcome::completed, user, created};
   }
   void moveIdentities(const UserId& from, const UserId& to) override {
     for (auto& [key, owner] : identities)

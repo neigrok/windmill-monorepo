@@ -238,6 +238,17 @@ create table if not exists user_identities (
   primary key (provider, subject)
 );
 create index if not exists user_identities_user on user_identities (user_id);
+alter table user_identities add column if not exists relay boolean not null default false;
+
+create table if not exists apple_tickets (
+  token_hash text primary key,
+  subject text not null,
+  email text not null,
+  relay boolean not null,
+  name text not null default '',
+  expires_ms bigint not null,
+  consumed_ms bigint
+);
 
 -- Long-lived per-user bearer tokens for OAuth-less MCP clients, keyed by the digest of the secret;
 -- the raw token is never stored. `id` is the public per-key handle. expires_ms null = never expires.

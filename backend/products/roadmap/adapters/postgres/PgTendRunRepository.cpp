@@ -4,6 +4,7 @@
 
 #include <json/json.h>
 #include <pqxx/pqxx>
+#include <stdexcept>
 
 #include <sstream>
 #include <string_view>
@@ -83,6 +84,8 @@ void PgTendRunRepository::save(const TendRun& run) {
   // Upsert keyed on the run id: start() writes the `running` row, the worker overwrites it.
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", run.user.str()).empty())
+    throw std::runtime_error("account no longer exists");
   txn.exec("INSERT INTO tend_runs "
            "(id, tree_id, user_id, prompt, status, refusal, summary, detail, edits, "
            "seq_from, seq_to, started_at, finished_at, created_node_ids) "

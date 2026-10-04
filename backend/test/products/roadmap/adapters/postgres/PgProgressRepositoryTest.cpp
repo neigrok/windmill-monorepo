@@ -16,7 +16,7 @@ namespace {
 
 const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RUNNING.md §7";
 const TreeId kTree{std::string("pgtest-progress")};
-const UserId kUser{std::string("pgtest-progress-user")};
+const UserId kUser{std::string("00000000-0000-4000-8000-0000000000d1")};
 constexpr std::uint64_t kNow = 1'700'000'000'000ull;
 
 Hlc at(std::uint64_t ms) { return Hlc{ms, 0, "r_pg"}; }
@@ -24,6 +24,7 @@ Hlc at(std::uint64_t ms) { return Hlc{ms, 0, "r_pg"}; }
 void reset() {
   PgLease conn{*pgTestPool()};
   pqxx::work txn{*conn};
+  txn.exec_params("INSERT INTO users(id,email) VALUES($1::uuid,'pg-progress@example.test') ON CONFLICT(id) DO NOTHING", kUser.str());
   txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1", kTree.str());
   txn.commit();
 }
@@ -86,10 +87,11 @@ TEST(pg_progress_batch_rolls_back_a_late_storage_failure_and_preserves_outcome_o
 TEST(pg_legacy_progress_reads_as_cleared_and_preserves_completion_and_stamps) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   const TreeId tree{"pgtest-progress-legacy"};
-  const UserId user{"pgtest-progress-legacy-user"};
+  const UserId user{"00000000-0000-4000-8000-0000000000d2"};
   {
     PgLease conn{*pgTestPool()};
     pqxx::work txn{*conn};
+    txn.exec_params("INSERT INTO users(id,email) VALUES($1::uuid,'pg-progress-legacy@example.test') ON CONFLICT(id) DO NOTHING", user.str());
     txn.exec_params("DELETE FROM node_progress WHERE tree_id = $1", tree.str());
     txn.exec_params(
         "INSERT INTO node_progress (tree_id,user_id,node_id,status,out_of_order,hlc,stamp_ms,updated_at) VALUES "

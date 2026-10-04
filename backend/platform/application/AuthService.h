@@ -70,9 +70,12 @@ public:
     CodeVerdict verdict;
     std::optional<SignedIn> signedIn;
     std::string forkSource;  // a pending fork rides the row whichever credential spends it
+    AppleTicketOutcome appleOutcome = AppleTicketOutcome::completed;
+    bool appleAttached = false;
   };
   CodeCompletion completeCode(const std::string& rawEmail, const std::string& code,
-                              const SessionContext& ctx = {});
+                              const SessionContext& ctx = {},
+                              const std::optional<std::string>& appleTicket = std::nullopt);
 
   // `privateEmail`: the address behind the identity is a provider relay.
   struct ProviderSignIn {
@@ -86,7 +89,21 @@ public:
   std::optional<ProviderSignIn> completeProvider(const ProviderIdentity& identity,
                                                  const SessionContext& ctx = {});
 
-  // A door already bound to another account is refused, never stolen.
+  struct AppleStart {
+    std::optional<ProviderSignIn> signIn;
+    std::string ticket;
+    UnixMs expiresAt = 0;
+  };
+  AppleStart beginApple(const ProviderIdentity& identity, const SessionContext& ctx = {});
+  struct AppleCreation {
+    AppleTicketOutcome outcome;
+    std::optional<ProviderSignIn> signIn;
+  };
+  AppleCreation createApple(const std::string& ticket, const SessionContext& ctx = {});
+  std::vector<SignInMethod> signInMethods(const UserId& userId);
+  bool removeApple(const UserId& userId);
+
+  // Apple can leave another account only when its footprint is empty.
   enum class AttachOutcome { attached, alreadyMine, takenByAnother, refused };
   AttachOutcome attachIdentity(const UserId& userId, const ProviderIdentity& identity);
 

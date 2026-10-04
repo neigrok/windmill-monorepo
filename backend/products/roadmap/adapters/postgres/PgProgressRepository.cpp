@@ -3,6 +3,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
+#include <stdexcept>
 
 #include <algorithm>
 #include <numeric>
@@ -76,6 +77,8 @@ std::vector<bool> PgProgressRepository::setStatuses(const TreeId& tree, const Us
   });
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", user.str()).empty())
+    throw std::runtime_error("account no longer exists");
   for (const std::size_t index : order) {
     const ProgressUpdate& update = updates[index];
     const pqxx::result result = txn.exec_params(

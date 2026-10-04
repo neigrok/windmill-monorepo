@@ -6,7 +6,8 @@
 
 namespace wm {
 
-PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool) : pool_(std::move(pool)) {}
+PgAuthRepository::PgAuthRepository(std::shared_ptr<PgPool> pool, std::shared_ptr<PgAccountFootprint> footprint)
+    : pool_(std::move(pool)), footprint_(std::move(footprint)) {}
 
 namespace {
 // A users row → User, carrying the soft-close stamp (null deleted_at → a live account).
@@ -114,6 +115,171 @@ void PgAuthRepository::bindIdentity(Provider provider, const std::string& subjec
       "email_at_link = excluded.email_at_link",
       toString(provider), subject, userId.str(), emailAtLink);
   txn.commit();
+}
+
+bool PgAuthRepository::tryBindIdentity(const ProviderIdentity& identity, const UserId& userId) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params(
+      "INSERT INTO user_identities(provider,subject,user_id,email_at_link,relay) VALUES('apple',$1,$2::uuid,$3,$4) "
+      "ON CONFLICT(provider,subject) DO UPDATE SET user_id=excluded.user_id "
+      "WHERE user_identities.user_id=excluded.user_id RETURNING user_id",
+      identity.subject, userId.str(), identity.email.value,
+      trustOf(identity) == AddressTrust::appOnly);
+  txn.commit();
+  return !rows.empty();
+}
+
+std::optional<User> PgAuthRepository::signInApple(const ProviderIdentity& identity, const UserId& userId,
+    const std::string& sessionDigest, UnixMs expiresAt, const std::string& userAgent,
+    const std::string& ip, UnixMs now) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  if (txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR UPDATE", userId.str()).empty()) return std::nullopt;
+  const auto bound = txn.exec_params(
+      "INSERT INTO user_identities(provider,subject,user_id,email_at_link,relay) VALUES('apple',$1,$2::uuid,$3,$4) "
+      "ON CONFLICT(provider,subject) DO UPDATE SET user_id=excluded.user_id "
+      "WHERE user_identities.user_id=excluded.user_id RETURNING user_id",
+      identity.subject, userId.str(), identity.email.value, trustOf(identity) == AddressTrust::appOnly);
+  if (bound.empty()) return std::nullopt;
+  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), userId.str());
+  txn.exec_params("INSERT INTO sessions(token_hash,user_id,expires_ms,user_agent,ip,last_seen_ms) VALUES($1,$2::uuid,$3,$4,$5,$6)",
+      sessionDigest, userId.str(), static_cast<long long>(expiresAt), userAgent, ip, static_cast<long long>(now));
+  txn.commit();
+  return userFrom(users[0]);
+}
+
+std::vector<SignInMethod> PgAuthRepository::signInMethods(const UserId& userId) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params(
+      "SELECT provider,email_at_link,relay FROM user_identities WHERE user_id=$1::uuid ORDER BY provider,created_at,subject",
+      userId.str());
+  std::vector<SignInMethod> methods;
+  for (const auto& row : rows) {
+    const Email email{row["email_at_link"].as<std::string>()};
+    methods.push_back({*parseProvider(row["provider"].as<std::string>()), email.value,
+                       row["relay"].as<bool>() || isPrivateRelay(email)});
+  }
+  return methods;
+}
+
+bool PgAuthRepository::unbindIdentity(Provider provider, const UserId& userId) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params("DELETE FROM user_identities WHERE provider=$1 AND user_id=$2::uuid",
+                                    toString(provider), userId.str());
+  txn.commit();
+  return rows.affected_rows() != 0;
+}
+
+std::optional<std::vector<std::string>> PgAuthRepository::takeOverIdentity(
+    const ProviderIdentity& identity, const UserId& from, const UserId& to) {
+  if (!footprint_ || from == to) return std::nullopt;
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  // Account locks precede the footprint recheck; foreign keys and non-FK writers hold key-share locks.
+  const auto accounts = txn.exec_params("SELECT id FROM users WHERE id IN ($1::uuid,$2::uuid) ORDER BY id FOR UPDATE", from.str(), to.str());
+  if (accounts.size() != 2 || footprint_->lockAndCheck(txn, from)) return std::nullopt;
+  const auto moved = txn.exec_params(
+      "UPDATE user_identities SET user_id=$3::uuid WHERE provider='apple' AND subject=$1 AND user_id=$2::uuid RETURNING user_id",
+      identity.subject, from.str(), to.str());
+  if (moved.empty()) return std::nullopt;
+  const auto sessions = txn.exec_params("DELETE FROM sessions WHERE user_id=$1::uuid RETURNING token_hash", from.str());
+  txn.exec_params("DELETE FROM users WHERE id=$1::uuid", from.str());
+  txn.commit();
+  return digestsOf(sessions);
+}
+
+void PgAuthRepository::insertAppleTicket(const std::string& digest, const StoredAppleTicket& ticket) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  txn.exec_params("INSERT INTO apple_tickets(token_hash,subject,email,relay,name,expires_ms) VALUES($1,$2,$3,$4,$5,$6)",
+      digest, ticket.identity.subject, ticket.identity.email.value, ticket.identity.relayEmail,
+      ticket.identity.name, static_cast<long long>(ticket.expiresAt));
+  txn.commit();
+}
+
+std::optional<StoredAppleTicket> PgAuthRepository::findAppleTicket(const std::string& digest, UnixMs now) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto rows = txn.exec_params(
+      "SELECT subject,email,relay,name,expires_ms FROM apple_tickets WHERE token_hash=$1 AND consumed_ms IS NULL AND expires_ms>$2",
+      digest, static_cast<long long>(now));
+  if (rows.empty()) return std::nullopt;
+  const auto& row = rows[0];
+  return StoredAppleTicket{{Provider::apple, row["subject"].as<std::string>(), Email{row["email"].as<std::string>()},
+      row["name"].as<std::string>(), true, row["relay"].as<bool>()}, static_cast<UnixMs>(row["expires_ms"].as<long long>())};
+}
+
+AppleTicketResult PgAuthRepository::redeemAppleTicket(const std::string& digest, UnixMs now,
+    const std::optional<UserId>& target, const std::string& name, const std::string& sessionDigest,
+    UnixMs expiresAt, const std::string& userAgent, const std::string& ip,
+    const std::string& codeLinkDigest) {
+  PgLease conn{*pool_};
+  pqxx::work txn{*conn};
+  const auto subjects = txn.exec_params("SELECT subject FROM apple_tickets WHERE token_hash=$1", digest);
+  if (subjects.empty()) return {AppleTicketOutcome::expired, std::nullopt};
+  // Every redemption takes the subject mutex before locking any ticket row.
+  txn.exec_params("SELECT pg_advisory_xact_lock(hashtext('apple-ticket'),hashtext($1))", subjects[0][0].as<std::string>());
+  const auto tickets = txn.exec_params(
+      "SELECT subject,email,relay FROM apple_tickets WHERE token_hash=$1 AND consumed_ms IS NULL AND expires_ms>$2 FOR UPDATE",
+      digest, static_cast<long long>(now));
+  if (tickets.empty()) return {AppleTicketOutcome::expired, std::nullopt};
+  const auto& ticket = tickets[0];
+  const bool linking = !codeLinkDigest.empty();
+  if (linking) {
+    const auto code = txn.exec_params(
+        "UPDATE magic_links SET consumed_ms=$2 WHERE token_hash=$1 AND consumed_ms IS NULL "
+        "AND expires_ms>$2 AND attempts<$3 RETURNING token_hash",
+        codeLinkDigest, static_cast<long long>(now), AuthPolicy::maxCodeAttempts);
+    if (code.empty()) return {AppleTicketOutcome::codeRefused, std::nullopt};
+    if (!target) {
+      txn.commit();
+      return {AppleTicketOutcome::noAccount, std::nullopt};
+    }
+  }
+  bool created = false;
+  std::string account;
+  if (target) {
+    account = target->str();
+    const auto users = txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR UPDATE", account);
+    if (users.empty()) {
+      if (linking) txn.commit();
+      return {AppleTicketOutcome::noAccount, std::nullopt};
+    }
+  } else {
+    const auto added = txn.exec_params(
+        "INSERT INTO users(id,email,name) VALUES(gen_random_uuid(),$1,$2) ON CONFLICT(email) DO NOTHING RETURNING id::text",
+        ticket["email"].as<std::string>(), name);
+    if (added.empty()) {
+      txn.exec_params("UPDATE apple_tickets SET consumed_ms=$2 WHERE token_hash=$1", digest, static_cast<long long>(now));
+      txn.commit();
+      return {AppleTicketOutcome::expired, std::nullopt};
+    }
+    created = true;
+    account = added[0][0].as<std::string>();
+  }
+  const auto bound = txn.exec_params(
+      "INSERT INTO user_identities(provider,subject,user_id,email_at_link,relay) VALUES('apple',$1,$2::uuid,$3,$4) "
+      "ON CONFLICT(provider,subject) DO UPDATE SET user_id=excluded.user_id "
+      "WHERE user_identities.user_id=excluded.user_id RETURNING user_id",
+      ticket["subject"].as<std::string>(), account, ticket["email"].as<std::string>(), ticket["relay"].as<bool>());
+  if (bound.empty()) {
+    if (linking) txn.commit();
+    return {AppleTicketOutcome::identityTaken, std::nullopt};
+  }
+  const auto users = txn.exec_params("UPDATE users SET deleted_at=NULL WHERE id=$1::uuid RETURNING " + std::string(kUserColumns), account);
+  if (users.empty()) return {AppleTicketOutcome::noAccount, std::nullopt};
+  txn.exec_params("INSERT INTO sessions(token_hash,user_id,expires_ms,user_agent,ip,last_seen_ms) VALUES($1,$2::uuid,$3,$4,$5,$6)",
+      sessionDigest, account, static_cast<long long>(expiresAt), userAgent, ip, static_cast<long long>(now));
+  if (created)
+    txn.exec_params("UPDATE apple_tickets SET consumed_ms=$2 WHERE subject=$1 AND consumed_ms IS NULL",
+        ticket["subject"].as<std::string>(), static_cast<long long>(now));
+  else
+    txn.exec_params("UPDATE apple_tickets SET consumed_ms=$2 WHERE token_hash=$1", digest, static_cast<long long>(now));
+  txn.commit();
+  return {AppleTicketOutcome::completed, userFrom(users[0]), created};
 }
 
 void PgAuthRepository::moveIdentities(const UserId& from, const UserId& to) {

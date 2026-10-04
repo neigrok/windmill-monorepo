@@ -27,9 +27,14 @@ PgAccountFootprint::PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector
                                   "." + probe.ownerColumn);
     if (!query_.empty()) query_ += " UNION ALL ";
     // Each branch is PARENTHESISED: a bare LIMIT inside a UNION arm is a Postgres syntax error.
-    query_ += "(SELECT 1 FROM " + probe.table + " WHERE " + probe.ownerColumn + " = $1::uuid LIMIT 1)";
+    query_ += "(SELECT 1 FROM " + probe.table + " WHERE " + probe.ownerColumn + (probe.textOwner ? " = $1::uuid::text LIMIT 1)" : " = $1::uuid LIMIT 1)");
   }
-  query_ += " LIMIT 1";
+  query_ = "SELECT 1 FROM (" + query_ + ") AS footprint LIMIT 1";
+}
+
+bool PgAccountFootprint::lockAndCheck(pqxx::transaction_base& txn, const UserId& userId) {
+  txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR UPDATE", userId.str());
+  return !txn.exec_params(query_, userId.str()).empty();
 }
 
 bool PgAccountFootprint::anyData(const UserId& userId) {

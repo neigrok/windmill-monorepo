@@ -3,6 +3,7 @@
 #include "platform/adapters/postgres/PgPool.h"
 
 #include <pqxx/pqxx>
+#include <stdexcept>
 
 namespace wm {
 
@@ -26,6 +27,8 @@ void PgFeedbackRepository::insert(const std::string& sessionKey, const std::opti
 
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
+  if (user && txn.exec_params("SELECT id FROM users WHERE id=$1::uuid FOR KEY SHARE", user->str()).empty())
+    throw std::runtime_error("account no longer exists");
   txn.exec("INSERT INTO feedback (session_key, user_id, message, email, context) "
            "VALUES ($1, $2::uuid, $3, $4, $5)",
            params);

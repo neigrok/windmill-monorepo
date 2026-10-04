@@ -76,6 +76,30 @@ void expireStateCookie(const drogon::HttpResponsePtr& response, const std::strin
   response->addCookie(std::move(cookie));
 }
 
+drogon::HttpResponsePtr appleTicketRefusal(AppleTicketOutcome outcome) {
+  if (outcome == AppleTicketOutcome::identityTaken)
+    return error(drogon::k409Conflict, "that Apple ID already opens another account", "identity-taken");
+  if (outcome == AppleTicketOutcome::noAccount)
+    return error(drogon::k404NotFound, "No account at this email", "no-account");
+  Json::Value body(Json::objectValue);
+  body["error"] = "Continue with Apple again";
+  body["detail"] = "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.";
+  body["code"] = "apple-ticket-expired";
+  return jsonResponse(body, drogon::k410Gone);
+}
+
+void respondAppleSignIn(const AuthService::ProviderSignIn& signIn, bool secure,
+                         const SessionCookieScopes& scopes, HttpCallback& callback) {
+  Json::Value body(Json::objectValue);
+  body["user"] = userJson(signIn.signedIn.user);
+  body["session"] = signIn.signedIn.sessionSecret;
+  body["created"] = signIn.created;
+  body["privateEmail"] = signIn.privateEmail;
+  auto response = jsonResponse(body);
+  setSessionCookie(response, signIn.signedIn.sessionSecret, secure, scopes);
+  callback(response);
+}
+
 void respondApple(AuthService& auth, bool secure, const SessionCookieScopes& scopes,
                   const std::optional<ProviderIdentity>& identity, const std::string& name,
                   const std::optional<User>& caller, const SessionContext& ctx, HttpCallback& callback) {
@@ -104,20 +128,19 @@ void respondApple(AuthService& auth, bool secure, const SessionCookieScopes& sco
     return;
   }
 
-  const std::optional<AuthService::ProviderSignIn> signIn = auth.completeProvider(namedIdentity, ctx);
-  if (!signIn) {
+  const auto result = auth.beginApple(namedIdentity, ctx);
+  if (result.signIn) {
+    respondAppleSignIn(*result.signIn, secure, scopes, callback);
+    return;
+  }
+  if (result.ticket.empty()) {
     callback(error(drogon::k401Unauthorized, "apple sign-in could not be completed"));
     return;
   }
   Json::Value body(Json::objectValue);
-  body["user"] = userJson(signIn->signedIn.user);
-  body["session"] = signIn->signedIn.sessionSecret;  // the app's Bearer credential
-  body["created"] = signIn->created;
-  // A relay address can never find the account this human has on the web; the client owns the decision.
-  body["privateEmail"] = signIn->privateEmail;
-  auto response = jsonResponse(body);
-  setSessionCookie(response, signIn->signedIn.sessionSecret, secure, scopes);
-  callback(response);
+  body["appleTicket"] = result.ticket;
+  body["expiresAt"] = static_cast<Json::UInt64>(result.expiresAt);
+  callback(jsonResponse(body));
 }
 
 // The OAuth `state` CSRF nonce, echoed in the authorize URL and stashed in a cookie; empty on an entropy failure.
@@ -146,10 +169,32 @@ std::string isoUtc(UnixMs ms) {
 
 AuthApi::AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
                  SessionCookieScopes cookieScopes, std::shared_ptr<GoogleOAuthClient> google, std::string appUrl,
-                 std::shared_ptr<AppleOAuthClient> apple, std::shared_ptr<AppleIdentityVerifier> appleNative)
+                 std::shared_ptr<AppleOAuthClient> apple, std::shared_ptr<AppleIdentityVerifier> appleNative,
+                 std::set<std::string> allowedOrigins)
     : auth_(std::move(auth)), signupFork_(std::move(signupFork)), secureCookies_(secureCookies),
       cookieScopes_(std::move(cookieScopes)), google_(std::move(google)), appUrl_(std::move(appUrl)),
-      apple_(std::move(apple)), appleNative_(std::move(appleNative)) {}
+      apple_(std::move(apple)), appleNative_(std::move(appleNative)), allowedOrigins_(std::move(allowedOrigins)) {}
+
+bool AuthApi::allowAppleMutation(const drogon::HttpRequestPtr& req, HttpCallback& callback, bool jsonBody) {
+  const bool cookies = !req->getHeader("cookie").empty() || !req->getCookie("wm_session").empty();
+  const auto& origin = req->getHeader("origin");
+  if ((cookies || !origin.empty()) && !allowedOrigins_.contains(origin)) {
+    callback(error(drogon::k403Forbidden, "untrusted origin", "untrusted-origin"));
+    return false;
+  }
+  if (jsonBody || cookies) {
+    std::string essence = req->getHeader("content-type").substr(0, req->getHeader("content-type").find(';'));
+    const auto first = essence.find_first_not_of(" \t");
+    const auto last = essence.find_last_not_of(" \t");
+    essence = first == std::string::npos ? "" : essence.substr(first, last - first + 1);
+    for (char& c : essence) if (c >= 'A' && c <= 'Z') c += 'a' - 'A';
+    if (essence != "application/json") {
+      callback(error(drogon::k415UnsupportedMediaType, "application/json required", "unsupported-media-type"));
+      return false;
+    }
+  }
+  return true;
+}
 
 void AuthApi::requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   std::shared_ptr<Json::Value> json = req->getJsonObject();
@@ -229,9 +274,10 @@ void AuthApi::verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback)
 
 void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   std::shared_ptr<Json::Value> json = req->getJsonObject();
-  const std::string email = json ? json->get("email", "").asString() : "";
-  const std::string code = json ? json->get("code", "").asString() : "";
-  if (email.empty() || code.empty()) {
+  if (json && json->isMember("appleTicket") && !allowAppleMutation(req, callback)) return;
+  const std::string email = json && (*json)["email"].isString() ? (*json)["email"].asString() : "";
+  const std::string code = json && (*json)["code"].isString() ? (*json)["code"].asString() : "";
+  if ((email.empty() || code.empty()) && !(json && json->isMember("appleTicket"))) {
     Json::Value body(Json::objectValue);
     body["error"] = "Missing code";
     body["code"] = "bad_request";
@@ -239,25 +285,33 @@ void AuthApi::verifyCode(const drogon::HttpRequestPtr& req, HttpCallback&& callb
     return;
   }
 
-  AuthService::CodeCompletion completion = auth_->completeCode(email, code, contextOf(req));
+  std::optional<std::string> ticket;
+  if (json && json->isMember("appleTicket"))
+    ticket = (*json)["appleTicket"].isString() ? (*json)["appleTicket"].asString() : "";
+  AuthService::CodeCompletion completion = auth_->completeCode(email, code, contextOf(req), ticket);
+  if (completion.appleOutcome != AppleTicketOutcome::completed) {
+    callback(appleTicketRefusal(completion.appleOutcome));
+    return;
+  }
   if (completion.verdict != CodeVerdict::valid) {
     // Every failure answers one identical brick, so this endpoint is never an oracle for which
     // addresses hold pending codes or accounts.
     Json::Value body(Json::objectValue);
-    body["error"] = "That code has expired";
-    body["detail"] = "Codes work once and last 15 minutes.";
+    body["error"] = "That code didn't work";
+    body["detail"] = "Check the digits, or send a fresh one.";
     body["code"] = "expired";
     callback(jsonResponse(body, drogon::k410Gone));
     return;
   }
   respondSignedIn(*completion.signedIn, completion.forkSource, callback,
-                  (*json)["sessionTransport"].isString() && (*json)["sessionTransport"].asString() == "bearer");
+                  (*json)["sessionTransport"].isString() && (*json)["sessionTransport"].asString() == "bearer", completion.appleAttached);
 }
 
 void AuthApi::respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
-                              HttpCallback& callback, bool bearerSession) {
+                              HttpCallback& callback, bool bearerSession, bool appleAttached) {
   Json::Value body(Json::objectValue);
   body["user"] = userJson(signedIn.user);
+  if (appleAttached) body["appleAttached"] = true;
   if (bearerSession) body["session"] = signedIn.sessionSecret;
 
   // A failed plant degrades to a plain sign-in — the fork never blocks the door — and the port owns the logging.
@@ -336,6 +390,7 @@ void AuthApi::googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& c
 // for the Keychain (the cookie is set too). The caller's session is read BEFORE the exchange: a
 // provider sign-in taken while already signed in ATTACHES the door to that account, never resolves one.
 void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!allowAppleMutation(req, callback)) return;
   if (!apple_ || !apple_->configured()) {
     callback(error(drogon::k404NotFound, "apple sign-in is not configured"));
     return;
@@ -362,6 +417,7 @@ void AuthApi::apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) 
 }
 
 void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!allowAppleMutation(req, callback)) return;
   if (!appleNative_ || !appleNative_->configured()) {
     callback(error(drogon::k404NotFound, "apple sign-in is not configured"));
     return;
@@ -382,6 +438,34 @@ void AuthApi::appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& call
        callback = std::move(callback)](std::optional<ProviderIdentity> identity) mutable {
         respondApple(*auth, secure, scopes, identity, name, caller, ctx, callback);
       }));
+}
+
+void AuthApi::appleCreate(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!allowAppleMutation(req, callback)) return;
+  const auto json = req->getJsonObject();
+  const std::string ticket = json && (*json)["appleTicket"].isString() ? (*json)["appleTicket"].asString() : "";
+  const auto result = auth_->createApple(ticket, contextOf(req));
+  if (result.outcome != AppleTicketOutcome::completed) {
+    callback(appleTicketRefusal(result.outcome));
+    return;
+  }
+  respondAppleSignIn(*result.signIn, secureCookies_, cookieScopes_, callback);
+}
+
+void AuthApi::removeApple(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
+  if (!allowAppleMutation(req, callback, false)) return;
+  const auto caller = auth_->authenticate(sessionSecretOf(req), contextOf(req));
+  if (!caller) {
+    callback(error(drogon::k401Unauthorized, "sign in to remove Apple"));
+    return;
+  }
+  if (!auth_->removeApple(caller->id)) {
+    callback(error(drogon::k404NotFound, "no Apple sign-in method"));
+    return;
+  }
+  auto response = drogon::HttpResponse::newHttpResponse();
+  response->setStatusCode(drogon::k204NoContent);
+  callback(response);
 }
 
 // The link door: the caller's account folds into the one this magic link names, carrying its
@@ -440,6 +524,19 @@ void AuthApi::me(const drogon::HttpRequestPtr& req, HttpCallback&& callback) {
   }
   Json::Value body(Json::objectValue);
   body["user"] = userJson(*user);
+  Json::Value methods(Json::arrayValue);
+  Json::Value email(Json::objectValue);
+  email["kind"] = "email";
+  email["email"] = user->email.value;
+  methods.append(email);
+  for (const auto& method : auth_->signInMethods(user->id)) {
+    Json::Value row(Json::objectValue);
+    row["kind"] = toString(method.provider);
+    row["email"] = method.email;
+    if (method.provider == Provider::apple) row["relay"] = method.relay;
+    methods.append(row);
+  }
+  body["signInMethods"] = methods;
   callback(jsonResponse(body));
 }
 

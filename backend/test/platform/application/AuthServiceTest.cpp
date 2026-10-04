@@ -374,6 +374,7 @@ TEST(a_provider_sign_in_while_signed_in_attaches_rather_than_resolving) {
 
   CHECK(h.service.attachIdentity(account, appleId("a-1", kRelay)) == AuthService::AttachOutcome::alreadyMine);
   const UserId other = h.service.completeProvider(googleId("g-9", "other@example.com"))->signedIn.user.id;
+  h.footprint.withData.insert(account.str());
   CHECK(h.service.attachIdentity(other, appleId("a-1", kRelay)) == AuthService::AttachOutcome::takenByAnother);
   CHECK_EQ(h.repo.findIdentity(Provider::apple, "a-1")->str(), account.str());
 }

@@ -40,6 +40,23 @@ struct SessionRow {
   std::string ip;
 };
 
+struct StoredAppleTicket {
+  ProviderIdentity identity;
+  UnixMs expiresAt = 0;
+};
+
+enum class AppleTicketOutcome { completed, expired, identityTaken, noAccount, codeRefused };
+struct AppleTicketResult {
+  AppleTicketOutcome outcome;
+  std::optional<User> user;
+  bool created = false;
+};
+struct SignInMethod {
+  Provider provider;
+  std::string email;
+  bool relay = false;
+};
+
 // Digests, not secrets, are the keys throughout.
 struct AuthRepository {
   virtual ~AuthRepository() = default;
@@ -58,6 +75,22 @@ struct AuthRepository {
   virtual std::optional<UserId> findIdentity(Provider provider, const std::string& subject) = 0;
   virtual void bindIdentity(Provider provider, const std::string& subject, const UserId& userId,
                             const std::string& emailAtLink) = 0;
+  virtual bool tryBindIdentity(const ProviderIdentity& identity, const UserId& userId) = 0;
+  virtual std::optional<User> signInApple(const ProviderIdentity& identity, const UserId& userId,
+      const std::string& sessionDigest, UnixMs expiresAt, const std::string& userAgent,
+      const std::string& ip, UnixMs now) = 0;
+  virtual std::vector<SignInMethod> signInMethods(const UserId& userId) = 0;
+  virtual bool unbindIdentity(Provider provider, const UserId& userId) = 0;
+  // Rechecks emptiness and ownership while moving the door and deleting its old account atomically.
+  virtual std::optional<std::vector<std::string>> takeOverIdentity(
+      const ProviderIdentity& identity, const UserId& from, const UserId& to) = 0;
+  virtual void insertAppleTicket(const std::string& digest, const StoredAppleTicket& ticket) = 0;
+  virtual std::optional<StoredAppleTicket> findAppleTicket(const std::string& digest, UnixMs now) = 0;
+  // Ticket spend, account creation/revival, conditional binding and session insertion commit together.
+  virtual AppleTicketResult redeemAppleTicket(const std::string& digest, UnixMs now,
+      const std::optional<UserId>& target, const std::string& name, const std::string& sessionDigest,
+      UnixMs expiresAt, const std::string& userAgent, const std::string& ip,
+      const std::string& codeLinkDigest = "") = 0;
   // Every door of `from` opens `to` afterwards. Only once `from` is provably empty.
   virtual void moveIdentities(const UserId& from, const UserId& to) = 0;
 

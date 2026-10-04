@@ -87,8 +87,14 @@ class SchemaReapplicationTest(unittest.TestCase):
                      for argument in arguments]
         return subprocess.run(arguments, capture_output=True, text=True)
 
-    def schema_dump(self):
-        dump = command(["pg_dump", "--dbname=" + self.database, "--schema-only"])
+    def schema_dump(self, legacy_auth=False):
+        arguments = ["pg_dump", "--dbname=" + self.database, "--schema-only"]
+        if legacy_auth:
+            arguments.append("--exclude-table=public.apple_tickets")
+        dump = command(arguments)
+        if legacy_auth:
+            dump = re.sub(r"(CREATE TABLE public\.user_identities \([^;]*?)(    relay boolean DEFAULT false NOT NULL,\n)",
+                          r"\1", dump, count=1)
         return re.sub(r"^\\(?:un)?restrict .+\n", "", dump, flags=re.MULTILINE)
 
     def snapshot(self):
@@ -123,8 +129,11 @@ class SchemaReapplicationTest(unittest.TestCase):
                     after[name].splitlines(keepends=True), fromfile="before", tofile="after"))
                 self.assertEqual(before[name], after[name], f"{name} changed:\n{difference}")
 
-    def test_nonadopted_catalog_is_byte_identical_to_legacy_schema(self):
-        current = self.schema_dump()
+    def test_nonadopted_catalog_preserves_legacy_except_declared_apple_auth_additions(self):
+        self.assertEqual(self.sql("select to_regclass('apple_tickets') is not null and exists "
+                                  "(select 1 from information_schema.columns where table_schema='public' "
+                                  "and table_name='user_identities' and column_name='relay')"), "t")
+        current = self.schema_dump(legacy_auth=True)
         legacy_name = "wm_legacy_catalog_" + uuid.uuid4().hex[:12]
         command(["createdb", "--maintenance-db=" + self.maintenance, legacy_name])
         self.addCleanup(command, ["dropdb", "--maintenance-db=" + self.maintenance, legacy_name])
@@ -135,12 +144,12 @@ class SchemaReapplicationTest(unittest.TestCase):
                 schema = Path(directory) / "schema.sql"
                 schema.write_text(self.origin_schema())
                 command(["psql", self.database, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(schema)])
-            self.assert_catalog_equal({"pg_dump --schema-only": self.schema_dump()},
+            self.assert_catalog_equal({"pg_dump --schema-only": self.schema_dump(legacy_auth=True)},
                                       {"pg_dump --schema-only": current})
-            legacy_before = self.schema_dump()
+            legacy_before = self.schema_dump(legacy_auth=True)
             self.apply("schema.sql")
             self.assert_catalog_equal({"pg_dump --schema-only": legacy_before},
-                                      {"pg_dump --schema-only": self.schema_dump()})
+                                      {"pg_dump --schema-only": self.schema_dump(legacy_auth=True)})
         finally:
             self.database = current_database
 

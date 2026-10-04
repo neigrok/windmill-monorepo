@@ -10,6 +10,7 @@
 
 #include <functional>
 #include <memory>
+#include <set>
 #include <string>
 
 namespace wm {
@@ -25,7 +26,8 @@ public:
   AuthApi(std::shared_ptr<AuthService> auth, std::shared_ptr<SignupFork> signupFork, bool secureCookies,
           SessionCookieScopes cookieScopes, std::shared_ptr<GoogleOAuthClient> google = nullptr,
           std::string appUrl = "", std::shared_ptr<AppleOAuthClient> apple = nullptr,
-          std::shared_ptr<AppleIdentityVerifier> appleNative = nullptr);
+          std::shared_ptr<AppleIdentityVerifier> appleNative = nullptr,
+          std::set<std::string> allowedOrigins = {});
 
   void requestLink(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST   /v1/auth/magic-link
   void verify(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST   /v1/auth/verify
@@ -34,6 +36,8 @@ public:
   void googleCallback(const drogon::HttpRequestPtr& req, HttpCallback&& callback); // GET  /v1/auth/google/callback
   void apple(const drogon::HttpRequestPtr& req, HttpCallback&& callback);        // POST   /v1/auth/apple
   void appleNative(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // POST   /v1/auth/apple/native
+  void appleCreate(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
+  void removeApple(const drogon::HttpRequestPtr& req, HttpCallback&& callback);
   void link(const drogon::HttpRequestPtr& req, HttpCallback&& callback);         // POST   /v1/auth/link
   void me(const drogon::HttpRequestPtr& req, HttpCallback&& callback);           // GET    /v1/me
   void logout(const drogon::HttpRequestPtr& req, HttpCallback&& callback);       // POST   /v1/auth/logout
@@ -45,8 +49,9 @@ public:
   void signOutEverywhere(const drogon::HttpRequestPtr& req, HttpCallback&& callback);  // DELETE /v1/sessions
 
 private:
+  bool allowAppleMutation(const drogon::HttpRequestPtr& req, HttpCallback& callback, bool jsonBody = true);
   void respondSignedIn(const AuthService::SignedIn& signedIn, const std::string& forkSource,
-                       HttpCallback& callback, bool bearerSession);
+                       HttpCallback& callback, bool bearerSession, bool appleAttached = false);
 
   std::shared_ptr<AuthService> auth_;
   std::shared_ptr<SignupFork> signupFork_;  // null on a deploy with no forkable product — both fork steps no-op
@@ -56,6 +61,7 @@ private:
   std::string appUrl_;                         // where the Google callback lands the browser
   std::shared_ptr<AppleOAuthClient> apple_;    // null when Apple sign-in is unconfigured
   std::shared_ptr<AppleIdentityVerifier> appleNative_;
+  std::set<std::string> allowedOrigins_;
 };
 
 }

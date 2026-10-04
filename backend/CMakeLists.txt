@@ -235,10 +235,12 @@ add_executable(windmill_domain_tests
   test/platform/domain/sync/CorpusTest.cpp
   test/platform/domain/ToolScopeTest.cpp
   test/platform/domain/AuthTest.cpp
+  test/platform/domain/AppleTicketTest.cpp
   test/platform/domain/MailTest.cpp
   test/platform/domain/MailArmingTest.cpp
   test/platform/domain/OAuthTest.cpp
   test/platform/application/AuthServiceTest.cpp
+  test/platform/application/AppleLinkingTest.cpp
   test/platform/application/EntitlementsTest.cpp
   test/platform/application/LiveSessionsTest.cpp
   test/platform/application/OAuthServiceTest.cpp
@@ -573,6 +575,7 @@ add_test(NAME sync COMMAND windmill_sync_tests)
 add_executable(windmill_adapters_tests
   test/http_main.cpp
   test/platform/adapters/http/AuthApiTest.cpp
+  test/platform/adapters/http/AppleLinkingApiTest.cpp
   test/platform/adapters/http/OAuthApiTest.cpp
   test/platform/adapters/http/McpKeyApiTest.cpp
   test/platform/adapters/http/EventsApiTest.cpp
@@ -597,6 +600,7 @@ add_executable(windmill_adapters_tests
   test/platform/adapters/amplitude/AmplitudeClientTest.cpp
   test/platform/adapters/postgres/PgAiUsageRepositoryTest.cpp
   test/platform/adapters/postgres/PgAuthRepositoryTest.cpp
+  test/platform/adapters/postgres/PgAppleLinkingTest.cpp
   test/platform/adapters/postgres/PgPoolTest.cpp
   test/platform/adapters/postgres/PgSubscriptionRepositoryTest.cpp
   test/products/roadmap/adapters/json/SubgraphJsonTest.cpp

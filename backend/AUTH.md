@@ -70,7 +70,7 @@ Request `{ "email": "sam@example.com", "code": "483201" }`. The iOS engine clien
 | Result | Status | Body / effect |
 |---|---|---|
 | Valid | `200` | `{ "user": {…} }` (+ `forkedTree` when one rode the row) + `Set-Cookie: wm_session=…`; with `sessionTransport: "bearer"`, also `"session": "<secret>"` |
-| Wrong / expired / used / exhausted / unknown email | `410` | `{ "error": "That code has expired", "detail": "Codes work once and last 15 minutes.", "code": "expired" }` |
+| Wrong / expired / used / exhausted / unknown email | `410` | `{ "error": "That code didn't work", "detail": "Check the digits, or send a fresh one.", "code": "expired" }` |
 | Missing email or code | `400` | `{ "error": "Missing code", "code": "bad_request" }` |
 
 The lookup is the NEWEST live row for the address — unspent, unexpired, fewer than 5 attempts — so a
@@ -92,8 +92,11 @@ single use, 5 attempts per row, and a per-IP bucket on `/v1/auth/verify-code` (1
 
 ### `GET /v1/me`
 
-`200 { "user": {…} }` when the session resolves (the window rolls forward on each call), else
-`401 {}`.
+`200 { "user": {…}, "signInMethods": [{ "kind": "email", "email": "sam@example.com" },
+{ "kind": "apple", "email": "<email_at_link>", "relay": true }] }` when the session resolves
+(the window rolls forward on each call), else `401 {}`. Email is first; bound providers follow.
+Apple is absent when unbound. Its address and relay flag describe the door at attachment, not the
+account's email or the latest sign-in token.
 
 ### `POST /v1/auth/logout`
 
@@ -108,14 +111,17 @@ arrives here or never; it seeds a NEW account and never renames an existing one.
 | Result | Status | Body |
 |---|---|---|
 | Signed in | `200` | `{ "user": {…}, "session": "<secret>", "created": bool, "privateEmail": bool }` + `Set-Cookie` |
+| No subject binding or account at the verified address | `200` | `{ "appleTicket": "<secret>", "expiresAt": <epoch ms> }`; no session or cookie |
 | Already signed in — the door was bound to the caller | `200` | `{ "user": {…}, "attached": true }` |
-| That Apple ID already opens another account | `409` | `{ "error": …, "code": "identity-taken" }` |
+| Signed in, that Apple ID opens another account with data | `409` | `{ "error": …, "code": "identity-taken" }` |
 | Apple refused, or the identity is unusable | `401` | `{ "error": "apple sign-in could not be completed" }` |
 | Not configured (any of the four env vars missing) | `404` | `{ "error": "apple sign-in is not configured" }` |
 
 `session` is the same secret as the cookie, returned in the body so a native client can keep it and
-send it as `Authorization: Bearer`. `created` **and** `privateEmail` together are the condition a
-client offers the link door on.
+send it as `Authorization: Bearer`. An unmatched sign-in returns only an Apple ticket, for relay
+and real addresses alike. Nothing is created or bound until the person answers. The ticket lasts
+15 minutes, is single use and is stored only by its digest in `apple_tickets`, alongside the verified
+subject, email, relay flag and once-only name. A ticket alone authenticates no request.
 
 ### `POST /v1/auth/apple/native` — the identity-token door
 
@@ -132,7 +138,8 @@ not-before time and hashed nonce. Client tokens never enter the payload-only par
 trusted authorization-code exchange. A malformed body answers `400`; rejected token, keys or
 provider response answers the same `401` as the authorization-code door. Successful bodies,
 cookie lines, subject resolution, relay-email flags and authenticated attachment behavior share
-that door's response pipeline. In particular, signed-out success includes `session` for Bearer use.
+that door's response pipeline. A matched signed-out sign-in includes `session` for Bearer use;
+an unmatched one includes only `appleTicket` and `expiresAt`.
 
 A verified subject with no email may open its existing `user_identities` binding, but cannot create
 an account or bind a new door. Any supplied address must be verified. Normal Apple identity tokens
@@ -142,6 +149,42 @@ include the email on subsequent authorizations too; only the name arrives once. 
 `AppleIdentityVerifier` is an injected port. HTTP tests use a fake verifier, and verifier tests use
 locally generated RSA keys and a fixed clock; neither requires Apple secrets or an Apple network
 response. Production has no fake-verifier environment switch.
+
+### `POST /v1/auth/apple/create` — answer Create account
+
+Request `{ "appleTicket": "<secret>" }`. A live ticket creates an account, binds its Apple door and
+mints a session in one transaction. The normal Apple success body carries `created: true`,
+`privateEmail`, `user` and `session`, with the session cookie. Redemption serializes by Apple subject;
+creation spends every competing ticket for that subject, so their answers are `410 apple-ticket-expired`.
+If the verified email gained an account meanwhile, create also answers `410`; repeat Apple sign-in
+to open that account. A subject bound elsewhere
+meanwhile answers `409 identity-taken` without creating or changing an account.
+
+Missing, unknown, spent and expired tickets all answer `410` with
+`{ "error": "Continue with Apple again", "detail": "Apple's sign-in lasts 15 minutes, and this one ran out. Nothing was created.", "code": "apple-ticket-expired" }`.
+
+### `POST /v1/auth/verify-code` with `appleTicket` — answer Use my account
+
+The optional `appleTicket` carries the Apple sign-in into email proof. The order is strict:
+
+1. Check the ticket first. A dead ticket answers the same `410 apple-ticket-expired`, without
+   consuming the code or a guess attempt.
+2. Check the code. Wrong, expired, used, exhausted and unknown codes keep the one collapsed `410`
+   refusal above: "That code didn't work" / "Check the digits, or send a fresh one."
+3. Spend a valid code. An existing account at the proven address gains the Apple door and a session;
+   the usual code success body gains `appleAttached: true`. `sessionTransport: "bearer"` also returns
+   `session`; the session cookie is set either way. Ticket consumption, binding and session creation
+   commit together. A subject bound to another account answers `409 identity-taken`, changing neither
+   account. No account answers `404 { "error": "No account at this email", "code": "no-account" }`:
+   the code is spent, nothing is created, and the ticket stays live for another address or Create account.
+
+`/v1/auth/magic-link` keeps sending to any valid address, regardless of account existence.
+
+### `DELETE /v1/me/sign-in-methods/apple`
+
+Requires the caller's session cookie or Bearer credential. Deletes only the caller's Apple
+bindings and answers `204`, or `404` if none exist; signed out answers `401`. The account, email
+door, other providers and sessions remain. Removing Apple does not close an account.
 
 ### `POST /v1/auth/link` — fold this account into the one the link names
 
@@ -175,6 +218,7 @@ create table if not exists user_identities (
   subject       text not null,
   user_id       uuid not null references users(id) on delete cascade,
   email_at_link text not null default '',   -- what the provider said when we linked; never re-read
+  relay         boolean not null default false,
   created_at    timestamptz not null default now(),
   primary key (provider, subject)
 );
@@ -192,32 +236,26 @@ identity resolves only an already-bound door.
 
 ### The resolution ladder
 
-One order, both providers. The first step that answers, answers.
+The subject resolves first. A known `(provider, subject)` opens its bound account regardless of
+address or name changes. With no binding, a verified address finds an existing account and binds
+the door. Google also creates on an unmatched verified address; Apple returns a ticket instead.
+Apple relay addresses follow the same ladder. Unverified addresses never find or create accounts.
+A subject-only Apple identity can only open or reuse its existing binding.
 
-1. **`(provider, subject)` is known** → that user, and the email is never consulted. A rotated relay
-   address, a changed Google address, an edited display name — none can move an account once the
-   subject is bound.
-2. **No door bound** → the verified address finds or creates an account exactly as a magic link
-   does, and the door is bound on the way through.
-
-A relay address runs step 2 unchanged: it is stable for this app, so it re-finds the same human and
-collides with no one else. What it cannot do is find the account they already have on the web — so
-the reply carries `privateEmail: true` beside `created`, and those two facts together are what the
-client offers the link door on.
-
-`email_verified == false` never reaches step 2. An unverified provider address resolving onto an
-existing account is an account takeover by anyone who can type an address.
-
-**A provider sign-in performed while already signed in is an ATTACH, never a resolve.** It binds
-`(provider, subject)` to the caller's current account and returns that account unchanged. This is
-the *Connect Apple* row in settings, and it is why the app offers *Continue with Apple* as a sign-in
-only while signed out.
+**A provider sign-in performed while already signed in attaches to the caller.** A free Apple door
+binds to that account; an already-owned door is unchanged. If Apple opens another account whose
+`AccountFootprint::anyData` is false, its Apple door moves to the caller and the empty account is
+deleted, with all its sessions revoked and live sockets disconnected. The database locks only the two account rows, then rechecks the footprint in the deletion
+transaction. Ownership foreign keys and the non-FK writers hold account key-share locks; unrelated
+accounts can keep writing. An account with data is untouched
+and answers `409 identity-taken`. Sign-in methods retain the original `email_at_link` and relay flag.
+Google attachment refuses an identity owned by another account.
 
 ### The link door
 
-The app offers it on `created && privateEmail`: the person emails themselves a link from the web and
-pastes it in, and the app posts that token to `POST /v1/auth/link` while still holding the new
-account's session. The server resolves the token to user A and compares it with caller B:
+The legacy `POST /v1/auth/link` endpoint consumes an emailed link while the caller holds a
+session. It is independent of the Apple-ticket question. The server resolves the token to user A
+and compares it with caller B:
 
 | Case | Outcome |
 |---|---|
@@ -247,6 +285,22 @@ server down at boot rather than reaching a query.
 deletes real data.** The list is the review surface, an empty one is refused at construction, and a
 fourth product adds one line to it.
 
+The probes cover every user-owned product table in `schema.sql`, including text-owned
+`node_progress`, history, reminders, settings and feedback, plus org membership, billing,
+MCP/OAuth credentials and sync state. Child-only tables are covered by their owning parent.
+`sessions` and `user_identities` are the doors, not an account's data; `magic_links` and
+`apple_tickets` are pending credentials without user ownership. `events`, `server_errors` and
+`ai_usage` are telemetry, excluded from emptiness. `paddle_customers` is email-addressed;
+its user-owned subscription rows count.
+
+Apple POST doors and verify-code with an Apple ticket require the `application/json` media-type essence. Requests
+carrying cookies must supply an Origin from the same allowlist used for credentialed CORS;
+any supplied untrusted Origin is refused before authentication or writes. Cookie-authenticated
+Apple removal also requires JSON; native Bearer removal needs no body or Content-Type.
+Native requests without cookies or Origin remain allowed.
+Matched Apple sign-in binds, revives and inserts its session in one transaction, after minting
+its session secret; an insert failure rolls back the binding and revival.
+
 ### Native surface notes
 
 - `Caller.cpp` falls back to `Authorization: Bearer <session-secret>` when the `wm_session` cookie is
@@ -272,8 +326,6 @@ fourth product adds one line to it.
   `/v1/auth/verify-code` or `/v1/auth/verify`, and captures `session` from the response body.
 - App Store guideline 5.1.1(v) requires in-app account deletion wherever Sign in with Apple ships;
   settings has close-with-grace.
-- Apple's `REVOKE` server-to-server notification unbinds a door, never an account. The identity row
-  is dropped, the user's data is untouched, and the email door still opens.
 
 ## The link URL
 
@@ -285,8 +337,8 @@ fourth product adds one line to it.
 
 - Call every auth endpoint with `credentials: 'include'`. The server grants credentialed CORS only to
   allow-listed origins — the app's own origin (`WINDMILL_APP_URL`) plus any in
-  `WINDMILL_ALLOWED_ORIGINS`. Any other origin gets no `Allow-Origin`, so a hostile page cannot drive
-  a credentialed `/v1/auth/verify`.
+  `WINDMILL_ALLOWED_ORIGINS`. Any other origin gets no `Allow-Origin`; the Apple mutation and code doors also enforce
+  Origin and JSON at the handler boundary.
 - In production the cookie's `Domain` is the registrable domain (`WINDMILL_COOKIE_DOMAIN`), so `app`
   and `api.app` share it. On `https` origins the cookie is `Secure`.
 - The cookie's scopes (engine.md §9.1 Session cookie scopes) are host-only, the configured `Domain`

@@ -1,5 +1,7 @@
 #include "platform/application/WorkerPool.h"
+#include "platform/adapters/postgres/PgAuthRepository.h"
 #include "platform/application/sync/Admission.h"
+#include "platform/application/sync/SyncService.h"
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
@@ -322,4 +324,65 @@ TEST(racing_overlay_writes_tree_writes_and_the_tree_death_leave_no_overlay_alive
     CHECK_EQ(world().failures.reports.size(), 0u);
     test::checkDigests(world().dump());
   }
+}
+
+TEST(apple_takeover_finishes_while_an_unrelated_sync_push_holds_its_replica) {
+  if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
+  world().seed(parseJson(R"({"epoch":"ep-1","clock":{"ms":0,"counter":0},"accounts":{"AX":{"name":"Ann"},"BX":{"name":"Bob"},"CX":{"name":"Cam"}}})"));
+  auto footprint = std::make_shared<PgAccountFootprint>(pgTestPool(), std::vector<OwnedTable>{
+      {"journal_page","user_id"}, {"gym_sessions","user_id"}, {"sync_replicas","account"}, {"sync_scopes","owner"}});
+  PgAuthRepository auth{pgTestPool(), footprint};
+  const ProviderIdentity identity{Provider::apple,"pg-sync-takeover",Email{"pg-sync-takeover@example.test"},"",true,false};
+  {
+    PgLease lease{*pgTestPool()}; pqxx::work txn{*lease};
+    txn.exec("DELETE FROM user_identities WHERE provider='apple' AND subject='pg-sync-takeover'");
+    txn.commit();
+  }
+  CHECK(auth.tryBindIdentity(identity, world().account("AX")));
+  class ReplicaGate : public fake::ForwardingStore {
+  public:
+    std::promise<void> arrived, release;
+    explicit ReplicaGate(SyncStore& store) : ForwardingStore(store), released(release.get_future().share()) {}
+    ReplicaRow bindReplica(SyncTxn& txn, const std::string& replica, const UserId& account, Ms now) override {
+      auto row = ForwardingStore::bindReplica(txn, replica, account, now);
+      if (++bindings == 2) {
+        arrived.set_value();
+        released.wait_for(std::chrono::seconds(10));
+      }
+      return row;
+    }
+  private:
+    std::shared_future<void> released;
+    int bindings = 0;
+  } gate{world().store()};
+  Admission admission(world().catalog(), gate, world().feed, world().clock(), world().failures);
+  auto intent = intentOf("self/probe", R"({"t":"card","id":"card0001","born":"1000:0:r_aaaaaaaaaaaa","life":["alive","1000:0:r_aaaaaaaaaaaa"],"f":{"title":["Unrelated","1000:0:r_aaaaaaaaaaaa"]}})");
+  intent["n"] = Json::UInt64{1};
+  auto request = parseJson(R"({"replica":"rp_000000000000000000000000000000cc","ackThrough":0,"intents":[]})");
+  request["account"] = world().account("CX").str();
+  request["intents"].append(intent);
+  struct PushClock : Clock { UnixMs nowMs() override { return kNow; } } clock;
+  SyncService service(world().catalog(), gate, admission, clock);
+  auto arrival = gate.arrived.get_future();
+  auto push = std::async(std::launch::async, [&] {
+    BlockingThread::Mark blocking;
+    TimeBudget budget{60'000};
+    return service.push(Credential::sent(world().account("CX")), jcs(request), budget);
+  });
+  const auto arrived = arrival.wait_for(std::chrono::seconds(5));
+  CHECK(arrived == std::future_status::ready);
+  auto takeover = std::async(std::launch::async, [&] {
+    return auth.takeOverIdentity(identity, world().account("AX"), world().account("BX"));
+  });
+  const auto completed = takeover.wait_for(std::chrono::seconds(2));
+  gate.release.set_value();
+  CHECK(completed == std::future_status::ready);
+  CHECK(takeover.get());
+  const auto outcome = push.get();
+  CHECK_EQ(outcome.status, 200);
+  CHECK_EQ(outcome.body["lastN"].asUInt64(), 1u);
+  CHECK_EQ(outcome.body["results"][0]["s"].asString(), std::string("ok"));
+  CHECK(!auth.findUserById(world().account("AX")));
+  CHECK_EQ(auth.findIdentity(Provider::apple, identity.subject), std::optional<UserId>{world().account("BX")});
+  CHECK(world().failures.reports.empty());
 }

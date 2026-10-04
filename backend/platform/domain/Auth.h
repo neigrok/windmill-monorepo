@@ -39,6 +39,7 @@ std::string sharableName(const User& user);
 std::optional<std::string> parseName(const std::string& raw);
 
 struct AuthPolicy {
+  static constexpr UnixMs appleTicketLifetimeMs = 15ull * 60 * 1000;
   static constexpr UnixMs linkLifetimeMs = 15ull * 60 * 1000;
   static constexpr UnixMs sessionLifetimeMs = 90ull * 24 * 60 * 60 * 1000;
   static constexpr UnixMs rateWindowMs = 10ull * 60 * 1000;
@@ -57,6 +58,7 @@ inline bool nameWithinLimit(const std::string& trimmed) {
   return !trimmed.empty() && trimmed.size() <= AuthPolicy::nameMaxBytes;
 }
 
+inline UnixMs appleTicketExpiry(UnixMs now) { return now + AuthPolicy::appleTicketLifetimeMs; }
 inline UnixMs linkExpiry(UnixMs now) { return now + AuthPolicy::linkLifetimeMs; }
 inline UnixMs sessionExpiry(UnixMs now) { return now + AuthPolicy::sessionLifetimeMs; }
 inline bool sessionExpired(UnixMs expiresAt, UnixMs now) { return now >= expiresAt; }

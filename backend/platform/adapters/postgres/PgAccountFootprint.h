@@ -14,6 +14,7 @@ namespace wm {
 struct OwnedTable {
   std::string table;
   std::string ownerColumn;
+  bool textOwner = false;
 };
 
 // Every probe in one statement: a UNION ALL of bounded existence checks, so the whole question
@@ -25,6 +26,7 @@ public:
   PgAccountFootprint(std::shared_ptr<PgPool> pool, std::vector<OwnedTable> probes);
 
   bool anyData(const UserId& userId) override;
+  bool lockAndCheck(pqxx::transaction_base& txn, const UserId& userId);
 
 private:
   std::shared_ptr<PgPool> pool_;

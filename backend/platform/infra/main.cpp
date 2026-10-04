@@ -241,7 +241,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   }
   bool secureCookies = appBaseUrl.rfind("https://", 0) == 0;
 
-  auto authRepo = std::make_shared<PgAuthRepository>(pool);
   auto resendClient = std::make_shared<ResendClient>(
       resendKey ? resendKey : "", resendFrom ? resendFrom : "Windmill <login@windmill.works>");
   lifetime.watch(resendClient);
@@ -263,7 +262,20 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto accountFootprint = std::make_shared<PgAccountFootprint>(
       pool, std::vector<OwnedTable>{
                 {"trees", "owner_id"},                // roadmap
+                {"node_progress", "user_id", true},
+                {"tend_runs", "user_id"},
+                {"reminder_subscription", "user_id"},
+                {"reminder_week", "user_id"},
                 {"journal_page", "user_id"},          // journal
+                {"journal_page_revision", "user_id"},
+                {"journal_nudge", "user_id"},
+                {"journal_nudge_day", "user_id"},
+                {"journal_span", "user_id"},
+                {"journal_echo", "user_id"},
+                {"journal_echo_dismissal", "user_id"},
+                {"journal_echo_signal", "user_id"},
+                {"journal_echo_offer_dismissal", "user_id"},
+                {"journal_page_curation", "user_id"},
                 {"gym_sessions", "user_id"},          // gym
                 {"gym_sets", "user_id"},              // gym
                 {"gym_set_revisions", "user_id"},
@@ -287,14 +299,19 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
                 {"gym_exercises", "created_by"},
                 {"gym_exercise_names", "user_id"},    // gym
                 {"gym_exercise_aliases", "user_id"},  // gym
-                // gym_preferences is absent on purpose: settings are not data an account holds.
+                {"gym_preferences", "user_id"},
+                {"org_members", "user_id"},
+                {"feedback", "user_id"},
                 {"paddle_subscriptions", "user_id"},  // platform
                 {"mcp_keys", "user_id"},              // platform
                 {"oauth_grants", "user_id"},          // platform
+                {"oauth_codes", "user_id"},
+                {"oauth_tokens", "user_id"},
                 {"sync_scopes", "owner"},             // the sync engine
                 {"sync_replicas", "account"},         // the sync engine
                 {"sync_requests", "account"},         // the sync engine
             });
+  auto authRepo = std::make_shared<PgAuthRepository>(pool, accountFootprint);
   // The sessions live sync sockets hold: every session AuthService revokes closes its sockets at once.
   auto liveSessions = std::make_shared<LiveSessions>();
   auto authService = std::make_shared<AuthService>(*authRepo, *emailSender, *tokens, *systemClock,
@@ -323,8 +340,30 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   lifetime.watch(appleClient);
   lifetime.watch(appleNativeVerifier);
   auto forkSignup = std::make_shared<ForkSignup>(*forkService);
+  // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
+  // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
+  std::set<std::string> allowedOrigins;
+  std::string appOrigin = appBaseUrl;
+  while (!appOrigin.empty() && appOrigin.back() == '/') appOrigin.pop_back();
+  allowedOrigins.insert(appOrigin);
+  if (const char* extra = std::getenv("WINDMILL_ALLOWED_ORIGINS")) {
+    std::string list = extra;
+    std::size_t start = 0;
+    while (start <= list.size()) {
+      std::size_t comma = list.find(',', start);
+      std::string origin = list.substr(start, comma - start);
+      while (!origin.empty() && (origin.front() == ' ' || origin.back() == ' ' || origin.back() == '/')) {
+        if (origin.front() == ' ') origin.erase(0, 1);
+        else origin.pop_back();
+      }
+      if (!origin.empty()) allowedOrigins.insert(origin);
+      if (comma == std::string::npos) break;
+      start = comma + 1;
+    }
+  }
+
   auto authApi = std::make_shared<AuthApi>(authService, forkSignup, secureCookies, *cookieScopes,
-                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier);
+                                           googleClient, appBaseUrl, appleClient, appleNativeVerifier, allowedOrigins);
   auto mcpKeyApi = std::make_shared<McpKeyApi>(authService, mcpKeyService);
 
 
@@ -571,27 +610,6 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   auto oauthApi = std::make_shared<OAuthApi>(oauthService, authService, apiBaseUrl, appBaseUrl,
                                              "/#/oauth/authorize", supportedScopes(mcpComposite->products()));
 
-  // The origins allowed to send credentialed (cookie-bearing) requests. The app is always trusted;
-  // WINDMILL_ALLOWED_ORIGINS adds more, comma-separated. Anything else gets no CORS grant.
-  std::set<std::string> allowedOrigins;
-  std::string appOrigin = appBaseUrl;
-  while (!appOrigin.empty() && appOrigin.back() == '/') appOrigin.pop_back();
-  allowedOrigins.insert(appOrigin);
-  if (const char* extra = std::getenv("WINDMILL_ALLOWED_ORIGINS")) {
-    std::string list = extra;
-    std::size_t start = 0;
-    while (start <= list.size()) {
-      std::size_t comma = list.find(',', start);
-      std::string origin = list.substr(start, comma - start);
-      while (!origin.empty() && (origin.front() == ' ' || origin.back() == ' ' || origin.back() == '/')) {
-        if (origin.front() == ' ') origin.erase(0, 1);
-        else origin.pop_back();
-      }
-      if (!origin.empty()) allowedOrigins.insert(origin);
-      if (comma == std::string::npos) break;
-      start = comma + 1;
-    }
-  }
 
   WriteRoutes routes(app, "platform");
   WriteRoutes mcpRoutes(app, "platform", "mcp");
@@ -756,6 +774,14 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
         [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->appleNative(req, std::move(cb)); },
         {drogon::Post});
   }
+  routes.registerHandler(
+      "/v1/auth/apple/create",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->appleCreate(req, std::move(cb)); },
+      {drogon::Post});
+  routes.registerHandler(
+      "/v1/me/sign-in-methods/apple",
+      [authApi](const drogon::HttpRequestPtr& req, HttpCallback&& cb) { authApi->removeApple(req, std::move(cb)); },
+      {drogon::Delete});
   // Folds this (empty) account into the one the magic link names.
   routes.registerHandler(
       "/v1/auth/link",
