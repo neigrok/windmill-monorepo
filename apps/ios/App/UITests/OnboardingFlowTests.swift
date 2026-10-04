@@ -59,6 +59,28 @@ import XCTest
     assertWhereToStart(in: app)
   }
 
+  func testSwipeImmediatelyAfterArrivalChangesPage() {
+    let app = launch()
+    XCTAssertTrue(app.staticTexts[titles[0]].waitForExistence(timeout: 10))
+    app.swipeLeft()
+    assertPage(1, in: app)
+    app.swipeRight()
+    assertPage(0, in: app)
+  }
+
+  func testFittingPagesDoNotCaptureVerticalSwipes() {
+    let app = launch()
+    for page in 0..<3 {
+      assertPage(page, in: app)
+      let title = app.staticTexts[titles[page]]
+      let frame = title.frame
+      app.swipeUp(velocity: .fast)
+      XCTAssertEqual(title.frame, frame)
+      app.swipeLeft(velocity: .fast)
+      assertPage(page + 1, in: app)
+    }
+  }
+
   func testReplayFromYouCanExitFromEveryPage() {
     let app = launch()
     assertPage(0, in: app)
@@ -151,7 +173,10 @@ import XCTest
         firstPaint.lifetime = .keepAlways
         add(firstPaint)
       }
+      let body = app.staticTexts[bodies[page]]
+      let bodyTop = body.frame.minY
       scroll.swipeUp()
+      XCTAssertLessThan(body.frame.minY, bodyTop)
       XCTAssertTrue(primary.isHittable)
       XCTAssertEqual(primary.frame, frame)
       let title = app.staticTexts.matching(identifier: "onboarding-title").matching(NSPredicate(format: "label == %@", titles[page])).firstMatch

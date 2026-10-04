@@ -39,8 +39,8 @@ nonisolated enum TelemetryPrivacy {
   static let labels: [String: Set<String>] = [
     "page": ["windmill", "roadmap", "journal", "gym"],
     "presentation": ["first_launch", "replay"],
-    "screen": ["welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24a", "24b", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
-    "action": ["open_journal", "show_ink", "dismiss_ink", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
+    "screen": ["welcome", "journal", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24a", "24b", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
+    "action": ["open_journal", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
     "outcome": ["ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous", "linked"],
     "method": ["GET", "POST", "DELETE", "email", "apple"],
     "day_kind": ["today"],

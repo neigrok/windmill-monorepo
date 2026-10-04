@@ -23,25 +23,25 @@ struct JournalScreen: View {
                   JournalBodyText(text: .constant(day.document.body), focused: .constant(false), fontSize: bodySize, editable: false)
                     .frame(height: JournalBodyText.height(for: day.document.body, width: geo.size.width - 48, fontSize: bodySize))
                   HStack { Text("Mood \(day.document.mood.map(String.init) ?? "–")"); Text("Energy \(day.document.energy.map(String.init) ?? "–")") }.font(Design.mono()).foregroundStyle(Design.dim)
-                }.accessibilityElement(children: .combine).accessibilityLabel("\(date(day.day)), read only. \(day.document.body)")
+                }.padding(.horizontal, 24).accessibilityElement(children: .combine).accessibilityLabel("\(date(day.day)), read only. \(day.document.body)")
               }
               today(width: geo.size.width - 48)
-            }.padding(.horizontal, 24)
+                .padding(.horizontal, 24)
+                .padding(.bottom, (focused || model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .contentShape(Rectangle())
+                .onTapGesture { if !model.editorReadOnly && !focused { focused = true } }
+            }
               .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
-              .padding(.bottom, focused || model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92))
-              .frame(minHeight: max(0, geo.size.height - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
+              .frame(minHeight: max(0, geo.size.height + geo.safeAreaInsets.bottom - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
           }.defaultScrollAnchor(model.compactAccountSheet || (typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
-            .onTapGesture { model.liftInk() }
+            .ignoresSafeArea(.container, edges: .bottom)
         }
         if model.roomMenu { roomMenu.padding(.leading, 16).padding(.top, 58) }
-      }.overlayPreferenceValue(AnchorFrames.self) { anchors in
-        GeometryReader { geometry in
-          InkNotes(frames: anchors.mapValues { geometry[$0] }, visible: model.inkVisible && !focused && !model.roomMenu)
-        }
       }
     }.onAppear { model.screenViewed("journal"); focused = model.editing; model.recordInvitations() }.onChange(of: focused) { _, value in
       model.editing = value
-      if value { model.liftInk() } else { model.done() }
+      if !value { model.done() }
     }
     .onChange(of: model.editing) { _, value in if !value { focused = false } }
     .sensoryFeedback(.success, trigger: model.firstKept)
@@ -55,14 +55,14 @@ struct JournalScreen: View {
 
   var header: some View {
     HStack {
-      Button { model.liftInk(); focused = false; model.roomMenu.toggle() } label: {
+      Button { focused = false; model.roomMenu.toggle() } label: {
         HStack(spacing: 8) { Text("Journal").font(Design.strong()); Image(systemName: "chevron.down").font(.system(size: 9)) }
           .foregroundStyle(Design.ink).padding(.horizontal, 17).frame(height: 44).modifier(Glass())
-      }.accessibilityLabel("Journal room menu").accessibilityIdentifier("room-menu").inkAnchor("room")
+      }.accessibilityLabel("Journal room menu").accessibilityIdentifier("room-menu")
       Spacer()
-      Button { model.liftInk(); focused = false; model.roomMenu = false; model.sheet = .you } label: {
+      Button { focused = false; model.roomMenu = false; model.sheet = .you } label: {
         YouGlyph().stroke(Design.ink, lineWidth: 1.5).frame(width: 18, height: 18).frame(width: 44, height: 44).modifier(Glass(capsule: false))
-      }.accessibilityLabel("You and settings").accessibilityIdentifier("you").inkAnchor("you")
+      }.accessibilityLabel("You and settings").accessibilityIdentifier("you")
     }.buttonStyle(.plain).dynamicTypeSize(...DynamicTypeSize.large)
   }
 
@@ -72,20 +72,21 @@ struct JournalScreen: View {
         Text(date(model.editorDay) + (model.words > 0 ? " · \(model.words) \(model.words == 1 ? "WORD" : "WORDS")" : "") + (focused || model.backup.isEmpty ? "" : " · \(model.backup)"))
           .font(Design.mono()).tracking(0.7).foregroundStyle(Design.dim)
         if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
-      }.inkAnchor("date").padding(.bottom, 16)
+      }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").padding(.bottom, 16)
       ZStack(alignment: .topLeading) {
         JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly)
           .frame(height: editorHeight(width: width))
+          .allowsHitTesting(focused || model.editorReadOnly)
         if model.showPlaceholder {
           HStack(alignment: .top, spacing: 3) {
             Rectangle().fill(Design.lamp).frame(width: 1.5, height: bodySize * 1.4)
             Text("Start anywhere. Nothing here is graded.").font(.custom("Inter-Regular", fixedSize: bodySize)).lineSpacing(7).foregroundStyle(Design.faint)
           }.allowsHitTesting(false).accessibilityHidden(true)
         }
-      }.inkAnchor("caret")
+      }
       if model.showPrivacy {
         Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-          .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).inkAnchor("privacy").padding(.top, 14)
+          .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).padding(.top, 14)
       }
       if !focused && !model.roomMenu {
         if model.scalesDue {
@@ -120,23 +121,11 @@ struct JournalScreen: View {
       Button { model.roomMenu = false } label: {
         HStack { Image(systemName: "checkmark").font(.system(size: 12)); Text("Journal"); Spacer(); Image(systemName: "book.closed") }.padding(.horizontal, 18).frame(minHeight: 52)
       }
-      Divider().overlay(Design.line)
-      Button { model.showInk() } label: {
-        HStack { Text("Show ink notes"); Spacer(); Image(systemName: "scribble") }.padding(.horizontal, 42).frame(minHeight: 50)
-      }.accessibilityIdentifier("show-ink-notes")
-      Divider().overlay(Design.line)
-      Button { model.roomMenu = false; model.sheet = .you } label: {
-        HStack {
-          VStack(alignment: .leading, spacing: 5) {
-            Text("You")
-            Text(model.account == nil ? "Not signed in" : model.accountName + " · " + model.backup).font(Design.text(13)).foregroundStyle(Design.faint)
-          }; Spacer(); YouGlyph().stroke(Design.ink, lineWidth: 1.5).frame(width: 18, height: 18)
-        }.padding(.horizontal, 42).frame(minHeight: 70)
-      }
     }.font(Design.text()).foregroundStyle(Design.ink).buttonStyle(.plain).frame(width: 262)
       .background(Color(hex: 0x242426), in: RoundedRectangle(cornerRadius: 28))
       .overlay(RoundedRectangle(cornerRadius: 28).stroke(.white.opacity(0.24), lineWidth: 0.7))
       .shadow(color: .black.opacity(0.4), radius: 15, y: 14)
+      .accessibilityElement(children: .contain).accessibilityIdentifier("journal-room-menu")
   }
 
   func editorHeight(width: CGFloat) -> CGFloat {
@@ -197,7 +186,10 @@ struct JournalBodyText: UIViewRepresentable {
       view.selectedRange = NSRange(location: selectionStart, length: min(selection.length, view.textStorage.length - selectionStart))
       context.coordinator.initialized = true
     }
-    if editable && focused && !view.isFirstResponder { view.becomeFirstResponder() }
+    if editable && focused && !view.isFirstResponder {
+      view.becomeFirstResponder()
+      view.selectedRange = NSRange(location: view.textStorage.length, length: 0)
+    }
     if (!editable || !focused) && view.isFirstResponder { view.resignFirstResponder() }
   }
 

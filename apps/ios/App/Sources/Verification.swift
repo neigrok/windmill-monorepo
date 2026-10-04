@@ -36,23 +36,17 @@ enum BoardFixture {
       await model.beginSignOut(); await model.finishSignOut(.discard)
       model.welcome = false; model.preferences.set(true, forKey: "journalOpened")
     }
-    if board.hasPrefix("05") || board.contains("a1-") || board.contains("a5-") || board.contains("a6-") || board.contains("a2-") {
-      model.inkVisible = !board.hasPrefix("05")
-      model.preferences.set(true, forKey: "inkShown")
-      if board.contains("a2-") {
-        Task { @MainActor [weak model] in
-          try? await Task.sleep(for: .milliseconds(2200))
-          model?.type("Long d")
-        }
-      }
+    if board.hasPrefix("05") { return }
+    if board == "journal-one-line" {
+      model.type("One line."); model.save(); model.done(); model.dismissScales()
       return
     }
-    model.type(board.hasPrefix("21") || board.contains("a4-") ? shortProse : prose)
+    model.type(board.hasPrefix("21") ? shortProse : prose)
     model.save(); model.done()
-    if !board.hasPrefix("07-journal") && !board.hasPrefix("06") && !board.contains("a3-") {
+    if !board.hasPrefix("07-journal") && !board.hasPrefix("06") {
       model.setScale("mood", 7); model.setScale("energy", 4)
     }
-    if board.hasPrefix("21") || board.contains("a4-") {
+    if board.hasPrefix("21") {
       model.keepDismissed = true; model.roomMenu = true; model.document.mood = nil; model.document.energy = nil
     }
     if board.hasPrefix("07b") || board.hasPrefix("21b") {
@@ -92,7 +86,7 @@ enum BoardFixture {
     if board.hasPrefix("15") {
       model.email = "you@example.com"; model.codeSentAt = Date(); model.sheet = .code
     }
-    if board.hasPrefix("06") || board.contains("a3-") { model.editing = true }
+    if board.hasPrefix("06") { model.editing = true }
     #endif
   }
 }

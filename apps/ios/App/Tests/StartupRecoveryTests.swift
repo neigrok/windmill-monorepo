@@ -73,7 +73,6 @@ import Synchronization
     try await completed(model)
     #expect(model.account == identity.account && !model.accountTransition)
     #expect(!model.restoringSignIn && model.pendingSignIn == nil && model.sheet == nil)
-    #expect(!model.inkVisible)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == nil)
     #expect(transport.state.withLock { $0.maximumActive } == 1)
     #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "signed_in"]])
@@ -100,7 +99,6 @@ import Synchronization
     await first.value
     #expect(!model.syncStarted && !model.accountTransition)
     #expect(model.restoringSignIn && model.pendingSignIn != nil && model.sheet == .authPending)
-    #expect(!model.inkVisible)
     #expect(model.recoveryDue == nil && model.recoveryDelayMs == Constants.backoffBaseMs)
     #expect(try runtime.store.read { try $0.deviceMeta()?.meta.pendingSignIn } == identity.account)
     #expect(recorder.entries.withLock { $0.isEmpty })

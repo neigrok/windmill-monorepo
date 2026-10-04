@@ -29,15 +29,6 @@ import Synchronization
     #expect(!model.scalesDue && !model.keepDue)
   }
 
-  @Test func inkShownOncePerInstallAndCanBeReopened() throws {
-    let (_, model) = try fixture()
-    model.openJournal(); #expect(model.inkVisible)
-    model.liftInk(); model.automaticallyShowInk(); #expect(!model.inkVisible)
-    model.showInk(); #expect(model.inkVisible)
-    model.type("a"); #expect(!model.inkVisible && model.document.body == "a")
-    model.saveTask?.cancel()
-  }
-
   @Test func firstInputRetiresPlaceholderEvenWhenDeleted() throws {
     let (_, model) = try fixture()
     model.type("a"); model.type("")
@@ -127,7 +118,6 @@ import Synchronization
     harness.sync()
     let reopened = try JournalModel(runner: harness.runner, preferences: model.preferences)
     #expect(!reopened.showPlaceholder && !reopened.showPrivacy && !reopened.scalesDue)
-    reopened.openJournal(); #expect(!reopened.inkVisible)
   }
 
   @Test func wordCountUsesCurrentWriting() throws {

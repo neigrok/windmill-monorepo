@@ -1,6 +1,71 @@
 import XCTest
 
 @MainActor final class JournalFlowTests: XCTestCase {
+  func testEmptyPageTapBelowTextOpensKeyboardAtEnd() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    XCTAssertEqual(editor.value as? String, "")
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "journal-empty"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: app.frame.maxY - 52))
+    XCTAssertGreaterThan(point.screenPoint.y, editor.frame.maxY + 40)
+    point.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText("A new line.")
+    XCTAssertEqual(editor.value as? String, "A new line.")
+    app.buttons["done-writing"].tap()
+    app.descendants(matching: .any)["journal-date"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText(" More.")
+    XCTAssertEqual(editor.value as? String, "A new line. More.")
+  }
+
+  func testOneLinePageTapBelowTextOpensKeyboardAtEnd() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-one-line"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    XCTAssertEqual(editor.value as? String, "One line.")
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "journal-one-line"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: app.frame.maxY - 52))
+    XCTAssertGreaterThan(point.screenPoint.y, editor.frame.maxY + 40)
+    point.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText(" Appended.")
+    XCTAssertEqual(editor.value as? String, "One line. Appended.")
+    app.buttons["done-writing"].tap()
+    editor.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.1)).tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText(" At the end.")
+    XCTAssertEqual(editor.value as? String, "One line. Appended. At the end.")
+  }
+
+  func testRoomMenuContainsJournalAndTopRightYouStillOpensSettings() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launch()
+    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
+    app.buttons["room-menu"].tap()
+    let menu = app.descendants(matching: .any)["journal-room-menu"]
+    XCTAssertEqual(menu.buttons.allElementsBoundByIndex.map(\.label), ["Journal"])
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "room-menu"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    app.buttons["Journal"].tap()
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
+  }
+
   func testAnonymousKeepEmailBackupAndSignOutReturn() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "02a-where-to-start-signed-out"]
@@ -39,7 +104,7 @@ import XCTest
     let roomSize = app.buttons["room-menu"].frame.size
     let accountSize = app.buttons["you"].frame.size
     app.terminate()
-    app.launchArguments = ["-board", "07j-a6-ink-notes-largest-text-AX3"]
+    app.launchArguments = ["-board", "05-journal-first-open-AX3"]
     app.launch()
     XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
     XCTAssertEqual(app.buttons["room-menu"].frame.size, roomSize)

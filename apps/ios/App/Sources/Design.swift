@@ -19,7 +19,6 @@ enum Design {
   static func strong(_ size: CGFloat = 16) -> Font { .custom("Inter-SemiBold", size: size, relativeTo: .body) }
   static func title(_ size: CGFloat = 28) -> Font { .custom("Nunito-ExtraBold", size: size, relativeTo: .title) }
   static func mono(_ size: CGFloat = 11) -> Font { .custom("JetBrainsMono-Regular", size: size, relativeTo: .caption) }
-  static func hand(_ size: CGFloat = 24) -> Font { .custom("Caveat-Regular", size: size, relativeTo: .body) }
 }
 
 extension Color {
@@ -54,15 +53,6 @@ struct YouGlyph: Shape {
     path.addCurve(to: CGPoint(x: 14.3, y: 15), control1: CGPoint(x: 4.1, y: 10.1), control2: CGPoint(x: 13.9, y: 10.1))
     return path.applying(CGAffineTransform(scaleX: rect.width / 18, y: rect.height / 18))
   }
-}
-
-struct AnchorFrames: PreferenceKey {
-  static var defaultValue: [String: Anchor<CGRect>] { [:] }
-  static func reduce(value: inout [String: Anchor<CGRect>], nextValue: () -> [String: Anchor<CGRect>]) { value.merge(nextValue(), uniquingKeysWith: { $1 }) }
-}
-
-extension View {
-  func inkAnchor(_ name: String) -> some View { anchorPreference(key: AnchorFrames.self, value: .bounds) { [name: $0] } }
 }
 
 struct ScaleRow: View {
