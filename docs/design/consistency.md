@@ -113,6 +113,50 @@ apps store carries across.
   `weighin` `kg` 20–400; engine §7.1 step 4), so 19.996 is saved as 20.00. Rule whether the sheet
   accepts such an entry as 20 or refuses it before rounding, and align the clients.
 
+### Sign-in doors
+
+Canon: `guidelines/account-linking.md` and the Figma section
+[4b · Apple sign-in · one account](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=194-3698).
+Apple sign-in is off in every build, so no surface draws it yet.
+
+- **8a · Apple creates before it asks.** Canon (account-linking §2–3): when Apple finds no account,
+  nothing is created until *Already on Windmill?* is answered. `AuthService::completeProvider`
+  creates the account and binds the door on the first call; `NativeAuth.apple` (`AppRuntime.swift`)
+  reads neither `created` nor `privateEmail`; `JournalModel.signIn` starts the engine sign-in at
+  once. Build: account-linking §8, requirements 1–4.
+- **8b · The fork-guard footnote.** Canon and boards 14, 02b and 16a carry no footnote;
+  `AccountSheet.swift` `authDoors` still draws *Signed up with email before? Use email, so it stays
+  one account.* Remove it in the change that ships 23a, never before: until then it is the only
+  guard.
+- **8c · The link door in AUTH.md.** `backend/AUTH.md` ("The resolution ladder", "The link door")
+  says the app offers `/v1/auth/link` on `created && privateEmail`. No client implements it, and
+  the condition misses an Apple ID that shares a different real address. Canon asks on every
+  create and carries an Apple ticket through the code door instead (account-linking §8). Owner:
+  backend — restate AUTH.md when the ticket lands.
+- **8d · Apple's revoke notification.** `backend/AUTH.md` (Native surface notes) says Apple's
+  `REVOKE` server-to-server notification unbinds a door; nothing in `backend/` receives it or
+  unbinds an identity. Build it or cut the line. Owner: backend.
+- **8e · "Expired" for a typo.** Canon (account-linking §4, `roadmap/guidelines/auth.md` §7)
+  answers a wrong, expired or used code with *That code didn't work* · *Check the digits, or send a
+  fresh one.* `AuthApi.cpp` answers *That code has expired* · *Codes work once and last 15
+  minutes.*, pinned by `AuthApiTest.cpp`; Android `Auth.kt` `expiredCode` keeps its own *expired*
+  sentence; iOS `NativeAuth.exchange` shows *Can't complete sign-in right now* for every refusal,
+  a wrong code included.
+- **8f · How you sign in, everywhere.** Canon (account-linking §5–6): every surface lists the
+  account's doors. iOS You has no such group; web `ProfileSection.jsx` reads *Magic link to {email}*
+  and *Continue with Google — coming soon.* while `SignInDialog.jsx` already offers Continue with
+  Google; Android `YouSheet.kt` lists no doors. `GET /v1/me` returns none (account-linking §8,
+  requirement 7).
+- **8g · Web Google forks the same way.** On the web, a Google address that differs from the
+  account's creates a second account with no question. Decide whether Continue with Google asks
+  *Already on Windmill?* too (account-linking §8, optional 3).
+- **8h · iOS sign-in question copy.** Canon (`guidelines/superapp-flow.md` §6, board 23d): *Add to
+  your account?* · *1 page from before you signed in is only on this phone, and your account
+  already has pages. Add it, or discard it for good.*, and the Discard alert names the count.
+  `AccountSheet.swift` says *Add your pages?* · *This account already has pages. Add {n} pages from
+  this phone, or discard them from this phone.* — *1 pages* in the singular — and *Discard these
+  pages?*.
+
 ## iOS
 
 `apps/ios/App` implements the journal first run on the engine; gym remains unbuilt. First-run canon:

@@ -90,8 +90,9 @@ themselves.**
   instead** is the second door: one `.oneTimeCode` field, the address with **Change**, *It works
   once and lasts 15 minutes.*, and an honest resend countdown. Google does not appear in the iOS
   app.
-- **The footnote guards against a forked account:** *Signed up with email before? Use email, so
-  it stays one account.*
+- **Continue with Apple never forks an account.** When Apple finds no Windmill account, one
+  question — *Already on Windmill?* — comes before anything is created, and **Use my account**
+  adds Apple to the account the person already has (`account-linking.md`).
 - **On success the sheet dismisses back into what the person was doing**, after the sign-in
   question below if one is owed.
 - **Signed in, no Keep offer is ever shown.** A quiet *backed up* takes its place: the journal
@@ -230,6 +231,8 @@ plus an SF Symbols Draw On check. No congratulation copy, no celebration, no cou
    in.
 6. **The sign-in question needs to know, per room, whether the account already holds records of
    its own**, before anything is sent.
+7. **An Apple sign-in that finds no account creates nothing until *Already on Windmill?* is
+   answered** (`account-linking.md` §3, §8).
 
 The backend dependencies of signed-out Coach are in `consistency.md` (6k–6n).
 

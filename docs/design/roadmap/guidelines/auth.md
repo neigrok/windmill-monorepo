@@ -87,7 +87,9 @@ count.
 `/connect`, reached from the account menu's "Account settings" row. The sections this doc
 owns:
 
-1. **Profile** — name (editable), email, how you sign in. Initial avatar, no photo upload.
+1. **Profile** — name (editable), email, how you sign in: every door the account has, read-only,
+   as the iOS You lists them (`../../guidelines/account-linking.md` §5–6). Initial avatar, no
+   photo upload.
 2. **Connected tools** — the connections list. LLM grants and browser sessions are
    **separate lists with separate revokes** — pulling Claude's key never signs your phone
    out.
@@ -131,7 +133,7 @@ owns:
 | Expired / used | "That link has expired" · "Links work once and last 15 minutes." · "Email me a fresh one" |
 | App door — primary | "Email me a code" |
 | App door — wait state | "Check your email" · "We sent a code to {email}. It works once and lasts 15 minutes." · numeric field "6-digit code" (accepts a pasted link) |
-| App door — expired / used | "That code has expired. Codes work once and last 15 minutes — send a fresh one." |
+| App door — wrong / expired / used | "That code didn't work. Check the digits, or send a fresh one." |
 | App door — reassurance | "No password. What you make on this device can join your account when you sign in." |
 | Typo | "That address looks unfinished — check the ending." |
 | Rate-limited | "That's a few links in a row" · "Check your spam folder first — or try again in 10 minutes." |

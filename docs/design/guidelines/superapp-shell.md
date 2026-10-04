@@ -69,11 +69,12 @@ room's appearance stays inside the room.
 
 **You** is a sheet with **Done**, reached from the room menu's last row or the account button.
 
-- **Signed out:** *Not signed in · Everything lives on this phone*, the Apple/email door with its
-  footnote (`superapp-flow.md` §6), **On this phone** with each room's real counts, Settings
+- **Signed out:** *Not signed in · Everything lives on this phone*, the Apple/email door
+  (`superapp-flow.md` §6), **On this phone** with each room's real counts, Settings
   (Appearance and each room's settings), and **Erase data**.
-- **Signed in:** the name and how they signed in, **Your data** (Backup with its state, On the
-  web), Settings, **Sign out** (`superapp-flow.md` §7) and **Delete account**.
+- **Signed in:** the name and how they signed in, **How you sign in** (the account's doors, where
+  Apple is added and removed — `account-linking.md` §5), **Your data** (Backup with its state, On
+  the web), Settings, **Sign out** (`superapp-flow.md` §7) and **Delete account**.
 
 **Windmill One** is one shared plan for actively requested AI assistance; credits do not pay for
 passive Echoes or ordinary product use. Purchasing is closed and allowance quantities remain a
@@ -169,7 +170,7 @@ ROOM MENU   the room name, top-left · native Menu · Journal · Gym · You
 ACCOUNT     trailing account button on a room's root · opens You
 RETIRED     hub · capsule · switcher sheet · house sheet · shell gestures
 YOU         signed out: the door, On this phone, Erase data · no Windmill One
-            signed in: Backup, On the web, Sign out, Delete account · always clay
+            signed in: How you sign in, Backup, On the web, Sign out, Delete account · always clay
 APP OWNS    its bar after the room menu, tabs, gestures · its palette · its settings
             its menu line · its skin reported outward once
 AI REQUESTS account-metered · iOS Coach: 5 questions per phone, once, without an account
