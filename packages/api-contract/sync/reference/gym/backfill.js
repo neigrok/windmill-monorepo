@@ -3,9 +3,10 @@
 // register it writes carries one stamp `M:0:srv`; seqs, rc and ru, spent ids, the note counter, start
 // receipts, the two projections and the scope digest follow. A scope that exists is left as it is.
 
-import { replaceRow } from '../core/digest.js';
+import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { between } from '../core/fracindex.js';
-import { jcs } from '../core/jcs.js';
+import { jcs, sameJson } from '../core/jcs.js';
+import { ownValue, setOwn } from '../core/maps.js';
 import { compareRecords, compactRow, recordKey, stampsOf } from '../core/rows.js';
 import { ServerState } from '../server/state.js';
 
@@ -235,5 +236,124 @@ export function audit({ state, registry, account, legacy, M, seeds }) {
   [...expected, ...spent].sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t) || compareRecords(a, b))
     .forEach((row, index) => check(`${row.t}/${row.id} seq`, state.stored(key, row.t, row.id).seq, index + 1));
   check('scope seq', state.scope(key)?.seq, expected.length + spent.length);
+  return true;
+}
+
+// C.10 upgrades adopted scopes from a separately frozen copy of their metadata columns.
+export function upgradeMetadata({ state, registry, account, source, M }) {
+  const key = `acct:${account}/gym`;
+  const marker = ownValue(state.product.gymMetadataUpgrades, key);
+  if (marker) {
+    if (marker.version !== 5 || marker.M !== M || !sameJson(marker.source, source)) throw new Error('gym metadata manifest mismatch');
+    return state.clone();
+  }
+  const next = state.clone();
+  const scope = next.scope(key);
+  const types = { routines: 'routine', proposals: 'proposal', notes: 'note' };
+  const fields = { routine: ['revision', 'createdEntries'], proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'] };
+  const additions = [];
+  for (const [table, t] of Object.entries(types)) {
+    const columns = source[table] ?? [];
+    const standing = next.rowsOf(key).filter((row) => row.t === t);
+    if (!sameJson(columns.map((row) => row.id).sort(), standing.map((row) => row.id).sort())) throw new Error('gym metadata source roster mismatch');
+    for (const column of columns) {
+      const row = structuredClone(next.row(key, t, column.id));
+      for (const name of fields[t]) {
+        if (row.f?.[name]) throw new Error('gym metadata already present without marker');
+        const value = column[name];
+        if ((value === undefined || value === null) && name !== 'createdEntries') throw new Error('gym metadata source missing value');
+        if (value !== undefined && value !== null) (row.f ??= {})[name] = [value, `${M}:0:srv`];
+      }
+      additions.push(row);
+    }
+  }
+  const ids = new Set();
+  for (const creation of source.routineCreations ?? []) {
+    if (ids.has(creation.id) || next.row(key, 'routineCreation', creation.id) || creation.snapshot === undefined || creation.snapshot === null) throw new Error('gym metadata creation source invalid');
+    ids.add(creation.id);
+    additions.push({ t: 'routineCreation', id: creation.id, f: { snapshot: [structuredClone(creation.snapshot), `${M}:0:srv`] }, rc: M, ru: M });
+  }
+  if (!scope) {
+    if (additions.length) throw new Error('gym metadata scope unadopted');
+    return next;
+  }
+  const order = [...registry.types.keys()];
+  additions.sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t) || compareRecords(a, b));
+  for (const row of additions) {
+    const before = next.row(key, row.t, row.id);
+    row.seq = ++scope.seq;
+    next.putRow(key, row);
+    scope.digest = replaceRow(scope.digest, before, row);
+  }
+  for (const name of ['revisions', 'bases']) {
+    if (!next.product[name]) continue;
+    delete next.product[name][key];
+    if (!Object.keys(next.product[name]).length) delete next.product[name];
+  }
+  next.product.gymMetadataUpgrades ??= {};
+  setOwn(next.product.gymMetadataUpgrades, key, { version: 5, M, source: structuredClone(source),
+    before: { scope: structuredClone(state.scope(key)), rows: structuredClone(state.rowsOf(key)), spent: structuredClone(state.spentOf(key)) } });
+  return next;
+}
+
+// The audit builds expected rows from the retained pre-upgrade feed and columns, not the writer.
+export function auditMetadata({ state, frozen, registry, account, source, M }) {
+  const key = `acct:${account}/gym`;
+  const check = (label, actual, expected) => {
+    if (!sameJson(actual, expected)) throw new Error(`gym metadata audit: ${label}`);
+  };
+  const expected = frozen.clone();
+  const scope = expected.scope(key);
+  for (const [table, t] of [['routines', 'routine'], ['proposals', 'proposal'], ['notes', 'note']]) {
+    const columns = source[table] ?? [];
+    const rows = frozen.rowsOf(key).filter((row) => row.t === t);
+    check('source roster', columns.map((row) => row.id).sort(), rows.map((row) => row.id).sort());
+    const required = t === 'routine' ? ['revision'] : t === 'proposal' ? ['baseRevision', 'baseName', 'changeCount'] : ['updatedAt'];
+    for (const column of columns) for (const name of required) {
+      if (!Object.hasOwn(column, name) || column[name] === null || column[name] === undefined) throw new Error('gym metadata audit: missing source value');
+    }
+    for (const row of rows) for (const name of [...required, ...(t === 'routine' ? ['createdEntries'] : [])]) {
+      if (row.f?.[name]) throw new Error('gym metadata audit: source already upgraded');
+    }
+  }
+  const creations = source.routineCreations ?? [];
+  check('creation source identities', new Set(creations.map((row) => row.id)).size, creations.length);
+  for (const row of creations) {
+    if (row.snapshot === null || row.snapshot === undefined || frozen.row(key, 'routineCreation', row.id)) throw new Error('gym metadata audit: creation source');
+  }
+  const changed = [];
+  for (const old of frozen.rowsOf(key)) {
+    const row = structuredClone(old);
+    const table = { routine: 'routines', proposal: 'proposals', note: 'notes' }[row.t];
+    if (!table) continue;
+    const column = (source[table] ?? []).find((item) => item.id === row.id);
+    if (!column) throw new Error('gym metadata audit: source roster');
+    const names = row.t === 'routine' ? ['revision', 'createdEntries'] : row.t === 'proposal' ? ['baseRevision', 'baseName', 'changeCount'] : ['updatedAt'];
+    for (const name of names) if (column[name] !== null && column[name] !== undefined) (row.f ??= {})[name] = [column[name], `${M}:0:srv`];
+    changed.push(row);
+  }
+  for (const row of source.routineCreations ?? []) changed.push({ t: 'routineCreation', id: row.id,
+    f: { snapshot: [structuredClone(row.snapshot), `${M}:0:srv`] }, rc: M, ru: M });
+  if (!scope) {
+    check('unadopted source', changed, []);
+    check('empty account', state.toJSON(), frozen.toJSON());
+    return true;
+  }
+  const order = [...registry.types.keys()];
+  changed.sort((a, b) => order.indexOf(a.t) - order.indexOf(b.t) || compareRecords(a, b));
+  for (const row of changed) {
+    row.seq = ++scope.seq;
+    expected.putRow(key, row);
+  }
+  scope.digest = expected.rowsOf(key).reduce((sum, row) => replaceRow(sum, undefined, row), ZERO_DIGEST);
+  for (const name of ['revisions', 'bases']) {
+    if (!expected.product[name]) continue;
+    delete expected.product[name][key];
+    if (!Object.keys(expected.product[name]).length) delete expected.product[name];
+  }
+  expected.product.gymMetadataUpgrades ??= {};
+  setOwn(expected.product.gymMetadataUpgrades, key, { version: 5, M, source: structuredClone(source),
+    before: { scope: structuredClone(frozen.scope(key)), rows: structuredClone(frozen.rowsOf(key)), spent: structuredClone(frozen.spentOf(key)) } });
+  check('rows, values, stamps, seq, receipts, counters, digest and manifest', state.toJSON(), expected.toJSON());
   return true;
 }

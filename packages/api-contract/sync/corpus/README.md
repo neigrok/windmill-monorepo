@@ -37,13 +37,14 @@ for the `gym/` files, and `../journal.registry.json` for the `journal/` files.
   and a commit rounds every such number.
 - `constants.json` holds the Appendix B and §9.7 values the vectors were generated with. A runner whose
   constants differ fails on it first.
-- In-place migrations are gym's backfill (`gym/backfill.json`, Appendix C) and journal's adoption
-  (`journal/backfill.json`, Appendix D). Other stores start empty.
+- In-place migrations are gym's adopted base and metadata supplement (`gym/backfill.json`,
+  `gym/metadata.json`, Appendix C), and journal's adoption (`journal/backfill.json`, Appendix D).
+  Other stores start empty.
 
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/`, `hlc/tick.json`, `hlc/observe.json`, `jcs/`, `join/`, `derive/`, `identity/seeded.json`, `digest/`, `protocol/` |
-| server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json`; the C++ server also `gym/backfill.json` and `journal/backfill.json`, since its stores are adopted in place |
+| server | `identity/table.json`, `admit/`, `text/`, `envelope/credentials.json`, `push/serve.json`, `pull/serve.json`, `pull/hello.json`, `live/death.json`, `machine/scope.json`, `gym/admit.json`, `journal/admit.json`, `journal/revisions.json`; the C++ server also `gym/backfill.json`, `gym/metadata.json` and `journal/backfill.json`, since its stores are adopted in place |
 | client | `hlc/offset.json`, `hlc/jump.json`, `fracindex/`, `view/`, `commit/`, `hold/`, `refusal/`, `write/`, `lineage/`, `pull/pages.json`, `machine/intent.json`, `machine/replica.json`, `journal/client.json`, `journal/content-clock.json`, `journal/claim-edit.json` |
 
 ## The probe product
@@ -120,22 +121,28 @@ as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy re
 The `gym/` files run against gym's own registry, `../gym.registry.json`, and gym's product binding
 (engine.md Appendix A.2), which every server runner implements as it implements the probe's. The rules
 below are the ones the reference models; A.2 states the rest (a replica's proposal re-checked by the
-shared diff rule, the client's stale view), and gym's server-origin doors (REST, MCP, the server
+the client's stale view), and gym's server-origin doors (REST, MCP, the server
 Coach) are not modelled: they are the gym backend's (`backend/products/gym/ARCHITECTURE.md`).
 
 **Product state.** Gym's `product` in the server state holds the seed catalog, the command receipts
-and the two projections its rules read:
+only:
 
 ```ts
 product: {
   seeds: {[exerciseId]: {name}},                                  // the global catalog, outside every scope
   starts?: {[scopeKey]: {[calledSessionId]: resolvedSessionId}},   // gym.start: a create maps id → id, a join id → the open one
   imports?: {[scopeKey]: {[sessionId]: args}},                     // gym.importSession: the raw arguments
-  corrections?: {[scopeKey]: {[requestId]: {sessionId, args}}},    // gym.correctSession
-  revisions?: {[scopeKey]: {[routineId]: number}},                 // a routine's revision
-  bases?: {[scopeKey]: {[proposalId]: {revision, name}}}           // a proposal's baseRevision and baseName
+  corrections?: {[scopeKey]: {[requestId]: {sessionId, args}}}     // gym.correctSession
 }
 ```
+
+R118's routine revision/count, frozen proposal base/count and note content time are server-written
+registers on the rows. `routineCreation.snapshot` is an independent immutable register over the
+existing Coach receipt table, with no life or live-routine reference. `gym/backfill.json` models
+C.1–C.9's adopted base; its `product.revisions` and `product.bases` are the legacy column projections
+before the R118 supplement, not an alternative runtime source for the new wire fields. The supplement
+removes that scope from these reference-only caches; production binds the existing typed columns
+rather than deleting them.
 
 A seed exercise id is `foreign` to every account (§4.2): the binding's `elsewhere` reports it held
 outside every scope. A proposal's unset `state` reads as `pending`, the registry's `default`.
@@ -210,11 +217,15 @@ bases are captured:
   `invalid`) and every entry's `exerciseId` a seed or an alive exercise of the scope (else
   `unknown-exercise`). A create takes revision 1; a change of `name` or `entries` adds 1 and writes
   `state := superseded`, `settledAt := serverNow` on every alive pending proposal of the routine (no
-  `supersededBy`). A death kills the routine's proposals and writes `routineId := null` on its sessions.
+  `supersededBy`). A death kills the routine's proposals and writes `routineId := null` on its sessions. R118 emits
+  server `revision`/`createdEntries` fields; an ask create freezes an independent `routineCreation`
+  snapshot which survives that death. Equal or losing writes and position-only edits move no revision.
 - **Exercise.** A death → `invalid`. A create without `stepKg` → `invalid`. A change of `name` writes
   `aliases := [the name it replaced, ...the aliases without that name or the new one]`, at most 5.
 - **ExerciseName.** Keyed by an id that is not a seed → `invalid`. A change of the displayed name (the
   register, else the seed's name) writes `aliases` as for an exercise.
+- **Note.** Create or a net title/body value change writes server `updatedAt := serverNow`. Reorder,
+  equal-value restamp, losing writes and retries preserve it, although `ru` can move.
 - **Weighin.** An alive put of a day later than the UTC date of `serverNow + 86 400 000` → `bad-instant`.
 - **Proposal.** A replica's create needs `door: ask` and `connection` and `agent` unset or `""` (else
   `invalid`), plus guards on both routine `entries` and `name` at their read stamps; moved stamps →
@@ -226,7 +237,11 @@ bases are captured:
   `routineId` is absent, `foreign` or dead → `unknown-record`. It captures the joined routine’s final
   revision and name as its base and writes `state := superseded`, `supersededBy :=` its id and
   `settledAt := serverNow` on stored and earlier created pending proposals of the same routine, door
-  and connection. The last same-key create remains pending.
+  and connection. The last same-key create remains pending. R118 freezes server `baseRevision`, `baseName` and
+  `changeCount`: non-kept rows + one rename + one reorder among matched surviving base occurrences.
+  Settlement preserves those fields; no client re-counts without the frozen base order.
+- **Metadata writers.** Public replica/server-door deltas supplying metadata, and every public
+  `routineCreation` delta (including an empty one), refuse `invalid`; only the binding writes them.
 
 ### `gym/admit.json` (server)
 
@@ -281,6 +296,42 @@ The vectors pin Appendix C's rules, as the reference applies them:
   else `M`. The note counter counts the notes, and the digest sums the rows (§6.12).
 - **Product state:** start receipts from the session receipts, each routine's `revision`, and each
   proposal's base from `baseRevision` and `baseName`.
+
+### `gym/metadata.json` (C++ server, R118)
+
+```ts
+{name, input: {state: ServerStateJson, account, source: MetadataSource, M: number},
+ expect: {state: ServerStateJson} | {error: true}}
+
+type MetadataSource = {
+  routines?: {id, revision, createdEntries?: number | null}[],
+  proposals?: {id, baseRevision, baseName, changeCount}[],
+  notes?: {id, updatedAt}[],
+  routineCreations?: {id, snapshot: Json}[]
+}
+```
+
+Run C.10's supplement of an already adopted account. `source` is the separate, immutable capture
+of CURRENT existing columns, including exact JSON snapshots; it is not derived from candidate wire
+rows or C.7's original adoption manifest. Required source rosters match current routine/proposal/note
+rows exactly. Missing required columns, duplicate snapshots or an unadopted snapshot account fail;
+unknown original counts remain absent. All new registers carry `M:0:srv`; existing row envelopes
+and receipts/counters/spent ids stay unchanged, except fresh row seqs above the frozen high seq.
+New snapshot rows have administrative `rc = ru = M`, never historical creation dates.
+
+Records are numbered in v5 type order, then id; digest and marker commit atomically. The reference
+marker `product.gymMetadataUpgrades[scopeKey]` retains version 5, M, source and the old scope/rows/spent
+roster for independent audit. An exact marker replay changes nothing; changed M/source refuses.
+`auditMetadata` derives expected values from the separately retained frozen inputs, validates source
+completeness and detects altered values, stamps, seqs, receipts and counters even with a recalculated
+digest. `reference/test/gym/backfill-audit.test.js` pins those failure gates.
+
+The old base-adoption vectors and the R118 supplement are distinct runners. The pure reference does
+not perform SQL, process interruption, shared writer freezes, startup or the one global epoch rotation;
+C.10 requires those operational failure tests in the C++/deployment wave. This new corpus file must
+have a named C++ runner rather than a skipped migration gate. Client readers use the stamped metadata
+and immutable snapshot; `gym/admit.json` also pins mixed-intent joined bases, forging refusals, no-op
+and losing writes, content time after reorder and snapshot retention after routine death.
 
 ## The journal product
 

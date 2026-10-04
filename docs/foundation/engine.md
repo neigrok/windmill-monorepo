@@ -5,14 +5,21 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 ## §0 Status and scope
 
-**Status:** Built in the C++ server (`backend/platform/**/sync*`) and the Swift client
-(`apps/ios/Sync`); `packages/api-contract/sync/reference/` is the JS reference. `windmill_server`
-mounts the composed gym + journal HTTP and live routes when `SYNC_ENABLED` is enabled (default
-off); `windmill_server_probe` mounts the probe contract. Gym and journal's server-origin engine
-doors have separate default-off `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES` switches.
-The composed contract has version 4 and minimum version 4. Gym and journal adopt their tables in
-place (Appendices C and D); every other product starts from empty stores. The composition requires
-both bindings and regenerated clients before deployment (§2.4).
+**Status:** The C++ server (`backend/platform/**/sync*`) and Swift client (`apps/ios/Sync`)
+carry the engine; `packages/api-contract/sync/reference/` is its JS reference. Production has gym
+and journal adopted in place and all gym writes admitted through the engine after the 2026-10-04
+cutover (Appendices C and D). iOS journal is the only production engine client; web and Android
+are moving onto it. `windmill_server` mounts the gym + journal HTTP/live composition with
+`SYNC_ENABLED`; `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES` select each product's admitted
+doors. Their configuration defaults are off; production's cutover configuration enables them.
+`windmill_server_probe` carries the test-only contract.
+
+**R118 contract:** The composed registry has version 5 and minimum version 5. A.2 specifies gym's
+metadata closure; C.10 specifies the forward-only upgrade of already adopted production rows.
+The C++ bindings, upgrade/audit and regenerated native clients are implementation work; this contract
+alone does not enable production v5. `composition.json` still composes gym and journal, whose
+versions rise together (§2.4); journal's field shape is unchanged. Every other product starts
+from empty stores.
 
 **Legacy REST writes:** the current route ledgers live in
 [gym ARCHITECTURE §8.1](../../backend/products/gym/ARCHITECTURE.md#81-http-routes) and
@@ -1250,8 +1257,8 @@ full (§7.9).
 exactly as `apply` stored its `after`, so the server hashes the form a page carries. Every row
 change is such a transaction: replica and server-origin admission, every command (`beforePull`
 commands included), and a command's writes into a scope it creates (§6.1 step 14); outside admission,
-only the in-place backfills, which set the digest of each scope they adopt (Appendices C.6 and D.6). Every referential
-consequence (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a
+only the audited in-place migrations, which set the digest of each scope they adopt or upgrade
+(Appendices C.6, C.10 and D.6). Every referential consequence (§2.2) is a change of step 13, and a derived row that `apply` writes (§6.9) is never a
 `feed` row. A governing create starts its scope at digest 0. Scope death changes no row, and a dead
 scope's digest is never sent; G5 sets it to 0. A restore brings it back with its rows. A pull reads
 the stored digest and never sums rows.
@@ -2389,7 +2396,7 @@ vectors assume.
 | Role | Files |
 |---|---|
 | all | `constants.json`, `stamp/{order,codec}`, `hlc/{tick,observe}`, `jcs/values`, `join/{lww,ranked,fww,life,born,record}`, `derive/slug`, `identity/seeded`, `digest/{row,scope}`, `protocol/*.jsonl` (hello, push, pull, live, join, skew and whole transcripts) |
-| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`, `journal/admit`, `journal/revisions`; the C++ server also `gym/backfill` and `journal/backfill`, the stores Appendices C and D adopt |
+| server | `identity/table` (every §4.3 cell), `admit/*`, `text/{tokens,script,diff3,merge}`, `envelope/credentials`, `push/serve`, `pull/{serve,hello}`, `live/death`, `machine/scope`, `gym/admit`, `journal/admit`, `journal/revisions`; the C++ server also `gym/backfill`, `gym/metadata` and `journal/backfill`, the stores Appendices C and D adopt |
 | client | `hlc/{offset,jump}`, `fracindex/{between,drop}`, `view/{drawn,stored}`, `commit/*`, `hold/{release,undo}`, `refusal/{fold,restamp,base-unknown,transport}`, `write/map`, `lineage/{signin,signout,start}`, `pull/pages`, `machine/{intent,replica}`, `journal/client`, `journal/content-clock` |
 
 Runners assert exact equality, comparing values by `jcs`.
@@ -2522,8 +2529,9 @@ as ≤200 chars is a bound in that unit, the field's, or its domain's when neste
 **Scope:** `self/gym`. **Device scope** `device/gym`, with rows keyed per session:
 `movementOrder:<session>` (the live movement order, exercise ids), `movement:<session>` (the chosen
 movement), `offer:<session>` (a pre-minted offer id) and `rack:<session>` (rack state).
-**Surfaces:** web, iOS, Android. iOS syncs through the engine; web and Android write through gym's
-REST API, a server-origin door (below). **Adoption:** in place, from gym's tables (Appendix C).
+**Surfaces:** web, iOS, Android. Gym has no production engine client yet; web and Android are
+moving onto it. Its REST, MCP and Coach writes are server-origin engine doors (below).
+**Adoption:** production tables are adopted in place (Appendix C).
 
 Every minted type mints 16 base-62 characters and is seeded (D-8): a seed of at most 58 characters,
 and `n ≤ 99 999`. Minted ids match `^[A-Za-z0-9_-]{8,64}$`, except `exercise` ids, which match
@@ -2534,15 +2542,67 @@ catalog outside every scope (§0): each seed id is `foreign` to every account, a
 
 | Type | Identity | Life | Fields | Rules |
 |---|---|---|---|---|
-| `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` ±500 quantum 0.01})}); const server: `createdDoor` ∈ {mcp, ask} | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. Projections: `revision` (1 at create, +1 when `name` or `entries` change); `created_entries`, its entry count at create; and, for a create with `createdDoor = ask`, the routine as created, kept after its death. |
+| `routine` | minted g | terminal, spent | lww: `name` 1–240 bytes, `position` an integer 0–2 147 483 647 (default 0), `entries` (`maxItems` 50 of {`exerciseId` (the only required key), `restSeconds` 15–900, `sets` (`maxItems` 20 of {`reps` 1–100, `weightKg` ±500 quantum 0.01})}); lww server: `revision` 1–2 147 483 647; const server: `createdDoor` ∈ {mcp, ask}, `createdEntries` 0–2 147 483 647 | `entries` holds one entry or more, and an entry's `sets`, when present, one set or more (`invalid`): an absent `sets` is the open line, a set's absent `reps` is max and its absent `weightKg` last time's, and an absent `restSeconds` the lifter's rest target. Editor save guards the fields it writes. Changing `name` or `entries` supersedes its pending proposals, every door's, with no `supersededBy`. Delete kills its proposals and writes `routineId = null` on its sessions. `createdDoor` is the agent door that created it, unset for the lifter's hand. R118: server-authored revision and original entry count; an ask create also writes the independent `routineCreation` snapshot below. |
+| `routineCreation` | keyed string, same id pattern as routine; no ref | none | const server: `snapshot` JSON | R118: exact immutable Coach creation receipt, in `gym_routine_creations`; survives routine/conversation deletion, purged only with its account. Not a primary type. No public writer. |
 | `exercise` | minted g | terminal, spent | lww: `name` 1–240 bytes; const: `pattern` ∈ {squat, hinge, press, pull, carry, core, isolation}, `equipment` ∈ {barbell, dumbbell, machine, cable, bodyweight, kettlebell}, `stepKg` 0.01–99.99 quantum 0.01; lww server: `aliases` (`maxItems` 5 of 1–240 bytes) | Never deleted (a delete is `invalid`). A create carries `stepKg` (`invalid` otherwise). A change of `name` writes `aliases :=` the name it replaced, then the aliases less that name and the new one, the first 5: newest first, so the name it holds is never an alias. |
 | `exerciseName` | keyed (`ref<exercise>`, a seed) | none | lww: `name` 1–240 bytes; lww server: `aliases` as an exercise's | A seed's name for the account: `name` unset reads as the seed's own name, and a seed renamed back to it holds it. Keyed by an id that is not a seed → `invalid`. A change of the displayed name writes `aliases` as an exercise's rename does. |
 | `session` | minted g | terminal, spent | lww server: `routineId` `ref<routine>` or null, `startedAt` an epoch ms, `finishedAt` an epoch ms, `closedBy` ∈ {finish, stale}, `displayName` ≤240 bytes or null; const server: `historyRoutineId` (the routine it started from, kept after that routine's death), `plan` JSON or null | Created only by commands. At most one session with `finishedAt` unset per account. `closedBy` is unset while `finishedAt` is, and on a session finished before gym recorded who closed it (Appendix C), which every rule reads as `finish`. A delete of a session whose `finishedAt` is unset is refused `session-open`, unless its last activity is 4 h or more before `serverNow`. Delete kills its sets. |
 | `set` | minted g | terminal, spent | `sessionId` const `ref<session>` parent; `exerciseId` const `ref<exercise>`; `setNumber` serial 1–2 147 483 647, next `[sessionId, exerciseId]`; lww: `weightKg` ±500 quantum 0.01, `reps` 1–500, `kind` ∈ {warmup, working, drop, failure}, `rpe` 1–10 or null quantum 0.1, `note` ≤4000 bytes, never null, `completedAt` an epoch ms | Set rules below. |
-| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25) | Cap 10. Editor save guards the fields it writes. Projections: `position`, the dense rank from 0 of `(ord, id)` among alive notes; `updated_at`, the server time of its create or of the last change of `title` or `body`. |
+| `note` | minted g | terminal, spent | lww: `title` 1–60 chars, `body` ≤500 bytes, `ord` (D-25); lww server: `updatedAt` epoch ms ≥0 | Cap 10. Editor save guards the fields it writes. Client-derived `position` is the dense rank from 0 of `(ord, id)` among alive notes. R118 `updatedAt` is its content admission time; reorder leaves it alone. |
 | `weighin` | keyed (local date `YYYY-MM-DD`) | yes, spent; `wholePut` | lww: `kg` 20–400 quantum 0.01, `recordedAt` an epoch ms | `check` refuses an alive put of a day later than the day after `serverNow`'s UTC date with `bad-instant`. A weigh-in is one fact (§2.4): each put writes `kg`, `recordedAt` and presence at one stamp, so the newest stamp wins whole, and a newer put than a delete, held or not, keeps the weigh-in. A replica writes `recordedAt` from the read-and-commit function's `now`; a server-origin door writes the `recordedAt` its request carries, and admits nothing over a stored weigh-in with a later one (below). Between a door's put and a replica's, stamp order decides, and a door's put is stamped at its admission: a reading a door admits stands over a replica's later reading still in its outbox. |
 | `prefs` | singleton | — | lww, with registry `default`s (§2.4): `units` ∈ {kg, lb} (kg), `restSeconds` 15–900 or null (null), `restSound` (true), `confirmHaptic` (true), `confirmSound` (false) | Phones edit `units`, `confirmHaptic`, `confirmSound`. |
-| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100 of {`kind` ∈ {kept, added, removed, retargeted}, `exerciseId`, `before`, `after`}, each side {`sets`, `restSeconds`} as a routine entry's); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; lww server: `threadId` (a Coach conversation's id) or null, `state` ranked (pending 0; applied, dismissed, superseded 1; unset reads `pending`), `supersededBy` (the proposal that replaced it), `settledAt` an epoch ms | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. `changes` lists the lines the routine takes on, in order, then the lines it drops; `before` is on kept, removed and retargeted lines, `after` on kept, added and retargeted ones. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset (`invalid`), and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. For a replica create, `check` requires both guards to match the joined routine registers (`invalid` otherwise). For every create, it matches each proposed line to the first unmatched base line of the same exercise; equal sides are `kept`, unequal sides `retargeted`, unmatched proposed lines `added`, then unmatched base lines `removed` in base order. The supplied changes must equal this diff. A revision leaves 1–50 entries, a nonempty name and no empty set scheme; a removal leaves no proposed entries. A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create supersedes the pending proposal of the same `(routine, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`, written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. Projections: `baseRevision` and `baseName`, the joined routine's final `revision` and `name` at admission, which a replica never supplies; and the change count `Apply all N` shows. |
+| `proposal` | minted g | terminal, spent | const: `routineId` `ref<routine>`, not a parent; `intent` ∈ {revise, remove}; `proposedName` ≤240 bytes; `summary` ≤400 bytes; `changes` (`maxItems` 100 of {`kind` ∈ {kept, added, removed, retargeted}, `exerciseId`, `before`, `after`}, each side {`sets`, `restSeconds`} as a routine entry's); `door` ∈ {ask, mcp}; `connection` ≤128 bytes; `agent` ≤64 chars; const server: `baseRevision` 1–2 147 483 647, `baseName` ≤240 bytes, `changeCount` 0–2 147 483 647; lww server: `threadId` (a Coach conversation's id) or null, `state` ranked (pending 0; applied, dismissed, superseded 1; unset reads `pending`), `supersededBy` (the proposal that replaced it), `settledAt` an epoch ms | Rules: [gym Coach](mobile/gym_coach.md) §9.2, §11. `changes` lists the lines the routine takes on, in order, then the lines it drops; `before` is on kept, removed and retargeted lines, `after` on kept, added and retargeted ones. A replica's create requires `door = ask`, and `connection` and `agent` empty or unset (`invalid`), and carries a guard (D-19) on every routine register its content is based on, `entries` and `name`, at the stamps it read; a moved stamp → `stale`. For a replica create, `check` requires both guards to match the joined routine registers (`invalid` otherwise). For every create, it matches each proposed line to the first unmatched base line of the same exercise; equal sides are `kept`, unequal sides `retargeted`, unmatched proposed lines `added`, then unmatched base lines `removed` in base order. The supplied changes must equal this diff. A revision leaves 1–50 entries, a nonempty name and no empty set scheme; a removal leaves no proposed entries. A create whose `routineId` is absent, `foreign` or dead → `unknown-record`. A create supersedes the pending proposal of the same `(routine, door, connection)`: `state = superseded`, `supersededBy :=` the create's id, `settledAt := serverNow`, written before the new proposal is inserted; at most one is pending per `(routine, door, connection)`. R118 freezes `baseRevision`, `baseName` and `changeCount` at creation from the joined routine; later settlement never rewrites them. |
+
+**R118 — metadata and REST parity.** Today's behaviour and design canon bind gym's registry.
+The adopted columns already hold the facts below; the wire carries them as ordinary stamped
+fields in `f`, using existing `lww` and `const` joins (§3.2). There is no new projection wire or
+field kind. All seven additions are **(b) registry fields**, server-authored and read-only to
+clients. A public replica delta writing one is `invalid`; a server-origin door MUST NOT supply
+one either. The binding computes them in `check`, in the admitting transaction, before hashing
+the final rows. An independent `routineCreation` has no life or reference to a live routine;
+the binding refuses every public delta of that type, including an empty delta. Its absent
+`primary` declaration means it does not change `holdsRecords`.
+
+| Fact | Wire field / merge | Authority and writes |
+|---|---|---|
+| Routine concurrency revision | `routine.revision`, integer 1–2 147 483 647, server `lww` | Create sets 1. One admitted net change of `name` and/or `entries` adds 1 exactly once, including `gym.applyProposal` revise. Position-only writes, equal-value restamps, losing writes, refused intents and receipt replays add nothing. At the integer ceiling a document change is `invalid`; never wrap. Project every joined routine's final revision before freezing any same-intent proposal. |
+| Original line count | `routine.createdEntries`, integer 0–2 147 483 647, server `const` | Every successful routine create, through any door, sets the joined creation `entries.length`. Edits, apply, reorder and retries leave it alone. Historical SQL NULL leaves the register absent, with no default; REST omits `history.created.movements` in that case. |
+| Original Coach routine | `routineCreation.snapshot`, JSON, server `const` | An ask routine create writes this independent keyed record in the same intent and seq. Use the exact creation response document: id, name, position (default 0), revision 1 and entries numbered from 1. No command sets it; `gym.applyProposal` edits/deletes an existing routine. Manual/MCP creates have no snapshot. Edits and routine/conversation death preserve it; account purge removes it. It is the engine view of the existing `gym_routine_creations.routine`, not a duplicate receipt table. |
+| Frozen base revision | `proposal.baseRevision`, integer 1–2 147 483 647, server `const` | Every proposal create freezes the joined routine's final revision after all same-intent routine changes. `gym.applyProposal`, `gym.dismissProposal`, supersession and receipt replay leave it alone. |
+| Frozen base name | `proposal.baseName`, string ≤240 UTF-8 bytes, server `const` | The same create freezes the joined routine's name. Empty historical values remain readable; no default or substitution of today's name. Settlement never writes it. |
+| Apply count | `proposal.changeCount`, integer 0–2 147 483 647, server `const` | The same create freezes the store's count against that joined base. Count every non-`kept` diff row, add one when `baseName ≠ proposedName`, and add one for a reorder: visit kept/retargeted rows in proposed order, matching each to the first unmatched base entry of the same exercise; any matched base index below the greatest visited index means one reorder. Added/removed rows do not participate in that order check. Settlement and replay preserve the count. |
+| Note content time | `note.updatedAt`, integer epoch ms ≥0, server `lww` | A note create or an admitted net title/body value change writes `serverNow`, including Coach's appended note. Ord-only reorder, equal content, losing writes and retries preserve it. No gym command sets it. Its stamp is the ordinary §10.3 server stamp, not the time value; `ru` still describes every envelope change. |
+
+**(a) Exact client derivations.** Note position is the zero-based index after sorting alive notes
+by `(ord, id)` in byte order; no position field is added. Routine creation chronology and
+proposal `createdAt` use their confirmed `rc`, which adoption retains from `created_at`.
+The movement count on an immutable Coach creation receipt is `snapshot.entries.length`; this
+does not supply an unknown routine-history count. The six scalar facts above cannot be derived
+from today's wire: a pull seq or register stamp is not a routine revision or a frozen base;
+current entries/name are not their original values; the diff omits the frozen base ordering
+needed for a reorder count; and reorder changes `ru` while preserving note content time.
+No missing fact uses **(c) a separate server-derived read projection**: server computation is
+carried by these existing field primitives, so pulls, command results, live reads and caches
+share the same authoritative values and digest.
+
+Clients render these fields from confirmed records, retain them through storage/restart and
+display missing historical values as absent. They MUST NOT invent metadata in predictions,
+restamp server fields or use a creation snapshot's administrative `rc` as a historical creation
+date. Public write maps do not claim the binding's metadata fields. The scalar names already
+match `web-b2`'s `web/src/products/gym/syncProjections.js`; creation receipts read the independent
+record by the routine id, including when that routine is spent.
+
+**Evidence:** [gym architecture §§3.7–3.9 and §8.4](../../backend/products/gym/ARCHITECTURE.md),
+[stored columns](../../backend/db/schema.sql) (`gym_routines`, `gym_proposals`, `gym_notes`,
+`gym_routine_creations`), [adopted envelope](../../backend/db/gym_sync.sql),
+[TypeStore reads/writes](../../backend/products/gym/sync/adapters/postgres/PgGym.cpp),
+[count and revision rules](../../backend/products/gym/sync/domain/GymRules.cpp),
+[nullable history count and creation replay](../../backend/products/gym/adapters/postgres/PgProgramRepository.cpp),
+and [Coach canon](../design/gym/briefs/09-coach.md) (creation receipts, Apply's store count and
+history from stored evidence), [Notes canon](../design/gym/briefs/10-notes.md). The named `web-b2`
+branch's gym README, projections and `web/test/products/gym/restParity.test.js` record the eight
+blocked strict comparisons. C.10 uses the current adopted columns, not the original cutover
+manifest's older values.
 
 **Coach conversations** (gym Coach §9.1) are not engine records yet: they stay in the gym backend's
 Coach tables, and the phone Coach adds `thread` and `message` to gym's registry, with their binding
@@ -2665,9 +2725,8 @@ stale. Logging after a stale close issues a new `gym.start`.
 - **Held:** delete set, delete routine, discard session, delete note, delete weigh-in.
 - **A reorder** writes the moved note's `ord`, or a routine's `position`.
 
-**Projections:** note `position` and `updated_at`; routine `revision`, `created_entries` and creation
-snapshot; proposal `baseRevision`, `baseName` and change count; set revisions (what a correction or a
-delete replaced). A session's death also deletes its workout share, which is outside the engine (§0).
+**Projections outside synced fields:** note `position` is client-derived (R118 above); set revisions
+(what a correction or a delete replaced). A session's death also deletes its workout share, which is outside the engine (§0).
 
 **Server-origin doors.** REST (web, Android), MCP and the server Coach admit as server origins
 (§6.3, D-23). Each keeps its wire as it is: gym ARCHITECTURE §8.4 states how each builds its
@@ -2888,9 +2947,10 @@ the engine's codes. No REST page endpoint adds an engine `code` member.
 
 ## Appendix C: Gym migration
 
-Gym adopts its tables in place: its records are the rows gym holds when the engine takes over its
-writes, and every account keeps its history. Journal's adoption is Appendix D; every other product
-starts from empty stores.
+Gym's production rows are adopted in place, and every gym write goes through admission after the
+2026-10-04 cutover. C.1–C.9 define the adopted base and its audit; C.10 upgrades its metadata to
+R118 without replaying adoption. Journal's adoption is Appendix D; every other product starts
+from empty stores.
 
 **C.1 Adoption.**
 - Each account holding a gym row, or an id C.3 spends, has one scope, `acct:<A>/gym`, alive. The
@@ -2911,8 +2971,8 @@ starts from empty stores.
 
 - Every other gym table stays outside the engine and keeps its writers: the receipts
   (`gym_write_receipts`, `gym_correction_receipts`, `gym_note_saves`), the projections
-  (`gym_set_revisions`, `gym_routine_creations`), the shares (`gym_session_shares`,
-  `gym_log_shares`, `gym_log_share_sessions`) and every Coach table (`gym_ask_*`).
+  (`gym_set_revisions`, and `gym_routine_creations` until C.10 binds its read-only records), the
+  shares (`gym_session_shares`, `gym_log_shares`, `gym_log_share_sessions`) and every Coach table (`gym_ask_*`).
 - Each adopted table gains the envelope of §2.2 by idempotent statements: `seq`, `rc`, `ru`, a stamp
   column per lattice field, and `born` and `life_stamp` where its type has life. Its scope is its
   `user_id`'s (`created_by`'s for `gym_exercises`), indexed by that column and `seq`. A register a type keeps in tables of its own (a routine's
@@ -2927,11 +2987,12 @@ starts from empty stores.
   `historyRoutineId` (A.2).
 
 **C.2 Stamps and registers.**
-- The backfill reads the server clock once, as it starts: `M`, recorded with the run. Every born, life
-  and field register it writes carries the stamp `M:0:srv`.
+- The base adoption reads the server clock once, as it starts: `M`, recorded with the run. Every
+  born, life and field register it writes carries the stamp `M:0:srv`.
 - A record's registers are its non-null columns, as the fields A.2 names them (`date_local` is a
   weigh-in's id, `set_number` a set's serial value), instants as epoch ms and `numeric` values as
-  numbers. Beyond the columns of the same name:
+  numbers. R118 metadata is added separately by C.10, not by this base adoption. Beyond the columns
+  of the same name:
   - a routine's `entries`: its lines in `position` order, each `{exerciseId, restSeconds?, sets?}`,
     with `sets` from its set rows in `set_index` order when it has any, each `{reps?, weightKg?}`;
   - a proposal's `changes`: its rows in `position` order, each `{kind, exerciseId, before?,
@@ -2960,7 +3021,7 @@ standing row of its type holds:
   created the session, `gym.importSession`'s. The rows of `gym_correction_receipts` are
   `gym.correctSession`'s. A receipt holds a request hash, and a replay compares its call by that
   hash, the digest of the raw arguments gym computes (§6.4).
-- The projections keep their columns: a routine's `revision`, `created_entries` and `created_at`,
+- Stored metadata keeps its columns (C.10 adds the R118 registers): a routine's `revision`, `created_entries` and `created_at`,
   `gym_routine_creations`, a proposal's `base_revision`, `base_name`, `changes` and `created_at`, a
   note's `position` and `updated_at`, and `gym_set_revisions`.
 
@@ -2974,9 +3035,9 @@ standing row of its type holds:
   gains an epoch when it holds none.
 
 **C.7 The run.**
-- Gym and journal share one owner-chosen write-freeze window (D.7). Gym's writes are frozen first:
+- The base adoption uses one owner-chosen gym + journal write-freeze window (D.7). Gym's writes are frozen first:
   every gym write — REST, MCP and the Coach's ability calls — answers
-  `503`, which Android's queue keeps; no engine replica exists yet; and no read settles staleness,
+  `503`, which Android's queue keeps; no gym replica predates base adoption; and no read settles staleness,
   since today's lazy close (gym ARCHITECTURE §4.2) is a write of a synced row: reads answer the rows
   as they stand until the freeze ends.
 - Record the run's M and retain an immutable per-account manifest of the frozen source rows,
@@ -2984,7 +3045,7 @@ standing row of its type holds:
   independently of the adopted rows and of the backfill's generated output.
 - Each account's C.2 to C.6 is one transaction, which marks the scope adopted. An adopted scope is
   skipped, so a run resumes where it stopped, and a second run changes nothing.
-- The run writes rows without admission: it is the one row change outside admission (§6.12). After
+- The adoption writes rows without admission (§6.12); the audited metadata supplement is C.10. After
   both products' adoption gates pass and their admitted writers are installed, gym's writes go
   through admission (A.2's doors), and the shared freeze ends.
 
@@ -3011,7 +3072,7 @@ admitted) proves it survives the first admission.
 
 **C.9 Invariants of an adopted scope.** §5's proofs start from empty stores. For an adopted scope the
 base case is the state C.7 leaves, and the inductive steps are unchanged: from then on every row
-change is an admission (C.1, C.7).
+change is an admission (C.1, C.7), except C.10's independently audited metadata supplement.
 - **INV-14.** Base: every stamp the run stores is `M:0:srv`, `M` being the server clock's reading
   as the run starts; gate 3 audits that equality independently against the frozen source. That clock
   never steps back within the run's process (§10.2), so each stamp is
@@ -3036,6 +3097,126 @@ change is an admission (C.1, C.7).
   `position` is 0–9 and unique per account.
 - **INV-11.** Today's partial unique indexes held A.2's invariants before the run (one open session
   per account; one pending proposal per routine, door and connection), and the run changes neither.
+
+**C.10 R118: metadata upgrade of production engine rows.** This is a supplement of the completed
+adoption, not a restore, re-adoption or replay of product writes. The original
+`gym_sync_adoptions` source and M remain immutable. After any upgrade account commits, recovery
+is forward-only: keep writers stopped, repair the candidate/tool and resume from the retained
+upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/receipt state.
+
+1. **Preparation and freeze.** Rehearse the candidate v5 image and the exact upgrade/audit tool
+   on a marked disposable production restore; retain the restored input and results. Ship the
+   composed v5 schemas to every engine client before enabling v5 service; the only current one is
+   iOS journal, whose content shape is unchanged but whose schema carrier changes. Serialize with
+   deploy/cutover jobs, verify an on-host backup, and stop every compose database writer under the
+   shared gym/journal freeze, including sync pushes, lazy closes and workers. Installed REST
+   clients keep their queued writes on 503. Do not let a v4 image resume writes once supplement
+   rows exist. Ordinary deployment and server startup MUST check both the adopted base and the
+   v5 metadata completion/audit gates. Reads captured for comparison run with no lazy settlement.
+2. **Frozen inputs.** Read the server clock once as `M118` and persist it with a run id, candidate
+   image/schema version, target epoch and immutable manifest. Capture the current adopted feed
+   rows, envelopes, scope high seq/digest/counters, spent ids, receipts, projections and the source
+   columns below for every gym-owning account, including scopes born by admission since cutover,
+   a spent-only account and an account
+   holding only a retained snapshot. The audit reads this retained source independently of the
+   candidate and its output. This is current post-cutover state, not C.7's original manifest.
+
+   | New register | Existing source, copied verbatim |
+   |---|---|
+   | `routine.revision` | `gym_routines.revision` |
+   | `routine.createdEntries` | `gym_routines.created_entries`; SQL NULL stays absent |
+   | `proposal.baseRevision`, `baseName`, `changeCount` | `gym_proposals.base_revision`, `base_name`, integer `changes`; never recompute from the current routine or diff rows |
+   | `note.updatedAt` | `gym_notes.updated_at` through the existing REST epoch-ms conversion |
+   | `routineCreation.snapshot` | exact decoded `gym_routine_creations.routine` JSON, owned by `user_id`, keyed by `routine_id`, including deleted routines |
+
+   Missing original counts or snapshots stay missing. Do not infer a creation count from live
+   entries, infer a frozen base from the current routine, normalize historical JSON or substitute
+   migration time for a note's content time. Historical out-of-domain values remain as C.2
+   requires. A source roster mismatch, missing required value, unadopted scope or unexpected
+   pre-existing metadata without a matching committed marker is a failed gate, not a repair by
+   invention. Existing snapshots account for spent routine ids through C.3; an unadopted snapshot
+   account fails the completeness audit.
+3. **Schema and per-account transaction.** Idempotent DDL adds `revision_stamp` and
+   `created_entries_stamp` to routines, `base_revision_stamp`, `base_name_stamp`,
+   `change_count_stamp` to proposals, and `updated_at_stamp` to notes. `changeCount` maps to the
+   existing integer `changes` column; the `changes` lattice still maps to `gym_proposal_changes`
+   with its own existing `changes_stamp`. Bind `routineCreation` directly to
+   `gym_routine_creations`, adding `seq`, `rc`, `ru`, `snapshot_stamp` and index `(user_id, seq)`;
+   its typed value stays in `routine`, with no born/life or routine foreign key. Add an immutable
+   `(user_id, version=5)` upgrade marker retaining `M118`, frozen inputs and the committed account
+   result. This marker is distinct from the base adoption marker. DDL must neither rewrite product
+   values nor fire triggers which do so.
+
+   Under the stopped-writer scope lock, set only the new present registers to `M118:0:srv`;
+   absent original counts have no stamp. Preserve every old register, born/life, `rc`, `ru`,
+   spent row, result/command receipt, set revision, note position/ord and counter exactly. The
+   snapshot table has no original creation timestamp: its new `rc = ru = M118` is administrative
+   and MUST NOT be rendered as a historical date. For each routine, snapshot, note and proposal,
+   assign one fresh seq above the frozen scope high seq in v5 registry type order, then id byte
+   order. Never renumber the adopted prefix. Recompute the scope digest from the exact complete
+   v5 feed and advance its high seq in the same transaction; mark the account complete there.
+   A matching committed marker is a no-op, including after live writes resume; a changed run M,
+   source or version refuses a rerun. Missing markers resume against the same manifest and M.
+4. **Independent acceptance.** On rehearsal and production, reconcile every account against
+   its frozen roster and columns, including NULL counts, historical empty names, settled or
+   superseded proposals, duplicate exercises, edited/reordered notes, deleted routines with
+   snapshots and spent-only accounts. Check exact values and new stamps, unchanged old envelopes
+   and all untouched tables/receipts, the deterministic fresh seqs/high seq, counters and feed
+   digest. A recomputed valid digest or no-op rerun is insufficient. Deliberately corrupt each
+   new value/stamp, a retained old stamp/time, a snapshot, seq and receipt, recompute the digest,
+   and require audit failure. A matching second run changes no row in any table. Crash before
+   and after each account commit and the epoch/startup boundary; rerun must leave either the
+   original account or its complete supplement, without double increments or mixed markers.
+   Test stalled tool output, timeout and process exit in the deployment runner; failure keeps
+   writers stopped and preserves diagnostics/manifests without logging content.
+5. **Release gate.** Frozen before/after captures of every REST/MCP/share read keep their bytes.
+   V5 TypeStore lock/apply/feed round trips hash identically on the first subsequent write;
+   remove the old ad hoc revision/base/count/time writers so registration cannot double-increment
+   a revision or duplicate SQL columns. V5 engine projections equal those REST reads, including
+   all 36 web parity comparisons, offline reload, no-op/retry, supersession and reorder. After all
+   account audits pass, rotate `sync_meta.epoch` exactly once to the retained target epoch before
+   starting the v5 service: every existing cursor must boot the new digest/shape (§6.7). Keep
+   pending intents and results; do not clear a client's outbox. The journal scope's content and
+   envelope are unchanged. Rehearse ready/sent/acked `journal.savePage` work and a pending claim
+   through epoch change and relaunch: original content stamps, claim ids, local-only device work
+   and retained edits survive; replay never appends claim text twice. Minimum version 5 refuses
+   v4 clients with 426. Only a successful audited v5 startup releases the freeze; interrupted startup resumes forward with the same target epoch.
+
+The JS reference's `gym/metadata.json` pins the per-account supplement and its matching rerun;
+independent audit tests corrupt outputs with recomputed digests and reject malformed sources.
+It does not execute PostgreSQL DDL, the shared freeze, process crashes or epoch publication; those
+are mandatory C++/deployment implementation gates. The new corpus file needs a named C++ runner
+in the tested image, not a skipped migration gate.
+
+**Implementation handoff and risks (outside the spec/contract territory).**
+- **C++ server and backfill:** bind the six scalar fields and the tenth TypeStore, map existing
+  columns explicitly, replace projection side writes with checked server deltas, add C.10 DDL,
+  immutable source/markers, audit and restartable CLI/runner gates. Wire binaries/schema into
+  CMake, Docker and workflows. Update registry/composition/corpus tests and surface documentation.
+  Risks: double revision increments, integer overflow, timestamp conversion, stamp/feed divergence,
+  stale frozen sources and snapshot loss on death; privacy-safe static-operation failure reporting
+  and structured counts/outcomes are required.
+- **Swift:** regenerate both composed schemas with `SyncSchemaGen`, update version pins and gym
+  domain projections/creation receipts, replay corpus, retain server fields through restart and
+  preserve pending journal writes across the epoch boot. Risk: the deployed journal client receives
+  426 if its coordinated v5 release is absent.
+- **Kotlin:** consume the composed v5 schema and authoritative fields, add gym projections and
+  independent creation receipt reads, pass client corpus/restart/refusal gates. Risks: presenting
+  optimistic metadata as admitted fact and clearing existing local writes during migration.
+- **JS/web:** update the engine composition/schema carrier, consume the six existing projection
+  names and `routineCreation` snapshots, enforce the strict 36/36 parity gate and cached/offline
+  projections. Risks: counting current entries for an unknown original count, recounting changes
+  without the frozen order, and using `ru` for note content time.
+
+Whole-repository consumers outside this pass's territory: `backend/products/gym/sync/` and its
+domain/Postgres tests; `backend/test/platform/domain/sync/{RegistryTest,CorpusTest}.cpp` (v4 pins,
+type list and corpus inventory); `apps/ios/Sync/Sources/SyncSchema/` and its schema generator/tests;
+`apps/ios/Sync/Sources/{SyncTesting,SyncModelServer}/` and conformance tests (corpus roles and gym
+server double); `apps/ios/Domain/` gym fixtures/projections; Android gym and the JS/web engine
+branches; `packages/api-contract/gym/domain/` consumers of the gym registry; and backend/iOS
+READMEs, `backend/CLAUDE.md`, `backend/products/gym/ARCHITECTURE.md`,
+`backend/products/journal/sync/README.md` and `web-b2`'s gym README (version/type/status claims).
+These are implementation-wave updates; they are not silently satisfied by the contract change.
 
 ---
 

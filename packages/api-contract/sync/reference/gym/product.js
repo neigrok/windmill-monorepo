@@ -1,6 +1,4 @@
-// The gym product's server rules (engine.md Appendix A.2): its commands, `check`, the seed catalog held
-// outside every scope, and the two projections its rules read (a routine's `revision`, a proposal's
-// base). corpus/README.md "The gym product" states the same rules.
+// Gym's commands and joined-record checks, including R118's server-authored metadata.
 
 import { sameJson } from '../core/jcs.js';
 import { ownValue, setOwn } from '../core/maps.js';
@@ -322,7 +320,7 @@ export class GymProduct {
   supersededReason(ctx, proposal) {
     if (isSet(valueOf(proposal, 'supersededBy'))) return 'replaced';
     const routineId = valueOf(proposal, 'routineId');
-    if (ownValue(book(ctx, 'revisions'), routineId) !== ownValue(book(ctx, 'bases'), proposal.id)?.revision) return 'routine-changed';
+    if (valueOf(ctx.stored('routine', routineId), 'revision') !== valueOf(proposal, 'baseRevision')) return 'routine-changed';
     return 'superseded';
   }
 
@@ -340,7 +338,7 @@ export class GymProduct {
     if (state === 'dismissed') throw new Refusal('proposal-settled', { state });
     if (state === 'superseded') throw new Refusal('proposal-superseded', { reason: this.supersededReason(ctx, proposal) });
     const routineId = valueOf(proposal, 'routineId');
-    if (ownValue(book(ctx, 'revisions'), routineId) !== ownValue(book(ctx, 'bases'), proposalId)?.revision) throw new Refusal('proposal-superseded', { reason: 'routine-changed' });
+    if (valueOf(ctx.stored('routine', routineId), 'revision') !== valueOf(proposal, 'baseRevision')) throw new Refusal('proposal-superseded', { reason: 'routine-changed' });
     const routine = ctx.stored('routine', routineId);
     const settle = { t: 'proposal', id: proposalId, born: proposal.born, f: { state: ['applied', null], settledAt: [ctx.serverNow, null] } };
     if (valueOf(proposal, 'intent') === 'remove') {
@@ -373,11 +371,9 @@ export class GymProduct {
   // Product rules on the joined records, record by record in intent order; the deltas they append are
   // the rules' server writes and the consequences of a death (§2.2).
   check(ctx, records) {
-    for (const record of records.filter((record) => record.after.t === 'routine')) {
-      const revisions = book(ctx, 'revisions');
-      if (died(record)) delete revisions[record.after.id];
-      else if (created(record)) setOwn(revisions, record.after.id, 1);
-      else if (changed(record, 'name') || changed(record, 'entries')) setOwn(revisions, record.after.id, (ownValue(revisions, record.after.id) ?? 1) + 1);
+    const metadata = { routine: ['revision', 'createdEntries'], proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'] };
+    for (const delta of ctx.deltas) {
+      if (delta.t === 'routineCreation' || (metadata[delta.t] ?? []).some((field) => Object.hasOwn(delta.f ?? {}, field))) throw new Refusal('invalid');
     }
     const key = (t, id) => `${t}|${JSON.stringify(id)}`;
     const joined = new Map(records.map((record) => [key(record.type.type, record.after.id), structuredClone(record.after)]));
@@ -392,11 +388,20 @@ export class GymProduct {
     const numbered = [];
     const append = (delta) => {
       appended.push(delta);
-      const row = structuredClone(current(delta.t, delta.id));
+      const row = structuredClone(current(delta.t, delta.id) ?? { t: delta.t, id: delta.id });
       if (delta.life) row.life = delta.life;
       row.f = { ...row.f, ...delta.f };
       joined.set(key(delta.t, delta.id), row);
     };
+    for (const record of records.filter((record) => record.after.t === 'routine' && isAlive(record.after))) {
+      const isNew = created(record);
+      if (!isNew && !changed(record, 'name') && !changed(record, 'entries')) continue;
+      const revision = isNew ? 1 : valueOf(record.original, 'revision') + 1;
+      if (!Number.isInteger(revision) || revision > 2_147_483_647) throw new Refusal('invalid');
+      const f = { revision: [revision, null] };
+      if (isNew) f.createdEntries = [valueOf(record.after, 'entries')?.length, null];
+      append({ t: 'routine', id: record.after.id, born: record.after.born, f });
+    }
     for (const record of records) {
       if (record.after.t === 'proposal') futureProposals.delete(record.after.id);
       const rule = RULES[record.type.type];
@@ -493,6 +498,12 @@ const RULES = {
       if (!Array.isArray(entries) || entries.length === 0 || entries.some((entry) => entry.sets !== undefined && entry.sets.length === 0)) throw new Refusal('invalid');
       if (entries.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
     }
+    if (isNew && valueOf(after, 'createdDoor') === 'ask') {
+      if (current('routineCreation', after.id)) throw new Refusal('invalid');
+      const snapshot = { id: after.id, name: valueOf(after, 'name'), position: valueOf(after, 'position') ?? 0,
+        entries: valueOf(after, 'entries').map((entry, i) => ({ ...entry, position: i + 1 })), revision: 1 };
+      append({ t: 'routineCreation', id: after.id, f: { snapshot: [snapshot, null] } });
+    }
     if (!moved) return;
     for (const proposal of rowsOf('proposal')) {
       if (!isAlive(proposal) || valueOf(proposal, 'routineId') !== after.id || stateOf(proposal) !== 'pending') continue;
@@ -524,6 +535,12 @@ const RULES = {
     if (isAlive(record.after) && record.after.id > utcDay(ctx.serverNow + DAY_MS)) throw new Refusal('bad-instant');
   },
 
+  note(ctx, record, { append }) {
+    if (created(record) || changed(record, 'title') || changed(record, 'body')) {
+      append({ t: 'note', id: record.after.id, born: record.after.born, f: { updatedAt: [ctx.serverNow, null] } });
+    }
+  },
+
   proposal(ctx, record, { current, rowsOf, append, futureProposals }) {
     const { after } = record;
     if (!created(record)) return;
@@ -547,7 +564,21 @@ const RULES = {
       || !valueOf(after, 'proposedName') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
       || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
     if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
-    setOwn(book(ctx, 'bases'), after.id, { revision: ownValue(ctx.productState.revisions?.[ctx.scopeKey], routineId) ?? 1, name: valueOf(routine, 'name') });
+    const base = valueOf(routine, 'entries');
+    const name = valueOf(routine, 'name');
+    let count = changes.filter((change) => change.kind !== 'kept').length + (name === valueOf(after, 'proposedName') ? 0 : 1);
+    const matched = new Set();
+    let highest = -1;
+    for (const change of changes) {
+      if (change.kind === 'added' || change.kind === 'removed') continue;
+      const i = base.findIndex((entry, at) => !matched.has(at) && entry.exerciseId === change.exerciseId);
+      matched.add(i);
+      if (i < highest) { count += 1; break; }
+      highest = i;
+    }
+    append({ t: 'proposal', id: after.id, born: after.born, f: {
+      baseRevision: [valueOf(routine, 'revision'), null], baseName: [name, null], changeCount: [count, null],
+    } });
     for (const other of rowsOf('proposal')) {
       if (other.id === after.id || futureProposals.has(other.id) || !isAlive(other) || stateOf(other) !== 'pending' || valueOf(other, 'routineId') !== routineId) continue;
       if (valueOf(other, 'door') !== valueOf(after, 'door') || (valueOf(other, 'connection') ?? '') !== (valueOf(after, 'connection') ?? '')) continue;

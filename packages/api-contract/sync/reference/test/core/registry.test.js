@@ -215,12 +215,47 @@ test('composition.json names the composed registries: gym and journal, each a pr
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(new Set(COMPOSED.map((registry) => `${registry.version}/${registry.minVersion}`)).size, 1);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[5, 5], [5, 5]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {
     assert.deepEqual(declared.filter((name, index) => declared.indexOf(name) !== index), []);
   }
+});
+
+test('gym authoritative metadata preserves server writers, frozen values and unknown creation counts', () => {
+  const gym = PRODUCTS.find((registry) => registry.registry === 'gym');
+  const fields = (name) => gym.types.find((type) => type.type === name).fields;
+  assert.deepEqual({
+    revision: fields('routine').revision,
+    createdEntries: fields('routine').createdEntries,
+    baseRevision: fields('proposal').baseRevision,
+    baseName: fields('proposal').baseName,
+    changeCount: fields('proposal').changeCount,
+    updatedAt: fields('note').updatedAt,
+  }, {
+    revision: { kind: 'lww', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
+    createdEntries: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 0, max: 2147483647 } },
+    baseRevision: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 1, max: 2147483647 } },
+    baseName: { kind: 'const', writer: 'server', unit: 'bytes', max: 240, domain: { type: 'string' } },
+    changeCount: { kind: 'const', writer: 'server', domain: { type: 'number', integer: true, min: 0, max: 2147483647 } },
+    updatedAt: { kind: 'lww', writer: 'server', domain: { type: 'number', integer: true, min: 0 } },
+  });
+});
+
+test('gym creation receipts keep independent string identities and exact server snapshots after routine death', () => {
+  const gym = PRODUCTS.find((registry) => registry.registry === 'gym');
+  const receiptIndex = gym.types.findIndex((type) => type.type === 'routineCreation');
+  assert.equal(gym.types[receiptIndex - 1].type, 'routine');
+  assert.deepEqual(gym.types[receiptIndex], {
+    type: 'routineCreation',
+    scope: 'product:gym',
+    identity: 'keyed',
+    idPattern: gym.types[receiptIndex - 1].idPattern,
+    life: false,
+    origins: ['replica', 'server'],
+    fields: { snapshot: { kind: 'const', writer: 'server', domain: { type: 'json' } } },
+  });
 });
 
 // D-8 and A.2: every gym minted type is seeded, and its widest seeded id, a seed at the bound and the largest ordinal, fits

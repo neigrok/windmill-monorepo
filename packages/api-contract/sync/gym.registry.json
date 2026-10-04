@@ -1,8 +1,8 @@
 {
   "$schema": "./registry.schema.json",
   "registry": "gym",
-  "version": 4,
-  "minVersion": 4,
+  "version": 5,
+  "minVersion": 5,
   "products": {
     "gym": {
       "surfaces": ["web", "ios", "android"],
@@ -62,7 +62,20 @@
             }
           }
         },
-        "createdDoor": { "kind": "const", "writer": "server", "domain": { "type": "string", "enum": ["mcp", "ask"] } }
+        "createdDoor": { "kind": "const", "writer": "server", "domain": { "type": "string", "enum": ["mcp", "ask"] } },
+        "revision": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 1, "max": 2147483647 } },
+        "createdEntries": { "kind": "const", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0, "max": 2147483647 } }
+      }
+    },
+    {
+      "type": "routineCreation",
+      "scope": "product:gym",
+      "identity": "keyed",
+      "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+      "life": false,
+      "origins": ["replica", "server"],
+      "fields": {
+        "snapshot": { "kind": "const", "writer": "server", "domain": { "type": "json" } }
       }
     },
     {
@@ -179,7 +192,8 @@
       "fields": {
         "title": { "kind": "lww", "writer": "client", "unit": "chars", "min": 1, "max": 60, "domain": { "type": "string" } },
         "body": { "kind": "lww", "writer": "client", "unit": "bytes", "max": 500, "domain": { "type": "string" } },
-        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } }
+        "ord": { "kind": "lww", "writer": "client", "domain": { "type": "fracKey" } },
+        "updatedAt": { "kind": "lww", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0 } }
       }
     },
     {
@@ -227,6 +241,9 @@
       "origins": ["replica", "server"],
       "fields": {
         "routineId": { "kind": "const", "writer": "client", "ref": "routine" },
+        "baseRevision": { "kind": "const", "writer": "server", "domain": { "type": "number", "integer": true, "min": 1, "max": 2147483647 } },
+        "baseName": { "kind": "const", "writer": "server", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
+        "changeCount": { "kind": "const", "writer": "server", "domain": { "type": "number", "integer": true, "min": 0, "max": 2147483647 } },
         "intent": { "kind": "const", "writer": "client", "domain": { "type": "string", "enum": ["revise", "remove"] } },
         "proposedName": { "kind": "const", "writer": "client", "unit": "bytes", "max": 240, "domain": { "type": "string" } },
         "summary": { "kind": "const", "writer": "client", "unit": "bytes", "max": 400, "domain": { "type": "string" } },

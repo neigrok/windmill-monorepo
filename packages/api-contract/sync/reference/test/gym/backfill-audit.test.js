@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { ZERO_DIGEST, replaceRow } from '../../core/digest.js';
-import { audit, backfill } from '../../gym/backfill.js';
+import { audit, auditMetadata, backfill, upgradeMetadata } from '../../gym/backfill.js';
 import { ServerState } from '../../server/state.js';
 import { gymRegistry } from '../../vectors/gym.js';
 
@@ -37,5 +37,63 @@ test('gym adoption audit rejects corrupted envelope stamps even with a recompute
     redigest(state);
     assert.deepEqual(backfill({ ...input, state, registry: gymRegistry }).toJSON(), state.toJSON());
     assert.throws(() => audit(auditInput(input, state)), new RegExp(label), label);
+  }
+});
+
+const metadata = JSON.parse(readFileSync(new URL('../../../corpus/gym/metadata.json', import.meta.url), 'utf8'))[0].input;
+const upgrade = (input = metadata) => upgradeMetadata({ ...input, state: new ServerState(input.state), registry: gymRegistry });
+const auditUpgrade = (state, input = metadata) => auditMetadata({ ...input, state, frozen: new ServerState(input.state), registry: gymRegistry });
+
+test('R118 independent audit rejects values, stamps, snapshots and retained receipts with recomputed digests', () => {
+  const cases = [
+    (state) => { state.row(key, 'routine', 'routine0001').f.revision[0] += 1; },
+    (state) => { state.row(key, 'routine', 'routine0001').f.createdEntries[0] += 1; },
+    (state) => { state.row(key, 'proposal', 'proposal001').f.baseRevision[0] += 1; },
+    (state) => { state.row(key, 'proposal', 'proposal001').f.baseName[0] = 'Current instead of frozen'; },
+    (state) => { state.row(key, 'proposal', 'proposal001').f.changeCount[0] = 1; },
+    (state) => { state.row(key, 'note', 'note0000001').f.updatedAt[0] = metadata.M; },
+    (state) => { state.row(key, 'note', 'note0000001').f.updatedAt[1] = `${metadata.M + 1}:0:srv`; },
+    (state) => { state.row(key, 'routineCreation', 'routine0002').f.snapshot[0].name = 'Invented'; },
+    (state) => { state.row(key, 'routine', 'routine0001').f.entries[1] = `${metadata.M}:0:srv`; },
+    (state) => { state.row(key, 'note', 'note0000001').ru += 1; },
+    (state) => { state.row(key, 'routine', 'routine0001').seq += 1; },
+    (state) => { state.spentOf(key)[0].seq += 1; },
+    (state) => { state.product.starts[key].session0001 = 'Other'; },
+    (state) => { state.scope(key).counters.note += 1; },
+    (state) => { state.product.gymMetadataUpgrades[key].M += 1; },
+  ];
+  for (const corrupt of cases) {
+    const state = upgrade();
+    corrupt(state);
+    redigest(state);
+    assert.throws(() => auditUpgrade(state), /gym metadata audit/);
+  }
+});
+
+test('R118 source failure is atomic and a committed marker refuses a changed manifest or clock', () => {
+  const frozen = new ServerState(metadata.state);
+  const before = frozen.toJSON();
+  const incomplete = structuredClone(metadata.source);
+  incomplete.proposals[0].baseRevision = null;
+  assert.throws(() => upgradeMetadata({ ...metadata, state: frozen, source: incomplete, registry: gymRegistry }), /missing value/);
+  assert.deepEqual(frozen.toJSON(), before);
+  const state = upgrade();
+  assert.throws(() => upgradeMetadata({ ...metadata, state, M: metadata.M + 1, registry: gymRegistry }), /manifest mismatch/);
+  assert.throws(() => upgradeMetadata({ ...metadata, state, source: incomplete, registry: gymRegistry }), /manifest mismatch/);
+  assert.deepEqual(upgradeMetadata({ ...metadata, state, registry: gymRegistry }).toJSON(), state.toJSON());
+});
+
+test('R118 independent audit refuses incomplete and duplicate source rosters', () => {
+  const candidates = [
+    (source) => { source.routines[0].revision = null; },
+    (source) => { delete source.proposals[0].baseName; },
+    (source) => { source.notes.push(source.notes[0]); },
+    (source) => { source.routineCreations.push(source.routineCreations[0]); },
+    (source) => { source.routineCreations[0].snapshot = null; },
+  ];
+  for (const corrupt of candidates) {
+    const input = structuredClone(metadata);
+    corrupt(input.source);
+    assert.throws(() => auditUpgrade(upgrade(), input), /gym metadata audit/);
   }
 });

@@ -6,7 +6,7 @@ import { CONSTANTS } from '../core/constants.js';
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { Registry } from '../core/registry.js';
 import { compactRow, isAlive } from '../core/rows.js';
-import { backfill } from '../gym/backfill.js';
+import { backfill, upgradeMetadata } from '../gym/backfill.js';
 import { GymProduct } from '../gym/product.js';
 import { admit } from '../server/admit.js';
 import { ServerState } from '../server/state.js';
@@ -65,7 +65,7 @@ const update = (t, id, born, stamp, values) => ({ t, id, born, f: regs(stamp, va
 
 // A's catalog, a routine at revision 1 with a pending MCP proposal, and a finished workout; B's own movement.
 const EXERCISE = rec('exercise', 'sledpush01', { stamp: s(T), seq: 1, f: { name: 'Sled Push', pattern: 'carry', equipment: 'machine', stepKg: 5 } });
-const ROUTINE = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: { name: 'Lower A', position: 0, entries: SQUAT } });
+const ROUTINE = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: { name: 'Lower A', position: 0, entries: SQUAT, revision: 1, createdEntries: 1 } });
 const FINISHED = rec('session', 'session0001', {
   stamp: `${T + 2}:0:srv`, seq: 3,
   f: { routineId: 'routine0001', historyRoutineId: 'routine0001', plan: { routine: 'Lower A', entries: SQUAT }, startedAt: T, finishedAt: T + H, closedBy: 'finish' },
@@ -75,7 +75,7 @@ const CHANGES = [{ kind: 'retargeted', exerciseId: 'back-squat', before: { sets:
 const ROUTINE_GUARDS = ['entries', 'name'].map((field) => ({ t: 'routine', id: 'routine0001', field, stamp: s(T + 1) }));
 const proposalRow = (id, seq, extra = {}, stamp = `${T + 4}:0:srv`) => rec('proposal', id, {
   stamp, seq,
-  f: { routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier squat', changes: CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude', state: 'pending', ...extra },
+  f: { routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier squat', changes: CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude', state: 'pending', baseRevision: 1, baseName: 'Lower A', changeCount: 1, ...extra },
 });
 const PENDING = proposalRow('proposal001', 5);
 const B_EXERCISE = rec('exercise', 'beltsquat1', { stamp: `${T}:0:r_bbbbbbbbbbbb`, seq: 1, f: { name: 'Belt Squat', pattern: 'squat', equipment: 'machine', stepKg: 5 } });
@@ -85,8 +85,6 @@ function base({ a = [], spent = {}, product = {} } = {}) {
     rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET, PENDING, ...a], [GYM_B]: [B_EXERCISE] },
     spent,
     product: {
-      revisions: { [GYM_A]: { routine0001: 1 } },
-      bases: { [GYM_A]: { proposal001: { revision: 1, name: 'Lower A' } } },
       starts: { [GYM_A]: { session0001: 'session0001' } },
       ...product,
     },
@@ -160,7 +158,7 @@ function sets() {
 // M4: routines keep `position`, carry entries as one register, and a document change supersedes.
 function routines() {
   const ask = proposalRow('proposal002', 6, { door: 'ask', connection: '', agent: '' });
-  const withAsk = base({ a: [ask], product: { bases: { [GYM_A]: { proposal001: { revision: 1, name: 'Lower A' }, proposal002: { revision: 1, name: 'Lower A' } } } } });
+  const withAsk = base({ a: [ask] });
   const open = rec('session', 'session0002', { stamp: `${T + 6 * H}:0:srv`, seq: 6, f: { routineId: 'routine0001', historyRoutineId: 'routine0001', plan: { routine: 'Lower A', entries: SQUAT }, startedAt: T + 6 * H } });
   const edit = (values) => gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), values)]);
   return [
@@ -184,9 +182,8 @@ function proposals() {
     return gym([{ t: 'proposal', id, born: stamp, life: ['alive', stamp], f: regs(stamp, values) }]);
   };
   const settledBy = (state, extra = {}) => proposalRow('proposal001', 5, { state, settledAt: T + 5 * H, ...extra });
-  const settled = (row, product = {}) => gymState({
-    rows: { [GYM_A]: [EXERCISE, ROUTINE, FINISHED, SET, row], [GYM_B]: [] },
-    product: { revisions: { [GYM_A]: { routine0001: 1 } }, bases: { [GYM_A]: { proposal001: { revision: 1, name: 'Lower A' } } }, ...product },
+  const settled = (row, revision = 1) => gymState({
+    rows: { [GYM_A]: [EXERCISE, { ...ROUTINE, f: { ...ROUTINE.f, revision: [revision, ROUTINE.f.revision[1]] } }, FINISHED, SET, row], [GYM_B]: [] },
   });
   const removal = proposalRow('proposal001', 5, { intent: 'remove', changes: [{ kind: 'removed', exerciseId: 'back-squat', before: { sets: [{ reps: 5, weightKg: 80 }], restSeconds: 180 } }] });
   const open = rec('session', 'session0002', { stamp: `${T + 6 * H}:0:srv`, seq: 6, f: { routineId: 'routine0001', historyRoutineId: 'routine0001', plan: { routine: 'Lower A', entries: SQUAT }, startedAt: T + 6 * H } });
@@ -202,20 +199,20 @@ function proposals() {
     admitted('a replica\'s proposal create with door mcp is invalid', { state: base(), origin: A, intent: mint('proposal003', {}, A) }),
     admitted('a replica\'s proposal create naming an agent is invalid', { state: base(), origin: A, intent: mint('proposal003', { door: 'ask', connection: '', agent: 'Claude' }, A) }),
     admitted('a replica\'s proposal create from the phone Coach door is admitted, its state unset and read as pending', { state: base(), origin: A, intent: { ...mint('proposal003', { door: 'ask', connection: '', agent: '' }, A), guard: ROUTINE_GUARDS } }),
-    admitted('apply writes the proposal\'s document and supersedes the routine\'s other pending proposals', { state: base({ a: [other], product: { bases: { [GYM_A]: { proposal001: { revision: 1, name: 'Lower A' }, proposal002: { revision: 1, name: 'Lower A' } } } } }), intent: apply() }),
+    admitted('apply writes the proposal\'s document and supersedes the routine\'s other pending proposals', { state: base({ a: [other] }), intent: apply() }),
     admitted('apply of an applied proposal is ok and writes nothing', { state: settled(settledBy('applied')), intent: apply() }),
     admitted('apply of a dismissed proposal is refused proposal-settled with its state', { state: settled(settledBy('dismissed')), intent: apply() }),
     admitted('apply of a proposal a newer one replaced is refused proposal-superseded: replaced', { state: settled(settledBy('superseded', { supersededBy: 'proposal009' })), intent: apply() }),
-    admitted('apply of a proposal its routine outran is refused proposal-superseded: routine-changed', { state: settled(settledBy('superseded'), { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: apply() }),
+    admitted('apply of a proposal its routine outran is refused proposal-superseded: routine-changed', { state: settled(settledBy('superseded'), 2), intent: apply() }),
     admitted('apply of a proposal superseded before either reason was recorded is refused proposal-superseded: superseded', { state: settled(settledBy('superseded')), intent: apply() }),
-    admitted('apply of a pending proposal whose base the routine outran is refused proposal-superseded: routine-changed, leaving pending unchanged', { state: settled(PENDING, { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: apply() }),
+    admitted('apply of a pending proposal whose base the routine outran is refused proposal-superseded: routine-changed, leaving pending unchanged', { state: settled(PENDING, 2), intent: apply() }),
     admitted('apply of a removal kills the routine and its proposals, and writes routineId null on its sessions', { state: settled(removal), intent: apply() }),
     admitted('apply of a proposal that died with its routine is refused record-dead', { state: base({ spent: { [GYM_A]: [{ t: 'proposal', id: 'proposal007', born: `${T}:0:srv`, lifeStamp: `${T + H}:0:srv`, seq: 6 }] } }), intent: apply('proposal007') }),
     admitted('dismiss settles a pending proposal with its settledAt', { state: base(), intent: dismiss() }),
     admitted('dismiss of a dismissed proposal is ok and writes nothing', { state: settled(settledBy('dismissed')), intent: dismiss() }),
     admitted('dismiss of an applied proposal is refused proposal-settled with its state', { state: settled(settledBy('applied')), intent: dismiss() }),
     admitted('dismiss of a superseded proposal is refused proposal-superseded with its reason', { state: settled(settledBy('superseded', { supersededBy: 'proposal009' })), intent: dismiss() }),
-    admitted('dismiss runs no revision check on a pending proposal', { state: settled(PENDING, { revisions: { [GYM_A]: { routine0001: 2 } } }), intent: dismiss() }),
+    admitted('dismiss runs no revision check on a pending proposal', { state: settled(PENDING, 2), intent: dismiss() }),
   ];
 }
 
@@ -307,7 +304,7 @@ function adversarial() {
     sessionId: 'session0001', exerciseId: 'dip', weightKg: 0, reps: 5, kind: 'working', note: '', completedAt: T + 9 * H,
   });
   const repeated = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: {
-    name: 'Lower A', entries: [...SQUAT, { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 90 }] }, { exerciseId: 'dip' }],
+    name: 'Lower A', revision: 1, createdEntries: 3, entries: [...SQUAT, { exerciseId: 'back-squat', sets: [{ reps: 3, weightKg: 90 }] }, { exerciseId: 'dip' }],
   } });
   const repeatedChanges = [
     { kind: 'retargeted', exerciseId: 'back-squat', before: CHANGES[0].before, after: { sets: [{ reps: 3, weightKg: 90 }] } },
@@ -370,12 +367,75 @@ function adversarial() {
 }
 
 function notes() {
-  const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord } });
+  const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord, updatedAt: T } });
   const ten = gymState({ rows: { [GYM_A]: Array.from({ length: 10 }, (_, i) => note(`note000000${i}`, i + 1, `a${i}`)), [GYM_B]: [] } });
   return [
     admitted('an eleventh note is refused cap', { state: ten, intent: gym([create('note', 'note000000x', s(T + 9 * H), { title: 'More', body: '', ord: 'a9V' })]) }),
     admitted('an edit at ten notes lands', { state: ten, intent: gym([update('note', 'note0000000', s(T + 1), s(T + 9 * H), { body: 'Edited' })]) }),
     admitted('a reorder writes the moved note\'s ord', { state: ten, intent: gym([update('note', 'note0000009', s(T + 10), s(T + 9 * H), { ord: 'Zz' })]) }),
+  ];
+}
+
+function metadata() {
+  const make = (id, door) => gym([create('routine', id, null, {
+    name: 'Upper', entries: [{ exerciseId: 'dip' }, { exerciseId: 'bench-press' }], ...(door ? { createdDoor: door } : {}),
+  })]);
+  const created = admit({ state: new ServerState(base()), registry: gymRegistry, product: gymProduct,
+    origin: SERVER_A, intent: make('routine0002', 'ask'), serverNow: NOW }).state;
+  const routine = created.row(GYM_A, 'routine', 'routine0002');
+  const edit = gym([update('routine', routine.id, routine.born, null, { name: 'Edited', entries: [{ exerciseId: 'dip' }] })]);
+  const edited = admit({ state: created, registry: gymRegistry, product: gymProduct, origin: SERVER_A, intent: edit, serverNow: NOW + 1000 }).state;
+  const remove = gym([{ t: 'routine', id: routine.id, born: routine.born, life: ['dead', null] }]);
+  const note = rec('note', 'note0000001', { stamp: s(T), seq: 6, f: { title: 'Grip', body: '', ord: 'a0', updatedAt: T } });
+  const noteState = gymState({ rows: { [GYM_A]: [note] } });
+  const noteEdit = (f, stamp = null) => gym([update('note', note.id, note.born, stamp, f)]);
+  const reordered = admit({ state: new ServerState(noteState), registry: gymRegistry, product: gymProduct, origin: SERVER_A,
+    intent: noteEdit({ ord: 'Zz' }), serverNow: NOW }).state;
+  const changed = admit({ state: reordered, registry: gymRegistry, product: gymProduct, origin: SERVER_A,
+    intent: noteEdit({ body: 'New body' }), serverNow: NOW + 1000 }).state;
+  const two = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 1, f: { name: 'Lower A', revision: 7, createdEntries: 3,
+    entries: [{ exerciseId: 'back-squat' }, { exerciseId: 'dip' }] } });
+  const propose = (proposedName, changes, intent = 'revise') => gym([create('proposal', 'proposal003', null, {
+    routineId: two.id, intent, proposedName, changes, summary: '', door: 'ask', connection: '', agent: '',
+  })]);
+  const kept = (id) => ({ kind: 'kept', exerciseId: id, before: {}, after: {} });
+  const proposalState = gymState({ rows: { [GYM_A]: [two] } });
+  const renameAndReorder = propose('Renamed', [kept('dip'), kept('back-squat')]);
+  const frozen = admit({ state: new ServerState(proposalState), registry: gymRegistry, product: gymProduct, origin: SERVER_A,
+    intent: renameAndReorder, serverNow: NOW }).state;
+  return [
+    admitted('R118 an ask creation freezes a separate snapshot and original entry count', { state: base(), origin: SERVER_A, intent: make('routine0002', 'ask') }),
+    admitted('R118 a manual creation carries its count but invents no Coach snapshot', { state: base(), origin: SERVER_A, intent: make('routine0002') }),
+    admitted('R118 an MCP creation invents no Coach snapshot', { state: base(), origin: SERVER_A, intent: make('routine0002', 'mcp') }),
+    admitted('R118 a name and entries edit increments revision once and preserves creation metadata', { state: created.toJSON(), origin: SERVER_A, intent: edit, serverNow: NOW + 1000 }),
+    admitted('R118 replaying equal routine values preserves revision and original count', { state: edited.toJSON(), origin: SERVER_A, intent: edit, serverNow: NOW + 2000 }),
+    admitted('R118 a routine death preserves its independent creation snapshot', { state: edited.toJSON(), origin: SERVER_A, intent: remove, serverNow: NOW + 2000 }),
+    admitted('R118 a losing routine write changes no revision', { state: base(), intent: gym([update('routine', 'routine0001', ROUTINE.born, s(T), { name: 'Lost' })]) }),
+    admitted('R118 note creation sets content admission time', { state: base(), origin: SERVER_A, intent: gym([create('note', 'note0000001', null, { title: 'Grip', body: '', ord: 'a0' })]) }),
+    admitted('R118 note reorder advances ru while preserving content time', { state: noteState, origin: SERVER_A, intent: noteEdit({ ord: 'Zz' }) }),
+    admitted('R118 a note body edit advances content time after reorder', { state: reordered.toJSON(), origin: SERVER_A, intent: noteEdit({ body: 'New body' }), serverNow: NOW + 1000 }),
+    admitted('R118 an equal note body retry preserves content time', { state: changed.toJSON(), origin: SERVER_A, intent: noteEdit({ body: 'New body' }), serverNow: NOW + 2000 }),
+    admitted('R118 a losing note title write preserves content time', { state: changed.toJSON(), intent: noteEdit({ title: 'Lost' }, s(T - 1)), serverNow: NOW + 2000 }),
+    admitted('R118 a note title edit uses server admission time rather than the replica stamp', { state: noteState, intent: noteEdit({ title: 'Changed' }, s(T + H)) }),
+    admitted('R118 proposal count includes one rename and one reorder with no moved targets', { state: proposalState, origin: SERVER_A, intent: renameAndReorder }),
+    admitted('R118 insertion and removal without surviving-line reorder count only moved rows', { state: proposalState, origin: SERVER_A,
+      intent: propose('Lower A', [kept('dip'), { kind: 'added', exerciseId: 'bench-press', after: {} }, { kind: 'removed', exerciseId: 'back-squat', before: {} }]) }),
+    admitted('R118 a removal uses the stored count formula including a changed proposed name', { state: proposalState, origin: SERVER_A,
+      intent: propose('', [{ kind: 'removed', exerciseId: 'back-squat', before: {} }, { kind: 'removed', exerciseId: 'dip', before: {} }], 'remove') }),
+    admitted('R118 supersession preserves frozen base name revision and count', { state: frozen.toJSON(), origin: SERVER_A,
+      intent: gym([update('routine', two.id, two.born, null, { name: 'Later', entries: [{ exerciseId: 'bench-press' }] })]), serverNow: NOW + 1000 }),
+    ...[false, true].map((proposalFirst) => {
+      const deltas = [update('routine', two.id, two.born, null, { name: 'Renamed' }), ...renameAndReorder.d];
+      return admitted(`R118 mixed intent freezes joined base and supersedes the proposal with ${proposalFirst ? 'proposal' : 'routine'} first`, {
+        state: proposalState, origin: SERVER_A, intent: gym(proposalFirst ? deltas.reverse() : deltas),
+      });
+    }),
+    ...[['routine', 'revision'], ['routine', 'createdEntries'], ['proposal', 'baseRevision'], ['proposal', 'baseName'], ['proposal', 'changeCount'], ['note', 'updatedAt']].map(([t, field]) =>
+      admitted(`R118 a replica cannot write ${t}.${field}`, { state: base(), intent: gym([create(t, 'forged0001', s(NOW), { [field]: field === 'baseName' ? 'Forged' : 1 })]) })),
+    admitted('R118 a server door cannot supply derived routine metadata', { state: base(), origin: SERVER_A, intent: gym([create('routine', 'forged0001', null, { name: 'Forged', entries: SQUAT, revision: 99 })]) }),
+    admitted('R118 a replica cannot supply a creation snapshot', { state: base(), intent: gym([{ t: 'routineCreation', id: 'forged0001', f: regs(s(NOW), { snapshot: {} }) }]) }),
+    admitted('R118 a bare server door cannot create or replace a snapshot', { state: created.toJSON(), origin: SERVER_A, intent: gym([{ t: 'routineCreation', id: routine.id, f: regs(null, { snapshot: {} }) }]) }),
+    admitted('R118 a replica cannot create an empty snapshot record', { state: base(), intent: gym([{ t: 'routineCreation', id: 'forged0001' }]) }),
   ];
 }
 
@@ -391,7 +451,7 @@ const LEGACY = {
     { exerciseId: 'dip', name: 'Parallel Dip', createdAt: T + 3 * H },
   ],
   routines: [{
-    id: 'routine0001', name: 'Lower A', position: 3, revision: 4, createdAt: T, createdDoor: 'mcp',
+    id: 'routine0001', name: 'Lower A', position: 3, revision: 4, createdAt: T, createdDoor: 'ask',
     entries: [
       { position: 2, exerciseId: 'dip' },
       { position: 1, exerciseId: 'back-squat', restSeconds: 180, sets: [{ setIndex: 2, reps: 3, weightKg: 90 }, { setIndex: 1, reps: 5, weightKg: 80 }, { setIndex: 3 }] },
@@ -447,9 +507,44 @@ function backfills() {
   ];
 }
 
+function metadataUpgrades() {
+  const empty = new ServerState({ epoch: 'ep-1', clock: { ms: 0, counter: 0 }, product: { seeds: SEEDS } });
+  const frozen = backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: LEGACY, M: T + 19 * H });
+  const source = {
+    routines: [{ id: 'routine0001', revision: 4, createdEntries: 5 }],
+    proposals: [{ id: 'proposal001', baseRevision: 3, baseName: 'Lower', changeCount: 7 }],
+    notes: LEGACY.notes.map(({ id, updatedAt }) => ({ id, updatedAt })),
+    routineCreations: [
+      { id: 'routine0001', snapshot: { id: 'routine0001', name: 'Original', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'dip' }] } },
+      { id: 'routine0002', snapshot: { id: 'routine0002', name: 'Deleted', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'dip' }] } },
+    ],
+  };
+  const upgraded = upgradeMetadata({ state: frozen, registry: gymRegistry, account: 'A', source, M });
+  const run = (name, state, columns) => vector(name, { state: state.toJSON(), account: 'A', source: columns, M },
+    { state: upgradeMetadata({ state, registry: gymRegistry, account: 'A', source: columns, M }).toJSON() });
+  const refused = (name, state, columns, time = M) => vector(name, { state: state.toJSON(), account: 'A', source: columns, M: time }, { error: true });
+  return [
+    run('R118 adopted metadata copies existing columns and snapshots including a spent routine', frozen, source),
+    run('R118 a matching committed upgrade is a no-op', upgraded, source),
+    run('R118 an unknown original count stays absent and no snapshot is invented',
+      backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: { ...LEGACY, routineCreations: [] }, M: T + 19 * H }),
+      { ...source, routines: [{ id: 'routine0001', revision: 4, createdEntries: null }], routineCreations: [] }),
+    run('R118 an empty account stays empty', empty, {}),
+    run('R118 a spent-only scope gains only its existing snapshot', backfill({ state: empty, registry: gymRegistry, account: 'A', legacy: { routineCreations: ['routine0002'] }, M: T + 19 * H }),
+      { routineCreations: [source.routineCreations[1]] }),
+    refused('R118 an interrupted account resumes only with the original frozen roster', frozen, { ...source, notes: [] }),
+    refused('R118 a missing required source value refuses without partial writes', frozen, { ...source, routines: [{ id: 'routine0001', revision: null }] }),
+    refused('R118 duplicate source snapshots refuse without partial writes', frozen, { ...source, routineCreations: [source.routineCreations[0], source.routineCreations[0]] }),
+    refused('R118 an unadopted snapshot account fails the gate', empty, { routineCreations: source.routineCreations }),
+    refused('R118 a committed upgrade rejects a changed clock', upgraded, source, M + 1),
+    refused('R118 a committed upgrade rejects changed source columns', upgraded, { ...source, routines: [{ id: 'routine0001', revision: 99 }] }),
+  ];
+}
+
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...adversarial()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...adversarial(), ...metadata()],
     'gym/backfill.json': backfills(),
+    'gym/metadata.json': metadataUpgrades(),
   };
 }
