@@ -43,7 +43,7 @@ class JournalComparisonTest(unittest.TestCase):
         for side in range(2):
             environment = self.diff.environment(side, "postgresql:///test", 18950 + side)
             self.assertEqual(environment["JOURNAL_ENGINE_WRITES"], str(side))
-            for name in ("JOURNAL_WRITE_FREEZE", "GYM_ENGINE_WRITES", "GYM_WRITE_FREEZE"):
+            for name in ("JOURNAL_WRITE_FREEZE", "GYM_ENGINE_WRITES", "GYM_WRITE_FREEZE", "LEGACY_REST_WRITES_RETIRED"):
                 self.assertEqual(environment[name], "0")
             self.assertEqual(environment["WM_TEST_CLOCK_FILE"], str(self.diff.clock_file))
             for name in ("OPENAI_API_KEY", "ANTHROPIC_API_KEY", "JOURNAL_EMBEDDER_URL"):
@@ -57,12 +57,13 @@ class JournalComparisonTest(unittest.TestCase):
         response = MagicMock(status=401)
         connection = MagicMock()
         connection.getresponse.return_value = response
-        with patch("journal_write_differential.http.client.HTTPConnection", return_value=connection), \
+        with patch.dict("os.environ", {"LEGACY_REST_WRITES_RETIRED": "1"}), \
+                patch("journal_write_differential.http.client.HTTPConnection", return_value=connection), \
                 patch("journal_write_differential.subprocess.Popen") as launch:
             for side in range(2):
                 self.diff.start(side, "postgresql:///plain", 18950 + side)
                 environment = launch.call_args.kwargs["env"]
-                for name in ("JOURNAL_ENGINE_WRITES", "JOURNAL_WRITE_FREEZE", "GYM_ENGINE_WRITES", "GYM_WRITE_FREEZE"):
+                for name in ("JOURNAL_ENGINE_WRITES", "JOURNAL_WRITE_FREEZE", "GYM_ENGINE_WRITES", "GYM_WRITE_FREEZE", "LEGACY_REST_WRITES_RETIRED"):
                     self.assertEqual(environment[name], "0")
                 self.assertEqual(launch.call_args.args[0][0], str(self.diff.main_binary if side == 0 else
                                  self.diff.args.bin_dir / "windmill_server_test_clock"))

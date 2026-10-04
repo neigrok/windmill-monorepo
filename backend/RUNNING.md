@@ -202,6 +202,13 @@ Journal reads retain their existing repository and REST wire contract. `SYNC_ENA
 `1`, `true` or `on` and mounts the full gym + journal engine HTTP and live routes; it defaults off.
 Enable gym and journal together only after their shared frozen rehearsal gates pass.
 
+`LEGACY_REST_WRITES_RETIRED` defaults off and accepts only `1`. It returns `410
+client-update-required` before auth, parsing or data access on the Retire rows of the
+[gym](products/gym/ARCHITECTURE.md#81-http-routes) and
+[journal](products/journal/ARCHITECTURE.md#http-surface) route ledgers, independently of the
+engine and freeze switches. Keep routes, reads, MCP, Coach and server-origin doors stay active.
+The owner sets the fixed retirement date; no date is configured in the server.
+
 ```sh
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" GYM_ENGINE_WRITES=1 \

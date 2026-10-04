@@ -91,7 +91,7 @@ def snapshot(environment, binary, output, now, log):
 
 def route_inventory(source):
     text = source.read_text()
-    return sorted(set(re.findall(r'(?:app|routes)\.registerHandler\(\s*"([^"]+)"(?:(?!(?:app|routes)\.registerHandler).)*?\{drogon::Get\}\)',
+    return sorted(set(re.findall(r'(?:app|routes)\.register(?:LegacyWrite)?Handler\(\s*"([^"]+)"(?:(?!(?:app|routes)\.register(?:LegacyWrite)?Handler).)*?\{drogon::Get\}\)',
                                  text, re.DOTALL)))
 
 

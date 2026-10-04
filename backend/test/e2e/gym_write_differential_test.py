@@ -36,12 +36,14 @@ class TimestampComparisonTest(unittest.TestCase):
         response = MagicMock(status=401)
         connection = MagicMock()
         connection.getresponse.return_value = response
-        with patch("gym_write_differential.http.client.HTTPConnection", return_value=connection), \
+        with patch.dict("os.environ", {"LEGACY_REST_WRITES_RETIRED": "1"}), \
+                patch("gym_write_differential.http.client.HTTPConnection", return_value=connection), \
                 patch("gym_write_differential.subprocess.Popen") as launch:
             for side in range(2):
                 self.diff.start(side, "postgresql:///plain", 18900 + side)
                 self.assertEqual(launch.call_args.kwargs["env"]["GYM_ENGINE_WRITES"], "0")
                 self.assertEqual(launch.call_args.kwargs["env"]["GYM_WRITE_FREEZE"], "0")
+                self.assertEqual(launch.call_args.kwargs["env"]["LEGACY_REST_WRITES_RETIRED"], "0")
                 self.assertEqual(launch.call_args.args[0][0], str(self.diff.main_binary if side == 0 else
                                  self.diff.args.bin_dir / "windmill_server_test_clock"))
 

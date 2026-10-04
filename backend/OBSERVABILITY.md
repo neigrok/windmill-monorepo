@@ -29,6 +29,9 @@ publication are separate completions: a failed watcher leaves the committed admi
 `WriteRoutes` registers all HTTP handlers, automatically wrapping mutating verbs and explicitly
 marking GET authentication/OAuth writes. The early advice finds declared write routes before rate
 limiting. Its callback and `observedHttpCallback` carry the request state across asynchronous work.
+`registerLegacyWriteHandler` marks the retired gym/journal REST writes. With
+`LEGACY_REST_WRITES_RETIRED=1`, they emit one WARN completion with `client-update-required` for
+the 410, without product work or an Issue; callback failures keep the normal failure reporting.
 MCP's `CompositeToolHost`, Coach's `AskTools` and roadmap's `ScopedToolHost` dispatch by their
 access declarations. Sync admission instruments every intent and catalog command; it validates
 labels against its sealed registry. `Heartbeat`, `MailSweep`, and `runObservedTool` cover scheduled

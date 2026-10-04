@@ -1,6 +1,7 @@
 #pragma once
 
 #include "platform/application/WriteObservation.h"
+#include "platform/adapters/http/JsonReply.h"
 
 #include <drogon/drogon.h>
 
@@ -21,6 +22,7 @@ struct WriteRoute {
   std::string product;
   std::string door;
   std::vector<drogon::HttpMethod> methods;
+  bool legacyRestWrite = false;
 };
 
 bool mutatingMethod(drogon::HttpMethod method);
@@ -28,6 +30,7 @@ std::string routeOperation(const std::string& product, const std::string& path,
                            const std::vector<drogon::HttpMethod>& methods);
 void declareWriteRoute(WriteRoute route);
 std::vector<WriteRoute> registeredWriteRoutes();
+bool legacyRestWriteRetired(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
@@ -82,6 +85,11 @@ struct ObservedHttpHandler<void (Host::*)(const drogon::HttpRequestPtr&, WriteHt
             finishWriteRequest(request, response);
           });
       observeHttpWork(request, [&] {
+        if (legacyRestWriteRetired(request)) {
+          observed(error(drogon::k410Gone, "This version of the app can no longer save; update it.",
+                         "client-update-required"));
+          return;
+        }
         handler(request, std::move(observed), std::forward<Arguments>(arguments)...);
       });
     };
@@ -112,15 +120,26 @@ public:
   template <typename Handler>
   void registerWriteHandler(const std::string& operation, const std::string& path, Handler handler,
                             const std::vector<drogon::HttpMethod>& methods) {
-    WriteRoute route{path, operation, product_, door_, methods};
-    declareWriteRoute(route);
-    std::vector<drogon::internal::HttpConstraint> constraints;
-    for (const auto method : methods) constraints.emplace_back(method);
-    app_.registerHandler(path, detail::ObservedHttpHandler<decltype(&Handler::operator())>::wrap(
-                                   route, std::move(handler)), constraints);
+    registerRoute({path, operation, product_, door_, methods}, std::move(handler));
+  }
+
+  template <typename Handler>
+  void registerLegacyWriteHandler(const std::string& path, Handler handler,
+                                  const std::vector<drogon::HttpMethod>& methods) {
+    registerRoute({path, routeOperation(product_, path, methods), product_, door_, methods, true},
+                  std::move(handler));
   }
 
 private:
+  template <typename Handler>
+  void registerRoute(WriteRoute route, Handler handler) {
+    declareWriteRoute(route);
+    std::vector<drogon::internal::HttpConstraint> constraints;
+    for (const auto method : route.methods) constraints.emplace_back(method);
+    app_.registerHandler(route.path, detail::ObservedHttpHandler<decltype(&Handler::operator())>::wrap(
+                                   route, std::move(handler)), constraints);
+  }
+
   drogon::HttpAppFramework& app_;
   std::string product_;
   std::string door_;

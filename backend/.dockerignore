@@ -24,3 +24,5 @@ deploy/gym-migration/*
 !deploy/gym-migration/schema-compatibility.sh
 !deploy/gym-migration/cutover-production.sh
 *.md
+!products/gym/ARCHITECTURE.md
+!products/journal/ARCHITECTURE.md

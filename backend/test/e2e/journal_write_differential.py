@@ -45,7 +45,7 @@ class JournalDifferential(Differential):
         self.equal_hlc_cohorts = {}
         source = (BACKEND / "products/journal/routes.cpp").read_text()
         self.inventory = [(verb.upper(), route) for route, verb in re.findall(
-            r'(?:app|routes)\.registerHandler\(\s*"([^"]+)"[\s\S]*?\{drogon::(Get|Post|Put|Patch|Delete)\}\);', source)]
+            r'(?:app|routes)\.register(?:LegacyWrite)?Handler\(\s*"([^"]+)"[\s\S]*?\{drogon::(Get|Post|Put|Patch|Delete)\}\);', source)]
         self.declared = set(self.inventory)
         assert self.declared, "journal route inventory is empty"
 
@@ -53,7 +53,7 @@ class JournalDifferential(Differential):
         engine = side if self.args.mode == "off-vs-on" else 0
         return {"DATABASE_URL": database, "PORT": str(port), "GYM_ENGINE_WRITES": "0",
                 "GYM_WRITE_FREEZE": "0", "JOURNAL_ENGINE_WRITES": str(engine),
-                "JOURNAL_WRITE_FREEZE": str(int(self.frozen)),
+                "JOURNAL_WRITE_FREEZE": str(int(self.frozen)), "LEGACY_REST_WRITES_RETIRED": "0",
                 "JOURNAL_NUDGE_ENABLED": str(int(self.armed)),
                 "JOURNAL_NUDGE_ALLOWLIST": ACCOUNT if self.armed else "",
                 "JOURNAL_NUDGE_ADMIN_TOKEN": ADMIN, "JOURNAL_ECHO_ADMIN_TOKEN": ADMIN,

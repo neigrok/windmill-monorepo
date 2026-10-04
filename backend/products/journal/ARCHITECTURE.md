@@ -220,40 +220,49 @@ and consume only an internal passive-work budget.
 
 ## HTTP surface
 
-| Method & path | Purpose | Auth |
-|---|---|---|
-| `GET /v1/journal/page/{date}` | one page | owner |
-| `GET /v1/journal/pages?since=&limit=` | delta feed: pages with a stamp past an HLC cursor, ascending, `limit` default 500 and capped at 1000. It never takes a query | owner |
-| `GET /v1/journal/pages?from=&to=` | a date range | owner |
-| `GET /v1/journal/pages` | every page | owner |
-| `PUT /v1/journal/page/{date}` | LWW upsert carrying the HLC stamp. A body past `kMaxPageBytes` is 413, before storage and before the revision trail | owner |
-| `POST /v1/journal/transcribe` | one-shot voice → `{ text }` | owner, Windmill One |
-| `GET /v1/journal/echoes?from=&to=` | full echoes on the pages in a range, grouped by page, plus `pagesWritten` | owner |
-| `POST /v1/journal/echoes/{triggerDay}/offer/dismiss` | compatibility route recording a retired offer, keeping every echo | owner |
-| `POST /v1/journal/echoes/{triggerDay}/dismiss` | retire every pairing on this page in one request | owner |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/dismiss` | retire one passage pair | owner |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/useful` | the reader's explicit positive answer | owner |
-| `POST /v1/journal/echoes/{triggerDay}/{matchDay}/opened` | the weaker "Read it" signal | owner |
-| `GET /v1/journal/export` | every page, JSON | owner |
-| `GET/PATCH /v1/journal/nudge` | settings. GET answers `{ enabled, channel, adaptive, nextDueAt?, armed, suppressed }`; PATCH takes `{ enabled?, channel?, nextDueAt?, slotDay?, pausedUntil? }` | owner |
-| `POST /v1/journal/nudge/pause` · `/unsubscribe` | the credential is the secret in the user's mail; POST-only; 204 either way | mail secret |
-| `POST /v1/admin/journal/nudge/sweep` | operator rehearsal (`dryRun`/`asOfMs`) | `JOURNAL_NUDGE_ADMIN_TOKEN` |
-| `GET /v1/admin/journal/echo/explain/{day}` | one page's derivation run for its reasons, writing nothing; explains the signed-in caller's own page | admin token + owner |
-| `POST /v1/admin/journal/echo/sweep` | repair pass; accepts `sinceMs` and `rejudge` | `JOURNAL_ECHO_ADMIN_TOKEN` |
+Keep routes remain REST, including page reads until their separate cleanup. The Retire route is
+marked with `registerLegacyWriteHandler`. `LEGACY_REST_WRITES_RETIRED` defaults off; only `1`
+enables it. When enabled, PUT page returns 410
+`{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
+before authentication, parsing or data access. The owner sets the fixed retirement date; none is
+configured yet. Replacements follow [engine A.3](../../../docs/foundation/engine.md).
+
+| Method | Path | Fate | Engine replacement / retained purpose |
+|---|---|---|---|
+| GET | `/v1/journal/page/{date}` | Keep | Owner: one page. |
+| PUT | `/v1/journal/page/{date}` | Retire | `journal.savePage`; anonymous adoption uses `journal.claimPage`. |
+| GET | `/v1/journal/pages` | Keep | Owner: all pages, inclusive from/to range, or HLC delta feed via since/limit (default 500, cap 1000); no search query. |
+| GET | `/v1/journal/export` | Keep | Owner: every page, JSON. |
+| GET | `/v1/journal/nudge` | Keep | Owner: settings read (`enabled`, `channel`, `adaptive`, `nextDueAt`, `armed`, `suppressed`). |
+| PATCH | `/v1/journal/nudge` | Keep | Owner: settings change (`enabled`, `channel`, `nextDueAt`, `slotDay`, `pausedUntil`). |
+| POST | `/v1/journal/nudge/pause` | Keep | Mail secret: pause nudges; always 204. |
+| POST | `/v1/journal/nudge/unsubscribe` | Keep | Mail secret: unsubscribe; always 204. |
+| POST | `/v1/admin/journal/nudge/sweep` | Keep | Admin token: rehearsal (`dryRun`/`asOfMs`). |
+| GET | `/v1/journal/echoes` | Keep | Owner: echoes in a from/to range plus pagesWritten. |
+| POST | `/v1/journal/echoes/{triggerDay}/offer/dismiss` | Keep | Owner: retire an offer while keeping every echo. |
+| POST | `/v1/journal/echoes/{triggerDay}/dismiss` | Keep | Owner: dismiss every pairing on one page. |
+| POST | `/v1/journal/echoes/{triggerDay}/{matchDay}/dismiss` | Keep | Owner: dismiss one passage pair. |
+| POST | `/v1/journal/echoes/{triggerDay}/{matchDay}/useful` | Keep | Owner: positive echo signal. |
+| POST | `/v1/journal/echoes/{triggerDay}/{matchDay}/opened` | Keep | Owner: echo opened signal. |
+| GET | `/v1/admin/journal/echo/explain/{day}` | Keep | Admin token + owner: explain that owner's derivation without writes. |
+| POST | `/v1/admin/journal/echo/sweep` | Keep | Admin token: repair pass (`sinceMs`/`rejudge`). |
+| POST | `/v1/journal/transcribe` | Keep | Owner, Windmill One: one-shot voice → `{text}`. |
 
 Register the offer-dismissal route **before** the `{matchDay}` pair route. Drogon matches in
 registration order and `{matchDay}` binds the literal `offer`. Do not sort that block.
 
 Pair and page dismissal write content-hash dismissals and `not_useful` signals; offer dismissal
 keeps every pairing. Every signal and dismissal door answers 204 however many times it is pressed.
-Session-authenticated routes resolve identity via `callerUserOf`/`callerOf`, 401 early, and scope
+With legacy writes enabled, session-authenticated routes resolve identity via `callerUserOf`/`callerOf`,
+401 early, and scope
 queries to that caller with no visibility parameter. Mail pause and unsubscribe use only their
 mail secret and answer 204 even when it matches nothing. There is no search route, thread route,
 share route, page-delete route or MCP `ToolHost`.
 
 ### REST translation into the engine
 
-REST keeps its responses, status codes and normalization. Its error bodies are exactly
+With the retirement switch off, REST keeps its responses, status codes and normalization. Its error
+bodies are exactly
 `{"error":"<sentence>"}`. The new freeze and engine-availability refusals additionally carry a
 machine `code`; the freeze is checked before authentication or parsing. The REST builder otherwise
 authenticates and parses before admission, then builds the normalized full-page command. All

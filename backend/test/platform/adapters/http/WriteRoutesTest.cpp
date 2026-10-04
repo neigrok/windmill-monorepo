@@ -1,11 +1,17 @@
 #include "platform/adapters/http/WriteRoutes.h"
 #include "platform/adapters/http/JsonReply.h"
+#include "platform/adapters/clock/SystemClock.h"
+#include "products/gym/routes.h"
+#include "products/journal/routes.h"
 #include "test/testing.h"
 
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <iterator>
+#include <optional>
 #include <regex>
+#include <set>
 #include <stdexcept>
 #include <typeinfo>
 #include <vector>
@@ -32,6 +38,25 @@ struct HttpWriteCapture : FailureReporter {
 std::string sourceText(const std::filesystem::path& path) {
   std::ifstream input(path);
   return std::string(std::istreambuf_iterator<char>(input), std::istreambuf_iterator<char>());
+}
+
+struct LegacyRestRetirement {
+  std::optional<std::string> previous;
+  explicit LegacyRestRetirement(const char* value) {
+    if (const char* current = std::getenv("LEGACY_REST_WRITES_RETIRED")) previous = current;
+    if (value) setenv("LEGACY_REST_WRITES_RETIRED", value, 1);
+    else unsetenv("LEGACY_REST_WRITES_RETIRED");
+  }
+  ~LegacyRestRetirement() {
+    if (previous) setenv("LEGACY_REST_WRITES_RETIRED", previous->c_str(), 1);
+    else unsetenv("LEGACY_REST_WRITES_RETIRED");
+  }
+};
+
+std::filesystem::path backendPath() {
+  auto backend = std::filesystem::path(__FILE__);
+  for (int parent = 0; parent < 5; ++parent) backend = backend.parent_path();
+  return backend;
 }
 }
 
@@ -73,6 +98,148 @@ TEST(write_http_callback_preserves_the_response_and_completes_only_once) {
   CHECK_EQ(responses, (std::vector<drogon::HttpResponsePtr>{original, original}));
   CHECK_EQ(original->getHeader("X-Fixture"), std::string("response header"));
   CHECK(capture.issues.empty());
+}
+
+TEST(write_http_retirement_is_off_by_default_and_accepts_only_one) {
+  HttpWriteCapture capture;
+  const auto original = error(drogon::k409Conflict, "original response", "session-id-taken");
+  int calls = 0;
+  auto handler = [&](const drogon::HttpRequestPtr&, WriteHttpCallback&& callback) {
+    ++calls;
+    callback(original);
+  };
+  const WriteRoute route{"/v1/test/legacy", "test.legacy", "gym", "rest", {drogon::Post}, true};
+  auto wrapped = detail::ObservedHttpHandler<decltype(&decltype(handler)::operator())>::wrap(route, handler);
+  const std::vector<const char*> disabled{nullptr, "", "0", "true", "on", "01", "1 "};
+  for (const char* value : disabled) {
+    LegacyRestRetirement retirement(value);
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    drogon::HttpResponsePtr response;
+    wrapped(request, [&response](const drogon::HttpResponsePtr& reply) { response = reply; });
+    CHECK_EQ(response, original);
+    CHECK_FALSE(legacyRestWriteRetired(request));
+  }
+  CHECK_EQ(calls, static_cast<int>(disabled.size()));
+  REQUIRE_EQ(capture.lines.size(), disabled.size());
+  for (const auto& line : capture.lines) CHECK_EQ(line.outcome, std::string("session-id-taken"));
+  CHECK(capture.issues.empty());
+}
+
+TEST(write_http_retirement_refuses_before_auth_body_parsing_or_handler_work) {
+  LegacyRestRetirement retirement("1");
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  int calls = 0;
+  auto handler = [&calls](const drogon::HttpRequestPtr&, WriteHttpCallback&&, const std::string&) {
+    ++calls;
+    throw std::runtime_error("handler must not run");
+  };
+  Json::Value expected(Json::objectValue);
+  expected["error"] = "This version of the app can no longer save; update it.";
+  expected["code"] = "client-update-required";
+  for (const auto method : {drogon::Post, drogon::Put, drogon::Patch, drogon::Delete}) {
+    const WriteRoute route{"/v1/test/legacy/{id}", "test.legacy", "journal", "rest", {method}, true};
+    auto wrapped = detail::ObservedHttpHandler<decltype(&decltype(handler)::operator())>::wrap(route, handler);
+    for (const char* authorization : {"", "Bearer PRIVATE TOKEN"}) {
+      auto request = drogon::HttpRequest::newHttpRequest();
+      request->setMethod(method);
+      request->setPath("/v1/test/legacy/PRIVATE");
+      request->setContentTypeCode(drogon::CT_APPLICATION_JSON);
+      request->setBody("{malformed PRIVATE JOURNAL TEXT");
+      if (*authorization) request->addHeader("Authorization", authorization);
+      beginWriteRequest(request, route);
+      CHECK(legacyRestWriteRetired(request));
+      drogon::HttpResponsePtr response;
+      wrapped(request, [&response](const drogon::HttpResponsePtr& reply) { response = reply; }, "PRIVATE ID");
+      REQUIRE(response);
+      CHECK_EQ(response->statusCode(), drogon::k410Gone);
+      CHECK_EQ(response->contentType(), drogon::CT_APPLICATION_JSON);
+      REQUIRE(response->getJsonObject());
+      CHECK_EQ(*response->getJsonObject(), expected);
+      CHECK_EQ(std::string(response->getBody()), std::string(jsonResponse(expected)->getBody()));
+    }
+  }
+  CHECK_EQ(calls, 0);
+  REQUIRE_EQ(capture.lines.size(), std::size_t{8});
+  for (const auto& line : capture.lines) {
+    CHECK_EQ(line.operation, std::string("test.legacy"));
+    CHECK_EQ(line.product, std::string("journal"));
+    CHECK_EQ(line.door, std::string("rest"));
+    CHECK_EQ(line.outcome, std::string("client-update-required"));
+  }
+  CHECK(capture.issues.empty());
+}
+
+TEST(write_http_retirement_keeps_reads_retained_writes_and_other_doors) {
+  LegacyRestRetirement retirement("1");
+  HttpWriteCapture capture;
+  const auto original = jsonResponse(Json::Value(Json::objectValue));
+  const std::vector<WriteRoute> retained{
+      {"/v1/test/retained", "test.retained", "gym", "rest", {drogon::Post}},
+      {"/v1/test/read", "test.read", "gym", "rest", {drogon::Get}, true},
+      {"/v1/test/mcp", "test.mcp", "gym", "mcp", {drogon::Post}, true},
+      {"/v1/test/coach", "test.coach", "gym", "coach", {drogon::Post}, true},
+      {"/v1/test/sync", "test.sync", "platform", "sync", {drogon::Post}, true},
+      {"/v1/test/server", "test.server", "journal", "server", {drogon::Put}, true}};
+  int calls = 0;
+  auto handler = [&](const drogon::HttpRequestPtr&, WriteHttpCallback&& callback) {
+    ++calls;
+    callback(original);
+  };
+  auto unmatched = drogon::HttpRequest::newHttpRequest();
+  unmatched->setMethod(drogon::Post);
+  CHECK_FALSE(legacyRestWriteRetired(unmatched));
+  for (const auto& route : retained) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(route.methods.front());
+    auto wrapped = detail::ObservedHttpHandler<decltype(&decltype(handler)::operator())>::wrap(route, handler);
+    drogon::HttpResponsePtr response;
+    wrapped(request, [&response](const drogon::HttpResponsePtr& reply) { response = reply; });
+    CHECK_EQ(response, original);
+    CHECK_FALSE(legacyRestWriteRetired(request));
+  }
+  CHECK_EQ(calls, static_cast<int>(retained.size()));
+  REQUIRE_EQ(capture.lines.size(), retained.size());
+  for (const auto& line : capture.lines) CHECK_EQ(line.outcome, std::string("ok"));
+  CHECK(capture.issues.empty());
+}
+
+TEST(write_http_retirement_callback_failures_remain_observed_without_handler_work) {
+  LegacyRestRetirement retirement("1");
+  HttpWriteCapture capture;
+  installWriteReporter(std::shared_ptr<FailureReporter>(&capture, [](FailureReporter*) {}));
+  int calls = 0;
+  auto handler = [&calls](const drogon::HttpRequestPtr&, WriteHttpCallback&&) { ++calls; };
+  const WriteRoute route{"/v1/test/legacy", "test.legacy", "gym", "rest", {drogon::Post}, true};
+  auto wrapped = detail::ObservedHttpHandler<decltype(&decltype(handler)::operator())>::wrap(route, handler);
+  for (const bool typed : {true, false}) {
+    auto request = drogon::HttpRequest::newHttpRequest();
+    request->setMethod(drogon::Post);
+    bool threw = false;
+    try {
+      wrapped(request, [typed](const drogon::HttpResponsePtr&) {
+        if (typed) throw std::runtime_error("PRIVATE CALLBACK DATA");
+        throw 17;
+      });
+    } catch (const std::runtime_error&) {
+      CHECK(typed);
+      threw = true;
+    } catch (int value) {
+      CHECK_FALSE(typed);
+      CHECK_EQ(value, 17);
+      threw = true;
+    }
+    CHECK(threw);
+  }
+  CHECK_EQ(calls, 0);
+  REQUIRE_EQ(capture.lines.size(), std::size_t{2});
+  REQUIRE_EQ(capture.issues.size(), std::size_t{2});
+  for (std::size_t index = 0; index < capture.lines.size(); ++index) {
+    CHECK_EQ(capture.lines[index].outcome, std::string("failed"));
+    CHECK(capture.issues[index].find(capture.lines[index].requestId) != std::string::npos);
+    CHECK(capture.issues[index].find("PRIVATE") == std::string::npos);
+  }
 }
 
 TEST(write_http_completion_callback_exceptions_report_failed_before_completion) {
@@ -269,10 +436,9 @@ TEST(write_http_shared_exception_handler_preserves_the_framework_500_bytes) {
 }
 
 TEST(write_http_inventory_covers_every_registered_mutating_route) {
-  auto backend = std::filesystem::path(__FILE__);
-  for (int parent = 0; parent < 5; ++parent) backend = backend.parent_path();
+  const auto backend = backendPath();
   REQUIRE(std::filesystem::exists(backend / "platform/infra/main.cpp"));
-  const std::regex call(R"(([a-zA-Z_][a-zA-Z_0-9]*)\.register(Write)?Handler\s*\()");
+  const std::regex call(R"(([a-zA-Z_][a-zA-Z_0-9]*)\.register(Write|LegacyWrite)?Handler\s*\()");
   const std::regex verb(R"(drogon::(Post|Put|Patch|Delete))");
   std::size_t writes = 0;
   for (const auto& entry : std::filesystem::recursive_directory_iterator(backend)) {
@@ -315,5 +481,37 @@ TEST(write_http_inventory_covers_every_registered_mutating_route) {
   for (const char* path : {"/v1/auth/google/start", "/v1/auth/google/callback", "/oauth/authorize"}) {
     const std::regex registration(std::string(R"(routes\.registerWriteHandler\s*\(\s*"[^"]+"\s*,\s*")") + path + "\"");
     CHECK(std::regex_search(main, registration));
+  }
+}
+
+TEST(write_http_registered_retired_routes_equal_each_products_retained_route_ledger) {
+  auto& app = drogon::app();
+  static auto clock = std::make_shared<SystemClock>();
+  gym::GymDeps gymDeps{};
+  gymDeps.clock = clock;
+  gymDeps.onShutdown = [](std::function<void()> stop) { stop(); };
+  gym::registerRoutes(app, gymDeps);
+  journal::registerRoutes(app, journal::JournalDeps{});
+
+  const std::regex row(R"(\|\s*`?(GET|POST|PUT|PATCH|DELETE)`?\s*\|\s*`([^`]+)`\s*\|\s*(Retire|Keep)\s*\|)");
+  for (const std::string product : {"gym", "journal"}) {
+    std::set<std::pair<std::string, std::string>> registered;
+    for (const auto& route : registeredWriteRoutes()) {
+      if (route.product != product || route.door != "rest" || !route.legacyRestWrite) continue;
+      for (const auto method : route.methods) {
+        CHECK(mutatingMethod(method));
+        CHECK(registered.emplace(std::string(drogon::to_string_view(method)), route.path).second);
+      }
+    }
+    std::set<std::pair<std::string, std::string>> ledger;
+    const std::string architecture = sourceText(backendPath() / "products" / product / "ARCHITECTURE.md");
+    for (auto match = std::sregex_iterator(architecture.begin(), architecture.end(), row);
+         match != std::sregex_iterator(); ++match) {
+      if ((*match)[3].str() != "Retire") continue;
+      CHECK(ledger.emplace((*match)[1].str(), (*match)[2].str()).second);
+    }
+    CHECK_FALSE(registered.empty());
+    CHECK_EQ(registered, ledger);
+    std::cout << product << " retirement ledger: " << registered.size() << " registered routes\n";
   }
 }

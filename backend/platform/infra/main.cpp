@@ -643,6 +643,7 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
       [apiLimiter, magicPerIp, magicGlobal, codePerIp, composePerIp, composeGlobal, tendPerIp,
        tendGlobal, writeCors](const drogon::HttpRequestPtr& req) -> drogon::HttpResponsePtr {
         if (req->method() == drogon::Options) return nullptr;  // preflight already answered above
+        if (legacyRestWriteRetired(req)) return nullptr;
         const std::string ip = clientIp(req);
         if (ip.empty()) return nullptr;  // internal / health-check traffic
         // Per-IP before global, so a hammering client never drains the shared ceiling. Drogon routes

@@ -2,6 +2,7 @@
 
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 #include <mutex>
 #include <set>
 #include <stdexcept>
@@ -40,7 +41,7 @@ const std::set<std::string> refusalCodes{
     "ask-busy", "ask-daily-limit", "ask-generation-active", "ask-image-busy", "ask-image-limit",
     "ask-not-configured", "ask-out-of-budget", "ask-request-conflict", "ask-request-malformed",
     "ask-session-open", "ask-thread-taken", "authorization_pending", "bad-id",
-    "bad_request", "clock-ahead", "correction-conflict", "cursor-invalid",
+    "bad_request", "client-update-required", "clock-ahead", "correction-conflict", "cursor-invalid",
     "epoch-mismatch", "exercise-id-taken", "expired", "fix-unreadable",
     "gym-engine-busy", "gym-engine-unavailable", "gym-frozen", "gym-not-adopted",
     "gym-unavailable", "id-retired", "id-taken", "identity-taken",
@@ -110,6 +111,13 @@ std::vector<WriteRoute> registeredWriteRoutes() {
   return routes;
 }
 
+bool legacyRestWriteRetired(const drogon::HttpRequestPtr& request) {
+  if (!mutatingMethod(request->method()) ||
+      !request->attributes()->get<bool>("wm.legacy_rest_write")) return false;
+  const char* value = std::getenv("LEGACY_REST_WRITES_RETIRED");
+  return value && std::string_view(value) == "1";
+}
+
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route) {
   if (request->attributes()->find(kWriteObservationAttribute))
@@ -117,6 +125,7 @@ std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr
   auto observation = std::make_shared<WriteObservation>(route.operation, route.product, route.door);
   request->attributes()->insert(kWriteObservationAttribute, observation);
   request->attributes()->insert("wm.write_operation", route.operation);
+  request->attributes()->insert("wm.legacy_rest_write", route.legacyRestWrite && route.door == "rest");
   return observation;
 }
 

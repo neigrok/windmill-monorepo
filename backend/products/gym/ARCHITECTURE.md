@@ -735,6 +735,68 @@ share token and return the same 404 for absent, revoked or expired links.
   generation recovery, streaming, pictures and Stop.
 - [The status ladder](#83-the-status-ladder) defines the machine codes clients branch on.
 
+Keep routes remain REST, including all reads until their separate cleanup. Retire routes are
+marked with `registerLegacyWriteHandler` in [routes.cpp](routes.cpp). `LEGACY_REST_WRITES_RETIRED`
+defaults off; only `1` enables it. When enabled, every Retire route returns 410
+`{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
+before authentication, parsing or data access. The owner sets the fixed retirement date; none is
+configured yet. Installed Android builds cannot be forced to update. MCP, Coach and server-origin
+admission doors remain active. Replacements follow [engine A.2](../../../docs/foundation/engine.md).
+
+| Method | Path | Fate | Engine replacement / retained purpose |
+|---|---|---|---|
+| GET | `/v1/gym/exercises` | Keep | Exercise catalogue, including global seeds. |
+| POST | `/v1/gym/exercises` | Retire | Create `exercise` delta with name, pattern, equipment and stepKg. |
+| GET | `/v1/gym/exercises/last` | Keep | Last-set projection. |
+| PATCH | `/v1/gym/exercises/{id}` | Retire | Write `exercise.name` or seeded `exerciseName.name`. |
+| GET | `/v1/gym/exercises/{id}/record` | Keep | Movement record projection. |
+| POST | `/v1/gym/sessions` | Retire | `gym.start` with `joinOpenSession: true`. |
+| POST | `/v1/gym/sessions/import` | Keep | Intentional import door (`gym.importSession` when admitted). |
+| POST | `/v1/gym/sessions/{id}/sets` | Retire | Create `set` delta under the session. |
+| PATCH | `/v1/gym/sessions/{id}/sets/{setId}` | Retire | Write changed `set` registers; retain completedAt. |
+| DELETE | `/v1/gym/sessions/{id}/sets/{setId}` | Retire | Held death of `set`. |
+| POST | `/v1/gym/sessions/{id}/finish` | Retire | `gym.finish`. |
+| GET | `/v1/gym/sessions` | Keep | Workout log read. |
+| GET | `/v1/gym/sessions/{id}` | Keep | Workout read. |
+| GET | `/v1/gym/sessions/{id}/review` | Keep | Workout review read. |
+| DELETE | `/v1/gym/sessions/{id}` | Retire | Held death of `session`, cascading to its sets. |
+| GET | `/v1/gym/last` | Keep | Last workout projection. |
+| GET | `/v1/gym/routines` | Keep | Routine list read. |
+| POST | `/v1/gym/routines` | Retire | Create `routine` delta. |
+| GET | `/v1/gym/routines/{id}` | Keep | Routine read. |
+| PUT | `/v1/gym/routines/{id}` | Retire | Guarded writes of `routine.name` and `routine.entries`; write position when changed. |
+| DELETE | `/v1/gym/routines/{id}` | Retire | Held death of `routine`. |
+| GET | `/v1/gym/proposals` | Keep | Proposal ledger read. |
+| GET | `/v1/gym/proposals/{id}` | Keep | Proposal read. |
+| POST | `/v1/gym/proposals/{id}/apply` | Retire | `gym.applyProposal`. |
+| POST | `/v1/gym/proposals/{id}/dismiss` | Retire | `gym.dismissProposal`. |
+| GET | `/v1/gym/preferences` | Keep | Preferences read. |
+| PUT | `/v1/gym/preferences` | Retire | Write changed `prefs` registers. |
+| GET | `/v1/gym/notes` | Keep | Notes read. |
+| PUT | `/v1/gym/notes` | Retire | Write the moved note's `ord` (D-25). |
+| PUT | `/v1/gym/notes/{id}` | Retire | Create `note`, or guarded writes of title/body. |
+| DELETE | `/v1/gym/notes/{id}` | Retire | Held death of `note`. |
+| GET | `/v1/gym/bodyweight` | Keep | Bodyweight read. |
+| PUT | `/v1/gym/bodyweight/{dateLocal}` | Retire | Whole-put `weighin` intent with kg, recordedAt and presence. |
+| DELETE | `/v1/gym/bodyweight/{dateLocal}` | Retire | Held death of `weighin`. |
+| GET | `/v1/gym/stats` | Keep | Statistics projection. |
+| PUT | `/v1/gym/threads/{thread}/attachments/{id}` | Keep | Coach attachment upload. |
+| GET | `/v1/gym/threads/{thread}/attachments/{id}` | Keep | Coach attachment read. |
+| POST | `/v1/gym/threads/{thread}/generations/{request}/stop` | Keep | Coach Stop. |
+| GET | `/v1/gym/threads` | Keep | Coach conversation list. |
+| GET | `/v1/gym/threads/{id}` | Keep | Coach conversation read. |
+| DELETE | `/v1/gym/threads/{id}` | Keep | Coach conversation deletion. |
+| POST | `/v1/gym/sessions/{id}/share` | Keep | Workout share creation. |
+| DELETE | `/v1/gym/sessions/{id}/share` | Keep | Workout share revocation. |
+| GET | `/v1/gym/shared/{token}` | Keep | Public workout share read. |
+| POST | `/v1/gym/sessions/{id}/corrections` | Retire | `gym.correctSession`. |
+| GET | `/v1/gym/history` | Keep | History/share-preview read. |
+| POST | `/v1/gym/log-shares` | Keep | Log share creation. |
+| GET | `/v1/gym/log-shares` | Keep | Log share list. |
+| DELETE | `/v1/gym/log-shares/{id}` | Keep | Log share revocation. |
+| GET | `/v1/gym/shared-logs/{token}` | Keep | Public log share read. |
+| POST | `/v1/gym/ask` | Keep | Coach Ask; mounted only when configured. |
+
 ### 8.2 Shapes
 
 `adapters/json/TrainingJson` is the one cross-surface codec — web, Android and the MCP tools all
@@ -788,6 +850,7 @@ carries a machine word under `code`
 
 | Status | `code` | When | What the client does |
 |---|---|---|---|
+| 410 | `client-update-required` | Retire route with `LEGACY_REST_WRITES_RETIRED=1`, before authentication or parsing | update the app; this version can no longer save |
 | 401 | — | no caller | sign in, then replay the write |
 | 404 | — | the session, routine or proposal is absent **or** another account's — one fact | terminal; re-read the list |
 | 400 | — | unreadable or unstorable *as written*: bad json, bad field type, a malformed id, an instant out of bounds, a bad cursor, a prefill read naming no movement, a close instant running backwards | terminal |
@@ -834,7 +897,9 @@ carries a machine word under `code`
 
 When gym's writes go through the sync engine ([engine](../../../docs/foundation/engine.md) A.2 and
 Appendix C), REST, MCP and Coach are server-origin doors (engine §6.3), and each keeps the ladder
-above. A door builds its intent under the scope lock; what it reads there and answers without
+above when legacy REST writes are not retired. The retirement switch blocks only marked REST
+registrations before a door runs. A door builds its intent under the scope lock; what it reads there
+and answers without
 admitting, and how it names an engine refusal, is this table. It names engine outcomes by their
 codes; a race between a door's read and its admission reaches the engine's own refusal.
 

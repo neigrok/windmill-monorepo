@@ -5,13 +5,25 @@ The key words MUST, MUST NOT, SHOULD and MAY are used as in RFC 2119. Sections, 
 
 ## §0 Status and scope
 
-**Status:** Built in the C++ server (`backend/platform/**/sync*`), which only
-`windmill_server_probe` mounts, and in the Swift client (`apps/ios/Sync`);
-`packages/api-contract/sync/reference/` is the JS reference. Gym's server-origin doors are built
-behind a disabled switch; journal's binding is specified in A.3. The composed contract serves gym
-and journal together. Gym and journal adopt their tables in place (Appendices C and D); every other
-product starts from empty stores. The composition requires both bindings and regenerated clients
-before it can be deployed (§2.4).
+**Status:** Built in the C++ server (`backend/platform/**/sync*`) and the Swift client
+(`apps/ios/Sync`); `packages/api-contract/sync/reference/` is the JS reference. `windmill_server`
+mounts the composed gym + journal HTTP and live routes when `SYNC_ENABLED` is enabled (default
+off); `windmill_server_probe` mounts the probe contract. Gym and journal's server-origin engine
+doors have separate default-off `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES` switches.
+The composed contract has version 4 and minimum version 4. Gym and journal adopt their tables in
+place (Appendices C and D); every other product starts from empty stores. The composition requires
+both bindings and regenerated clients before deployment (§2.4).
+
+**Legacy REST writes:** the current route ledgers live in
+[gym ARCHITECTURE §8.1](../../backend/products/gym/ARCHITECTURE.md#81-http-routes) and
+[journal ARCHITECTURE](../../backend/products/journal/ARCHITECTURE.md#http-surface).
+`LEGACY_REST_WRITES_RETIRED=1` refuses their marked Retire writes with 410
+`{"error":"This version of the app can no longer save; update it.","code":"client-update-required"}`
+before authentication, parsing or data access. It defaults off and is independent of engine
+admission and freeze switches. Keep routes and all reads stay REST until their separate cleanup;
+MCP, Coach and server-origin doors remain active. The owner sets the fixed retirement date; none
+is configured yet. Installed Android builds cannot be forced to update. `/v1/sync` retains its
+separate `426 upgrade-required` minimum-schema refusal (§9.1).
 
 **In the engine:**
 - record identity, deletion and spent ids;

@@ -94,6 +94,7 @@ jobs:
           APPLE_CLIENT_ID: ${{ vars.APPLE_CLIENT_ID || '' }}
           JOURNAL_ENGINE_WRITES: ${{ vars.JOURNAL_ENGINE_WRITES || '0' }}
           JOURNAL_WRITE_FREEZE: ${{ vars.JOURNAL_WRITE_FREEZE || '0' }}
+          LEGACY_REST_WRITES_RETIRED: ${{ vars.LEGACY_REST_WRITES_RETIRED || '0' }}
           WINDMILL_MCP_ALLOWED_ORIGINS: ${{ vars.WINDMILL_MCP_ALLOWED_ORIGINS }}
           IMAGE_TAG: ${{ inputs.image_tag || github.event.workflow_run.head_sha }}
         run: |
@@ -148,6 +149,7 @@ jobs:
                        JOURNAL_ECHO_ADMIN_TOKEN \
                        SYNC_ENABLED APPLE_NATIVE_ENABLED APPLE_CLIENT_ID \
                        GYM_ENGINE_WRITES GYM_WRITE_FREEZE JOURNAL_ENGINE_WRITES JOURNAL_WRITE_FREEZE \
+                       LEGACY_REST_WRITES_RETIRED \
                        WINDMILL_OWNER_EMAILS WINDMILL_COOKIE_RETIRED_DOMAINS \
                        WINDMILL_MCP_ALLOWED_ORIGINS WINDMILL_MCP_TOKEN; do
               printf '%s=%s\n' "$key" "${!key}"

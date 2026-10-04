@@ -46,7 +46,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         catalog->listExercises(req, std::move(cb));
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/exercises",
       [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         catalog->createExercise(req, std::move(cb));
@@ -66,7 +66,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // The rename is a PATCH and not a PUT because ONE field of a movement is a lifter's to change:
   // a PUT would promise the whole row, and the pattern, equipment and step of a seed belong to the
   // catalog rather than to any one account.
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/exercises/{id}",
       [catalog](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         catalog->renameExercise(req, std::move(cb), id);
@@ -81,7 +81,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         catalog->exerciseRecord(req, std::move(cb), id);
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         training->startSession(req, std::move(cb));
@@ -94,7 +94,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         training->importSession(req, std::move(cb));
       },
       {drogon::Post});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions/{id}/sets",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         training->appendSet(req, std::move(cb), id);
@@ -112,17 +112,17 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   // *"That one is yours to change. I can read what you lifted; I can't edit it."* A wave that
   // "completes the catalog" here deletes that sentence from the product. `GymToolsTest` pins the
   // absence so it cannot be added by accident.
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions/{id}/sets/{setId}",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
             const std::string& setId) { training->fixSet(req, std::move(cb), id, setId); },
       {drogon::Patch});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions/{id}/sets/{setId}",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
             const std::string& setId) { training->deleteSet(req, std::move(cb), id, setId); },
       {drogon::Delete});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions/{id}/finish",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         training->finishSession(req, std::move(cb), id);
@@ -146,7 +146,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         training->reviewSession(req, std::move(cb), id);
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/sessions/{id}",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         training->discardSession(req, std::move(cb), id);
@@ -164,7 +164,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         program->listRoutines(req, std::move(cb));
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/routines",
       [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         program->createRoutine(req, std::move(cb));
@@ -176,13 +176,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         program->getRoutine(req, std::move(cb), id);
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/routines/{id}",
       [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         program->replaceRoutine(req, std::move(cb), id);
       },
       {drogon::Put});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/routines/{id}",
       [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         program->deleteRoutine(req, std::move(cb), id);
@@ -209,13 +209,13 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         program->getProposal(req, std::move(cb), id);
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/proposals/{id}/apply",
       [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         program->applyProposal(req, std::move(cb), id);
       },
       {drogon::Post});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/proposals/{id}/dismiss",
       [program](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         program->dismissProposal(req, std::move(cb), id);
@@ -232,7 +232,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         preferences->preferences(req, std::move(cb));
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/preferences",
       [preferences](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         preferences->savePreferences(req, std::move(cb));
@@ -249,19 +249,19 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         notes->listNotes(req, std::move(cb));
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/notes",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
         notes->reorderNotes(req, std::move(cb));
       },
       {drogon::Put});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/notes/{id}",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         notes->saveNote(req, std::move(cb), id);
       },
       {drogon::Put});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/notes/{id}",
       [notes](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         notes->deleteNote(req, std::move(cb), id);
@@ -278,12 +278,12 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
         bodyweight->listEntries(req, std::move(cb));
       },
       {drogon::Get});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/bodyweight/{dateLocal}",
       [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                    const std::string& dateLocal) { bodyweight->saveEntry(req, std::move(cb), dateLocal); },
       {drogon::Put});
-  routes.registerHandler(
+  routes.registerLegacyWriteHandler(
       "/v1/gym/bodyweight/{dateLocal}",
       [bodyweight](const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                    const std::string& dateLocal) { bodyweight->deleteEntry(req, std::move(cb), dateLocal); },
@@ -355,7 +355,7 @@ void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
       },
       {drogon::Get});
 
-  routes.registerHandler("/v1/gym/sessions/{id}/corrections",
+  routes.registerLegacyWriteHandler("/v1/gym/sessions/{id}/corrections",
       [training](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id) {
         training->correctSession(req, std::move(cb), id);
       }, {drogon::Post});

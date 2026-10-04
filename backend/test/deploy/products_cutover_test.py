@@ -3,6 +3,7 @@ import argparse
 import copy
 import fcntl
 import hashlib
+import http.client
 import importlib.util
 import json
 import os
@@ -481,11 +482,13 @@ class CutoverTest:
         command(["psql", self.database_url(database), "-Xq", "-v", "ON_ERROR_STOP=1",
                  *[argument for name in files for argument in ("-f", str(BACKEND / "db" / name))]])
 
-    def snapshot(self, database):
+    def snapshot(self, database, row_versions=False):
         schema = command(["pg_dump", "--dbname", self.database_url(database), "--schema-only", "--no-owner", "--no-privileges"])
         schema = re.sub(rb"^\\(?:un)?restrict .+\n", b"", schema, flags=re.MULTILINE)
         rows = {}
         queries = ["SET timezone='UTC';"]
+        row_value = ("jsonb_build_object('row',to_jsonb(t),'xmin',t.xmin::text,'ctid',t.ctid::text)"
+                     if row_versions else "to_jsonb(t)")
         relations = self.sql(database, "SELECT json_build_array(schemaname,tablename) FROM pg_tables "
             "WHERE schemaname NOT IN ('pg_catalog','information_schema') AND schemaname NOT LIKE 'pg_toast%' "
             "ORDER BY schemaname,tablename")
@@ -493,7 +496,7 @@ class CutoverTest:
             namespace, table = json.loads(row)
             quoted = '"' + namespace.replace('"', '""') + '"."' + table.replace('"', '""') + '"'
             key = "'" + quoted.replace("'", "''") + "'"
-            queries.append(f"SELECT json_build_array({key}, coalesce(string_agg(to_jsonb(t)::text, E'\\n' "
+            queries.append(f"SELECT json_build_array({key}, coalesce(string_agg({row_value}::text, E'\\n' "
                            f"ORDER BY to_jsonb(t)::text COLLATE \"C\"), '')) FROM {quoted} t;")
         sequences = self.sql(database, "SELECT json_build_array(sequence_schema,sequence_name) FROM information_schema.sequences "
                              "WHERE sequence_schema NOT IN ('pg_catalog','information_schema') ORDER BY sequence_schema,sequence_name")
@@ -518,7 +521,7 @@ class CutoverTest:
         database = self.create_database(self.template)
         work = self.directory / name / "windmill"
         work.mkdir(parents=True)
-        original = {**OLD_SWITCHES, "POSTGRES_PASSWORD": SECRET, "DOMAIN_APP": "cutover.example.invalid", "IMAGE_TAG": "tested"}
+        original = {**OLD_SWITCHES, "LEGACY_REST_WRITES_RETIRED": "0", "POSTGRES_PASSWORD": SECRET, "DOMAIN_APP": "cutover.example.invalid", "IMAGE_TAG": "tested"}
         (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in original.items()))
         shutil.copyfile(BACKEND / "deploy/docker-compose.yml", work / "docker-compose.yml")
         shutil.copyfile(BACKEND / "deploy/Caddyfile", work / "Caddyfile")
@@ -555,7 +558,7 @@ class CutoverTest:
             path = binaries / tool
             path.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(SELF)]) + " " + mode + ' "$@"\n')
             path.chmod(0o700)
-        environment = {**os.environ, **SWITCHES, "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+        environment = {**os.environ, **SWITCHES, "LEGACY_REST_WRITES_RETIRED": "0", "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
                        "WM_CUTOVER_STATE": str(state_path)}
         return work, state_path, environment, database
 
@@ -631,6 +634,133 @@ class CutoverTest:
             assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0, path
         self.stop_server(fixture[1])
         return fixture
+
+    def legacy_retirement(self):
+        # Read the registration mark rather than maintaining a second list of retired paths.
+        inventory = []
+        for product in ("gym", "journal"):
+            source = (BACKEND / f"products/{product}/routes.cpp").read_text()
+            inventory += re.findall(
+                r'routes\.(register(?:LegacyWrite)?Handler)\(\s*"([^"]+)"'
+                r'(?:(?!routes\.register(?:LegacyWrite)?Handler).)*?'
+                r'\{drogon::(Get|Post|Put|Patch|Delete)\}\)', source, re.DOTALL)
+        retired = [(path, method.upper()) for registrar, path, method in inventory
+                   if registrar == "registerLegacyWriteHandler"]
+        assert retired and any(path.startswith("/v1/journal/") for path, _ in retired), "retirement inventory missing a product"
+        expected = {"error": "This version of the app can no longer save; update it.",
+                    "code": "client-update-required"}
+        for engine, frozen in (("0", "0"), ("1", "0"), ("1", "1")):
+            database = self.create_database(self.template)
+            self.apply(database, "gym_sync.sql", "journal_sync.sql")
+            for product in ("gym", "journal"):
+                command([self.args.bin_dir / f"windmill_{product}_backfill"],
+                        {**os.environ, **OLD_SWITCHES, "DATABASE_URL": self.database_url(database)})
+            owner = self.sql(database, "SELECT id FROM users WHERE email='gym-rehearsal-1@example.invalid'").decode()
+            digest = hashlib.sha256(SECRET.encode()).hexdigest()
+            self.sql(database, f"INSERT INTO sessions(token_hash,user_id,expires_ms) "
+                     f"VALUES ('{digest}','{owner}',99999999999999)")
+            with socket.socket() as reserved:
+                reserved.bind(("127.0.0.1", 0))
+                port = reserved.getsockname()[1]
+            environment = {**os.environ, **SWITCHES, "DATABASE_URL": self.database_url(database), "PORT": str(port),
+                "LEGACY_REST_WRITES_RETIRED": "1", "GYM_ENGINE_WRITES": engine, "JOURNAL_ENGINE_WRITES": engine,
+                "GYM_WRITE_FREEZE": frozen, "JOURNAL_WRITE_FREEZE": frozen, "SYNC_ENABLED": engine,
+                "WINDMILL_HOST": "127.0.0.1", "WINDMILL_APP_URL": "http://cutover.test",
+                "WINDMILL_API_URL": "http://cutover.test", "WINDMILL_COOKIE_DOMAIN": "",
+                "WINDMILL_MCP_TOKEN": SECRET, "WINDMILL_MCP_USER": owner, "WINDMILL_MCP_PATH": "/mcp",
+                "ANTHROPIC_API_KEY": "", "OPENAI_API_KEY": "", "RESEND_API_KEY": "", "SENTRY_DSN": "",
+                "AMPLITUDE_API_KEY": "", "JOURNAL_EMBEDDER_URL": "", "JOURNAL_NUDGE_ENABLED": "0",
+                "REMINDERS_ENABLED": "0", "TENDING_ENABLED": "0"}
+            log = self.directory / f"legacy-retirement-{engine}-{frozen}.log"
+            connection = http.client.HTTPConnection("127.0.0.1", port, timeout=3)
+
+            def request(method, path, body=b"{}", headers=None):
+                connection.request(method, path, body, {"Content-Type": "application/json", **(headers or {})})
+                response = connection.getresponse()
+                return response.status, {key.lower(): value for key, value in response.getheaders()}, response.read()
+
+            def concrete(path):
+                return re.sub(r'\{([^}]+)\}', lambda match: "2026-09-01"
+                              if match[1] in ("date", "dateLocal", "day", "triggerDay", "matchDay")
+                              else "retirement_fixture", path)
+
+            cookie = {"Cookie": "wm_session=" + SECRET}
+            with log.open("wb") as output:
+                process = subprocess.Popen([str(self.args.bin_dir / "windmill_server")], cwd=self.directory,
+                    env=environment, stdin=subprocess.DEVNULL, stdout=output, stderr=output, start_new_session=True)
+            try:
+                deadline = time.monotonic() + 15
+                while True:
+                    if process.poll() is not None:
+                        raise AssertionError("retirement server exited during startup: " + log.read_text())
+                    try:
+                        status, _, _ = request("GET", "/v1/gym/preferences")
+                        assert status == 401, ("read startup probe", status)
+                        break
+                    except (OSError, http.client.HTTPException):
+                        connection.close()
+                        if time.monotonic() >= deadline:
+                            raise AssertionError("retirement server startup timed out: " + log.read_text())
+                        time.sleep(0.05)
+                baseline = self.snapshot(database, row_versions=True)
+                for path, method in retired:
+                    for body, headers in ((b"{}", {}), (b"{", cookie),
+                                          (b'{"title":"Retired","body":"Must not be saved"}', cookie)):
+                        status, fields, payload = request(method, concrete(path), body, headers)
+                        assert status == 410 and json.loads(payload) == expected, (method, path, status, payload)
+                        assert fields.get("content-type", "").startswith("application/json"), fields
+                # Drain the ordinary visitor bucket, then prove retirement still wins.
+                forwarded = {"X-Forwarded-For": "192.0.2.17"}
+                for _ in range(100):
+                    status, _, _ = request("GET", "/v1/gym/preferences", b"", forwarded)
+                    if status == 429:
+                        break
+                    assert status == 401, ("retained rate-limit control", status)
+                else:
+                    raise AssertionError("retained route did not enforce its 50-request rate-limit burst")
+                for _ in range(100):
+                    path, method = retired[0]
+                    status, _, payload = request(method, concrete(path), b"", {**cookie, **forwarded})
+                    assert status == 410 and json.loads(payload) == expected, ("rate limited retirement", status, payload)
+                assert self.snapshot(database, row_versions=True) == baseline, "retired requests touched database rows/schema/sequences"
+
+                # Every retained registration reaches its existing door; public/conditional reads
+                # and the unconfigured Ask path may answer 404, but none may answer retirement.
+                for registrar, path, method in inventory:
+                    if registrar == "registerLegacyWriteHandler":
+                        continue
+                    status, _, payload = request(method.upper(), concrete(path))
+                    assert status != 410, ("retained route retired", method, path, payload)
+                for path in ("/v1/gym/preferences", "/v1/journal/pages"):
+                    status, _, payload = request("GET", path, headers=cookie)
+                    assert status == 200, ("retained authenticated read", path, status, payload)
+                if frozen == "0":
+                    status, _, payload = request("PATCH", "/v1/journal/nudge", b'{"enabled":false}', cookie)
+                    assert status == 200 and not json.loads(payload)["enabled"], (status, payload)
+                    assert self.sql(database, f"SELECT NOT enabled FROM journal_nudge WHERE user_id='{owner}'") == b"t"
+                    mcp = {"Authorization": "Bearer " + SECRET}
+                    status, fields, payload = request("POST", "/mcp", json.dumps({"jsonrpc": "2.0", "id": "init",
+                        "method": "initialize", "params": {"protocolVersion": "2025-03-26", "capabilities": {},
+                        "clientInfo": {"name": "retirement-test", "version": "1"}}}).encode(), mcp)
+                    assert status == 200 and "result" in json.loads(payload), (status, payload)
+                    mcp["Mcp-Session-Id"] = fields["mcp-session-id"]
+                    status, _, payload = request("POST", "/mcp", json.dumps({"jsonrpc": "2.0", "id": "write",
+                        "method": "tools/call", "params": {"name": "gym_save_note", "arguments": {
+                        "id": "note_retirement_mcp", "title": "MCP retained", "body": "Saved through the tool door."}}}).encode(), mcp)
+                    reply = json.loads(payload)
+                    assert status == 200 and "result" in reply and not reply["result"].get("isError", False), (status, payload)
+                    assert self.sql(database, f"SELECT body FROM gym_notes WHERE user_id='{owner}' AND id='note_retirement_mcp'") == b"Saved through the tool door."
+                self.cases += 1
+                print(f"PASS legacy retirement engine={engine} freeze={frozen}: {len(retired)} routes, no data touched", flush=True)
+            finally:
+                connection.close()
+                if process.poll() is None:
+                    os.killpg(process.pid, signal.SIGTERM)
+                    try:
+                        process.wait(timeout=15)
+                    except subprocess.TimeoutExpired:
+                        os.killpg(process.pid, signal.SIGKILL)
+                        process.wait(timeout=5)
 
     def failures(self):
         for phase in ("dump", "list", "checksum", "schema", "journal-schema", "backfill", "journal-backfill",
@@ -1015,8 +1145,14 @@ class CutoverTest:
         assert "group: deploy-vps" in source and "cancel-in-progress: false" in source, source
         assert "cut over gym and journal" in source and "inputs.confirm" in source, source
         assert "cutover-production.sh" in source and "migrate-production.sh" not in source, source
-        assert "group: deploy-vps" in self.args.deploy_workflow.read_text()
-        assert "deploy-production.sh" in self.args.deploy_workflow.read_text(), "deploy tests must exercise the program actually shipped by deploy.yml"
+        deploy = self.args.deploy_workflow.read_text()
+        assert "group: deploy-vps" in deploy
+        assert "deploy-production.sh" in deploy, "deploy tests must exercise the program actually shipped by deploy.yml"
+        assert "LEGACY_REST_WRITES_RETIRED: ${{ vars.LEGACY_REST_WRITES_RETIRED || '0' }}" in deploy, "retirement switch must default off in deploy"
+        render_keys = re.search(r'for key in POSTGRES_PASSWORD ([\s\S]*?); do', deploy)
+        assert render_keys and "LEGACY_REST_WRITES_RETIRED" in render_keys[1].split(), "deploy must forward retirement switch to .env"
+        compose = (BACKEND / "deploy/docker-compose.yml").read_text()
+        assert "LEGACY_REST_WRITES_RETIRED: ${LEGACY_REST_WRITES_RETIRED:-0}" in compose, "compose must forward retirement switch and default off"
         assert not (BACKEND / "deploy/gym-migration/database-fence.sh").exists(), "obsolete database fence remains"
         assert not (BACKEND / "deploy/gym-migration/migrate-production.sh").exists(), "obsolete fenced migration remains"
         self.cases += 1
@@ -1045,7 +1181,7 @@ def main():
     parser.add_argument("--maintenance-db", default=os.environ.get("DATABASE_URL", "postgresql:///postgres?host=/tmp"))
     parser.add_argument("--deploy-workflow", type=Path, default=BACKEND.parent / ".github/workflows/deploy.yml")
     parser.add_argument("--cutover-workflow", type=Path, default=BACKEND.parent / ".github/workflows/products-cutover.yml")
-    parser.add_argument("--regression-only", choices=("success", "failures", "kills", "guards", "deploy-guards", "forward-only", "rollback-kill", "recovery-kill", "automatic-restore-kill", "prerequisites"))
+    parser.add_argument("--regression-only", choices=("success", "failures", "kills", "guards", "deploy-guards", "forward-only", "rollback-kill", "recovery-kill", "automatic-restore-kill", "prerequisites", "legacy-retirement"))
     args = parser.parse_args()
     args.bin_dir = args.bin_dir.resolve()
     for product in ("gym", "journal"):
@@ -1059,12 +1195,13 @@ def main():
             methods = {"success": test.success, "failures": test.failures, "kills": test.kills,
                        "guards": test.guards, "deploy-guards": test.deploy_guards, "forward-only": test.forward_only,
                        "rollback-kill": test.rollback_start_kill, "recovery-kill": test.recovery_restore_kill,
-                       "automatic-restore-kill": test.automatic_restore_kill, "prerequisites": test.prerequisites}
+                       "automatic-restore-kill": test.automatic_restore_kill, "prerequisites": test.prerequisites,
+                       "legacy-retirement": test.legacy_retirement}
             if args.regression_only:
                 methods[args.regression_only]()
             else:
                 test.workflows()
-                for method in (test.prerequisites, test.guards, test.deploy_guards, test.success, test.failures, test.kills,
+                for method in (test.legacy_retirement, test.prerequisites, test.guards, test.deploy_guards, test.success, test.failures, test.kills,
                                test.recovery_restore_kill, test.automatic_restore_kill, test.rollback_start_kill, test.forward_only):
                     method()
             print(json.dumps({"passed": True, "cases": test.cases}, sort_keys=True))
