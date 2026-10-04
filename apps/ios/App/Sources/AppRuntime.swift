@@ -75,16 +75,24 @@ final class AppRuntime {
   let lifecycle: AppLifecycle
   let tokens: any TokenStore
   let revocations: any TokenStore
+  let hadInstallHistory: Bool
   var revoking = false
   var lastRevocationAttempt = Date.distantPast
   var revocationOnline = false
 
-  init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry()) throws {
+  init(settings: AppSettings, telemetry: any Telemetry = NoopTelemetry(), directory: URL? = nil,
+       service: String? = nil, syncTransport: (any SyncTransport)? = nil) throws {
     self.settings = settings; self.telemetry = telemetry
     let telemetry: any Telemetry = telemetry is NoopTelemetry ? telemetry : BoundedTelemetry(telemetry)
-    let directory = URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
-    if (settings.board != nil && !settings.restoreBoard) || settings.scenario != nil { try? FileManager.default.removeItem(at: directory) }
-    let storage = try ProtectedStorage(directory: directory, telemetry: telemetry)
+    let storageDirectory = directory ?? URL.applicationSupportDirectory.appending(path: settings.board.map { "JournalBoards/\($0)" } ?? settings.scenario.map { "JournalVerification/\($0)" } ?? "WindmillSync")
+    if directory == nil && ((settings.board != nil && !settings.restoreBoard) || settings.scenario != nil) { try? FileManager.default.removeItem(at: storageDirectory) }
+    let keychainService = service ?? settings.board.map { "works.windmill.boards.\($0)" } ?? settings.scenario.map { "works.windmill.scenarios.\($0)" } ?? "works.windmill.app"
+    tokens = KeychainTokenStore(service: keychainService, telemetry: telemetry)
+    revocations = KeychainTokenStore(service: keychainService + ".signed-out-sessions", telemetry: telemetry)
+    // Engine launch can prune credentials; preserve the phone's history before it mutates anything.
+    hadInstallHistory = FileManager.default.fileExists(atPath: storageDirectory.path) ||
+      !tokens.accounts().isEmpty || !revocations.accounts().isEmpty
+    let storage = try ProtectedStorage(directory: storageDirectory, telemetry: telemetry)
     do {
       store = try Store(path: storage.databasePath, registry: SyncSchema.registry,
                         commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
@@ -120,10 +128,7 @@ final class AppRuntime {
     transport = HTTPTransport(baseURL: settings.baseURL ?? URL(string: "http://127.0.0.1:1")!, schema: SyncSchema.version, telemetry: telemetry)
     auth = NativeAuth(baseURL: settings.baseURL, telemetry: telemetry)
     #endif
-    let service = settings.board.map { "works.windmill.boards.\($0)" } ?? settings.scenario.map { "works.windmill.scenarios.\($0)" } ?? "works.windmill.app"
-    tokens = KeychainTokenStore(service: service, telemetry: telemetry)
-    revocations = KeychainTokenStore(service: service + ".signed-out-sessions", telemetry: telemetry)
-    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), store: store, transport: transport,
+    engine = try SyncEngine(config: EngineConfig(appVersion: "0.2.0", surface: .ios), store: store, transport: syncTransport ?? transport,
                             tokens: tokens,
                             forkGuard: storage.forkGuard, clock: EngineClock(wall: settings.board != nil ? BoardClock() : SystemClock(), sleeper: ContinuousClock()), random: SystemRandom(), connectivity: PathConnectivity(), telemetry: telemetry)
     runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: DeviceZone())
@@ -135,6 +140,7 @@ final class AppRuntime {
     self.telemetry = telemetry
     self.settings = settings; self.store = store; self.engine = engine; self.auth = auth; self.runner = runner
     self.tokens = tokens; self.revocations = revocations
+    hadInstallHistory = true
     lifecycle = AppLifecycle(engine: engine, signals: .application, time: ApplicationBackgroundTime())
   }
 

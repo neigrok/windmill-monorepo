@@ -206,7 +206,8 @@ import Synchronization
     server.state.withLock { $0.helloOnline = false }
     await model.createAppleAccount()
     let runtime = try #require(model.runtime), sessions = server.state.withLock { $0.sessions }
-    let restored = try JournalModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime)
+    let recorder = TelemetryRecorder()
+    let restored = try JournalModel(runner: runtime.runner, preferences: model.preferences, runtime: runtime, telemetry: recorder)
     #expect(restored.pendingSignIn != nil && restored.sheet == .authPending && restored.appleTicket == nil)
     server.state.withLock { $0.helloOnline = true; $0.authOnline = false }
     await restored.start()
@@ -214,6 +215,8 @@ import Synchronization
     for _ in 0..<200 where restored.pendingSignIn != nil { try await Task.sleep(for: .milliseconds(10)) }
     #expect(restored.pendingSignIn == nil && restored.account == "model-apple@example.com" && restored.sheet == nil)
     #expect(restored.document.body == "Survives the failed hello" && server.state.withLock { $0.sessions == sessions })
+    #expect(recorder.entries.withLock { $0.filter { $0.name == "auth_signed_in" }.map(\.properties) } == [["method": "apple", "outcome": "ok"]])
+    #expect(restored.preferences.string(forKey: "pendingAuthMethod") == nil && !restored.restoringSignIn)
   }
 
   @Test func lostRemovalResponseThen404ClearsStaleAppleRow() async throws {

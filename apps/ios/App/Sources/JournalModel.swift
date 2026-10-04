@@ -54,12 +54,15 @@ final class JournalModel {
   var working = false
   var accountTransition = false
   var syncStarted = false
+  var restoringSignIn = false
   var signInSession: SignInSession?
   var signOutSession: SignOutSession?
   var welcome: Bool
   @ObservationIgnored var saveTask: Task<Void, Never>?
   @ObservationIgnored var observationTask: Task<Void, Never>?
   @ObservationIgnored var timerTask: Task<Void, Never>?
+  @ObservationIgnored var recoveryDue: ContinuousClock.Instant?
+  @ObservationIgnored var recoveryDelayMs = Constants.backoffBaseMs
   var editorDay: LocalDay
 
   enum Sheet: String, Identifiable {
@@ -101,6 +104,7 @@ final class JournalModel {
     if let runtime, let pending = try runtime.store.read({ try $0.device().meta.pendingSignIn }), let token = runtime.tokens.token(for: pending) {
       let identity = AuthIdentity(account: pending, token: token, name: accountName, email: preferences.string(forKey: "accountEmail:\(pending)") ?? "")
       pendingSignIn = PendingSignIn(identity: identity, method: preferences.string(forKey: "pendingAuthMethod") ?? "email", linked: preferences.bool(forKey: "pendingAuthLinked"), needsAppleAttachment: false, receiptPending: false)
+      restoringSignIn = true
       sheet = .authPending; welcome = false
     }
   }
@@ -144,38 +148,72 @@ final class JournalModel {
 
   func start() async {
     guard let runtime else { return }
-    let events = runtime.engine.events()
-    observationTask = Task { [weak self] in
-      for await _ in events { self?.refresh() }
+    let restoring = restoringSignIn
+    if observationTask == nil {
+      let events = runtime.engine.events()
+      observationTask = Task { [weak self] in
+        for await _ in events { self?.refresh() }
+      }
     }
     await runtime.revokeSignedOutSessions(force: true)
     await resumeBackup()
-    refresh()
-    runtime.updateTelemetryIdentity()
-    telemetry.event("auth_restore", properties: ["outcome": account == nil ? "anonymous" : authPaused ? "paused" : "signed_in"])
-    if !welcome { automaticallyShowInk() }
-    timerTask = Task { [weak self] in
-      while !Task.isCancelled {
-        try? await Task.sleep(for: .milliseconds(350))
-        guard let self, !Task.isCancelled else { return }
-        self.refresh()
-        self.expireAppleTicket()
-        if self.pendingSignIn != nil, !self.working, self.authRetryAt <= Date() { await self.retryAuthenticatedSignIn() }
-        if !self.syncStarted && !self.dirty { await self.resumeBackup() }
-        await self.runtime?.revokeSignedOutSessions()
+    if timerTask == nil {
+      timerTask = Task { [weak self] in
+        while !Task.isCancelled {
+          try? await Task.sleep(for: .milliseconds(350))
+          guard let self, !Task.isCancelled else { return }
+          self.refresh()
+          self.expireAppleTicket()
+          if !self.restoringSignIn, self.pendingSignIn != nil, !self.working, !self.accountTransition, self.authRetryAt <= Date() { await self.retryAuthenticatedSignIn() }
+          if !self.syncStarted && !self.dirty { await self.resumeBackup() }
+          await self.runtime?.revokeSignedOutSessions()
+        }
       }
     }
+    guard !Task.isCancelled else { return }
+    refresh()
+    runtime.updateTelemetryIdentity()
+    if !syncStarted {
+      let outcome = dirty ? (account == nil ? "anonymous" : authPaused ? "paused" : "signed_in") : "failed"
+      telemetry.event("auth_restore", properties: ["outcome": outcome])
+    }
+    if !welcome && !restoring { automaticallyShowInk() }
   }
 
   func resumeBackup() async {
-    guard !accountTransition, pendingSignIn == nil, let runtime else { return }
+    guard !Task.isCancelled, !syncStarted, !accountTransition, !working,
+          pendingSignIn == nil || restoringSignIn, let runtime else { return }
+    if let recoveryDue, recoveryDue > ContinuousClock.now { return }
     accountTransition = true; editing = false
     defer { accountTransition = false }
     if dirty, !save() { return }
     await runtime.engine.start()
-    signInSession = try? await runtime.engine.resumeSignIn()
-    if signInSession?.isComplete == false { sheet = .adoption }
-    syncStarted = true
+    guard !Task.isCancelled else { return }
+    do {
+      let resumed = try await runtime.engine.resumeSignIn()
+      try Task.checkCancellation()
+      signInSession = resumed
+      syncStarted = true
+      recoveryDue = nil; recoveryDelayMs = Constants.backoffBaseMs
+      refresh()
+      runtime.updateTelemetryIdentity()
+      if restoringSignIn {
+        if let pending = pendingSignIn, preferences.string(forKey: "pendingAuthMethod") != nil {
+          telemetry.event("auth_signed_in", properties: ["method": pending.method, "outcome": pending.linked ? "linked" : "ok"])
+        }
+        pendingSignIn = nil; restoringSignIn = false
+        preferences.removeObject(forKey: "pendingAuthMethod"); preferences.removeObject(forKey: "pendingAuthLinked")
+        presentSignInResult()
+      } else if signInSession?.isComplete == false { sheet = .adoption }
+      telemetry.event("auth_restore", properties: ["outcome": account == nil ? "anonymous" : authPaused ? "paused" : "signed_in"])
+    } catch {
+      guard !Task.isCancelled, !(error is CancellationError) else { return }
+      let delayMs = Int64.random(in: Constants.backoffBaseMs...recoveryDelayMs)
+      recoveryDue = ContinuousClock.now.advanced(by: .milliseconds(delayMs))
+      recoveryDelayMs = min(recoveryDelayMs * 2, Constants.backoffLiveCeilingMs)
+      guard !(error is EngineError) else { return }
+      reportBoundary("auth_restore", error: error)
+    }
   }
 
   func refresh() {
@@ -430,7 +468,8 @@ final class JournalModel {
   }
 
   func retryAuthenticatedSignIn() async {
-    guard !working, pendingSignIn != nil else { return }
+    guard !working, !accountTransition, pendingSignIn != nil else { return }
+    if restoringSignIn { recoveryDue = nil; await resumeBackup(); return }
     working = true; accountTransition = true; error = nil
     defer { working = false; accountTransition = false }
     await continueAuthenticatedSignIn()

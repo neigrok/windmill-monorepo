@@ -65,7 +65,7 @@ MetricKit are disabled. Technical reports contain no product navigation history.
 
 ## Product events
 
-The 18-name allowlist below covers the app's screens and actions. Every row also carries the common
+The 22-name allowlist below covers the app's screens and actions. Every row also carries the common
 platform/version/build/release/environment properties. Scale answers record only that the invitation
 was answered or declined; neither the scale name nor its value is recorded.
 
@@ -76,6 +76,8 @@ was answered or declined; neither the scale name nor its value is recorded.
 | Email code | `auth_code_requested`, `auth_code_sent` | method: email; outcome: ok, failed |
 | Sign-in | `auth_sign_in_started`, `auth_signed_in` | method: email, apple; outcome: ok, linked, failed, cancelled; linked follows a code link or signed-in attach |
 | Sign-out | `auth_signed_out` | outcome: ok |
+| Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
+| Introduction replay | `onboarding_replayed` | presentation: replay |
 | First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
 | Choices | `first_run_choice` | screen; action: open_journal, show_ink, dismiss_ink, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
@@ -89,9 +91,18 @@ Apple auth operations use static labels `auth_apple`, `auth_apple_create`, `auth
 The simulator model follows the same auth-boundary failure reporting, without secrets in diagnostics.
 A legacy Apple door returning `created: true` is a decode failure; its session never reaches the engine.
 `auth_pending` marks authenticated sign-in awaiting engine recovery; `retry` resumes the retained
-identity without repeating code verification or ticket creation. Retries also run after a five-second
-delay while the app is open. Paused Apple linking validates the verified account id before bearer
-attachment. Apple removal treats HTTP 404 as already removed, alongside 204.
+identity without repeating code verification or ticket creation. In-process authenticated sign-in retries
+also run after a five-second delay while the app is open; restored engine sign-ins use the account
+recovery cooldown below. Completing a restored app sign-in retains its method and linked outcome.
+Paused Apple linking validates the verified account id before bearer attachment. Apple removal treats
+HTTP 404 as already removed, alongside 204.
+
+The four-page introduction records each viewed page, Skip and completion; opening About Windmill
+records replay before the sheet's page views. Its labels contain no picture text or user content.
+Account recovery runs independently of introduction gating and scene changes. Interrupted recovery
+stays retryable and emits no outcome; a failed initial restore emits `auth_restore: failed`, and a later
+successful retry emits its restored outcome. Retries are single-flight with a jittered 1–30 second
+exponential cooldown. Install history is captured before engine credential cleanup and is never telemetry.
 No page counts, record IDs, dates, text, scale values or account identity are included in properties.
 The wire schema is `{sessionKey, platform: "ios", events: [{id, name, clientMs, props}]}`.
 UUID event IDs and the session key persist across relaunch and retries.

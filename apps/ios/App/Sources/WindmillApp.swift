@@ -6,6 +6,9 @@ struct WindmillApp: App {
   @Environment(\.scenePhase) var scenePhase
   @State var model: JournalModel?
   @State var failure: String?
+  @State var introduction = false
+  @State var launchLink = false
+  @UIApplicationDelegateAdaptor(OnboardingLaunchDelegate.self) var launchDelegate
   let settings: AppSettings
   let telemetry: AppTelemetry
   init() {
@@ -24,28 +27,53 @@ struct WindmillApp: App {
     WindowGroup {
       Group {
         if let model {
-          RootScreen(model: model)
+          if introduction {
+            OnboardingScreen(replay: false, telemetry: telemetry) { introduction = false }
+          } else { RootScreen(model: model).preferredColorScheme(.dark) }
         } else if let failure {
           ZStack { Design.shell.ignoresSafeArea(); Text(failure).foregroundStyle(Design.ink).padding(24) }
-        } else { Design.shell.ignoresSafeArea() }
-      }.preferredColorScheme(.dark).onChange(of: scenePhase) { _, phase in
+        } else { Color("ShellCanvas").ignoresSafeArea() }
+      }.preferredColorScheme(OnboardingFixture.appearance)
+        .onOpenURL { _ in launchLink = true; introduction = false }
+        .onContinueUserActivity(NSUserActivityTypeBrowsingWeb) { _ in launchLink = true; introduction = false }
+        .onChange(of: scenePhase) { _, phase in
         if phase != .active { model?.background() }
         if phase == .background { telemetry.event("app_backgrounded") }
         else if phase == .active { telemetry.event("app_foregrounded"); model?.refresh() }
-      }.task {
-        guard model == nil else { return }
+      }.modifier(JournalStartup(model: model))
+      .task(id: scenePhase) {
+        guard scenePhase == .active, model == nil else { return }
+        await Task.yield()
+        guard !Task.isCancelled else { return }
         do {
           let runtime = try AppRuntime(settings: settings, telemetry: telemetry)
           let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, let suite { preferences.removePersistentDomain(forName: suite) }
           let created = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
-          if let board = settings.board, !settings.restoreBoard { await BoardFixture.prepare(board, model: created) }
+          var onboardingFixture = false
+          if let board = settings.board, !settings.restoreBoard {
+            onboardingFixture = await OnboardingFixture.prepare(board, model: created)
+            if !onboardingFixture { await BoardFixture.prepare(board, model: created) }
+          }
+          if settings.board == nil && settings.scenario == nil || onboardingFixture {
+            introduction = try OnboardingLaunch.shouldPresent(model: created, deepLink: launchLink || launchDelegate.deepLink || settings.board == "onboarding-deep-link")
+          }
           model = created
-          await created.start()
-          if settings.scenario != nil { await AppScenario.run(model: created) }
         } catch { failure = "Couldn't open the journal on this phone. \(error.localizedDescription)" }
       }
+    }
+  }
+}
+
+// Scene changes may cancel launch gating, but must not interrupt account recovery.
+struct JournalStartup: ViewModifier {
+  let model: JournalModel?
+  func body(content: Content) -> some View {
+    content.task(id: model != nil) {
+      guard let model else { return }
+      await model.start()
+      if model.runtime?.settings.scenario != nil { await AppScenario.run(model: model) }
     }
   }
 }

@@ -8,6 +8,7 @@ struct AccountSheet: View {
   @Bindable var model: JournalModel
   @FocusState var focusedInput: JournalModel.Sheet?
   @State var appleNonce = ""
+  @State var aboutWindmill = false
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @Environment(\.colorScheme) var colorScheme
@@ -58,6 +59,11 @@ struct AccountSheet: View {
       .presentationDragIndicator(.visible)
       .presentationDetents(compact && !typeSize.isAccessibilitySize ? [.medium] : [.large])
       .presentationCornerRadius(40)
+      .sheet(isPresented: $aboutWindmill) {
+        let systemStyle = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first?.traitCollection.userInterfaceStyle
+        OnboardingScreen(replay: true, telemetry: model.telemetry) { aboutWindmill = false }
+          .preferredColorScheme(OnboardingFixture.appearance ?? (systemStyle == .light ? .light : .dark))
+      }
       .interactiveDismissDisabled(model.editorReadOnly)
       .disabled((model.working || model.accountTransition) && !inputStep)
       .animation(.easeOut(duration: reduceMotion ? 0.2 : 0.28), value: model.sheet)
@@ -280,6 +286,13 @@ struct AccountSheet: View {
         fact("Backup", model.authPaused ? "Paused" : model.backup == "backed up" ? "Up to date" : "Not backed up yet")
         Button("Sign out") { Task { await model.beginSignOut() } }.frame(minHeight: 52).accessibilityIdentifier("sign-out")
       }
+      Button {
+        model.telemetry.event("onboarding_replayed", properties: ["presentation": "replay"])
+        aboutWindmill = true
+      } label: {
+        HStack { Text("About Windmill"); Spacer(); Image(systemName: "chevron.right") }
+          .padding(16).frame(minHeight: 52).background(Design.card, in: RoundedRectangle(cornerRadius: 20))
+      }.buttonStyle(.plain).accessibilityIdentifier("about-windmill")
     }
   }
 

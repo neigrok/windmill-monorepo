@@ -61,6 +61,7 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 - [Nunito](https://github.com/google/fonts/tree/main/ofl/nunito), extra bold.
 - [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/tree/master/fonts/ttf), regular.
 - [Caveat](https://github.com/google/fonts/tree/main/ofl/caveat), regular ink notes.
+- [Baloo 2](https://github.com/google/fonts/tree/main/ofl/baloo2), bold introduction wordmark.
 
 Inter, Nunito and Caveat are static instances of the official variable fonts. Colour and type tokens
 follow the supplied Figma `TOKENS.json`. Ink paths are vectors attached to live view anchors.
@@ -68,7 +69,7 @@ follow the supplied Figma `TOKENS.json`. Ink paths are vectors attached to live 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
 `-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
-See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 18-event allowlist,
+See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 22-event allowlist,
 privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
 with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
 builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.

@@ -33,9 +33,12 @@ nonisolated enum TelemetryPrivacy {
     "app_started", "app_foregrounded", "app_backgrounded", "auth_restore", "auth_code_requested",
     "auth_code_sent", "auth_sign_in_started", "auth_signed_in", "auth_signed_out",
     "first_run_screen_viewed", "first_run_choice", "scale_invitation_shown", "scale_invitation_answered",
-    "journal_line_saved", "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error"
+    "journal_line_saved", "sync_pull_outcome", "sync_push_outcome", "api_request_failed", "client_error",
+    "onboarding_screen_viewed", "onboarding_skipped", "onboarding_finished", "onboarding_replayed"
   ]
   static let labels: [String: Set<String>] = [
+    "page": ["windmill", "roadmap", "journal", "gym"],
+    "presentation": ["first_launch", "replay"],
     "screen": ["welcome", "journal", "ink_notes", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24a", "24b", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
     "action": ["open_journal", "show_ink", "dismiss_ink", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
     "outcome": ["ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous", "linked"],

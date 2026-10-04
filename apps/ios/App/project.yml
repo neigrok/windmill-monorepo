@@ -88,7 +88,6 @@ targets:
         CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
-        UIUserInterfaceStyle: Dark
         UILaunchScreen:
           UIColorName: ShellCanvas
         UISupportedInterfaceOrientations: [UIInterfaceOrientationPortrait]
@@ -100,6 +99,7 @@ targets:
           - Nunito-ExtraBold.ttf
           - JetBrainsMono-Regular.ttf
           - Caveat-Regular.ttf
+          - Baloo2-Bold.ttf
     scheme:
       testTargets: [WindmillTests, WindmillUITests]
   WindmillTests:
