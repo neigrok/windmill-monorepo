@@ -50,7 +50,7 @@ extension SyncEngine {
       try reauthenticate(token: token)
       return SignInSession(engine: self, account: account, holdsRecords: [:], decisions: nil)
     }
-    let replaced = try core.store.read { try $0.deviceMeta()?.meta.pendingSignIn }
+    let replaced = try core.storageRead { try $0.deviceMeta()?.meta.pendingSignIn }
     try core.tokens.save(token, for: account)
     try core.write { store, _ in try store.beginSignIn(account: account) }
     if let replaced, !replaced.utf8.elementsEqual(account.utf8) { try? core.tokens.delete(for: replaced) }
@@ -59,7 +59,7 @@ extension SyncEngine {
 
   // The pending sign-in, with a new hello and every decision still due; nil when no sign-in is pending.
   public func resumeSignIn() async throws -> SignInSession? {
-    guard let account = try core.store.read({ try $0.deviceMeta()?.meta.pendingSignIn }) else { return nil }
+    guard let account = try core.storageRead({ try $0.deviceMeta()?.meta.pendingSignIn }) else { return nil }
     return try await continueSignIn(as: account)
   }
 
@@ -149,7 +149,7 @@ extension SyncEngine {
 
   // What accounts left on this device at sign-out with Keep, each with its unsent entries and pending device work.
   public func dormantReplicas() throws -> [DormantReplica] {
-    try core.store.read { try $0.device() }.replicas.compactMap { replica in
+    try core.storageRead { try $0.device() }.replicas.compactMap { replica in
       guard replica.meta.state == .dormant, let account = replica.meta.account else { return nil }
       return DormantReplica(
         account: account, ready: replica.outbox.filter { $0.state == .ready }.count,

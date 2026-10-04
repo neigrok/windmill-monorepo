@@ -39,7 +39,7 @@ struct JournalScreen: View {
           InkNotes(frames: anchors.mapValues { geometry[$0] }, visible: model.inkVisible && !focused && !model.roomMenu)
         }
       }
-    }.onAppear { focused = model.editing }.onChange(of: focused) { _, value in
+    }.onAppear { model.screenViewed("journal"); focused = model.editing; model.recordInvitations() }.onChange(of: focused) { _, value in
       model.editing = value
       if value { model.liftInk() } else { model.done() }
     }

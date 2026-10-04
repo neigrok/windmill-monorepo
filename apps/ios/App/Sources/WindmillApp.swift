@@ -1,11 +1,25 @@
 import SwiftUI
+import SyncEngine
 
 @main
 struct WindmillApp: App {
   @Environment(\.scenePhase) var scenePhase
   @State var model: JournalModel?
   @State var failure: String?
-  let settings = AppSettings()
+  let settings: AppSettings
+  let telemetry: AppTelemetry
+  init() {
+    let settings = AppSettings()
+    self.settings = settings
+    #if DEBUG
+    let debug = true
+    #else
+    let debug = false
+    #endif
+    telemetry = AppTelemetry(info: settings.telemetryInfo, baseURL: settings.baseURL,
+                             directory: URL.applicationSupportDirectory.appending(path: "WindmillTelemetry"), debug: debug)
+    telemetry.event("app_started")
+  }
   var body: some Scene {
     WindowGroup {
       Group {
@@ -15,15 +29,17 @@ struct WindmillApp: App {
           ZStack { Design.shell.ignoresSafeArea(); Text(failure).foregroundStyle(Design.ink).padding(24) }
         } else { Design.shell.ignoresSafeArea() }
       }.preferredColorScheme(.dark).onChange(of: scenePhase) { _, phase in
-        if phase != .active { model?.background() } else { model?.refresh() }
+        if phase != .active { model?.background() }
+        if phase == .background { telemetry.event("app_backgrounded") }
+        else if phase == .active { telemetry.event("app_foregrounded"); model?.refresh() }
       }.task {
         guard model == nil else { return }
         do {
-          let runtime = try AppRuntime(settings: settings)
+          let runtime = try AppRuntime(settings: settings, telemetry: telemetry)
           let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, let suite { preferences.removePersistentDomain(forName: suite) }
-          let created = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime)
+          let created = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
           if let board = settings.board { await BoardFixture.prepare(board, model: created) }
           model = created
           await created.start()
@@ -40,7 +56,7 @@ struct RootScreen: View {
   var body: some View {
     Group {
       if model.runtime?.settings.board == "01-launch" { Design.shell.ignoresSafeArea() }
-      else if model.welcome { welcome }
+      else if model.welcome { welcome.onAppear { model.screenViewed("welcome") } }
       else { JournalScreen(model: model) }
     }.sheet(isPresented: Binding(get: { model.sheet != nil }, set: { if !$0 && !model.editorReadOnly { model.sheet = nil } }), onDismiss: { model.dismissSheet() }) { AccountSheet(model: model) }
       .environment(\.dynamicTypeSize, model.runtime?.settings.board?.contains("AX3") == true ? .accessibility3 : typeSize)
@@ -70,7 +86,7 @@ struct RootScreen: View {
                 .overlay(RoundedRectangle(cornerRadius: 28).stroke(Design.line, lineWidth: 1))
             }.buttonStyle(.plain).accessibilityIdentifier("open-journal")
               .padding(.horizontal, -8)
-            if model.canSignIn { Button("Sign in") { model.sheet = .keep }.font(Design.strong()).foregroundStyle(Design.dim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
+            if model.canSignIn { Button("Sign in") { model.choose("keep", screen: "welcome"); model.sheet = .keep }.font(Design.strong()).foregroundStyle(Design.dim).frame(maxWidth: .infinity, minHeight: 52).padding(.top, 10) }
             if model.keptWork {
               Text("Changes you kept will return when you sign in to the same account.").font(Design.text(13)).foregroundStyle(Design.dim).padding(.top, 8)
             }

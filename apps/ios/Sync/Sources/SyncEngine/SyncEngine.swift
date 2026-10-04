@@ -27,9 +27,9 @@ public final class SyncEngine: Replica {
 
   public convenience init(config: EngineConfig, bindings: [any ProductBinding] = [], store: Store, transport: any SyncTransport,
                           tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
-                          connectivity: any Connectivity) throws {
+                          connectivity: any Connectivity, telemetry: any Telemetry = NoopTelemetry()) throws {
     try self.init(config: config, bindings: bindings, store: store, transport: transport, tokens: tokens, forkGuard: forkGuard,
-                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity)
+                  clock: clock, random: random, identities: Identities(random: random), connectivity: connectivity, telemetry: telemetry)
   }
 
   // Construction runs engine start's first half (`EngineCore.launch`). `identities` mints every id and actor; the
@@ -38,9 +38,9 @@ public final class SyncEngine: Replica {
   package init(config: EngineConfig, bindings: [any ProductBinding], store: Store, transport: any SyncTransport,
                tokens: any TokenStore, forkGuard: any ForkGuardStore, clock: EngineClock, random: any RandomSource,
                identities: any IdentitySource & Sendable, connectivity: any Connectivity,
-               tap: (@Sendable (EngineEvent) -> Void)? = nil) throws {
+               tap: (@Sendable (EngineEvent) -> Void)? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
     let core = EngineCore(config: config, bindings: bindings, store: store, tokens: tokens, clock: clock, random: random,
-                          identities: identities, connectivity: connectivity)
+                          identities: identities, connectivity: connectivity, telemetry: telemetry)
     if let tap { core.publisher.tap(tap) }
     try core.launch(forkGuard: forkGuard)
 
@@ -72,7 +72,7 @@ public final class SyncEngine: Replica {
   // `resumeSignIn()`. Then every subscribed scope is wanted, and the loops start, once. In step mode (`drivesLoops`
   // false) the loops stay for the caller to step.
   public func start() async {
-    if let pending = try? core.store.read({ try $0.deviceMeta()?.meta.pendingSignIn }) {
+    if let pending = try? core.storageRead({ try $0.deviceMeta()?.meta.pendingSignIn }) {
       _ = try? await continueSignIn(as: pending)
     } else {
       let seat = try? core.seat()
@@ -170,7 +170,7 @@ public final class SyncEngine: Replica {
 
   // §7.12 the id of the replica commits, views, the sender and the puller act on, each change of it announced.
   public func activeReplica() throws -> String {
-    try core.store.read { try $0.activeReplica() }
+    try core.storageRead { try $0.activeReplica() }
   }
 
   // MARK: Observing (UI modules)
@@ -274,12 +274,12 @@ public final class SyncEngine: Replica {
 
   // What `notices(product)` and `undoOffers` show, read from the store now rather than through the main-actor views.
   package func currentNotices(_ product: String) throws -> [Notice] {
-    try core.store.read { try ViewHub.loadNotices($0, of: product) }
+    try core.storageRead { try ViewHub.loadNotices($0, of: product) }
   }
 
   package func currentUndoOffers() throws -> [UndoOffer] {
     let deviceNow = core.clock.wall.nowMs()
-    return try core.store.read { try ViewHub.loadOffers($0, deviceNow: deviceNow) }
+    return try core.storageRead { try ViewHub.loadOffers($0, deviceNow: deviceNow) }
   }
 
   package var identities: any IdentitySource & Sendable { core.identities }
@@ -312,6 +312,7 @@ final class EngineCore: Sendable {
   let random: any RandomSource
   let identities: any IdentitySource & Sendable
   let connectivity: any Connectivity
+  let telemetry: any Telemetry
   let publisher = Publisher()
   let wakes = Wakes()
   let pullWants = PullWants()
@@ -329,7 +330,8 @@ final class EngineCore: Sendable {
   let writingThread = Atomic<UInt64>(0)
 
   init(config: EngineConfig, bindings: [any ProductBinding], store: Store, tokens: any TokenStore, clock: EngineClock,
-       random: any RandomSource, identities: any IdentitySource & Sendable, connectivity: any Connectivity) {
+       random: any RandomSource, identities: any IdentitySource & Sendable, connectivity: any Connectivity,
+       telemetry: any Telemetry = NoopTelemetry()) {
     self.config = config
     self.bindings = bindings
     self.store = store
@@ -338,7 +340,19 @@ final class EngineCore: Sendable {
     self.random = random
     self.identities = identities
     self.connectivity = connectivity
+    let telemetry: any Telemetry = telemetry is NoopTelemetry || telemetry is BoundedTelemetry ? telemetry : BoundedTelemetry(telemetry)
+    self.telemetry = telemetry
     slices = Mutex(WriterSlices(config.slicing))
+    publisher.tap { event in
+      switch event {
+      case .digestMismatch(let kind, _):
+        let kind = ["product", "tree", "overlay"].contains(kind) ? kind : "unknown"
+        telemetry.failure("sync_digest", kind: "digest_mismatch", properties: ["scope_kind": kind])
+      case .pushMalformed:
+        telemetry.failure("sync_admission", kind: "malformed")
+      case .ended, .activeReplicaChanged: break
+      }
+    }
   }
 
   var registry: Registry { store.registry }
@@ -365,16 +379,22 @@ final class EngineCore: Sendable {
     writers.enter()
     defer { writers.leave() }
     var written: (value: Value, change: StoreChange)?
-    let held = try clock.sleeper.measure {
-      written = try actor.withLock { actor in
-        writingThread.store(thread, ordering: .releasing)
-        defer { writingThread.store(0, ordering: .releasing) }
-        var instance = Instance(actor: actor, deviceNow: clock.wall.nowMs(), appVersion: config.appVersion)
-        let written = try action(store, &instance)
-        actor = instance.actor
-        publisher.publish(written.change, written.events)
-        return (written.value, written.change)
+    let held: Duration
+    do {
+      held = try clock.sleeper.measure {
+        written = try actor.withLock { actor in
+          writingThread.store(thread, ordering: .releasing)
+          defer { writingThread.store(0, ordering: .releasing) }
+          var instance = Instance(actor: actor, deviceNow: clock.wall.nowMs(), appVersion: config.appVersion)
+          let written = try action(store, &instance)
+          actor = instance.actor
+          publisher.publish(written.change, written.events)
+          return (written.value, written.change)
+        }
       }
+    } catch {
+      reportStorage(error, operation: "storage_write")
+      throw error
     }
     let (value, change) = written!
     if change.seat {
@@ -412,35 +432,45 @@ final class EngineCore: Sendable {
   }
 
   // §7.4, §7.5: no answer in REQUEST_TIMEOUT_MS is a transport error; cancelling the caller cancels the call too.
-  func answered<Body: Sendable>(_ call: @escaping @Sendable () async -> Reply<Body>) async -> Reply<Body> {
-    await withTaskGroup(of: RequestRace<Body>.self) { group in
-      group.addTask { .answered(await call()) }
-      group.addTask { [sleeper = clock.sleeper] in
-        do {
-          try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
-          return .timedOut
-        } catch {
-          return .stopped
+  func answered<Body: Sendable>(operation: String, _ call: @escaping @Sendable () async -> Reply<Body>) async
+    -> (reply: Reply<Body>, failureKind: String?) {
+    let diagnostics = TransportDiagnostics.Invocation()
+    let start = clock.wall.reading().mono
+    return await TransportDiagnostics.$invocation.withValue(diagnostics) {
+      let reply = await withTaskGroup(of: RequestRace<Body>.self) { group in
+        group.addTask { .answered(await call()) }
+        group.addTask { [sleeper = clock.sleeper] in
+          do {
+            try await sleeper.sleep(for: .milliseconds(Constants.requestTimeoutMs))
+            return .timedOut
+          } catch {
+            return .stopped
+          }
         }
-      }
-      while let first = await group.next() {
-        switch first {
-        case .answered(let reply):
-          group.cancelAll()
-          return reply
-        case .timedOut:
-          group.cancelAll()
-          return .unreachable
-        case .stopped:
-          continue
+        while let first = await group.next() {
+          switch first {
+          case .answered(let reply):
+            group.cancelAll()
+            return reply
+          case .timedOut:
+            if !Task.isCancelled {
+              TransportDiagnostics.report(telemetry, operation: operation, method: "POST", kind: "timeout",
+                                          durationMs: max(0, clock.wall.reading().mono - start))
+            }
+            group.cancelAll()
+            return .unreachable
+          case .stopped:
+            continue
+          }
         }
+        return .unreachable
       }
-      return .unreachable
+      return (reply, diagnostics.kind.withLock { $0 })
     }
   }
 
   func read<T>(_ scope: ScopeRef, _ body: (any ScopeReader) throws -> T) throws -> T {
-    try store.read { tx in
+    try storageRead { tx in
       let reader = try TransactionReader(tx, core: self, scope: scope, deviceNow: clock.wall.nowMs())
       defer { reader.end() }
       return try body(reader)
@@ -449,7 +479,44 @@ final class EngineCore: Sendable {
 
   // The active replica's meta.
   func seat() throws -> ReplicaMeta? {
-    try store.read { tx in try tx.meta(of: tx.activeReplica()) }
+    try storageRead { tx in try tx.meta(of: tx.activeReplica()) }
+  }
+
+  // The central read/write boundaries report only storage failures, preserving product/body errors as thrown.
+  func storageRead<T>(_ body: (StoreTransaction) throws -> T) throws -> T {
+    try storageOperation { try store.read(body) }
+  }
+
+  func storageOperation<T>(_ body: () throws -> T) throws -> T {
+    do { return try body() }
+    catch {
+      reportStorage(error, operation: "storage_read")
+      throw error
+    }
+  }
+
+  func reportStorage(_ error: any Error, operation: String) {
+    if let kind = Store.failureKind(error) { telemetry.failure(operation, kind: kind) }
+  }
+
+  func outcome<Body: Sendable>(_ name: String, reply: Reply<Body>, since start: Int64, failureKind: String? = nil) {
+    guard !Task.isCancelled else { return }
+    let properties: [String: String]
+    switch reply {
+    case .answered(.ok): properties = ["outcome": "ok"]
+    case .answered(.failed(let failure)):
+      properties = ["outcome": "failed", "failure_kind": "http", "status": String(failure.status)]
+    case .unreachable: properties = ["outcome": "failed", "failure_kind": failureKind ?? "transport"]
+    }
+    telemetry.event(name, properties: properties, durationMs: max(0, clock.wall.reading().mono - start))
+  }
+
+  func failedOutcome(_ name: String, error: any Error, since start: Int64) {
+    guard !Task.isCancelled else { return }
+    let kind = Store.failureKind(error) ?? "unexpected_admission"
+    telemetry.event(name, properties: ["outcome": "failed", "failure_kind": kind],
+                    durationMs: max(0, clock.wall.reading().mono - start))
+    if kind == "unexpected_admission" { telemetry.failure("sync_admission", kind: kind) }
   }
 
   // §10.2: the device wall clock plus the active replica's offset.
@@ -565,7 +632,7 @@ package final class Releaser: Sendable {
   package func step() -> ReleaserStep {
     do {
       let deviceNow = core.clock.wall.nowMs()
-      let due = try core.store.read { tx in
+      let due = try core.storageRead { tx in
         try tx.replica(tx.activeReplica())?.outbox.filter { $0.state == .held }.map(\.releaseAt).min()
       }
       guard let due else { return .idle }

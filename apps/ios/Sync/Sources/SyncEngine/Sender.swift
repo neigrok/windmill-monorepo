@@ -105,6 +105,7 @@ package actor Sender {
     let before = wait
     defer { if leaving { wait.restoreBackoff(from: before) } }
     guard core.connectivity.isOnline else { return .idle }
+    var requestStart: Int64?
     do {
       guard let seat = try core.seat(), seat.state == .bound, !seat.authPaused, let account = seat.account else { return .idle }
       guard signingOut?.account.utf8.elementsEqual(account.utf8) != true else { return .idle }
@@ -114,9 +115,13 @@ package actor Sender {
       }
       guard request.replica.utf8.elementsEqual(seat.replica.utf8) else { return .again }
       let send = core.clock.wall.reading()
-      let reply = await core.answered { [transport] in await transport.push(request, token: token) }
-      return try record(reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      requestStart = send.mono
+      let exchange = await core.answered(operation: "sync_push") { [transport] in await transport.push(request, token: token) }
+      let next = try record(exchange.reply, to: request, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      core.outcome("sync_push_outcome", reply: exchange.reply, since: send.mono, failureKind: exchange.failureKind)
+      return next
     } catch {
+      if let requestStart { core.failedOutcome("sync_push_outcome", error: error, since: requestStart) }
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
   }
@@ -165,6 +170,9 @@ package actor Sender {
   func next(after response: PushResponse, to request: PushRequest) -> SenderStep {
     conflicts = 0
     let answered = response.results.filter { result in request.intents.contains { $0.n == result.n } }
+    if answered.contains(where: { $0.verdict == .refused(.internal) }) || answered.isEmpty && response.retry == nil {
+      core.telemetry.failure("sync_admission", kind: "unexpected_admission")
+    }
     let skewed = answered.contains { $0.verdict == .refused(.clockSkew) }
     if !answered.isEmpty {
       batchLimit = nil

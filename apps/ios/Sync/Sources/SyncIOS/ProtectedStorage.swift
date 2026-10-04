@@ -7,24 +7,31 @@ import SyncEngine
 // re-identifies every replica, and two phones never push as one replica.
 public struct ProtectedStorage: Sendable {
   public let directory: URL
+  let telemetry: any Telemetry
 
   // The directory is made, and on iOS protected, if it is not already.
-  public init(directory: URL) throws {
-    try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+  public init(directory: URL, telemetry: any Telemetry = NoopTelemetry()) throws {
+    do {
+      try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
     #if os(iOS)
-    try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
+      try FileManager.default.setAttributes([.protectionKey: FileProtectionType.completeUntilFirstUserAuthentication], ofItemAtPath: directory.path)
     #endif
+    } catch {
+      telemetry.failure("storage_prepare", kind: "storage")
+      throw error
+    }
     self.directory = directory
+    self.telemetry = telemetry
   }
 
   // The app's own: `Application Support/WindmillSync`.
-  public static func standard() throws -> ProtectedStorage {
-    try ProtectedStorage(directory: URL.applicationSupportDirectory.appending(path: "WindmillSync"))
+  public static func standard(telemetry: any Telemetry = NoopTelemetry()) throws -> ProtectedStorage {
+    try ProtectedStorage(directory: URL.applicationSupportDirectory.appending(path: "WindmillSync"), telemetry: telemetry)
   }
 
   public var databasePath: String { directory.appending(path: "sync.sqlite").path }
 
-  public var forkGuard: FileForkGuardStore { FileForkGuardStore(file: directory.appending(path: "fork-guard")) }
+  public var forkGuard: FileForkGuardStore { FileForkGuardStore(file: directory.appending(path: "fork-guard"), telemetry: telemetry) }
 }
 
 // The fork guard's copy as one file excluded from backup: nil when it is missing or unreadable, as on a restored device.
@@ -32,22 +39,37 @@ public struct ProtectedStorage: Sendable {
 // excluded again when it is read.
 public final class FileForkGuardStore: ForkGuardStore {
   public let file: URL
+  let telemetry: any Telemetry
 
-  public init(file: URL) {
+  public init(file: URL, telemetry: any Telemetry = NoopTelemetry()) {
     self.file = file
+    self.telemetry = telemetry
   }
 
   public func load() -> String? {
-    guard let copy = try? String(contentsOf: file, encoding: .utf8) else { return nil }
-    try? Self.excludeFromBackup(file)
-    return copy
+    do {
+      let copy = try String(contentsOf: file, encoding: .utf8)
+      do { try Self.excludeFromBackup(file) }
+      catch { telemetry.failure("storage_fork_guard", kind: "storage") }
+      return copy
+    } catch {
+      if (error as? CocoaError)?.code != .fileReadNoSuchFile {
+        telemetry.failure("storage_fork_guard", kind: "storage")
+      }
+      return nil
+    }
   }
 
   public func save(_ forkGuard: String) throws {
-    let written = file.deletingLastPathComponent().appending(path: "\(file.lastPathComponent).new")
-    try Data(forkGuard.utf8).write(to: written)
-    try Self.excludeFromBackup(written)
-    guard rename(written.path, file.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    do {
+      let written = file.deletingLastPathComponent().appending(path: "\(file.lastPathComponent).new")
+      try Data(forkGuard.utf8).write(to: written)
+      try Self.excludeFromBackup(written)
+      guard rename(written.path, file.path) == 0 else { throw CocoaError(.fileWriteUnknown) }
+    } catch {
+      telemetry.failure("storage_fork_guard", kind: "storage")
+      throw error
+    }
   }
 
   static func excludeFromBackup(_ file: URL) throws {

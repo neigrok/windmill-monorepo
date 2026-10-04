@@ -104,6 +104,11 @@ enum AppScenario {
       model.code = try runtime.settings.codeFile.map { try String(contentsOfFile: $0, encoding: .utf8).trimmingCharacters(in: .whitespacesAndNewlines) } ?? "482913"
       await model.verifyCode(); try await backedUp(model); steps.append("sign-in-again-backed-up")
       guard !expectedPage.isEmpty && model.document.body == expectedPage else { throw AppFailure(message: "restored page differs from the backed-up page") }
+      if runtime.settings.scenario == "telemetry-first-run" {
+        model.codeSentAt = nil
+        await model.sendCode()
+        if model.error != nil { steps.append("forced-handled-auth-failure") }
+      }
       try JSONSerialization.data(withJSONObject: ["ok": true, "steps": steps]).write(to: URL(fileURLWithPath: report))
     } catch {
       try? JSONSerialization.data(withJSONObject: ["ok": false, "steps": steps, "error": error.localizedDescription]).write(to: URL(fileURLWithPath: report))

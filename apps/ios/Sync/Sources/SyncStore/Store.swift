@@ -14,6 +14,13 @@ public final class Store: Sendable {
   let crashPoints: CrashPoints
   let planners: Planners
 
+  // Classifies the boundary without exposing SQLite messages, SQL arguments, paths or corrupted column values.
+  public static func failureKind(_ error: any Error) -> String? {
+    if error is DatabaseError { return "sqlite" }
+    if let storeError = error as? StoreError, case .corrupt = storeError { return "storage" }
+    return nil
+  }
+
   // A file store: a `DatabasePool` in WAL mode. `rewriteDeviceValue` is the products' hook for a write map's joined id
   // in their device rows (§7.7 write map step 1).
   public convenience init(path: String, registry: Registry, limits: Limits = Limits(), crashPoints: CrashPoints = .none,

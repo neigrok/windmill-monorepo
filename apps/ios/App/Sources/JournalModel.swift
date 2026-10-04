@@ -7,10 +7,15 @@ import SyncCore
 import SyncEngine
 import SyncReplica
 import SyncSchema
+import SyncStore
+import SyncIOS
 
 @Observable @MainActor
 final class JournalModel {
   let runner: ActionRunner
+  let telemetry: any Telemetry
+  var invitationShown = false
+  var keepInvitationShown = false
   let preferences: UserDefaults
   let runtime: AppRuntime?
   var room: JournalRoom?
@@ -44,7 +49,8 @@ final class JournalModel {
 
   enum Sheet: String, Identifiable { case keep, address, code, you, adoption, discardAdoption, signOut; var id: String { rawValue } }
 
-  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil) throws {
+  init(runner: ActionRunner, preferences: UserDefaults, runtime: AppRuntime? = nil, telemetry: any Telemetry = NoopTelemetry()) throws {
+    self.telemetry = telemetry
     self.runner = runner; self.preferences = preferences; self.runtime = runtime
     editorDay = try runner.moment().today
     if let draft = try runner.read(Journal.scope, { try $0.device(EditorDraft.key).map(EditorDraft.init(json:)) }) {
@@ -79,17 +85,18 @@ final class JournalModel {
   }
 
   func openJournal() {
+    choose("open_journal", screen: "welcome")
     welcome = false; preferences.set(true, forKey: "journalOpened")
     refresh(); automaticallyShowInk()
   }
 
   func automaticallyShowInk() {
     guard room?.stance == .empty, room?.firstRunKnown == true, !preferences.bool(forKey: "inkShown") else { return }
-    preferences.set(true, forKey: "inkShown"); inkVisible = true
+    preferences.set(true, forKey: "inkShown"); inkVisible = true; screenViewed("ink_notes")
   }
 
-  func showInk() { roomMenu = false; inkVisible = true }
-  func liftInk() { inkVisible = false }
+  func showInk() { choose("show_ink", screen: "journal"); roomMenu = false; inkVisible = true; screenViewed("ink_notes") }
+  func liftInk() { if inkVisible { choose("dismiss_ink", screen: "ink_notes") }; inkVisible = false }
 
   func start() async {
     guard let runtime else { return }
@@ -100,6 +107,8 @@ final class JournalModel {
     await runtime.revokeSignedOutSessions(force: true)
     await resumeBackup()
     refresh()
+    runtime.updateTelemetryIdentity()
+    telemetry.event("auth_restore", properties: ["outcome": account == nil ? "anonymous" : authPaused ? "paused" : "signed_in"])
     if !welcome { automaticallyShowInk() }
     timerTask = Task { [weak self] in
       while !Task.isCancelled {
@@ -139,9 +148,11 @@ final class JournalModel {
         error = "Your writing is still on this phone. This page hasn't been backed up."
       }
     } catch {
+      if !readFailed { reportBoundary("journal_read", error: error) }
       readFailed = true
       self.error = "Couldn't read the journal. Your current writing is kept here; try again."
     }
+    recordInvitations()
   }
 
   func type(_ text: String) {
@@ -149,7 +160,7 @@ final class JournalModel {
     liftInk()
     if !text.isEmpty && room?.state.placeholder == "pending" {
       do { _ = try runner.run(RetireJournalInvitation("placeholder")); room = try runner.read(Journal.scope, JournalRoom.init) }
-      catch { self.error = "Couldn't save on this phone. Your writing stays in the editor." }
+      catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save on this phone. Your writing stays in the editor." }
     }
     document.body = text; dirty = true; error = nil
     preserveDraft()
@@ -169,9 +180,11 @@ final class JournalModel {
       if document.body.utf8.count > 131_072 {
         error = "Your draft is kept on this phone. Shorten this page before it can be backed up."; dirty = true; return false
       }
+      let previousBody = room?.days.first(where: { $0.day == editorDay })?.document.body ?? ""
       let wasFirst = room?.state.firstPage == "pending"
       switch try runner.run(SavePage(day: editorDay, document: document, retiring: retiring)) {
       case .committed, .unchanged:
+        if document.isWritten && editorDay == today && document.body != previousBody { telemetry.event("journal_line_saved", properties: ["day_kind": "today"]) }
         dirty = false; error = nil
         if wasFirst && document.isWritten { firstKept = true }
         refresh(); return true
@@ -179,6 +192,7 @@ final class JournalModel {
         error = "This page couldn't be saved. Your writing stays in the editor."; dirty = true; return false
       }
     } catch {
+      reportBoundary("journal_save", error: error)
       self.error = "Couldn't save on this phone. Your writing stays in the editor. Try again."; dirty = true; return false
     }
   }
@@ -189,7 +203,7 @@ final class JournalModel {
       case .committed, .unchanged: return true
       case .refused: break
       }
-    } catch {}
+    } catch { reportBoundary("journal_draft", error: error) }
     error = "Couldn't keep the draft on this phone. Your writing stays in the editor. Try saving again."
     return false
   }
@@ -215,21 +229,22 @@ final class JournalModel {
   func setScale(_ name: String, _ value: Int?) {
     guard !editorReadOnly else { return }
     liftInk()
+    let answeringInvitation = room?.scaleInvitationDue == true && value != nil
     if name == "mood" { document.mood = value } else { document.energy = value }
-    dirty = true; preserveDraft(); _ = save(retiring: value == nil ? [] : ["scales"])
+    dirty = true; preserveDraft(); if save(retiring: value == nil ? [] : ["scales"]), answeringInvitation { telemetry.event("scale_invitation_answered", properties: ["action": "answered"]) }
   }
 
   func dismissScales() {
     do {
       switch try runner.run(RetireJournalInvitation("scales")) {
-      case .committed, .unchanged: refresh()
+      case .committed, .unchanged: telemetry.event("scale_invitation_answered", properties: ["action": "declined"]); refresh()
       case .refused: error = "Couldn't save this choice. Try again."
       }
-    } catch { self.error = "Couldn't save this choice. Try again." }
+    } catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save this choice. Try again." }
   }
 
-  func keep() { done(); liftInk(); roomMenu = false; keepSheetPresented = true; sheet = .keep }
-  func closeKeep() { sheet = nil; dismissKeep() }
+  func keep() { choose("keep", screen: "journal"); done(); liftInk(); roomMenu = false; keepSheetPresented = true; sheet = .keep }
+  func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
   func dismissKeep() {
     guard room?.keepDue == true else { return }
     keepDismissed = true; preferences.set(true, forKey: "keepDismissed")
@@ -242,12 +257,15 @@ final class JournalModel {
   func sendCode() async {
     guard !working, let auth = runtime?.auth else { return }
     if sheet == .code, let sent = codeSentAt, Date().timeIntervalSince(sent) < 30 { return }
+    if sheet == .code { choose("resend", screen: "code") }
+    telemetry.event("auth_code_requested", properties: ["method": "email"])
     working = true; error = nil
     defer { working = false }
     do {
       try await auth.requestCode(email: email)
+      telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "ok"])
       codeSentAt = Date(); code = ""; sheet = .code
-    } catch { self.error = error.localizedDescription }
+    } catch { telemetry.event("auth_code_sent", properties: ["method": "email", "outcome": "failed"]); self.error = error.localizedDescription }
   }
 
   func verifyCode() async {
@@ -256,8 +274,9 @@ final class JournalModel {
     defer { working = false }
     accountTransition = true; editing = false
     defer { accountTransition = false }
-    do { try await signIn(try await auth.verifyCode(email: email, code: code)) }
-    catch { self.error = error.localizedDescription }
+    telemetry.event("auth_sign_in_started", properties: ["method": "email"])
+    do { try await signIn(try await auth.verifyCode(email: email, code: code)); telemetry.event("auth_signed_in", properties: ["method": "email", "outcome": "ok"]) }
+    catch { telemetry.event("auth_signed_in", properties: ["method": "email", "outcome": "failed"]); self.error = error.localizedDescription }
   }
 
   func signIn(_ identity: AuthIdentity) async throws {
@@ -270,7 +289,9 @@ final class JournalModel {
       throw AppFailure(message: "Sign in to the same account to resume backup. Your pages stay with this account.")
     }
     accountName = identity.name
-    signInSession = try await runtime.engine.signIn(account: identity.account, token: identity.token)
+    do { signInSession = try await runtime.engine.signIn(account: identity.account, token: identity.token) }
+    catch { reportBoundary("auth_sign_in", error: error); throw error }
+    runtime.updateTelemetryIdentity()
     if signInSession?.isComplete == false { sheet = .adoption }
     else { sheet = nil; welcome = false; refresh() }
   }
@@ -287,11 +308,13 @@ final class JournalModel {
         if let recounted = try await runtime?.engine.resumeSignIn() { session = recounted; signInSession = recounted }
         if answer == .discard { sheet = .adoption; error = "The pages changed. Choose again for the current pages."; return }
       }
+      choose(answer == .add ? "add" : "discard", screen: "adoption")
       try await session.complete(Dictionary(uniqueKeysWithValues: session.decisions.map { ($0.product, answer) }))
+      runtime?.updateTelemetryIdentity()
       document = PageDocument(); dirty = false; editing = false; signInSession = nil; sheet = nil; welcome = false; refresh()
     } catch EngineError.signInChanged {
       signInSession = try? await runtime?.engine.resumeSignIn(); error = "The pages changed. Choose again for the current pages."
-    } catch { self.error = error.localizedDescription }
+    } catch { reportBoundary("auth_adopt", error: error); self.error = error.localizedDescription }
   }
 
   func beginSignOut() async {
@@ -299,8 +322,9 @@ final class JournalModel {
     accountTransition = true; editing = false
     defer { accountTransition = false }
     if dirty, !save() { return }
+    choose("sign_out", screen: "you")
     do { signOutSession = try await runtime.engine.signOut(); sheet = .signOut }
-    catch { self.error = error.localizedDescription }
+    catch { reportBoundary("auth_sign_out", error: error); self.error = error.localizedDescription }
   }
 
   func finishSignOut(_ choice: SignOutChoice) async {
@@ -316,7 +340,10 @@ final class JournalModel {
         if choice == .discard { error = "Pending writing changed. Review the new count."; return }
       }
       revocation = try runtime.prepareRevocation(account: session.account)
+      choose(choice == .keep ? "keep" : "discard", screen: "sign_out")
       _ = try await session.finish(choice)
+      runtime.updateTelemetryIdentity()
+      telemetry.event("auth_signed_out", properties: ["outcome": "ok"])
       signOutSession = nil; signInSession = nil
       sheet = nil; account = nil; document = PageDocument(); dirty = false; editing = false; error = nil
       inkVisible = false; keepDismissed = false; welcome = true; refresh()
@@ -325,15 +352,32 @@ final class JournalModel {
     } catch EngineError.signOutChanged {
       if let revocation { try? runtime.revocations.delete(for: revocation) }
       await session.cancel(); signOutSession = try? await runtime.engine.signOut(); error = "Pending writing changed. Review the new count."
-    } catch { if let revocation { try? runtime.revocations.delete(for: revocation) }; self.error = error.localizedDescription }
+    } catch { reportBoundary("auth_sign_out", error: error); if let revocation { try? runtime.revocations.delete(for: revocation) }; self.error = error.localizedDescription }
   }
 
   func authenticateApple(_ identity: () async throws -> AuthIdentity) async {
     guard !working else { return }
     working = true; accountTransition = true; editing = false; error = nil
     defer { working = false; accountTransition = false }
-    do { try await signIn(identity()) } catch { self.error = error.localizedDescription }
+    telemetry.event("auth_sign_in_started", properties: ["method": "apple"])
+    do { try await signIn(identity()); telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "ok"]) }
+    catch { telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": "failed"]); self.error = error.localizedDescription }
   }
 
-  func cancelSignOut() async { await signOutSession?.cancel(); signOutSession = nil; sheet = .you }
+  func reportBoundary(_ operation: String, error: any Error) {
+    guard Store.failureKind(error) == nil, !(error is KeychainError) else { return }
+    telemetry.failure(operation, kind: "unexpected")
+  }
+
+  func screenViewed(_ screen: String) { telemetry.event("first_run_screen_viewed", properties: ["screen": screen]) }
+  func choose(_ action: String, screen: String) { telemetry.event("first_run_choice", properties: ["screen": screen, "action": action]) }
+  func recordInvitations() {
+    if room?.scaleInvitationDue != true { invitationShown = false }
+    if room?.keepDue != true { keepInvitationShown = false }
+    guard !welcome, !editing else { return }
+    if scalesDue && !invitationShown { invitationShown = true; telemetry.event("scale_invitation_shown") }
+    if keepDue && !keepInvitationShown { keepInvitationShown = true; screenViewed("keep") }
+  }
+
+  func cancelSignOut() async { choose("cancel", screen: "sign_out"); await signOutSession?.cancel(); signOutSession = nil; sheet = .you }
 }

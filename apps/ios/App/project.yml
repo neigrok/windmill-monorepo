@@ -8,6 +8,9 @@ packages:
     path: ../Sync
   WindmillDomain:
     path: ../Domain
+  Sentry:
+    url: https://github.com/getsentry/sentry-cocoa.git
+    exactVersion: 9.29.0
 targets:
   Windmill:
     type: application
@@ -17,6 +20,8 @@ targets:
       - path: Resources
         buildPhase: resources
     dependencies:
+      - package: Sentry
+        product: Sentry
       - package: WindmillSync
         product: SyncCore
       - package: WindmillSync
@@ -42,26 +47,47 @@ targets:
         PRODUCT_BUNDLE_IDENTIFIER: works.windmill.app
         MARKETING_VERSION: "0.2.0"
         CURRENT_PROJECT_VERSION: "1"
-        CODE_SIGN_IDENTITY: "-"
         CODE_SIGN_STYLE: Manual
         SWIFT_VERSION: "6.0"
         SWIFT_TREAT_WARNINGS_AS_ERRORS: "YES"
         SWIFT_WARNINGS_AS_WARNINGS_GROUPS: DeprecatedDeclaration
         SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
         TARGETED_DEVICE_FAMILY: "1"
-        WM_SERVER_BASE_URL: ""
+        WM_SERVER_BASE_URL: https://windmill.works
         WM_APPLE_SIGN_IN_ENABLED: "NO"
-    entitlements:
-      path: Generated/Windmill.entitlements
-      properties:
-        com.apple.developer.applesignin: [Default]
+        IOS_SENTRY_DSN: ""
+        WM_SOURCE_REVISION: ""
+        WM_TELEMETRY_ENVIRONMENT: ""
+        WM_DEBUG_TELEMETRY: "NO"
+        # Git worktree metadata may live outside SRCROOT.
+        ENABLE_USER_SCRIPT_SANDBOXING: "NO"
+        INFOPLIST_FILE: $(DERIVED_FILE_DIR)/Windmill.Info.plist
+        CODE_SIGN_ENTITLEMENTS: Tools/Windmill-$(WM_APPLE_SIGN_IN_ENABLED).entitlements
+      configs:
+        Debug:
+          CODE_SIGN_IDENTITY: "-"
+        Release:
+          CODE_SIGN_IDENTITY: Apple Development
+          CODE_SIGN_STYLE: Automatic
+          CODE_SIGN_IDENTITY[sdk=iphonesimulator*]: "-"
+          CODE_SIGN_STYLE[sdk=iphonesimulator*]: Manual
+    preBuildScripts:
+      - name: Prepare build metadata and capabilities
+        basedOnDependencyAnalysis: false
+        script: python3 "$SRCROOT/Tools/prepare_build.py"
+        inputFiles:
+          - $(SRCROOT)/Tools/prepare_build.py
+          - $(SRCROOT)/Generated/Info.plist
+        outputFiles:
+          - $(DERIVED_FILE_DIR)/Windmill.Info.plist
     info:
       path: Generated/Info.plist
       properties:
         CFBundleDisplayName: Windmill
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
         ITSAppUsesNonExemptEncryption: false
         WMServerBaseURL: $(WM_SERVER_BASE_URL)
-        WMAppleSignInEnabled: $(WM_APPLE_SIGN_IN_ENABLED)
         UIUserInterfaceStyle: Dark
         UILaunchScreen:
           UIColorName: ShellCanvas

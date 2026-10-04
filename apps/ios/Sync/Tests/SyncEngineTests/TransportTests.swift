@@ -50,11 +50,11 @@ struct TransportTests {
     }
 
     // A transport to `host`, served by `route`; nil from the route is no response at all.
-    static func transport(_ host: String, _ route: @escaping Route) -> HTTPTransport {
+    static func transport(_ host: String, telemetry: any Telemetry = NoopTelemetry(), _ route: @escaping Route) -> HTTPTransport {
       routes.withLock { $0[host] = route }
       let configuration = URLSessionConfiguration.ephemeral
       configuration.protocolClasses = [Stub.self]
-      return HTTPTransport(baseURL: URL(string: "https://\(host)/")!, schema: 3, configuration: configuration)
+      return HTTPTransport(baseURL: URL(string: "https://\(host)/")!, schema: 3, configuration: configuration, telemetry: telemetry)
     }
   }
 

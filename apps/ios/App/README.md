@@ -3,15 +3,16 @@
 The product app uses `works.windmill.app`, the previous TestFlight bundle identifier. iOS 18 is the
 minimum. Generate the project with `xcodegen generate`, then open `Windmill.xcodeproj`.
 
-The default build saves anonymously on the phone. Configure `WM_SERVER_BASE_URL` with the server's
-origin, such as `http://127.0.0.1:18860`, or launch with `-server` followed by that URL. The engine
-appends `/v1/sync`; native authentication uses `/v1/auth`. Production sync is not enabled by default.
+The default build connects to `https://windmill.works` and saves on the phone without an account.
+Configure `WM_SERVER_BASE_URL` with a local server origin, such as `http://127.0.0.1:8089`, or launch
+with `-server` followed by that URL. The engine appends `/v1/sync`; native authentication uses
+`/v1/auth`. The server must enable and admit the journal engine.
 See [the full local server recipe](../../../backend/RUNNING.md). Sessions come from the response body
 and are kept in Keychain; native authentication does not retain cookies.
 
+Apple sign-in is off by default and the built app declares no Sign in with Apple entitlement.
 Set `WM_APPLE_SIGN_IN_ENABLED=YES` only for a server configured for native Apple verification. Device
-builds need your development team and Apple signing identity (override the simulator's ad hoc
-`CODE_SIGN_IDENTITY=-` and `CODE_SIGN_STYLE=Manual`). Enable Sign in with Apple for this bundle ID.
+Release builds use automatic development signing with your team; App Store export signs for distribution. Enable Sign in with Apple for this bundle ID.
 An actual Apple ID on a device is required for the production Apple flow.
 
 Debug simulator launches support `-model-server` for the full engine model transport. It supplies
@@ -50,3 +51,11 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 
 Inter, Nunito and Caveat are static instances of the official variable fonts. Colour and type tokens
 follow the supplied Figma `TOKENS.json`. Ink paths are vectors attached to live view anchors.
+
+Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
+telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use
+`-telemetry -sentry-dsn http://ios@127.0.0.1:8091/42`. Release builds require `IOS_SENTRY_DSN`.
+See [iOS observability](../../../docs/IOS_OBSERVABILITY.md) for the complete 18-event allowlist,
+privacy rules, queue behavior and release verification. CI uses `python3 Tools/generate_project.py`
+with a nonproduction DSN. The manual release workflow uses `--release` with the signing secrets,
+builds with Xcode 26.3 and uploads to TestFlight; it does not run on push.

@@ -58,9 +58,11 @@ public final class HTTPTransport: SyncTransport {
   let schema: Int
   let session: URLSession
   let liveSession: URLSession
+  let telemetry: any Telemetry
 
   // `schema`: the registry version the engine was built with.
-  public init(baseURL: URL, schema: Int, configuration: URLSessionConfiguration = .ephemeral) {
+  public init(baseURL: URL, schema: Int, configuration: URLSessionConfiguration = .ephemeral,
+              telemetry: any Telemetry = NoopTelemetry()) {
     let configuration = configuration.copy() as! URLSessionConfiguration
     configuration.timeoutIntervalForRequest = 30
     configuration.waitsForConnectivity = false
@@ -70,25 +72,27 @@ public final class HTTPTransport: SyncTransport {
     configuration.timeoutIntervalForResource = TimeInterval(Constants.requestTimeoutMs) / 1000
     self.baseURL = baseURL
     self.schema = schema
+    self.telemetry = telemetry
     session = URLSession(configuration: configuration)
     liveSession = URLSession(configuration: live)
   }
 
   public func hello(token: SessionToken?) async -> Reply<HelloResponse> {
-    await exchange("GET", "v1/sync/hello", body: nil, token: token)
+    await exchange("GET", "v1/sync/hello", operation: "sync_hello", body: nil, token: token)
   }
 
   public func push(_ request: PushRequest, token: SessionToken) async -> Reply<PushResponse> {
-    await exchange("POST", "v1/sync/push", body: request.body, token: token)
+    await exchange("POST", "v1/sync/push", operation: "sync_push", body: request.body, token: token)
   }
 
   public func pull(_ request: PullRequest, token: SessionToken?) async -> Reply<PullResponse> {
-    await exchange("POST", "v1/sync/pull", body: request.body, token: token)
+    await exchange("POST", "v1/sync/pull", operation: "sync_pull", body: request.body, token: token)
   }
 
   // §9.5 `GET /v1/sync/live?schema=<version>`, over `ws` or `wss` as the base URL goes over `http` or `https`; frames
   // above LIVE_FRAME_BYTES fail the socket.
   public func openLive(token: SessionToken) async -> Reply<any LiveConnection> {
+    let start = ContinuousClock.now
     var components = URLComponents(url: baseURL.appending(path: "v1/sync/live"), resolvingAgainstBaseURL: false)!
     components.scheme = components.scheme == "http" ? "ws" : "wss"
     components.queryItems = [URLQueryItem(name: "schema", value: String(schema))]
@@ -101,17 +105,27 @@ public final class HTTPTransport: SyncTransport {
     task.resume()
     switch await withTaskCancellationHandler(operation: { await opening.outcome() }, onCancel: { task.cancel() }) {
     case .open:
-      return .answered(.ok(WebSocketConnection(task: task)))
+      return .answered(.ok(WebSocketConnection(task: task, telemetry: telemetry)))
     case .refused(let status):
       task.cancel()
+      if !Task.isCancelled {
+        TransportDiagnostics.report(telemetry, operation: "sync_live", method: "GET", kind: "http", status: status,
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+      }
       return .answered(.failed(HTTPFailure(status: status)))
-    case .unanswered:
+    case .unanswered(let kind):
       task.cancel()
+      if !Task.isCancelled, let kind {
+        TransportDiagnostics.report(telemetry, operation: "sync_live", method: "GET", kind: kind,
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+      }
       return .unreachable
     }
   }
 
-  func exchange<Body: ResponseBody>(_ method: String, _ path: String, body: [UInt8]?, token: SessionToken?) async -> Reply<Body> {
+  func exchange<Body: ResponseBody>(_ method: String, _ path: String, operation: String, body: [UInt8]?,
+                                    token: SessionToken?) async -> Reply<Body> {
+    let start = ContinuousClock.now
     var request = URLRequest(url: baseURL.appending(path: path))
     request.httpMethod = method
     request.setValue(String(schema), forHTTPHeaderField: "Sync-Schema")
@@ -120,10 +134,30 @@ public final class HTTPTransport: SyncTransport {
       request.setValue("application/json", forHTTPHeaderField: "Content-Type")
       request.httpBody = Data(body)
     }
-    guard let (data, response) = try? await session.data(for: request), let http = response as? HTTPURLResponse else {
+    do {
+      let (data, response) = try await session.data(for: request)
+      guard !Task.isCancelled else { return .unreachable }
+      guard let http = response as? HTTPURLResponse else {
+        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "transport",
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+        return .unreachable
+      }
+      let reply = Reply<Body>(status: http.statusCode, body: try? JSON(parsing: [UInt8](data)))
+      if http.statusCode != 200 {
+        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "http", status: http.statusCode,
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+      } else if case .unreachable = reply {
+        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: "decode", status: 200,
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+      }
+      return reply
+    } catch {
+      if !Task.isCancelled, let kind = TransportDiagnostics.kind(error) {
+        TransportDiagnostics.report(telemetry, operation: operation, method: method, kind: kind,
+                                    durationMs: TransportDiagnostics.elapsed(since: start))
+      }
       return .unreachable
     }
-    return Reply(status: http.statusCode, body: try? JSON(parsing: [UInt8](data)))
   }
 }
 
@@ -133,7 +167,7 @@ final class WebSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
   enum Outcome: Sendable {
     case open
     case refused(status: Int)
-    case unanswered
+    case unanswered(kind: String?)
   }
 
   struct State {
@@ -169,7 +203,9 @@ final class WebSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
   }
 
   func urlSession(_ session: URLSession, task: URLSessionTask, didCompleteWithError error: (any Error)?) {
-    guard let status = (task.response as? HTTPURLResponse)?.statusCode else { return settle(.unanswered) }
+    guard let status = (task.response as? HTTPURLResponse)?.statusCode else {
+      return settle(.unanswered(kind: error.map { TransportDiagnostics.kind($0) } ?? "transport"))
+    }
     settle(.refused(status: status))
   }
 }
@@ -177,27 +213,50 @@ final class WebSocketOpening: NSObject, URLSessionWebSocketDelegate, Sendable {
 // An open `URLSessionWebSocketTask`: each message one JCS text frame, each frame read by the `SyncCore` parser.
 final class WebSocketConnection: LiveConnection {
   let task: URLSessionWebSocketTask
+  let telemetry: any Telemetry
 
-  init(task: URLSessionWebSocketTask) {
+  init(task: URLSessionWebSocketTask, telemetry: any Telemetry = NoopTelemetry()) {
     self.task = task
+    self.telemetry = telemetry
   }
 
   func send(_ request: LiveRequest) async throws {
-    try await task.send(.string(request.json.jcsText))
+    let start = ContinuousClock.now
+    do { try await task.send(.string(request.json.jcsText)) }
+    catch {
+      report(error, operation: "sync_live_send", since: start)
+      throw error
+    }
   }
 
   func receive() async throws -> LiveFrame? {
+    let start = ContinuousClock.now
     let message: URLSessionWebSocketTask.Message
     do {
       message = try await task.receive()
     } catch {
+      if task.closeCode == .normalClosure || task.closeCode == .goingAway { return nil }
+      report(error, operation: "sync_live_receive", since: start)
       if task.closeCode != .invalid { return nil }
       throw error
     }
-    switch message {
-    case .string(let text): return try LiveFrame(json: JSON(parsing: Array(text.utf8)))
-    case .data(let data): return try LiveFrame(json: JSON(parsing: [UInt8](data)))
-    @unknown default: throw JSONError.shape("a live message of an unknown kind")
+    do {
+      switch message {
+      case .string(let text): return try LiveFrame(json: JSON(parsing: Array(text.utf8)))
+      case .data(let data): return try LiveFrame(json: JSON(parsing: [UInt8](data)))
+      @unknown default: throw JSONError.shape("a live message of an unknown kind")
+      }
+    } catch {
+      TransportDiagnostics.report(telemetry, operation: "sync_live_receive", method: "GET", kind: "decode",
+                                  durationMs: TransportDiagnostics.elapsed(since: start))
+      throw error
+    }
+  }
+
+  func report(_ error: any Error, operation: String, since start: ContinuousClock.Instant) {
+    if !Task.isCancelled, let kind = TransportDiagnostics.kind(error) {
+      TransportDiagnostics.report(telemetry, operation: operation, method: "GET", kind: kind,
+                                  durationMs: TransportDiagnostics.elapsed(since: start))
     }
   }
 

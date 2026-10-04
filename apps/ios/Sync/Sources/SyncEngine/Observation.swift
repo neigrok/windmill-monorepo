@@ -253,14 +253,14 @@ final class ViewHub {
   var undoOffers: UndoOffers {
     if let offersView { return offersView }
     let deviceNow = core.clock.wall.nowMs()
-    let view = UndoOffers(offers: (try? core.store.read { try Self.loadOffers($0, deviceNow: deviceNow) }) ?? [])
+    let view = UndoOffers(offers: (try? core.storageRead { try Self.loadOffers($0, deviceNow: deviceNow) }) ?? [])
     offersView = view
     return view
   }
 
   var status: SyncStatus {
     if let statusView { return statusView }
-    let view = SyncStatus(try? core.store.read { try Self.loadStatus($0, core: core) })
+    let view = SyncStatus(try? core.storageRead { try Self.loadStatus($0, core: core) })
     statusView = view
     return view
   }
@@ -279,7 +279,7 @@ final class ViewHub {
 
   func notices(_ product: String) -> NoticesView {
     if let view = liveNotices[Array(product.utf8)]?.view { return view }
-    let view = NoticesView(product: product, notices: (try? core.store.read { try Self.loadNotices($0, of: product) }) ?? [])
+    let view = NoticesView(product: product, notices: (try? core.storageRead { try Self.loadNotices($0, of: product) }) ?? [])
     liveNotices[Array(product.utf8)] = Weak(view: view)
     return view
   }
@@ -290,7 +290,7 @@ final class ViewHub {
   // a small read, load on the main actor when first asked for, and one whose read fails keeps what it shows until the
   // next change.
   @concurrent nonisolated func load<Value: Sendable>(_ read: @Sendable (StoreTransaction) throws -> Value) async throws -> Value {
-    try core.store.read(read)
+    try core.storageRead(read)
   }
 
   // What `read` makes of the view `key`: the snapshot to show, or nil when the view shows it already.

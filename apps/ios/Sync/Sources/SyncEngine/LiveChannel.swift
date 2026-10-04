@@ -214,9 +214,16 @@ package actor LiveChannel {
   func keep(_ meta: ReplicaMeta) async -> LiveStep {
     guard let current = socket else { return .idle }
     let mono = now()
-    if let pongDue = current.pongDue, pongDue <= mono { return reopenLater() }
+    if let pongDue = current.pongDue, pongDue <= mono {
+      // The heartbeat deadline is an engine-owned timeout; closing its socket is a normal client close.
+      TransportDiagnostics.report(core.telemetry, operation: "sync_live", method: "GET", kind: "timeout",
+                                  durationMs: max(0, mono - (pongDue - Constants.livePongMs)))
+      return reopenLater()
+    }
     do {
-      guard let subscriptions = try core.store.subscriptions(of: meta.replica, core.subscriptions()) else { return .again }
+      guard let subscriptions = try core.storageOperation({ try core.store.subscriptions(of: meta.replica, core.subscriptions()) }) else {
+        return .again
+      }
       let doubtful = core.doubts.withLock { doubts in Set(subscriptions.pulled.filter(doubts.inDoubt)) }
       let dropped = current.following.filter { !subscriptions.set.contains($0) }
       let added = subscriptions.pulled.filter { !current.following.contains($0) && !doubtful.contains($0) }

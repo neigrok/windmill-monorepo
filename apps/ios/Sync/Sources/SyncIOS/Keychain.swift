@@ -8,9 +8,11 @@ import SyncEngine
 // cloned from a backup finds no token and waits for the person to sign in.
 public final class KeychainTokenStore: TokenStore {
   public let service: String
+  let telemetry: any Telemetry
 
-  public init(service: String = "windmill.sync.session") {
+  public init(service: String = "windmill.sync.session", telemetry: any Telemetry = NoopTelemetry()) {
     self.service = service
+    self.telemetry = telemetry
   }
 
   public func token(for account: String) -> SessionToken? {
@@ -18,8 +20,17 @@ public final class KeychainTokenStore: TokenStore {
     query[kSecReturnData as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitOne
     var found: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &found) == errSecSuccess, let data = found as? Data else { return nil }
-    return SessionToken(String(decoding: data, as: UTF8.self))
+    let status = SecItemCopyMatching(query as CFDictionary, &found)
+    guard status != errSecItemNotFound else { return nil }
+    guard status == errSecSuccess else {
+      telemetry.failure("keychain_read", kind: "keychain")
+      return nil
+    }
+    guard let data = found as? Data, let value = String(data: data, encoding: .utf8) else {
+      telemetry.failure("keychain_read", kind: "decode")
+      return nil
+    }
+    return SessionToken(value)
   }
 
   // An item kept already takes the new token and this store's accessibility.
@@ -28,14 +39,14 @@ public final class KeychainTokenStore: TokenStore {
       kSecValueData as String: Data(token.value.utf8), kSecAttrAccessible as String: kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly,
     ]
     let updated = SecItemUpdate(item(account) as CFDictionary, stored as CFDictionary)
-    guard updated == errSecItemNotFound else { return try KeychainError.check(updated) }
-    try KeychainError.check(SecItemAdd(item(account).merging(stored) { $1 } as CFDictionary, nil))
+    let status = updated == errSecItemNotFound ? SecItemAdd(item(account).merging(stored) { $1 } as CFDictionary, nil) : updated
+    try check(status, operation: "keychain_save")
   }
 
   public func delete(for account: String) throws {
     let status = SecItemDelete(item(account) as CFDictionary)
     guard status != errSecItemNotFound else { return }
-    try KeychainError.check(status)
+    try check(status, operation: "keychain_delete")
   }
 
   public func accounts() -> [String] {
@@ -43,22 +54,34 @@ public final class KeychainTokenStore: TokenStore {
     query[kSecReturnAttributes as String] = true
     query[kSecMatchLimit as String] = kSecMatchLimitAll
     var found: CFTypeRef?
-    guard SecItemCopyMatching(query as CFDictionary, &found) == errSecSuccess, let items = found as? [[String: Any]] else { return [] }
+    let status = SecItemCopyMatching(query as CFDictionary, &found)
+    guard status != errSecItemNotFound else { return [] }
+    guard status == errSecSuccess else {
+      telemetry.failure("keychain_accounts", kind: "keychain")
+      return []
+    }
+    guard let items = found as? [[String: Any]] else {
+      telemetry.failure("keychain_accounts", kind: "decode")
+      return []
+    }
     return items.compactMap { $0[kSecAttrAccount as String] as? String }
   }
 
   func item(_ account: String) -> [String: Any] {
     [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: service, kSecAttrAccount as String: account]
   }
+
+  func check(_ status: OSStatus, operation: String) throws {
+    guard status == errSecSuccess else {
+      telemetry.failure(operation, kind: "keychain")
+      throw KeychainError(status: status)
+    }
+  }
 }
 
 // A Keychain call that failed, by its status.
 public struct KeychainError: Error, Hashable, CustomStringConvertible {
   public let status: OSStatus
-
-  static func check(_ status: OSStatus) throws {
-    guard status == errSecSuccess else { throw KeychainError(status: status) }
-  }
 
   public var description: String {
     "the Keychain answered \(status): \(SecCopyErrorMessageString(status, nil).map { $0 as String } ?? "no message")"

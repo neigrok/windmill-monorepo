@@ -114,6 +114,8 @@ package actor Puller {
   var kicksSeen: UInt64 = 0
   var serverAskEnd: Int64?
   var fallbackDue: Int64?
+  // One report per unbroken doubt, after re-pulls reach the 30-second retry ceiling.
+  var reportedDoubts: Set<ScopeRef> = []
 
   init(core: EngineCore, transport: any SyncTransport) {
     self.core = core
@@ -206,6 +208,7 @@ package actor Puller {
     if let serverAskEnd, serverAskEnd > mono { return .backoff(ms: serverAskEnd - mono) }
     guard core.connectivity.isOnline else { return .idle }
     var taken: [ScopeRef] = []
+    var requestStart: Int64?
     do {
       guard let meta = try core.seat() else { return .idle }
       var token: SessionToken?
@@ -215,7 +218,11 @@ package actor Puller {
         token = found
       }
       let set = try core.reconcileSubscriptions()
-      core.doubts.withLock { $0.keep(Set(set)) }
+      let stillExhausted = core.doubts.withLock { doubts in
+        doubts.keep(Set(set))
+        return set.filter { doubts.inDoubt($0) && doubts.k($0) >= 6 }
+      }
+      reportedDoubts.formIntersection(stillExhausted)
       repulling.formIntersection(set)
       wants.add(Set(set).subtracting(joined))
       joined = Set(set)
@@ -223,7 +230,7 @@ package actor Puller {
       taken = wanted.all ? set : set.filter(wanted.scopes.contains)
       if wanted.all { fallbackDue = set.isEmpty ? nil : mono + Constants.pullFallbackMs }
       wants.reading(taken)
-      guard let planned = try core.store.pullPlan(taken, replica: meta.replica) else {
+      guard let planned = try core.storageOperation({ try core.store.pullPlan(taken, replica: meta.replica) }) else {
         wants.add(taken)
         return .again
       }
@@ -231,9 +238,13 @@ package actor Puller {
       wants.read(wanted.scopes.union(taken), waiting: planned.waiting)
       guard let request = planned.request else { return .idle }
       let send = core.clock.wall.reading()
-      let reply = await core.answered { [transport, token] in await transport.pull(request, token: token) }
-      return try record(reply, to: request, for: meta, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      requestStart = send.mono
+      let exchange = await core.answered(operation: "sync_pull") { [transport, token] in await transport.pull(request, token: token) }
+      let next = try record(exchange.reply, to: request, for: meta, under: token, timing: Timing(send: send, recv: core.clock.wall.reading()))
+      core.outcome("sync_pull_outcome", reply: exchange.reply, since: send.mono, failureKind: exchange.failureKind)
+      return next
     } catch {
+      if let requestStart { core.failedOutcome("sync_pull_outcome", error: error, since: requestStart) }
       wants.add(taken)
       return .backoff(ms: nextBackoff(floorMs: 0))
     }
@@ -299,7 +310,9 @@ package actor Puller {
   func doubt(_ page: PullPage, _ outcome: PageOutcome) {
     switch (outcome, page.body) {
     case (.ignored, _): core.doubts.withLock { $0.end(page.scope, at: now(), random: core.random) }
-    case (.applied, .rows): core.doubts.withLock { $0.rows(page.scope, at: now()) }
+    case (.applied, .rows):
+      core.doubts.withLock { $0.rows(page.scope, at: now()) }
+      reportedDoubts.remove(page.scope)
     default: break
     }
   }
@@ -309,8 +322,18 @@ package actor Puller {
     let ended = repulling.intersection(scopes)
     repulling.subtract(ended)
     let mono = now()
-    core.doubts.withLock { doubts in
+    let exhausted = core.doubts.withLock { doubts -> [ScopeRef] in
       for scope in ended.sorted() { doubts.repulled(scope, at: mono, random: core.random) }
+      return ended.filter { doubts.inDoubt($0) && doubts.k($0) >= 6 }
+    }
+    for scope in exhausted where reportedDoubts.insert(scope).inserted {
+      let kind: String = switch scope.kind {
+      case .product: "product"
+      case .tree: "tree"
+      case .overlay: "overlay"
+      case .device: "unknown"
+      }
+      core.telemetry.failure("sync_doubt", kind: "backoff_exhausted", properties: ["scope_kind": kind])
     }
   }
 

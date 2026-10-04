@@ -12,10 +12,10 @@ struct AccountSheet: View {
     VStack(spacing: 0) {
       HStack {
         if model.sheet == .code || model.sheet == .address {
-          roundButton("chevron.left", "Back") { model.sheet = model.sheet == .code ? .address : .keep }
+          roundButton("chevron.left", "Back") { model.choose("back", screen: model.sheet?.rawValue ?? "keep"); model.sheet = model.sheet == .code ? .address : .keep }
         } else if model.sheet == .keep { roundButton("xmark", "Close") { model.closeKeep() } }
         Spacer()
-        if model.sheet == .you { Button("Done") { model.sheet = nil }.font(Design.strong()).padding(.horizontal, 18).frame(height: 44).modifier(Glass()) }
+        if model.sheet == .you { Button("Done") { model.choose("close", screen: "you"); model.sheet = nil }.font(Design.strong()).padding(.horizontal, 18).frame(height: 44).modifier(Glass()) }
       }.padding(.horizontal, 24).padding(.top, model.sheet == .keep ? 24 : 16)
       ScrollView {
         VStack(alignment: .leading, spacing: 16) {
@@ -39,7 +39,7 @@ struct AccountSheet: View {
       .presentationCornerRadius(38)
       .interactiveDismissDisabled(model.editorReadOnly)
       .disabled(model.working || model.accountTransition)
-      .onChange(of: model.sheet, initial: true) { _, value in inputFocused = value == .code || value == .address }
+      .onChange(of: model.sheet, initial: true) { _, value in inputFocused = value == .code || value == .address; if let value { model.screenViewed(value == .discardAdoption ? "discard_adoption" : value == .signOut ? "sign_out" : value.rawValue) } }
   }
 
   var keep: some View {
@@ -82,12 +82,17 @@ struct AccountSheet: View {
                       let data = credential.identityToken, let identityToken = String(data: data, encoding: .utf8), let auth = model.runtime?.auth else { return }
                 let name = credential.fullName.map { PersonNameComponentsFormatter().string(from: $0) } ?? ""
                 await model.authenticateApple { try await auth.apple(identityToken: identityToken, nonce: appleNonce, name: name) }
-              } catch { model.error = error.localizedDescription }
+              } catch {
+                let cancelled = (error as? ASAuthorizationError)?.code == .canceled
+                model.telemetry.event("auth_signed_in", properties: ["method": "apple", "outcome": cancelled ? "cancelled" : "failed"])
+                if !cancelled { model.telemetry.failure("auth_apple", kind: "unexpected") }
+                model.error = error.localizedDescription
+              }
             }
           }.signInWithAppleButtonStyle(.white).frame(height: 52).clipShape(Capsule())
         }
       }
-      Button("Use email instead") { model.sheet = .address }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("email-sign-in")
+      Button("Use email instead") { model.choose("email", screen: model.sheet?.rawValue ?? "keep"); model.sheet = .address }.font(Design.strong()).frame(maxWidth: .infinity, minHeight: 44).accessibilityIdentifier("email-sign-in")
       Text("Signed up with email before? Use email, so it stays one account.").font(Design.text(13)).foregroundStyle(Design.faint).multilineTextAlignment(.center).frame(maxWidth: .infinity).padding(.top, 5)
     }.buttonStyle(.plain)
   }
@@ -109,7 +114,7 @@ struct AccountSheet: View {
       Text("Check your email").font(Design.title())
       HStack(spacing: 7) {
         Text("Sent to \(model.email)").font(Design.text(14)).foregroundStyle(Design.dim)
-        Button("Change") { model.sheet = .address }.font(Design.strong(14)).foregroundStyle(Design.brand)
+        Button("Change") { model.choose("change_email", screen: "code"); model.sheet = .address }.font(Design.strong(14)).foregroundStyle(Design.brand)
       }
       TextField("6-digit code", text: $model.code).keyboardType(.numberPad).textContentType(.oneTimeCode).focused($inputFocused)
         .padding(18).frame(minHeight: 60).background(Color(hex: 0x222224), in: RoundedRectangle(cornerRadius: 18))
@@ -161,7 +166,7 @@ struct AccountSheet: View {
       Text("Add your pages?").font(Design.title())
       Text("This account already has pages. Add \(model.adoptionCount) pages from this phone, or discard them from this phone.").foregroundStyle(Design.dim)
       Button("Add") { Task { await model.adopt(.add) } }.frame(maxWidth: .infinity, minHeight: 52).modifier(Glass()).foregroundStyle(Design.brand)
-      Button("Discard") { model.sheet = .discardAdoption }.frame(maxWidth: .infinity, minHeight: 52).modifier(Glass()).foregroundStyle(Design.brand)
+      Button("Discard") { model.choose("discard", screen: "adoption"); model.sheet = .discardAdoption }.frame(maxWidth: .infinity, minHeight: 52).modifier(Glass()).foregroundStyle(Design.brand)
     }
   }
 
@@ -170,7 +175,7 @@ struct AccountSheet: View {
       Text("Discard these pages?").font(Design.title())
       Text("Discard \(model.adoptionCount) pages written on this phone while signed out. Your account's pages stay in your account.").foregroundStyle(Design.dim)
       Button("Discard", role: .destructive) { Task { await model.adopt(.discard) } }.frame(maxWidth: .infinity, minHeight: 52)
-      Button("Cancel", role: .cancel) { model.sheet = .adoption }.frame(maxWidth: .infinity, minHeight: 52)
+      Button("Cancel", role: .cancel) { model.choose("cancel", screen: "discard_adoption"); model.sheet = .adoption }.frame(maxWidth: .infinity, minHeight: 52)
     }
   }
 
