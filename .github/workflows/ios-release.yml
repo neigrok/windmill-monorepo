@@ -23,6 +23,7 @@ jobs:
       APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
       ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
       ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+      WM_APPLE_SIGN_IN_ENABLED: ${{ vars.IOS_APPLE_SIGN_IN_ENABLED || 'NO' }}
     steps:
       - uses: actions/checkout@v5
 

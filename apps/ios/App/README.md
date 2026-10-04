@@ -11,7 +11,8 @@ See [the full local server recipe](../../../backend/RUNNING.md). Sessions come f
 and are kept in Keychain; native authentication does not retain cookies.
 
 Apple sign-in is off by default and the built app declares no Sign in with Apple entitlement.
-Set `WM_APPLE_SIGN_IN_ENABLED=YES` only for a server configured for native Apple verification. Device
+Set `WM_APPLE_SIGN_IN_ENABLED=YES` only for a server configured for native Apple verification; the
+release workflow reads it from the repository variable `IOS_APPLE_SIGN_IN_ENABLED` (default NO). Device
 Release builds use automatic development signing with your team; App Store export signs for distribution. Enable Sign in with Apple for this bundle ID.
 An actual Apple ID on a device is required for the production Apple flow.
 
