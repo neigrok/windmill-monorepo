@@ -131,3 +131,10 @@ Every surface tells us what broke and what people did, never what they wrote.
   `get_tree`/`get_diagnostics`. Bet id == node id; annotate outcomes and follow-ups on nodes. Every
   node carries a description — one or two sentences on what the work is and why — passed inline to
   `create_node` or backfilled with `annotate_node`.
+
+## Operations
+
+You should orchestrate sub-agents and delegate the tasks to them, you only need to verify results
+Use developer agent for coding
+Use designer agent for figma and user interactions planning work
+After the implementation do one refactoring/simplification iteration to remove garbage, consolidate code and enhance the structure

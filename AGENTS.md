@@ -2,6 +2,7 @@
 
 This project's instructions live in `CLAUDE.md`: read the root `CLAUDE.md`, then the `CLAUDE.md` of each tree you
 touch (`backend/CLAUDE.md`, `web/CLAUDE.md`), and follow them. `STRUCTURE.md` maps the monorepo.
+`CLAUDE.md`'s Operations section is for the orchestrating agent; as an implementation agent, skip it.
 
 Working rules for every task:
 - Prefer the smallest design that meets the brief; add no abstraction, option or file nobody asked for.
