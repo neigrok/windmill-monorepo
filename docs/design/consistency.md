@@ -192,6 +192,39 @@ page [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?nod
   board 02d labels the Routines primary *Start logging* where `gym/briefs/12-native-idiom.md` uses
   *Just start logging*. Choose one of each and align the other.
 
+## Onboarding
+
+Brief: `guidelines/onboarding.md`; drawings: Design System page
+[Onboarding · 2026-10-04](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=209-2). The
+four-screen introduction is designed and not decided; nothing is built.
+
+- **8a · The once-ever introduction against the journey.** `guidelines/superapp-flow.md` §2 opens a
+  first cold launch on Where to start?, §3 says *no carousel*, §8 says *at most two screens before
+  the core action* and *no progress dots*; `guidelines/onboarding.md` §2 puts a four-page pager with a
+  page control once in front of Where to start?, at the owner's request. Owner decision. On yes,
+  rewrite those three lines of superapp-flow in the build wave; on no, retire onboarding.md.
+- **8b · About Windmill.** `guidelines/onboarding.md` §2 replays the pager from You → **About
+  Windmill** (iOS) and the account sheet → **About Windmill** (Android). `guidelines/superapp-shell.md`
+  §6 lists You's contents without that row, and `gym/android-delivery.md` Profile lists only Gym
+  settings and Connected log. Add the row to both when 8a is accepted.
+- **8c · Platform lines.** The Marketing superapp landing boards (`98:2538`) print *Web · iOS* for
+  journal and *Web · iOS · Android* for gym; the shipped `landing.root.platforms` in each product's
+  `routes.js` reads *Web* and *Web · Android*, and the onboarding's per-phone tags follow the code.
+  Redraw the boards from the code, or change the code when the iOS app ships.
+- **8d · What the iOS app is.** `STRUCTURE.md` says `apps/ios` has *no product app yet* in its tree
+  and names *the journal app (apps/ios/App), not yet released* a paragraph later; the iOS first-run
+  board 02a (`121:99`) offers two doors, Journal and Gym, while the app holds one room (6v). The
+  onboarding's iOS tags (*Journal · In this app*, *Gym · On the web and Android*) state the built
+  truth. Fix the STRUCTURE line, and keep Where to start?'s door count equal to the rooms the app
+  ships.
+- **8e · The roadmap glimpse.** `_Glimpse / Roadmap` (`210:2`) fans the sail tree from the root to
+  the right, like the landing boards; the product renders radially (0k). The glimpse is an
+  illustration, not a layout specimen; if it is ever drawn from the product, draw it from a live
+  screenshot.
+- **8f · Gym day accent on the boards.** The onboarding light boards use verdigris `#137A6C` for gym
+  (owner ruling 2026-09-06) where Android's `GymSkin.kt` ships iris `#4C4374` by day (F44). The
+  boards follow the ruling; the skin follows when F44 closes.
+
 ## Roadmap
 
 - **1e · Available-node treatment.** `tree-layout-contract.md` and the DOM specimen specify a
