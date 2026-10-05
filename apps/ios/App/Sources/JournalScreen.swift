@@ -7,6 +7,7 @@ struct JournalScreen: View {
   @Bindable var model: JournalModel
   @State var focused = false
   @State var writeRequest = 0
+  @State var appendRequest = 0
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var systemReduceMotion
   @ScaledMetric(relativeTo: .body) var bodySize = 17.0
@@ -31,6 +32,10 @@ struct JournalScreen: View {
                 today(width: geo.size.width - 48)
                   .padding(.horizontal, 24)
                   .padding(.bottom, focused ? 18 : (model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
+                  .contentShape(Rectangle())
+                  .gesture(TapGesture().onEnded {
+                    if !model.editorReadOnly && model.sheet == nil { appendRequest += 1 }
+                  }, including: focused ? .all : .subviews)
                   .id("journal-today")
               }
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
@@ -108,7 +113,7 @@ struct JournalScreen: View {
           if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
         }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
-          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly)
+          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest)
             .frame(height: editorHeight(width: width))
             .allowsHitTesting(focused || model.editorReadOnly)
           if model.document.body.isEmpty && !focused {
@@ -132,7 +137,9 @@ struct JournalScreen: View {
         }
       }.padding(.bottom, focused ? 0 : 23)
         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
-        .onTapGesture { if !model.editorReadOnly && model.sheet == nil && !focused { focused = true } }
+        .gesture(TapGesture().onEnded {
+          if !model.editorReadOnly && model.sheet == nil && !focused { focused = true }
+        }, including: focused ? .subviews : .all)
       if !focused {
         if model.scalesDue {
           HStack {
@@ -178,6 +185,7 @@ struct JournalBodyText: UIViewRepresentable {
   @Binding var focused: Bool
   let fontSize: CGFloat
   var editable = true
+  var appendRequest = 0
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
@@ -190,11 +198,11 @@ struct JournalBodyText: UIViewRepresentable {
     (text as NSString).boundingRect(with: CGSize(width: width, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin, .usesFontLeading], attributes: attributes(fontSize: fontSize), context: nil).height + 8
   }
 
-  func makeUIView(context: Context) -> UITextView {
+  func makeUIView(context: Context) -> JournalEditorView {
     #if DEBUG && targetEnvironment(simulator)
-    let view = ProcessInfo.processInfo.arguments.contains("-journal-layout-test") ? JournalLayoutTextView() : UITextView()
+    let view = ProcessInfo.processInfo.arguments.contains("-journal-layout-test") ? JournalLayoutTextView() : JournalTextView()
     #else
-    let view = UITextView()
+    let view = JournalTextView()
     #endif
     view.delegate = context.coordinator
     view.backgroundColor = .clear
@@ -203,31 +211,23 @@ struct JournalBodyText: UIViewRepresentable {
     view.textContainerInset = .zero
     view.textContainer.lineFragmentPadding = 0
     view.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-    return view
+    return JournalEditorView(textView: view)
   }
 
-  func updateUIView(_ view: UITextView, context: Context) {
+  func updateUIView(_ editor: JournalEditorView, context: Context) {
+    let view = editor.textView
     context.coordinator.parent = self
     view.isEditable = editable
+    // Unfocused taps belong to the page, before keyboard layout moves the text view.
+    editor.isUserInteractionEnabled = focused || !editable
     view.accessibilityLabel = editable ? "Today's page" : nil
     view.accessibilityIdentifier = editable ? "journal-editor" : nil
-    let textChanged = view.text != text
-    let fontChanged = view.font?.pointSize != fontSize
-    if view.markedTextRange == nil && (textChanged || fontChanged) {
-      let selection = context.coordinator.initialized ? view.selectedRange : NSRange(location: text.utf16.count, length: 0)
-      if textChanged { view.text = text }
-      let attributes = Self.attributes(fontSize: fontSize)
-      view.font = attributes[.font] as? UIFont
-      view.textStorage.setAttributes(attributes, range: NSRange(location: 0, length: view.textStorage.length))
-      view.typingAttributes = attributes
-      let selectionStart = min(selection.location, view.textStorage.length)
-      view.selectedRange = NSRange(location: selectionStart, length: min(selection.length, view.textStorage.length - selectionStart))
-      context.coordinator.initialized = true
-    }
-    if editable && focused && !view.isFirstResponder {
+    context.coordinator.updateText(view, text: text, fontSize: fontSize)
+    if editable && focused && (!view.isFirstResponder || context.coordinator.appendRequest != appendRequest) {
       view.becomeFirstResponder()
       view.selectedRange = NSRange(location: view.textStorage.length, length: 0)
     }
+    context.coordinator.appendRequest = appendRequest
     if (!editable || !focused) && view.isFirstResponder { view.resignFirstResponder() }
   }
 
@@ -236,24 +236,103 @@ struct JournalBodyText: UIViewRepresentable {
   final class Coordinator: NSObject, UITextViewDelegate {
     var parent: JournalBodyText
     var initialized = false
+    var publishingText = false
+    var appendRequest = 0
     init(_ parent: JournalBodyText) { self.parent = parent }
-    func textViewDidChange(_ textView: UITextView) { parent.text = textView.text }
+
+    func updateText(_ view: UITextView, text: String, fontSize: CGFloat) {
+      // Binding publication can reenter with the snapshot from before this keystroke.
+      guard !publishingText, view.markedTextRange == nil else { return }
+      let textChanged = view.text != text
+      let fontChanged = view.font?.pointSize != fontSize
+      guard textChanged || fontChanged else { return }
+      let selection = initialized ? view.selectedRange : NSRange(location: text.utf16.count, length: 0)
+      if textChanged { view.text = text }
+      let attributes = JournalBodyText.attributes(fontSize: fontSize)
+      view.font = attributes[.font] as? UIFont
+      view.textStorage.setAttributes(attributes, range: NSRange(location: 0, length: view.textStorage.length))
+      view.typingAttributes = attributes
+      let selectionStart = min(selection.location, view.textStorage.length)
+      view.selectedRange = NSRange(location: selectionStart, length: min(selection.length, view.textStorage.length - selectionStart))
+      initialized = true
+    }
+
+    func textViewDidChange(_ textView: UITextView) {
+      publishingText = true
+      defer { publishingText = false }
+      parent.text = textView.text
+    }
     func textViewDidBeginEditing(_ textView: UITextView) { if !parent.focused { parent.focused = true } }
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
   }
 }
 
+final class JournalEditorView: UIView, UIGestureRecognizerDelegate {
+  let textView: JournalTextView
+  let appendArea = UIView()
+  let appendTap = UITapGestureRecognizer()
+
+  init(textView: JournalTextView) {
+    self.textView = textView
+    super.init(frame: .zero)
+    addSubview(textView)
+    addSubview(appendArea)
+    appendArea.accessibilityElementsHidden = true
+    appendTap.addTarget(self, action: #selector(appendAtEnd))
+    appendTap.delegate = self
+    appendArea.addGestureRecognizer(appendTap)
+  }
+
+  required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
+
+  override func layoutSubviews() {
+    super.layoutSubviews()
+    textView.frame = bounds
+    appendArea.frame = bounds
+  }
+
+  override func hitTest(_ point: CGPoint, with event: UIEvent?) -> UIView? {
+    guard isUserInteractionEnabled, !isHidden, alpha > 0.01, self.point(inside: point, with: event) else { return nil }
+    let textPoint = convert(point, to: textView)
+    if textView.isEditable && textPoint.y >= textView.lastLineRect.maxY {
+      return appendArea.hitTest(convert(point, to: appendArea), with: event)
+    }
+    return textView.hitTest(textPoint, with: event)
+  }
+
+  func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer,
+                         shouldBeRequiredToFailBy otherGestureRecognizer: UIGestureRecognizer) -> Bool {
+    gestureRecognizer === appendTap && otherGestureRecognizer is UITapGestureRecognizer
+  }
+
+  @objc func appendAtEnd() {
+    guard isUserInteractionEnabled, textView.isEditable else { return }
+    textView.becomeFirstResponder()
+    textView.selectedTextRange = textView.textRange(from: textView.endOfDocument, to: textView.endOfDocument)
+  }
+}
+
+class JournalTextView: UITextView {
+  var lastLineRect: CGRect {
+    let lastCharacter = position(from: endOfDocument, offset: -1) ?? endOfDocument
+    guard let lastLine = tokenizer.rangeEnclosingPosition(lastCharacter, with: .line,
+      inDirection: UITextDirection(rawValue: UITextStorageDirection.backward.rawValue)) else { return caretRect(for: endOfDocument) }
+    return firstRect(for: lastLine)
+  }
+}
+
 #if DEBUG && targetEnvironment(simulator)
-final class JournalLayoutTextView: UITextView {
+final class JournalLayoutTextView: JournalTextView {
   override var accessibilityValue: String? {
     get {
-      guard let window, let selection = selectedTextRange,
-            let lastCharacter = position(from: endOfDocument, offset: -1),
-            let lastLine = tokenizer.rangeEnclosingPosition(lastCharacter, with: .line,
-              inDirection: UITextDirection(rawValue: UITextStorageDirection.backward.rawValue)) else { return nil }
+      guard let window, let selection = selectedTextRange else { return nil }
       let caret = convert(caretRect(for: selection.end), to: window)
-      let line = convert(firstRect(for: lastLine), to: window)
-      let metrics = [
+      let line = convert(lastLineRect, to: window)
+      let metrics: [String: Any] = [
+        "text": text ?? "",
+        "selection": [selectedRange.location, selectedRange.length],
+        "textLength": textStorage.length,
+        "focused": isFirstResponder,
         "caret": [caret.minX, caret.minY, caret.width, caret.height],
         "lastLine": [line.minX, line.minY, line.width, line.height],
       ]

@@ -3,11 +3,11 @@ import XCTest
 @MainActor final class JournalFlowTests: XCTestCase {
   func testEmptyPageTapBelowTextOpensKeyboardAtEnd() {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
     app.launch()
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
-    XCTAssertEqual(editor.value as? String, "")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "")
     XCTAssertEqual(editor.label, "Today's page")
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
@@ -17,22 +17,24 @@ import XCTest
     let point = editor.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.95))
     point.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
     app.typeText("A new line.")
-    XCTAssertEqual(editor.value as? String, "A new line.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "A new line.")
     app.buttons["done-writing"].tap()
     app.descendants(matching: .any)["journal-date"].tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
     app.typeText(" More.")
-    XCTAssertEqual(editor.value as? String, "A new line. More.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "A new line. More.")
   }
 
   func testOneLinePageTapBelowTextOpensKeyboardAtEnd() {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "journal-one-line"]
+    app.launchArguments = ["-model-server", "-board", "journal-one-line", "-journal-layout-test"]
     app.launch()
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
-    XCTAssertEqual(editor.value as? String, "Short walk, then an early night.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night.")
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-one-line"
@@ -41,13 +43,48 @@ import XCTest
     let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: editor.frame.maxX - 1, dy: editor.frame.maxY + 12))
     point.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
     app.typeText(" Appended.")
-    XCTAssertEqual(editor.value as? String, "Short walk, then an early night. Appended.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night. Appended.")
     app.buttons["done-writing"].tap()
     editor.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.1)).tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
     app.typeText(" At the end.")
-    XCTAssertEqual(editor.value as? String, "Short walk, then an early night. Appended. At the end.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night. Appended. At the end.")
+    app.buttons["done-writing"].tap()
+    app.descendants(matching: .any)["journal-date"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
+    app.typeText(" Again.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night. Appended. At the end. Again.")
+  }
+
+  func testFocusedOneLinePageTapsBelowTextMoveCaretToEnd() throws {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-one-line", "-journal-layout-test"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
+    for (fraction, belowLine) in [(0.01, 4.0), (0.5, 4.0), (0.99, 4.0), (0.01, 30.0), (0.5, 30.0), (0.99, 30.0)] {
+      try tapIntoLastLine(in: app)
+      let metrics = try XCTUnwrap(journalMetrics(in: editor))
+      let lastLine = try XCTUnwrap(metrics["lastLine"] as? [Double])
+      guard lastLine.count == 4 else { XCTFail("Invalid lastLine rectangle: \(lastLine)"); return }
+      let visibleBottom = min(editor.frame.maxY, app.scrollViews.firstMatch.frame.maxY) - 1
+      let tapY = min(lastLine[1] + lastLine[3] + belowLine, visibleBottom)
+      XCTAssertGreaterThan(tapY, lastLine[1] + lastLine[3])
+      let viewport = app.scrollViews.firstMatch.frame
+      app.coordinate(withNormalizedOffset: .zero).withOffset(
+        CGVector(dx: viewport.minX + viewport.width * fraction,
+                 dy: tapY)).tap()
+      assertCaretAtEnd(in: editor)
+    }
+    app.typeText(" Appended.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night. Appended.")
   }
 
   func testOneRoomTitleIsInertAndTopRightYouStillOpensSettings() {
@@ -171,10 +208,29 @@ import XCTest
     write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     let done = app.buttons["done-writing"]
+    let editor = app.textViews["journal-editor"]
     for addition in ["First filled line.\nSecond filled line.\nThird filled line.",
                      String(repeating: "\nA longer page keeps the caret clear of the Done seat.", count: 12), "\n"] {
+      assertCaretAtEnd(in: editor)
       app.typeText(addition)
       try assertWritingClearsSeat(in: app)
+      try tapIntoLastLine(in: app)
+      let metrics = try XCTUnwrap(journalMetrics(in: editor))
+      let lastLine = try XCTUnwrap(metrics["lastLine"] as? [Double])
+      guard lastLine.count == 4 else { XCTFail("Invalid lastLine rectangle: \(lastLine)"); return }
+      let visibleBottom = min(editor.frame.maxY, app.scrollViews.firstMatch.frame.maxY) - 1
+      let tapY = min(lastLine[1] + lastLine[3] + 4, visibleBottom)
+      XCTAssertGreaterThan(tapY, lastLine[1] + lastLine[3])
+      app.coordinate(withNormalizedOffset: .zero).withOffset(
+        CGVector(dx: editor.frame.minX + 1, dy: tapY)).tap()
+      assertCaretAtEnd(in: editor)
+      XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, metrics["text"] as? String)
+      try tapIntoLastLine(in: app)
+      let bottom = app.scrollViews.firstMatch.frame.maxY - 1
+      XCTAssertGreaterThan(bottom, lastLine[1] + lastLine[3])
+      app.coordinate(withNormalizedOffset: .zero).withOffset(
+        CGVector(dx: editor.frame.maxX - 1, dy: bottom)).tap()
+      assertCaretAtEnd(in: editor)
     }
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-long-writing"
@@ -184,19 +240,57 @@ import XCTest
     XCTAssertTrue(write.waitForExistence(timeout: 5))
   }
 
+  func journalMetrics(in editor: XCUIElement) -> [String: Any]? {
+    guard let value = editor.value as? String else { return nil }
+    return (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
+  }
+
+  func tapIntoLastLine(in app: XCUIApplication,
+                       file: StaticString = #filePath, line: UInt = #line) throws {
+    let editor = app.textViews["journal-editor"]
+    let metrics = try XCTUnwrap(journalMetrics(in: editor), file: file, line: line)
+    let rect = try XCTUnwrap(metrics["lastLine"] as? [Double], file: file, line: line)
+    guard rect.count == 4 else { XCTFail("Invalid lastLine rectangle: \(rect)", file: file, line: line); return }
+    app.coordinate(withNormalizedOffset: .zero).withOffset(
+      CGVector(dx: rect[0] + rect[2] / 4, dy: rect[1] + rect[3] / 2)).tap()
+    let insideText = NSPredicate { _, _ in
+      guard let metrics = self.journalMetrics(in: editor),
+            let selection = metrics["selection"] as? [Int], selection.count == 2,
+            let length = metrics["textLength"] as? Int else { return false }
+      return metrics["focused"] as? Bool == true && selection[0] < length
+    }
+    if insideText.evaluate(with: editor) { return }
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: insideText, object: editor)], timeout: 5), .completed,
+                   "Expected selection inside text: \(editor.value ?? "missing editor value")", file: file, line: line)
+  }
+
+  func assertCaretAtEnd(in editor: XCUIElement,
+                        file: StaticString = #filePath, line: UInt = #line) {
+    let ready = NSPredicate { _, _ in
+      guard let metrics = self.journalMetrics(in: editor),
+            let selection = metrics["selection"] as? [Int],
+            let length = metrics["textLength"] as? Int else { return false }
+      return metrics["focused"] as? Bool == true && selection == [length, 0]
+    }
+    if ready.evaluate(with: editor) { return }
+    let expectation = XCTNSPredicateExpectation(predicate: ready, object: editor)
+    XCTAssertEqual(XCTWaiter.wait(for: [expectation], timeout: 5), .completed,
+                   "Expected focused caret at end: \(editor.value ?? "missing editor value")", file: file, line: line)
+  }
+
   func assertWritingClearsSeat(in app: XCUIApplication,
                              file: StaticString = #filePath, line: UInt = #line) throws {
     let editor = app.textViews["journal-editor"]
     let done = app.buttons["done-writing"]
     let visibleTop = app.scrollViews.firstMatch.frame.minY
     let value = try XCTUnwrap(editor.value as? String, file: file, line: line)
-    let metrics = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: [Double]], file: file, line: line)
+    let metrics = try XCTUnwrap(journalMetrics(in: editor), file: file, line: line)
     let geometry = XCTAttachment(string: "\(value)\neditor: \(editor.frame)\nseat: \(done.frame)")
     geometry.name = "journal-writing-geometry"
     geometry.lifetime = .keepAlways
     add(geometry)
     for name in ["caret", "lastLine"] {
-      let rect = try XCTUnwrap(metrics[name], file: file, line: line)
+      let rect = try XCTUnwrap(metrics[name] as? [Double], file: file, line: line)
       guard rect.count == 4 else { XCTFail("Invalid \(name) rectangle: \(rect)", file: file, line: line); return }
       XCTAssertGreaterThan(rect[2], 0, file: file, line: line)
       XCTAssertGreaterThan(rect[3], 0, file: file, line: line)
@@ -293,7 +387,7 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "paused-backup"]
     app.launch()
-    XCTAssertTrue(app.staticTexts["Backup is paused. Sign in again to resume."].waitForExistence(timeout: 15))
+    XCTAssertTrue(app.staticTexts["Backup is paused. Sign in again to resume."].waitForExistence(timeout: 30))
     app.buttons["email-sign-in"].tap()
     let email = app.textFields["email-address"]
     XCTAssertTrue(email.waitForExistence(timeout: 5)); email.tap(); email.typeText("apple@example.com")

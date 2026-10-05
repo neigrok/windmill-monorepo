@@ -42,8 +42,8 @@ for local replay verification; the final report contains no credential.
 Run the `WindmillTests` scheme tests for deterministic domain and lineage flows, and
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
 protected Application Support directory. `JournalDomain` owns writing and first-run state.
-The writing clearance test uses `-journal-layout-test` on Debug simulators to read UIKit's caret and
-last-line rectangles in window coordinates through the editor's accessibility value.
+The writing tests use `-journal-layout-test` on Debug simulators to read selection, focus and text,
+plus UIKit's caret and last-line rectangles in window coordinates, through the editor's accessibility value.
 
 Native editing writes today's page only; past days are read-only. Tapping today's page from its date
 through the space above the mood rows opens the keyboard with the caret at the end. The body reserves
