@@ -248,6 +248,27 @@ class TransportTests {
         }
     }
 
+    @Test fun closeSurvivesTheLastLiveConnectionClosingDuringTraversal() = runBlocking {
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
+                val waiting = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
+                val sockets = object : java.util.concurrent.ConcurrentHashMap<LiveConnection, Boolean>() {
+                    override val size: Int get() = super.size.also { if (it == 1) connection.close() }
+                }.keySet(true)
+                sockets.add(connection)
+                HTTPTransport::class.java.getDeclaredField("sockets").also { it.isAccessible = true }.set(transport, sockets)
+                transport.close()
+                assertNull(withTimeout(2_000) { waiting.await() })
+                transport.close()
+                assertSame(Reply.Unreachable, transport.openLive("token"))
+                assertSame(Reply.Unreachable, transport.hello(null))
+                assertEquals(1, server.requestCount)
+            }
+        }
+    }
+
     @Test fun malformedUtf8AndOversizeFramesCloseTheLiveChannel() = runBlocking {
         for (payload in listOf(byteArrayOf(0xc3.toByte(), 0x28), "x".repeat(Constants.LIVE_FRAME_BYTES + 1).encodeToByteArray())) {
             MockWebServer().use { server ->

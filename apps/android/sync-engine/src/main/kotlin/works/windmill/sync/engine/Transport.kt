@@ -173,6 +173,6 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         catch (cancelled: CancellationException) { connection.close(); if (cancelled is TimeoutCancellationException) { telemetry.offer(EngineOperation.live, EngineOutcome.timeout); return Reply.Unreachable }; throw cancelled }
     }
     override fun close() {
-        if (closed.compareAndSet(false, true)) { calls.forEach(Call::cancel); sockets.toList().forEach(LiveConnection::close); telemetry.close() }
+        if (closed.compareAndSet(false, true)) { calls.forEach(Call::cancel); sockets.forEach(LiveConnection::close); telemetry.close() }
     }
 }
