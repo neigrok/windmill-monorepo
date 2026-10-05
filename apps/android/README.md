@@ -155,6 +155,30 @@ verified commit/ref/version/workflow/run identities, receives the password throu
 the input, signs and checks the certificate and unchanged application contents. Its APK, digest
 and provenance remain unpublished until native acceptance and a same-key update check pass.
 
+The published [0.11.0/code160 release](https://github.com/neigrok/windmill-monorepo/releases/tag/android-v0.11.0)
+uses tag `android-v0.11.0` at `192bc26182ad18f4d377d9a320af52f7406d3226`,
+[Actions run 37385912056](https://github.com/neigrok/windmill-monorepo/actions/runs/37385912056),
+attempt 1, from a tag push. Both jobs passed. Local finalization verified the retained certificate,
+non-debuggable package, unchanged application contents and linked provenance. All three anonymously
+downloaded assets are byte-identical to the accepted files. The APK SHA-256 is
+`de1a8cc89655c145d4c7ea8b56d7e6f7b474b12dc3789608d608daaf18648581`.
+The release workflow supplies `-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest`;
+the APK contains that destination, which resolves to this release.
+
+Android 14 emulator acceptance used the public 0.10.0/code108 APK, signed out against the production
+configuration. Its routine, finished 20 kg × 5 workout, live two-set workout and 72.4 kg weigh-in
+survived `adb install -r` with their IDs, values, timestamps and frozen plans intact. The live workout
+accepted a third set, then a fourth in airplane mode; all four survived force-stop/restart offline.
+Finishing retained 400 kg volume alongside the original 100 kg workout. The routine and original
+workout opened correctly. An independent clean install opened the empty Routines screen.
+
+Signed-in source/debug-key upgrade, Add/Discard/Keep and offline server delivery reuse
+[completed A2 acceptance](https://github.com/neigrok/windmill-monorepo/commit/10680fd17f521fc4e9dd957b3f9459028565e254)
+and [final A2 CI](https://github.com/neigrok/windmill-monorepo/actions/runs/37383639801).
+[Notes coverage](https://github.com/neigrok/windmill-monorepo/blob/3c814064d7b80ac76b8a833e75e9f8a7ecdc93af/apps/android/gym/src/test/kotlin/works/windmill/gym/ui/EngineNotesScreenTests.kt)
+is Compose/engine-model testing. Signed-in acceptance was not repeated on the published-key APK:
+Android application code is unchanged from A2 at `3c814064`; the release adds the update destination.
+
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. Uninstalling removes device-only records;
 preserve them before changing installation. When both sides hold training, choose Add to transfer
