@@ -77,11 +77,20 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         try {
             return suspendCancellableCoroutine { continuation ->
                 continuation.invokeOnCancellation { call.cancel() }
+                fun current() = continuation.isActive && !closed.get()
                 call.enqueue(object : Callback {
                     override fun onFailure(call: Call, failure: IOException) {
-                        if (continuation.isActive) { telemetry.offer(operation(kind), EngineOutcome.failure); continuation.resume(Reply.Unreachable) { _, _, _ -> } }
+                        if (continuation.isActive) {
+                            if (current()) telemetry.offer(operation(kind), EngineOutcome.failure)
+                            continuation.resume(Reply.Unreachable) { _, _, _ -> }
+                        }
                     }
                     override fun onResponse(call: Call, response: Response) {
+                        if (!current()) {
+                            response.close()
+                            if (continuation.isActive) continuation.resume(Reply.Unreachable) { _, _, _ -> }
+                            return
+                        }
                         val answer = response.use {
                             try {
                                 val source = it.body?.source()
@@ -91,9 +100,9 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                                 if (it.code == 200) {
                                     if (json == null) throw JsonError("response")
                                     validateResponse(kind, json)
-                                } else telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
+                                } else if (current()) telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
                                 Reply.Answer(SyncResponse(it.code, json))
-                            } catch (_: Exception) { telemetry.offer(operation(kind), EngineOutcome.failure); Reply.Unreachable }
+                            } catch (_: Exception) { if (current()) telemetry.offer(operation(kind), EngineOutcome.failure); Reply.Unreachable }
                         }
                         if (continuation.isActive) continuation.resume(answer) { _, _, _ -> }
                     }
@@ -107,9 +116,9 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         val messages = Channel<Json>(32)
         val socketRef = java.util.concurrent.atomic.AtomicReference<WebSocket?>()
         val opening = CompletableDeferred<Reply<LiveConnection>>()
+        val connectionClosed = AtomicBoolean(false)
         val connection = object : LiveConnection {
             private val receiving = AtomicBoolean(false)
-            private val connectionClosed = AtomicBoolean(false)
             override suspend fun send(request: Json) {
                 val text = request.jcs
                 if (connectionClosed.get() || text.encodeToByteArray().size > Constants.LIVE_FRAME_BYTES || socketRef.get()?.let { it.queueSize() + text.encodeToByteArray().size <= Constants.LIVE_FRAME_BYTES && it.send(text) } != true) throw IOException("live-send")
@@ -132,11 +141,15 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         val listener = object : WebSocketListener() {
             override fun onOpen(webSocket: WebSocket, response: Response) { socketRef.set(webSocket); if (closed.get() || !opening.complete(Reply.Answer(connection))) connection.close() }
             private fun message(webSocket: WebSocket, bytes: ByteArray) {
+                if (connectionClosed.get() || closed.get()) return
                 try {
                     if (bytes.size > Constants.LIVE_FRAME_BYTES) throw IOException("frame-limit")
                     val frame = Json.parse(bytes); validateFrame(frame)
                     if (!messages.trySend(frame).isSuccess) throw IOException("live-backpressure")
-                } catch (_: Exception) { telemetry.offer(EngineOperation.live, EngineOutcome.failure); messages.close(IOException("live-frame")); webSocket.cancel() }
+                } catch (_: Exception) {
+                    if (!connectionClosed.get() && !closed.get()) telemetry.offer(EngineOperation.live, EngineOutcome.failure)
+                    messages.close(IOException("live-frame")); webSocket.cancel()
+                }
             }
             override fun onMessage(webSocket: WebSocket, text: String) = message(webSocket, text.encodeToByteArray())
             override fun onMessage(webSocket: WebSocket, bytes: ByteString) = message(webSocket, bytes.toByteArray())
@@ -144,7 +157,12 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { messages.close(); sockets.remove(connection) }
             override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
                 val status = response?.code
-                response?.close(); telemetry.offer(EngineOperation.live,
+                response?.close()
+                if (connectionClosed.get() || closed.get()) {
+                    opening.complete(Reply.Unreachable); messages.close(); sockets.remove(connection)
+                    return
+                }
+                telemetry.offer(EngineOperation.live,
                     if (status in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
                 opening.complete(if (status != null) Reply.Failed(SyncResponse(status)) else Reply.Unreachable); messages.close(IOException("live-failed")); sockets.remove(connection)
             }

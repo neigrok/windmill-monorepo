@@ -76,6 +76,7 @@ class SyncRuntimeTests {
         val opening = AtomicInteger()
         val activePushes = AtomicInteger()
         val maximumPushes = AtomicInteger()
+        @Volatile var failPush = false
         val opened = CompletableDeferred<Socket>()
         val hellos = Channel<String?>(Channel.UNLIMITED)
         var holdsRecords = false
@@ -91,7 +92,11 @@ class SyncRuntimeTests {
             val count = activePushes.incrementAndGet()
             maximumPushes.updateAndGet { maxOf(it, count) }
             val push = Push(request, token)
-            try { pushes.send(push); return push.answer.await() }
+            try {
+                if (failPush) throw java.io.IOException("push failed")
+                pushes.send(push)
+                return push.answer.await()
+            }
             catch (cancelled: CancellationException) { push.cancelled.complete(Unit); throw cancelled }
             finally { activePushes.decrementAndGet() }
         }
@@ -322,6 +327,9 @@ class SyncRuntimeTests {
             assertEquals(0, fixture.transport.activePushes.get())
             assertEquals("sent", fixture.engine.device.current().entries().single().state)
             assertFalse(fixture.runtime.senderStep(leaving = true))
+            fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+            until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+            assertFalse(fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure })
         }
     }
 
@@ -431,6 +439,9 @@ class SyncRuntimeTests {
             fixture.runtime.shutdown(1_000)
             withTimeout(1_000) { socket.closed.await(); socket.sendCancelled.await(); pending.cancelled.await() }
             assertFalse(fixture.runtime.pullerStep())
+            fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+            until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+            assertFalse(fixture.events.any { it.operation == EngineOperation.pull && it.outcome == EngineOutcome.failure })
         }
     }
 
@@ -564,6 +575,53 @@ class SyncRuntimeTests {
             assertEquals(2, request.request.member("intents").arr().size)
             request.answer.complete(Reply.Unreachable)
             assertTrue(resumed.await())
+        }
+    }
+
+    @Test fun signOutCancelsItsActivePushWithoutReportingFailureAndTheSameRequestCanResume() = runBlocking {
+        val flushing = CompletableDeferred<Unit>()
+        val expired = CompletableDeferred<Unit>()
+        val sleeper = object : EngineSleeper {
+            override suspend fun sleep(ms: Long) {
+                if (ms == Constants.SIGNOUT_FLUSH_MS.toLong()) { flushing.complete(Unit); expired.await() }
+                else awaitCancellation()
+            }
+        }
+        Fixture(sleeper = sleeper).use { fixture ->
+            fixture.create(); fixture.runtime.enter()
+            val request = fixture.push()
+            val decision = async { fixture.runtime.signOut() }
+            withTimeout(2_000) { flushing.await() }; expired.complete(Unit)
+            val question = withTimeout(2_000) { decision.await() }
+            withTimeout(2_000) { request.cancelled.await() }
+            assertEquals(0, fixture.transport.activePushes.get())
+            assertEquals("sent", fixture.engine.device.current().entries().single().state)
+            question.cancel(); fixture.runtime.enter()
+            val resumed = fixture.push()
+            assertEquals(request.request, resumed.request)
+            resumed.answer.complete(ok(resumed.request))
+            until { fixture.engine.device.current().meta.member("ackThrough") == Json.of(1) }
+            fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+            until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+            assertFalse(fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure })
+            assertTrue(fixture.runtime.signOut().finish(SignOutChoice.keep).member("complete").bool())
+            assertEquals("anon", fixture.engine.device.current().state)
+        }
+    }
+
+    @Test fun aGenuineBackgroundPushExceptionStillReportsFailureAndRetainsItsRetry() = runBlocking {
+        Fixture().use { fixture ->
+            fixture.transport.failPush = true
+            fixture.create(); fixture.runtime.enter()
+            until { fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure } }
+            assertEquals("sent", fixture.engine.device.current().entries().single().state)
+            val request = fixture.engine.nextPush()!!
+            fixture.transport.failPush = false
+            fixture.runtime.enter()
+            val resumed = fixture.push()
+            assertEquals(request, resumed.request)
+            resumed.answer.complete(ok(resumed.request))
+            until { fixture.engine.device.current().meta.member("ackThrough") == Json.of(1) }
         }
     }
 

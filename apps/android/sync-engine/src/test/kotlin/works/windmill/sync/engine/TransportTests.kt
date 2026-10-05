@@ -43,6 +43,7 @@ class TransportTests {
         override fun close(code: Int, reason: String?): Boolean = error("cancel expected")
         override fun cancel() { cancels++; if (failOnCancel) fail() }
         fun fail() { listener.onFailure(this, IOException("disconnected"), null) }
+        fun message(text: String) { listener.onMessage(this, text) }
     }
 
     @Test fun helloPushAndPullUseCanonicalBodiesSchemaHeaderAndBearerAuth() = runBlocking {
@@ -137,18 +138,28 @@ class TransportTests {
     }
 
     @Test fun callerCancellationCancelsTheUnderlyingHttpCall() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        val socket = LiveSocket()
         MockWebServer().use { server ->
             server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
             val failed = CompletableDeferred<Call>()
             val client = OkHttpClient.Builder().eventListener(object : EventListener() {
                 override fun callFailed(call: Call, ioe: IOException) { failed.complete(call) }
             }).build()
-            HTTPTransport(server.url("/").toString(), 4, client = client, requestTimeoutMs = 5_000).use { transport ->
+            HTTPTransport(server.url("/").toString(), 4, client = client, requestTimeoutMs = 5_000,
+                telemetry = EngineTelemetry { events.send(it) }, webSocketFactory = socket).use { transport ->
                 val caller = async(start = CoroutineStart.UNDISPATCHED) { transport.hello(null) }
                 assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)); caller.cancelAndJoin()
                 assertTrue(withTimeout(2_000) { failed.await() }.isCanceled())
+                connected(transport.openLive("token")).use {
+                    socket.fail()
+                    assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                    assertTrue(events.tryReceive().isFailure)
+                }
             }
         }
+        events.close()
+        Unit
     }
 
     @Test fun closeCancelsPendingHttpAndRefusesFurtherRequests() = runBlocking {
@@ -306,6 +317,35 @@ class TransportTests {
                 assertNull(withTimeout(2_000) { connection.receive() })
             }
         }
+    }
+
+    @Test fun intentionalLiveCloseIgnoresCancellationAndLateFramesButStillReportsDisconnects() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        val socket = LiveSocket(failOnCancel = true)
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4, webSocketFactory = socket,
+                telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                val connection = connected(transport.openLive("token"))
+                val receiving = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
+                connection.close()
+                socket.fail()
+                socket.message("not-json")
+                assertNull(withTimeout(2_000) { receiving.await() })
+                assertEquals(1, socket.cancels)
+                // A real failure through the same telemetry queue fences all preceding close callbacks.
+                server.enqueue(MockResponse().setResponseCode(503))
+                assertEquals(503, answer(transport.hello(null)).status)
+                assertEquals(EngineEvent(EngineOperation.hello, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                assertTrue(events.tryReceive().isFailure)
+                val next = connected(transport.openLive("token"))
+                socket.fail()
+                assertTrue(runCatching { next.receive() }.exceptionOrNull() is IOException)
+                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.failure), withTimeout(2_000) { events.receive() })
+                next.close()
+            }
+        }
+        events.close()
+        Unit
     }
 
     @Test fun liveSocketDisconnectFailsReceive() = runBlocking {

@@ -120,16 +120,22 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         scope.launch {
             while (isActive && !closed) {
-                try { while (engine.sweepReleased()) { yield() } } catch (_: Exception) { engine.report(EngineOperation.storage, EngineOutcome.failure) }
+                try { while (engine.sweepReleased()) { yield() } }
+                catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
+                catch (_: Exception) { engine.report(EngineOperation.storage, EngineOutcome.failure) }
                 sleeper.sleep(1_000)
             }
         }
         scope.launch { while (isActive && !closed) {
-            try { if (foreground && online) senderStep() } catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure) }
+            try { if (foreground && online) senderStep() }
+            catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
+            catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure) }
             wait(senderWake, 1_000)
         } }
         scope.launch { while (isActive && !closed) {
-            try { if (foreground && online) pullerStep() } catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
+            try { if (foreground && online) pullerStep() }
+            catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
+            catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
         } }
         scope.launch { var k = 0
