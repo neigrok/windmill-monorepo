@@ -69,7 +69,7 @@ apps store carries across.
     (`pageStore.js` `forget`, `pageCache.js`); web gym keeps no local log.
   - Figma: board [16c](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2661) draws only the base alert and needs the unconfirmed-changes variant;
     board [16d](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=152-2780) needs the kept-changes line; the first-run READ ME (`128:1151`) still
-    lists sign-out with unsent changes as open question 8; the Android *Account / Profile* board
+    lists sign-out with unsent changes as open question 6; the Android *Account / Profile* board
     ([`669:8214`](https://www.figma.com/design/vdmdiKWrmZoS1FtcvJRf6O/?node-id=669-8214)) draws no confirmation. The web's confirmation is not drawn.
 - **7d · Signing in with local data.** Canon (`guidelines/superapp-flow.md` §6 "Signing in with work
   already on the phone", `roadmap/guidelines/auth.md` §4, `gym/android-delivery.md`; owner ruling
@@ -248,17 +248,13 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
 
 - **iOS journal first run · R117.** The rebuilt app carries Journal only. Boards 02a and 21a/21b
   draw a Gym choice; iOS omits that choice and its introduction until a working gym exists.
-  First-open boards 05 and 07j-a1/a5/a6 omit the mood and energy strip and use the shorter privacy
-  fact; iOS follows `journal/onboarding.md`: both optional scales are visible and the privacy
-  line is *Only you. No prompts, no fields, nothing to fill in — write a line or a page.*
   Account controls appear only for a configured engine server; production sync is not live.
-  The room-switcher boards label their displayed first paragraph as 26 words; it has 20. iOS
-  counts the actual page text. AX3 keeps the longer privacy fact and scales in a scrollable page.
+  AX3 keeps the longer privacy fact and scales in a scrollable page.
 
-- **First-open privacy fact.** The Figma board [`122:242`](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=122-242)
-  says *Only you can read this.* It drifts from `journal/onboarding.md` §2's canon: *Only you. No
-  prompts, no fields, nothing to fill in — write a line or a page.* Align the board with written
-  canon; the fact retires after the first save.
+- **6w · Ink notes in the foundation docs.** `../foundation/engine.md` (the install flag, *Show ink
+  notes* as a UI action) and `../foundation/domain-kit.md` (the once-per-install ink-note flag, the
+  room-menu item) still describe Journal's ink notes. Canon has none since 2026-10-05
+  (`journal/onboarding.md` §1, `guidelines/superapp-shell.md` §3): strike both passages.
 
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,

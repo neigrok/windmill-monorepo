@@ -201,6 +201,9 @@ Beats and curves are `motion-language.md`'s; nothing here invents motion.
   glimpse keeps its own type (it is a picture) and shrinks to 260 pt tall at AX sizes; when the page
   no longer fits, it scrolls vertically inside the pager and the primary stays pinned. Android must
   be checked at font scale 2.0 on a device, not on a scaled screenshot.
+- **A page scrolls only when its content overflows its height.** A page that fits is not a scroll
+  view at all: a horizontal swipe reaches the pager at once, and never waits on a vertical scroll
+  that has nowhere to go. Owner finding, TestFlight 7.
 - **Reading order** (VoiceOver and TalkBack): Skip → eyebrow → title → body → tag → the glimpse →
   the page control (*Page 2 of 4*, adjustable) → the primary. On page 1 the wordmark comes first and
   reads *Windmill*.
@@ -222,7 +225,7 @@ Beats and curves are `motion-language.md`'s; nothing here invents motion.
 |---|---|---|
 | Skip (pages 1–3) | plain button, top-right → Where to start? | TextButton in the top app bar → Gym first open |
 | Next | pager scrolls one page | pager scrolls one page |
-| Swipe | native pager; the last page rubber-bands forward | HorizontalPager; the last page rubber-bands |
+| Swipe | native pager; the last page rubber-bands forward; a page's own vertical scroll exists only when its content overflows (§7) | HorizontalPager; the last page rubber-bands; same scroll rule |
 | Back | swipe back a page; no back button | system Back → previous page; on page 1 it leaves the app, with the predictive-back preview |
 | Get started (page 4) | → Where to start? | → Gym first open |
 | Replay | sheet from You → About Windmill, Done top-right and on page 4 | destination from the account sheet → About Windmill, back app bar, Done on page 4 |
@@ -246,3 +249,7 @@ Nothing counts skips. No page is required reading.
    moves a product.
 6. **Accessibility of §7** is tested on devices in both modes: reading order, the single-element
    glimpses, the largest text sizes.
+7. **A page is scrollable only when its content overflows** (§7): on iOS the page is wrapped in a
+   `ScrollView` only when its measured content exceeds the viewport, or the scroll is disabled
+   otherwise; on Android `verticalScroll` is applied on the same condition. Checked at the default
+   text size and at AX sizes: a swipe on a fitting page must move the pager on the first try.

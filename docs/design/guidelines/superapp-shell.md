@@ -1,7 +1,8 @@
 # The superapp shell
 
-The frame around the rooms. Sections 1–5, 7, 8 and 10 and You in §6 govern the iOS shell, which
-carries two rooms, Journal and Gym; Roadmap does not appear on iOS. §6's Appearance rules and §9's
+The frame around the rooms. Sections 1–5, 7, 8 and 10 and You in §6 govern the iOS shell, whose
+rooms are Journal and — from the wave after TestFlight 7 — Gym; Roadmap does not appear on iOS.
+§6's Appearance rules and §9's
 AI-request rules govern every surface, and the last section governs the web shell's safe areas.
 Android carries Gym alone and draws no shell between rooms.
 
@@ -19,7 +20,7 @@ belongs to the room. Gym keeps its own tabs — **Routines · The log · Coach**
 
 ## 2. The shell owns
 
-1. **The room menu** at the top-left (§3).
+1. **The room-name seat** at the top-left — a title with one room, the room menu with two (§3).
 2. **You** (§6).
 3. The screens before a room: the once-ever **introduction** (`onboarding.md`), **Where to
    start?** and **Bringing it back** (`superapp-flow.md`).
@@ -28,26 +29,28 @@ belongs to the room. Gym keeps its own tabs — **Routines · The log · Coach**
 Nothing else. There is no hub, no capsule, no switcher sheet, no sheet that introduces the other
 room, and no gesture of the shell's own.
 
-## 3. The room menu
+## 3. The room-name seat and the room menu
 
-The room's name, top-left, is a native `Menu` (a glass button with a chevron). Tapping it lists
-**Journal · Gym · You**:
+The room's name sits top-left on every room root, in one seat that never moves. What the seat is
+depends on how many rooms the phone carries:
 
-- the room you are in carries the checkmark;
-- each room row is its name, its symbol and at most one short line;
-- the You row's line is the account state: *Not signed in* signed out, *<name> · backed up*
-  signed in;
-- a room may add one item of its own between the rooms and You, shown only inside that room.
-  Journal's is **Show ink notes** (`journal/onboarding.md` §2); Gym has none.
+- **One room** — iOS today, Journal alone — the seat holds the name as a plain title: no glass, no
+  chevron, no menu, nothing to tap. VoiceOver reads it as a heading.
+- **Two rooms** — the day Gym joins — the same word in the same place becomes a native `Menu` (a
+  glass capsule with a chevron) listing the rooms, **Journal · Gym**: the room you are in carries
+  the checkmark; each row is its name, its symbol and at most one short line. Switching the seat on
+  changes its dressing, never its position: the Figma component `_Room capsule` carries both as
+  `Menu = On · Off`, so no board is redrawn when the second room ships.
 
-The menu is the only way between rooms inside the app. It never carries a count, a badge or an
-unread total. A third room is one more row here and one more door on Where to start?; nothing
-else moves.
+**You is never a row.** The account button, top-right, is its one door (§6). The menu carries
+nothing but rooms — no count, no badge, no unread total, no item of a room's own — and it is the
+only way between rooms inside the app. A third room is one more row here and one more door on Where
+to start?; nothing else moves.
 
 ## 4. Inside a room
 
-- **Top-left: the room menu.** Every room reserves that seat on its stack roots; one push deep the
-  seat holds the room's own back button.
+- **Top-left: the room-name seat** (§3). Every room reserves it on its stack roots; one push deep
+  the seat holds the room's own back button.
 - **Top-right: the account button**, the trailing item where a room's root draws one, past the
   room's own actions. It opens You.
 - Everything below the top bar is the room's.
@@ -59,7 +62,7 @@ else moves.
   verdigris-grey stone for Gym. The shell does not invent a room's colours; it only says *light or
   dark*, and the room maps that onto its own place.
 - **Its own settings.** You lists them and walks you in; it never absorbs them.
-- The line it lends its room-menu row, and its own room-menu item, if any (§3).
+- The line it lends its room-menu row (§3).
 
 **A room reports its skin outward exactly once**, so the shell can dress the chrome it lays over
 that room. It must be a live value rather than a constant on the product: journal's skin is night
@@ -68,7 +71,7 @@ room's appearance stays inside the room.
 
 ## 6. You & Appearance
 
-**You** is a sheet with **Done**, reached from the room menu's last row or the account button.
+**You** is a sheet with **Done**, reached from the account button and nowhere else.
 
 - **Signed out:** *Not signed in · Everything lives on this phone*, the Apple/email door
   (`superapp-flow.md` §6), **On this phone** with each room's real counts, Settings
@@ -167,9 +170,10 @@ These rules hold on every surface.
 
 ```
 ROOMS       iOS: Journal · Gym · Roadmap is web only · no app-level tab bar
-ROOM MENU   the room name, top-left · native Menu · Journal · Gym · You
-            checkmark on the room you are in · You row = Not signed in | <name> · backed up
-            never a count or a badge
+ROOM SEAT   the room name, top-left, one seat that never moves
+            one room (iOS today) = a plain title · no chevron · no menu · a heading to VoiceOver
+            two rooms = native Menu of rooms only · Journal · Gym · checkmark on the room you are in
+            never You · never a count or a badge · Figma _Room capsule · Menu = On | Off
 ACCOUNT     trailing account button on a room's root · opens You
 RETIRED     hub · capsule · switcher sheet · house sheet · shell gestures
 YOU         signed out: the door, On this phone, About Windmill, Erase data · no Windmill One
