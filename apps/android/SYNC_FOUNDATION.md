@@ -104,7 +104,7 @@ python3 tools/schema_gen.py --check
 | Client corpus | 52/52 files, 740/740 cases, 0 unclaimed. All seven protocol transcripts generate requests through Engine, use actual model replies, and compare client returns and final devices/ended/server state. JSONL transcripts each count once. |
 | Server corpus | 27 server-role files / 748 cases, plus 7 protocol transcripts. |
 | Kit corpus | 12/12 files, 475/475 cases, 0 unclaimed. Gym domain corpus: 5/5 files, 56 cases. |
-| API and engine | API 13/13; engine 133/133 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
+| API and engine | API 13/13; engine 134/134 per debug/release variant, 0 skips/errors/failures. Includes native SQLite on SDK26/27/28/29/35 and transport/runtime failure paths. |
 | Kit and model units | Kit 24/24; kit-testing 507/507; gym-domain 62/62; model-server 5/5. |
 | Test execution | Sync-testing: 1494/1494 ordinary tests + 258/258 mandatory-property tests, 0 skips/errors/failures. App: 35/35 and platform: 92/92 per variant; gym: 1264 tests per variant, 12 existing ignored tests each, 0 failures. |
 | Properties | P1/P3/P4/P5/P6/P7/P8: 128 distinct seeds each. P1: 147456 law assertions; P3: compares drawn after each result and pull; P4: 32768 admissions; P5: 32768 order assertions; P6: 32768 digest assertions; P7: 16384 merges / 43582 token-occurrence checks; P8: frozen-server-clock recovery under holds, undo, retire, keyed carriers, orphans, later writes, epochs and 409. |
