@@ -71,6 +71,10 @@ public struct Dependents: Sendable {
     }
     let commandGone = entry.intent.command.map { command in
       wholeScope || Dependents.references(of: command, registry: registry).contains { names($0.key, from: entry.scope) }
+        || entry.predict.contains { delta in
+          let record = ScopedKey(scope: entry.scope, key: delta.key)
+          return delta.lattice.life.map { lives.contains(ScopedLife(record: record, life: $0)) } == true
+        }
     } ?? false
     return Part(removed: removed, commandGone: commandGone)
   }

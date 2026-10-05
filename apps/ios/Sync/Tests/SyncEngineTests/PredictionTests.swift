@@ -173,6 +173,69 @@ struct PredictionTests {
     #expect(try rig.engine.read(GymRemovalActions.scope) { try $0.drawn("routine") } == [])
   }
 
+  @Test(arguments: [false, true], [false, true])
+  func endingADeletionFoldsPredictionsCarryingItsLife(_ refuse: Bool, _ predictedDeletion: Bool) async throws {
+    var registry = try Rig.probe.json.asObject()
+    var commands = try registry.member("commands").asArray()
+    commands.append(["name": "probe.predictDay", "scope": "product:probe", "origins": ["replica"],
+      "serverInternal": false, "args": [:], "predicts": ["day"]])
+    registry["commands"] = .array(commands)
+    let rig = try Rig(account: "A", registry: Registry(json: .object(registry)), limits: Limits(pushMaxIntents: 1))
+    let replica: any Replica = rig.engine
+    let stamp = try Stamp("1000:0:r_server00001")
+    let row = Row(key: RecordKey("day", "2026-01-01"),
+      lattice: Lattice(life: Life(.alive, stamp), fields: ["score": Register(1, stamp)]), seq: 1, rc: 1000, ru: 1000)
+    rig.transport.willAnswerPull(200, Rig.pulled([Rig.rows([row], seq: 1)]))
+    #expect(await rig.engine.puller.step() == .pulled([PageReport(scope: Rig.scope, outcome: .applied)]))
+    let before = try #require(try replica.read(Rig.scope) { try $0.confirmed("day", "2026-01-01") })
+    let view = try rig.engine.records(Rig.scope, "day")
+    await rig.engine.settle()
+    #expect(Self.ids(view) == ["2026-01-01"])
+
+    let command = Command(name: "probe.predictDay", args: [:])
+    let deletion = Change.delete("day", "2026-01-01")
+    let receipt = try rig.commit(Gesture(changes: predictedDeletion ? [] : [deletion], hold: !refuse,
+      command: predictedDeletion ? command : nil, predict: predictedDeletion ? [deletion] : [], gestureId: "delete"))
+    try rig.commit(Gesture(changes: [.put("day", "2026-01-02", present: true, ["score": 9])], command: command,
+      predict: [.put("day", "2026-01-01", present: nil, ["score": 2])], gestureId: "later"))
+    try rig.commit(Gesture(changes: [], command: command,
+      predict: [.put("day", "2026-01-01", present: nil, ["score": 3])], gestureId: "last"))
+    let pending = try rig.active().outbox
+    #expect(pending.map(\.localId) == ["delete/0", "later/0", "last/0"])
+    #expect(pending.flatMap(\.predict).filter { $0.key == row.key }.map(\.lattice.life)
+      == Array(repeating: Life(.dead, receipt.stamp), count: predictedDeletion ? 3 : 2))
+    #expect(try replica.read(Rig.scope) { try $0.drawn("day", "2026-01-01")?.isVisible } == false)
+    await rig.engine.settle()
+    #expect(Self.ids(view) == ["2026-01-02"])
+
+    if refuse {
+      rig.transport.willAnswerPush(200, Rig.ok(lastN: 1, [Rig.refused(1, "invalid")]))
+      #expect(await rig.engine.sender.step() == .again)
+      #expect(rig.transport.pushes.map { $0.intents.compactMap(\.n) } == [[1]])
+    } else {
+      #expect(await rig.engine.sender.step() == .idle)
+      #expect(rig.transport.pushes == [])
+      #expect(try replica.undo(receipt.gestureId))
+    }
+    rig.connectivity.set(online: false)
+    #expect(try rig.outbox() == ["later/0 ready"])
+    let remaining = try #require(try rig.active().outbox.first)
+    #expect(remaining.intent.deltas.map(\.key) == [RecordKey("day", "2026-01-02")])
+    #expect(remaining.intent.command == nil)
+    #expect(remaining.predict == [])
+    #expect(try replica.read(Rig.scope) { try $0.drawn("day", "2026-01-01") } == before)
+    #expect(try replica.read(Rig.scope) { try $0.confirmed("day", "2026-01-01") } == before)
+    await rig.engine.settle()
+    #expect(Self.ids(view) == ["2026-01-01", "2026-01-02"])
+    if refuse {
+      let notices = try rig.engine.currentNotices("probe")
+      #expect(notices.map(\.code) == [.invalid])
+      #expect(notices.map(\.content.dependents) == [[NoticeContent(command: command), NoticeContent(command: command)]])
+    } else {
+      #expect(try rig.engine.currentNotices("probe") == [])
+    }
+  }
+
   static func ids(_ view: RecordsView) -> [RecordID]? {
     guard case .loaded(let snapshot) = view.state else { return nil }
     return snapshot.records.map(\.id)
