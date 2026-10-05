@@ -43,7 +43,16 @@ Run the `WindmillTests` scheme tests for deterministic domain and lineage flows,
 `WindmillUITests` for the native sheet/keyboard round trip. All product persistence is in the engine's
 protected Application Support directory. `JournalDomain` owns writing and first-run state.
 
-Native editing writes today's page only; past days are read-only. When the local day changes at
+Native editing writes today's page only; past days are read-only. Tapping today's page from its date
+through the space above the mood rows opens the keyboard with the caret at the end. The body reserves
+at least three lines at the current text size. An empty, unfocused page shows a still lamp caret.
+The 44 pt Write seat at bottom-right returns from history to today and opens writing; the same seat
+becomes Done writing above the keyboard. It hides during read-only transitions and account sheets.
+The one-room header is a plain Journal heading; the account button opens You.
+`journal-empty-later`, `journal-one-line` and `journal-history` board fixtures seed past pages through
+the journal actions. A `-RM` suffix exercises the journal's Reduce Motion scroll and glyph swap.
+Focus and dismissal emit the bounded `first_run_choice` actions `write` and `done_writing` on the
+`journal` screen, without page content. When the local day changes at
 midnight or after a timezone change, the whole open draft, including its saved prefix, carries into
 today and is combined with today's existing page. Yesterday's saved page stays intact. The draft is
 persisted on each edit in the active replica before autosave, and is restored across backgrounding,
@@ -61,11 +70,10 @@ Fonts are bundled from official OFL sources, with licences alongside each family
 - [Inter](https://github.com/google/fonts/tree/main/ofl/inter), regular and semibold.
 - [Nunito](https://github.com/google/fonts/tree/main/ofl/nunito), extra bold.
 - [JetBrains Mono](https://github.com/JetBrains/JetBrainsMono/tree/master/fonts/ttf), regular.
-- [Caveat](https://github.com/google/fonts/tree/main/ofl/caveat), regular ink notes.
 - [Baloo 2](https://github.com/google/fonts/tree/main/ofl/baloo2), bold introduction wordmark.
 
-Inter, Nunito and Caveat are static instances of the official variable fonts. Colour and type tokens
-follow the supplied Figma `TOKENS.json`. Ink paths are vectors attached to live view anchors.
+Inter and Nunito are static instances of the official variable fonts. Colour and type tokens
+follow the supplied Figma `TOKENS.json`.
 
 Telemetry uses Sentry Cocoa for failures and first-party `/v1/events` for product events. Debug
 telemetry is off unless `WM_DEBUG_TELEMETRY=YES` is supplied; simulator verification can use

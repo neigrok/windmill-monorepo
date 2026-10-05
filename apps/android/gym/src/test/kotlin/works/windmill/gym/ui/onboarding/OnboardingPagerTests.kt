@@ -9,6 +9,11 @@ import androidx.activity.ComponentActivity
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.semantics.SemanticsActions
+import androidx.compose.ui.semantics.SemanticsProperties
+import androidx.compose.ui.test.SemanticsMatcher
+import androidx.compose.ui.test.assert
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.StateRestorationTester
 import androidx.compose.ui.test.junit4.createAndroidComposeRule
@@ -19,14 +24,18 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
 import androidx.compose.ui.test.swipeRight
+import androidx.compose.ui.test.swipeUp
+import androidx.compose.ui.unit.Density
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotSame
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.GraphicsMode
 import org.robolectric.annotation.Implementation
 import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowContentResolver
@@ -37,6 +46,7 @@ import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
+@GraphicsMode(GraphicsMode.Mode.NATIVE)
 class OnboardingPagerTests {
     @get:Rule val compose = createAndroidComposeRule<ComponentActivity>()
 
@@ -134,6 +144,70 @@ class OnboardingPagerTests {
                 "onboarding_action" to mapOf("state" to "first_launch", "screen" to "roadmap", "action" to "swipe"),
                 "onboarding_page_viewed" to mapOf("state" to "first_launch", "screen" to "windmill"),
             ), events)
+        }
+    }
+
+    @Test
+    fun fittingPagesAcceptTheNextSwipeImmediatelyAfterSettlingAndAVerticalFling() {
+        val settled = mutableListOf<Int>()
+        compose.setContent {
+            CompositionLocalProvider(LocalTelemetry provides telemetry) {
+                GymMaterial { OnboardingPager(replay = false, onExit = {}, reducedMotion = false,
+                    onPageSettled = { settled += it }) }
+            }
+        }
+        compose.mainClock.autoAdvance = false
+        try {
+            for (page in 0..3) {
+                val content = compose.onNodeWithTag("onboarding_page_$page", useUnmergedTree = true)
+                val range = content.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+                assertEquals(0f, range.maxValue())
+                assertEquals(0f, range.value())
+                content.assert(SemanticsMatcher.keyNotDefined(SemanticsActions.ScrollBy))
+                compose.onNodeWithContentDescription("Page ${page + 1} of 4").assertIsDisplayed()
+                if (page == 3) break
+                content.performTouchInput {
+                    if (page > 0) swipeUp(durationMillis = 100)
+                    swipeLeft(startX = width * .9f, endX = width * .1f, durationMillis = 150)
+                }
+                compose.mainClock.advanceTimeUntil(timeoutMillis = 2_000) { settled.last() == page + 1 }
+            }
+            compose.runOnIdle { assertEquals(listOf(0, 1, 2, 3), settled) }
+        } finally {
+            compose.mainClock.autoAdvance = true
+        }
+    }
+
+    @Test
+    @Config(qualifiers = "w320dp-h640dp-xhdpi")
+    fun doubleFontScaleStillScrollsAndAcceptsTheNextSwipeAfterAVerticalFling() {
+        val settled = mutableListOf<Int>()
+        compose.setContent {
+            val density = LocalDensity.current
+            CompositionLocalProvider(LocalDensity provides Density(density.density, 2f), LocalTelemetry provides telemetry) {
+                GymMaterial { OnboardingPager(replay = false, onExit = {}, reducedMotion = false,
+                    onPageSettled = { settled += it }) }
+            }
+        }
+        compose.onNodeWithText("Next").performClick()
+        compose.onNodeWithContentDescription("Page 2 of 4").assertIsDisplayed()
+        val content = compose.onNodeWithTag("onboarding_page_1", useUnmergedTree = true)
+        val range = content.fetchSemanticsNode().config[SemanticsProperties.VerticalScrollAxisRange]
+        assertTrue("double-sized text overflows", range.maxValue() > 0f)
+        content.assert(SemanticsMatcher.keyIsDefined(SemanticsActions.ScrollBy))
+        compose.mainClock.autoAdvance = false
+        try {
+            content.performTouchInput { swipeUp(startY = height * .6f, endY = height * .5f, durationMillis = 100) }
+            val released = range.value()
+            compose.mainClock.advanceTimeBy(32)
+            assertTrue("a vertical fling keeps moving after release", range.value() > released)
+            assertTrue("the fling has not reached the bottom (${range.value()}/${range.maxValue()})", range.value() < range.maxValue())
+            content.performTouchInput { swipeLeft(startX = width * .9f, endX = width * .1f, durationMillis = 150) }
+            compose.mainClock.advanceTimeUntil(timeoutMillis = 2_000) { settled.last() == 2 }
+            compose.onNodeWithContentDescription("Page 3 of 4").assertIsDisplayed()
+            compose.runOnIdle { assertEquals(listOf(0, 1, 2), settled) }
+        } finally {
+            compose.mainClock.autoAdvance = true
         }
     }
 

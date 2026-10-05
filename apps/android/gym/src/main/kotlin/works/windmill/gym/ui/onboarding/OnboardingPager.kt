@@ -172,7 +172,9 @@ fun OnboardingPager(replay: Boolean, onExit: () -> Unit, reducedMotion: Boolean?
         HorizontalPager(pager, Modifier.weight(1f).fillMaxWidth().semantics { isTraversalGroup = false },
             key = { it }) { page ->
             val active = page == pager.settledPage && !pager.isScrollInProgress
-            Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())
+            val scroll = rememberScrollState()
+            Column(Modifier.fillMaxSize().verticalScroll(scroll, enabled = scroll.maxValue > 0)
+                .testTag("onboarding_page_$page")
                 .padding(horizontal = 20.dp).padding(top = 12.dp, bottom = 16.dp)
                 .semantics { isTraversalGroup = false; if (page != pager.currentPage) hideFromAccessibility() },
                 horizontalAlignment = Alignment.CenterHorizontally) {

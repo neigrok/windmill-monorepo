@@ -98,7 +98,6 @@ targets:
           - Inter-SemiBold.ttf
           - Nunito-ExtraBold.ttf
           - JetBrainsMono-Regular.ttf
-          - Caveat-Regular.ttf
           - Baloo2-Bold.ttf
     scheme:
       testTargets: [WindmillTests, WindmillUITests]

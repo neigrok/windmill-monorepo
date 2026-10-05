@@ -1,6 +1,7 @@
 import Foundation
 import DomainKit
 import JournalDomain
+import SyncSchema
 
 // Launch fixtures use the same actions, persistence and sign-in door as the app.
 enum BoardFixture {
@@ -36,24 +37,33 @@ enum BoardFixture {
       await model.beginSignOut(); await model.finishSignOut(.discard)
       model.welcome = false; model.preferences.set(true, forKey: "journalOpened")
     }
-    if board.hasPrefix("05") || board.contains("a1-") || board.contains("a5-") || board.contains("a6-") || board.contains("a2-") {
-      model.inkVisible = !board.hasPrefix("05")
-      model.preferences.set(true, forKey: "inkShown")
-      if board.contains("a2-") {
-        Task { @MainActor [weak model] in
-          try? await Task.sleep(for: .milliseconds(2200))
-          model?.type("Long d")
+    if board.hasPrefix("05") { return }
+    if board == "journal-read-only" { model.working = true; return }
+    if board.hasPrefix("journal-empty-later") || board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+      guard let engine = model.runtime?.engine else { return }
+      let count = board.hasPrefix("journal-history") ? 12 : 1
+      for offset in 1...count {
+        // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
+        let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
+        let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone)
+        guard let saved = try? runner.run(SavePage(day: model.today.adding(days: -offset), document: PageDocument(body: shortProse), retiring: ["placeholder", "scales"])), saved.refusal == nil else {
+          model.error = "Couldn't prepare the journal board."; return
         }
+      }
+      model.keepDismissed = true
+      model.refresh()
+      if board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+        model.type("Short walk, then an early night."); model.save(); model.done()
       }
       return
     }
-    model.type(board.hasPrefix("21") || board.contains("a4-") ? shortProse : prose)
+    model.type(board.hasPrefix("21") ? shortProse : prose)
     model.save(); model.done()
-    if !board.hasPrefix("07-journal") && !board.hasPrefix("06") && !board.contains("a3-") {
+    if !board.hasPrefix("07-journal") && !board.hasPrefix("06") {
       model.setScale("mood", 7); model.setScale("energy", 4)
     }
-    if board.hasPrefix("21") || board.contains("a4-") {
-      model.keepDismissed = true; model.roomMenu = true; model.document.mood = nil; model.document.energy = nil
+    if board.hasPrefix("21") {
+      model.keepDismissed = true; model.document.mood = nil; model.document.energy = nil
     }
     if board.hasPrefix("07b") || board.hasPrefix("21b") {
       if let identity = try? model.runtime?.auth.fakeApple() { try? await model.signIn(identity) }
@@ -92,7 +102,7 @@ enum BoardFixture {
     if board.hasPrefix("15") {
       model.email = "you@example.com"; model.codeSentAt = Date(); model.sheet = .code
     }
-    if board.hasPrefix("06") || board.contains("a3-") { model.editing = true }
+    if board.hasPrefix("06") { model.editing = true }
     #endif
   }
 }

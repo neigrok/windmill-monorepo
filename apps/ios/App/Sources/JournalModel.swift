@@ -24,8 +24,6 @@ final class JournalModel {
   var dirty = false
   var readFailed = false
   var error: String?
-  var inkVisible = false
-  var roomMenu = false
   var sheet: Sheet?
   var account: String?
   var keptWork = false
@@ -135,20 +133,11 @@ final class JournalModel {
   func openJournal() {
     choose("open_journal", screen: "welcome")
     welcome = false; preferences.set(true, forKey: "journalOpened")
-    refresh(); automaticallyShowInk()
+    refresh()
   }
-
-  func automaticallyShowInk() {
-    guard room?.stance == .empty, room?.firstRunKnown == true, !preferences.bool(forKey: "inkShown") else { return }
-    preferences.set(true, forKey: "inkShown"); inkVisible = true; screenViewed("ink_notes")
-  }
-
-  func showInk() { choose("show_ink", screen: "journal"); roomMenu = false; inkVisible = true; screenViewed("ink_notes") }
-  func liftInk() { if inkVisible { choose("dismiss_ink", screen: "ink_notes") }; inkVisible = false }
 
   func start() async {
     guard let runtime else { return }
-    let restoring = restoringSignIn
     if observationTask == nil {
       let events = runtime.engine.events()
       observationTask = Task { [weak self] in
@@ -177,7 +166,6 @@ final class JournalModel {
       let outcome = dirty ? (account == nil ? "anonymous" : authPaused ? "paused" : "signed_in") : "failed"
       telemetry.event("auth_restore", properties: ["outcome": outcome])
     }
-    if !welcome && !restoring { automaticallyShowInk() }
   }
 
   func resumeBackup() async {
@@ -241,7 +229,6 @@ final class JournalModel {
 
   func type(_ text: String) {
     guard !editorReadOnly else { return }
-    liftInk()
     if !text.isEmpty && room?.state.placeholder == "pending" {
       do { _ = try runner.run(RetireJournalInvitation("placeholder")); room = try runner.read(Journal.scope, JournalRoom.init) }
       catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save on this phone. Your writing stays in the editor." }
@@ -312,7 +299,6 @@ final class JournalModel {
 
   func setScale(_ name: String, _ value: Int?) {
     guard !editorReadOnly else { return }
-    liftInk()
     let answeringInvitation = room?.scaleInvitationDue == true && value != nil
     if name == "mood" { document.mood = value } else { document.energy = value }
     dirty = true; preserveDraft(); if save(retiring: value == nil ? [] : ["scales"]), answeringInvitation { telemetry.event("scale_invitation_answered", properties: ["action": "answered"]) }
@@ -327,7 +313,7 @@ final class JournalModel {
     } catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save this choice. Try again." }
   }
 
-  func keep() { choose("keep", screen: "journal"); done(); liftInk(); roomMenu = false; keepSheetPresented = true; sheet = .keep }
+  func keep() { choose("keep", screen: "journal"); done(); keepSheetPresented = true; sheet = .keep }
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
   func dismissKeep() {
     guard room?.keepDue == true else { return }
@@ -585,7 +571,7 @@ final class JournalModel {
       signOutSession = nil; signInSession = nil
       sheet = nil; account = nil; document = PageDocument(); dirty = false; editing = false; error = nil
       appleTicket = nil; signInMethods = []; accountEmail = ""; appleLinkedReceipt = false
-      inkVisible = false; keepDismissed = false; welcome = true; refresh()
+      keepDismissed = false; welcome = true; refresh()
       preferences.set(false, forKey: "keepDismissed")
       await runtime.revokeSignedOutSessions(force: true)
     } catch EngineError.signOutChanged {

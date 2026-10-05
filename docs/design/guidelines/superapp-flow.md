@@ -100,8 +100,7 @@ themselves.**
 - **On success the sheet dismisses back into what the person was doing**, after the sign-in
   question below if one is owed.
 - **Signed in, no Keep offer is ever shown.** A quiet *backed up* takes its place: the journal
-  page's meta line ends *backed up*, the room menu's You row reads *<name> · backed up*, and You
-  shows Backup with its state.
+  page's meta line ends *backed up*, and You shows Backup with its state.
 
 ### Signing in with work already on the phone
 

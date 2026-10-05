@@ -9,7 +9,7 @@ enum OnboardingFixture {
     model.preferences.removePersistentDomain(forName: "board-\(board)")
     model.welcome = true
     if board == "onboarding-room" {
-      model.openJournal(); model.liftInk(); model.type("A page already on this phone."); model.save(); model.done(); model.dismissScales()
+      model.openJournal(); model.type("A page already on this phone."); model.save(); model.done(); model.dismissScales()
       model.preferences.removeObject(forKey: OnboardingLaunch.shownKey)
     }
     if board == "onboarding-signed-in", let identity = try? model.runtime?.auth.fakeApple() {

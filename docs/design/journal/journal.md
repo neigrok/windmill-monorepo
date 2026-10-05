@@ -58,11 +58,57 @@ to have something true to say when they look back.
 | Stillness | **The reading column never moves.** Above 1240px the echo margin's 300px is reserved space, held whether or not the panel has anything in it, and the measure centres in what is left. An echo arriving, leaving, or being scrolled past changes the panel's *content*; nothing may change the canvas's geometry, at any scroll speed |
 | Zoom | Read → Skim → Year is one continuous compression of the same canvas, never three screens. Mood is the only thing that survives to Year — **quantised to five bands** (`scales.md` §4) |
 | Gaps | **An unwritten day is not drawn at all** — the canvas is what you wrote, not a calendar with holes in it, and each marker's date shows the jump |
-| Today | The last block; writing happens inline at the bottom, not in a composer. Only today's body and scales are writable; past days stay read-only on web and native |
+| Today | The last block; writing happens inline at the bottom, not in a composer. Only today's body and scales are writable; past days stay read-only on web and native. On the phone the whole page is the tap target and the Write seat opens it (§4a) |
 | Mood & energy | **Two labelled rows, one per scale**, each a snapping scrubber over 0–10 — never a floating bar, never drawn twice on a screen. **0 is a real value**; unset is a separate state. **On phone the strip does not exist while the keyboard is up**; it arrives above the tab bar the instant the keyboard drops, fading in, never sliding. `scales.md` is canon for the control |
 | Voice | One control, in the top bar beside search on both surfaces; no `ONE` badge on the control. Recording sheet → plain editable text, "Audio discarded" stated |
 | Links | A URL in the writing is lamp and underlined wherever it appears, today included — under the composer it is paint on a layer over the field, so a tap still places the caret; on a past day it opens in a new tab. The grammar is conservative and shared by every surface (`packages/api-contract/journal-links.json`): an explicit `http(s)://` or a `www.`, never a bare `example.com`, because a false link inside a sentence is worse than a missed one. Nothing else in the writing is formatted — there is no markdown here |
 | Saved state | Mono text, never a button or spinner |
+
+### 4a. Today's page on the phone — the door to writing
+
+The page invites writing by its own geometry, every night, without a word of chrome. Boards 05,
+07c and 07d of the Figma page
+[iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2) draw it.
+
+- **The whole page is the target.** Today's page — the day marker, the body and the space down to
+  the mood rows, the full measure wide — is one tap target. A tap focuses the page with the caret
+  after the last character and raises the keyboard. The body never draws shorter than **three
+  lines** at the current text size, so an empty or one-line page is still a page-sized target.
+  Past days stay read-only.
+- **The parked caret.** While today's page is empty and unfocused, a still lamp caret — 1.5 pt
+  wide, 1.4 × the body size tall — stands at the start of the first line. It does not blink: the
+  keyboard is down, and the system caret takes over on focus. It takes no hits and is hidden from
+  VoiceOver. On a written page nothing is parked; the text is the invitation.
+- **The Write seat.** One 44 pt glass circle at the trailing edge, 16 pt in from the edge and 12 pt
+  above the bottom safe-area inset, holding `square.and.pencil` at 18 pt in ink. It is the seat the
+  Done checkmark takes while writing — one control, two states. Keyboard down, **Write**: scroll to
+  today if the canvas is in the past, focus the end of today's page, raise the keyboard, swap the
+  glyph to `checkmark`. Keyboard up, **Done writing**: resign the keyboard and save. The seat rides
+  above the keyboard with the system inset. It is hidden while the editor is read-only, while a
+  sheet covers the room, and in the compact account sheet.
+- **Motion.** The glyph swap is a symbol replace, about 300 ms; the scroll to today is the
+  system's animated scroll, 480 ms at most; nothing else moves. Press feedback is the system's. No
+  haptic — the first kept page keeps the only one (`onboarding.md`). **Reduce Motion:** the swap is
+  a cross-fade, the scroll jumps, the caret is still in both.
+- **VoiceOver.** The seat reads *Write*, hint *Opens the keyboard on today's page*; while writing,
+  *Done writing*. Today's page reads *Today's page*, a text view, double-tap to edit; the parked
+  caret is not read. Order: the room's name (a heading), You, the days oldest first, today's
+  marker, today's page, Mood, Energy, the seat.
+- **Copy.** Nothing on screen. No caption explains the seat (`guidelines/text-budget.md`): an
+  affordance that needs a sentence is a design failure.
+- **Dynamic Type.** The caret and the three-line minimum scale with the body; the seat stays 44 pt
+  and its glyph 18 pt.
+
+```
+TARGET        today's marker → the mood rows · full measure · body ≥ 3 lines · caret to the end
+PARKED CARET  lamp · 1.5 pt × (1.4 × body) · empty + unfocused only · still · no hits · not read
+WRITE SEAT    44 pt glass circle · trailing 16 · 12 above the bottom inset, above the keyboard when up
+              square.and.pencil 18 pt ink ↔ checkmark · symbol replace ~300 ms
+              a11y label "Write" · hint "Opens the keyboard on today's page" · "Done writing" when up
+              hidden: editor read-only · a sheet is up · compact account sheet
+FROM THE PAST scroll to today ≤ 480 ms, then focus · Reduce Motion: jump
+HAPTIC        none
+```
 
 ## 5. Search — positions, not documents
 
@@ -174,7 +220,7 @@ One product, four shells:
 | **Installed (PWA)** | The reference web experience. Push, app icon, no browser chrome |
 | **Mobile web** | Same canvas inside browser chrome. The app's tab bar sits *above* the browser toolbar; one install offer, stating plainly that a tab can't receive nudges |
 | **Desktop web** | Gutter + scroll-following margin + month rail, ⌘K, select-to-search, print |
-| **Native (iOS)** | The journal room inside the Windmill superapp, entered from Where to start? or the room menu. Same canvas, same canon. The shell owns the room menu top-left and the account button top-right (`guidelines/superapp-shell.md`); journal owns everything below them, including the night default. Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
+| **Native (iOS)** | The journal room inside the Windmill superapp, entered from Where to start? or, once Gym joins, the room menu. Same canvas, same canon. The shell owns the room-name seat top-left — a plain title while Journal is the only room, the room menu with two — and the account button top-right (`guidelines/superapp-shell.md` §3); journal owns everything below them, including the night default and the Write seat (§4a). Carries the canvas, mood/energy, offline-first writing and claim-on-sign-in; search, voice, echoes, nudges and the week are not there, and their absence is stated rather than stubbed |
 
 Phone is primary. Breakpoints: 744 / 1024 / 1440.
 

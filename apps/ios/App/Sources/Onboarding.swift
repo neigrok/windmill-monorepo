@@ -43,7 +43,7 @@ enum OnboardingLaunch {
     defer { model.preferences.set(true, forKey: shownKey) }
     guard !deepLink, model.account == nil, !model.readFailed, model.welcome,
           !model.dirty, model.room?.stance == .empty, model.room?.days.isEmpty == true,
-          !model.preferences.bool(forKey: "journalOpened"), !model.preferences.bool(forKey: "inkShown"),
+          !model.preferences.bool(forKey: "journalOpened"),
           !model.preferences.bool(forKey: "keepDismissed") else { return false }
     if let runtime = model.runtime {
       guard !runtime.hadInstallHistory, runtime.tokens.accounts().isEmpty, runtime.revocations.accounts().isEmpty else { return false }
@@ -75,6 +75,7 @@ struct OnboardingScreen: View {
   @State var settled: OnboardingPage?
   @State var visit = UUID()
   @State var exited = false
+  @State var overflowingPages: Set<OnboardingPage> = []
   @Environment(\.colorScheme) var scheme
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var reduceMotion
@@ -108,14 +109,15 @@ struct OnboardingScreen: View {
                   OnboardingGlimpse(page: item, active: settled == item, visit: visit, palette: palette)
                     .frame(height: typeSize.isAccessibilitySize ? 260 : item == .windmill ? 320 : 340)
                     .accessibilityRepresentation {
-                      Text(item.example).accessibilityIdentifier("onboarding-glimpse")
+                      Text(item.example).accessibilityIdentifier("onboarding-glimpse").accessibilitySortPriority(30)
                     }.accessibilitySortPriority(30)
                   VStack(alignment: .leading, spacing: 10) {
                     if item != .windmill {
                       HStack(spacing: 8) {
                         Circle().fill(item == .roadmap ? palette.brand : item == .journal ? palette.lamp : palette.gym).frame(width: 7, height: 7).accessibilityHidden(true)
                         Text(item.name.uppercased()).font(Design.mono(10)).tracking(2.4).foregroundStyle(palette.dim)
-                      }.accessibilityIdentifier("onboarding-eyebrow").accessibilitySortPriority(70)
+                          .accessibilityIdentifier("onboarding-eyebrow").accessibilitySortPriority(70)
+                      }
                     }
                     Text(item.title).font(Design.title(34)).tracking(0.2).foregroundStyle(palette.ink)
                       .fixedSize(horizontal: false, vertical: true).accessibilityIdentifier("onboarding-title").accessibilityAddTraits(.isHeader).accessibilitySortPriority(60)
@@ -130,7 +132,14 @@ struct OnboardingScreen: View {
                     }
                   }
                 }.padding(.horizontal, 24).padding(.top, item == .windmill ? 16 : 6).padding(.bottom, 16)
-              }.tag(item).accessibilityElement(children: .contain).accessibilitySortPriority(60)
+              }.scrollDisabled(!overflowingPages.contains(item)).scrollBounceBehavior(.basedOnSize)
+                .onScrollGeometryChange(for: Bool.self) { geometry in
+                  geometry.contentSize.height > geometry.containerSize.height
+                } action: { _, overflows in
+                  if overflows { overflowingPages.insert(item) }
+                  else { overflowingPages.remove(item) }
+                }
+                .tag(item).accessibilityElement(children: .contain).accessibilitySortPriority(60)
             }
           }.tabViewStyle(.page(indexDisplayMode: .never))
             .indexViewStyle(.page(backgroundDisplayMode: .never))

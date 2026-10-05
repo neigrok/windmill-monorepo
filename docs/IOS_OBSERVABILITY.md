@@ -78,8 +78,8 @@ was answered or declined; neither the scale name nor its value is recorded.
 | Sign-out | `auth_signed_out` | outcome: ok |
 | Introduction | `onboarding_screen_viewed`, `onboarding_skipped`, `onboarding_finished` | page: windmill, roadmap, journal, gym; presentation: first_launch, replay |
 | Introduction replay | `onboarding_replayed` | presentation: replay |
-| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, ink_notes, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
-| Choices | `first_run_choice` | screen; action: open_journal, show_ink, dismiss_ink, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
+| First-run screens | `first_run_screen_viewed` | screen: welcome, journal, keep, address, code, you, adoption, discard_adoption, sign_out, 23a, 23b, 23c, 24a, 24b, 24c, 24d, apple_no_account, apple_expired, auth_pending |
+| Choices | `first_run_choice` | screen; action: open_journal, write, done_writing, keep, close, email, back, change_email, resend, add, discard, cancel, sign_out, use_account, create_account, remove_apple, retry |
 | Optional scales | `scale_invitation_shown`, `scale_invitation_answered` | action: answered, declined |
 | Writing | `journal_line_saved` | day_kind: today; emitted after a changed, nonempty body saves, never for scale-only changes |
 | Synchronization | `sync_pull_outcome`, `sync_push_outcome` | outcome: ok, failed; failure_kind, status, duration_ms |
