@@ -12,8 +12,14 @@ import uuid
 
 
 def run(command, environment, output=None, sql=None):
-    result = subprocess.run(command, env=environment, input=sql, stdout=subprocess.PIPE,
-                            stderr=subprocess.PIPE, check=False)
+    try:
+        result = subprocess.run(command, env=environment, input=sql, stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE, check=False, timeout=300)
+    except subprocess.TimeoutExpired as error:
+        if output:
+            output.write_bytes(error.stdout or b"")
+            output.with_suffix(output.suffix + ".stderr").write_bytes(error.stderr or b"")
+        raise RuntimeError(f"{Path(command[0]).name} timed out after 300 seconds") from None
     if output:
         output.write_bytes(result.stdout)
         if result.stderr:
@@ -106,16 +112,17 @@ def disposable_fixtures(environment):
 
 def no_fixture_objects(environment):
     count = psql(environment, "SELECT (SELECT count(*) FROM pg_trigger WHERE "
-                 "tgname LIKE 'wm_journal_rehearsal_pause_%') + "
-                 "(SELECT count(*) FROM pg_proc WHERE proname LIKE 'wm_journal_rehearsal_pause_%');")
+                 "tgname ~ '^wm_(gym|journal)_rehearsal_pause_') + "
+                 "(SELECT count(*) FROM pg_proc WHERE proname ~ '^wm_(gym|journal)_rehearsal_pause_');")
     if count.strip() != b"0":
         raise RuntimeError("known rehearsal fixture objects exist; investigate before migration")
 
 
-def interrupted_account(environment, binary, owner, output):
+def interrupted_account(environment, binary, owner, output, product="journal"):
     disposable_fixtures(environment)
     owner = str(uuid.UUID(owner))
-    name = "wm_journal_rehearsal_pause_" + uuid.uuid4().hex
+    name = f"wm_{product}_rehearsal_pause_" + uuid.uuid4().hex
+    table = "journal_page" if product == "journal" else "gym_routines"
     identifier = quote_identifier(name)
     process = None
     installed = False
@@ -123,16 +130,17 @@ def interrupted_account(environment, binary, owner, output):
     try:
         psql(environment, f"CREATE FUNCTION {identifier}() RETURNS trigger LANGUAGE plpgsql AS $$ "
                          "BEGIN PERFORM pg_sleep(30); RETURN NULL; END $$; "
-                         f"CREATE TRIGGER {identifier} BEFORE UPDATE ON journal_page "
+                         f"CREATE TRIGGER {identifier} BEFORE UPDATE ON {table} "
                          f"FOR EACH STATEMENT EXECUTE FUNCTION {identifier}();")
         installed = True
-        with (output / "journal-interrupted-account.log").open("wb") as log:
-            process = subprocess.Popen([str(binary), "--account", owner],
+        with (output / f"{product}-interrupted-account.log").open("wb") as log:
+            options = [] if product == "journal" else ["--upgrade-v5"]
+            process = subprocess.Popen([str(binary), *options, "--account", owner],
                                        env={**environment, "PGAPPNAME": name}, stdout=log, stderr=log)
             deadline = time.monotonic() + 15
             while time.monotonic() < deadline:
                 if process.poll() is not None:
-                    raise RuntimeError("journal interruption fixture exited before its account transaction paused")
+                    raise RuntimeError(f"{product} interruption fixture exited before its account transaction paused")
                 paused = psql(environment, f"SELECT count(*) FROM pg_stat_activity WHERE application_name='{name}' "
                                            "AND state='active' AND wait_event='PgSleep';").strip()
                 if paused != b"0":
@@ -142,7 +150,7 @@ def interrupted_account(environment, binary, owner, output):
                     break
                 time.sleep(0.05)
             else:
-                raise RuntimeError("journal account transaction did not reach the before-commit interruption gate")
+                raise RuntimeError(f"{product} account transaction did not reach the before-commit interruption gate")
     finally:
         if process:
             process.terminate()
@@ -152,11 +160,14 @@ def interrupted_account(environment, binary, owner, output):
                 process.kill()
                 process.wait()
         if installed:
-            psql(environment, f"DROP TRIGGER {identifier} ON journal_page; DROP FUNCTION {identifier}();")
+            psql(environment, f"DROP TRIGGER {identifier} ON {table}; DROP FUNCTION {identifier}();")
     offline(environment)
     database_dump(environment, output / "data-after-account-interruption")
-    equal_files(output / "data-before-account-interruption", output / "data-after-account-interruption",
-                "interruption before account commit changed table rows or sequences")
+    if product == "journal":
+        equal_files(output / "data-before-account-interruption", output / "data-after-account-interruption",
+                    "interruption before account commit changed table rows or sequences")
+    elif psql(environment, f"SELECT count(*) FROM gym_routines WHERE user_id='{owner}' AND revision_stamp IS NOT NULL;").strip() != b"0":
+        raise RuntimeError("interrupted v5 account committed a partial supplement")
 
 
 def main():
@@ -165,8 +176,11 @@ def main():
     parser.add_argument("--output", type=Path, required=True, help="new directory for evidence")
     parser.add_argument("--now-ms", type=int, help="one clock instant shared by both read snapshots")
     parser.add_argument("--apply-adoption", action="store_true", help="apply both adoption schemas after the first read snapshots")
+    parser.add_argument("--upgrade-v5", action="store_true", help="upgrade an adopted gym database using the retained R118 manifest")
     parser.add_argument("--disposable-fixtures", action="store_true", help="run fault fixtures only on a marked throwaway database")
     args = parser.parse_args()
+    if args.apply_adoption and args.upgrade_v5:
+        parser.error("choose base adoption or the v5 metadata upgrade")
     environment = dict(os.environ)
     database = environment.get("DATABASE_URL", "")
     if not database:
@@ -208,6 +222,52 @@ def main():
         if before[product]["restGetRoutes"] != routes[product]:
             raise RuntimeError(f"REST snapshot inventory differs from {product}/routes.cpp: "
                                f"snapshot={before[product]['restGetRoutes']}, routes={routes[product]}")
+    if args.upgrade_v5:
+        gym = str(binaries["windmill_gym_backfill"])
+        for product in products:
+            run([str(binaries[f"windmill_{product}_backfill"]), "--audit-current"], environment,
+                args.output / f"{product}-base-audit.jsonl")
+        epoch = psql(environment, "SELECT epoch FROM sync_meta;")
+        run(["psql", "--dbname", database, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", str(backend / "db/gym_sync_v5.sql")],
+            environment, args.output / "gym-v5-schema.log")
+        if args.disposable_fixtures:
+            owners = psql(environment, "SELECT user_id FROM gym_routines ORDER BY user_id LIMIT 1;").splitlines()
+            if owners:
+                interrupted_account(environment, binaries["windmill_gym_backfill"], owners[0].decode(), args.output, "gym")
+        run([gym, "--upgrade-v5"], environment, args.output / "gym-v5-migration.jsonl")
+        run([gym, "--audit-v5"], environment, args.output / "gym-v5-audit.jsonl")
+        audit = [json.loads(line) for line in (args.output / "gym-v5-audit.jsonl").read_text().splitlines()]
+        if args.disposable_fixtures:
+            run([gym, "--audit-v5", "--test-corruptions"], environment, args.output / "gym-v5-corruption-audit.jsonl")
+        offline(environment)
+        migrated = database_dump(environment, args.output / "data-migrated")
+        for product in products:
+            snapshot(environment, binaries[f"windmill_{product}_snapshot"], args.output / "reads-after" / product,
+                     now, args.output / f"{product}-snapshot-after.jsonl")
+        read_files = equal_files(args.output / "reads-before", args.output / "reads-after", "v5 read response diff")
+        run([gym, "--upgrade-v5"], environment, args.output / "gym-v5-second-run.jsonl")
+        offline(environment)
+        database_dump(environment, args.output / "data-after-second-run")
+        equal_files(args.output / "data-migrated", args.output / "data-after-second-run", "v5 snapshots/rerun changed data")
+        database_dump(environment, args.output / "data-before-bootstrap", "^(gym_|journal_|sync_)")
+        run(["bash", str(schema_guard), "apply", database, str(backend / "db/schema.sql")], environment,
+            args.output / "bootstrap-rerun.log")
+        run([gym, "--audit-v5"], environment, args.output / "gym-v5-bootstrap-audit.jsonl")
+        run([str(binaries["windmill_journal_backfill"]), "--audit-current"], environment,
+            args.output / "journal-bootstrap-audit.jsonl")
+        offline(environment)
+        database_dump(environment, args.output / "data-after-bootstrap", "^(gym_|journal_|sync_)")
+        equal_files(args.output / "data-before-bootstrap", args.output / "data-after-bootstrap", "v5 bootstrap changed adopted data")
+        if psql(environment, "SELECT epoch FROM sync_meta;") != epoch:
+            raise RuntimeError("v5 metadata upgrade changed the sync epoch")
+        report = {"passed": True, "version": 5, "accounts": before["gym"]["accounts"],
+                  "initialTableRows": sum(row.get("rows", 0) for row in baseline),
+                  "responses": sum(before[product]["responses"] for product in products),
+                  "auditedScopes": len(audit), "tables": len([row for row in migrated if "table" in row]),
+                  "readFilesCompared": read_files, "epochUnchanged": True, "secondRunChanges": 0}
+        (args.output / "result.json").write_text(json.dumps(report, sort_keys=True, indent=2) + "\n")
+        print(json.dumps(report, sort_keys=True))
+        return
     if args.apply_adoption:
         for product in products:
             run(["psql", "--dbname", database, "-X", "-q", "-v", "ON_ERROR_STOP=1", "-f", str(backend / f"db/{product}_sync.sql")],

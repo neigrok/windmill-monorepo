@@ -6,6 +6,7 @@
 #include "platform/application/sync/SyncService.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "products/journal/sync/adapters/postgres/PgJournalBackfill.h"
 #include "test/platform/Fakes.h"
 #include "test/platform/adapters/postgres/PgSyncWorld.h"
@@ -72,6 +73,7 @@ TEST(product_sync_unadopted_history_is_unavailable_and_never_consumes_a_native_i
     for (int partial = 0; partial < 3; ++partial) {
       gymWorld.seed(accounts);
       journalWorld.seed(accounts);
+      gym::engine::PgGymMetadataUpgrade(pgTestPool()).run();
       auto catalog = productCatalog();
       auto& store = gymWorld.store();
       const auto user = gymWorld.account("A");
@@ -144,7 +146,16 @@ TEST(product_sync_unadopted_history_is_unavailable_and_never_consumes_a_native_i
         txn->commit();
       }
       const auto backfill = [&] {
-        if (product == "gym") gym::engine::PgGymBackfill(pgTestPool()).run(500'000, false, user.str());
+        if (product == "gym") {
+          {
+            auto txn = store.begin(TxnMode::write);
+            sqlOf(*txn).exec("delete from gym_sync_metadata_upgrades");
+            sqlOf(*txn).exec("delete from gym_sync_metadata_upgrade_runs");
+            txn->commit();
+          }
+          gym::engine::PgGymBackfill(pgTestPool()).run(500'000, false, user.str());
+          gym::engine::PgGymMetadataUpgrade(pgTestPool()).run(600'000);
+        }
         else journal::engine::PgJournalBackfill(pgTestPool()).run(500'000, false, user.str());
       };
       if (partial == 2) {

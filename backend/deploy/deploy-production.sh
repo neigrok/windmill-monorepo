@@ -48,6 +48,7 @@ journal_writes=$(python3 -c 'import json,sys; print(int(json.load(sys.stdin)["se
 
 adopted=f
 schemas_present=f
+metadata_v5=f
 if [[ -f docker-compose.yml && -f .env ]] && [[ -n $(docker compose ps -aq db) ]]; then
   status=$(docker compose exec -T db bash -seuo pipefail <<'DATABASE'
 psql -w -XAtq -v ON_ERROR_STOP=1 --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" <<'SQL'
@@ -55,10 +56,11 @@ SELECT to_regclass('public.gym_sync_adoptions') IS NOT NULL AS gym,
        to_regclass('public.journal_sync_adoptions') IS NOT NULL AS journal \gset
 SELECT :'gym'::boolean OR :'journal'::boolean;
 SELECT :'gym'::boolean AND :'journal'::boolean;
+SELECT to_regclass('public.gym_sync_metadata_upgrade_runs') IS NOT NULL OR to_regclass('public.gym_sync_metadata_upgrades') IS NOT NULL;
 SQL
 DATABASE
   )
-  IFS=$'\n' read -r -d '' adopted schemas_present < <(printf '%s\n\0' "$status") || true
+  IFS=$'\n' read -r -d '' adopted schemas_present metadata_v5 < <(printf '%s\n\0' "$status") || true
 fi
 if [[ "$gym_writes" == 1 || "$journal_writes" == 1 ]] && [[ "$schemas_present" != t ]]; then
   printf 'FAIL engine writes require complete product adoption; run products-cutover.yml. Old configuration remains running.\n' >&2
@@ -76,6 +78,13 @@ if [[ "$adopted" == t ]]; then
       exit 1
     fi
     docker run --rm --network none "$compatible_image" bash /app/deploy/gym-migration/schema-compatibility.sh check-image
+    if [[ "$metadata_v5" == t ]] && [[ "$(docker image inspect --format '{{ index .Config.Labels "io.windmill.gym-sync-metadata-version" }}' "$compatible_image")" != 5 ]]; then
+      printf 'FAIL gym metadata v5 database requires a v5-capable image. Old configuration remains running.\n' >&2
+      exit 1
+    fi
+    if [[ "$metadata_v5" == t ]]; then
+      docker run --rm --network none "$compatible_image" bash /app/deploy/gym-migration/schema-compatibility.sh check-v5-image
+    fi
   done
   for product in gym journal; do
     # The products audit eligible and fresh accounts themselves; empty users need no migration marker.

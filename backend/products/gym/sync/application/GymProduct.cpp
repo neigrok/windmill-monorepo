@@ -8,10 +8,11 @@ using namespace sync;
 
 namespace {
 
-GymFacts load(GymState& state, SyncTxn& txn, const ScopeKey& scope, SyncReader& read) {
+GymFacts load(GymState& state, SyncTxn& txn, const ScopeKey& scope, SyncReader& read, const Registry& registry) {
   GymFacts facts;
   facts.books = state.load(txn, scope);
-  for (const char* type : {"routine", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal"}) {
+  for (const char* type : {"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal"}) {
+    if (!registry.type(type)) continue;
     for (Row& row : read.scan(type)) facts.rows.push_back(std::move(row));
   }
   return facts;
@@ -23,7 +24,7 @@ class GymProduct::Rules final : public TypeRules {
 public:
   explicit Rules(GymState& state) : state_(state) {}
   std::vector<Delta> check(const CheckCtx& ctx, const std::vector<Change>& changes) override {
-    return checkGym(load(state_, ctx.txn, ctx.scope.key, ctx.read), changes, ctx.intent, ctx.caller.server, ctx.serverNow);
+    return checkGym(load(state_, ctx.txn, ctx.scope.key, ctx.read, ctx.registry), changes, ctx.intent, ctx.caller.server, ctx.serverNow);
   }
 private:
   GymState& state_;
@@ -42,7 +43,7 @@ public:
   }
 
   CommandOutcome run(CommandCtx& ctx) override {
-    GymFacts facts = load(state_, ctx.txn, ctx.scope.key, ctx.read);
+    GymFacts facts = load(state_, ctx.txn, ctx.scope.key, ctx.read, ctx.registry);
     auto lock = [&](const std::string& type, const Json::Value& id) {
       if (!id.isString()) return;
       facts.locked.insert_or_assign({type, id.asString()}, ctx.read.lock(type, RecordId(id)));

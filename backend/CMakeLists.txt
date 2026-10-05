@@ -560,13 +560,15 @@ add_executable(windmill_sync_tests
   test/products/probe/adapters/postgres/PgProbeTest.cpp
   test/products/gym/sync/adapters/postgres/PgGymTest.cpp
   test/products/gym/sync/adapters/postgres/PgGymBackfillTest.cpp
+  test/products/gym/sync/adapters/postgres/PgGymMetadataUpgradeTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalTest.cpp
   test/products/journal/sync/adapters/postgres/JournalDoorTest.cpp
   test/products/journal/sync/adapters/postgres/PgJournalBackfillTest.cpp)
 target_sources(windmill_gym_sync PRIVATE
   products/gym/sync/adapters/postgres/PgGym.cpp
-  products/gym/sync/adapters/postgres/PgGymBackfill.cpp)
-target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync windmill_journal)
+  products/gym/sync/adapters/postgres/PgGymBackfill.cpp
+  products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.cpp)
+target_link_libraries(windmill_sync_tests PRIVATE windmill_probe windmill_product_sync windmill_journal windmill_gym)
 target_compile_definitions(windmill_sync_tests PRIVATE
   WM_SYNC_CONTRACT_DIR="${WM_API_CONTRACT_DIR}/sync"
   WM_PG_TEST_URL_ENV="WM_SYNC_DATABASE_URL")

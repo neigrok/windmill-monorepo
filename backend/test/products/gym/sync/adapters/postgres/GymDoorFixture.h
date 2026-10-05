@@ -1,6 +1,7 @@
 #pragma once
 
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
+#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
@@ -45,10 +46,11 @@ struct Harness {
   Harness() {
     PgLease lease{*pool()};
     pqxx::work txn{*lease};
-    txn.exec("truncate gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
+    txn.exec("truncate gym_sync_metadata_upgrades, gym_sync_metadata_upgrade_runs, gym_sync_adoptions, gym_ask_deleted_threads, gym_ask_threads, gym_note_saves, gym_write_receipts, gym_correction_receipts, gym_set_revisions, gym_log_shares, gym_session_shares, gym_routine_creations, gym_proposals, gym_routines, gym_sessions, gym_sets, gym_notes, gym_bodyweight, gym_preferences, gym_exercise_names, gym_exercise_aliases, sync_spent, sync_requests, sync_replicas, sync_scopes cascade");
     txn.exec("delete from gym_exercises where created_by is not null");
     txn.exec("insert into users(id,email) values($1::uuid,'gym-door@example.com'),($2::uuid,'gym-door-other@example.com') on conflict(id) do nothing", pqxx::params{user.str(), other.str()});
     txn.commit();
+    engine::PgGymMetadataUpgrade(pool()).run();
   }
 };
 

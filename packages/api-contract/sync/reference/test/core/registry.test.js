@@ -215,7 +215,7 @@ test('composition.json names the composed registries: gym and journal, each a pr
 // So a product registry joins the composition without a rename, no two product registries, composed or not, declare a
 // name twice.
 test('the composed registries declare one version, and no product registry declares a name another does', () => {
-  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[5, 5], [5, 5]]);
+  assert.deepEqual(COMPOSED.map((registry) => [registry.version, registry.minVersion]), [[5, 4], [5, 4]]);
   const names = (pick) => PRODUCTS.flatMap(pick);
   const codes = names((r) => Object.values(r.products).flatMap((product) => product.codes ?? []));
   for (const declared of [names((r) => Object.keys(r.products)), names((r) => r.types.map((t) => t.type)), names((r) => r.commands.map((c) => c.name)), codes]) {

@@ -230,6 +230,8 @@ class JournalDifferential(Differential):
                 assert all(not json.loads(line)["changed"] for line in report.splitlines()), report
                 assert before == self.snapshot(database), "second run mutated the store"
             self.start(side, database, self.ports[side])
+        for connection in self.connections:
+            connection.close()
 
     def request(self, side, method, target, body, headers=None):
         payload = body if isinstance(body, bytes) else json.dumps(body, ensure_ascii=False).encode() if body is not None else None

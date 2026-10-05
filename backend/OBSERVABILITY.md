@@ -121,7 +121,7 @@ probe 2; sync 3; MCP transport 4. Excluding the two dev routes and two standalon
 duplicates leaves 84 production HTTP operations. MCP has 36 write declarations (roadmap 23,
 gym 13); compatibility aliases share their canonical operation. Coach has 27 operations (ask 2,
 gym abilities 4, scoped roadmap abilities 21). The catalogs have nine production commands
-(gym 7, journal 2), plus four probe commands. Six binaries expose 12 tool modes. Background
+(gym 7, journal 2), plus four probe commands. Six binaries expose 14 tool modes. Background
 coverage includes 19 scheduled/stage operations plus sync publication, Amplitude forwarding and
 legacy gym settlement and the AI usage ledger (24 background operations). Server-origin entry points include gym/journal doors, ServerCall metadata,
 session refresh and signup fork. The roadmap socket has two write frame kinds plus rate refusal.
@@ -287,7 +287,7 @@ server writes are authentication refresh or lazy settlement.
 | `probe` registry command `probe.end` | `sync.command.probe.end` | completion; command result | unexpected |
 | `probe` registry command `probe.copy` | `sync.command.probe.copy` | completion; command result | unexpected |
 | `probe` registry command `probe.tick` | `sync.command.probe.tick` | completion; command result | unexpected |
-| `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 9 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
+| `Admission::admit` / `admitBuilt` (replica and server-origin intents; gym 10 types, journal 2 types, probe 10 types) | `sync.admit` | completion; bounded refusal or result | unexpected |
 | `Admission::commitAndPublish` committed change publication | `sync.publish` | completion; bounded refusal or result | unexpected |
 | `GymDoor::execute` (engine writes from REST, MCP, Coach, lazy settlement) | `gym.server_call` | completion; actual call result and expected training refusal | unexpected |
 | `JournalDoor::execute` (engine writes from REST and server services) | `journal.server_call` | completion; actual call result and expected journal refusal | unexpected |
@@ -301,6 +301,8 @@ server writes are authentication refresh or lazy settlement.
 | `platform/infra/gym_backfill_main.cpp (backfill_dry_run)` (tool) | `gym.backfill_dry_run` | completion; bounded stage outcome | unexpected |
 | `platform/infra/gym_backfill_main.cpp (audit)` (tool) | `gym.audit` | completion; bounded stage outcome | unexpected |
 | `platform/infra/gym_backfill_main.cpp (audit_current)` (tool) | `gym.audit_current` | completion; bounded stage outcome | unexpected |
+| `platform/infra/gym_backfill_main.cpp (upgrade_v5)` (tool) | `gym.metadata_upgrade` | completion; bounded stage outcome | unexpected |
+| `platform/infra/gym_backfill_main.cpp (audit_v5)` (tool) | `gym.metadata_audit` | completion; bounded stage outcome | unexpected |
 | `platform/infra/gym_snapshot_main.cpp (snapshot)` (tool) | `gym.snapshot` | completion; bounded stage outcome | unexpected |
 | `platform/infra/gym_rehearsal_seed_main.cpp (rehearsal_seed)` (tool) | `gym.rehearsal_seed` | completion; bounded stage outcome | unexpected |
 | `platform/infra/journal_backfill_main.cpp (backfill)` (tool) | `journal.backfill` | completion; bounded stage outcome | unexpected |

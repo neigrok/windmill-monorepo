@@ -209,11 +209,14 @@ def rehearse_shim(arguments):
             checkpoint = "schema"
         elif name == "psql" and any(str(arg).endswith("/journal_sync.sql") for arg in arguments):
             checkpoint = "journal-schema"
+        elif name == "psql" and any(str(arg).endswith("/gym_sync_v5.sql") for arg in arguments):
+            checkpoint = "v5-schema"
         elif output:
             checkpoint = {"gym-migration.jsonl": "backfill", "journal-migration.jsonl": "journal-backfill",
                 "gym-audit.jsonl": "audit", "journal-audit.jsonl": "journal-audit",
                 "bootstrap-rerun.log": "bootstrap", "gym-bootstrap-audit.jsonl": "gym-bootstrap-audit",
-                "journal-bootstrap-audit.jsonl": "journal-bootstrap-audit"}.get(Path(output).name)
+                "journal-bootstrap-audit.jsonl": "journal-bootstrap-audit",
+                "gym-v5-migration.jsonl": "v5-upgrade", "gym-v5-audit.jsonl": "v5-audit"}.get(Path(output).name)
         if checkpoint and event(checkpoint, pause=True):
             raise RuntimeError("injected " + checkpoint + " operation failure")
         return result
@@ -256,10 +259,10 @@ def docker_shim(arguments):
             return 0
         if args[0] == "run":
             entrypoint = args.index("--entrypoint")
-            assert candidate and args[entrypoint + 2:] == ["server", "--audit-current"], args
+            assert candidate and args[entrypoint + 2:] in (["server", "--audit-current"], ["server", "--audit-v5"]), args
             assert "--pull" in args and args[args.index("--pull") + 1] == "never", args
             environment = {**os.environ, **env_file(".env.next"), "DATABASE_URL": state["databaseUrl"]}
-            return subprocess.run([str(Path(state["binDir"]) / args[entrypoint + 1]), "--audit-current"],
+            return subprocess.run([str(Path(state["binDir"]) / args[entrypoint + 1]), args[-1]],
                                   env=environment, check=False).returncode
         if args[:3] == ["exec", "-T", "db"]:
             database_env = {"POSTGRES_USER": state["postgresUser"], "POSTGRES_DB": state["databaseName"],
@@ -269,7 +272,7 @@ def docker_shim(arguments):
         if args[:3] == ["exec", "-T", "server"]:
             invocation = [argument.replace("/app", str(BACKEND)) for argument in args[3:]]
             if Path(invocation[0]).name.startswith("windmill_"):
-                assert invocation[1:] == ["--audit-current"], invocation
+                assert invocation[1:] in (["--audit-current"], ["--audit-v5"]), invocation
                 invocation[0] = str(Path(state["binDir"]) / invocation[0])
             environment = {**os.environ, **env_file(".env"), "DATABASE_URL": state["databaseUrl"]}
             return subprocess.run(invocation, env=environment, check=False).returncode
@@ -336,6 +339,8 @@ def docker_shim(arguments):
     if arguments[:2] == ["image", "inspect"]:
         if ".Id" in arguments[3]:
             print(IMAGE)
+        elif "io.windmill.gym-sync-metadata-version" in arguments[3]:
+            print(state.get("metadataVersion", "5"))
         else:
             print(state["imageCompatibility"] or "<no value>")
         return 0
@@ -569,7 +574,8 @@ class CutoverTest:
         executable = work.parent / "script-under-test.sh"
         shutil.copyfile(script, executable)
         with output.open("wb") as stdout, errors.open("wb") as stderr:
-            process = subprocess.Popen(["bash", str(executable), *([str(work)] if script == SCRIPT else [])], cwd=work,
+            mode = ["--upgrade-v5"] if environment.get("WM_CUTOVER_V5") == "1" else []
+            process = subprocess.Popen(["bash", str(executable), *([str(work), *mode] if script == SCRIPT else [])], cwd=work,
                 env=environment, stdin=subprocess.DEVNULL, stdout=stdout, stderr=stderr, start_new_session=True)
             # The script's first shim call can already be reading state; write it as the shims do.
             with Path(str(state_path) + ".lock").open("a") as lock:
@@ -634,6 +640,107 @@ class CutoverTest:
             assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0, path
         self.stop_server(fixture[1])
         return fixture
+
+    def metadata_upgrade(self):
+        for phase in (None, "v5-schema", "v5-upgrade", "v5-audit", "prepare"):
+            fixture = self.fixture("metadata-" + str(phase), **({"failAt": phase} if phase else {}))
+            work, state_path, environment, database = fixture
+            self.apply(database, "gym_sync.sql", "journal_sync.sql")
+            for product in ("gym", "journal"):
+                command([self.args.bin_dir / f"windmill_{product}_backfill"],
+                        {**os.environ, "DATABASE_URL": self.database_url(database)})
+            values = {**env_file(work / ".env"), **SWITCHES}
+            (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in values.items()))
+            state = json.loads(state_path.read_text())
+            state["productionRuntime"].update(SWITCHES)
+            for row in state["containers"].values():
+                if row["Config"]["Labels"]["com.docker.compose.service"] == "server":
+                    row["Config"]["Env"] = [f"{key}={value}" for key, value in state["productionRuntime"].items()]
+            state_path.write_text(json.dumps(state))
+            environment["WM_CUTOVER_V5"] = "1"
+            original = copy.deepcopy(state["containers"])
+            baseline = self.snapshot(database)
+            epoch = self.sql(database, "SELECT epoch FROM sync_meta")
+            status, output, errors, state = self.execute(fixture)
+            if phase:
+                assert status != 0 and b"restored; old configuration running" in output, (phase, output, errors)
+                assert self.snapshot(database) == baseline, "v5 pre-start rollback changed adopted data"
+                self.assert_old_running(original, state)
+            else:
+                assert status == 0 and b"PASS gym and journal cutover (--upgrade-v5)" in output, (status, output, errors)
+                assert self.sql(database, "SELECT epoch FROM sync_meta") == epoch, "v5 cutover rotated epoch"
+                assert self.sql(database, "SELECT count(*) FROM gym_sync_metadata_upgrades WHERE result IS NOT NULL").strip() != b"0"
+                report = json.loads((Path(state["migrationEvidence"]) / "run/result.json").read_text())
+                assert report["passed"] and report["version"] == 5 and report["epochUnchanged"], report
+                self.stop_server(state_path)
+                before = self.snapshot(database, row_versions=True)
+                command([self.args.bin_dir / "windmill_gym_backfill", "--upgrade-v5"],
+                        {**os.environ, "DATABASE_URL": self.database_url(database)})
+                assert self.snapshot(database, row_versions=True) == before, "v5 rerun updated rows"
+                for key in SWITCHES:
+                    environment.pop(key, None)
+                state = json.loads(state_path.read_text())
+                state["metadataVersion"] = "<no value>"
+                state_path.write_text(json.dumps(state))
+                (work / "rendered.env").write_bytes((work / ".env").read_bytes())
+                shutil.copyfile(work / "docker-compose.yml", work / "docker-compose.next.yml")
+                shutil.copyfile(work / "Caddyfile", work / "Caddyfile.next")
+                original = copy.deepcopy(state["containers"])
+                status, output, errors, state = self.execute(fixture, BACKEND / "deploy/deploy-production.sh")
+                assert status != 0 and b"v5-capable image" in output + errors, (status, output, errors)
+                assert state["containers"] == original and self.snapshot(database, row_versions=True) == before
+            self.stop_server(state_path)
+        fixture = self.fixture("metadata-ddl-only")
+        work, state_path, environment, database = fixture
+        self.apply(database, "gym_sync.sql", "journal_sync.sql")
+        for product in ("gym", "journal"):
+            command([self.args.bin_dir / f"windmill_{product}_backfill"],
+                    {**os.environ, "DATABASE_URL": self.database_url(database)})
+        self.apply(database, "gym_sync_v5.sql")
+        for key in SWITCHES:
+            environment.pop(key, None)
+        (work / "rendered.env").write_text((work / ".env").read_text() +
+                                          "".join(f"{key}={value}\n" for key, value in SWITCHES.items()))
+        shutil.copyfile(work / "docker-compose.yml", work / "docker-compose.next.yml")
+        shutil.copyfile(work / "Caddyfile", work / "Caddyfile.next")
+        state = json.loads(state_path.read_text())
+        original = copy.deepcopy(state["containers"])
+        files = {name: (work / name).read_bytes() for name in (".env", "docker-compose.yml", "Caddyfile")}
+        baseline = self.snapshot(database, row_versions=True)
+        status, output, errors, state = self.execute(fixture, BACKEND / "deploy/deploy-production.sh")
+        assert status != 0 and b"current audit failed" in output + errors, (status, output, errors)
+        assert state["containers"] == original and self.snapshot(database, row_versions=True) == baseline
+        assert all((work / name).read_bytes() == content for name, content in files.items())
+        print("PASS v5 cutover, independent audits, immutable rerun, rollback failures and legacy image guard", flush=True)
+
+    def runner_failures(self):
+        spec = importlib.util.spec_from_file_location("rehearsal_runner_test", BACKEND / "deploy/gym-migration/rehearse.py")
+        module = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(module)
+        real_run = module.subprocess.run
+        try:
+            for condition in ("exit", "crash", "timeout", "stalled-output"):
+                output = self.directory / ("runner-" + condition + ".log")
+                def failed_run(*args, **kwargs):
+                    assert kwargs["timeout"] == 300
+                    return real_run(*args, **{**kwargs, "timeout": 0.2})
+                module.subprocess.run = failed_run
+                script = "import sys,time,os,signal; " + ("sys.exit(8)" if condition == "exit" else
+                    "os.kill(os.getpid(),signal.SIGKILL)" if condition == "crash" else
+                    "time.sleep(30)" if condition == "timeout" else "print('partial',flush=True); time.sleep(30)")
+                try:
+                    module.run([sys.executable, "-c", script], os.environ, output)
+                except RuntimeError as error:
+                    assert ("status 8" if condition == "exit" else "status -9" if condition == "crash" else "timed out") in str(error)
+                else:
+                    raise AssertionError("runner accepted " + condition)
+                assert output.is_file(), "failed tool diagnostics were discarded"
+                if condition == "stalled-output":
+                    assert output.read_bytes() == b"partial\n", "stalled tool's output was lost"
+                self.cases += 1
+        finally:
+            module.subprocess.run = real_run
+        print("PASS migration runner exit, crash, timeout and stalled output retain diagnostics", flush=True)
 
     def legacy_retirement(self):
         # Read the registration mark rather than maintaining a second list of retired paths.
@@ -1181,7 +1288,7 @@ def main():
     parser.add_argument("--maintenance-db", default=os.environ.get("DATABASE_URL", "postgresql:///postgres?host=/tmp"))
     parser.add_argument("--deploy-workflow", type=Path, default=BACKEND.parent / ".github/workflows/deploy.yml")
     parser.add_argument("--cutover-workflow", type=Path, default=BACKEND.parent / ".github/workflows/products-cutover.yml")
-    parser.add_argument("--regression-only", choices=("success", "failures", "kills", "guards", "deploy-guards", "forward-only", "rollback-kill", "recovery-kill", "automatic-restore-kill", "prerequisites", "legacy-retirement"))
+    parser.add_argument("--regression-only", choices=("success", "failures", "kills", "guards", "deploy-guards", "forward-only", "rollback-kill", "recovery-kill", "automatic-restore-kill", "prerequisites", "legacy-retirement", "metadata-upgrade", "runner-failures"))
     args = parser.parse_args()
     args.bin_dir = args.bin_dir.resolve()
     for product in ("gym", "journal"):
@@ -1196,12 +1303,13 @@ def main():
                        "guards": test.guards, "deploy-guards": test.deploy_guards, "forward-only": test.forward_only,
                        "rollback-kill": test.rollback_start_kill, "recovery-kill": test.recovery_restore_kill,
                        "automatic-restore-kill": test.automatic_restore_kill, "prerequisites": test.prerequisites,
-                       "legacy-retirement": test.legacy_retirement}
+                       "legacy-retirement": test.legacy_retirement, "metadata-upgrade": test.metadata_upgrade,
+                       "runner-failures": test.runner_failures}
             if args.regression_only:
                 methods[args.regression_only]()
             else:
                 test.workflows()
-                for method in (test.legacy_retirement, test.prerequisites, test.guards, test.deploy_guards, test.success, test.failures, test.kills,
+                for method in (test.runner_failures, test.metadata_upgrade, test.legacy_retirement, test.prerequisites, test.guards, test.deploy_guards, test.success, test.failures, test.kills,
                                test.recovery_restore_kill, test.automatic_restore_kill, test.rollback_start_kill, test.forward_only):
                     method()
             print(json.dumps({"passed": True, "cases": test.cases}, sort_keys=True))

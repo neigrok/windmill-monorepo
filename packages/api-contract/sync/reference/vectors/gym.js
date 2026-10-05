@@ -433,8 +433,15 @@ function metadata() {
     ...[['routine', 'revision'], ['routine', 'createdEntries'], ['proposal', 'baseRevision'], ['proposal', 'baseName'], ['proposal', 'changeCount'], ['note', 'updatedAt']].map(([t, field]) =>
       admitted(`R118 a replica cannot write ${t}.${field}`, { state: base(), intent: gym([create(t, 'forged0001', s(NOW), { [field]: field === 'baseName' ? 'Forged' : 1 })]) })),
     admitted('R118 a server door cannot supply derived routine metadata', { state: base(), origin: SERVER_A, intent: gym([create('routine', 'forged0001', null, { name: 'Forged', entries: SQUAT, revision: 99 })]) }),
+    admitted('R118 a server door cannot supply metadata on an absent routine delete', { state: base(), origin: SERVER_A,
+      intent: gym([{ t: 'routine', id: 'missing001', born: null, life: ['dead', null], f: regs(null, { revision: 99 }) }]) }),
+    admitted('R118 a server door cannot supply metadata on a spent routine delete', { state: base({
+      spent: { [GYM_A]: [{ t: 'routine', id: 'routine0009', born: s(T), lifeStamp: s(T + H), seq: 6 }] },
+    }), origin: SERVER_A, intent: gym([{ t: 'routine', id: 'routine0009', born: null, life: ['dead', null], f: regs(null, { revision: 99 }) }]) }),
     admitted('R118 a replica cannot supply a creation snapshot', { state: base(), intent: gym([{ t: 'routineCreation', id: 'forged0001', f: regs(s(NOW), { snapshot: {} }) }]) }),
     admitted('R118 a bare server door cannot create or replace a snapshot', { state: created.toJSON(), origin: SERVER_A, intent: gym([{ t: 'routineCreation', id: routine.id, f: regs(null, { snapshot: {} }) }]) }),
+    admitted('R118 a bare server door cannot submit an empty delta for an existing snapshot', { state: created.toJSON(), origin: SERVER_A,
+      intent: gym([{ t: 'routineCreation', id: routine.id }]) }),
     admitted('R118 a replica cannot create an empty snapshot record', { state: base(), intent: gym([{ t: 'routineCreation', id: 'forged0001' }]) }),
   ];
 }

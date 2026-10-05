@@ -254,6 +254,46 @@ class SchemaReapplicationTest(unittest.TestCase):
         self.assertNotEqual(result.returncode, 0, "final schema reapply invalidated an unchecked gym digest")
         self.assertIn("gym backfill: current feed digest or greatest seq mismatch", result.stderr)
 
+    def test_v5_candidate_reapplies_v4_database_without_adding_metadata_columns(self):
+        self.apply("gym_sync.sql", "journal_sync.sql")
+        before = self.snapshot()
+        result = self.deploy_schema(BACKEND / "db/schema.sql")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_catalog_equal(before, self.snapshot())
+        self.assertEqual(self.sql("SELECT EXISTS(SELECT FROM information_schema.columns WHERE "
+                                  "table_schema='public' AND table_name='gym_routines' AND column_name='revision_stamp')"), "f")
+
+    def test_v5_candidate_preserves_upgraded_catalog_and_rows(self):
+        self.apply("gym_sync.sql", "journal_sync.sql")
+        environment = {**os.environ, "DATABASE_URL": self.database}
+        for product in ("gym", "journal"):
+            subprocess.run([str(self.bin_dir / f"windmill_{product}_backfill")], env=environment,
+                           capture_output=True, check=True)
+        self.apply("gym_sync_v5.sql")
+        subprocess.run([str(self.bin_dir / "windmill_gym_backfill"), "--upgrade-v5"], env=environment,
+                       capture_output=True, check=True)
+        before = self.snapshot()
+        rows = self.sql("SELECT jsonb_build_object('row',to_jsonb(r),'xmin',r.xmin::text) FROM gym_routines r")
+        result = self.deploy_schema(BACKEND / "db/schema.sql")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assert_catalog_equal(before, self.snapshot())
+        self.assertEqual(rows, self.sql("SELECT jsonb_build_object('row',to_jsonb(r),'xmin',r.xmin::text) FROM gym_routines r"))
+        subprocess.run([str(self.bin_dir / "windmill_gym_backfill"), "--audit-v5"], env=environment,
+                       capture_output=True, check=True)
+
+    def test_v4_candidate_refused_on_v5_ddl_before_touching_rows(self):
+        self.apply("gym_sync.sql", "journal_sync.sql", "gym_sync_v5.sql")
+        before = self.snapshot()
+        rows = self.sql("SELECT to_jsonb(r)::text FROM gym_routines r")
+        with tempfile.TemporaryDirectory(prefix="wm-v4-schema-") as directory:
+            schema = Path(directory) / "schema.sql"
+            schema.write_text((BACKEND / "db/schema.sql").read_text().replace("-- windmill-gym-sync-metadata-version: 5\n", ""))
+            result = self.deploy_schema(schema)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("v5-compatible", result.stderr)
+        self.assert_catalog_equal(before, self.snapshot())
+        self.assertEqual(rows, self.sql("SELECT to_jsonb(r)::text FROM gym_routines r"))
+
     def test_legacy_image_without_schema_guard_accepts_unadopted_database(self):
         with tempfile.TemporaryDirectory(prefix="wm-legacy-runtime-") as directory:
             runtime = Path(directory)

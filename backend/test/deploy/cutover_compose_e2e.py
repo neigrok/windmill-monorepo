@@ -26,9 +26,9 @@ SWITCHES = {"GYM_ENGINE_WRITES": "1", "JOURNAL_ENGINE_WRITES": "1",
 ACCOUNTS = [f"90000000-0000-4000-8000-{index:012d}" for index in (1, 2)]
 REMOTE = '''main() {
   cd "$1"
-  bash "$2" "$1"
+  bash "$2" "$1" "${3:-adopt}"
 }
-main "$1" "$2" < /dev/null
+main "$1" "$2" "${3:-adopt}" < /dev/null
 '''
 PROXY = '''#!/usr/bin/env python3
 import os
@@ -165,9 +165,9 @@ class Harness:
         operation()
         print("PASS " + name, flush=True)
 
-    def remote(self, script, switches=None, extra=None):
+    def remote(self, script, switches=None, extra=None, operation="adopt"):
         environment = {**self.environment, **(switches or {}), **(extra or {})}
-        return self.run(["bash", "-seuo", "pipefail", "--", self.work, script],
+        return self.run(["bash", "-seuo", "pipefail", "--", self.work, script, operation],
                         input=REMOTE.encode(), env=environment, okay=False, timeout=900)
 
     def candidate(self, values=None, caddy=None):
@@ -310,6 +310,76 @@ class Harness:
         for product in ("gym", "journal"):
             self.compose("exec", "-T", "server", "windmill_" + product + "_backfill", "--audit-current")
 
+    def metadata_rollback(self):
+        self.metadata_before = self.reads()
+        rows, runtime, files = self.sql(ROWS), self.runtime(), self.live_files()
+        marker = self.directory / "fail-v5-prepare"
+        marker.touch()
+        result = self.remote("products-cutover.sh", SWITCHES, {"WM_E2E_FAIL_PREPARE": str(marker)}, "--upgrade-v5")
+        assert result.returncode != 0 and b"restored; old configuration running" in result.stdout, result.stdout.decode()
+        assert Path(str(marker) + ".fired").exists(), "v5 failure did not reach audited pre-start prepare"
+        assert self.sql(ROWS) == rows and self.runtime() == runtime and self.live_files() == files
+        assert self.reads() == self.metadata_before, "v4 adopted REST changed after v5 rollback"
+
+    def metadata_rehearsal(self):
+        database = "products_rehearsal_" + uuid.uuid4().hex[:12]
+        archive = self.compose("exec", "-T", "db", "sh", "-ec",
+                               'exec pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" --format=custom').stdout
+        self.compose("exec", "-T", "db", "createdb", "-U", "windmill", database)
+        try:
+            self.compose("exec", "-T", "db", "pg_restore", "-U", "windmill", "-d", database, "--exit-on-error", input=archive)
+            self.sql(f"COMMENT ON DATABASE {database} IS 'windmill-rehearsal-disposable';")
+            server = json.loads(self.run([self.docker, "inspect", self.compose("ps", "-q", "server").stdout.decode().strip()]).stdout)[0]
+            environment = dict(entry.split("=", 1) for entry in server["Config"]["Env"])
+            environment["DATABASE_URL"] = environment["DATABASE_URL"].rsplit("/", 1)[0] + "/" + database
+            env_file = self.directory / "rehearsal.env"
+            env_file.write_text("".join(f"{key}={value}\n" for key, value in environment.items()))
+            env_file.chmod(0o600)
+            evidence = self.directory / "v5-rehearsal"
+            evidence.mkdir()
+            network = next(iter(server["NetworkSettings"]["Networks"]))
+            self.run([self.docker, "run", "--rm", "--network", network, "--user", f"{os.getuid()}:{os.getgid()}",
+                      "--env-file", env_file, "--mount", f"type=bind,src={evidence},dst=/evidence", self.images[1],
+                      "python3", "/app/deploy/gym-migration/rehearse.py", "--bin-dir", "/usr/local/bin",
+                      "--output", "/evidence/run", "--upgrade-v5", "--disposable-fixtures"], timeout=900)
+            report = json.loads((evidence / "run/result.json").read_text())
+            assert report["passed"] and report["version"] == 5 and report["secondRunChanges"] == 0 and report["epochUnchanged"]
+            assert (evidence / "run/gym-interrupted-account.log").is_file(), "rehearsal skipped account interruption"
+        finally:
+            self.compose("exec", "-T", "db", "dropdb", "-U", "windmill", "--force", database)
+
+    def metadata_success(self):
+        epoch = self.sql("SELECT epoch FROM sync_meta;")
+        result = self.remote("products-cutover.sh", SWITCHES, operation="--upgrade-v5")
+        assert result.returncode == 0 and b"PASS gym and journal cutover (--upgrade-v5)" in result.stdout, (result.stdout + result.stderr).decode()
+        assert self.reads() == self.metadata_before and self.sql("SELECT epoch FROM sync_meta;") == epoch
+        self.compose("exec", "-T", "server", "windmill_gym_backfill", "--audit-current")
+        rows = self.sql(ROWS)
+        self.compose("exec", "-T", "server", "windmill_gym_backfill", "--upgrade-v5")
+        assert self.sql(ROWS) == rows, "online v5 rerun changed any row/sequence"
+
+    def metadata_deploy(self):
+        self.candidate()
+        result = self.remote("deploy-production.sh")
+        assert result.returncode == 0 and b"PASS deployed" in result.stdout, (result.stdout + result.stderr).decode()
+        self.audits()
+
+    def metadata_image_refusal(self):
+        tag = self.tags[1] + "-v4"
+        image = REPOSITORY + ":" + tag
+        container = self.identifier + "-label-fixture"
+        self.run([self.docker, "create", "--name", container, self.images[1]])
+        try:
+            self.run([self.docker, "commit", "--change", 'LABEL io.windmill.gym-sync-metadata-version="4"', container, image])
+            self.created_images.append(image)
+        finally:
+            self.run([self.docker, "rm", container])
+        rows, runtime, files = self.sql(ROWS), self.runtime(), self.live_files()
+        self.candidate({**self.values, "IMAGE_TAG": tag})
+        result = self.remote("deploy-production.sh")
+        assert result.returncode != 0 and b"v5-capable image" in result.stdout + result.stderr
+        assert self.sql(ROWS) == rows and self.runtime() == runtime and self.live_files() == files
+
     def engine_writes(self):
         for index in range(2):
             self.request("PUT", f"/v1/gym/notes/after_adoption_{index}", index, {"body": "Engine write", "title": "After"})
@@ -383,7 +453,7 @@ class Harness:
                 return allowed
             for path in ("deploy/Caddyfile", "deploy/docker-compose.yml", "deploy/deploy-production.sh",
                          "deploy/gym-migration/rehearse.py", "deploy/gym-migration/schema-compatibility.sh",
-                         "deploy/gym-migration/cutover-production.sh"):
+                         "deploy/gym-migration/cutover-production.sh", "db/gym_sync_v5.sql"):
                 assert included(path) and (BACKEND / path).is_file(), "missing Docker input " + path
             for path in ("deploy/README.md", "deploy/gym-migration/rehearse_local.py",
                          "deploy/gym-migration/__pycache__/rehearse.pyc", ".env"):
@@ -505,6 +575,12 @@ def main():
                 harness.check("both adoption audits pass", harness.audits)
                 harness.check("SYNC_ENABLED=0 keeps /v1/sync at 404", lambda: harness.request("GET", "/v1/sync", expected=404))
                 harness.check("post-cutover REST writes maintain engine digests", harness.engine_writes)
+                harness.check("v5 pre-start failure restores adopted v4 database and running configuration", harness.metadata_rollback)
+                harness.check("v5 restored rehearsal audits history, rerun and account interruption/resume", harness.metadata_rehearsal)
+                harness.check("v5 cutover preserves REST/epoch, audits and immutable online rerun", harness.metadata_success)
+                harness.check("v5-capable ordinary deployment accepts upgraded database", harness.metadata_deploy)
+                harness.check("v5 database refuses image without metadata capability before promotion", harness.metadata_image_refusal)
+                harness.check("post-v5 REST writes maintain gym and journal digests", harness.engine_writes)
                 for gym, journal in (("0", "0"), ("0", "1"), ("1", "0")):
                     harness.check(f"later deploy refuses gym={gym} journal={journal} before promotion",
                                   lambda gym=gym, journal=journal: harness.refusal(gym, journal))

@@ -12,10 +12,7 @@ public:
     Json::Value books(Json::objectValue);
     const auto& db = sync::fake::dbOf(txn);
     books["seeds"] = db.gym["seeds"];
-    for (const char* kind : {"starts", "imports", "corrections", "revisions", "bases"}) books[kind] = db.gym[kind][scope.text()];
-    for (const auto& [ref, row] : db.rows) {
-      if (ref.scope == scope && row.t == "routine") books["routineNames"][row.id.column()] = value(&row, "name");
-    }
+    for (const char* kind : {"starts", "imports", "corrections"}) books[kind] = db.gym[kind][scope.text()];
     return books;
   }
   void receipt(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::string& kind,
@@ -31,18 +28,6 @@ public:
     auto found = FakeTypeStore::elsewhere(txn, scope, ids);
     if (def().name == "exercise") for (const auto& id : ids) if (sync::fake::dbOf(txn).gym["seeds"].isMember(id.column())) found.insert(id.key());
     return found;
-  }
-  void apply(sync::SyncTxn& txn, const sync::ScopeKey& scope, const std::vector<sync::RowWrite>& writes) override {
-    FakeGymState state;
-    Json::Value books = state.load(txn, scope);
-    for (const auto& write : writes) projectGym(books, write);
-    auto& product = sync::fake::dbOf(txn).gym;
-    for (const char* kind : {"revisions", "bases"}) {
-      if (books[kind].isNull()) continue;
-      product[kind][scope.text()] = books[kind];
-      if (product[kind][scope.text()].empty()) product[kind].removeMember(scope.text());
-    }
-    FakeTypeStore::apply(txn, scope, writes);
   }
 };
 

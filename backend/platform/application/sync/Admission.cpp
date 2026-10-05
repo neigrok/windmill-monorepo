@@ -430,6 +430,7 @@ private:
   void checkProduct() {
     std::set<std::string> touched;
     for (const Change& change : changes_->changes()) touched.insert(change.type->name);
+    for (const Delta& delta : intent().d) touched.insert(delta.t);
     std::vector<Delta> appended;
     const CheckCtx ctx{registry_, *scopeRow_, caller_, now_, *this, *txn_, intent()};
     std::set<TypeRules*> checked;

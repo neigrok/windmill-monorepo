@@ -10,7 +10,7 @@ using namespace wm::sync;
 namespace {
 
 [[maybe_unused]] const bool registered = [] {
-  const Json::Value vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
+  Json::Value vectors = corpus::readCorpusFile(WM_SYNC_CONTRACT_DIR "/corpus/gym/admit.json");
   for (const TypeDef& type : gym::engine::registry().types()) {
     const std::string name = type.name;
     ::testing::Register{"gym_store_round_trip/" + name, [name, vectors] {

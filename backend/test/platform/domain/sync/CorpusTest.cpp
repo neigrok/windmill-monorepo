@@ -377,6 +377,7 @@ Json::Value liveDeathOverFakes(const Json::Value& input) {
       {"machine/scope.json", scopeMachine},
       {"admit/", admitOverFakes},
       {"gym/admit.json", [](const Json::Value& input) { test::FakeWorld world(true); return test::gymAdmitVector(world, input); }},
+      {"gym/metadata.json", corpus::ExternalRunner{"windmill_sync_tests over Postgres"}},
       {"gym/backfill.json", corpus::ExternalRunner{"windmill_sync_tests over Postgres"}},
       {"journal/admit.json", [](const Json::Value& input) { test::FakeWorld world(false, true); return test::journalAdmitVector(world, input); }},
       {"journal/revisions.json", wm::journal::engine::retainedRevisions},

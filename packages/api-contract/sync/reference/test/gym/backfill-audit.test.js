@@ -2,9 +2,16 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import test from 'node:test';
 import { ZERO_DIGEST, replaceRow } from '../../core/digest.js';
+import { CONSTANTS } from '../../core/constants.js';
+import { steadyTiming } from '../../core/clock.js';
+import { Registry } from '../../core/registry.js';
+import { compareRecords } from '../../core/rows.js';
+import { onPullResponse, pullRequest } from '../../client/puller.js';
+import { Replica } from '../../client/replica.js';
+import { pull } from '../../server/pull.js';
 import { audit, auditMetadata, backfill, upgradeMetadata } from '../../gym/backfill.js';
 import { ServerState } from '../../server/state.js';
-import { gymRegistry } from '../../vectors/gym.js';
+import { gymRegistry, gymProduct } from '../../vectors/gym.js';
 
 const vectors = JSON.parse(readFileSync(new URL('../../../corpus/gym/backfill.json', import.meta.url), 'utf8'));
 const key = 'acct:A/gym';
@@ -96,4 +103,41 @@ test('R118 independent audit refuses incomplete and duplicate source rosters', (
     corrupt(input.source);
     assert.throws(() => auditUpgrade(upgrade(), input), /gym metadata audit/);
   }
+});
+
+test('R118 fresh seqs converge a v4 store through ordinary live pulls with unknown fields and types', () => {
+  const json = JSON.parse(readFileSync(new URL('../../../gym.registry.json', import.meta.url), 'utf8'));
+  json.version = json.minVersion = 4;
+  json.types = json.types.filter((type) => type.type !== 'routineCreation');
+  for (const [t, fields] of Object.entries({ routine: ['revision', 'createdEntries'],
+    proposal: ['baseRevision', 'baseName', 'changeCount'], note: ['updatedAt'] })) {
+    for (const field of fields) delete json.types.find((type) => type.type === t).fields[field];
+  }
+  const v4 = new Registry(json);
+  let replica = Replica.fresh({ replica: 'rp_00000000000000000000000000000001', state: 'bound', account: 'A' });
+  const frozen = new ServerState(metadata.state);
+  const now = frozen.row(key, 'session', 'session0002').f.startedAt[0] + 1;
+  const ctx = { registry: v4, actor: 'r_aaaaaaaaaaaa', deviceNow: now,
+    limits: CONSTANTS, ended: [], telemetry: [], appVersion: 'v4' };
+  const firstRequest = pullRequest(replica, v4, ['self/gym']);
+  const boot = pull({ state: frozen, registry: gymRegistry, product: gymProduct,
+    account: 'A', request: firstRequest, serverNow: now, limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 << 30 } });
+  onPullResponse(replica, ctx, firstRequest, boot.response, steadyTiming(now, now));
+  const cursor = replica.cursorOf('self/gym').cursor;
+  const upgraded = upgrade();
+  assert.equal(upgraded.epoch, frozen.epoch);
+  const request = pullRequest(replica, v4, ['self/gym']);
+  assert.equal(request.scopes[0].cursor, cursor);
+  const live = pull({ state: upgraded, registry: gymRegistry, product: gymProduct,
+    account: 'A', request, serverNow: now, limits: { ...CONSTANTS, PULL_PAGE_BYTES: 1 << 30 } });
+  assert.equal(live.response.body.pages[0].kind, 'rows');
+  assert.ok(live.response.body.pages[0].rows.every((row) => row.seq > frozen.scope(key).seq));
+  onPullResponse(replica, ctx, request, live.response, steadyTiming(now, now));
+  replica = new Replica(replica.toJSON());
+  assert.deepEqual(replica.confirmedRows('self/gym'), upgraded.rowsOf(key).sort(compareRecords));
+  assert.deepEqual(replica.confirmedRow('self/gym', 'routineCreation', 'routine0002'),
+    upgraded.row(key, 'routineCreation', 'routine0002'));
+  assert.equal(replica.cursorOf('self/gym').digest, upgraded.scope(key).digest);
+  assert.equal(replica.meta.serverEpoch, frozen.epoch);
+  assert.deepEqual(ctx.telemetry, []);
 });

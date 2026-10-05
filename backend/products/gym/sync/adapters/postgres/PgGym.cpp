@@ -6,6 +6,7 @@
 #include "products/gym/sync/domain/GymRules.h"
 #include "products/gym/sync/adapters/postgres/GymDoorHash.h"
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "products/gym/application/GymSwitches.h"
 
 #include <algorithm>
@@ -29,11 +30,23 @@ std::string snake(const std::string& field) {
 
 bool same(const Json::Value& a, const Json::Value& b) { return jcs(a) == jcs(b); }
 
+bool metadataSchema(SyncTxn& txn) {
+  return sqlOf(txn).exec("select exists(select 1 from pg_attribute where attrelid='gym_routines'::regclass and attname='revision_stamp' and not attisdropped)")[0][0].as<bool>();
+}
+
+bool metadataField(const std::string& type, const std::string& name) {
+  return (type == "routine" && (name == "revision" || name == "createdEntries")) ||
+      (type == "proposal" && (name == "baseRevision" || name == "baseName" || name == "changeCount")) ||
+      (type == "note" && name == "updatedAt");
+}
+
 bool complex(const std::string& field) { return field == "entries" || field == "changes" || field == "aliases"; }
 bool instant(const std::string& type, const std::string& field) {
-  return field == "startedAt" || field == "finishedAt" || field == "completedAt" || (type == "proposal" && field == "settledAt");
+  return field == "startedAt" || field == "finishedAt" || field == "completedAt" || (type == "proposal" && field == "settledAt") || (type == "note" && field == "updatedAt");
 }
 std::string column(const std::string& type, const std::string& field) {
+  if (type == "proposal" && field == "changeCount") return "changes";
+  if (type == "routineCreation" && field == "snapshot") return "routine";
   if (type == "weighin" && field == "kg") return "weight_kg";
   return snake(field);
 }
@@ -147,7 +160,7 @@ void writeAliases(SyncTxn& txn, const ScopeKey& scope, const Row& row) {
   }
 }
 
-std::string selectColumns(const TypeDef& type, const std::string& id) {
+std::string selectColumns(const TypeDef& type, const std::string& id, bool metadata) {
   std::string select = id == "" ? "'prefs'::text as sync_id" : id + "::text as sync_id";
   select += ", seq, rc, ru";
   if (type.identity == Identity::minted) select += ", born";
@@ -155,7 +168,7 @@ std::string selectColumns(const TypeDef& type, const std::string& id) {
   for (const auto& [name, field] : type.fields) {
     const std::string col = column(type.name, name);
     if (field.kind == FieldKind::serial) { select += ", " + col; continue; }
-    select += ", " + snake(name) + "_stamp";
+    select += std::string(", ") + (metadataField(type.name, name) && !metadata ? "null::text as " : "") + snake(name) + "_stamp";
     if (complex(name)) continue;
     select += instant(type.name, name) ? ", (extract(epoch from " + col + ") * 1000)::bigint as " + col : ", " + col;
   }
@@ -183,7 +196,7 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
     else if (name == "aliases") v = readAliases(txn, scope, row.id.column());
     else if (!result[col.c_str()].is_null()) {
       if (instant(type.name, name) || name == "recordedAt") v = Json::Int64(result[col.c_str()].template as<std::int64_t>());
-      else if (name == "plan") v = parseJson(result[col.c_str()].template as<std::string>());
+      else if (name == "plan" || name == "snapshot") v = parseJson(result[col.c_str()].template as<std::string>());
       else if (field.domain && field.domain->type == Domain::Type::number) v = field.domain->integer ? Json::Value(Json::Int64(result[col.c_str()].template as<std::int64_t>())) : Json::Value(result[col.c_str()].template as<double>());
       else if (field.domain && field.domain->type == Domain::Type::boolean) v = result[col.c_str()].template as<bool>();
       else v = result[col.c_str()].template as<std::string>();
@@ -196,7 +209,10 @@ Row readRow(SyncTxn& txn, const ScopeKey& scope, const TypeDef& type, const R& r
 std::string fallback(const std::string& type, const std::string& name) {
   if (type == "exerciseName" && name == "name") return "null";
   if (name == "name" || name == "body" || name == "summary" || name == "connection" || name == "agent" || name == "proposedName" || name == "note") return "''";
-  if (name == "completedAt" || name == "startedAt") return "to_timestamp(0)";
+  if (name == "revision" || name == "baseRevision") return "1";
+  if (name == "baseName") return "''";
+  if (name == "changeCount") return "0";
+  if (name == "completedAt" || name == "startedAt" || name == "updatedAt") return "to_timestamp(0)";
   if (name == "title") return "'_'";
   if (name == "position" || name == "weightKg") return "0";
   if (name == "reps") return "1";
@@ -231,8 +247,9 @@ void setRevision(SyncTxn& txn, const RowWrite& write) {
 }
 
 PgGymType::PgGymType(const TypeDef& type) : type_(type), owner_(type.name == "exercise" ? "created_by" : "user_id"), id_("id") {
-  static const std::map<std::string, std::string> tables{{"routine","gym_routines"},{"exercise","gym_exercises"},{"exerciseName","gym_exercise_names"},{"session","gym_sessions"},{"set","gym_sets"},{"note","gym_notes"},{"weighin","gym_bodyweight"},{"prefs","gym_preferences"},{"proposal","gym_proposals"}};
+  static const std::map<std::string, std::string> tables{{"routine","gym_routines"},{"routineCreation","gym_routine_creations"},{"exercise","gym_exercises"},{"exerciseName","gym_exercise_names"},{"session","gym_sessions"},{"set","gym_sets"},{"note","gym_notes"},{"weighin","gym_bodyweight"},{"prefs","gym_preferences"},{"proposal","gym_proposals"}};
   table_ = tables.at(type.name);
+  if (type.name == "routineCreation") id_ = "routine_id";
   if (type.name == "exerciseName") id_ = "exercise_id";
   if (type.name == "weighin") id_ = "date_local";
   if (type.name == "prefs") id_ = "";
@@ -241,10 +258,11 @@ PgGymType::PgGymType(const TypeDef& type) : type_(type), owner_(type.name == "ex
 std::map<std::string, Row> PgGymType::lock(SyncTxn& txn, const ScopeKey& scope, const std::vector<RecordId>& ids) {
   std::map<std::string, Row> rows;
   if (ids.empty()) return rows;
+  if (type_.name == "routineCreation" && !metadataSchema(txn)) return rows;
   pqxx::params params{scope.account().str()};
   std::string where = owner_ + "=$1::uuid and seq is not null";
   if (!id_.empty()) where += " and " + id_ + "::text in (" + idPlaceholders(params, ids, 2) + ")";
-  const auto result = sqlOf(txn).exec("select " + selectColumns(type_, id_) + " from " + table_ + " where " + where + " order by " + (id_.empty() ? "user_id::text" : id_ + "::text") + " collate \"C\" for update", params);
+  const auto result = sqlOf(txn).exec("select " + selectColumns(type_, id_, metadataSchema(txn)) + " from " + table_ + " where " + where + " order by " + (id_.empty() ? "user_id::text" : id_ + "::text") + " collate \"C\" for update", params);
   for (const auto& row : result) {
     Row stored = readRow(txn, scope, type_, row);
     rows.emplace(stored.id.key(), std::move(stored));
@@ -263,6 +281,8 @@ std::set<std::string> PgGymType::elsewhere(SyncTxn& txn, const ScopeKey& scope, 
 
 void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<RowWrite>& writes) {
   auto& sql = sqlOf(txn);
+  const bool metadata = metadataSchema(txn) && (type_.name == "routineCreation" ||
+      std::any_of(type_.fields.begin(), type_.fields.end(), [&](const auto& field) { return metadataField(type_.name, field.first); }));
   std::vector<const RowWrite*> ordered;
   for (const RowWrite& write : writes) if (write.before) ordered.push_back(&write);
   for (const RowWrite& write : writes) if (!write.before) ordered.push_back(&write);
@@ -301,6 +321,7 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
     if (type_.identity == Identity::minted) parameter("born", toString(*row.lattice.born));
     if (type_.life) parameter("life_stamp", toString(row.lattice.life->stamp));
     for (const auto& [name, field] : type_.fields) {
+      if (!metadata && metadataField(type_.name, name)) continue;
       const std::string col = column(type_.name, name);
       if (field.kind == FieldKind::serial) {
         const auto serial = row.v.find(name);
@@ -313,20 +334,20 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
       if (reg == row.lattice.f.end()) { add(col, fallback(type_.name, name)); continue; }
       bindValue(params, reg->second.value);
       const std::string p = "$" + std::to_string(++index);
-      add(col, instant(type_.name, name) ? "to_timestamp(" + p + "::numeric/1000)" : p + (name == "plan" ? "::jsonb" : ""));
+      add(col, instant(type_.name, name) ? "to_timestamp(" + p + "::numeric/1000)" : p + (name == "plan" || name == "snapshot" ? "::jsonb" : ""));
     }
     if (type_.name == "routine" || type_.name == "exercise" || type_.name == "proposal" || type_.name == "note") add("created_at", "to_timestamp(" + std::to_string(row.rc) + "::numeric/1000)");
     if (type_.name == "exerciseName" || type_.name == "weighin" || type_.name == "prefs") add("updated_at", "to_timestamp(" + std::to_string(row.ru) + "::numeric/1000)");
-    if (type_.name == "note") {
-      add("position", "0");
+    if (type_.name == "note") add("position", "0");
+    if (!metadata && type_.name == "note") {
       const bool moved = !write.before || !same(value(&*write.before, "title"), value(&row, "title")) || !same(value(&*write.before, "body"), value(&row, "body"));
       add("updated_at", moved ? "to_timestamp(" + std::to_string(row.ru) + "::numeric/1000)" : "(select updated_at from gym_notes where id=" + sql.quote(row.id.column()) + ")");
     }
-    if (type_.name == "routine") {
+    if (!metadata && type_.name == "routine") {
       const std::string count = std::to_string(value(&row, "entries").size());
       if (!write.before) add("created_entries", count);
     }
-    if (type_.name == "proposal") {
+    if (!metadata && type_.name == "proposal") {
       const std::string routine = value(&row, "routineId").asString();
       if (!write.before) {
         add("base_revision", "coalesce((select revision from gym_routines where id=" + sql.quote(routine) + "),1)");
@@ -358,9 +379,9 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
                pqxx::params{row.id.column(), scope.account().str(), session, gymSetRequestHash(request, session)});
     }
     if (type_.name == "routine") {
-      setRevision(txn, write);
+      if (!metadata) setRevision(txn, write);
       writeEntries(txn, row.id.column(), value(&row, "entries"));
-      if (!write.before && value(&row, "createdDoor") == "ask") {
+      if (!metadata && !write.before && value(&row, "createdDoor") == "ask") {
         Json::Value snapshot(Json::objectValue);
         snapshot["id"] = row.id.json(); snapshot["name"] = value(&row, "name"); snapshot["position"] = value(&row, "position").isNull() ? Json::Value(0) : value(&row, "position");
         snapshot["entries"] = value(&row, "entries"); snapshot["revision"] = 1;
@@ -376,12 +397,13 @@ void PgGymType::apply(SyncTxn& txn, const ScopeKey& scope, const std::vector<Row
 }
 
 std::vector<Row> PgGymType::feed(SyncTxn& txn, const ScopeKey& scope, const FeedQuery& query) {
+  if (type_.name == "routineCreation" && !metadataSchema(txn)) return {};
   pqxx::params params{scope.account().str(), static_cast<std::int64_t>(query.afterSeq), query.afterKey};
   const std::string key = id_.empty() ? "'prefs'::text" : id_ + "::text";
   std::string where = " where " + owner_ + "=$1::uuid and seq is not null and (seq>$2 or (seq=$2 and " + idOrder(key, false) + ">$3))";
   if (query.throughSeq) { params.append(static_cast<std::int64_t>(*query.throughSeq)); where += " and seq<=$4"; }
   std::vector<Row> rows;
-  const auto result = sqlOf(txn).exec("select " + selectColumns(type_, id_) + " from " + table_ + where + " order by seq," + idOrder(key, false), params);
+  const auto result = sqlOf(txn).exec("select " + selectColumns(type_, id_, metadataSchema(txn)) + " from " + table_ + where + " order by seq," + idOrder(key, false), params);
   for (const auto& resultRow : result) {
     Row row = readRow(txn, scope, type_, resultRow);
     if (query.visibleOnly && !visible(type_, row)) continue;
@@ -440,7 +462,7 @@ Seq PgGymType::greatestSeq(SyncTxn& txn, const ScopeKey& scope) {
 
 std::vector<Row> PgGymType::adoptedRows(SyncTxn& txn, const ScopeKey& scope) {
   std::vector<Row> rows;
-  for (const auto& result : sqlOf(txn).exec("select " + selectColumns(type_, id_) + " from " + table_ + " where " + owner_ + "=$1::uuid and not " + adoptionPredicate(), pqxx::params{scope.account().str()}))
+  for (const auto& result : sqlOf(txn).exec("select " + selectColumns(type_, id_, metadataSchema(txn)) + " from " + table_ + " where " + owner_ + "=$1::uuid and not " + adoptionPredicate(), pqxx::params{scope.account().str()}))
     rows.push_back(readRow(txn, scope, type_, result));
   return rows;
 }
@@ -557,12 +579,12 @@ Json::Value PgGymState::load(SyncTxn& txn, const ScopeKey& scope) {
   Json::Value books(Json::objectValue);
   auto& sql = sqlOf(txn);
   const pqxx::params owner{scope.account().str()};
+  books["metadataVersion"] = metadataSchema(txn) ? 5 : 4;
   for (const auto& row : sql.exec("select id,name from gym_exercises where created_by is null")) books["seeds"][row[0].template as<std::string>()]["name"] = row[1].template as<std::string>();
-  for (const auto& row : sql.exec("select id,revision,name from gym_routines where user_id=$1::uuid and seq is not null", owner)) {
+  if (books["metadataVersion"] == 4) for (const auto& row : sql.exec("select id,revision from gym_routines where user_id=$1::uuid and seq is not null", owner)) {
     books["revisions"][row[0].template as<std::string>()] = row[1].template as<int>();
-    books["routineNames"][row[0].template as<std::string>()] = row[2].template as<std::string>();
   }
-  for (const auto& row : sql.exec("select id,base_revision,base_name from gym_proposals where user_id=$1::uuid and seq is not null", owner)) {
+  if (books["metadataVersion"] == 4) for (const auto& row : sql.exec("select id,base_revision,base_name from gym_proposals where user_id=$1::uuid and seq is not null", owner)) {
     const std::string id = row[0].template as<std::string>();
     books["bases"][id]["revision"] = row[1].template as<int>();
     books["bases"][id]["name"] = row[2].template as<std::string>();
@@ -610,6 +632,7 @@ void PgGym::bindTo(SyncCatalog& catalog, bool checkAdoption) {
 
 void PgGym::requireReady(SyncTxn& txn, const ScopeKey& scope) {
   try {
+    PgGymMetadataUpgrade::requireComplete(txn);
     const auto rows = sqlOf(txn).exec(
         "select exists(select 1 from gym_sync_adoptions where user_id=$1::uuid) as marker,"
         " exists(select 1 from sync_scopes where key=$2 and state='alive') as scope",
@@ -621,6 +644,10 @@ void PgGym::requireReady(SyncTxn& txn, const ScopeKey& scope) {
     throw ProductScopeUnavailable("gym adoption schema is unavailable");
   } catch (const pqxx::undefined_table&) {
     throw ProductScopeUnavailable("gym adoption schema is unavailable");
+  } catch (const ProductScopeUnavailable&) {
+    throw;
+  } catch (const MetadataUpgradeError&) {
+    throw ProductScopeUnavailable("gym metadata upgrade is incomplete");
   }
 }
 

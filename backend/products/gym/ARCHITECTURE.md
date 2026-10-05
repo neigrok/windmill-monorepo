@@ -58,7 +58,7 @@ once. `routes.cpp` names every path in one column; `TrainingApi.h` holds the sta
 
 The engine binding lives in `sync/`: pure rules and commands in `domain/`, binding in `application/`,
 receipts and projection reads through `ports/GymState`, and adopted-table stores in
-`adapters/postgres/PgGym`. `windmill_gym_sync` embeds gym registry v3 from `composition.json` and is
+`adapters/postgres/PgGym`. `windmill_gym_sync` embeds gym registry v5 with minimum version 4 from `composition.json` and is
 linked by gym. Its adoption schema, `db/gym_sync.sql`, is applied separately during migration and in
 isolated sync tests; the ordinary deploy applies only `schema.sql`. `GYM_ENGINE_WRITES` defaults
 off; when enabled, the services use `ports/GymWriteDoor`, implemented by the Postgres `GymDoor`,
@@ -931,15 +931,21 @@ codes; a race between a door's read and its admission reaches the engine's own r
 | `PUT /preferences` | the whole document, omitted fields at their defaults; today's codes | `ok` → 200 |
 
 Every read keeps its bytes (engine Appendix C.8, gate 1):
-- a routine's `position` is its register (0 while unset), its `revision` the projection, its entries
-  numbered `1..n` in array order, and its `created` history row made of `rc`, `created_entries` and
+- a routine's `position` is its register (0 while unset), its `revision` the server-authored register, its entries
+  numbered `1..n` in array order, and its `created` history row made of `rc`, `createdEntries` and
   `createdDoor`;
-- a note's `position` is its rank by `(ord, id)`, and `updatedAt` the projection;
-- a proposal's `createdAt` is `rc`, `changeCount`, `baseRevision` and `baseName` are projections,
+- a note's `position` is its rank by `(ord, id)`, and `updatedAt` the server-authored content-time register;
+- a proposal's `createdAt` is `rc`, `changeCount`, `baseRevision` and `baseName` are server-authored frozen registers,
   `source.thread` is `threadId`, and `supersededBy` stays off the wire;
 - a session's `routineName` is `displayName`, and `closedItself` reads the auto-close signature where
   `closedBy` is unset;
 - a movement's `stepKg` is its register, and its aliases are newest first, omitted when empty.
+
+`routineCreation.snapshot` binds the immutable JSON in `gym_routine_creations`; historical and new
+receipts share the exact REST routine document captured at create. The keyed record has no life or
+routine reference and survives routine and conversation deletion. `db/gym_sync_v5.sql` and the
+metadata upgrade copy current stored facts into stamped fields with fresh seqs; the v4 compatibility
+path retains its SQL metadata writes until that separate migration completes.
 
 A Coach conversation's delete first admits `threadId = null` on the proposals naming it, then deletes
 the conversation.

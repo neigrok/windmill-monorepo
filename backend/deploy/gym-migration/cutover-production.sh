@@ -14,6 +14,8 @@ fi
 
 main() {
   cd "${1:-$HOME/windmill}"
+  operation=${2:-adopt}
+  case "$operation" in adopt|--upgrade-v5) ;; *) printf 'FAIL unknown cutover operation\n' >&2; return 1 ;; esac
   umask 077
   mkdir -p migration-evidence
   chmod 700 migration-evidence
@@ -28,6 +30,14 @@ main() {
   previous=
   recovering=0
   [ ! -f "$active" ] || previous=$(cat "$active")
+  if [ "$operation" = --upgrade-v5 ] && [ -n "$previous" ] && [ "$(cat "$previous/phase")" = complete ]; then
+    previous=
+  fi
+  if [ -n "$previous" ] && [ -f "$previous/operation" ] && [ "$(cat "$previous/phase")" != rolled-back ] && [ "$(cat "$previous/operation")" != "$operation" ]; then
+    printf 'FAIL interrupted cutover must resume with the same operation\n' >&2
+    return 1
+  fi
+  printf '%s\n' "$operation" > "$evidence/operation"
   phase=preconditions
   started=$(date +%s)
   stopped_at=0
@@ -72,7 +82,7 @@ main() {
   }
 
   no_fixtures() {
-    [ "$(db_sql <<< "SELECT (SELECT count(*) FROM pg_trigger WHERE tgname LIKE 'wm_journal_rehearsal_pause_%') + (SELECT count(*) FROM pg_proc WHERE proname LIKE 'wm_journal_rehearsal_pause_%') + (SELECT count(*) FROM pg_class WHERE relname LIKE 'wm_journal_rehearsal_pause_%');")" = 0 ]
+    [ "$(db_sql <<< "SELECT (SELECT count(*) FROM pg_trigger WHERE tgname ~ '^wm_(gym|journal)_rehearsal_pause_') + (SELECT count(*) FROM pg_proc WHERE proname ~ '^wm_(gym|journal)_rehearsal_pause_') + (SELECT count(*) FROM pg_class WHERE relname ~ '^wm_(gym|journal)_rehearsal_pause_');")" = 0 ]
   }
 
   record_phase() {
@@ -154,7 +164,7 @@ SQL
       < "$backup" || return 1
     rows > "$evidence/restored.rows" || return 1
     cmp "$evidence/rollback.rows" "$evidence/restored.rows" || return 1
-    [ "$(adopted)" = f ]
+    [ "$(adopted)" = "$(cat "$evidence/rollback.adopted")" ]
   }
 
   start_old() {
@@ -211,7 +221,7 @@ PY
     outage=0
     [ "$stopped_at" -eq 0 ] || outage=$(($(date +%s) - stopped_at))
     if [ "$status" -eq 0 ]; then
-      printf 'PASS gym and journal cutover; forward-only; automatic restore disabled\n' >&3
+      printf 'PASS gym and journal cutover (%s); forward-only; automatic restore disabled\n' "$operation" >&3
       cat "$evidence/counts.json" >&3
     elif [ "$forward_only" -eq 1 ]; then
       printf 'FAIL %s; forward-only; automatic restore disabled; repair the adopted database forward\n' "$phase" >&3
@@ -309,6 +319,10 @@ PY
   project=$(cat "$evidence/project")
   while IFS= read -r service; do services+=("$service"); done < "$evidence/services"
   [ "$(docker image inspect --format '{{ index .Config.Labels "io.windmill.schema-adoption-compatibility" }}' "$image")" = gym-journal-v1 ]
+  if [ "$operation" = --upgrade-v5 ]; then
+    [ "$(docker image inspect --format '{{ index .Config.Labels "io.windmill.gym-sync-metadata-version" }}' "$image")" = 5 ]
+    docker run --rm --network none "$image" bash /app/deploy/gym-migration/schema-compatibility.sh check-v5-image
+  fi
   docker run --rm --network none "$image" bash /app/deploy/gym-migration/schema-compatibility.sh check-image
   [ "$(docker image inspect --format '{{.Id}}' "$(cat "$evidence/compose-image")")" = "$image" ]
 
@@ -324,9 +338,12 @@ PY
     esac
   fi
   adoption_state=$(adopted) || { [ "$recovering" -eq 1 ] && adoption_state=f; }
-  if [ "$recovering" -eq 0 ] && [ "$adoption_state" != f ]; then
+  if [ "$recovering" -eq 0 ] && [ "$operation" = adopt ] && [ "$adoption_state" != f ]; then
     phase='already or partially adopted; rerun refused; keep services stopped, inspect the backup and private evidence; manually recover before traffic or repair forward after traffic'
     return 1
+  fi
+  if [ "$recovering" -eq 0 ] && [ "$operation" = --upgrade-v5 ]; then
+    [ "$adoption_state" = t ]
   fi
   if [ "$recovering" -eq 0 ]; then
     [ "$(cat "$evidence/environment-matches")" = True ]
@@ -386,6 +403,7 @@ PY
   record_phase backup
   backup="$evidence/rollback.dump"
   rows > "$evidence/rollback.rows"
+  adopted > "$evidence/rollback.adopted"
   db_tools pg_dump --format=custom --create > "$backup.partial"
   test -s "$backup.partial"
   db_tools pg_restore --list < "$backup.partial" > /dev/null
@@ -398,10 +416,12 @@ PY
   record_phase migration
   mutated=1
   stopped
+  migration_mode=--apply-adoption
+  [ "$operation" != --upgrade-v5 ] || migration_mode=--upgrade-v5
   docker run --rm --restart=no --name "$runner" --network "$network" \
     --user "$(id -u):$(id -g)" --env-file "$evidence/runtime.env" \
     --mount "type=bind,src=$evidence,dst=/evidence" "$image" \
-    python3 /app/deploy/gym-migration/rehearse.py --bin-dir /usr/local/bin --output /evidence/run --apply-adoption
+    python3 /app/deploy/gym-migration/rehearse.py --bin-dir /usr/local/bin --output /evidence/run "$migration_mode"
   python3 - "$evidence/run/result.json" <<'PY' > "$evidence/counts.json"
 import json
 import sys

@@ -105,6 +105,8 @@
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
+#include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
+#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "platform/infra/SyncProducts.h"
 #include "products/gym/routes.h"
 
@@ -421,6 +423,13 @@ static int runServer(wm::ObservabilityLifetime& lifetime, std::shared_ptr<wm::Se
   installLogTee(sentry, logLevelFromEnv(std::getenv("SENTRY_LOG_LEVEL")));
   installWriteReporter(sentry);
 
+  {
+    sync::PgSyncStore startupStore(pool, sync::Limits{}.lockTimeoutMs);
+    const auto txn = startupStore.begin(sync::TxnMode::snapshot);
+    gym::engine::PgGymMetadataUpgrade::requireComplete(*txn);
+    if (sync::sqlOf(*txn).exec("select to_regclass('gym_sync_metadata_upgrades') is not null")[0][0].as<bool>())
+      gym::engine::PgGymBackfill(pool).auditCurrent();
+  }
   auto productsCatalog = sync::productCatalog();
 #ifdef WM_SYNC_PROBE
   auto syncCatalog = std::make_shared<sync::SyncCatalog>(probe::registry());

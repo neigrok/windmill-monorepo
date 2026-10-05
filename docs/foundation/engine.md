@@ -14,10 +14,10 @@ are moving onto it. `windmill_server` mounts the gym + journal HTTP/live composi
 doors. Their configuration defaults are off; production's cutover configuration enables them.
 `windmill_server_probe` carries the test-only contract.
 
-**R118 contract:** The composed registry has version 5 and minimum version 5. A.2 specifies gym's
+**R118 contract:** The composed registry has version 5 and minimum version 4. A.2 specifies gym's
 metadata closure; C.10 specifies the forward-only upgrade of already adopted production rows.
-The C++ bindings, upgrade/audit and regenerated native clients are implementation work; this contract
-alone does not enable production v5. `composition.json` still composes gym and journal, whose
+The C++ server binds these fields and ships the upgrade/audit tool. Production v5 requires the
+stopped-writer migration and audit gates below; existing v4 journal clients remain supported. `composition.json` still composes gym and journal, whose
 versions rise together (§2.4); journal's field shape is unchanged. Every other product starts
 from empty stores.
 
@@ -345,9 +345,11 @@ engine body names no product. Each product ships a registry of its own
 command they declare, so it never admits a type it cannot store, and its clients compose exactly
 those registries: server and client speak one registry, named by its version. A product joins the
 composition, and a type its product's registry, in the change that binds it on the server, and the
-composition's `version` and `minVersion` rise with it (§9.1). A registry that drops a product raises
-`minVersion` above every version that declares it, so a client that still carries the product is
-answered `426` (§9.1).
+composition's `version` rises with it (§9.1). `minVersion` MUST rise above every incompatible
+version when the envelope shape changes, a declared product or type is dropped, or a rule enforced
+by clients changes. Additive products, types and fields do not raise `minVersion`: clients retain
+and hash unknown fields and types harmlessly (§7.6). R118 is additive, so v5 accepts v4 clients;
+the installed journal client reads no gym records and is never refused `426` for this upgrade.
 
 - **Types:** `scope` (`product:<name>`, `tree` or `overlay`), `identity`, `idSpace`, `idPattern`,
   `key` (a keyed type's natural key: an id of another type, or a tuple of such ids, whose types, and
@@ -2086,8 +2088,8 @@ and pull in the header `Sync-Schema`, and the live socket's upgrade request, to 
 `WebSocket` cannot add headers, in the query parameter `schema` (`/v1/sync/live?schema=<version>`).
 The server reads each request's version from that carrier only, as its HTTP framework presents it. A
 missing value, or one that is not a decimal integer, → `400 malformed`; a version below the server's
-`minSchema` → `426 upgrade-required`. A change to the shape of any request or response raises the
-registry `version`, and `minVersion` with it, so a client that speaks the older shape is answered
+`minSchema` → `426 upgrade-required`. A change to any request or response envelope shape raises
+registry `version`, and `minVersion` with it (§2.4), so a client that speaks the older shape is answered
 `426` at the version check, never `400` at the shape check. A browser cannot read the status of a
 refused upgrade, so a web client learns a `426` from its hello, push or pull (§7.5). Keyed ids
 declared as arrays (`edge: [from, to]`) have their `jcs` as identity.
@@ -2567,7 +2569,7 @@ the binding refuses every public delta of that type, including an empty delta. I
 |---|---|---|
 | Routine concurrency revision | `routine.revision`, integer 1–2 147 483 647, server `lww` | Create sets 1. One admitted net change of `name` and/or `entries` adds 1 exactly once, including `gym.applyProposal` revise. Position-only writes, equal-value restamps, losing writes, refused intents and receipt replays add nothing. At the integer ceiling a document change is `invalid`; never wrap. Project every joined routine's final revision before freezing any same-intent proposal. |
 | Original line count | `routine.createdEntries`, integer 0–2 147 483 647, server `const` | Every successful routine create, through any door, sets the joined creation `entries.length`. Edits, apply, reorder and retries leave it alone. Historical SQL NULL leaves the register absent, with no default; REST omits `history.created.movements` in that case. |
-| Original Coach routine | `routineCreation.snapshot`, JSON, server `const` | An ask routine create writes this independent keyed record in the same intent and seq. Use the exact creation response document: id, name, position (default 0), revision 1 and entries numbered from 1. No command sets it; `gym.applyProposal` edits/deletes an existing routine. Manual/MCP creates have no snapshot. Edits and routine/conversation death preserve it; account purge removes it. It is the engine view of the existing `gym_routine_creations.routine`, not a duplicate receipt table. |
+| Original Coach routine | `routineCreation.snapshot`, JSON, server `const` | An ask routine create writes this independent keyed record in the same intent and seq. Historical and new snapshots share one shape: the exact REST `toJson(Routine)` response at creation, with id, name, position (default 0), revision 1 and entries numbered from 1. No command sets it; `gym.applyProposal` edits/deletes an existing routine. Manual/MCP creates have no snapshot. Edits and routine/conversation death preserve it; account purge removes it. It is the engine view of the existing `gym_routine_creations.routine`, not a duplicate receipt table. |
 | Frozen base revision | `proposal.baseRevision`, integer 1–2 147 483 647, server `const` | Every proposal create freezes the joined routine's final revision after all same-intent routine changes. `gym.applyProposal`, `gym.dismissProposal`, supersession and receipt replay leave it alone. |
 | Frozen base name | `proposal.baseName`, string ≤240 UTF-8 bytes, server `const` | The same create freezes the joined routine's name. Empty historical values remain readable; no default or substitution of today's name. Settlement never writes it. |
 | Apply count | `proposal.changeCount`, integer 0–2 147 483 647, server `const` | The same create freezes the store's count against that joined base. Count every non-`kept` diff row, add one when `baseName ≠ proposedName`, and add one for a reorder: visit kept/retargeted rows in proposed order, matching each to the first unmatched base entry of the same exercise; any matched base index below the greatest visited index means one reorder. Added/removed rows do not participate in that order check. Settlement and replay preserve the count. |
@@ -3100,21 +3102,31 @@ change is an admission (C.1, C.7), except C.10's independently audited metadata 
 
 **C.10 R118: metadata upgrade of production engine rows.** This is a supplement of the completed
 adoption, not a restore, re-adoption or replay of product writes. The original
-`gym_sync_adoptions` source and M remain immutable. After any upgrade account commits, recovery
+`gym_sync_adoptions` source and M remain immutable. Direct tool recovery after an account commit
 is forward-only: keep writers stopped, repair the candidate/tool and resume from the retained
-upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/receipt state.
+upgrade manifest. The production stopped-window runner first verifies its immediately-pre-upgrade
+backup and restores that backup on any failure before the persisted startup-attempt boundary. Never restore a
+pre-2026-10-04-cutover database or clear adoption/spent/receipt state.
 
 1. **Preparation and freeze.** Rehearse the candidate v5 image and the exact upgrade/audit tool
-   on a marked disposable production restore; retain the restored input and results. Ship the
-   composed v5 schemas to every engine client before enabling v5 service; the only current one is
-   iOS journal, whose content shape is unchanged but whose schema carrier changes. Serialize with
-   deploy/cutover jobs, verify an on-host backup, and stop every compose database writer under the
-   shared gym/journal freeze, including sync pushes, lazy closes and workers. Installed REST
-   clients keep their queued writes on 503. Do not let a v4 image resume writes once supplement
+   on a marked disposable production restore; retain the restored input and results. The
+   candidate must serve the installed v4 journal client before and after upgrade, with v5 and
+   minimum version 4. Serialize with deploy/cutover jobs, verify an on-host backup, and stop every
+   compose database writer under the shared gym/journal freeze, including sync pushes, lazy closes
+   and workers. Installed REST clients keep their queued writes on 503. Do not let a v4 image resume writes once supplement
    rows exist. Ordinary deployment and server startup MUST check both the adopted base and the
-   v5 metadata completion/audit gates. Reads captured for comparison run with no lazy settlement.
+   v5 metadata completion/audit gates. The image keeps the base label
+   `io.windmill.schema-adoption-compatibility=gym-journal-v1` and declares
+   `io.windmill.gym-sync-metadata-version=5`; `schema.sql` declares
+   `-- windmill-gym-sync-metadata-version: 5`. Either upgrade marker table's existence, including
+   DDL-only preparation, requires a v5-capable image and `--audit-current` before ordinary deployment;
+   ordinary deployment does not install v5 DDL. A v5-capable image runs on the v4-adopted schema
+   before the new columns exist and on the completed v5 schema. `--audit-current` checks metadata
+   completion and the current feed after live writes; `--audit-v5` independently compares frozen
+   inputs only during the stopped-writer migration gate. Reads captured for comparison run
+   with no lazy settlement.
 2. **Frozen inputs.** Read the server clock once as `M118` and persist it with a run id, candidate
-   image/schema version, target epoch and immutable manifest. Capture the current adopted feed
+   image/schema version and immutable manifest. Capture the current adopted feed
    rows, envelopes, scope high seq/digest/counters, spent ids, receipts, projections and the source
    columns below for every gym-owning account, including scopes born by admission since cutover,
    a spent-only account and an account
@@ -3134,8 +3146,11 @@ upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/r
    migration time for a note's content time. Historical out-of-domain values remain as C.2
    requires. A source roster mismatch, missing required value, unadopted scope or unexpected
    pre-existing metadata without a matching committed marker is a failed gate, not a repair by
-   invention. Existing snapshots account for spent routine ids through C.3; an unadopted snapshot
-   account fails the completeness audit.
+   invention. Here **adopted** means that `acct:<A>/gym` exists in `sync_scopes`, not that a
+   `gym_sync_adoptions` row exists: scopes born by admission since 2026-10-04 have none.
+   **Unexpected pre-existing metadata** means a non-null new `*_stamp` column; the legacy source
+   value columns already exist and are not evidence of an upgrade. Existing snapshots account for
+   spent routine ids through C.3; an unadopted snapshot account fails the completeness audit.
 3. **Schema and per-account transaction.** Idempotent DDL adds `revision_stamp` and
    `created_entries_stamp` to routines, `base_revision_stamp`, `base_name_stamp`,
    `change_count_stamp` to proposals, and `updated_at_stamp` to notes. `changeCount` maps to the
@@ -3143,9 +3158,14 @@ upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/r
    with its own existing `changes_stamp`. Bind `routineCreation` directly to
    `gym_routine_creations`, adding `seq`, `rc`, `ru`, `snapshot_stamp` and index `(user_id, seq)`;
    its typed value stays in `routine`, with no born/life or routine foreign key. Add an immutable
-   `(user_id, version=5)` upgrade marker retaining `M118`, frozen inputs and the committed account
-   result. This marker is distinct from the base adoption marker. DDL must neither rewrite product
-   values nor fire triggers which do so.
+   run marker in `gym_sync_metadata_upgrade_runs` retaining `M118` and the frozen manifest, and an
+   immutable `(user_id, version=5)` account marker in `gym_sync_metadata_upgrades` retaining the
+   committed result. These markers are distinct from the base adoption marker. DDL must neither
+   rewrite product values nor fire triggers which do so.
+
+   Hard account deletion cascades the per-account frozen sources and results. The immutable global
+   run retains its original UUID roster as administrative migration evidence; resume and independent
+   audits compare only its surviving accounts.
 
    Under the stopped-writer scope lock, set only the new present registers to `M118:0:srv`;
    absent original counts have no stamp. Preserve every old register, born/life, `rc`, `ru`,
@@ -3165,7 +3185,7 @@ upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/r
    digest. A recomputed valid digest or no-op rerun is insufficient. Deliberately corrupt each
    new value/stamp, a retained old stamp/time, a snapshot, seq and receipt, recompute the digest,
    and require audit failure. A matching second run changes no row in any table. Crash before
-   and after each account commit and the epoch/startup boundary; rerun must leave either the
+   and after each account commit and the startup boundary; rerun must leave either the
    original account or its complete supplement, without double increments or mixed markers.
    Test stalled tool output, timeout and process exit in the deployment runner; failure keeps
    writers stopped and preserves diagnostics/manifests without logging content.
@@ -3174,32 +3194,39 @@ upgrade manifest. Never restore a pre-cutover database or clear adoption/spent/r
    remove the old ad hoc revision/base/count/time writers so registration cannot double-increment
    a revision or duplicate SQL columns. V5 engine projections equal those REST reads, including
    all 36 web parity comparisons, offline reload, no-op/retry, supersession and reorder. After all
-   account audits pass, rotate `sync_meta.epoch` exactly once to the retained target epoch before
-   starting the v5 service: every existing cursor must boot the new digest/shape (§6.7). Keep
-   pending intents and results; do not clear a client's outbox. The journal scope's content and
-   envelope are unchanged. Rehearse ready/sent/acked `journal.savePage` work and a pending claim
-   through epoch change and relaunch: original content stamps, claim ids, local-only device work
-   and retained edits survive; replay never appends claim text twice. Minimum version 5 refuses
-   v4 clients with 426. Only a successful audited v5 startup releases the freeze; interrupted startup resumes forward with the same target epoch.
+   account audits pass, start the v5 service without rotating `sync_meta.epoch`. Every upgraded
+   row has a fresh seq above the frozen high seq, so an existing live cursor receives it through
+   ordinary pulls; a partial boot finishes at its frozen `asOf` and then receives the supplement
+   live. Seq is part of the hashed row (§6.12), so the replacement rows and their new digest
+   converge together without an epoch reset. Keep pending intents and results; do not clear a
+   client's outbox. The journal scope's content and envelope are unchanged. Rehearse an installed
+   v4 journal client with ready/sent/acked `journal.savePage` work and pending claims while other
+   doors write gym records, across server upgrade and client relaunch: original content stamps,
+   claim ids, local-only device work and retained edits survive; replay never appends claim text
+   twice. Minimum version 4 accepts that client. Only a successful audited v5 startup releases the
+   freeze. A direct tool interruption resumes with the same manifest and epoch; production runner
+   failure before the persisted startup-attempt boundary restores the verified stopped-window
+   backup. Once any service startup is attempted, recovery is forward-only because a started writer
+   may already have admitted writes.
 
 The JS reference's `gym/metadata.json` pins the per-account supplement and its matching rerun;
 independent audit tests corrupt outputs with recomputed digests and reject malformed sources.
-It does not execute PostgreSQL DDL, the shared freeze, process crashes or epoch publication; those
-are mandatory C++/deployment implementation gates. The new corpus file needs a named C++ runner
-in the tested image, not a skipped migration gate.
+It does not execute PostgreSQL DDL, the shared freeze, process crashes or startup; those
+are mandatory C++/deployment implementation gates. The C++ runner for `gym/metadata.json`, the
+Postgres upgrade and independent audit, and the shared deployment runner implement those gates.
 
-**Implementation handoff and risks (outside the spec/contract territory).**
-- **C++ server and backfill:** bind the six scalar fields and the tenth TypeStore, map existing
-  columns explicitly, replace projection side writes with checked server deltas, add C.10 DDL,
-  immutable source/markers, audit and restartable CLI/runner gates. Wire binaries/schema into
-  CMake, Docker and workflows. Update registry/composition/corpus tests and surface documentation.
-  Risks: double revision increments, integer overflow, timestamp conversion, stamp/feed divergence,
-  stale frozen sources and snapshot loss on death; privacy-safe static-operation failure reporting
-  and structured counts/outcomes are required.
+**Server delivery and remaining client handoff.**
+- **C++ server and backfill:** the six scalar fields and tenth TypeStore bind the existing columns;
+  checked server deltas maintain revision/base/count/time metadata and independent creation
+  snapshots. `db/gym_sync_v5.sql`, `windmill_gym_backfill --upgrade-v5` and `--audit-v5` retain an
+  immutable run and per-account sources/results, resume interrupted accounts and audit frozen
+  values independently. CMake, Docker and the existing cutover/rehearsal workflows carry the
+  registry, binaries and schema. Startup and ordinary deployment require completion and current
+  digests. Tool failures report static operations and structured counts without product content.
 - **Swift:** regenerate both composed schemas with `SyncSchemaGen`, update version pins and gym
   domain projections/creation receipts, replay corpus, retain server fields through restart and
-  preserve pending journal writes across the epoch boot. Risk: the deployed journal client receives
-  426 if its coordinated v5 release is absent.
+  preserve pending journal writes through ordinary pulls and relaunch. The installed v4 journal
+  client remains accepted; consuming gym metadata requires the composed v5 schema.
 - **Kotlin:** consume the composed v5 schema and authoritative fields, add gym projections and
   independent creation receipt reads, pass client corpus/restart/refusal gates. Risks: presenting
   optimistic metadata as admitted fact and clearing existing local writes during migration.
@@ -3208,15 +3235,12 @@ in the tested image, not a skipped migration gate.
   projections. Risks: counting current entries for an unknown original count, recounting changes
   without the frozen order, and using `ru` for note content time.
 
-Whole-repository consumers outside this pass's territory: `backend/products/gym/sync/` and its
-domain/Postgres tests; `backend/test/platform/domain/sync/{RegistryTest,CorpusTest}.cpp` (v4 pins,
-type list and corpus inventory); `apps/ios/Sync/Sources/SyncSchema/` and its schema generator/tests;
+Remaining whole-repository consumers outside this delivery's territory:
+`apps/ios/Sync/Sources/SyncSchema/` and its schema generator/tests;
 `apps/ios/Sync/Sources/{SyncTesting,SyncModelServer}/` and conformance tests (corpus roles and gym
-server double); `apps/ios/Domain/` gym fixtures/projections; Android gym and the JS/web engine
-branches; `packages/api-contract/gym/domain/` consumers of the gym registry; and backend/iOS
-READMEs, `backend/CLAUDE.md`, `backend/products/gym/ARCHITECTURE.md`,
-`backend/products/journal/sync/README.md` and `web-b2`'s gym README (version/type/status claims).
-These are implementation-wave updates; they are not silently satisfied by the contract change.
+server double, including its old `product.revisions`/`bases` bookkeeping). These Swift updates are
+not silently satisfied by the server and contract delivery. Other clients consume unchanged REST
+responses, and the installed v4 journal client remains compatible.
 
 ---
 

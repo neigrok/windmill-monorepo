@@ -184,7 +184,7 @@ Delta newSet(const std::string& session, const Json::Value& set, bool correction
 std::string supersededReason(const GymFacts& facts, const Row& proposal) {
   if (!value(&proposal, "supersededBy").isNull()) return "replaced";
   const std::string routine = value(&proposal, "routineId").asString();
-  if (facts.books["revisions"][routine] != facts.books["bases"][proposal.id.column()]["revision"]) return "routine-changed";
+  if (facts.books["metadataVersion"] == 4 ? facts.books["revisions"][routine] != facts.books["bases"][proposal.id.column()]["revision"] : value(facts.row("routine", routine), "revision") != value(&proposal, "baseRevision")) return "routine-changed";
   return "superseded";
 }
 
@@ -216,6 +216,15 @@ Json::Value proposalChanges(const Json::Value& base, const Json::Value& proposed
 }
 
 std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& changes, const Intent& intent, bool server, Ms now) {
+  const bool metadata = facts.books["metadataVersion"] != 4;
+  const std::map<std::string, std::vector<std::string>> authored{
+      {"routine", {"revision", "createdEntries"}}, {"proposal", {"baseRevision", "baseName", "changeCount"}}, {"note", {"updatedAt"}}};
+  for (const Delta& delta : intent.d) {
+    if (delta.t == "routineCreation") throw Refusal(code::invalid);
+    const auto found = authored.find(delta.t);
+    if (found != authored.end()) for (const std::string& field : found->second)
+      if (delta.lattice.f.contains(field)) throw Refusal(code::invalid);
+  }
   using Key = std::pair<std::string, std::string>;
   std::map<Key, Row> joined;
   std::set<std::string> futureProposals;
@@ -254,11 +263,23 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
   };
   std::vector<Delta> appended;
   auto append = [&](Delta delta) {
-    Row& row = joined.at({delta.t, delta.id.column()});
+    auto [position, inserted] = joined.try_emplace(Key{delta.t, delta.id.column()}, delta.t, delta.id);
+    Row& row = position->second;
     if (delta.lattice.life) row.lattice.life = delta.lattice.life;
     for (const auto& [field, reg] : delta.lattice.f) row.lattice.f.insert_or_assign(field, reg);
     appended.push_back(std::move(delta));
   };
+  if (metadata) for (const Change& change : changes) {
+    const Row& after = change.after;
+    if (after.t != "routine" || !after.alive()) continue;
+    const bool fresh = created(change);
+    if (!fresh && !changed(change, "name") && !changed(change, "entries")) continue;
+    const Json::Value prior = value(change.stored ? &*change.stored : nullptr, "revision");
+    if (!fresh && (prior.isNull() || prior.asInt64() >= 2'147'483'647)) throw Refusal(code::invalid);
+    Json::Value values = object({{"revision", fresh ? Json::Value(1) : Json::Value(prior.asInt64() + 1)}});
+    if (fresh) values["createdEntries"] = value(&after, "entries").size();
+    append(fields(after, values));
+  }
   for (const Change& change : changes) {
     const Row& after = change.after;
     if (after.t == "set") {
@@ -322,6 +343,16 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
         }
         for (const Json::Value& entry : entries) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
       }
+      if (metadata && created(change) && value(&after, "createdDoor") == "ask") {
+        if (current("routineCreation", after.id.json())) throw Refusal(code::invalid);
+        Json::Value snapshot = object({{"id", after.id.json()}, {"name", value(&after, "name")},
+            {"position", value(&after, "position").isNull() ? Json::Value(0) : value(&after, "position")},
+            {"revision", 1}, {"entries", value(&after, "entries")}});
+        int position = 0;
+        for (auto& entry : snapshot["entries"]) entry["position"] = ++position;
+        Row receipt("routineCreation", after.id);
+        append(fields(receipt, object({{"snapshot", snapshot}})));
+      }
       if (!changed(change, "name") && !changed(change, "entries")) continue;
       for (const auto& [key, proposal] : joined) {
         if (proposal.t != "proposal" || !proposal.alive() || value(&proposal, "routineId") != after.id.json() || stateOf(proposal) != "pending") continue;
@@ -352,6 +383,8 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       if (after.alive() && after.id.column() > date) throw Refusal("bad-instant");
       continue;
     }
+    if (metadata && after.t == "note" && (created(change) || changed(change, "title") || changed(change, "body")))
+      append(fields(after, object({{"updatedAt", Json::UInt64(now)}})));
     if (after.t != "proposal" || !created(change)) continue;
     futureProposals.erase(after.id.column());
     if (!server && (value(&after, "door") != "ask" || !value(&after, "connection").asString().empty() || !value(&after, "agent").asString().empty())) throw Refusal(code::invalid);
@@ -378,6 +411,9 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     }
     if (!same(value(&after, "changes"), proposalChanges(value(routine, "entries"), proposed))) throw Refusal(code::invalid);
     for (const Json::Value& entry : proposed) if (!known(entry["exerciseId"])) throw Refusal("unknown-exercise");
+    if (metadata) append(fields(after, object({{"baseRevision", value(routine, "revision")},
+        {"baseName", value(routine, "name")},
+        {"changeCount", proposalChangeCount(value(routine, "entries"), value(&after, "changes"), value(routine, "name"), value(&after, "proposedName"))}})));
     for (const auto& [key, other] : joined) {
       if (other.t != "proposal" || other.id == after.id || futureProposals.contains(other.id.column())) continue;
       if (!other.alive() || stateOf(other) != "pending" || value(&other, "routineId") != routineId || value(&other, "door") != value(&after, "door")) continue;
@@ -510,7 +546,7 @@ GymOutcome runGym(const std::string& name, const Json::Value& args, const Json::
   if (state == "applied" || state == "dismissed") throw Refusal("proposal-settled", object({{"state", state}}));
   if (state == "superseded") throw Refusal("proposal-superseded", object({{"reason", supersededReason(facts, proposal)}}));
   const std::string routineId = value(&proposal, "routineId").asString();
-  if (apply && facts.books["revisions"][routineId] != facts.books["bases"][id]["revision"]) throw Refusal("proposal-superseded", object({{"reason", "routine-changed"}}));
+  if (apply && (facts.books["metadataVersion"] == 4 ? facts.books["revisions"][routineId] != facts.books["bases"][id]["revision"] : value(facts.row("routine", routineId), "revision") != value(&proposal, "baseRevision"))) throw Refusal("proposal-superseded", object({{"reason", "routine-changed"}}));
   Delta settle = fields(proposal, object({{"state", apply ? "applied" : "dismissed"}, {"settledAt", Json::UInt64(now)}}));
   if (!apply) {
     append(outcome, std::move(settle));
@@ -551,17 +587,5 @@ int proposalChangeCount(const Json::Value& base, const Json::Value& changes, con
   return count;
 }
 
-void projectGym(Json::Value& books, const RowWrite& write) {
-  const std::string id = write.id.column();
-  if (write.type->name == "routine") {
-    if (!write.after) { books["revisions"].removeMember(id); return; }
-    if (!write.before) { books["revisions"][id] = 1; return; }
-    if (!same(value(&*write.before, "name"), value(&*write.after, "name")) || !same(value(&*write.before, "entries"), value(&*write.after, "entries"))) books["revisions"][id] = books["revisions"].get(id, 1).asInt() + 1;
-    return;
-  }
-  if (write.type->name != "proposal" || !write.after || write.before) return;
-  const std::string routineId = value(&*write.after, "routineId").asString();
-  books["bases"][id] = object({{"revision", books["revisions"].get(routineId, 1)}, {"name", books["routineNames"][routineId]}});
-}
 
 }

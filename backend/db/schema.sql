@@ -1,4 +1,5 @@
 -- windmill-schema-adoption-compatibility: gym-journal-v1
+-- windmill-gym-sync-metadata-version: 5
 -- Re-applied in order on every deploy: every statement must be idempotent. Grouped by FK
 -- dependency, so the per-product banners alternate.
 

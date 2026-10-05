@@ -1,7 +1,7 @@
 // engine.md Appendix C, the gym backfill: one account's gym rows, as today's tables hold them (the legacy
 // JSON of corpus/README.md "gym/backfill.json"), adopted in place as the records of `acct:<A>/gym`. Every
 // register it writes carries one stamp `M:0:srv`; seqs, rc and ru, spent ids, the note counter, start
-// receipts, the two projections and the scope digest follow. A scope that exists is left as it is.
+// receipts and the scope digest follow. A scope that exists is left as it is.
 
 import { ZERO_DIGEST, replaceRow } from '../core/digest.js';
 import { between } from '../core/fracindex.js';
@@ -153,10 +153,6 @@ export function backfill({ state, registry, account, legacy, M }) {
   const product = next.product;
   const starts = Object.fromEntries((legacy.writeReceipts ?? []).filter((row) => row.kind === 'session').map((row) => [row.id, row.sessionId]).sort());
   if (Object.keys(starts).length) (product.starts ??= {})[key] = starts;
-  const revisions = Object.fromEntries((legacy.routines ?? []).map((routine) => [routine.id, routine.revision]).sort());
-  if (Object.keys(revisions).length) (product.revisions ??= {})[key] = revisions;
-  const bases = Object.fromEntries((legacy.proposals ?? []).map((proposal) => [proposal.id, { revision: proposal.baseRevision, name: proposal.baseName }]).sort());
-  if (Object.keys(bases).length) (product.bases ??= {})[key] = bases;
   return new ServerState(next.toJSON());
 }
 
@@ -285,11 +281,6 @@ export function upgradeMetadata({ state, registry, account, source, M }) {
     next.putRow(key, row);
     scope.digest = replaceRow(scope.digest, before, row);
   }
-  for (const name of ['revisions', 'bases']) {
-    if (!next.product[name]) continue;
-    delete next.product[name][key];
-    if (!Object.keys(next.product[name]).length) delete next.product[name];
-  }
   next.product.gymMetadataUpgrades ??= {};
   setOwn(next.product.gymMetadataUpgrades, key, { version: 5, M, source: structuredClone(source),
     before: { scope: structuredClone(state.scope(key)), rows: structuredClone(state.rowsOf(key)), spent: structuredClone(state.spentOf(key)) } });
@@ -346,11 +337,6 @@ export function auditMetadata({ state, frozen, registry, account, source, M }) {
     expected.putRow(key, row);
   }
   scope.digest = expected.rowsOf(key).reduce((sum, row) => replaceRow(sum, undefined, row), ZERO_DIGEST);
-  for (const name of ['revisions', 'bases']) {
-    if (!expected.product[name]) continue;
-    delete expected.product[name][key];
-    if (!Object.keys(expected.product[name]).length) delete expected.product[name];
-  }
   expected.product.gymMetadataUpgrades ??= {};
   setOwn(expected.product.gymMetadataUpgrades, key, { version: 5, M, source: structuredClone(source),
     before: { scope: structuredClone(frozen.scope(key)), rows: structuredClone(frozen.rowsOf(key)), spent: structuredClone(frozen.spentOf(key)) } });

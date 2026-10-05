@@ -1,6 +1,6 @@
 # One gym + journal cutover
 
-Production uses one dispatch-only **Gym and journal production cutover** workflow
+Production uses one dispatch-only **Gym and journal production cutover and metadata upgrade** workflow
 (`.github/workflows/products-cutover.yml`). It shares `deploy-vps` concurrency with backend and
 frontend VPS deployments, so neither can deploy while cutover runs. There is no staging environment.
 The whole site, including roadmap, is unavailable while database writers are stopped: plan for a
@@ -226,7 +226,7 @@ services, or the database, and print a FAIL line naming any missing prerequisite
 Ordinary deployment also refuses an interrupted cutover before its saved startup boundary, even
 if adoption has completed, so an automatic deploy cannot restart writers before the remaining audits.
 
-Dispatch **Gym and journal production cutover** (`products-cutover.yml`) once, with `confirm`
+Dispatch **Gym and journal production cutover and metadata upgrade** (`products-cutover.yml`) with `operation=adopt` and `confirm`
 exactly `cut over gym and journal`. Before changing anything, the remote script verifies the running
 image's compatibility, an unadopted database, the repository switches and the absence of fixture
 objects. It also requires the live `SYNC_ENABLED=0`. Then it stops every compose database writer,
@@ -274,6 +274,50 @@ verified archive only before that boundary; once any engine startup was attempte
 Never start an old SQL writer against an adopted or partially adopted
 database. Never erase adoption markers or create empty scopes to bypass a failed gate.
 
+## R118 gym metadata upgrade
+
+First deploy the v5-capable image through ordinary deployment while the adopted database is still
+v4. It retains `io.windmill.schema-adoption-compatibility=gym-journal-v1` and adds
+`io.windmill.gym-sync-metadata-version=5`; its `schema.sql` carries
+`-- windmill-gym-sync-metadata-version: 5`. Ordinary schema application does not add the v5 columns.
+The same image serves the v4 database before the upgrade and the v5 database afterward.
+
+Rehearse the exact image on a marked disposable adopted restore:
+
+```sh
+python3 backend/deploy/gym-migration/rehearse.py --bin-dir /path/to/build \
+  --output /private/tmp/gym-v5-rehearsal --upgrade-v5 --disposable-fixtures
+```
+
+This captures gym and journal REST/MCP reads before adding `db/gym_sync_v5.sql`, freezes the
+upgrade manifest, interrupts an account before commit and resumes it, independently audits the
+metadata, checks corruption rejection, compares read bytes, and verifies a second run plus ordinary
+schema application leave every row and sequence unchanged. The sync epoch stays unchanged;
+fresh row sequences deliver the supplement through ordinary pulls. A v4 journal client remains
+compatible with composition version 5 and minimum version 4.
+
+Dispatch the same production workflow with `operation=upgrade-v5` and `confirm` exactly
+`upgrade gym metadata v5`. The existing wrapper uses the same writer inventory, durable phases,
+verified stopped-service rollback backup and startup boundary as base adoption. It applies only
+the separate v5 DDL, runs `windmill_gym_backfill --upgrade-v5`, requires `--audit-v5`, byte-identical
+read snapshots, unchanged epoch and immutable rerun, and audits journal before startup. Production
+installs no fault fixtures. Any failure before startup restores the immediately preceding adopted
+database and old configuration; after startup is attempted recovery remains forward-only.
+
+`gym_sync_metadata_upgrade_runs` retains the immutable version-5 run, clock, registry hash and
+account roster. `gym_sync_metadata_upgrades` retains each account's frozen source and one committed
+result. The direct upgrade tool resumes this manifest and treats completed accounts as no-ops,
+including after live writes. An interrupted production wrapper restores its verified backup before
+taking a new rollback point; rerun it with the same operation.
+
+Existence of either upgrade table, including DDL-only or partially completed upgrades, raises the
+database's image requirement to v5. Ordinary deploy refuses images without the v5 label before
+promoting files or changing containers and requires `--audit-current`, including completion and
+v5 digest checks. The independent `--audit-v5` is the frozen prestartup migration gate and is not
+used after live writes change the frozen rows. The schema guard also
+requires the bundled v5 marker. Keep services stopped if completion/audit fails; never start a v4
+writer after v5 DDL. Successful startup also checks complete metadata and current digests.
+
 `schema.sql` is safe to reapply after adoption: gym legacy history changes and trigger creation are
 guarded by `gym_sync_adoptions`, journal legacy scale conversion is guarded by
 `journal_sync_adoptions`, and journal scale constraints are created only when missing. The
@@ -299,7 +343,9 @@ fixtures use SQL; external providers are disabled. Local test substitutions use 
 a random loopback port, local image pull policies, and an inert healthy model sidecar. The database,
 server, Caddy, migration commands, and deploy/cutover scripts are real. Checks cover the image
 upgrade, exact rollback rows and running configuration after a forced pre-start failure, successful
-adoption and unchanged reads, both audits, sync's 404, post-adoption writes, all three disabled-switch
+adoption and unchanged reads, both audits, sync's 404, post-adoption writes, the v5 rollback and
+restored rehearsal with account interruption/resume, audited v5 migration and rerun, image-capability
+refusal, post-v5 writes, all three disabled-switch
 deploy refusals, an applied Caddyfile change, and a same-candidate retry after SIGKILL between file
 promotion and Caddy recreation. Each check prints PASS or FAIL. The exit handler
 removes its containers, volumes, network, Buildx builder/cache and newly created or pulled images.

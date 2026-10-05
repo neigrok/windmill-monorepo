@@ -95,7 +95,11 @@ def main():
             if case == "plain": command.append("--apply-adoption")
             run(command, environment, output / "rehearsal.log")
             result = json.loads((output / "evidence/result.json").read_text())
-            reports.append({"case": case, **result, "earlyEngine": early})
+            run(["python3", str(Path(__file__).with_name("rehearse.py")), "--bin-dir", str(args.bin_dir),
+                 "--output", str(output / "v5-evidence"), "--upgrade-v5", "--disposable-fixtures"],
+                environment, output / "v5-rehearsal.log")
+            metadata = json.loads((output / "v5-evidence/result.json").read_text())
+            reports.append({"case": case, **result, "earlyEngine": early, "metadataUpgrade": metadata})
         finally:
             if connection: connection.close()
             if process:

@@ -49,8 +49,8 @@ Everything else is optional and each feature stays dark without its key — copy
 
 ### Full engine server for the iOS simulator
 
-Run from `backend/`. This uses an isolated local database, both in-place adoption schemas and
-both backfills. Choose the port with `WM_ENGINE_PORT`; the simulator can reach
+Run from `backend/`. This uses an isolated local database, both in-place adoption schemas,
+both backfills and the gym v5 metadata upgrade. Choose the port with `WM_ENGINE_PORT`; the simulator can reach
 `http://127.0.0.1:<port>`. `SYNC_ENABLED`, `GYM_ENGINE_WRITES` and `JOURNAL_ENGINE_WRITES`
 default off independently. The probe product and its dev endpoints are absent from this server.
 
@@ -71,6 +71,9 @@ SQL
 "$WM_ENGINE_BUILD/windmill_journal_backfill"
 "$WM_ENGINE_BUILD/windmill_gym_backfill" --audit
 "$WM_ENGINE_BUILD/windmill_journal_backfill" --audit
+psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f db/gym_sync_v5.sql
+"$WM_ENGINE_BUILD/windmill_gym_backfill" --upgrade-v5
+"$WM_ENGINE_BUILD/windmill_gym_backfill" --audit-v5
 RESEND_API_KEY= ANTHROPIC_API_KEY= OPENAI_API_KEY= JOURNAL_EMBEDDER_URL= \
   SYNC_ENABLED=1 GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 \
   WINDMILL_HOST=127.0.0.1 WINDMILL_APP_URL="http://127.0.0.1:$WM_ENGINE_PORT" \
@@ -170,7 +173,7 @@ the process down is named (`*** CRASHED mid-case … ***`) and re-raised, so the
 
 The Postgres integration cases run only under `WM_PG_TEST` and require two fresh throwaway databases.
 The REST `adapters` suite reads `DATABASE_URL`, holding plain `db/schema.sql`. The engine `sync` suite
-reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql`, `db/gym_sync.sql` and `db/journal_sync.sql`.
+reads `WM_SYNC_DATABASE_URL`, holding `db/schema.sql`, `db/probe.sql`, `db/gym_sync.sql`, `db/journal_sync.sql` and `db/gym_sync_v5.sql`.
 The combined gym and journal adoption rehearsal and cutover are documented in
 [deploy/gym-migration/README.md](deploy/gym-migration/README.md).
 Both URLs must be set when running those suites under `WM_PG_TEST`. Never apply `gym_sync.sql` or `journal_sync.sql` to the
@@ -183,7 +186,7 @@ probe, gym and journal data as it replays the corpus, store and concurrency case
 createdb -h /tmp wm_rest_test
 createdb -h /tmp wm_sync_test
 psql -h /tmp -d wm_rest_test -v ON_ERROR_STOP=1 -f db/schema.sql
-psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql -f db/gym_sync.sql -f db/journal_sync.sql
+psql -h /tmp -d wm_sync_test -v ON_ERROR_STOP=1 -f db/schema.sql -f db/probe.sql -f db/gym_sync.sql -f db/journal_sync.sql -f db/gym_sync_v5.sql
 WM_PG_TEST=1 DATABASE_URL="postgresql:///wm_rest_test?host=/tmp" \
   WM_SYNC_DATABASE_URL="postgresql:///wm_sync_test?host=/tmp" \
   ctest --test-dir build -R '^(domain|sync|adapters)$' -V

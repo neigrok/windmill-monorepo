@@ -118,7 +118,7 @@ jobs:
           psql "$DATABASE_URL" -v ON_ERROR_STOP=1 -f backend/db/schema.sql
           createdb --maintenance-db="$DATABASE_URL" windmill_sync_test
           psql "$WM_SYNC_DATABASE_URL" -v ON_ERROR_STOP=1 \
-            -f backend/db/schema.sql -f backend/db/probe.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql
+            -f backend/db/schema.sql -f backend/db/probe.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql -f backend/db/gym_sync_v5.sql
           createdb --maintenance-db="$DATABASE_URL" windmill_deployment_test
           psql "$WM_ENGINE_DATABASE_URL" -v ON_ERROR_STOP=1 \
             -f backend/db/schema.sql -f backend/db/gym_sync.sql -f backend/db/journal_sync.sql

@@ -127,7 +127,10 @@ must be public.
   roadmap included, is down for the few minutes it takes.** Failure before the persisted startup
   boundary restores the backup and old configuration. Once startup is attempted, recovery is
   forward-only and no automatic restore occurs. Cutover and adopted-database deployments require
-  the image's `gym-journal-v1` compatibility declaration and matching bundled schema marker. Ordinary deploy
+  the image's `gym-journal-v1` compatibility declaration and matching bundled schema marker. Gym metadata
+  v5 also requires `io.windmill.gym-sync-metadata-version=5`, the bundled v5 schema marker and completion
+  audit whenever either upgrade table exists. The same cutover workflow upgrades metadata under its
+  verified stopped-writer backup and recovery discipline; ordinary deploy does not apply v5 DDL. Ordinary deploy
   refuses engine writes without complete adoption, either engine writer disabled after adoption,
   and incompatible images on adopted databases
   before changing the live `.env`, compose files or containers. Production runs no fault fixtures;

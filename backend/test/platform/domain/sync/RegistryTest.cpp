@@ -508,7 +508,7 @@ TEST(the_product_registries_are_gym_and_journal_and_each_loads) {
 TEST(the_gym_registry_reads_as_declared) {
   const std::vector<Registry> registries = productRegistries();
   const Registry& gym = registries.front();
-  CHECK_EQ(namesOf(gym.types()), (std::vector<std::string>{"routine", "exercise", "exerciseName", "session", "set", "note", "weighin",
+  CHECK_EQ(namesOf(gym.types()), (std::vector<std::string>{"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin",
                                                           "prefs", "proposal"}));
   CHECK_EQ(namesOf(gym.commands()), (std::vector<std::string>{"gym.start", "gym.importSession", "gym.correctSession", "gym.finish",
                                                              "gym.applyProposal", "gym.dismissProposal", "gym.closeStale"}));
@@ -519,7 +519,7 @@ TEST(the_gym_registry_reads_as_declared) {
   std::vector<std::string> deviceRows;
   for (const auto& [name, row] : device) deviceRows.push_back(name);
   CHECK_EQ(deviceRows, (std::vector<std::string>{"movement", "movementOrder", "offer", "rack"}));
-  CHECK_EQ(gym.version(), 4);
+  CHECK_EQ(gym.version(), 5);
   CHECK_EQ(gym.minVersion(), 4);
   CHECK(gym.type("thread") == nullptr);
   CHECK(gym.type("message") == nullptr);
@@ -541,14 +541,14 @@ TEST(the_gym_registry_reads_as_declared) {
 
 // The product registries ship as one registry: one version and minVersion, and no product, type, command or
 // refusal code a second registry declares again.
-TEST(the_deployment_composition_embeds_gym_and_journal_v4) {
+TEST(the_deployment_composition_embeds_gym_and_journal_v5) {
   const Json::Value composition = parseJson(compositionText());
   CHECK_EQ(jcs(composition), jcs(parseJson(R"({"composition":"windmill","registries":["gym.registry.json","journal.registry.json"]})")));
-  CHECK_EQ(productRegistry().version(), 4);
+  CHECK_EQ(productRegistry().version(), 5);
   CHECK_EQ(productRegistry().minVersion(), 4);
   const std::vector<Registry> registries{wm::gym::engine::registry(), wm::journal::engine::registry()};
   const auto catalog = productCatalog();
-  CHECK_EQ(namesOf(catalog->registry().types()), (std::vector<std::string>{"routine", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "page", "journalState"}));
+  CHECK_EQ(namesOf(catalog->registry().types()), (std::vector<std::string>{"routine", "routineCreation", "exercise", "exerciseName", "session", "set", "note", "weighin", "prefs", "proposal", "page", "journalState"}));
   CHECK(catalog->registry().command("journal.savePage") != nullptr);
   CHECK(catalog->registry().command("journal.claimPage") != nullptr);
   for (const auto& type : catalog->registry().types()) CHECK_EQ(catalog->store(type.name).def().name, type.name);

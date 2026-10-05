@@ -90,10 +90,6 @@ inline Json::Value gymAdmitVector(SyncWorld& world, const Json::Value& input) {
   Json::Value& product = answer["state"]["product"];
   // The reference's empty book namespaces have no SQL rows.
   if (input["intent"]["cmd"]["name"] == "gym.start" && !product["starts"].isMember(scope)) product["starts"][scope] = Json::Value(Json::objectValue);
-  for (const auto& kind : input["state"]["product"].getMemberNames()) {
-    if (!input["state"]["product"][kind].isObject() || !input["state"]["product"][kind].isMember(scope)) continue;
-    if (kind == "revisions" && !product[kind].isMember(scope)) product[kind][scope] = Json::Value(Json::objectValue);
-  }
   return answer;
 }
 

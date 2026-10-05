@@ -218,6 +218,9 @@ class Differential:
                     (self.directory / "backfill.jsonl").write_text(report)
                     self.binary("windmill_gym_backfill", {"DATABASE_URL": database}, "--audit")
                     assert sum(json.loads(line)["changed"] for line in report.splitlines()) > 0
+                    command(["psql", database, "-Xq", "-v", "ON_ERROR_STOP=1", "-f", str(BACKEND / "db/gym_sync_v5.sql")])
+                    self.binary("windmill_gym_backfill", {"DATABASE_URL": database}, "--upgrade-v5")
+                    self.binary("windmill_gym_backfill", {"DATABASE_URL": database}, "--audit-v5")
             self.start(side, database, ports[side])
             if not side:
                 for target, body, status in (("/sessions/import", self.legacy_import, 201),
@@ -226,6 +229,8 @@ class Differential:
                     assert response[0] == status, response
                 response = self.request(0, "DELETE", "/v1/gym/sessions/session_adopted/sets/set_adopted_b", None)
                 assert response[0] == 204, response
+        for connection in self.connections:
+            connection.close()
         self.pair("POST", "/mcp", {"jsonrpc": "2.0", "id": 1, "method": "initialize",
                   "params": {"protocolVersion": "2025-03-26", "capabilities": {},
                              "clientInfo": {"name": "gym-differential", "version": "1"}}}, rpc=True)

@@ -120,9 +120,8 @@ as `product.receipts[<scope key>][<called run id>] = <resolved run id>`, copy re
 
 The `gym/` files run against gym's own registry, `../gym.registry.json`, and gym's product binding
 (engine.md Appendix A.2), which every server runner implements as it implements the probe's. The rules
-below are the ones the reference models; A.2 states the rest (a replica's proposal re-checked by the
-the client's stale view), and gym's server-origin doors (REST, MCP, the server
-Coach) are not modelled: they are the gym backend's (`backend/products/gym/ARCHITECTURE.md`).
+below are the ones the reference models; A.2 also specifies gym's server-origin doors (REST, MCP
+and the server Coach), whose adapters live in `backend/products/gym/ARCHITECTURE.md`.
 
 **Product state.** Gym's `product` in the server state holds the seed catalog, the command receipts
 only:
@@ -139,10 +138,8 @@ product: {
 R118's routine revision/count, frozen proposal base/count and note content time are server-written
 registers on the rows. `routineCreation.snapshot` is an independent immutable register over the
 existing Coach receipt table, with no life or live-routine reference. `gym/backfill.json` models
-C.1–C.9's adopted base; its `product.revisions` and `product.bases` are the legacy column projections
-before the R118 supplement, not an alternative runtime source for the new wire fields. The supplement
-removes that scope from these reference-only caches; production binds the existing typed columns
-rather than deleting them.
+C.1–C.9's adopted base without the R118 registers; `gym/metadata.json` models their supplement
+from the existing typed columns and creation receipt JSON.
 
 A seed exercise id is `foreign` to every account (§4.2): the binding's `elsewhere` reports it held
 outside every scope. A proposal's unset `state` reads as `pending`, the registry's `default`.
@@ -327,13 +324,22 @@ completeness and detects altered values, stamps, seqs, receipts and counters eve
 digest. `reference/test/gym/backfill-audit.test.js` pins those failure gates.
 
 The old base-adoption vectors and the R118 supplement are distinct runners. The pure reference does
-not perform SQL, process interruption, shared writer freezes, startup or the one global epoch rotation;
-C.10 requires those operational failure tests in the C++/deployment wave. This new corpus file must
-have a named C++ runner rather than a skipped migration gate. Client readers use the stamped metadata
-and immutable snapshot; `gym/admit.json` also pins mixed-intent joined bases, forging refusals, no-op
-and losing writes, content time after reorder and snapshot retention after routine death.
+not perform SQL, process interruption, shared writer freezes or startup;
+C.10 requires those operational failure tests in C++ and deployment. The named C++ runner is
+`PgGymMetadataUpgradeTest.cpp`, with the shared cutover/rehearsal runner exercising the deployment
+gates. Client readers use the stamped metadata
+and immutable snapshot. Fresh seqs deliver every upgrade through ordinary pulls in the unchanged
+epoch; §6.12 hashes those seqs. `gym/admit.json` also pins mixed-intent joined bases, forging refusals,
+no-op and losing writes, content time after reorder and snapshot retention after routine death.
+The gym audit tests also apply the supplement to a v4 store: ordinary live pulls retain unknown
+fields and `routineCreation` through restart and converge on the v5 digest.
 
 ## The journal product
+
+`reference/test/journal/claim-edit.test.js` covers the installed v4 journal registry against a
+composed v5 service with minimum version 4. Ready/sent/acked saves and pending claims survive gym
+writes through MCP/ask doors, client relaunch and a lost claim response; retained typing reconciles
+once, with no epoch change and no gym subscription.
 
 `journal/` runs against `../journal.registry.json` and Appendix A.3. It has a keyed `page` and a
 nonprimary singleton `journalState`. A blank page remains a stored REST resource and participates

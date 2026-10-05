@@ -1,6 +1,7 @@
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 
 #include "products/gym/sync/adapters/postgres/PgGym.h"
+#include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "products/gym/sync/GymRegistry.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/Admit.h"
@@ -50,7 +51,7 @@ void requireSchema(SyncTxn& txn) {
   requireColumn("gym_sync_adoptions", "migration_ms", "bigint");
   requireColumn("gym_sync_adoptions", "frozen_source", "jsonb");
   for (const Table& table : tables) {
-    const TypeDef& type = *registry().type(table.type);
+    const TypeDef& type = *baseRegistry().type(table.type);
     for (const std::string col : {"seq", "rc", "ru"}) requireColumn(table.name, col, "bigint");
     if (type.identity == Identity::minted) requireColumn(table.name, "born", "text");
     if (type.life) requireColumn(table.name, "life_stamp", "text");
@@ -178,7 +179,7 @@ void auditFrozen(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
     return std::any_of(source["gym_exercise_aliases"].begin(), source["gym_exercise_aliases"].end(), [&](const auto& row) { return row["exercise_id"] == id; });
   };
   auto add = [&](const Table& table, const Json::Value& raw, const std::string& id, Ms rc, Ms ru) {
-    const TypeDef& type = *registry().type(table.type);
+    const TypeDef& type = *baseRegistry().type(table.type);
     Expected row{rc, ru, {}, {}};
     for (const auto& [name, field] : type.fields) {
       if (field.kind == FieldKind::serial) continue;
@@ -264,7 +265,7 @@ void auditFrozen(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
   for (const auto& row : source["gym_note_saves"]) spentCandidate("note", row["id"]);
   Seq seq = 0;
   std::uint64_t noteCount = 0;
-  for (const TypeDef& type : registry().types()) {
+  for (const TypeDef& type : baseRegistry().types()) {
     PgGymType typeStore(type);
     std::map<std::string, Row> rows, thin;
     for (const auto& row : typeStore.feed(txn, scope.key, FeedQuery{})) rows.emplace(row.id.column(), row);
@@ -331,12 +332,12 @@ void auditFrozen(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope) {
   }
 }
 
-Json::Value checkScope(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope, bool permitUnsetDefaults = false) {
+Json::Value checkScope(SyncTxn& txn, PgSyncStore& store, const ScopeRow& scope, bool permitUnsetDefaults = false, bool metadata = false) {
   if (!PgGymBackfill::adopted(txn, scope.key, permitUnsetDefaults)) throw std::runtime_error("C.8 adoption audit failed: " + scope.key.text() + " has unadopted rows or required spent ids");
   Digest256 digest;
   Seq greatest = 0;
   std::uint64_t rows = 0, spent = 0;
-  for (const TypeDef& type : registry().types()) {
+  for (const TypeDef& type : (metadata ? registry() : baseRegistry()).types()) {
     PgGymType typeStore(type);
     for (const Row& row : typeStore.feed(txn, scope.key, FeedQuery{})) {
       digest = digest + rowHash(row.toJson());
@@ -362,7 +363,7 @@ std::uint64_t testFrozenAudit(SyncTxn& txn, PgSyncStore& store, const ScopeRow& 
   const std::string future = sql.quote(std::to_string(marker[0][0].as<Ms>() + Limits{}.maxSkewMs + 1) + ":0:srv");
   std::vector<std::string> mutations;
   for (const auto& table : tables) {
-    const TypeDef& type = *registry().type(table.type);
+    const TypeDef& type = *baseRegistry().type(table.type);
     const std::string eligible = " where " + table.owner + "=$1::uuid and seq>0";
     auto mutate = [&](const std::string& column, const std::string& value) {
       mutations.push_back("update " + table.name + " set " + column + "=" + value + eligible + " and " + column + " is not null returning 1");
@@ -388,7 +389,7 @@ std::uint64_t testFrozenAudit(SyncTxn& txn, PgSyncStore& store, const ScopeRow& 
       ScopeRow candidate = original;
       candidate.digest = Digest256();
       candidate.seq = 0;
-      for (const TypeDef& type : registry().types()) {
+      for (const TypeDef& type : baseRegistry().types()) {
         PgGymType typeStore(type);
         for (const Row& row : typeStore.feed(txn, original.key, FeedQuery{})) {
           candidate.digest = candidate.digest + rowHash(row.toJson());
@@ -447,7 +448,7 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
     std::map<std::string, std::vector<Row>> records;
     std::vector<Row> spent = spentRows(*txn, key, stamp);
     std::uint64_t changed = spent.size();
-    for (const TypeDef& type : registry().types()) {
+    for (const TypeDef& type : baseRegistry().types()) {
       PgGymType typeStore(type);
       records[type.name] = typeStore.adoptionRows(*txn, key, migrationTime);
       changed += records[type.name].size();
@@ -456,7 +457,7 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
     for (const auto& row : sql.exec("select coalesce(max(seq),0) from sync_spent where scope_key=$1", pqxx::params{key.text()}))
       scope.seq = std::max(scope.seq, row[0].template as<Seq>());
     if (!existing && changed == 0 && scope.seq == 0) continue;
-    for (const TypeDef& type : registry().types()) {
+    for (const TypeDef& type : baseRegistry().types()) {
       std::vector<Row*> ordered;
       for (Row& row : records[type.name]) ordered.push_back(&row);
       for (Row& row : spent) if (row.t == type.name) ordered.push_back(&row);
@@ -467,7 +468,7 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
       sql.exec("insert into gym_sync_adoptions(user_id,migration_ms,frozen_source) values($1::uuid,$2,$3::jsonb) on conflict do nothing",
                pqxx::params{owner, static_cast<std::int64_t>(migrationTime), jcs(source)});
       if (!existing && !store.insertScope(*txn, key, UserId(owner), std::nullopt)) throw std::runtime_error("scope appeared during backfill: " + key.text());
-      for (const TypeDef& type : registry().types()) {
+      for (const TypeDef& type : baseRegistry().types()) {
         PgGymType typeStore(type);
         typeStore.adopt(*txn, key, records[type.name]);
       }
@@ -475,7 +476,7 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
     }
     scope.digest = Digest256();
     std::uint64_t count = 0, spentCount = 0;
-    for (const TypeDef& type : registry().types()) {
+    for (const TypeDef& type : baseRegistry().types()) {
       PgGymType typeStore(type);
       std::map<std::string, Row> complete;
       if (dryRun) {
@@ -508,7 +509,7 @@ std::vector<Json::Value> PgGymBackfill::run(Ms migrationTime, bool dryRun, std::
 bool PgGymBackfill::adopted(SyncTxn& txn, const ScopeKey& scope, bool permitUnsetDefaults) {
   const auto current = sqlOf(txn).exec("select seq from sync_scopes where key=$1", pqxx::params{scope.text()});
   const Seq scopeSeq = current.empty() ? 0 : current[0][0].as<Seq>();
-  for (const TypeDef& type : registry().types()) {
+  for (const TypeDef& type : baseRegistry().types()) {
     PgGymType typeStore(type);
     if (typeStore.needsAdoption(txn, scope, permitUnsetDefaults)) return false;
     if (typeStore.greatestSeq(txn, scope) > scopeSeq) return false;
@@ -536,12 +537,20 @@ std::vector<Json::Value> PgGymBackfill::audit(std::optional<std::string> account
 std::vector<Json::Value> PgGymBackfill::auditCurrent(std::optional<std::string> account) {
   PgSyncStore store(pool_, Limits{}.lockTimeoutMs);
   auto txn = store.begin(TxnMode::snapshot);
+  PgGymMetadataUpgrade::requireComplete(*txn);
   requireSchema(*txn);
   std::vector<Json::Value> reports;
   for (const auto& owner : accounts(*txn, account)) {
     const auto scope = store.scope(*txn, ScopeKey::product(UserId(owner), "gym"), RowLock::none);
     if (!scope) throw std::runtime_error("C.8 adoption audit failed: acct:" + owner + "/gym has eligible rows or spent ids but no scope");
-    reports.push_back(checkScope(*txn, store, *scope, true));
+    const bool metadataSchema = !sqlOf(*txn).exec("select 1 from pg_attribute where attrelid='gym_routines'::regclass and attname='revision_stamp' and not attisdropped").empty();
+    const bool metadata = metadataSchema && sqlOf(*txn).exec(
+        "select exists(select 1 from gym_sync_metadata_upgrades where user_id=$1::uuid) "
+        "or exists(select 1 from gym_routines where user_id=$1::uuid and revision_stamp is not null) "
+        "or exists(select 1 from gym_notes where user_id=$1::uuid and updated_at_stamp is not null) "
+        "or exists(select 1 from gym_proposals where user_id=$1::uuid and base_revision_stamp is not null) "
+        "or exists(select 1 from gym_routine_creations where user_id=$1::uuid and snapshot_stamp is not null)", pqxx::params{owner})[0][0].as<bool>();
+    reports.push_back(checkScope(*txn, store, *scope, true, metadata));
   }
   return reports;
 }

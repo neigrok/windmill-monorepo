@@ -812,19 +812,6 @@
               "session0001": "session0001",
               "session0004": "session0004"
             }
-          },
-          "revisions": {
-            "acct:A/gym": {
-              "routine0001": 4
-            }
-          },
-          "bases": {
-            "acct:A/gym": {
-              "proposal001": {
-                "revision": 3,
-                "name": "Lower"
-              }
-            }
           }
         }
       }
@@ -1369,19 +1356,6 @@
             "acct:A/gym": {
               "session0001": "session0001",
               "session0004": "session0004"
-            }
-          },
-          "revisions": {
-            "acct:A/gym": {
-              "routine0001": 4
-            }
-          },
-          "bases": {
-            "acct:A/gym": {
-              "proposal001": {
-                "revision": 3,
-                "name": "Lower"
-              }
             }
           }
         }
@@ -2175,19 +2149,6 @@
             "acct:A/gym": {
               "session0001": "session0001",
               "session0004": "session0004"
-            }
-          },
-          "revisions": {
-            "acct:A/gym": {
-              "routine0001": 4
-            }
-          },
-          "bases": {
-            "acct:A/gym": {
-              "proposal001": {
-                "revision": 3,
-                "name": "Lower"
-              }
             }
           }
         }

@@ -32,7 +32,7 @@ inline bool postgresEnabled() {
 
 class PgWorld final : public SyncWorld {
 public:
-  PgWorld(bool gym = false, bool journal = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(wm::gym::engine::registry()), journalProduct_(wm::journal::engine::registry()), catalog_(journal ? wm::journal::engine::registry() : gym ? wm::gym::engine::registry() : probe::registry()), gym_(gym), journal_(journal) {
+  PgWorld(bool gym = false, bool journal = false, bool baseGym = false) : store_(pgTestPool(), Limits{}.lockTimeoutMs), probe_(probe::registry()), gymProduct_(baseGym ? wm::gym::engine::baseRegistry() : wm::gym::engine::registry()), journalProduct_(wm::journal::engine::registry()), catalog_(journal ? wm::journal::engine::registry() : gym ? (baseGym ? wm::gym::engine::baseRegistry() : wm::gym::engine::registry()) : probe::registry()), gym_(gym), journal_(journal) {
     // Corpus snapshots describe admitted engine state, including relational-only FK fixtures.
     if (journal_) journalProduct_.bindTo(catalog_, false);
     else if (gym_) gymProduct_.bindTo(catalog_, false);
@@ -73,6 +73,10 @@ public:
     resetClock(state["clock"]);
     std::unique_ptr<SyncTxn> txn = store_.begin(TxnMode::write);
     pqxx::transaction_base& sql = sqlOf(*txn);
+    if (sql.exec("select to_regclass('gym_sync_metadata_upgrades') is not null")[0][0].as<bool>()) {
+      sql.exec("delete from gym_sync_metadata_upgrades");
+      sql.exec("delete from gym_sync_metadata_upgrade_runs");
+    }
     for (const char* table : {"probe_marks_revisions", "probe_start_receipts", "probe_copy_receipts", "probe_marks", "probe_links", "probe_tags",
                               "probe_metas", "probe_facts", "probe_days", "probe_laps", "probe_runs", "probe_cards", "probe_boards", "sync_spent",
                               "sync_requests", "sync_replicas", "sync_scopes"}) {
@@ -85,14 +89,7 @@ public:
         sql.exec("insert into gym_exercises(id,name,pattern,equipment) values($1,$2,'isolation','bodyweight')", pqxx::params{id, state["product"]["seeds"][id]["name"].asString()});
       }
       productSeed_ = state["product"];
-      implicitRevisions_.clear();
-      for (const auto& key : state["rows"].getMemberNames()) {
-        for (const auto& row : state["rows"][key]) {
-          if (row["t"] == "routine" && !state["product"]["revisions"][key].isMember(row["id"].asString())) {
-            implicitRevisions_[key].insert(row["id"].asString());
-          }
-        }
-      }
+
     }
     if (journal_) {
       sql.exec("truncate journal_page_revision,journal_page,journal_sync_state,journal_claim_receipts,journal_content_clock,journal_sync_adoptions cascade");
@@ -211,12 +208,7 @@ public:
           for (const std::string& id : product[kind][key].getMemberNames()) gymState.receipt(*txn, storeKey(key), kind, id, product[kind][key][id]);
         }
       }
-      for (const std::string& key : product["revisions"].getMemberNames()) for (const std::string& id : product["revisions"][key].getMemberNames()) {
-        sql.exec("update gym_routines set revision=$3 where user_id=$1::uuid and id=$2", pqxx::params{storeKey(key).account().str(), id, product["revisions"][key][id].asInt()});
-      }
-      for (const std::string& key : product["bases"].getMemberNames()) for (const std::string& id : product["bases"][key].getMemberNames()) {
-        sql.exec("update gym_proposals set base_revision=$3,base_name=$4 where user_id=$1::uuid and id=$2", pqxx::params{storeKey(key).account().str(), id, product["bases"][key][id]["revision"].asInt(), product["bases"][key][id]["name"].asString()});
-      }
+
     }
     if (journal_) {
       for (const auto& key : product["journalAdoptions"].getMemberNames()) {
@@ -332,20 +324,12 @@ public:
     if (gym_) {
       state["product"] = Json::Value(Json::objectValue);
       state["product"]["seeds"] = productSeed_["seeds"];
-      state["product"]["bases"] = productSeed_["bases"];
       wm::gym::engine::PgGymState gymState;
       for (const auto& key : state["scopes"].getMemberNames()) {
         Json::Value books = gymState.load(*txn, storeKey(key));
-        // SQL supplies revision 1 for legacy routines; the corpus only represents explicit
-        // revision books, so leave an unchanged implicit default out of its dumped state.
-        for (const auto& id : implicitRevisions_[key]) {
-          if (books["revisions"].isMember(id) && books["revisions"][id] == 1) books["revisions"].removeMember(id);
-        }
-        for (const char* kind : {"starts", "imports", "corrections", "revisions", "bases"}) {
+        for (const char* kind : {"starts", "imports", "corrections"}) {
           if (books[kind].isNull() || books[kind].empty()) continue;
-          if (std::string(kind) == "bases") {
-            for (const auto& id : books[kind].getMemberNames()) state["product"][kind][key][id] = books[kind][id];
-          } else state["product"][kind][key] = books[kind];
+          state["product"][kind][key] = books[kind];
         }
       }
       for (const auto& key : state["product"].getMemberNames()) if (state["product"][key].isNull() || state["product"][key].empty()) state["product"].removeMember(key);
@@ -407,7 +391,6 @@ private:
   SyncCatalog catalog_;
   Json::Value accounts_;
   Json::Value productSeed_;
-  std::map<std::string, std::set<std::string>> implicitRevisions_;
   std::map<std::pair<std::string, std::string>, Seq> journalInitial_;
   bool gym_;
   bool journal_;

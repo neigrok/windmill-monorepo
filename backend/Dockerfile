@@ -82,6 +82,7 @@ RUN ! nm -C build/windmill_gym_backfill build/windmill_gym_snapshot \
 # own, which the curl package brings) — the exact set ldd reports against the built binary.
 FROM ubuntu:22.04 AS runtime
 LABEL io.windmill.schema-adoption-compatibility="gym-journal-v1"
+LABEL io.windmill.gym-sync-metadata-version="5"
 
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
@@ -106,6 +107,7 @@ COPY --from=build /src/build/windmill_journal_backfill /usr/local/bin/windmill_j
 COPY --from=build /src/build/windmill_journal_snapshot /usr/local/bin/windmill_journal_snapshot
 COPY --from=build /src/db/schema.sql            /app/db/schema.sql
 COPY --from=build /src/db/gym_sync.sql          /app/db/gym_sync.sql
+COPY --from=build /src/db/gym_sync_v5.sql       /app/db/gym_sync_v5.sql
 COPY --from=build /src/db/journal_sync.sql      /app/db/journal_sync.sql
 COPY --from=build /src/deploy/gym-migration/rehearse.py /app/deploy/gym-migration/rehearse.py
 COPY --from=build /src/deploy/gym-migration/schema-compatibility.sh /app/deploy/gym-migration/schema-compatibility.sh

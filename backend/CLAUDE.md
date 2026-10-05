@@ -71,21 +71,24 @@ against the sync contract in `../packages/api-contract/sync`, which CMake finds 
 `.github/workflows/backend.yml`). The domain tests replay its golden corpus over in-memory fakes, one
 case per vector (`test/platform/domain/sync/CorpusTest.cpp`); a corpus file with no runner is a named
 skipped case, and a file nobody claims fails. They also load every product registry the contract ships
-(`RegistryTest.cpp`), and run the gym and journal bindings against registry v4 and composition.json. `windmill_sync_tests` replays the server's files again
+(`RegistryTest.cpp`), and run the gym and journal bindings against registry v5/minimum 4 and composition.json. `windmill_sync_tests` replays the server's files again
 over Postgres under `WM_PG_TEST` (`RUNNING.md` §7).
 
-`products/gym/sync/` binds gym's nine types and seven commands over its adopted tables. `windmill_server`,
+`products/gym/sync/` binds gym's ten types and seven commands over its adopted tables. `windmill_server`,
 the test binaries and `windmill_gym_backfill` link `windmill_gym_sync`. `GYM_ENGINE_WRITES` routes the REST,
 MCP and Coach gym writes through the engine as server-origin intents and defaults off; `GYM_WRITE_FREEZE`
 defaults off and blocks every gym write door and the lazy staleness settlement (engine.md C.7). Tests apply
 `db/gym_sync.sql` after `schema.sql` only in the isolated `WM_SYNC_DATABASE_URL` database; legacy repository
 Postgres cases use plain `schema.sql` at `DATABASE_URL`, admitted door cases the sync database. The admission
-corpus runs over fakes and Postgres, and all five backfill vectors over Postgres. The backfill tool requires the
+corpus runs over fakes and Postgres, and all five base-backfill vectors and eleven metadata-upgrade vectors over Postgres. The backfill tool requires the
 adopted schema and migrates each account in one transaction; `deploy/gym-migration/` holds the offline
-rehearsal.
+rehearsal. `db/gym_sync_v5.sql` and `windmill_gym_backfill --upgrade-v5` add the six server-authored
+metadata fields and immutable routine creation feed without changing REST bytes or the epoch. The
+v5 binary serves an adopted v4 database before this separate migration; startup and scope readiness
+refuse incomplete upgrades, and ordinary deployment checks the image metadata capability.
 
 `products/journal/sync/` binds `page`, `journalState`, `journal.savePage` and `journal.claimPage` over
-adopted journal tables. `platform/infra/SyncProducts` seals the gym + journal v4 catalog and injects it
+adopted journal tables. `platform/infra/SyncProducts` seals the gym + journal v5/minimum-4 catalog and injects it
 into both products' doors; products remain independent. `JOURNAL_ENGINE_WRITES` routes page writes
 through `ServerCall` and defaults off; reads and off-engine features keep their existing repositories.
 `JOURNAL_WRITE_FREEZE` defaults off and blocks journal mutations, echo/nudge workers and provider
