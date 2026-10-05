@@ -713,6 +713,65 @@ class CutoverTest:
         assert all((work / name).read_bytes() == content for name, content in files.items())
         print("PASS v5 cutover, independent audits, immutable rerun, rollback failures and legacy image guard", flush=True)
 
+        fixture = self.fixture("metadata-restored")
+        work, state_path, environment, database = fixture
+        self.apply(database, "gym_sync.sql", "journal_sync.sql")
+        database_env = {**os.environ, "DATABASE_URL": self.database_url(database)}
+        for product in ("gym", "journal"):
+            command([self.args.bin_dir / f"windmill_{product}_backfill"], database_env)
+        self.apply(database, "gym_sync_v5.sql")
+        command([self.args.bin_dir / "windmill_gym_backfill", "--upgrade-v5"], database_env)
+        backup = work.parent / "completed-v5.dump"
+        command(["pg_dump", "--dbname", self.database_url(database), "--format=custom", "--file", backup])
+        saved = self.snapshot(database)
+        frozen_epoch = self.sql(database, "SELECT epoch FROM gym_sync_metadata_upgrade_runs WHERE version=5")
+        for failure in (None, "incomplete", "digest"):
+            command(["pg_restore", "--dbname", self.database_url(database), "--clean", "--no-owner",
+                     "--no-privileges", "--exit-on-error", backup])
+            assert self.snapshot(database) == saved, "completed v5 backup restore changed rows/schema/sequences"
+            self.sql(database, "UPDATE sync_meta SET epoch=replace(gen_random_uuid()::text,'-','')")
+            assert self.sql(database, "SELECT epoch FROM sync_meta") != frozen_epoch, "restore did not rotate epoch"
+            assert self.sql(database, "SELECT epoch FROM gym_sync_metadata_upgrade_runs WHERE version=5") == frozen_epoch
+            if failure == "incomplete":
+                self.sql(database, "DELETE FROM gym_sync_metadata_upgrades WHERE user_id="
+                         "(SELECT user_id FROM gym_sync_metadata_upgrades ORDER BY user_id LIMIT 1)")
+            elif failure == "digest":
+                self.sql(database, "UPDATE sync_scopes SET digest=decode(repeat('00',32),'hex') WHERE key LIKE '%/gym'")
+            before = self.snapshot(database, row_versions=True)
+            for mode in ("--audit-current", "--upgrade-v5", "--audit-v5"):
+                result = subprocess.run([self.args.bin_dir / "windmill_gym_backfill", mode],
+                                        env=database_env, capture_output=True, check=False, timeout=15)
+                assert (result.returncode == 0) == (failure is None and mode != "--audit-v5"), (failure, mode, result.stderr)
+            assert self.snapshot(database, row_versions=True) == before, "restored v5 checks changed immutable migration rows"
+            if failure:
+                state = json.loads(state_path.read_text())
+                result = subprocess.run([self.args.bin_dir / "windmill_server"], cwd=work,
+                    env={**database_env, **SWITCHES, "PORT": str(state["serverPort"]), "SENTRY_DSN": "",
+                         "ANTHROPIC_API_KEY": "", "RESEND_API_KEY": "", "AMPLITUDE_API_KEY": ""},
+                    capture_output=True, check=False, timeout=15)
+                assert result.returncode != 0, "startup accepted restored v5 " + failure
+            for key in SWITCHES:
+                environment.pop(key, None)
+            (work / "rendered.env").write_text((work / ".env").read_text() +
+                                              "".join(f"{key}={value}\n" for key, value in SWITCHES.items()))
+            shutil.copyfile(work / "docker-compose.yml", work / "docker-compose.next.yml")
+            shutil.copyfile(work / "Caddyfile", work / "Caddyfile.next")
+            original = copy.deepcopy(json.loads(state_path.read_text())["containers"])
+            files = {name: (work / name).read_bytes() for name in (".env", "docker-compose.yml", "Caddyfile")}
+            status, output, errors, state = self.execute(fixture, BACKEND / "deploy/deploy-production.sh")
+            if failure:
+                assert status != 0 and b"current audit failed" in output + errors, (failure, status, output, errors)
+                assert state["containers"] == original and self.snapshot(database, row_versions=True) == before
+                assert all((work / name).read_bytes() == content for name, content in files.items())
+            else:
+                assert status == 0 and b"PASS deployed:" in output, (status, output, errors)
+                assert "started-engine" in state["events"] and state.get("serverProcessGroup"), state["events"]
+                assert {"windmill_gym_backfill", "windmill_journal_backfill"} <= {
+                    args[args.index("--entrypoint") + 1] for args in state["commands"]
+                    if args[0] == "compose" and "--entrypoint" in args and args[-1] == "--audit-current"}
+                self.stop_server(state_path)
+        print("PASS completed v5 restore rotates epoch: startup, current audit, rerun and deploy validate completion/digests", flush=True)
+
     def runner_failures(self):
         spec = importlib.util.spec_from_file_location("rehearsal_runner_test", BACKEND / "deploy/gym-migration/rehearse.py")
         module = importlib.util.module_from_spec(spec)
