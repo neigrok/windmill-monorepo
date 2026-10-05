@@ -197,7 +197,7 @@ TEST(gym_metadata_upgrade_rolls_back_an_interrupted_account_and_resumes_same_clo
   CHECK(upgrade.audit(owner)[0]["audit"].asBool());
 }
 
-TEST(gym_metadata_upgrade_resumes_after_committed_account_output_exits) {
+TEST(gym_metadata_upgrade_resumes_after_committed_output_and_refuses_incomplete_epoch_rotation) {
   if (!test::postgresEnabled()) SKIP(test::kNeedsPostgres);
   const auto input = metadataVector()["input"];
   test::PgWorld world(true, false, true);
@@ -214,9 +214,28 @@ TEST(gym_metadata_upgrade_resumes_after_committed_account_output_exits) {
   catch (const std::runtime_error&) { exited = true; }
   CHECK(exited);
   {
-    auto txn = world.store().begin(TxnMode::snapshot);
+    auto txn = world.store().begin(TxnMode::write);
     CHECK_EQ(sqlOf(*txn).exec("select count(*) from gym_sync_metadata_upgrades where result is not null")[0][0].as<int>(), 1);
     CHECK_EQ(sqlOf(*txn).exec("select count(*) from gym_sync_metadata_upgrades where result is null")[0][0].as<int>(), 1);
+    sqlOf(*txn).exec("update sync_meta set epoch='rotated-incomplete'");
+    txn->commit();
+  }
+  const auto rotated = databaseRows(world);
+  bool refused = false;
+  try { upgrade.run(); }
+  catch (const gym::engine::MetadataUpgradeError& error) {
+    refused = std::string(error.what()).ends_with("retained run epoch differs during incomplete upgrade");
+  }
+  CHECK(refused);
+  refused = false;
+  try { gym::engine::PgGymBackfill(pgTestPool()).auditCurrent(); }
+  catch (const gym::engine::MetadataUpgradeError&) { refused = true; }
+  CHECK(refused);
+  CHECK_EQ(jcs(databaseRows(world)), jcs(rotated));
+  {
+    auto txn = world.store().begin(TxnMode::write);
+    sqlOf(*txn).exec("update sync_meta set epoch=(select epoch from gym_sync_metadata_upgrade_runs where version=5)");
+    txn->commit();
   }
   const auto resumed = upgrade.run();
   REQUIRE_EQ(resumed.size(), 2u);

@@ -355,11 +355,14 @@ std::vector<Json::Value> PgGymMetadataUpgrade::run(std::optional<Ms> migrationTi
     if (!run.empty()) {
       at = run[0][0].as<Ms>(); owners = survivingRoster(*txn, parseJson(run[0][3].as<std::string>()));
       require(!migrationTime || *migrationTime == at, "explicit migration clock differs from retained run");
-      require(run[0][1].as<std::string>() == registryHash && run[0][2].as<std::string>() == store.epoch(*txn), "retained run registry or epoch differs");
+      require(run[0][1].as<std::string>() == registryHash, "retained run registry differs");
       if (sql.exec("select exists(select 1 from gym_sync_metadata_upgrades where version=5 and result is null)")[0][0].as<bool>()) {
+        require(run[0][2].as<std::string>() == store.epoch(*txn), "retained run epoch differs during incomplete upgrade");
         Json::Value current(Json::arrayValue);
         for (const auto& owner : accounts(*txn)) current.append(owner);
         require(jcs(current) == jcs(owners), "source account roster changed during incomplete upgrade");
+      } else {
+        PgGymBackfill(pool_).auditCurrent();
       }
     } else {
       owners = Json::Value(Json::arrayValue);
@@ -433,10 +436,9 @@ void PgGymMetadataUpgrade::requireComplete(SyncTxn& txn) {
                "('gym_routine_creations','rc'),('gym_routine_creations','ru')) columns(table_name,column_name) "
                "join pg_attribute a on a.attrelid=to_regclass(columns.table_name) and a.attname=columns.column_name and not a.attisdropped)")[0][0].as<bool>()) return;
   requireSchema(txn);
-  const auto run = sql.exec("select registry_hash,epoch from gym_sync_metadata_upgrade_runs where version=5");
+  const auto run = sql.exec("select registry_hash from gym_sync_metadata_upgrade_runs where version=5");
   require(run.size() == 1, "metadata schema has no initialized upgrade run");
-  require(run[0][0].as<std::string>() == sha256(jcs(parseJson(registryText()))).hex() &&
-          run[0][1].as<std::string>() == sql.exec("select epoch from sync_meta where one")[0][0].as<std::string>(), "retained registry or epoch differs");
+  require(run[0][0].as<std::string>() == sha256(jcs(parseJson(registryText()))).hex(), "retained registry differs");
   require(sql.exec("select not exists(select 1 from gym_sync_metadata_upgrades where version=5 and "
                    "(result is null or coalesce(result->>'audit','')<>'true' or coalesce(result->>'version','')<>'5' "
                    "or coalesce(result->>'account','')<>user_id::text or coalesce(result->>'migrationMs','')<>migration_ms::text))")[0][0].as<bool>(), "metadata preparation or committed audit is incomplete");

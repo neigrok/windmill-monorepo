@@ -3123,7 +3123,12 @@ pre-2026-10-04-cutover database or clear adoption/spent/receipt state.
    ordinary deployment does not install v5 DDL. A v5-capable image runs on the v4-adopted schema
    before the new columns exist and on the completed v5 schema. `--audit-current` checks metadata
    completion and the current feed after live writes; `--audit-v5` independently compares frozen
-   inputs only during the stopped-writer migration gate. Reads captured for comparison run
+   inputs only during the stopped-writer migration gate. Frozen-epoch equality applies to incomplete
+   migration resumes and frozen acceptance (`--audit-v5`), not completed-upgrade readiness.
+   Restoring a completed v5 backup MUST rotate `sync_meta.epoch` (§7.5); startup,
+   `--audit-current`, ordinary deployment and completed `--upgrade-v5` reruns accept that rotation
+   while still validating metadata completion and current feed digests. The retained run's epoch
+   remains immutable. Reads captured for comparison run
    with no lazy settlement.
 2. **Frozen inputs.** Read the server clock once as `M118` and persist it with a run id, candidate
    image/schema version and immutable manifest. Capture the current adopted feed
