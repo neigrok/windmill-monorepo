@@ -136,6 +136,61 @@ class SyncRuntimeTests {
         "results" to Json.Arr(request.member("intents").arr().map { Json.objectOf("n" to it.member("n"), "s" to Json.of("ok"), "seq" to Json.of(1)) }))))
     private suspend fun until(body: () -> Boolean) = withTimeout(2_000) { while (!body()) delay(5) }
 
+    @Test fun closingAnEngineWhileItsRuntimeCallbackIsRunningCancelsOwnedWorkersWithoutLeakingFailures() = runBlocking {
+        for (closeRuntime in listOf(true, false)) Fixture().use { fixture ->
+            val owner = (SyncRuntime::class.java.getDeclaredField("scope").also { it.isAccessible = true }
+                .get(fixture.runtime) as CoroutineScope).coroutineContext[Job]!!
+            val workers = owner.children.toList()
+            val completions = workers.map { worker -> CompletableDeferred<Throwable?>().also { ended ->
+                worker.invokeOnCompletion { ended.complete(it) }
+            } }
+            val entered = CompletableDeferred<Unit>()
+            val release = java.util.concurrent.CountDownLatch(1)
+            val once = AtomicBoolean(true)
+            fixture.clock.beforeReading = {
+                if (once.compareAndSet(true, false)) {
+                    entered.complete(Unit)
+                    check(release.await(2, java.util.concurrent.TimeUnit.SECONDS))
+                }
+            }
+            try {
+                fixture.engine.subscribe(product)
+                withTimeout(2_000) { entered.await() }
+                if (closeRuntime) fixture.runtime.close()
+                fixture.engine.close()
+            } finally { release.countDown() }
+            withTimeout(2_000) { workers.joinAll() }
+            assertTrue(owner.isCancelled)
+            assertTrue(completions.map { it.await() }.all { it == null || it is CancellationException })
+            assertFalse(fixture.events.any { it.outcome == EngineOutcome.failure })
+        }
+    }
+
+    @Test fun runtimeWorkerBoundariesReportUnexpectedFailuresAndPropagateCancellation() = runBlocking {
+        for (cancelled in listOf(false, true)) Fixture().use { fixture ->
+            val owner = (SyncRuntime::class.java.getDeclaredField("scope").also { it.isAccessible = true }
+                .get(fixture.runtime) as CoroutineScope).coroutineContext[Job]!!
+            val collector = owner.children.first()
+            val completion = CompletableDeferred<Throwable?>()
+            collector.invokeOnCompletion { completion.complete(it) }
+            val once = AtomicBoolean(true)
+            fixture.clock.beforeReading = {
+                if (once.compareAndSet(true, false)) {
+                    if (cancelled) throw CancellationException("cancelled")
+                    throw java.io.IOException("secret-token/private-content")
+                }
+            }
+            fixture.engine.subscribe(product)
+            val failure = withTimeout(2_000) { completion.await() }
+            if (cancelled) assertTrue(failure is CancellationException) else assertNull(failure)
+            fixture.engine.report(EngineOperation.hello, EngineOutcome.refused)
+            until { fixture.events.any { it.operation == EngineOperation.hello && it.outcome == EngineOutcome.refused } }
+            assertEquals(if (cancelled) emptyList() else listOf(EngineEvent(EngineOperation.sync, EngineOutcome.failure)),
+                fixture.events.filter { it.outcome == EngineOutcome.failure })
+            assertTrue(owner.isActive)
+        }
+    }
+
     private class ReleaseSleeper : EngineSleeper {
         class Sleep(val ms: Long) { val resume = CompletableDeferred<Unit>(); val ended = CompletableDeferred<Unit>() }
         val sleeps = CopyOnWriteArrayList<Sleep>()

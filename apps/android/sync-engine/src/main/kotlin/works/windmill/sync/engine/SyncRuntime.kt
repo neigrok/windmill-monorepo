@@ -90,8 +90,18 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         finally { task.cancel(); timer.cancel() }
     }
     private fun wakeAll() { senderWake.trySend(Unit); pullerWake.trySend(Unit); liveWake.trySend(Unit) }
+    private fun launchWorker(operation: EngineOperation, body: suspend CoroutineScope.() -> Unit) = scope.launch {
+        try { body() }
+        catch (cancelled: CancellationException) { throw cancelled }
+        catch (failure: Exception) {
+            // Cancellation cannot interrupt synchronous work already running when the engine closes.
+            if (failure is CommitFailure && failure.kind == CommitFailure.Kind.notWritable &&
+                failure.description == "closed" && engine.lock.withLock { engine.closed }) close()
+            else engine.report(operation, EngineOutcome.failure)
+        }
+    }
     init {
-        scope.launch { engine.changes.collect { change ->
+        launchWorker(EngineOperation.sync) { engine.changes.collect { change ->
             if (change.version == Long.MIN_VALUE) { close(); return@collect }
             heldWake.trySend(Unit)
             when (change.operation) {
@@ -104,7 +114,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 else -> Unit
             }
         } }
-        scope.launch {
+        launchWorker(EngineOperation.release) {
             while (isActive && !closed) {
                 try {
                     val due = engine.lock.withLock { engine.device.current().entries().filter { it.state == "held" }.minOfOrNull { it.json.member("releaseAt").long() } }
@@ -118,7 +128,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 }
             }
         }
-        scope.launch {
+        launchWorker(EngineOperation.storage) {
             while (isActive && !closed) {
                 try { while (engine.sweepReleased()) { yield() } }
                 catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
@@ -126,19 +136,19 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 sleeper.sleep(1_000)
             }
         }
-        scope.launch { while (isActive && !closed) {
+        launchWorker(EngineOperation.push) { while (isActive && !closed) {
             try { if (foreground && online) senderStep() }
             catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
             catch (_: Exception) { engine.report(EngineOperation.push, EngineOutcome.failure) }
             wait(senderWake, 1_000)
         } }
-        scope.launch { while (isActive && !closed) {
+        launchWorker(EngineOperation.pull) { while (isActive && !closed) {
             try { if (foreground && online) pullerStep() }
             catch (cancelled: CancellationException) { if (!isActive) throw cancelled }
             catch (_: Exception) { engine.report(EngineOperation.pull, EngineOutcome.failure) }
             wait(pullerWake, 1_000)
         } }
-        scope.launch { var k = 0
+        launchWorker(EngineOperation.live) { var k = 0
             while (isActive && !closed) {
                 if (!foreground || !online || seat() == null) { socket?.close(); socket = null; wait(liveWake, 30_000); continue }
                 val start = mono()
@@ -174,11 +184,11 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         }
         launched = true
     }
-    fun enter() { foreground = true; scope.launch { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() } }
+    fun enter() { foreground = true; launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() } }
     fun connectivity(online: Boolean) {
         this.online = online; engine.networkStatus(online = online)
         if (!online) { socket?.close(); socket = null }
-        scope.launch { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
+        launchWorker(EngineOperation.sync) { senderTurn.withLock { wait.kick(mono()) }; engine.subscriptions(products).forEach(pullWanted::add); wakeAll() }
     }
     suspend fun leave() {
         foreground = false; socket?.close(); socket = null
@@ -311,7 +321,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     fun reauthenticate(token: String) {
         val account = engine.lock.withLock { engine.device.current().account } ?: throw EngineError(EngineError.Code.notSignedIn)
-        storageIO { tokens.save(account, token) }; engine.reauthenticate(); socket?.close(); socket = null; scope.launch { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
+        storageIO { tokens.save(account, token) }; engine.reauthenticate(); socket?.close(); socket = null; launchWorker(EngineOperation.lifecycle) { senderTurn.withLock { wait.kick(mono()) }; wakeAll() }
     }
     suspend fun senderStep(leaving: Boolean = false): Boolean = runSenderStep(leaving, false)
     private suspend fun runSenderStep(leaving: Boolean, draining: Boolean): Boolean {

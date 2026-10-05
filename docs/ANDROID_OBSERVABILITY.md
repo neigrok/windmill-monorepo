@@ -69,7 +69,12 @@ storage, read, writer, transport and lifecycle failures report under `sync_<oper
 HTTP refusals, including update-required responses, emit metrics without Sentry issues. The engine
 owns hello, push, pull, live, retries, deadlines and cancellation. Engine network failures use
 bounded operation/outcome labels; intentional request/socket close and coroutine cancellation do
-not report issues. Unchanged engine transactions enqueue no success telemetry. The application
+not report issues. Unchanged engine transactions enqueue no success telemetry.
+Runtime-owned workers contain unexpected exceptions at their coroutine boundary and report only
+the static operation/outcome. Engine closure cancels the runtime without reporting a failure;
+coroutine cancellation is rethrown. Synchronous work already running during closure cannot leak
+the engine's closed-store exception into the process's uncaught exception handler.
+The application
 forwards engine refusals and failures; successful user steps already have their product events,
 so background housekeeping never becomes `sync_engine` traffic. A healthy live socket suppresses
 periodic fallback pulls; first reads, live hints, doubt resolution and socket recovery still pull.
