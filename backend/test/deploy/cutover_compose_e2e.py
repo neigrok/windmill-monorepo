@@ -348,11 +348,34 @@ class Harness:
         finally:
             self.compose("exec", "-T", "db", "dropdb", "-U", "windmill", "--force", database)
 
+    def metadata_enable_sync(self):
+        rows, epoch = self.sql(ROWS), self.sql("SELECT epoch FROM sync_meta;").strip().decode()
+        self.values["SYNC_ENABLED"] = "1"
+        self.candidate()
+        result = self.remote("deploy-production.sh")
+        assert result.returncode == 0 and b"PASS deployed" in result.stdout, (result.stdout + result.stderr).decode()
+        self.compose("up", "-d", "--wait", "--wait-timeout", "180", "--pull", "never", timeout=240)
+        assert self.sql(ROWS) == rows and self.reads() == self.metadata_before, "enabling sync changed adopted v4 history"
+        assert self.sql("SELECT to_regclass('gym_sync_metadata_upgrade_runs') IS NULL;").strip() == b"t", \
+            "sync-on upgrade fixture is already v5"
+        answer = self.request("GET", "/v1/sync/hello", expected=400)
+        assert answer == {"error": "malformed", "epoch": epoch, "serverTime": answer["serverTime"]}
+        assert type(answer["serverTime"]) is int and answer["serverTime"] > 0
+
     def metadata_success(self):
         epoch = self.sql("SELECT epoch FROM sync_meta;")
-        result = self.remote("products-cutover.sh", SWITCHES, operation="--upgrade-v5")
+        files = self.live_files()
+        switches = {key: self.values[key] for key in SWITCHES}
+        result = self.remote("products-cutover.sh", switches, operation="--upgrade-v5")
         assert result.returncode == 0 and b"PASS gym and journal cutover (--upgrade-v5)" in result.stdout, (result.stdout + result.stderr).decode()
         assert self.reads() == self.metadata_before and self.sql("SELECT epoch FROM sync_meta;") == epoch
+        assert self.live_files() == files, "v5 upgrade changed live environment or deployment files"
+        server = json.loads(self.run([self.docker, "inspect", self.compose("ps", "-q", "server").stdout.decode().strip()]).stdout)[0]
+        environment = dict(entry.split("=", 1) for entry in server["Config"]["Env"])
+        assert all(environment.get(key) == value for key, value in switches.items()), environment
+        answer = self.request("GET", "/v1/sync/hello", expected=400)
+        assert answer == {"error": "malformed", "epoch": epoch.strip().decode(), "serverTime": answer["serverTime"]}
+        assert type(answer["serverTime"]) is int and answer["serverTime"] > 0
         self.compose("exec", "-T", "server", "windmill_gym_backfill", "--audit-current")
         rows = self.sql(ROWS)
         self.compose("exec", "-T", "server", "windmill_gym_backfill", "--upgrade-v5")
@@ -577,7 +600,8 @@ def main():
                 harness.check("post-cutover REST writes maintain engine digests", harness.engine_writes)
                 harness.check("v5 pre-start failure restores adopted v4 database and running configuration", harness.metadata_rollback)
                 harness.check("v5 restored rehearsal audits history, rerun and account interruption/resume", harness.metadata_rehearsal)
-                harness.check("v5 cutover preserves REST/epoch, audits and immutable online rerun", harness.metadata_success)
+                harness.check("adopted v4 ordinary deployment enables sync with malformed hello and current epoch", harness.metadata_enable_sync)
+                harness.check("sync-on v5 cutover preserves files, switches, REST/epoch, mounted hello and immutable rerun", harness.metadata_success)
                 harness.check("v5-capable ordinary deployment accepts upgraded database", harness.metadata_deploy)
                 harness.check("v5 database refuses image without metadata capability before promotion", harness.metadata_image_refusal)
                 harness.check("post-v5 REST writes maintain gym and journal digests", harness.engine_writes)

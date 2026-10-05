@@ -29,6 +29,7 @@ jobs:
     timeout-minutes: 90
     steps:
       - name: Validate production confirmation and deployment switches
+        id: validate
         env:
           CONFIRM: ${{ inputs.confirm }}
           OPERATION: ${{ inputs.operation }}
@@ -39,15 +40,30 @@ jobs:
           SYNC_ENABLED: ${{ vars.SYNC_ENABLED || '0' }}
         run: |
           set -euo pipefail
-          expected='cut over gym and journal'
-          if [ "$OPERATION" = upgrade-v5 ]; then expected='upgrade gym metadata v5'; fi
+          case "$OPERATION" in
+            adopt)
+              expected='cut over gym and journal'
+              if [ "$SYNC_ENABLED" != 0 ]; then
+                printf 'FAIL base adoption requires SYNC_ENABLED=0\n'
+                exit 1
+              fi
+              ;;
+            upgrade-v5)
+              expected='upgrade gym metadata v5'
+              case "$SYNC_ENABLED" in
+                0|1) ;;
+                *) printf 'FAIL SYNC_ENABLED must be 0 or 1\n'; exit 1 ;;
+              esac
+              ;;
+            *) printf 'FAIL unsupported cutover operation\n'; exit 1 ;;
+          esac
           if [ "$CONFIRM" != "$expected" ] ||
              [ "$GYM_ENGINE_WRITES" != 1 ] || [ "$JOURNAL_ENGINE_WRITES" != 1 ] ||
-             [ "$GYM_WRITE_FREEZE" != 0 ] || [ "$JOURNAL_WRITE_FREEZE" != 0 ] ||
-             [ "$SYNC_ENABLED" != 0 ]; then
+             [ "$GYM_WRITE_FREEZE" != 0 ] || [ "$JOURNAL_WRITE_FREEZE" != 0 ]; then
             printf 'FAIL production confirmation or deployment switches\n'
             exit 1
           fi
+          printf 'sync_enabled=%s\n' "$SYNC_ENABLED" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v5
       - name: Stop writers, verify backup, migrate and audit before startup
         env:
@@ -56,6 +72,7 @@ jobs:
           SSH_USER: ${{ secrets.SSH_USER }}
           SSH_PORT: ${{ secrets.SSH_PORT }}
           OPERATION: ${{ inputs.operation }}
+          SYNC_ENABLED: ${{ steps.validate.outputs.sync_enabled }}
         run: |
           set -euo pipefail
           key=$(mktemp)
@@ -65,12 +82,12 @@ jobs:
           scp -q -i "$key" -P "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             backend/deploy/gym-migration/cutover-production.sh \
             "$SSH_USER@$SSH_HOST:windmill/products-cutover.sh"
-          # Values are constants only after the repository variables passed the exact guards above.
+          # Switch values passed the exact guards above.
           operation=adopt
           if [ "$OPERATION" = upgrade-v5 ]; then operation=--upgrade-v5; fi
           ssh -i "$key" -p "${SSH_PORT:-22}" -o StrictHostKeyChecking=accept-new \
             "$SSH_USER@$SSH_HOST" \
-            "GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 GYM_WRITE_FREEZE=0 JOURNAL_WRITE_FREEZE=0 SYNC_ENABLED=0 bash -seuo pipefail -- $operation" <<'REMOTE'
+            "GYM_ENGINE_WRITES=1 JOURNAL_ENGINE_WRITES=1 GYM_WRITE_FREEZE=0 JOURNAL_WRITE_FREEZE=0 SYNC_ENABLED=$SYNC_ENABLED bash -seuo pipefail -- $operation" <<'REMOTE'
           main() {
             cd ~/windmill
             bash products-cutover.sh "$PWD" "$1"

@@ -239,7 +239,7 @@ completed restoration. It applies `gym_sync.sql` and `journal_sync.sql`, runs bo
 all read, envelope, independent digest and catalog audits, then reapplies `schema.sql` and repeats
 the catalog and digest checks. Production installs no test fixtures and runs no fault injections.
 
-On PASS, the script writes the five switches into `~/windmill/.env` with the same literal values
+On PASS, base adoption writes the five switches into `~/windmill/.env` with the same literal values
 as `deploy.yml`, preserving other configuration and the initialized Postgres password. It starts
 the services and checks health, a REST read that needs no credentials, both products'
 `--audit-current`, and the disabled `/v1/sync` route's 404 response. No subsequent enable or release
@@ -297,7 +297,11 @@ fresh row sequences deliver the supplement through ordinary pulls. A v4 journal 
 compatible with composition version 5 and minimum version 4.
 
 Dispatch the same production workflow with `operation=upgrade-v5` and `confirm` exactly
-`upgrade gym metadata v5`. The existing wrapper uses the same writer inventory, durable phases,
+`upgrade gym metadata v5`. Both engine-write switches must be on and both freezes off; `SYNC_ENABLED`
+may be `0` or `1` and must match the live configuration. The upgrade never rewrites `~/windmill/.env`
+and preserves every switch. With sync enabled, startup smoke requires `/v1/sync/hello` to answer
+400 `malformed` with the unchanged epoch; with sync disabled, it requires 404.
+The wrapper uses the same writer inventory, durable phases,
 verified stopped-service rollback backup and startup boundary as base adoption. It applies only
 the separate v5 DDL, runs `windmill_gym_backfill --upgrade-v5`, requires `--audit-v5`, byte-identical
 read snapshots, unchanged epoch and immutable rerun, and audits journal before startup. Production
@@ -343,9 +347,11 @@ fixtures use SQL; external providers are disabled. Local test substitutions use 
 a random loopback port, local image pull policies, and an inert healthy model sidecar. The database,
 server, Caddy, migration commands, and deploy/cutover scripts are real. Checks cover the image
 upgrade, exact rollback rows and running configuration after a forced pre-start failure, successful
-adoption and unchanged reads, both audits, sync's 404, post-adoption writes, the v5 rollback and
+adoption and unchanged reads, both audits, sync's 404, post-adoption writes, sync-enabled ordinary
+deployment on v4, the v5 rollback and
 restored rehearsal with account interruption/resume, audited v5 migration and rerun, image-capability
-refusal, post-v5 writes, all three disabled-switch
+refusal, preserved live switches and epoch through the sync-enabled v5 upgrade, mounted sync smoke,
+post-v5 writes, all three disabled-switch
 deploy refusals, an applied Caddyfile change, and a same-candidate retry after SIGKILL between file
 promotion and Caddy recreation. Each check prints PASS or FAIL. The exit handler
 removes its containers, volumes, network, Buildx builder/cache and newly created or pulled images.

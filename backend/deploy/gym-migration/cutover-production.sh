@@ -168,7 +168,7 @@ SQL
   }
 
   start_old() {
-    cp "$evidence/previous.env" .env || return 1
+    if [ "$operation" = adopt ]; then cp "$evidence/previous.env" .env || return 1; fi
     # These are the original containers, so recovery never runs schema.sql or changes their image.
     python3 - "$evidence/writers-before.json" "$server" <<'PY'
 import json
@@ -197,7 +197,7 @@ PY
     if [ "$mutated" -eq 1 ]; then
       restore_backup || return 1
     fi
-    cp "$evidence/previous.env" .env || return 1
+    if [ "$operation" = adopt ]; then cp "$evidence/previous.env" .env || return 1; fi
     # Legacy writes may resume at the next command. This backup is no longer eligible for automatic restore.
     record_phase rolled-back || return 1
     start_old
@@ -255,7 +255,9 @@ PY
   [ "${JOURNAL_ENGINE_WRITES:-}" = 1 ]
   [ "${GYM_WRITE_FREEZE:-}" = 0 ]
   [ "${JOURNAL_WRITE_FREEZE:-}" = 0 ]
-  [ "${SYNC_ENABLED:-0}" = 0 ]
+  sync_enabled=${SYNC_ENABLED:-0}
+  case "$sync_enabled" in 0|1) ;; *) return 1 ;; esac
+  if [ "$operation" = adopt ]; then [ "$sync_enabled" = 0 ]; fi
   # Compose must read the live .env until prepare; exported workflow inputs otherwise override it.
   unset GYM_ENGINE_WRITES JOURNAL_ENGINE_WRITES GYM_WRITE_FREEZE JOURNAL_WRITE_FREEZE SYNC_ENABLED
   test -f .env
@@ -264,7 +266,7 @@ PY
   test -n "$db" && test -n "$server"
   docker inspect "$server" "$db" > "$evidence/runtime.json"
   docker compose config --format json > "$evidence/compose.json"
-  python3 - "$evidence" <<'PY'
+  python3 - "$evidence" "$operation" "$sync_enabled" <<'PY'
 import json
 from pathlib import Path
 import re
@@ -287,8 +289,15 @@ for entry in entries:
     if key in environment:
         raise SystemExit("duplicate runtime environment key")
     environment[key] = value
-if environment.get("SYNC_ENABLED", "0") != "0":
-    raise SystemExit("SYNC_ENABLED must stay zero")
+switches = {"GYM_ENGINE_WRITES": "1", "JOURNAL_ENGINE_WRITES": "1",
+            "GYM_WRITE_FREEZE": "0", "JOURNAL_WRITE_FREEZE": "0", "SYNC_ENABLED": "0"}
+if sys.argv[2] == "--upgrade-v5":
+    switches["SYNC_ENABLED"] = sys.argv[3]
+    if any(environment.get(key, "0") != value for key, value in switches.items()):
+        raise SystemExit("live upgrade switches must match the validated deployment switches")
+elif environment.get("SYNC_ENABLED", "0") != "0":
+    raise SystemExit("base adoption requires SYNC_ENABLED=0")
+(evidence / "switches.json").write_text(json.dumps(switches) + "\n")
 (evidence / "environment-matches").write_text(str(all(environment.get(key) == str(value) for key, value in config["services"]["server"].get("environment", {}).items())) + "\n")
 db_environment = dict(entry.split("=", 1) for entry in database["Config"]["Env"])
 address = urlsplit(environment.get("DATABASE_URL", ""))
@@ -392,7 +401,7 @@ PY
   fi
   if [ "$mutated" -eq 1 ]; then
     restore_backup
-    cp "$previous/previous.env" .env
+    if [ "$operation" = adopt ]; then cp "$previous/previous.env" .env; fi
     mutated=0
     evidence=$recovery_evidence
   fi
@@ -416,6 +425,10 @@ PY
   record_phase migration
   mutated=1
   stopped
+  if [ "$operation" = --upgrade-v5 ]; then
+    db_sql <<< 'SELECT epoch FROM sync_meta;' > "$evidence/epoch-before"
+    test -s "$evidence/epoch-before"
+  fi
   migration_mode=--apply-adoption
   [ "$operation" != --upgrade-v5 ] || migration_mode=--upgrade-v5
   docker run --rm --restart=no --name "$runner" --network "$network" \
@@ -430,11 +443,15 @@ if result["passed"] is not True:
     raise SystemExit("product audits did not pass")
 print(json.dumps({key: result[key] for key in ("accounts", "initialTableRows", "responses", "auditedScopes", "tables")}, sort_keys=True))
 PY
+  if [ "$operation" = --upgrade-v5 ]; then
+    [ "$(db_sql <<< 'SELECT epoch FROM sync_meta;')" = "$(cat "$evidence/epoch-before")" ]
+  fi
 
   # 5. Validate the next environment while every writer is still stopped.
   record_phase prepare
   stopped
-  python3 - .env <<'PY'
+  if [ "$operation" = adopt ]; then
+    python3 - .env <<'PY'
 from pathlib import Path
 import sys
 path = Path(sys.argv[1])
@@ -445,6 +462,9 @@ temporary = path.with_suffix(".cutover.tmp")
 temporary.write_text("\n".join(lines + [key + "=" + value for key, value in switches.items()]) + "\n")
 temporary.replace(path)
 PY
+  else
+    cmp "$evidence/previous.env" .env
+  fi
   docker compose config -q
   # Persist this BEFORE any start call: a failed/interruptible start can already have accepted writes.
   record_phase forward-only
@@ -462,13 +482,12 @@ for service, settings in json.load(open(sys.argv[1]))["services"].items():
         subprocess.run(["docker", "update", "--restart=" + settings.get("restart", "no"), *containers], check=True)
 PY
   docker inspect "$(docker compose ps -q server)" > "$evidence/started.json"
-  python3 - "$evidence/started.json" "$image" <<'PY'
+  python3 - "$evidence/started.json" "$image" "$evidence/switches.json" <<'PY'
 import json
 import sys
 server, = json.load(open(sys.argv[1]))
 environment = dict(entry.split("=", 1) for entry in server["Config"]["Env"])
-required = {"GYM_ENGINE_WRITES": "1", "JOURNAL_ENGINE_WRITES": "1",
-            "GYM_WRITE_FREEZE": "0", "JOURNAL_WRITE_FREEZE": "0", "SYNC_ENABLED": "0"}
+required = json.load(open(sys.argv[3]))
 if server["Image"] != sys.argv[2] or not server["State"]["Running"] or any(environment.get(key, "0") != value for key, value in required.items()):
     raise SystemExit("started server image or switches do not match the audited cutover")
 PY
@@ -476,8 +495,20 @@ PY
     curl --silent --show-error --max-time 15 --output /dev/null http://localhost:8080/
     test "$(curl --silent --show-error --max-time 15 --output /tmp/cutover-gallery.json --write-out "%{http_code}" http://localhost:8080/v1/gallery)" = 200
     python3 -c '\''import json; json.load(open("/tmp/cutover-gallery.json"))'\''
-    test "$(curl --silent --show-error --max-time 15 --output /dev/null --write-out "%{http_code}" http://localhost:8080/v1/sync)" = 404
   '
+  epoch=$(db_sql <<< 'SELECT epoch FROM sync_meta;')
+  if [ "$operation" = --upgrade-v5 ]; then
+    [ "$epoch" = "$(cat "$evidence/epoch-before")" ]
+  fi
+  docker compose exec -T server sh -ec '
+    status=$(curl --silent --show-error --max-time 15 --output /tmp/cutover-sync.json --write-out "%{http_code}" http://localhost:8080/v1/sync/hello)
+    if [ "$SYNC_ENABLED" = 1 ]; then
+      test "$status" = 400
+      python3 -c '\''import json,sys; reply=json.load(open("/tmp/cutover-sync.json")); assert reply["error"] == "malformed" and reply["epoch"] == sys.argv[1]'\'' "$1"
+    else
+      test "$status" = 404
+    fi
+  ' sh "$epoch"
   for product in gym journal; do
     docker compose exec -T server "windmill_${product}_backfill" --audit-current
   done

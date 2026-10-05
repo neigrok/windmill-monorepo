@@ -522,11 +522,11 @@ class CutoverTest:
         return self.sql(database, "SELECT to_regclass('gym_sync_adoptions') IS NOT NULL OR "
                         "to_regclass('journal_sync_adoptions') IS NOT NULL") == b"t"
 
-    def fixture(self, name, **injection):
+    def fixture(self, name, switches=None, **injection):
         database = self.create_database(self.template)
         work = self.directory / name / "windmill"
         work.mkdir(parents=True)
-        original = {**OLD_SWITCHES, "LEGACY_REST_WRITES_RETIRED": "0", "POSTGRES_PASSWORD": SECRET, "DOMAIN_APP": "cutover.example.invalid", "IMAGE_TAG": "tested"}
+        original = {**(switches or OLD_SWITCHES), "LEGACY_REST_WRITES_RETIRED": "0", "POSTGRES_PASSWORD": SECRET, "DOMAIN_APP": "cutover.example.invalid", "IMAGE_TAG": "tested"}
         (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in original.items()))
         shutil.copyfile(BACKEND / "deploy/docker-compose.yml", work / "docker-compose.yml")
         shutil.copyfile(BACKEND / "deploy/Caddyfile", work / "Caddyfile")
@@ -563,7 +563,7 @@ class CutoverTest:
             path = binaries / tool
             path.write_text("#!/bin/sh\nexec " + shlex.join([sys.executable, str(SELF)]) + " " + mode + ' "$@"\n')
             path.chmod(0o700)
-        environment = {**os.environ, **SWITCHES, "LEGACY_REST_WRITES_RETIRED": "0", "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
+        environment = {**os.environ, **SWITCHES, **(switches or {}), "LEGACY_REST_WRITES_RETIRED": "0", "PATH": str(binaries) + os.pathsep + os.environ["PATH"],
                        "WM_CUTOVER_STATE": str(state_path)}
         return work, state_path, environment, database
 
@@ -642,54 +642,111 @@ class CutoverTest:
         return fixture
 
     def metadata_upgrade(self):
-        for phase in (None, "v5-schema", "v5-upgrade", "v5-audit", "prepare"):
-            fixture = self.fixture("metadata-" + str(phase), **({"failAt": phase} if phase else {}))
-            work, state_path, environment, database = fixture
-            self.apply(database, "gym_sync.sql", "journal_sync.sql")
-            for product in ("gym", "journal"):
-                command([self.args.bin_dir / f"windmill_{product}_backfill"],
-                        {**os.environ, "DATABASE_URL": self.database_url(database)})
-            values = {**env_file(work / ".env"), **SWITCHES}
-            (work / ".env").write_text("".join(f"{key}={value}\n" for key, value in values.items()))
-            state = json.loads(state_path.read_text())
-            state["productionRuntime"].update(SWITCHES)
-            for row in state["containers"].values():
-                if row["Config"]["Labels"]["com.docker.compose.service"] == "server":
-                    row["Config"]["Env"] = [f"{key}={value}" for key, value in state["productionRuntime"].items()]
-            state_path.write_text(json.dumps(state))
-            environment["WM_CUTOVER_V5"] = "1"
-            original = copy.deepcopy(state["containers"])
-            baseline = self.snapshot(database)
-            epoch = self.sql(database, "SELECT epoch FROM sync_meta")
-            status, output, errors, state = self.execute(fixture)
-            if phase:
-                assert status != 0 and b"restored; old configuration running" in output, (phase, output, errors)
-                assert self.snapshot(database) == baseline, "v5 pre-start rollback changed adopted data"
-                self.assert_old_running(original, state)
-            else:
-                assert status == 0 and b"PASS gym and journal cutover (--upgrade-v5)" in output, (status, output, errors)
-                assert self.sql(database, "SELECT epoch FROM sync_meta") == epoch, "v5 cutover rotated epoch"
-                assert self.sql(database, "SELECT count(*) FROM gym_sync_metadata_upgrades WHERE result IS NOT NULL").strip() != b"0"
-                report = json.loads((Path(state["migrationEvidence"]) / "run/result.json").read_text())
-                assert report["passed"] and report["version"] == 5 and report["epochUnchanged"], report
-                self.stop_server(state_path)
-                before = self.snapshot(database, row_versions=True)
-                command([self.args.bin_dir / "windmill_gym_backfill", "--upgrade-v5"],
-                        {**os.environ, "DATABASE_URL": self.database_url(database)})
-                assert self.snapshot(database, row_versions=True) == before, "v5 rerun updated rows"
-                for key in SWITCHES:
-                    environment.pop(key, None)
+        for key, value in {**SWITCHES, "SYNC_ENABLED": "1"}.items():
+            for wrong in (("0", "2") if key == "SYNC_ENABLED" else ("0" if value == "1" else "1",)):
+                fixture = self.fixture(f"metadata-live-guard-{key}-{wrong}", switches={**SWITCHES, "SYNC_ENABLED": "1"})
+                work, state_path, environment, database = fixture
+                environment["WM_CUTOVER_V5"] = "1"
+                values = env_file(work / ".env")
+                values[key] = wrong
+                (work / ".env").write_text("".join(f"{name}={setting}\n" for name, setting in values.items()))
                 state = json.loads(state_path.read_text())
-                state["metadataVersion"] = "<no value>"
+                state["productionRuntime"][key] = wrong
+                for row in state["containers"].values():
+                    if row["Config"]["Labels"]["com.docker.compose.service"] == "server":
+                        row["Config"]["Env"] = [f"{name}={setting}" for name, setting in state["productionRuntime"].items()]
                 state_path.write_text(json.dumps(state))
-                (work / "rendered.env").write_bytes((work / ".env").read_bytes())
-                shutil.copyfile(work / "docker-compose.yml", work / "docker-compose.next.yml")
-                shutil.copyfile(work / "Caddyfile", work / "Caddyfile.next")
                 original = copy.deepcopy(state["containers"])
-                status, output, errors, state = self.execute(fixture, BACKEND / "deploy/deploy-production.sh")
-                assert status != 0 and b"v5-capable image" in output + errors, (status, output, errors)
-                assert state["containers"] == original and self.snapshot(database, row_versions=True) == before
-            self.stop_server(state_path)
+                original_env = (work / ".env").read_bytes()
+                baseline = self.snapshot(database, row_versions=True)
+                status, output, errors, state = self.execute(fixture)
+                assert status != 0 and output.startswith(b"FAIL") and not errors, (key, wrong, output, errors)
+                assert state["containers"] == original and (work / ".env").read_bytes() == original_env
+                assert self.snapshot(database, row_versions=True) == baseline and not state["toolCalls"], "live switch refusal changed database"
+        print("PASS v5 live engine/freeze/sync mismatch guards preserve production", flush=True)
+        scenarios = [("success", None),
+                     *[("fail", phase) for phase in ("v5-schema", "v5-upgrade", "v5-audit", "prepare")],
+                     *[("kill", phase) for phase in ("verified-backup", "v5-schema", "v5-upgrade", "prepare", "start", "smoke")]]
+        for sync in ("0", "1"):
+            switches = {**SWITCHES, "SYNC_ENABLED": sync}
+            for kind, phase in scenarios:
+                fixture = self.fixture(f"metadata-sync-{sync}-{kind}-{phase}", switches=switches,
+                                       **({kind + "At": phase} if phase else {}))
+                work, state_path, environment, database = fixture
+                self.apply(database, "gym_sync.sql", "journal_sync.sql")
+                for product in ("gym", "journal"):
+                    command([self.args.bin_dir / f"windmill_{product}_backfill"],
+                            {**os.environ, "DATABASE_URL": self.database_url(database)})
+                environment["WM_CUTOVER_V5"] = "1"
+                original = copy.deepcopy(json.loads(state_path.read_text())["containers"])
+                original_env = (work / ".env").read_bytes()
+                original_stat = (work / ".env").stat()
+                baseline = self.snapshot(database)
+                epoch = self.sql(database, "SELECT epoch FROM sync_meta")
+                status, output, errors, state = self.execute(fixture)
+                assert (work / ".env").read_bytes() == original_env, "v5 cutover changed live environment bytes"
+                assert (work / ".env").stat().st_ino == original_stat.st_ino and \
+                    (work / ".env").stat().st_mtime_ns == original_stat.st_mtime_ns, "v5 cutover rewrote live environment"
+                assert self.sql(database, "SELECT epoch FROM sync_meta") == epoch, "v5 cutover rotated epoch"
+                if kind == "fail":
+                    assert status != 0 and state.get("failFired") and b"restored; old configuration running" in output, (phase, output, errors)
+                    assert self.snapshot(database) == baseline, "v5 pre-start rollback changed adopted data"
+                    self.assert_old_running(original, state)
+                    self.verify_backup(fixture)
+                else:
+                    if kind == "kill":
+                        assert status == -signal.SIGKILL and state.get("killFired"), (phase, status, output, errors)
+                        interrupted = self.snapshot(database)
+                        for key in ("killAt", "injectionEvent", "injectionFired", "killFired"):
+                            state.pop(key, None)
+                        state_path.write_text(json.dumps(state))
+                        status, output, errors, state = self.execute(fixture)
+                        assert (work / ".env").read_bytes() == original_env and \
+                            (work / ".env").stat().st_ino == original_stat.st_ino and \
+                            (work / ".env").stat().st_mtime_ns == original_stat.st_mtime_ns, "v5 resume rewrote live environment"
+                        assert self.sql(database, "SELECT epoch FROM sync_meta") == epoch, "v5 resume rotated epoch"
+                        if phase in ("start", "smoke"):
+                            assert status != 0 and b"forward-only" in output and "restored" not in state["events"], (phase, output, errors)
+                            assert self.snapshot(database) == interrupted, "forward-only v5 resume restored retired backup"
+                            self.stop_server(state_path)
+                            print(f"PASS v5 sync={sync} SIGKILL/{phase} forward-only refusal", flush=True)
+                            continue
+                        assert "restored" in state["events"], "v5 resume did not restore verified rollback point"
+                    assert status == 0 and not errors and b"PASS gym and journal cutover (--upgrade-v5)" in output, (status, output, errors)
+                    assert self.sql(database, "SELECT count(*) FROM gym_sync_metadata_upgrades WHERE result IS NOT NULL").strip() != b"0"
+                    report = json.loads((Path(state["migrationEvidence"]) / "run/result.json").read_text())
+                    assert report["passed"] and report["version"] == 5 and report["epochUnchanged"], report
+                    server = next(row for row in state["containers"].values()
+                                  if row["Config"]["Labels"]["com.docker.compose.service"] == "server")
+                    actual = dict(entry.split("=", 1) for entry in server["Config"]["Env"])
+                    assert {key: actual[key] for key in switches} == switches, "v5 startup changed live switches"
+                    probe = subprocess.run([state["tools"]["curl"], "-sS", "--write-out", "\n%{http_code}",
+                        f"http://127.0.0.1:{state['serverPort']}/v1/sync/hello"], capture_output=True, check=True)
+                    body, http_status = probe.stdout.rsplit(b"\n", 1)
+                    assert http_status == (b"400" if sync == "1" else b"404"), probe.stdout
+                    if sync == "1":
+                        reply = json.loads(body)
+                        assert reply["error"] == "malformed" and reply["epoch"].encode() == epoch, reply
+                    self.stop_server(state_path)
+                    before = self.snapshot(database, row_versions=True)
+                    command([self.args.bin_dir / "windmill_gym_backfill", "--upgrade-v5"],
+                            {**os.environ, "DATABASE_URL": self.database_url(database)})
+                    assert self.snapshot(database, row_versions=True) == before, "v5 rerun updated rows"
+                    if kind == "success":
+                        for key in SWITCHES:
+                            environment.pop(key, None)
+                        state = json.loads(state_path.read_text())
+                        state["metadataVersion"] = "<no value>"
+                        state_path.write_text(json.dumps(state))
+                        (work / "rendered.env").write_bytes((work / ".env").read_bytes())
+                        shutil.copyfile(work / "docker-compose.yml", work / "docker-compose.next.yml")
+                        shutil.copyfile(work / "Caddyfile", work / "Caddyfile.next")
+                        original = copy.deepcopy(state["containers"])
+                        status, output, errors, state = self.execute(fixture, BACKEND / "deploy/deploy-production.sh")
+                        assert status != 0 and b"v5-capable image" in output + errors, (status, output, errors)
+                        assert state["containers"] == original and self.snapshot(database, row_versions=True) == before
+                self.stop_server(state_path)
+                print(f"PASS v5 sync={sync} {kind}/{phase}: switches and epoch preserved", flush=True)
         fixture = self.fixture("metadata-ddl-only")
         work, state_path, environment, database = fixture
         self.apply(database, "gym_sync.sql", "journal_sync.sql")
@@ -1311,6 +1368,29 @@ class CutoverTest:
         assert "group: deploy-vps" in source and "cancel-in-progress: false" in source, source
         assert "cut over gym and journal" in source and "inputs.confirm" in source, source
         assert "cutover-production.sh" in source and "migrate-production.sh" not in source, source
+        assert "SYNC_ENABLED: ${{ steps.validate.outputs.sync_enabled }}" in source, "validated sync switch is not forwarded"
+        assert "SYNC_ENABLED=$SYNC_ENABLED bash" in source, "remote cutover hardcodes the sync switch"
+        validation = re.search(r"        run: \|\n([\s\S]*?)      - uses:", source)
+        assert validation, "workflow validation shell not found"
+        shell = "\n".join(line[10:] for line in validation[1].splitlines())
+        cases = [("adopt", {"SYNC_ENABLED": "0"}, True), ("adopt", {"SYNC_ENABLED": "1"}, False),
+                 ("upgrade-v5", {"SYNC_ENABLED": "0"}, True), ("upgrade-v5", {"SYNC_ENABLED": "1"}, True),
+                 ("unsupported", {}, False)]
+        for operation in ("adopt", "upgrade-v5"):
+            cases += [(operation, {"CONFIRM": "wrong"}, False)]
+            cases += [(operation, {"SYNC_ENABLED": invalid}, False) for invalid in ("", "2")]
+            cases += [(operation, {key: "0" if value == "1" else "1"}, False)
+                      for key, value in SWITCHES.items() if key != "SYNC_ENABLED"]
+        for index, (operation, overrides, accepted) in enumerate(cases):
+            output = self.directory / f"workflow-output-{index}"
+            output.touch()
+            environment = {**os.environ, **SWITCHES, "OPERATION": operation,
+                           "CONFIRM": "upgrade gym metadata v5" if operation == "upgrade-v5" else "cut over gym and journal",
+                           "GITHUB_OUTPUT": str(output), **overrides}
+            result = subprocess.run(["bash", "-c", shell], env=environment, capture_output=True, check=False)
+            assert (result.returncode == 0) == accepted, (operation, overrides, result.stdout, result.stderr)
+            assert output.read_text() == (f"sync_enabled={environment['SYNC_ENABLED']}\n" if accepted else ""), overrides
+            self.cases += 1
         deploy = self.args.deploy_workflow.read_text()
         assert "group: deploy-vps" in deploy
         assert "deploy-production.sh" in deploy, "deploy tests must exercise the program actually shipped by deploy.yml"
