@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import { after, test } from 'node:test';
+import { once } from 'node:events';
 import { chromium } from 'playwright';
 import { createServer } from 'vite';
 import { fileURLToPath } from 'node:url';
@@ -7,20 +8,64 @@ import { fileURLToPath } from 'node:url';
 let server, browser, origin;
 const root = fileURLToPath(new URL('../../../', import.meta.url));
 const registryPath = fileURLToPath(new URL('../../../../packages/api-contract/sync/probe.registry.json', import.meta.url));
+const testHtml = '<!doctype html><title>Sync engine test</title>';
 const ready = (async () => {
   server = await createServer({ configFile: false, root, cacheDir: `${root}/node_modules/.vite-sync-test`, plugins: [{ name: 'sync-test-page', configureServer(server) {
-    server.middlewares.use('/sync-test', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end('<!doctype html><title>Sync engine test</title>'); });
+    server.middlewares.use('/sync-test', (_request, response) => { response.setHeader('Content-Type', 'text/html'); response.end(testHtml); });
   } }], optimizeDeps: { include: ['@noble/hashes/sha256', '@noble/hashes/utils'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  // Linux x64 uses Chrome for Testing; intentional crashes must not wait for its Crashpad handler.
-  browser = await chromium.launch({ channel: 'chromium', headless: true,
-    args: process.platform === 'linux' && process.arch === 'x64' ? ['--disable-crashpad-for-testing'] : [],
-    ignoreDefaultArgs: ['--disable-back-forward-cache'] });
+  browser = await chromium.launch({ channel: 'chromium', headless: true, ignoreDefaultArgs: ['--disable-back-forward-cache'] });
 })();
 after(async () => { await ready; await browser?.close(); await server?.close(); });
 
+async function freshContext() {
+  await ready;
+  return browser.newContext();
+}
+
+async function serving(path = '/sync-test') {
+  const url = `${origin}${path}`;
+  try {
+    const response = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    assert.equal(response.status, 200);
+    assert.equal(await response.text(), testHtml);
+  } catch (error) {
+    throw new Error(`Sync test dev server is not serving ${url} before browser navigation`, { cause: error });
+  }
+}
+
+async function crashRenderer(page) {
+  const cdp = await page.context().newCDPSession(page);
+  let pid;
+  try {
+    const { frameTree } = await cdp.send('Page.getFrameTree');
+    cdp.on('Tracing.dataCollected', ({ value }) => {
+      for (const event of value) {
+        if (event.name !== 'TracingStartedInBrowser') continue;
+        const frame = event.args?.data?.frames?.find(({ frame }) => frame === frameTree.frame.id);
+        if (frame) pid = frame.processId;
+      }
+    });
+    await cdp.send('Tracing.start', { categories: 'disabled-by-default-devtools.timeline', transferMode: 'ReportEvents' });
+    const complete = once(cdp, 'Tracing.tracingComplete');
+    await cdp.send('Tracing.end');
+    await complete;
+  } finally { await cdp.detach(); }
+  assert.ok(Number.isSafeInteger(pid) && pid > 0, 'CDP trace did not identify the target renderer PID');
+  const system = await browser.newBrowserCDPSession();
+  try {
+    const { processInfo } = await system.send('SystemInfo.getProcessInfo');
+    assert.ok(processInfo.some((process) => process.type === 'renderer' && process.id === pid), `Target PID ${pid} is not a live Chromium renderer`);
+  } finally { await system.detach(); }
+  const crash = page.waitForEvent('crash');
+  crash.catch(() => {});
+  process.kill(pid, 'SIGKILL');
+  await crash;
+}
+
 async function open(context, name) {
+  await serving();
   const page = await context.newPage();
   await page.goto(`${origin}/sync-test`);
   await page.evaluate(async ({ name, registryPath }) => {
@@ -82,8 +127,7 @@ async function signedTabs(context, name) {
 }
 
 test('Chromium: two real tabs elect one leader, fan out durable observations, hand off on close and renderer crash', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const pages = await Promise.all([open(context, 'tabs'), open(context, 'tabs')]);
     const first = await leader(pages), second = 1 - first;
@@ -96,9 +140,7 @@ test('Chromium: two real tabs elect one leader, fan out durable observations, ha
     await pages[second].waitForFunction(() => engine.leader);
     const replacement = await open(context, 'tabs');
     await replacement.waitForFunction(() => !engine.leader);
-    const cdp = await context.newCDPSession(pages[second]);
-    const crash = pages[second].waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {}); await crash;
+    await crashRenderer(pages[second]);
     await replacement.waitForFunction(() => engine.leader);
     assert.equal(await replacement.evaluate(() => observation.getSnapshot().drawn.length), 1);
     assert.equal(await replacement.evaluate(() => requests), 0);
@@ -107,8 +149,7 @@ test('Chromium: two real tabs elect one leader, fan out durable observations, ha
 });
 
 test('Chromium: killing a tab inside an IndexedDB commit preserves the previous pointer, rows, clock and outbox', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const writer = await open(context, 'atomic');
     await gesture(writer, 'card0001');
@@ -129,9 +170,7 @@ test('Chromium: killing a tab inside an IndexedDB commit preserves the previous 
       } }).catch(() => {});
     });
     await writer.waitForFunction(() => stalled);
-    const cdp = await context.newCDPSession(writer);
-    const crash = writer.waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {}); await crash;
+    await crashRenderer(writer);
     assert.deepEqual(await reader.evaluate(async () => (await engine.store.read()).device.toJSON()), before);
     await writer.close();
     await reader.evaluate(() => engine.close());
@@ -142,7 +181,7 @@ test('Chromium: killing a tab inside an IndexedDB commit preserves the previous 
 });
 
 test('Chromium: scoped writer latency and pointer swaps stay independent of cached row count', async (t) => {
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const page = await open(context, 'latency');
     const measurements = await page.evaluate(async () => {
@@ -174,8 +213,7 @@ test('Chromium: scoped writer latency and pointer swaps stay independent of cach
 });
 
 test('Chromium: the engine reopens IndexedDB while the browser is offline without a network request', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const page = await open(context, 'offline-browser');
     await gesture(page, 'card0001');
@@ -196,8 +234,7 @@ test('Chromium: the engine reopens IndexedDB while the browser is offline withou
 });
 
 test('Chromium: a real bfcache restore reopens the engine and keeps existing observations writable', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const page = await open(context, 'bfcache-restore');
     const cdp = await context.newCDPSession(page), reasons = [];
@@ -212,7 +249,9 @@ test('Chromium: a real bfcache restore reopens the engine and keeps existing obs
       observation.subscribe(() => observed.push(observation.getSnapshot().drawn.map((row) => row.id)));
       window.addEventListener('pageshow', (event) => { restoredFromCache = event.persisted; });
     });
+    await serving('/sync-test/away');
     await page.goto(`${origin}/sync-test/away`, { waitUntil: 'commit', timeout: 5000 });
+    await serving();
     await page.goBack({ waitUntil: 'commit', timeout: 5000 });
     try { await page.waitForFunction(() => window.restoredFromCache && !engine.closed && events.some(({ event }) => event === 'restored'), null, { timeout: 6000 }); }
     catch (error) {
@@ -231,8 +270,7 @@ test('Chromium: a real bfcache restore reopens the engine and keeps existing obs
 });
 
 test('Chromium: persisted lifecycle events close and reopen real Web Locks and IndexedDB', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const page = await open(context, 'persisted-lifecycle');
     await gesture(page, 'card0001');
@@ -253,8 +291,7 @@ test('Chromium: persisted lifecycle events close and reopen real Web Locks and I
 });
 
 test('Chromium: default telemetry beacons use intake-compatible names and bounded content-free properties', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const page = await open(context, 'beacon');
     let delivered;
@@ -278,17 +315,14 @@ test('Chromium: default telemetry beacons use intake-compatible names and bounde
 });
 
 test('Chromium: a replica transition committed before a leader crash is announced once by the surviving tab', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const pages = await Promise.all([open(context, 'transition-crash'), open(context, 'transition-crash')]);
     const owner = await leader(pages), survivor = 1 - owner;
     const previous = await pages[survivor].evaluate(() => engine.activeReplica());
     const replica = 'rp_99999999999999999999999999999999';
     await pages[owner].evaluate((replica) => engine.store.transact((device) => { device.activeReplica.meta.replica = replica; }), replica);
-    const cdp = await context.newCDPSession(pages[owner]);
-    const crash = pages[owner].waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {}); await crash;
+    await crashRenderer(pages[owner]);
     await pages[survivor].waitForFunction((replica) => engine.leader && engine.activeReplica() === replica, replica);
     assert.deepEqual(await pages[survivor].evaluate(() => events), [{ event: 'activeReplicaChanged', previous, replica }]);
     assert.equal(await pages[survivor].evaluate(() => engine.getSnapshot().replica), replica);
@@ -297,8 +331,7 @@ test('Chromium: a replica transition committed before a leader crash is announce
 });
 
 test('Chromium: a delayed hello cannot reverse a completed sign-out in another tab', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const [delayed, owner] = await signedTabs(context, 'peer-auth-generation');
     await delayed.evaluate(() => {
@@ -318,8 +351,7 @@ test('Chromium: a delayed hello cannot reverse a completed sign-out in another t
 });
 
 test('Chromium: a follower sign-out pauses numbering across leader handoff, Cancel resumes and owner crash releases it', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const pages = await signedTabs(context, 'shared-signout');
     const first = await leader(pages), owner = 1 - first;
@@ -343,9 +375,7 @@ test('Chromium: a follower sign-out pauses numbering across leader handoff, Canc
     await pages[owner].waitForFunction(() => engine.signingOut);
     await follower.evaluate(() => engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0002', f: { title: 'private' } }]));
     const before = await pages[owner].evaluate(() => sentRequests.filter((request) => request.endpoint === 'push').length);
-    const cdp = await context.newCDPSession(follower);
-    const crash = follower.waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {}); await crash;
+    await crashRenderer(follower);
     await pages[owner].waitForFunction((before) => !engine.signingOut && sentRequests.filter((request) => request.endpoint === 'push').length > before, before);
     assert.equal(await pages[owner].evaluate(async () => (await engine.store.read()).device.meta.signOut), undefined);
     await follower.close();
@@ -353,8 +383,7 @@ test('Chromium: a follower sign-out pauses numbering across leader handoff, Canc
 });
 
 test('Chromium: an idle leader recovers a committed outbox after writer crash without broadcasts and respects retry floors', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const pages = await signedTabs(context, 'durable-outbox-reconcile');
     const first = await leader(pages), writer = 1 - first;
@@ -367,9 +396,7 @@ test('Chromium: an idle leader recovers a committed outbox after writer crash wi
       await engine.commit('self/probe', [{ op: 'create', t: 'card', id: 'card0001', f: { title: 'private' } }]);
       return floor;
     });
-    const cdp = await context.newCDPSession(pages[writer]);
-    const crash = pages[writer].waitForEvent('crash');
-    cdp.send('Page.crash').catch(() => {}); await crash;
+    await crashRenderer(pages[writer]);
     await pages[first].waitForFunction(() => sentRequests.some((request) => request.endpoint === 'push'));
     const pushes = await pages[first].evaluate(() => sentRequests.filter((request) => request.endpoint === 'push'));
     assert.equal(pushes.length, 1);
@@ -380,8 +407,7 @@ test('Chromium: an idle leader recovers a committed outbox after writer crash wi
 });
 
 test('Chromium: a durable commit resolves when versionchange closes IndexedDB before publication', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const writer = await open(context, 'commit-versionchange');
     const result = await writer.evaluate(async () => {
@@ -402,8 +428,7 @@ test('Chromium: a durable commit resolves when versionchange closes IndexedDB be
 });
 
 test('Chromium: a persisted 426 blocks hello after a missed broadcast and reload, and a new build may retry', async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const [source, peer] = await Promise.all([open(context, 'persisted-upgrade'), open(context, 'persisted-upgrade')]);
     await Promise.all([accountTransport(source), accountTransport(peer)]);
@@ -434,8 +459,7 @@ test('Chromium: a persisted 426 blocks hello after a missed broadcast and reload
 });
 
 for (const order of ['pull-before-result', 'result-before-pull']) test(`Chromium: journal claim preserves the newer edit through ${order}`, async () => {
-  await ready;
-  const context = await browser.newContext();
+  const context = await freshContext();
   try {
     const name = `journal-claim-${order}`;
     const page = await open(context, name);
