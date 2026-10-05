@@ -13,7 +13,10 @@ const ready = (async () => {
   } }], optimizeDeps: { include: ['@noble/hashes/sha256', '@noble/hashes/utils'] }, server: { host: '127.0.0.1', port: 0, fs: { allow: [fileURLToPath(new URL('../../../../', import.meta.url))] } } });
   await server.listen(0);
   origin = `http://127.0.0.1:${server.httpServer.address().port}`;
-  browser = await chromium.launch({ channel: 'chromium', headless: true, ignoreDefaultArgs: ['--disable-back-forward-cache'] });
+  // Linux x64 uses Chrome for Testing; intentional crashes must not wait for its Crashpad handler.
+  browser = await chromium.launch({ channel: 'chromium', headless: true,
+    args: process.platform === 'linux' && process.arch === 'x64' ? ['--disable-crashpad-for-testing'] : [],
+    ignoreDefaultArgs: ['--disable-back-forward-cache'] });
 })();
 after(async () => { await ready; await browser?.close(); await server?.close(); });
 
