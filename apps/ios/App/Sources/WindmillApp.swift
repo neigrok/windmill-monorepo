@@ -50,6 +50,7 @@ struct WindmillApp: App {
           let suite = settings.board.map { "board-\($0)" } ?? settings.scenario.map { "scenario-\($0)" }
           let preferences = suite.map { UserDefaults(suiteName: $0)! } ?? .standard
           if settings.scenario != nil, let suite { preferences.removePersistentDomain(forName: suite) }
+          if !settings.restoreBoard, let board = settings.board { preferences.removePersistentDomain(forName: "board-\(board)") }
           let created = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: telemetry)
           var onboardingFixture = false
           if let board = settings.board, !settings.restoreBoard {

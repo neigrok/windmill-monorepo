@@ -40,6 +40,29 @@ import Synchronization
     throw CancellationError()
   }
 
+  @Test func upgradedPreviouslyOpenedInstallDoesNotShowInkDuringRealStartup() async throws {
+    let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.ink-upgrade-tests.\(UUID())"
+    let runtime = try AppRuntime(settings: AppSettings(arguments: ["app"]), directory: directory, service: service,
+                                 syncTransport: JournalModelTransport())
+    let preferences = UserDefaults(suiteName: service)!, recorder = TelemetryRecorder()
+    preferences.set(true, forKey: "journalOpened")
+    #expect(preferences.object(forKey: "inkShown") == nil)
+    let model = try JournalModel(runner: runtime.runner, preferences: preferences, runtime: runtime, telemetry: recorder)
+    defer {
+      model.timerTask?.cancel(); model.observationTask?.cancel()
+      preferences.removePersistentDomain(forName: service)
+    }
+    #expect(!model.welcome && model.room?.firstRunKnown == true && model.room?.stance == .empty && model.room?.days.isEmpty == true)
+    await model.start()
+    #expect(model.syncStarted && !model.restoringSignIn && !model.editorReadOnly)
+    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.map(\.name) } == ["auth_restore"])
+    #expect(recorder.entries.withLock { $0.map(\.properties) } == [["outcome": "anonymous"]])
+    model.automaticallyShowInk(); model.openJournal()
+    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
+  }
+
   @Test func pendingSignInSurvivesInactiveThenActiveDuringDelayedHello() async throws {
     let directory = URL.temporaryDirectory.appending(path: UUID().uuidString), service = "works.windmill.startup-tests.\(UUID())"
     let transport = RecoveryTransport()

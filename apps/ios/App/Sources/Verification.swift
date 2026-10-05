@@ -9,7 +9,6 @@ enum BoardFixture {
   static let shortProse = "Long day. The walk home was the best part — the rain had just stopped and the street smelled of it."
   static func prepare(_ board: String, model: JournalModel) async {
     #if DEBUG && targetEnvironment(simulator)
-    model.preferences.removePersistentDomain(forName: "board-\(board)")
     model.keepDismissed = false
     model.welcome = board.hasPrefix("01") || board.hasPrefix("02")
     guard !model.welcome else { return }

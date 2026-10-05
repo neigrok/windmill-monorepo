@@ -6,7 +6,6 @@ enum OnboardingFixture {
   static func prepare(_ board: String, model: JournalModel) async -> Bool {
     #if DEBUG && targetEnvironment(simulator)
     guard board.hasPrefix("onboarding-") else { return false }
-    model.preferences.removePersistentDomain(forName: "board-\(board)")
     model.welcome = true
     if board == "onboarding-room" {
       model.openJournal(); model.type("A page already on this phone."); model.save(); model.done(); model.dismissScales()

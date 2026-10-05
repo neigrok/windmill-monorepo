@@ -25,6 +25,7 @@ final class JournalModel {
   var readFailed = false
   var error: String?
   var inkVisible = false
+  private var firstOpenEligible: Bool
   var sheet: Sheet?
   var account: String?
   var keptWork = false
@@ -95,7 +96,9 @@ final class JournalModel {
     if let draft = try runner.read(Journal.scope, { try $0.device(EditorDraft.key).map(EditorDraft.init(json:)) }) {
       editorDay = draft.day; document = draft.document; dirty = true
     }
-    welcome = !preferences.bool(forKey: "journalOpened")
+    let firstOpen = !preferences.bool(forKey: "journalOpened")
+    firstOpenEligible = firstOpen
+    welcome = firstOpen
     keepDismissed = preferences.bool(forKey: "keepDismissed")
     refresh()
     if let account { accountEmail = preferences.string(forKey: "accountEmail:\(account)") ?? "" }
@@ -138,13 +141,18 @@ final class JournalModel {
   }
 
   func automaticallyShowInk() {
-    guard room?.stance == .empty, room?.firstRunKnown == true, room?.days.isEmpty == true,
+    guard firstOpenEligible, room?.stance == .empty, room?.firstRunKnown == true, room?.days.isEmpty == true,
           !document.isWritten, !readFailed, !editing, !editorReadOnly, sheet == nil,
           !preferences.bool(forKey: "inkShown") else { return }
+    firstOpenEligible = false
     preferences.set(true, forKey: "inkShown"); inkVisible = true; screenViewed("ink_notes")
   }
 
-  func liftInk() { if inkVisible { choose("dismiss_ink", screen: "ink_notes") }; inkVisible = false }
+  func liftInk() {
+    firstOpenEligible = false
+    if inkVisible { choose("dismiss_ink", screen: "ink_notes") }
+    inkVisible = false
+  }
 
   func start() async {
     guard let runtime else { return }
@@ -225,6 +233,9 @@ final class JournalModel {
       }
       let value = try runner.read(Journal.scope, JournalRoom.init)
       room = value
+      let hasHistory = value.stance == .holding || !value.days.isEmpty || value.state.firstPage == "retired" || document.isWritten
+      if hasHistory { firstOpenEligible = false }
+      if hasHistory || !welcome, !preferences.bool(forKey: "journalOpened") { preferences.set(true, forKey: "journalOpened") }
       if readFailed { error = nil; readFailed = false }
       if let runtime { account = try runtime.account(); keptWork = try runtime.hasKeptWork() }
       if !dirty && !editing { document = value.days.first(where: { $0.day == editorDay })?.document ?? PageDocument() }

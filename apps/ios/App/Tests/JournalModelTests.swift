@@ -43,6 +43,86 @@ import Synchronization
     ])
   }
 
+  @Test(arguments: [false, true]) func previouslyOpenedInstallNeverShowsInkWithoutPresentationPreference(clearOpenedMarker: Bool) throws {
+    let (harness, _) = try fixture()
+    let suite = "journal-ink-upgrade-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    preferences.set(true, forKey: "journalOpened")
+    #expect(preferences.object(forKey: "inkShown") == nil)
+    let recorder = TelemetryRecorder()
+    let model = try JournalModel(runner: harness.runner, preferences: preferences, telemetry: recorder)
+    #expect(!model.welcome && model.room?.firstRunKnown == true && model.room?.stance == .empty && model.room?.days.isEmpty == true)
+    if clearOpenedMarker { preferences.removeObject(forKey: "journalOpened") }
+    model.automaticallyShowInk(); model.openJournal()
+    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.map(\.properties) } == [["screen": "welcome", "action": "open_journal"]])
+  }
+
+  @Test(arguments: [false, true]) func emptyAuthEntryRecordsVisitWithoutRearmingInkOnRelaunch(showBeforeExit: Bool) throws {
+    let (harness, _) = try fixture(account: "empty-auth-account")
+    harness.sync()
+    let suite = "journal-ink-auth-entry-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    let recorder = TelemetryRecorder()
+    let first = try JournalModel(runner: harness.runner, preferences: preferences, telemetry: recorder)
+    #expect(first.welcome && preferences.object(forKey: "journalOpened") == nil && preferences.object(forKey: "inkShown") == nil)
+    #expect(first.room?.firstRunKnown == true && first.room?.stance == .empty && first.room?.days.isEmpty == true && first.room?.isAnonymous == false)
+    first.sheet = .code
+    first.presentSignInResult()
+    #expect(!first.welcome && first.sheet == nil && preferences.bool(forKey: "journalOpened") && preferences.object(forKey: "inkShown") == nil)
+    if showBeforeExit {
+      first.automaticallyShowInk()
+      #expect(first.inkVisible && preferences.bool(forKey: "inkShown"))
+    }
+    let reopened = try JournalModel(runner: harness.runner, preferences: UserDefaults(suiteName: suite)!, telemetry: recorder)
+    reopened.automaticallyShowInk(); reopened.openJournal()
+    #expect(!reopened.welcome && !reopened.inkVisible && preferences.bool(forKey: "inkShown") == showBeforeExit)
+    if !showBeforeExit { #expect(preferences.object(forKey: "inkShown") == nil) }
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.map(\.properties) } ==
+            (showBeforeExit ? [["screen": "ink_notes"]] : []))
+  }
+
+  @Test func priorWritingRetiresInkEligibilityEvenAfterHistoryIsClearedAndFlagsAreAbsent() throws {
+    let engine = SteppedEngine(registry: SyncSchema.registry, startMs: 1_790_424_000_000, account: nil,
+                              rules: ComposedServerRules.windmill(registry: SyncSchema.registry),
+                              commandResultWrites: JournalWriting.resultWrites, pendingDeviceWork: JournalWriting.pendingWork)
+    let runner = ActionRunner(replica: engine.replica, registry: SyncSchema.registry, zone: FixedZone(offsetSeconds: 0))
+    let pending = PendingClaim(day: try runner.moment().today, claimId: "prior-ink-history", document: PageDocument(body: "Earlier writing."), retirements: [:])
+    _ = try engine.replica.commit(Journal.scope, Gesture(changes: [], local: [DeviceWrite(key: pending.key, value: pending.json)]))
+    let suite = "journal-ink-history-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    #expect(preferences.object(forKey: "journalOpened") == nil && preferences.object(forKey: "inkShown") == nil)
+    let recorder = TelemetryRecorder()
+    let model = try JournalModel(runner: runner, preferences: preferences, telemetry: recorder)
+    #expect(preferences.bool(forKey: "journalOpened") && preferences.object(forKey: "inkShown") == nil)
+    #expect(model.room?.days.count == 1 && model.document.body == "Earlier writing.")
+    _ = try engine.replica.commit(Journal.scope, Gesture(changes: [], local: [DeviceWrite(key: pending.key, value: nil)]))
+    model.refresh(); model.refresh()
+    #expect(model.room?.stance == .empty && model.room?.days.isEmpty == true && model.room?.state.firstPage == "pending" && !model.document.isWritten)
+    let reopened = try JournalModel(runner: runner, preferences: UserDefaults(suiteName: suite)!, telemetry: recorder)
+    #expect(!reopened.welcome && reopened.room?.days.isEmpty == true && !reopened.document.isWritten)
+    reopened.automaticallyShowInk(); reopened.openJournal()
+    #expect(!reopened.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    model.automaticallyShowInk(); model.openJournal()
+    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
+  }
+
+  @Test func retiredFirstPageSuppressesInkInEmptyRoomWithoutInstallFlags() throws {
+    let (harness, _) = try fixture()
+    _ = try harness.runner.run(RetireJournalInvitation("firstPage"))
+    let suite = "journal-ink-retired-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
+    defer { preferences.removePersistentDomain(forName: suite) }
+    #expect(preferences.object(forKey: "journalOpened") == nil && preferences.object(forKey: "inkShown") == nil)
+    let recorder = TelemetryRecorder()
+    let model = try JournalModel(runner: harness.runner, preferences: preferences, telemetry: recorder)
+    #expect(preferences.bool(forKey: "journalOpened") && preferences.object(forKey: "inkShown") == nil)
+    #expect(model.room?.stance == .empty && model.room?.days.isEmpty == true && model.room?.state.firstPage == "retired" && !model.document.isWritten)
+    model.automaticallyShowInk(); model.openJournal()
+    #expect(!model.inkVisible && preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
+  }
+
   @Test(arguments: [false, true]) func inkNeverReturnsAcrossPreferencesAndModelRecreation(dismissBeforeExit: Bool) throws {
     let (harness, _) = try fixture()
     let suite = "journal-ink-tests.\(UUID())", preferences = UserDefaults(suiteName: suite)!
@@ -71,6 +151,25 @@ import Synchronization
             ["first_run_screen_viewed", "first_run_choice"])
     #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.map(\.properties) } ==
             [["screen": "ink_notes"], ["screen": "ink_notes", "action": "dismiss_ink"]])
+  }
+
+  @Test(arguments: [false, true]) func inputWhileInkIsDeferredPreventsLatePresentation(writeThenDelete: Bool) throws {
+    let recorder = TelemetryRecorder()
+    let (_, model) = try fixture(telemetry: recorder)
+    model.readFailed = true
+    model.automaticallyShowInk()
+    #expect(!model.inkVisible && model.preferences.object(forKey: "inkShown") == nil)
+    if writeThenDelete {
+      model.type("Temporary writing."); model.type("")
+      model.saveTask?.cancel()
+    } else { model.liftInk() }
+    #expect(model.readFailed && !model.document.isWritten)
+    model.readFailed = false
+    model.refresh()
+    #expect(model.room?.firstRunKnown == true && model.room?.stance == .empty && model.room?.days.isEmpty == true && model.room?.state.firstPage == "pending")
+    model.automaticallyShowInk(); model.openJournal()
+    #expect(!model.inkVisible && model.preferences.object(forKey: "inkShown") == nil)
+    #expect(recorder.entries.withLock { $0.filter { $0.properties["screen"] == "ink_notes" }.isEmpty })
   }
 
   @Test func inkWaitsForKnownEmptyRoom() throws {
