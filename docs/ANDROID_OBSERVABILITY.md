@@ -4,7 +4,8 @@ Android errors use the Sentry Android SDK. Behavioral events use the first-party
 `POST /v1/events` intake, which accepts anonymous and authenticated batches, stores them and
 forwards them to Amplitude. The Android APK contains
 no Amplitude API key. `Telemetry` is injected through the application, account, HTTP transport,
-workout stores, notifications and Compose provider; tests default to `Telemetry.None`.
+workout stores, the SQLite sync runtime, migration, notifications and Compose provider; tests
+default to `Telemetry.None`.
 
 ## Configuration
 
@@ -40,9 +41,10 @@ cause. Concurrent calls keep separate diagnostics, and an injected client's even
 receives its callbacks. Products supply operations such as `gym_ask` so dynamic resource IDs and
 query strings never enter the report. Phase labels contain no URL, host, IP address or body data.
 
-Expected HTTP statuses 400, 401, 403, 404, 409, 422 and 429 produce product/API failure metrics rather
-than Sentry issues. DNS/connect failures produce `failure_kind=offline` metrics; cancellation is
-propagated without an issue. Timeouts remain distinct and reportable. Coach uses a 660-second request
+Expected HTTP statuses 400, 401, 403, 404, 409, 410, 422, 426 and 429 produce product/API failure
+metrics rather than Sentry issues. The REST transport emits `failure_kind=offline` metrics for
+DNS/connect failures; cancellation is propagated without an issue. Timeouts remain distinct and
+reportable. Coach uses a 660-second request
 budget for the backend's bounded sequence of model/tool calls. An intervening proxy may impose a
 shorter limit.
 
@@ -61,6 +63,27 @@ capture, logs, tracing and profiling are not enabled. Coach questions, answers, 
 addresses, tokens, authorization headers and response bodies are excluded. Crash reports rely on
 stack/type, release and operation tags; cross-event navigation history is in behavioral metrics.
 
+The application adapts `EngineTelemetry` to the existing `Telemetry` interface. The engine's
+bounded queue carries static operation/outcome enums and allowlisted refusal codes. Unexpected
+storage, read, writer, transport and lifecycle failures report under `sync_<operation>`; expected
+HTTP refusals, including update-required responses, emit metrics without Sentry issues. The engine
+owns hello, push, pull, live, retries, deadlines and cancellation. Engine network failures use
+bounded operation/outcome labels; intentional request/socket close and coroutine cancellation do
+not report issues. No replica/account identifier,
+record key, source document, workout content or credential enters these reports.
+
+Legacy migration reports unexpected boundary failures under `gym.migration`. Its durable source
+archive and per-replica journal remain on the phone; their contents and local refusal reasons are
+not telemetry. Settings exposes explicit correction and retry. A completed archive fence prevents
+re-running migration after sign-out or Discard. Account decisions include pending retained work,
+pin revisions and preserve unsent account work with Keep.
+
+The update dialog responds to engine 426 and REST 410 `client-update-required` without deleting
+local work. `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no
+configured URL, **Open Windmill** opens `https://windmill.works`; the repository contains no public
+APK download destination. Installed-app verification must use the distribution's actual URL when
+it is available.
+
 ## Product events
 
 Every event carries platform, app version, build, release and environment. Event properties pass a
@@ -78,6 +101,11 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | storage |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, storage, outcome |
+| Engine | `sync_engine` | operation, outcome, failure_kind |
+| Migration | `gym_migration_completed`, `gym_migration_recovery` | outcome; action, state |
+| Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
+| Connectivity | `sync_connectivity` | state |
+| Update | `client_update_required` | state, action, status, outcome |
 | Reliability | `api_request_failed`, `client_error` | operation, method, route, status, failure_kind, duration_ms, network_phase |
 
 Onboarding records first launch and replay from **About Windmill**. It emits an open, each settled

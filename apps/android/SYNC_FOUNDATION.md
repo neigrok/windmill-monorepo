@@ -2,9 +2,10 @@
 
 A1 provides the Kotlin sync engine, domain kit and gym domain surface. The Gradle build enforces
 client and kit corpus coverage, mandatory properties, replay fault coverage, schema freshness and
-strict layering. Product wiring, UI and migration of today's stores belong to A2.
+strict layering. A2 now composes that engine into the shipping gym, migrates the device stores and
+uses engine account decisions. See [A2 verification](A2_VERIFICATION.md) for the current app gates.
 
-## Modules
+## A1 module baseline
 
 There are 12 Gradle projects: eight JVM modules, Android `:sync-engine`, and `:app`, `:platform`,
 `:gym`. Kotlin source lines below include comments and blanks, exclude build output, and include
@@ -24,10 +25,10 @@ generated schema. The schema generator and its tests contain 356 Python lines.
 | Total | 12430 | 6633 |
 
 SyncAPI's public surface is unchanged from `c1e1125b`. `ActionRunner` now requires an injected
-`ActionContext`: the synchronous pure kit reads its nesting flag through that port. The actual
-coroutine-context element and entry helper live in `:domain-kit-testing`; child contexts copy the
-flag, dispatcher hops retain it, and independent entries are isolated. No ThreadLocal or coroutine
-owner exception is used. A2 supplies the production boundary adapter with the same semantics.
+`ActionContext`: the synchronous pure kit reads its nesting flag through that port. The testing
+coroutine-context element and entry helper live in `:domain-kit-testing`; the shipping adapter is
+`gym/store/GymActionContext.kt`. Child contexts copy the flag, dispatcher hops retain it, and
+independent entries are isolated. No coroutine owner exception is used.
 
 The engine has normalized device, stable replica-handle, row-set, row/reference, spent, cursor,
 known-scope, outbox/touch, notice and device-row storage. Staging swaps and forgetting/purging
@@ -84,11 +85,15 @@ Telemetry defaults to no-op, uses bounded 64-event drop-oldest queues and a 2s c
 deadline, and never waits in the writer. Only operation/outcome enums and allowlisted static codes
 are emitted; no content, token, account or raw exception message enters events. Storage, transport,
 lifecycle/cancel and shutdown expose injected hooks. Diagnostic/testing histories retain at most
-1024 entries. Delivery may drop events on overflow/shutdown. A2 supplies Sentry/event adapters.
+1024 entries. Delivery may drop events on overflow/shutdown. The app supplies Sentry/event adapters
+through `Telemetry`.
 
-## Gates
+## A1 gate baseline
 
-Run from `apps/android`, with the SDK configured in ignored `local.properties`:
+The following counts record the foundation commit; current A2 results live in
+[A2 verification](A2_VERIFICATION.md).
+
+Run from `apps/android`, with `ANDROID_HOME` pointing to the SDK:
 
 ```sh
 export JAVA_HOME="$HOME/Applications/Android Studio.app/Contents/jbr/Contents/Home"
@@ -160,11 +165,11 @@ commits and forbids pushing.
 
 ## Remaining and verification limits
 
-A2 owns product lifecycle, transport/token/fork-guard/telemetry composition, UI and today's store
-migration. The production coroutine-context adapter also belongs at that boundary. Nightly replay
-against the real backend/Postgres remains unwired; its CI workflow is outside this territory. No
-ready ADB device is attached, so physical process death/power loss and Android writer latency were
-not verified. Hosted Linux CI was not run because pushing is forbidden. Native Robolectric SQLite
+A2 implements product lifecycle, transport/token/fork-guard/telemetry composition, UI and device
+store migration. Its installed-app evidence and limits are recorded separately. Nightly replay
+against the real backend/Postgres remains unwired; its CI workflow is outside this territory.
+Physical power loss and Android writer latency were not verified in the A1 gate. Hosted Linux CI
+was not run because pushing is forbidden. Native Robolectric SQLite
 and MockWebServer cover transactional failure,
 close/reopen, cancelled requests, stalled output, bounded queues and shutdown. Coroutine deadlines
 require cooperative suspension; synchronous commit bodies cannot be preempted.

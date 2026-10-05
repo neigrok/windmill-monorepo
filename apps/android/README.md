@@ -22,8 +22,8 @@ account and backend. There is no subscription surface.
 
 The eight JVM modules and Android engine library contain the SyncAPI, client runtime, model server
 and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and
-strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). Product wiring, UI
-and current store migration belong to A2.
+strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). The app composes
+that runtime for gym, with durable legacy migration and account decisions.
 
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
 The app is portrait-only. Shared gym rules live in
@@ -60,60 +60,47 @@ Sign-in uses an emailed six-digit code (`door:"app"`, `POST /v1/auth/verify-code
 accepts a pasted magic link or token. There are no app links.
 
 `SessionStore` seals the credential and verified user together through `SecretVault` (AES-GCM,
-Android Keystore). Backup is disabled by both manifest and extraction rules. A Keystore failure
-has no plaintext fallback. Offline restore retains a previously bound account as unverified;
-legacy or unreadable identity stays unresolved. Only a confirmed 401 signs out. Resume retries
-verification, and transports and local writes remain bound to their selected account.
+Android Keystore). Engine credentials use the same vault. Backup is disabled by both manifest and
+extraction rules; a Keystore failure has no plaintext fallback. Offline restore retains a previously
+bound account as unverified. Only a confirmed 401 expires identity. A durable sign-out fence prevents
+a restart between Keep and credential removal from signing the account back in.
+Verified sign-in proposals have a separate sealed credential. The current account changes only
+after the engine accepts the decision; cancelling a proposal keeps the previous account and work.
 
-Device stores use `Seat` keys (`u.<userId>` or `anon`). `LocalLog`, `SetQueue`, `LocalBodyweight`
-and `LocalPreferences` support signed-out training. The bundled movement catalogue uses backend
-seed ids so local workouts can later synchronize. Legacy files without a seat are attributed once
-to the session held when opened; without one, they are quarantined.
+The application owns one SQLite engine and runtime, with separate anonymous, bound and dormant
+account replicas. Android subscribes only to gym; signed-out work never pushes. An empty account
+accepts signed-out training automatically. When both sides hold training, sign-in presents pinned
+**Add** / **Discard** counts, including refused imports retained on this phone. Work changed while
+the choice is open requires a fresh decision. Sign-out uses **Keep**, retaining unsent account work
+in its dormant replica and selecting an independent anonymous replica.
 
-Signing in selects an account; it does not adopt anonymous records. Gym settings offers **These
-are mine** and **Not mine** for a frozen local-data batch. Signed-out approval binds a specific
-sign-in flow; verified identity binds the batch before credential commit. Cancel revokes the intent.
+First launch archives the existing SetQueue, LocalLog, DeviceCopy, preferences, bodyweight and
+claim-consent documents before migrating them. Each engine transaction commits source identity,
+work and its completion marker together; a crash resumes without duplicating completed work.
+Finished signed-out workouts use atomic strict imports. Unfinished starts use join/write-map
+semantics. Attempted operations keep their original identities and payloads until reconciliation.
+Refused imports retain their source on the phone. Gym settings shows the reason and offers explicit
+correction and retry; dates, sets and frozen routine lineage are never silently changed.
 
-`ClaimConsent` and `LocalClaimConsent` persist source revisions, decision and owner before transfer.
-A corrupt consent journal blocks transfer. Repository completion markers let a restart resume
-only the approved batch and owner; newer/changed records stay separate. Active-queue preflight
-must pass before transfer or replay. **Not mine** gives nine seconds to Undo, then removes only
-unchanged captured records. Unverified accounts may use their own local records but cannot finish
-an approved transfer until verification succeeds.
+## Training runtime
 
-## Replay and workout runtime
+`TrainingStore` keeps the Compose interface and runs gym reads and writes through `EngineTraining`
+and `:gym:domain`. SetQueue retains the device workout controls used by the shared `GymRuntime`
+and notification receivers; engine replica changes rebuild that projection from the selected
+replica. The bundled movement catalogue uses backend seed identities. Coach threads, attachments,
+shares and connected-log credentials use REST. `LocalCoach` retains account-scoped drafts, request
+identities and partial replies; retry retains identity and Stop preserves completed work.
 
-`ClaimReplay` sends preferences, movements, routines, finished sessions oldest-first, the unanswered
-live-session start, then weigh-ins. Finished sessions replay start → sets → finish with
-`joinOpenSession:false`. The queue's `unclaimed` bit records an unanswered start, never consent.
-Owed sets drain before replay and the settling log read. Failed preferences retry independently;
-untouched defaults do not participate. Delayed replies cannot overwrite another account or newer
-local revisions.
+Workout logging persists consumed actions and timestamps. Rack, movement, account and finish
+changes invalidate stale actions. Notification logging requires unlock and current identity;
+native paging must settle before rack edits or logging. The silent ongoing notification can become
+a system Live Update. Dismiss hides it for that workout; Show workout restores it. Elapsed and
+latest-set clocks survive relaunch and freeze at finish. There are no rest alerts or set-confirmation
+signals. The UI displays kilograms even with an account preference of lb.
 
-An explicit start also sends `joinOpenSession:false`. A `session-already-open` refusal reloads
-and adopts the existing session while retaining the refusal. Offline, 5xx and `clock-ahead`
-responses leave new work on the device for replay. A device-held session idle for four hours
-finishes at its last activity on reconnect. First-session onboarding requires successful log and
-routine reads, not empty lists caused by failed requests.
-
-`GymRuntime` is shared with notification receivers, which restore local state without HTTP auth.
-Logging commits the set, consumed action and timestamp together. Rack edits, movement/account
-changes and finish invalidate prior actions; notification logging requires unlock and current
-identity. Native exercise paging must settle before rack edits or set logging.
-
-The ongoing notification shows the workout and can become a system Live Update. Dismiss hides it
-for that session; Show workout restores it. Workout elapsed and time since the latest retained
-set survive relaunch and freeze at finish. There are no rest alerts or set confirmation signals.
-The UI displays kilograms even with an account preference of lb.
-
-Preference/routine replacement reads and preserves server-owned fields first. Unknown future or
-malformed saved-workout state leaves the queue read-only for recovery; the decoder tolerates the
-retired version-1 rest-control keys without interpreting them.
-
-`LocalCoach` persists account-scoped drafts, request/attachment ids and partial replies. Retry
-retains identity; Stop preserves partial text and completed actions. Images use authenticated
-bodies. `CoachPhotos` normalizes them within 4096 pixels per edge and 5 MiB. New chat clears the
-local pending request while retaining server history.
+A 426 from the engine or 410 `client-update-required` from REST presents **Update required**.
+The local replica remains intact while network synchronization is paused. Update destination
+configuration and observability are documented in [Android observability](../../docs/ANDROID_OBSERVABILITY.md).
 
 ## CI and releases
 
@@ -131,7 +118,8 @@ and provenance remain unpublished until native acceptance and a same-key update 
 
 Distribution is by sideload. Published APKs through 0.7.1 use different debug certificates and
 cannot update in place with the retained release key. Uninstalling removes device-only records;
-preserve them before changing installation. Signing in alone does not transfer anonymous records.
+preserve them before changing installation. When both sides hold training, choose Add to transfer
+signed-out records.
 
 Spoken TalkBack acceptance is unverified. Routines tab labels clip at 320dp with 200% text; see
 [the design consistency ledger](../../docs/design/consistency.md).
