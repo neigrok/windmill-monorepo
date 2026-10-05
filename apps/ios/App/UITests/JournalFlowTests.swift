@@ -8,6 +8,7 @@ import XCTest
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "")
+    assertInkVisible(true, in: editor)
     XCTAssertEqual(editor.label, "Today's page")
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
@@ -18,6 +19,7 @@ import XCTest
     point.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     assertCaretAtEnd(in: editor)
+    assertInkVisible(false, in: editor)
     app.typeText("A new line.")
     XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "A new line.")
     app.buttons["done-writing"].tap()
@@ -28,6 +30,63 @@ import XCTest
     XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "A new line. More.")
   }
 
+  func testInkNeverReturnsAfterUntouchedFirstOpenRelaunch() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    assertInkVisible(true, in: editor)
+    XCTAssertFalse(app.keyboards.firstMatch.exists)
+    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    app.terminate()
+    app.launchArguments += ["-restore-board"]
+    app.launch()
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    assertInkVisible(false, in: editor)
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "")
+    app.buttons["you"].tap()
+    XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    app.buttons["Done"].tap()
+    XCTAssertTrue(editor.waitForExistence(timeout: 5))
+    assertInkVisible(false, in: editor)
+  }
+
+  func testWriteSeatLiftsInkAndPreservesEachTypedCharacter() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    assertInkVisible(true, in: editor)
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertInkVisible(false, in: editor)
+    var written = ""
+    for character in "One line.\nAnother line." {
+      app.typeText(String(character))
+      written.append(character)
+      XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, written)
+      assertCaretAtEnd(in: editor)
+    }
+    app.buttons["done-writing"].tap()
+    assertInkVisible(false, in: editor)
+    app.terminate()
+    app.launchArguments += ["-restore-board"]
+    app.launch()
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    assertInkVisible(false, in: editor)
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, written)
+    app.descendants(matching: .any)["journal-date"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    assertCaretAtEnd(in: editor)
+    app.typeText(" More.")
+    XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, written + " More.")
+  }
+
   func testOneLinePageTapBelowTextOpensKeyboardAtEnd() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "journal-one-line", "-journal-layout-test"]
@@ -35,6 +94,7 @@ import XCTest
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(journalMetrics(in: editor)?["text"] as? String, "Short walk, then an early night.")
+    assertInkVisible(false, in: editor)
     XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-one-line"
@@ -89,15 +149,20 @@ import XCTest
 
   func testOneRoomTitleIsInertAndTopRightYouStillOpensSettings() {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
+    app.launchArguments = ["-model-server", "-board", "05-journal-first-open", "-journal-layout-test"]
     app.launch()
     let title = app.staticTexts["room-name"]
     XCTAssertTrue(title.waitForExistence(timeout: 10))
     XCTAssertEqual(title.label, "Journal")
     XCTAssertFalse(app.buttons["room-menu"].exists)
     XCTAssertFalse(app.buttons["room-name"].exists)
+    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
+    let editor = app.textViews["journal-editor"]
+    assertInkVisible(true, in: editor)
     let frame = title.frame
     title.tap()
+    assertInkVisible(false, in: editor)
     XCTAssertEqual(title.frame, frame)
     XCTAssertFalse(app.keyboards.firstMatch.exists)
     XCTAssertFalse(app.descendants(matching: .any)["journal-room-menu"].exists)
@@ -107,6 +172,8 @@ import XCTest
     add(screenshot)
     app.buttons["you"].tap()
     XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["show-ink-notes"].exists)
+    XCTAssertFalse(app.buttons["Show ink notes"].exists)
     XCTAssertFalse(app.buttons["write-today"].exists)
     XCTAssertFalse(app.buttons["done-writing"].exists)
   }
@@ -243,6 +310,14 @@ import XCTest
   func journalMetrics(in editor: XCUIElement) -> [String: Any]? {
     guard let value = editor.value as? String else { return nil }
     return (try? JSONSerialization.jsonObject(with: Data(value.utf8))) as? [String: Any]
+  }
+
+  func assertInkVisible(_ visible: Bool, in editor: XCUIElement,
+                        file: StaticString = #filePath, line: UInt = #line) {
+    let ready = NSPredicate { _, _ in self.journalMetrics(in: editor)?["inkVisible"] as? Bool == visible }
+    if ready.evaluate(with: editor) { return }
+    XCTAssertEqual(XCTWaiter.wait(for: [XCTNSPredicateExpectation(predicate: ready, object: editor)], timeout: 5), .completed,
+                   "Expected ink visibility \(visible): \(editor.value ?? "missing editor value")", file: file, line: line)
   }
 
   func tapIntoLastLine(in app: XCUIApplication,

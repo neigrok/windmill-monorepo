@@ -16,6 +16,12 @@ import Testing
     return editor
   }
 
+  @Test func inkFontIsRegisteredFromTheAppBundle() throws {
+    let font = try #require(UIFont(name: "Caveat-Regular", size: 26))
+    #expect(font.familyName == "Caveat")
+    #expect((Bundle.main.object(forInfoDictionaryKey: "UIAppFonts") as? [String])?.contains("Caveat-Regular.ttf") == true)
+  }
+
   @Test(arguments: ["", "Short walk, then an early night.", "A walk 🌙 e\u{301}.",
                     "First line.\nLast line.", "A trailing empty line.\n",
                     String(repeating: "A longer wrapped page. ", count: 12)])

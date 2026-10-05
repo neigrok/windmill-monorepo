@@ -8,6 +8,8 @@ struct JournalScreen: View {
   @State var focused = false
   @State var writeRequest = 0
   @State var appendRequest = 0
+  @State var inkMounted = false
+  @State var inkFrames: [String: CGRect] = [:]
   @Environment(\.dynamicTypeSize) var typeSize
   @Environment(\.accessibilityReduceMotion) var systemReduceMotion
   @ScaledMetric(relativeTo: .body) var bodySize = 17.0
@@ -44,10 +46,12 @@ struct JournalScreen: View {
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
               .padding(.bottom, focused ? 44 + 12 : 0)
           }
+          inkNotes(origin: geo.frame(in: .global).origin)
         }
       }.overlay(alignment: .bottomTrailing) {
         if !model.editorReadOnly && model.sheet == nil && !model.compactAccountSheet {
           Button {
+            model.liftInk()
             writeRequest += 1
             let request = writeRequest
             if focused { focused = false; return }
@@ -71,35 +75,51 @@ struct JournalScreen: View {
             .accessibilityLabel(focused ? "Done writing" : "Write")
             .accessibilityHint(focused ? "" : "Opens the keyboard on today's page")
             .accessibilityIdentifier(focused ? "done-writing" : "write-today")
+            .inkAnchor("write", enabled: inkMounted, frames: $inkFrames)
             .padding(.trailing, 16).padding(.bottom, 12)
         }
       }
-    }.onAppear { model.screenViewed("journal"); focused = model.editing; model.recordInvitations() }.onChange(of: focused) { _, value in
+    }.simultaneousGesture(TapGesture().onEnded { model.liftInk() })
+      .onAppear { model.screenViewed("journal"); focused = model.editing; model.recordInvitations() }.onChange(of: focused) { _, value in
       writeRequest += 1
       model.editing = value
       model.choose(value ? "write" : "done_writing", screen: "journal")
-      if !value { model.done() }
+      if value { model.liftInk() } else { model.done() }
     }
     .onChange(of: model.editing) { _, value in if !value { focused = false } }
     .onChange(of: model.sheet) { _, _ in writeRequest += 1 }
     .onChange(of: model.editorReadOnly) { _, _ in writeRequest += 1 }
     .onDisappear { writeRequest += 1 }
+    .task(id: model.inkVisible) {
+      if model.inkVisible { inkMounted = true; return }
+      try? await Task.sleep(for: .milliseconds(360))
+      guard !Task.isCancelled else { return }
+      inkMounted = false
+    }
     .sensoryFeedback(.success, trigger: model.firstKept)
+  }
+
+  @ViewBuilder func inkNotes(origin: CGPoint) -> some View {
+    if inkMounted {
+      InkNotes(frames: inkFrames.mapValues { $0.offsetBy(dx: -origin.x, dy: -origin.y) }, visible: model.inkVisible && !focused && model.sheet == nil)
+        .allowsHitTesting(false)
+    }
   }
 
   var header: some View {
     HStack {
       roomName
       Spacer()
-      Button { focused = false; model.sheet = .you } label: {
+      Button { model.liftInk(); focused = false; model.sheet = .you } label: {
         YouGlyph().stroke(Design.ink, lineWidth: 1.5).frame(width: 18, height: 18).frame(width: 44, height: 44).modifier(Glass(capsule: false))
-      }.accessibilityLabel("You and settings").accessibilityIdentifier("you")
+      }.accessibilityLabel("You and settings").accessibilityIdentifier("you").inkAnchor("you", enabled: inkMounted, frames: $inkFrames)
     }.buttonStyle(.plain).dynamicTypeSize(...DynamicTypeSize.large)
   }
 
   // The room menu mounts in this seat when the phone carries a second room.
   var roomName: some View {
     Text("Journal").font(Design.strong(17)).foregroundStyle(Design.ink)
+      .inkAnchor("title", enabled: inkMounted, frames: $inkFrames)
       .padding(.leading, 16).padding(.trailing, 14).frame(height: 44)
       .accessibilityAddTraits(.isHeader).accessibilityIdentifier("room-name")
   }
@@ -111,9 +131,9 @@ struct JournalScreen: View {
           Text(date(model.editorDay) + (model.words > 0 ? " · \(model.words) \(model.words == 1 ? "WORD" : "WORDS")" : "") + (focused || model.backup.isEmpty ? "" : " · \(model.backup)"))
             .font(Design.mono()).tracking(0.7).foregroundStyle(Design.dim)
           if model.firstKept && model.scalesDue { Image(systemName: "checkmark").font(.system(size: 10)).foregroundStyle(Design.lamp) }
-        }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").padding(.bottom, 16)
+        }.accessibilityElement(children: .combine).accessibilityIdentifier("journal-date").inkAnchor("date", enabled: inkMounted, frames: $inkFrames).padding(.bottom, 16)
         ZStack(alignment: .topLeading) {
-          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest)
+          JournalBodyText(text: Binding(get: { model.document.body }, set: { model.type($0) }), focused: $focused, fontSize: bodySize, editable: !model.editorReadOnly, appendRequest: appendRequest, inkVisible: inkMounted && model.inkVisible && !focused && model.sheet == nil)
             .frame(height: editorHeight(width: width))
             .allowsHitTesting(focused || model.editorReadOnly)
           if model.document.body.isEmpty && !focused {
@@ -126,14 +146,14 @@ struct JournalScreen: View {
               }.accessibilityHidden(true)
               if model.showPrivacy {
                 Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-                  .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint)
+                  .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames)
               }
             }.allowsHitTesting(false)
           }
-        }
+        }.inkAnchor("caret", enabled: inkMounted, frames: $inkFrames)
         if model.showPrivacy && (!model.document.body.isEmpty || focused) {
           Text("Only you. No prompts, no fields, nothing to fill in — write a line or a page.")
-            .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).padding(.top, 14)
+            .font(Design.text(13)).lineSpacing(3).foregroundStyle(Design.faint).inkAnchor("privacy", enabled: inkMounted, frames: $inkFrames).padding(.top, 14)
         }
       }.padding(.bottom, focused ? 0 : 23)
         .frame(maxWidth: .infinity, alignment: .leading).contentShape(Rectangle())
@@ -186,6 +206,7 @@ struct JournalBodyText: UIViewRepresentable {
   let fontSize: CGFloat
   var editable = true
   var appendRequest = 0
+  var inkVisible = false
 
   static func attributes(fontSize: CGFloat) -> [NSAttributedString.Key: Any] {
     let paragraph = NSMutableParagraphStyle()
@@ -218,6 +239,7 @@ struct JournalBodyText: UIViewRepresentable {
     let view = editor.textView
     context.coordinator.parent = self
     view.isEditable = editable
+    view.inkVisible = inkVisible
     // Unfocused taps belong to the page, before keyboard layout moves the text view.
     editor.isUserInteractionEnabled = focused || !editable
     view.accessibilityLabel = editable ? "Today's page" : nil
@@ -313,6 +335,7 @@ final class JournalEditorView: UIView, UIGestureRecognizerDelegate {
 }
 
 class JournalTextView: UITextView {
+  var inkVisible = false
   var lastLineRect: CGRect {
     let lastCharacter = position(from: endOfDocument, offset: -1) ?? endOfDocument
     guard let lastLine = tokenizer.rangeEnclosingPosition(lastCharacter, with: .line,
@@ -333,6 +356,7 @@ final class JournalLayoutTextView: JournalTextView {
         "selection": [selectedRange.location, selectedRange.length],
         "textLength": textStorage.length,
         "focused": isFirstResponder,
+        "inkVisible": inkVisible,
         "caret": [caret.minX, caret.minY, caret.width, caret.height],
         "lastLine": [line.minX, line.minY, line.width, line.height],
       ]

@@ -73,6 +73,15 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(TelemetryPrivacy.properties(["action": "private-marker"]).isEmpty)
   }
 
+  @Test func inkLabelsAreBoundedWithoutReplayAction() {
+    #expect(TelemetryPrivacy.properties(["screen": "ink_notes", "action": "dismiss_ink", "text": "private-marker"]) ==
+            ["screen": .label("ink_notes"), "action": .label("dismiss_ink")])
+    #expect(TelemetryPrivacy.properties(["action": "show_ink"]).isEmpty)
+    #expect(TelemetryPrivacy.persistedProperties(["screen": .label("journal"), "action": .label("show_ink")],
+                                               fallback: TelemetryMetadata(info: info)) ==
+            ["screen": .label("journal")].merging(TelemetryMetadata(info: info).properties) { _, new in new })
+  }
+
   @Test func sdkScrubsPrivateFieldsBeforeDelivery() async throws {
     let options = try #require(CrashReports.options(info: info, debug: true))
     let delivered = TelemetryBuffer<String?>(nil)
