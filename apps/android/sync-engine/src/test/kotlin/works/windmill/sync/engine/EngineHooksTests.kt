@@ -137,4 +137,83 @@ class EngineHooksTests {
                 question.member("counted").arr().map(Json::str))
         }
     }
+
+    private fun anonymousPending() = Engine.memory(registry,
+        clock = object : EngineClock { override fun now() = 5_000L }, actor = "r_aaaaaaaaaaaa",
+        pendingDeviceWork = { _, rows -> rows.keys.toList() + "missing" }).also {
+        it.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", Json.objectOf("pending" to Json.of(true))))))
+    }
+
+    @Test fun deviceOnlyAnonymousWorkRequiresPinnedAddAndSurvivesKeepAndReopen() {
+        anonymousPending().use { engine ->
+            val source = engine.activeReplica()
+            val question = engine.signIn("A", mapOf("probe" to true))
+            assertFalse(question.member("complete").bool())
+            assertEquals(source, engine.activeReplica())
+            assertEquals(Json.objectOf("pending" to Json.of(1)), question.member("due").arr().single().member("count"))
+            val counted = question.member("due").arr().single().member("counted").arr().map(Json::str)
+            assertTrue(engine.signIn("A", mapOf("probe" to true), mapOf("probe" to "add"), mapOf("probe" to counted)).flag("complete"))
+            assertEquals(source, engine.activeReplica())
+            assertEquals(Json.objectOf("pending" to Json.of(true)), engine.read(scope) { it.device("rack") })
+            assertTrue(engine.signOut("keep").flag("complete"))
+            Engine.memory(registry, engine.snapshot(), pendingDeviceWork = { _, rows -> rows.keys.toList() }).use { reopened ->
+                assertTrue(reopened.signIn("A", mapOf("probe" to true)).flag("complete"))
+                assertEquals(Json.objectOf("pending" to Json.of(true)), reopened.read(scope) { it.device("rack") })
+            }
+        }
+    }
+
+    @Test fun changedDeviceOnlyWorkCannotBeDiscardedByAnEarlierAnswer() {
+        anonymousPending().use { engine ->
+            val question = engine.signIn("A", mapOf("probe" to true))
+            val counted = question.member("due").arr().single().member("counted").arr().map(Json::str)
+            val corrected = Json.objectOf("pending" to Json.of(true), "revision" to Json.of(2))
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", corrected))))
+            assertFalse(engine.signIn("A", mapOf("probe" to true), mapOf("probe" to "discard"), mapOf("probe" to counted)).flag("complete"))
+            assertEquals(corrected, engine.read(scope) { it.device("rack") })
+            val current = engine.signIn("A", mapOf("probe" to true)).member("due").arr().single().member("counted").arr().map(Json::str)
+            assertTrue(engine.signIn("A", mapOf("probe" to true), mapOf("probe" to "discard"), mapOf("probe" to current)).flag("complete"))
+            assertNull(engine.read(scope) { it.device("rack") })
+        }
+    }
+
+    @Test fun deviceOnlyWorkAddsToEmptyOrDormantAccountsWithoutBeingLost() {
+        anonymousPending().use { engine ->
+            assertTrue(engine.signIn("A", mapOf("probe" to false)).flag("complete"))
+            assertEquals(Json.objectOf("pending" to Json.of(true)), engine.read(scope) { it.device("rack") })
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", null))))
+            engine.signOut("keep")
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", Json.of("new")))))
+            val question = engine.signIn("A", mapOf("probe" to true))
+            val counted = question.member("due").arr().single().member("counted").arr().map(Json::str)
+            assertTrue(engine.signIn("A", mapOf("probe" to true), mapOf("probe" to "add"), mapOf("probe" to counted)).flag("complete"))
+            assertEquals(Json.of("new"), engine.read(scope) { it.device("rack") })
+        }
+    }
+
+    @Test fun pendingJournalCountsItsRecordsAndRejectsMalformedCounts() {
+        anonymousPending().use { engine ->
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", Json.objectOf(
+                "count" to Json.objectOf("run" to Json.of(2), "lap" to Json.of(7)))))))
+            val question = engine.signIn("A", mapOf("probe" to true))
+            assertEquals(Json.objectOf("run" to Json.of(2), "lap" to Json.of(7)), question.member("due").arr().single().member("count"))
+            engine.commit(scope, Gesture(emptyList(), local = listOf(DeviceWrite("rack", Json.objectOf(
+                "count" to Json.objectOf("run" to Json.of(-1)))))))
+            val before = engine.snapshot()
+            assertThrows(IllegalArgumentException::class.java) { engine.signIn("A", mapOf("probe" to true)) }
+            assertEquals(before, engine.snapshot())
+        }
+    }
+
+    @Test fun failedAddRollsBackSelectionAndRetainsDeviceOnlySource() {
+        anonymousPending().use { engine ->
+            val before = engine.snapshot()
+            (engine.store as MemoryStore).failNextCommit = true
+            assertEquals(CommitFailure.Kind.storeFailure,
+                assertThrows(CommitFailure::class.java) { engine.signIn("A", mapOf("probe" to false)) }.kind)
+            assertEquals(before, engine.snapshot())
+            assertTrue(engine.signIn("A", mapOf("probe" to false)).flag("complete"))
+            assertEquals(Json.objectOf("pending" to Json.of(true)), engine.read(scope) { it.device("rack") })
+        }
+    }
 }

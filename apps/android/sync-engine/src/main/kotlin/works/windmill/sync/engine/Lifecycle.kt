@@ -105,18 +105,37 @@ fun Engine.start(backupGuard: Json? = null): Json = write(EngineOperation.lifecy
     Json.objectOf("actor" to Json.of(actor), "reidentified" to Json.of(reidentified)).with("pendingSignIn" to device.meta["pendingSignIn"])
 }
 internal fun Engine.entriesOf(replica: ReplicaState, product: String) = replica.entries().filter { registry.product(it.scope) == product }
+internal fun Engine.pendingKeys(replica: ReplicaState, product: String): List<String> {
+    val rows = replica.device[product]?.obj().orEmpty()
+    return pendingDeviceWork(product, rows).distinct().sorted().filter { it in rows }
+}
+internal fun Engine.lineageWork(replica: ReplicaState, product: String): List<String> =
+    entriesOf(replica, product).map { it.id } + pendingKeys(replica, product).map { key ->
+        "device:$product:$key:${Sha256.hex(replica.device.getValue(product).member(key).jcs.encodeToByteArray())}"
+    }
 internal fun Engine.anonCount(replica: ReplicaState, product: String): Json {
     val records = entriesOf(replica, product).flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.distinct()
-    return Json.Obj(records.groupingBy { it.second.type }.eachCount().map { it.key to Json.of(it.value) })
+    val counts = records.groupingBy { it.second.type }.eachCount().toMutableMap()
+    for (key in pendingKeys(replica, product)) {
+        val detail = replica.device.getValue(product).member(key)["count"]?.obj()
+        if (detail == null) { counts["pending"] = Math.addExact(counts["pending"] ?: 0, 1); continue }
+        for ((type, value) in detail) {
+            require(type == "pending" || registry.type(type) != null)
+            val amount = value.long()
+            require(amount in 0..Int.MAX_VALUE.toLong())
+            counts[type] = Math.addExact(counts[type] ?: 0, amount.toInt())
+        }
+    }
+    return Json.Obj(counts.map { it.key to Json.of(it.value) })
 }
 fun Engine.anonCount(replica: String, product: String): Json = lock.withLock { ensureOpen(); anonCount(device.replicas.single { it.id == replica }, product) }
 fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions: Map<String, String> = emptyMap(), counted: Map<String, List<String>> = emptyMap()): Json = write(EngineOperation.lifecycle) {
     val previous = device.active
     val anon = device.replicas.firstOrNull { it.state == "anon" }
     anon?.entries()?.filter { it.state == "held" }?.forEach { anon.move(it, "release", ended) }
-    val due = registry.products.keys.sorted().filter { holdsRecords[it] == true && anon != null && entriesOf(anon, it).isNotEmpty() }.map { product ->
+    val due = registry.products.keys.sorted().filter { holdsRecords[it] == true && anon != null && lineageWork(anon, it).isNotEmpty() }.map { product ->
         Json.objectOf("kind" to Json.of("signed-out"), "product" to Json.of(product), "count" to anonCount(anon!!, product),
-            "counted" to Json.Arr(entriesOf(anon, product).map { Json.of(it.id) }))
+            "counted" to Json.Arr(lineageWork(anon, product).map(Json::of)))
     }
     if (due.any { question ->
             val product = question.member("product").str()
@@ -131,17 +150,18 @@ fun Engine.signIn(account: String, holdsRecords: Map<String, Boolean>, decisions
         entriesOf(anon!!, product).forEach { anon.move(it, "discard", ended) }; anon.device.remove(product)
     }
     val dormant = device.replicas.firstOrNull { it.state == "dormant" && it.account == account }
+    val hasAnonymousWork = anon != null && (anon.outbox.isNotEmpty() || registry.products.keys.any { pendingKeys(anon, it).isNotEmpty() })
     val target = when {
         dormant != null -> dormant.also {
             it.meta = it.meta.with("state" to Json.of(Machines.replica.transition("dormant", "sign-in", "bound")))
             it.cursors.clear(); it.staging.keys.toList().forEach { scope -> store.dropStaging(it.id, ScopeRef(scope)) }; it.staging.clear()
         }
-        anon != null && anon.outbox.isNotEmpty() -> anon.also {
+        hasAnonymousWork -> anon!!.also {
             it.meta = it.meta.with("state" to Json.of(Machines.replica.transition("anon", "sign-in", "bound")), "account" to Json.of(account))
         }
         else -> freshReplica(identities.replicaID(), account).also { device.replicas.add(it) }
     }
-    if (anon != null && anon !== target && anon.outbox.isNotEmpty()) {
+    if (anon != null && anon !== target && hasAnonymousWork) {
         for (entry in anon.entries()) {
             entry.json = entry.json.with("commitOrder" to Json.of(1 + (target.outbox.maxOfOrNull { it.order } ?: 0)))
             target.outbox.add(entry)

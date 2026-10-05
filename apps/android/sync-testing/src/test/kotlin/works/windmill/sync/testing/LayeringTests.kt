@@ -186,7 +186,7 @@ class LayeringTests {
             ":gym:domain" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
 
             ":platform" to setOf(":domain-kit", ":sync-core", ":sync-api", ":sync-schema"),
-            ":gym" to setOf(":gym:domain", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":platform"), ":app" to projects,
+            ":gym" to setOf(":gym:domain", ":domain-kit", ":sync-core", ":sync-api", ":sync-schema", ":sync-engine", ":platform"), ":app" to projects,
         )
         val jvmPlugins = setOf(
             "org.gradle.api.plugins.BasePlugin", "org.gradle.api.plugins.HelpTasksPlugin", "org.gradle.api.plugins.JavaBasePlugin", "org.gradle.api.plugins.JavaPlugin",
