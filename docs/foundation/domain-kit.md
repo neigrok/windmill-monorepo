@@ -1064,8 +1064,9 @@ public final class ActionRunner: Sendable {
 
 `run(action)` is one ordered, fail-fast pipeline:
 
-1. **No nesting.** A run entered on a thread already inside a run traps (Swift `preconditionFailure`
-   over a `@TaskLocal` flag; Kotlin `check` over a thread-local in the runner class). A nested run
+1. **No nesting.** A run entered in an execution context already inside a run traps (Swift
+   `preconditionFailure` over a `@TaskLocal` flag; Kotlin `check` over a coroutine-context
+   element in the runner, never a `ThreadLocal`). A nested run
    reached through a port that hops threads and waits deadlocks on the store's writer instead.
 2. `replica.commit(action.scope) { ctx in … }`: one local transaction (engine §7.1, read-and-commit
    form). Steps 3–6 run in it. A `CommitFailure` of kind `malformed` traps (ER-14); `run` rethrows

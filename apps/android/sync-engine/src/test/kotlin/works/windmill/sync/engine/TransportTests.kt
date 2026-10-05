@@ -1,0 +1,292 @@
+package works.windmill.sync.engine
+
+import java.io.IOException
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import kotlinx.coroutines.*
+import okhttp3.*
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
+import okhttp3.mockwebserver.SocketPolicy
+import okio.ByteString.Companion.toByteString
+import org.junit.Assert.*
+import org.junit.Test
+import works.windmill.sync.core.*
+
+class TransportTests {
+    private fun json(text: String) = Json.parse(text)
+    private val hello = """{"serverTime":100,"epoch":"ep-1","schema":4,"minSchema":4,"holdsRecords":{"gym":true},"as":"A"}"""
+    private val push = """{"serverTime":100,"epoch":"ep-1","as":"A","lastN":0,"results":[]}"""
+    private val pull = """{"serverTime":100,"epoch":"ep-1","as":"A","pages":[]}"""
+    private val frame = """{"op":"gone","scope":"self/gym","as":"A"}"""
+    private fun answer(reply: Reply<SyncResponse>) = (reply as Reply.Answer).value
+    private fun connected(reply: Reply<LiveConnection>) = (reply as Reply.Answer).value
+    private fun socketResponse(socket: CompletableDeferred<WebSocket>) = MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+        override fun onOpen(webSocket: WebSocket, response: Response) { socket.complete(webSocket) }
+    })
+
+    @Test fun helloPushAndPullUseCanonicalBodiesSchemaHeaderAndBearerAuth() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(hello)); server.enqueue(MockResponse().setBody(push)); server.enqueue(MockResponse().setBody(pull))
+            HTTPTransport(server.url("/prefix/").toString(), 4).use { transport ->
+                assertEquals(json(hello), answer(transport.hello(null)).body)
+                val helloRequest = server.takeRequest(2, TimeUnit.SECONDS)!!
+                assertEquals("GET", helloRequest.method); assertEquals("/prefix/v1/sync/hello", helloRequest.path)
+                assertEquals("4", helloRequest.getHeader("Sync-Schema")); assertNull(helloRequest.getHeader("Authorization"))
+                val body = Json.objectOf("z" to Json.of("é"), "a" to Json.of(1))
+                assertEquals(200, answer(transport.push(body, "token")).status)
+                val pushRequest = server.takeRequest(2, TimeUnit.SECONDS)!!
+                assertEquals("POST", pushRequest.method); assertEquals("/prefix/v1/sync/push", pushRequest.path)
+                assertEquals("Bearer token", pushRequest.getHeader("Authorization")); assertEquals("4", pushRequest.getHeader("Sync-Schema"))
+                assertEquals(body.jcs, pushRequest.body.readUtf8()); assertEquals("application/json; charset=utf-8", pushRequest.getHeader("Content-Type"))
+                assertEquals(200, answer(transport.pull(body, "other")).status)
+                val pullRequest = server.takeRequest(2, TimeUnit.SECONDS)!!
+                assertEquals("POST", pullRequest.method); assertEquals("/prefix/v1/sync/pull", pullRequest.path)
+                assertEquals("Bearer other", pullRequest.getHeader("Authorization")); assertEquals(body.jcs, pullRequest.body.readUtf8())
+            }
+        }
+    }
+
+    @Test fun invalidJsonAndWrongSuccessShapesAreUnreachable() = runBlocking {
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                for (body in listOf("not-json", "{}", """{"serverTime":100,"epoch":"ep-1","schema":"4","minSchema":4}""")) {
+                    server.enqueue(MockResponse().setBody(body)); assertSame(Reply.Unreachable, transport.hello(null))
+                }
+                server.enqueue(MockResponse().setBody("""{"serverTime":100,"epoch":"ep-1","lastN":0,"results":[{"n":1,"s":"other"}]}"""))
+                assertSame(Reply.Unreachable, transport.push(Json.objectOf(), "token"))
+                server.enqueue(MockResponse().setBody("""{"serverTime":100,"epoch":"ep-1","pages":[{"scope":"self/gym","kind":"other"}]}"""))
+                assertSame(Reply.Unreachable, transport.pull(Json.objectOf(), null))
+            }
+        }
+    }
+
+    @Test fun failureStatusesPreserveJsonAndPermitAnEmptyBody() = runBlocking {
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                val failed = json("""{"serverTime":100,"epoch":"ep-1","code":"account-mismatch","as":"B"}""")
+                server.enqueue(MockResponse().setResponseCode(409).setBody(failed.jcs))
+                assertEquals(SyncResponse(409, failed), answer(transport.push(Json.objectOf(), "token")))
+                server.enqueue(MockResponse().setResponseCode(401))
+                assertEquals(SyncResponse(401, null), answer(transport.hello("token")))
+                server.enqueue(MockResponse().setResponseCode(503).setBody("temporarily unavailable"))
+                assertEquals(SyncResponse(503, null), answer(transport.pull(Json.objectOf(), null)))
+            }
+        }
+    }
+
+    @Test fun redirectsAndCookieStateDoNotEscapeTheSyncOrigin() = runBlocking {
+        MockWebServer().use { server ->
+            var cookieReads = 0
+            val client = OkHttpClient.Builder().cookieJar(object : CookieJar {
+                override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) { error("cookies must be disabled") }
+                override fun loadForRequest(url: HttpUrl): List<Cookie> { cookieReads++; return emptyList() }
+            }).build()
+            server.enqueue(MockResponse().setResponseCode(302).addHeader("Location", server.url("/redirected")).addHeader("Set-Cookie", "token=secret"))
+            HTTPTransport(server.url("/").toString(), 4, client = client).use { transport -> assertEquals(302, answer(transport.hello("token")).status) }
+            assertEquals(1, server.requestCount); assertEquals(0, cookieReads)
+        }
+    }
+
+    @Test fun stalledResponseUsesOneTotalDeadline() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setBody(hello).setBodyDelay(5, TimeUnit.SECONDS))
+            HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 100).use { transport ->
+                assertSame(Reply.Unreachable, withTimeout(2_000) { transport.hello(null) })
+            }
+        }
+    }
+
+    @Test fun callerCancellationCancelsTheUnderlyingHttpCall() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val failed = CompletableDeferred<Call>()
+            val client = OkHttpClient.Builder().eventListener(object : EventListener() {
+                override fun callFailed(call: Call, ioe: IOException) { failed.complete(call) }
+            }).build()
+            HTTPTransport(server.url("/").toString(), 4, client = client, requestTimeoutMs = 5_000).use { transport ->
+                val caller = async(start = CoroutineStart.UNDISPATCHED) { transport.hello(null) }
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)); caller.cancelAndJoin()
+                assertTrue(withTimeout(2_000) { failed.await() }.isCanceled())
+            }
+        }
+    }
+
+    @Test fun closeCancelsPendingHttpAndRefusesFurtherRequests() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val transport = HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 5_000)
+            try {
+                val pending = async(start = CoroutineStart.UNDISPATCHED) { transport.hello(null) }
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)); transport.close()
+                assertSame(Reply.Unreachable, withTimeout(2_000) { pending.await() })
+                assertSame(Reply.Unreachable, transport.hello(null)); assertSame(Reply.Unreachable, transport.openLive("token"))
+                assertEquals(1, server.requestCount)
+            } finally { transport.close() }
+        }
+    }
+
+    @Test fun responseLimitAndSocketDisconnectFailWithoutPartialAnswers() = runBlocking {
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 2_000).use { transport ->
+                server.enqueue(MockResponse().setBody("x".repeat(4 * 1024 * 1024 + 1)))
+                assertSame(Reply.Unreachable, withTimeout(4_000) { transport.hello(null) })
+                server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.DISCONNECT_AT_START))
+                assertSame(Reply.Unreachable, withTimeout(4_000) { transport.hello(null) })
+            }
+        }
+    }
+
+    @Test fun liveHandshakeSendAndReceiveUseCanonicalJsonAndCloseTerminatesReceive() = runBlocking {
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); val sent = CompletableDeferred<String>()
+            server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onOpen(webSocket: WebSocket, response: Response) { serverSocket.complete(webSocket) }
+                override fun onMessage(webSocket: WebSocket, text: String) { sent.complete(text) }
+            }))
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                connected(withTimeout(2_000) { transport.openLive("secret") }).use { connection ->
+                    val request = server.takeRequest(2, TimeUnit.SECONDS)!!
+                    assertEquals("/v1/sync/live?schema=4", request.path); assertEquals("Bearer secret", request.getHeader("Authorization"))
+                    val outgoing = Json.objectOf("scopes" to Json.array(Json.of("self/gym")), "op" to Json.of("follow"))
+                    connection.send(outgoing); assertEquals(outgoing.jcs, withTimeout(2_000) { sent.await() })
+                    serverSocket.await().send(frame); assertEquals(json(frame), withTimeout(2_000) { connection.receive() })
+                    serverSocket.await().close(1000, "done"); assertNull(withTimeout(2_000) { connection.receive() })
+                }
+            }
+        }
+    }
+
+    @Test fun liveHandshakeFailuresPreserveAuthenticationAndUpgradeStatus() = runBlocking {
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                for (status in listOf(401, 426)) {
+                    server.enqueue(MockResponse().setResponseCode(status).setBody("""{"serverTime":100,"epoch":"ep-1"}"""))
+                    val result = withTimeout(2_000) { transport.openLive("token") }
+                    assertTrue(result is Reply.Failed)
+                    assertEquals(status, (result as Reply.Failed).response.status)
+                }
+            }
+        }
+    }
+
+    @Test fun stalledLiveHandshakeTimesOutAndCallerCancellationCancelsIt() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 100).use { transport ->
+                assertSame(Reply.Unreachable, withTimeout(2_000) { transport.openLive("token") })
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS))
+            }
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 5_000).use { transport ->
+                val caller = async(start = CoroutineStart.UNDISPATCHED) { transport.openLive("token") }
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)); caller.cancelAndJoin()
+                assertTrue(caller.isCancelled)
+            }
+        }
+    }
+
+    @Test fun closeCancelsAPendingLiveHandshake() = runBlocking {
+        MockWebServer().use { server ->
+            server.enqueue(MockResponse().setSocketPolicy(SocketPolicy.NO_RESPONSE))
+            val transport = HTTPTransport(server.url("/").toString(), 4, requestTimeoutMs = 5_000)
+            try {
+                val pending = async(start = CoroutineStart.UNDISPATCHED) { transport.openLive("token") }
+                assertNotNull(server.takeRequest(2, TimeUnit.SECONDS)); transport.close()
+                assertSame(Reply.Unreachable, withTimeout(2_000) { pending.await() })
+            } finally { transport.close() }
+        }
+    }
+
+    @Test fun malformedUtf8AndOversizeFramesCloseTheLiveChannel() = runBlocking {
+        for (payload in listOf(byteArrayOf(0xc3.toByte(), 0x28), "x".repeat(Constants.LIVE_FRAME_BYTES + 1).encodeToByteArray())) {
+            MockWebServer().use { server ->
+                val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+                HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                    connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                        serverSocket.await().send(payload.toByteString())
+                        assertTrue(runCatching { withTimeout(2_000) { connection.receive() } }.exceptionOrNull() is IOException)
+                    }
+                }
+            }
+        }
+    }
+
+    @Test fun liveReceiveQueueOverflowClosesInsteadOfLosingFrames() = runBlocking {
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+            val failure = CompletableDeferred<Unit>()
+            HTTPTransport(server.url("/").toString(), 4, telemetry = EngineTelemetry { if (it.operation == EngineOperation.live && it.outcome == EngineOutcome.failure) failure.complete(Unit) }).use { transport ->
+                connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                    repeat(40) { serverSocket.await().send(frame) }
+                    withTimeout(2_000) { failure.await() }
+                    var received = 0
+                    val ended = runCatching { withTimeout(2_000) { while (connection.receive() != null) received++ } }.exceptionOrNull()
+                    assertTrue(ended is IOException); assertEquals(32, received)
+                }
+            }
+        }
+    }
+
+    @Test fun liveAllowsOneReaderAndReaderCancellationLeavesItUsable() = runBlocking {
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                    val waiting = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
+                    assertTrue(runCatching { connection.receive() }.exceptionOrNull() is IllegalStateException)
+                    waiting.cancelAndJoin(); serverSocket.await().send(frame)
+                    assertEquals(json(frame), withTimeout(2_000) { connection.receive() })
+                }
+            }
+        }
+    }
+
+    @Test fun liveDisconnectCloseAndOversizeSendHaveBoundedFailurePaths() = runBlocking {
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+            val transport = HTTPTransport(server.url("/").toString(), 4)
+            try {
+                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
+                assertTrue(runCatching { connection.send(Json.of("x".repeat(Constants.LIVE_FRAME_BYTES))) }.exceptionOrNull() is IOException)
+                server.shutdown()
+                assertTrue(runCatching { withTimeout(2_000) { connection.receive() } }.exceptionOrNull() is IOException)
+                connection.close()
+            } finally { transport.close() }
+        }
+        MockWebServer().use { server ->
+            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
+            HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
+                val waiting = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
+                transport.close(); assertNull(withTimeout(2_000) { waiting.await() })
+                assertTrue(runCatching { connection.send(Json.objectOf()) }.exceptionOrNull() is IOException)
+            }
+        }
+    }
+
+    @Test fun stalledLiveOutputRefusesAnUnboundedSendQueue() = runBlocking {
+        MockWebServer().use { server ->
+            val entered = CompletableDeferred<Unit>(); val release = CountDownLatch(1)
+            server.enqueue(MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
+                override fun onMessage(webSocket: WebSocket, text: String) {
+                    entered.complete(Unit); release.await(5, TimeUnit.SECONDS)
+                }
+            }))
+            try {
+                HTTPTransport(server.url("/").toString(), 4).use { transport ->
+                    connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                        connection.send(Json.objectOf()); withTimeout(2_000) { entered.await() }
+                        val payload = Json.of("x".repeat(Constants.LIVE_FRAME_BYTES - 4))
+                        var refusal: Throwable? = null
+                        for (index in 0 until 128) {
+                            refusal = runCatching { connection.send(payload) }.exceptionOrNull()
+                            if (refusal != null) break
+                        }
+                        assertTrue(refusal is IOException)
+                    }
+                }
+            } finally { release.countDown() }
+        }
+    }
+}
