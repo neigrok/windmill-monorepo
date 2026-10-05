@@ -95,6 +95,7 @@ jobs:
           if ! ./gradlew --no-daemon :app:assembleRelease \
             "-Pwindmill.versionName=$VERSION" \
             "-Pwindmill.versionCode=$GITHUB_RUN_NUMBER" \
+            "-Pwindmill.updateUrl=https://github.com/neigrok/windmill-monorepo/releases/latest" \
             > "$RUNNER_TEMP/windmill-android-candidate-build.log" 2>&1; then
             echo "Build candidate assembly failed; captured build output will be removed." >&2
             exit 1

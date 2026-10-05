@@ -84,9 +84,9 @@ pin revisions and preserve unsent account work with Keep.
 
 The update dialog responds to engine 426 and REST 410 `client-update-required` without deleting
 local work. `-Pwindmill.updateUrl=<public Android update URL>` configures its destination. With no
-configured URL, **Open Windmill** opens `https://windmill.works`; the repository contains no public
-APK download destination. Installed-app verification must use the distribution's actual URL when
-it is available.
+configured URL, **Open Windmill** opens `https://windmill.works`. The release workflow supplies
+`https://github.com/neigrok/windmill-monorepo/releases/latest`, labeled **Get the update**.
+Installed-app verification must use that public destination.
 
 ## Product events
 
