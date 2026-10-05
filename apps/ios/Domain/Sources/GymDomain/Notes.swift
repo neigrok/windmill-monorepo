@@ -15,15 +15,20 @@ public struct Note: Draftable, Removable, Ordered {
   public let id: ID<Note>
   public var title: String
   public var body: String
+  public let updatedAt: Instant?
 
   public init(id: ID<Note>, title: String = "", body: String = "") {
     self.id = id
     self.title = title
     self.body = body
+    self.updatedAt = nil
   }
 
   public init(_ r: Fields) throws(DecodeError) {
-    self.init(id: ID(r.id), title: try r.string("title"), body: try r.string("body", default: ""))
+    id = ID(r.id)
+    title = try r.string("title")
+    body = try r.string("body", default: "")
+    updatedAt = try r.optionalInstant("updatedAt")
   }
 
   public var fields: [String: JSON] { ["title": .string(title), "body": .string(body)] }
@@ -33,10 +38,10 @@ public struct Note: Draftable, Removable, Ordered {
     Check("body") { n, _ in n.body = try NoteRules.body.apply(n.body, at: "body") },
   ]
 
-  // Engine A.2's `position`: the dense rank of (ord, id), 1 for the top note, among the alive notes `stored` lists, a note
+  // Engine A.2's `position`: the dense rank of (ord, id), 0 for the top note, among the alive notes `stored` lists, a note
   // inside its delete window included.
   public static func position(of id: ID<Note>, stored notes: [Note]) -> Int? {
-    notes.firstIndex { $0.id == id }.map { $0 + 1 }
+    notes.firstIndex { $0.id == id }
   }
 }
 

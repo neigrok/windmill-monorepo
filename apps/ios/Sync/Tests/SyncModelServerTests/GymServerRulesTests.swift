@@ -13,15 +13,36 @@ struct GymServerRulesTests {
     var routine = try create.input.member("intent").member("d").asArray()[0].asObject()
     routine["born"] = .null
     routine["life"] = ["alive", .null]
-    let fields = try routine.member("f").asObject().members.map { name, pair in
+    var fields = try routine.member("f").asObject().members.map { name, pair in
       (name, JSON.array([try pair.asArray()[0], .null]))
     }
+    fields.append(("createdDoor", ["ask", .null]))
     routine["f"] = .object(JSON.Object(uniqueKeysWithValues: fields))
     let deltas = try [JSON.object(routine)] + cap.input.member("intent").member("d").asArray()
     let admission = Admission(registry: try Registry(json: Corpus.registryFile("gym")), rules: GymServerRules())
     let admitted = try admission.admit(["scope": "self/gym", "d": .array(deltas)], from: .server(account: "A", requestId: nil),
       at: try cap.input.member("serverNow").asInteger(), in: &state)
     #expect(admitted.result == .refused(Refusal(.cap, detail: ["type": "note", "cap": 10])))
+    #expect(admitted.events == [])
+    #expect(state == before)
+  }
+
+  @Test(arguments: [nil, Int64(2_147_483_647)])
+  func aDocumentEditCannotInventOrOverflowItsRevision(_ revision: Int64?) throws {
+    let edit = try vector("R118 a name and entries edit increments revision once and preserves creation metadata")
+    var state = try ServerState(json: edit.input.member("state"))
+    let scope = ScopeKey(.product(account: "A", name: "gym"))
+    let key = RecordKey("routine", RecordID("routine0002"))
+    var row = try #require(state.rows[scope]?[key])
+    let stamp = try #require(row.lattice.fields["revision"]?.stamp)
+    row.lattice.fields["revision"] = revision.map { Register(JSON($0), stamp) }
+    state.rows[scope]?[key] = row
+    state.scopes[scope]?.digest = ScopeDigest(rows: Array((state.rows[scope] ?? [:]).values).map(\.json))
+    let before = state
+    let admission = Admission(registry: try Registry(json: Corpus.registryFile("gym")), rules: GymServerRules())
+    let admitted = try admission.admit(edit.input.member("intent"), from: .server(account: "A", requestId: nil),
+      at: try edit.input.member("serverNow").asInteger(), in: &state)
+    #expect(admitted.result == .refused(Refusal(.invalid)))
     #expect(admitted.events == [])
     #expect(state == before)
   }

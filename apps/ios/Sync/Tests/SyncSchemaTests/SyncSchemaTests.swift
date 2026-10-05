@@ -10,7 +10,7 @@ struct SyncSchemaTests {
     let gym = try Corpus.registryFile("gym").asObject()
     let journal = try Corpus.registryFile("journal").asObject()
     let expected: JSON = [
-      "registry": "windmill", "version": 4, "minVersion": 4,
+      "registry": "windmill", "version": 5, "minVersion": 4,
       "products": .object(JSON.Object(uniqueKeysWithValues: try gym.member("products").asObject().members + journal.member("products").asObject().members)),
       "types": .array(try gym.member("types").asArray() + journal.member("types").asArray()),
       "commands": .array(try gym.member("commands").asArray() + journal.member("commands").asArray()),
@@ -23,12 +23,12 @@ struct SyncSchemaTests {
   }
 
   @Test func theVersionIsTheRegistrys() {
-    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [4, 4, 4])
+    #expect([SyncSchema.version, SyncSchema.registry.version, SyncSchema.registry.minVersion] == [5, 5, 4])
   }
 
   @Test func everyTypeAndCommandHasItsName() {
     let types = [
-      Gym.Types.routine, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set, Gym.Types.note,
+      Gym.Types.routine, Gym.Types.routineCreation, Gym.Types.exercise, Gym.Types.exerciseName, Gym.Types.session, Gym.Types.set, Gym.Types.note,
       Gym.Types.weighin, Gym.Types.prefs, Gym.Types.proposal, Journal.Types.page, Journal.Types.journalState,
     ]
     let commands = [

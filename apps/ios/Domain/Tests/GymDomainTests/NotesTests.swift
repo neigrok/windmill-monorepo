@@ -22,6 +22,18 @@ struct NotesTests {
     return draft.id
   }
 
+  @Test(arguments: [nil, Int64(1_800_000_000_000)])
+  func contentTimeIsReadWithoutEnteringTheWriteMap(_ updatedAt: Int64?) throws {
+    var values: [String: JSON] = ["title": "Tone", "body": "Blunt."]
+    if let updatedAt { values["updatedAt"] = JSON(updatedAt) }
+    let record = Record(type: Gym.Types.note, id: "note0001", life: nil, born: nil, values: values, texts: [:],
+      serials: [:], rc: 100, ru: 200, isVisible: true, isPending: false, isHeld: false)
+    let note = try Note(Fields(record))
+    #expect(note.updatedAt == updatedAt.map { Instant(ms: $0) })
+    #expect(note.fields == ["title": "Tone", "body": "Blunt."])
+    #expect(Note(id: note.id, title: note.title, body: note.body).updatedAt == nil)
+  }
+
   @Test func aNoteIsAddedBelowTheOthersAsTheStoreHoldsIt() throws {
     let a = NotesTests.phone()
     _ = try NotesTests.add(a, "What I am training for", body: "A 100 kg bench by June.")
@@ -177,7 +189,7 @@ struct NotesTests {
     a.sync()
     let notes = try b.stored(Note.self)
     #expect(notes.map(\.id) == [three, one, two])
-    #expect([three, one, two].map { Note.position(of: $0, stored: notes) } == [1, 2, 3])
+    #expect([three, one, two].map { Note.position(of: $0, stored: notes) } == [0, 1, 2])
   }
 
   @Test func aDeleteIsHeldForItsWindowKeepingItsPositionAndUndoBringsTheNoteBack() throws {
@@ -190,7 +202,7 @@ struct NotesTests {
     #expect(removal.releaseAt == 1_800_000_000_000 + Constants.holdMs)
     #expect(a.undoOffers().map(\.id) == [removal.gestureId])
     #expect(try a.drawn(Note.self).map(\.id) == [two])
-    #expect(Note.position(of: two, stored: try a.stored(Note.self)) == 2)
+    #expect(Note.position(of: two, stored: try a.stored(Note.self)) == 1)
     #expect(try a.runner.undo(removal.gestureId))
     #expect(try a.drawn(Note.self).map(\.id) == [one, two])
     let again = try #require(try a.runner.run(DeleteNote(one)).receipt)

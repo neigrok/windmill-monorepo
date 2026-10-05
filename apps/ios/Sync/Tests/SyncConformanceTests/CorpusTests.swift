@@ -83,6 +83,7 @@ struct CorpusTests {
     #expect(stale == [])
     #expect(Corpus.role(of: "gym/admit.json") == .server)
     #expect(Corpus.role(of: "gym/backfill.json") == .cppOnly)
+    #expect(Corpus.role(of: "gym/metadata.json") == .cppOnly)
     #expect(Corpus.role(of: "gym/unclaimed.json") == nil)
   }
 

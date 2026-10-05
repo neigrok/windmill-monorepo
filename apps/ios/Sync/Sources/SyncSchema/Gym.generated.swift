@@ -7,6 +7,7 @@ public enum Gym {
 
   public enum Types {
     public static let routine = "routine"
+    public static let routineCreation = "routineCreation"
     public static let exercise = "exercise"
     public static let exerciseName = "exerciseName"
     public static let session = "session"
@@ -210,6 +211,11 @@ public enum Gym {
         "deadRows": "spent",
         "fields": [
           "createdDoor": ["domain": ["enum": ["mcp", "ask"], "type": "string"], "kind": "const", "writer": "server"],
+          "createdEntries": [
+            "domain": ["integer": true, "max": 2147483647, "min": 0, "type": "number"],
+            "kind": "const",
+            "writer": "server",
+          ],
           "entries": [
             "domain": [
               "items": [
@@ -251,6 +257,11 @@ public enum Gym {
             "kind": "lww",
             "writer": "client",
           ],
+          "revision": [
+            "domain": ["integer": true, "max": 2147483647, "min": 1, "type": "number"],
+            "kind": "lww",
+            "writer": "server",
+          ],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -267,6 +278,15 @@ public enum Gym {
         "scope": "product:gym",
         "seeded": ["ordinalMax": 99999, "seedMax": 58],
         "type": "routine",
+      ],
+      [
+        "fields": ["snapshot": ["domain": ["type": "json"], "kind": "const", "writer": "server"]],
+        "idPattern": "^[A-Za-z0-9_-]{8,64}$",
+        "identity": "keyed",
+        "life": false,
+        "origins": ["replica", "server"],
+        "scope": "product:gym",
+        "type": "routineCreation",
       ],
       [
         "deadRows": "spent",
@@ -451,6 +471,7 @@ public enum Gym {
             "unit": "chars",
             "writer": "client",
           ],
+          "updatedAt": ["domain": ["integer": true, "min": 0, "type": "number"], "kind": "lww", "writer": "server"],
         ],
         "idPattern": "^[A-Za-z0-9_-]{8,64}$",
         "idSpace": "global",
@@ -517,6 +538,17 @@ public enum Gym {
         "deadRows": "spent",
         "fields": [
           "agent": ["domain": ["type": "string"], "kind": "const", "max": 64, "unit": "chars", "writer": "client"],
+          "baseName": ["domain": ["type": "string"], "kind": "const", "max": 240, "unit": "bytes", "writer": "server"],
+          "baseRevision": [
+            "domain": ["integer": true, "max": 2147483647, "min": 1, "type": "number"],
+            "kind": "const",
+            "writer": "server",
+          ],
+          "changeCount": [
+            "domain": ["integer": true, "max": 2147483647, "min": 0, "type": "number"],
+            "kind": "const",
+            "writer": "server",
+          ],
           "changes": [
             "domain": [
               "items": [
@@ -619,6 +651,6 @@ public enum Gym {
         "type": "proposal",
       ],
     ],
-    "version": 4,
+    "version": 5,
   ]
 }

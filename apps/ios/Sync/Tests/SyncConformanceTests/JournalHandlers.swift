@@ -50,7 +50,9 @@ enum JournalHandlers {
       texts: ["body": TextEdit(text: try! args.member("body").asString())])]
   }
 
-  static func claimEdit(_ input: JSON) throws -> JSON {
+  static func claimEdit(_ input: JSON, clientRegistry: Registry = registry, serverRegistry: Registry = registry,
+                        beforeAdmission: (inout ModelServer) throws -> Void = { _ in }, loseClaimReply: Bool = false) throws -> JSON {
+    let registry = clientRegistry
     let now = try input.member("now").asInteger(), day = try input.member("day").asString()
     let claim = try input.member("claim").asObject(), edit = try input.member("edit").asObject()
     let claimId = try claim.member("claimId").asString(), pendingKey = "pendingClaim:\(claimId)"
@@ -60,7 +62,8 @@ enum JournalHandlers {
     let identities = try QueuedIdentities(["ids": ["rp_00000000000000000000000000000002"], "actors": [.string(ClientSteps.actor)]])
     var instance = Instance(actor: try Stamp.Actor(ClientSteps.actor), deviceNow: now, appVersion: "1")
     var device = PlannedDevice(LoadedDevice(meta: DeviceMeta(), active: try input.member("replica").asString(), replicas: [.fresh(ReplicaMeta(replica: try input.member("replica").asString(), state: .anon))]), registry: registry, limits: Limits(), commandResultWrites: resultWrites, pendingDeviceWork: pendingWork)
-    var server = ModelServer(registry: registry, rules: JournalServerRules(), state: try ServerState(json: input.member("server")))
+    let rules: any ServerRules = serverRegistry.products.count == 1 ? JournalServerRules() : ComposedServerRules.windmill(registry: serverRegistry)
+    var server = ModelServer(registry: serverRegistry, rules: rules, state: try ServerState(json: input.member("server")))
     var trace: [JSON] = []
     func snapshot(_ op: String, _ value: JSON = .null) throws { trace.append(["op": .string(op), "value": value, "device": try device.dump()]) }
     func commit(_ gesture: Gesture, at: Int64) throws -> JSON {
@@ -176,7 +179,15 @@ enum JournalHandlers {
       request = try device.push(limit: nil, at: now + editAt + 2 + skewMs)!
       try snapshot("claimRetriedAfterSignIn", request.json)
     }
+    try beforeAdmission(&server)
     var response = server.push(request.json, credential: .account("A"), at: now + claimAt).json
+    if loseClaimReply {
+      try snapshot("claimReplyLost", ["request": request.json, "response": response, "server": server.state.json])
+      try restart()
+      request = try device.push(limit: nil, at: now + claimAt + 1 + skewMs)!
+      response = server.push(request.json, credential: .account("A"), at: now + claimAt + 1).json
+      try snapshot("claimRetry", ["request": request.json, "response": response, "server": server.state.json])
+    }
     if skewMs != 0 {
       try pushResult(response, request: request, at: claimAt); try snapshot("skewResult", response); try restart()
       request = try device.push(limit: nil, at: now + claimAt + 1 + skewMs)!
