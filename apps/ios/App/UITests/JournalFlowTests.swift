@@ -8,12 +8,13 @@ import XCTest
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
     XCTAssertEqual(editor.value as? String, "")
+    XCTAssertEqual(editor.label, "Today's page")
+    XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-empty"
     screenshot.lifetime = .keepAlways
     add(screenshot)
-    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: 8, dy: app.frame.maxY - 52))
-    XCTAssertGreaterThan(point.screenPoint.y, editor.frame.maxY + 40)
+    let point = editor.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.95))
     point.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     app.typeText("A new line.")
@@ -31,39 +32,189 @@ import XCTest
     app.launch()
     let editor = app.textViews["journal-editor"]
     XCTAssertTrue(editor.waitForExistence(timeout: 10))
-    XCTAssertEqual(editor.value as? String, "One line.")
+    XCTAssertEqual(editor.value as? String, "Short walk, then an early night.")
+    XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-one-line"
     screenshot.lifetime = .keepAlways
     add(screenshot)
-    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: app.frame.midX, dy: app.frame.maxY - 52))
-    XCTAssertGreaterThan(point.screenPoint.y, editor.frame.maxY + 40)
+    let point = app.coordinate(withNormalizedOffset: .zero).withOffset(CGVector(dx: editor.frame.maxX - 1, dy: editor.frame.maxY + 12))
     point.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     app.typeText(" Appended.")
-    XCTAssertEqual(editor.value as? String, "One line. Appended.")
+    XCTAssertEqual(editor.value as? String, "Short walk, then an early night. Appended.")
     app.buttons["done-writing"].tap()
     editor.coordinate(withNormalizedOffset: CGVector(dx: 0.01, dy: 0.1)).tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
     app.typeText(" At the end.")
-    XCTAssertEqual(editor.value as? String, "One line. Appended. At the end.")
+    XCTAssertEqual(editor.value as? String, "Short walk, then an early night. Appended. At the end.")
   }
 
-  func testRoomMenuContainsJournalAndTopRightYouStillOpensSettings() {
+  func testOneRoomTitleIsInertAndTopRightYouStillOpensSettings() {
     let app = XCUIApplication()
     app.launchArguments = ["-model-server", "-board", "05-journal-first-open"]
     app.launch()
-    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    app.buttons["room-menu"].tap()
-    let menu = app.descendants(matching: .any)["journal-room-menu"]
-    XCTAssertEqual(menu.buttons.allElementsBoundByIndex.map(\.label), ["Journal"])
+    let title = app.staticTexts["room-name"]
+    XCTAssertTrue(title.waitForExistence(timeout: 10))
+    XCTAssertEqual(title.label, "Journal")
+    XCTAssertFalse(app.buttons["room-menu"].exists)
+    XCTAssertFalse(app.buttons["room-name"].exists)
+    let frame = title.frame
+    title.tap()
+    XCTAssertEqual(title.frame, frame)
+    XCTAssertFalse(app.keyboards.firstMatch.exists)
+    XCTAssertFalse(app.descendants(matching: .any)["journal-room-menu"].exists)
     let screenshot = XCTAttachment(screenshot: app.screenshot())
-    screenshot.name = "room-menu"
+    screenshot.name = "room-title"
     screenshot.lifetime = .keepAlways
     add(screenshot)
-    app.buttons["Journal"].tap()
     app.buttons["you"].tap()
     XCTAssertTrue(app.buttons["about-windmill"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.buttons["write-today"].exists)
+    XCTAssertFalse(app.buttons["done-writing"].exists)
+  }
+
+  func testEmptyLaterPageWriteSeatAndKeyboardSeat() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-empty-later"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    let write = app.buttons["write-today"]
+    XCTAssertTrue(write.waitForExistence(timeout: 10))
+    XCTAssertEqual(write.label, "Write")
+    XCTAssertEqual(write.frame.width, 44, accuracy: 1)
+    XCTAssertEqual(write.frame.height, 44, accuracy: 1)
+    XCTAssertEqual(app.frame.maxX - write.frame.maxX, 16, accuracy: 1)
+    XCTAssertEqual(editor.value as? String, "")
+    XCTAssertGreaterThanOrEqual(editor.frame.height, 76.5)
+    XCTAssertFalse(app.staticTexts["Start anywhere. Nothing here is graded."].exists)
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "journal-empty-later"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    let parkedSeat = write.frame
+    write.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    let done = app.buttons["done-writing"]
+    XCTAssertEqual(done.label, "Done writing")
+    XCTAssertEqual(done.frame.width, parkedSeat.width, accuracy: 0.5)
+    XCTAssertEqual(done.frame.height, parkedSeat.height, accuracy: 0.5)
+    XCTAssertEqual(done.frame.minX, parkedSeat.minX)
+    // XCTest's keyboard frame excludes its prediction bar.
+    XCTAssertLessThanOrEqual(done.frame.maxY, app.keyboards.firstMatch.frame.minY - 12)
+    done.tap()
+    XCTAssertTrue(write.waitForExistence(timeout: 5))
+    XCTAssertEqual(write.frame.minY, parkedSeat.minY, accuracy: 0.5)
+    XCTAssertEqual(editor.value as? String, "")
+    app.descendants(matching: .any)["journal-date"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.typeText("Today's line.")
+    XCTAssertEqual(editor.value as? String, "Today's line.")
+  }
+
+  func testWriteSeatReturnsFromPastDayToToday() {
+    assertWriteFromHistory(board: "journal-history", screenshotName: "journal-history")
+  }
+
+  func testReduceMotionWriteSeatReturnsFromPastDayToToday() {
+    assertWriteFromHistory(board: "journal-history-RM", screenshotName: "journal-reduce-motion")
+  }
+
+  func testReduceMotionEmptyPageKeepsParkedCaretStill() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-empty-later-RM"]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    let parked = editor.screenshot().pngRepresentation
+    app.staticTexts["room-name"].tap()
+    XCTAssertEqual(editor.screenshot().pngRepresentation, parked)
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "journal-reduce-motion-empty"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    app.buttons["write-today"].tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    app.buttons["done-writing"].tap()
+    XCTAssertTrue(app.buttons["write-today"].waitForExistence(timeout: 5))
+    XCTAssertFalse(app.keyboards.firstMatch.exists)
+    XCTAssertEqual(editor.value as? String, "")
+  }
+
+  func testReadOnlyEditorHidesWriteSeatAndIgnoresPageTap() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-read-only"]
+    app.launch()
+    let marker = app.descendants(matching: .any)["journal-date"]
+    XCTAssertTrue(marker.waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["write-today"].exists)
+    XCTAssertFalse(app.buttons["done-writing"].exists)
+    marker.tap()
+    XCTAssertFalse(app.keyboards.firstMatch.exists)
+  }
+
+  func testCompactKeepSheetHidesWriteSeat() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "14-keep"]
+    app.launch()
+    XCTAssertTrue(app.buttons["email-sign-in"].waitForExistence(timeout: 10))
+    XCTAssertFalse(app.buttons["write-today"].exists)
+    XCTAssertFalse(app.buttons["done-writing"].exists)
+  }
+
+  func testFilledLinesStayAboveDoneSeat() {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", "journal-empty-later"]
+    app.launch()
+    let write = app.buttons["write-today"]
+    XCTAssertTrue(write.waitForExistence(timeout: 10))
+    write.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    let editor = app.textViews["journal-editor"]
+    let done = app.buttons["done-writing"]
+    app.typeText("First filled line.\nSecond filled line.\nThird filled line.")
+    XCTAssertLessThanOrEqual(editor.frame.maxY, done.frame.minY)
+    app.typeText(String(repeating: "\nA longer page keeps the caret clear of the Done seat.", count: 12))
+    XCTAssertLessThanOrEqual(editor.frame.maxY, done.frame.minY)
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = "journal-long-writing"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    done.tap()
+    XCTAssertTrue(write.waitForExistence(timeout: 5))
+  }
+
+  func assertWriteFromHistory(board: String, screenshotName: String) {
+    let app = XCUIApplication()
+    app.launchArguments = ["-model-server", "-board", board]
+    app.launch()
+    let editor = app.textViews["journal-editor"]
+    XCTAssertTrue(editor.waitForExistence(timeout: 10))
+    let scroll = app.scrollViews.firstMatch
+    for _ in 0..<5 { scroll.swipeDown(velocity: .fast) }
+    XCTAssertFalse(editor.isHittable)
+    let screenshot = XCTAttachment(screenshot: app.screenshot())
+    screenshot.name = screenshotName + "-past"
+    screenshot.lifetime = .keepAlways
+    add(screenshot)
+    let write = app.buttons["write-today"]
+    XCTAssertTrue(write.isHittable)
+    write.tap()
+    XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
+    XCTAssertTrue(editor.isHittable)
+    XCTAssertTrue(app.buttons["done-writing"].exists)
+    let returned = XCTAttachment(screenshot: app.screenshot())
+    returned.name = screenshotName + "-today"
+    returned.lifetime = .keepAlways
+    add(returned)
+    app.typeText(" Appended today.")
+    XCTAssertEqual(editor.value as? String, "Short walk, then an early night. Appended today.")
+    app.buttons["done-writing"].tap()
+    XCTAssertTrue(write.waitForExistence(timeout: 5))
+    XCTAssertFalse(app.keyboards.firstMatch.exists)
+    scroll.swipeDown(velocity: .fast)
+    XCTAssertFalse(app.buttons["done-writing"].exists)
+    XCTAssertTrue(write.isHittable)
   }
 
   func testAnonymousKeepEmailBackupAndSignOutReturn() {
@@ -100,16 +251,20 @@ import XCTest
     let app = XCUIApplication()
     app.launchArguments = ["-board", "05-journal-first-open"]
     app.launch()
-    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    let roomSize = app.buttons["room-menu"].frame.size
+    XCTAssertTrue(app.staticTexts["room-name"].waitForExistence(timeout: 10))
+    let roomSize = app.staticTexts["room-name"].frame.size
     let accountSize = app.buttons["you"].frame.size
+    let writeSize = app.buttons["write-today"].frame.size
+    let bodyHeight = app.textViews["journal-editor"].frame.height
     app.terminate()
     app.launchArguments = ["-board", "05-journal-first-open-AX3"]
     app.launch()
-    XCTAssertTrue(app.buttons["room-menu"].waitForExistence(timeout: 10))
-    XCTAssertEqual(app.buttons["room-menu"].frame.size, roomSize)
+    XCTAssertTrue(app.staticTexts["room-name"].waitForExistence(timeout: 10))
+    XCTAssertEqual(app.staticTexts["room-name"].frame.size, roomSize)
     XCTAssertEqual(app.buttons["you"].frame.size, accountSize)
-    XCTAssertEqual(app.buttons["room-menu"].label, "Journal room menu")
+    XCTAssertEqual(app.buttons["write-today"].frame.size, writeSize)
+    XCTAssertGreaterThan(app.textViews["journal-editor"].frame.height, bodyHeight)
+    XCTAssertEqual(app.staticTexts["room-name"].label, "Journal")
     XCTAssertEqual(app.buttons["you"].label, "You and settings")
   }
   func testPausedBackupOffersSameAccountEmailReauthentication() {

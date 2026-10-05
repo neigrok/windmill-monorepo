@@ -1,6 +1,7 @@
 import Foundation
 import DomainKit
 import JournalDomain
+import SyncSchema
 
 // Launch fixtures use the same actions, persistence and sign-in door as the app.
 enum BoardFixture {
@@ -37,8 +38,23 @@ enum BoardFixture {
       model.welcome = false; model.preferences.set(true, forKey: "journalOpened")
     }
     if board.hasPrefix("05") { return }
-    if board == "journal-one-line" {
-      model.type("One line."); model.save(); model.done(); model.dismissScales()
+    if board == "journal-read-only" { model.working = true; return }
+    if board.hasPrefix("journal-empty-later") || board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+      guard let engine = model.runtime?.engine else { return }
+      let count = board.hasPrefix("journal-history") ? 12 : 1
+      for offset in 1...count {
+        // Each saved page is today to its fixture runner; the app's past-day guard stays intact.
+        let zone = FixedZone(offsetSeconds: DeviceZone().offsetSeconds(at: Instant(ms: BoardClock().nowMs())) - offset * 86_400)
+        let runner = ActionRunner(replica: engine, registry: SyncSchema.registry, zone: zone)
+        guard let saved = try? runner.run(SavePage(day: model.today.adding(days: -offset), document: PageDocument(body: shortProse), retiring: ["placeholder", "scales"])), saved.refusal == nil else {
+          model.error = "Couldn't prepare the journal board."; return
+        }
+      }
+      model.keepDismissed = true
+      model.refresh()
+      if board.hasPrefix("journal-one-line") || board.hasPrefix("journal-history") {
+        model.type("Short walk, then an early night."); model.save(); model.done()
+      }
       return
     }
     model.type(board.hasPrefix("21") ? shortProse : prose)
@@ -47,7 +63,7 @@ enum BoardFixture {
       model.setScale("mood", 7); model.setScale("energy", 4)
     }
     if board.hasPrefix("21") {
-      model.keepDismissed = true; model.roomMenu = true; model.document.mood = nil; model.document.energy = nil
+      model.keepDismissed = true; model.document.mood = nil; model.document.energy = nil
     }
     if board.hasPrefix("07b") || board.hasPrefix("21b") {
       if let identity = try? model.runtime?.auth.fakeApple() { try? await model.signIn(identity) }

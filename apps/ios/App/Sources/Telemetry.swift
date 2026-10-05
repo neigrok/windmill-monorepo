@@ -40,7 +40,7 @@ nonisolated enum TelemetryPrivacy {
     "page": ["windmill", "roadmap", "journal", "gym"],
     "presentation": ["first_launch", "replay"],
     "screen": ["welcome", "journal", "keep", "address", "code", "you", "adoption", "discard_adoption", "sign_out", "23a", "23b", "23c", "24a", "24b", "24c", "24d", "apple_no_account", "apple_expired", "auth_pending"],
-    "action": ["open_journal", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
+    "action": ["open_journal", "write", "done_writing", "keep", "close", "email", "back", "change_email", "resend", "add", "discard", "cancel", "sign_out", "answered", "declined", "use_account", "create_account", "remove_apple", "retry"],
     "outcome": ["ok", "failed", "cancelled", "signed_in", "signed_out", "paused", "anonymous", "linked"],
     "method": ["GET", "POST", "DELETE", "email", "apple"],
     "day_kind": ["today"],

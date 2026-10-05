@@ -24,7 +24,6 @@ final class JournalModel {
   var dirty = false
   var readFailed = false
   var error: String?
-  var roomMenu = false
   var sheet: Sheet?
   var account: String?
   var keptWork = false
@@ -314,7 +313,7 @@ final class JournalModel {
     } catch { reportBoundary("journal_choice", error: error); self.error = "Couldn't save this choice. Try again." }
   }
 
-  func keep() { choose("keep", screen: "journal"); done(); roomMenu = false; keepSheetPresented = true; sheet = .keep }
+  func keep() { choose("keep", screen: "journal"); done(); keepSheetPresented = true; sheet = .keep }
   func closeKeep() { choose("close", screen: "keep"); sheet = nil; dismissKeep() }
   func dismissKeep() {
     guard room?.keepDue == true else { return }

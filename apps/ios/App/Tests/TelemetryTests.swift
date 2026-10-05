@@ -65,6 +65,14 @@ nonisolated final class TelemetryBuffer<Value: Sendable>: Sendable {
     #expect(!String(decoding: bytes, as: UTF8.self).contains("private-marker"))
   }
 
+  @Test func writingChoicesRetainOnlyBoundedLabels() {
+    for action in ["write", "done_writing"] {
+      #expect(TelemetryPrivacy.properties(["screen": "journal", "action": action, "text": "private-marker", "mood": "8"]) ==
+              ["screen": .label("journal"), "action": .label(action)])
+    }
+    #expect(TelemetryPrivacy.properties(["action": "private-marker"]).isEmpty)
+  }
+
   @Test func sdkScrubsPrivateFieldsBeforeDelivery() async throws {
     let options = try #require(CrashReports.options(info: info, debug: true))
     let delivered = TelemetryBuffer<String?>(nil)
