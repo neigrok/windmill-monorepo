@@ -3,8 +3,12 @@ package works.windmill.gym.store
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -20,6 +24,7 @@ import works.windmill.gym.net.TrainingSyncing
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
+import works.windmill.sync.engine.*
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class TrainingFinishTests {
@@ -399,96 +404,61 @@ class TrainingFinishTests {
         assertEquals(live, store.session)
         assertEquals(sets, store.sets)
     }
-    @Test fun aReceiptAlreadyShownFollowsTheLaterClaimRemintWithoutWaitingForThatClaim() = runTest {
-        val server = FakeTraining().apply { online = false }
-        val gate = CompletableDeferred<Unit>()
-        val log = object : TrainingSyncing by server {
-            override suspend fun startSession(start: SessionStart): Session {
-                if (server.online && start.id == "ses_second") throw works.windmill.platform.net.WindmillApiException.Refused(
-                    409, works.windmill.platform.net.Refusal(code = "session-id-taken", message = "taken"))
-                return server.startSession(start)
-            }
-            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                val stored = server.appendSet(sessionId, write)
-                if (sessionId != "ses_canonical") return stored
-                return stored.copy(id = "set_canonical", setNumber = 4).also {
-                    server.sets[sessionId] = mutableListOf(it)
-                }
-            }
+    @Test fun aReceiptAlreadyShownKeepsItsIdentityAndDeletionDeadlineDuringEngineDelivery() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            room.workout(60.0)
+            val live = room.workout(100.0, "back-squat", finish = false)
+            val performed = room.store.sets.single()
+            room.engine.releaseHeld(true)
+            val pending = room.engine.nextPush()!!
+            val finish = async { room.store.finish() }
+            runCurrent()
+            assertTrue("local finish remains independent of the older push", finish.isCompleted)
+            val receipt = (finish.await() as FinishOutcome.Closed).detail
+            assertEquals(live.id, receipt.session.id)
+            assertEquals(listOf(performed), receipt.sets)
+            room.store.withhold(Deletion.Set(live.id, performed))
+            val deadline = room.store.withheld.single().untilMs
+            val server = EngineRoomFixture.server()
+            val response = server.push(pending, works.windmill.sync.modelserver.Credential.Account("alice"), room.now)
+            val reading = works.windmill.sync.core.ClockReading(room.now, room.now, "test")
+            room.engine.onPushResponse(pending, works.windmill.sync.engine.SyncResponse(response.status, response.body),
+                works.windmill.sync.engine.RequestTiming(reading, reading))
+            room.sync(server); room.store.refreshEngine()
+            val expected = (room.store.sessionDetail(live.id) as GymResult.Ok).value
+            assertEquals(receipt.session.id, expected.session.id)
+            assertEquals(listOf(performed.id), expected.sets.map { it.id })
+            assertEquals(expected, room.store.retainedSession(receipt))
+            assertEquals(listOf(WithheldDelete(Deletion.Set(live.id, expected.sets.single()), deadline)), room.store.withheld)
+            assertNull(room.store.session)
         }
-        val ids = mutableListOf("ses_first", "ses_second", "ses_canonical")
-        val store = store(mapOf("a" to log), mintSession = { ids.removeAt(0) })
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        store.finish()
-        store.start()
-        store.choose("back-squat")
-        store.logSet(100.0, 5)
-        val performed = store.sets.single()
-        server.online = true
-        server.onFinish = { if (server.finished.last().first == "ses_first") gate.await() }
-        val reconnect = launch { store.connect(account()) }
-        runCurrent()
-        val finish = async { store.finish() }
-        runCurrent()
-        assertTrue("local finish remains independent of the older claim", finish.isCompleted)
-        val receipt = (finish.await() as FinishOutcome.Closed).detail
-        assertEquals("ses_second", receipt.session.id)
-        assertEquals(listOf(performed), receipt.sets)
-        store.withhold(Deletion.Set(receipt.session.id, performed))
-        val deadline = store.withheld.single().untilMs
-        gate.complete(Unit)
-        reconnect.join()
-        val canonical = performed.copy(id = "set_canonical", setNumber = 4)
-        val expected = SessionDetail(server.stored.getValue("ses_canonical"), listOf(canonical))
-        assertEquals(expected, store.retainedSession(receipt))
-        assertEquals(listOf(WithheldDelete(Deletion.Set("ses_canonical", canonical), deadline)), store.withheld)
-        assertEquals(expected.sets, (store.sessionDetail(expected.session.id) as GymResult.Ok).value.sets)
-        assertNull(store.session)
     }
 
-    @Test fun finishDuringALiveClaimCollisionMovesTheShelfAndReceiptTogether() = runTest {
-        val server = FakeTraining().apply { online = false }
-        val gate = CompletableDeferred<Unit>()
-        var deferred = false
-        val log = object : TrainingSyncing by server {
-            override suspend fun startSession(start: SessionStart): Session {
-                if (deferred && start.id == "ses_mine") {
-                    gate.await()
-                    throw works.windmill.platform.net.WindmillApiException.Refused(409,
-                        works.windmill.platform.net.Refusal(code = "session-id-taken", message = "taken"))
-                }
-                return server.startSession(start)
-            }
+    @Test fun finishDuringAnEngineIdentityRefusalKeepsTheOriginalReceiptAndExplainsTheFailure() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            val live = room.workout(60.0, finish = false)
+            val performed = room.store.sets.single()
+            val finish = async { room.store.finish() }
+            runCurrent()
+            assertTrue(finish.isCompleted)
+            val receipt = (finish.await() as FinishOutcome.Closed).detail
+            assertEquals(live.id, receipt.session.id)
+            assertEquals(listOf(performed), receipt.sets)
+            val server = EngineRoomFixture.server()
+            server.refuse(code = "id-taken")
+            room.sync(server)
+            withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
+            room.store.refreshEngine()
+            assertEquals("a refusal never remints the receipt", receipt, room.store.retainedSession(receipt))
+            assertTrue(room.store.refusals.isNotEmpty())
+            assertTrue("the engine retains the refused original source", room.engine.notices("gym").notices.value.any {
+                it.content.command?.args?.get("id") == works.windmill.sync.core.Json.of(live.id)
+            })
+            assertNull(room.store.session)
         }
-        val ids = mutableListOf("ses_mine", "ses_canonical")
-        val store = store(mapOf("a" to log), mintSession = { ids.removeAt(0) })
-        store.connect(account())
-        store.start()
-        store.choose("bench-press")
-        store.logSet(60.0, 8)
-        val performed = store.sets.single()
-        deferred = true
-        server.online = true
-        val connect = launch { store.connect(account()) }
-        runCurrent()
-        val finish = async { store.finish() }
-        runCurrent()
-        assertTrue(finish.isCompleted)
-        val receipt = (finish.await() as FinishOutcome.Closed).detail
-        assertEquals("ses_mine", receipt.session.id)
-        gate.complete(Unit)
-        connect.join()
-        val expected = SessionDetail(server.stored.getValue("ses_canonical"), listOf(performed.copy(setNumber = 1)))
-        assertEquals(expected, store.retainedSession(receipt))
-        assertEquals(listOf("ses_canonical"), server.stored.keys.toList())
-        assertFalse(server.stored.getValue("ses_canonical").isOpen)
-        assertNull(store.session)
-        assertTrue(store.refusals.isEmpty())
     }
-
     @Test fun aStartReplyOrLostReplyCannotAdoptIntoTheNextAccount() = runTest {
         for (lost in listOf(false, true)) {
             val first = FakeTraining()

@@ -133,7 +133,7 @@ fun RoutinesScreen(
                     }
                 }
 
-                if (!isSignedIn) item("claim") { ClaimCard(onSignIn) }
+                if (!isSignedIn) item("sign-in") { SignInCard(onSignIn) }
 
                 if (empty) {
                     item("empty") {
@@ -242,7 +242,7 @@ private fun RoutineRow(
 }
 
 @Composable
-private fun ClaimCard(onSignIn: () -> Unit) {
+private fun SignInCard(onSignIn: () -> Unit) {
     val skin = LocalGymColors.current
     Column(
         verticalArrangement = Arrangement.spacedBy(WindmillSpace.x1),
@@ -258,7 +258,7 @@ private fun ClaimCard(onSignIn: () -> Unit) {
             color = skin.ink,
         )
         Text(
-            "Sign in to claim it — it opens on the web too.",
+            "Sign in to add it to your account — it opens on the web too.",
             style = GymType.numeral(12).copy(lineHeight = 17.sp),
             color = skin.inkDim,
         )

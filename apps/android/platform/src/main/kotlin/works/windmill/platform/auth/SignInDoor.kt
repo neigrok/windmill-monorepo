@@ -118,7 +118,7 @@ fun SignInDoor(
             if (sentTo == null) {
                 Text("New here? The same door creates your account.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim)
                 DoorField("Email", "you@example.com", email, KeyboardType.Email, pending == null && !completed, refusal) { email = it; refusal = null }
-                Text("Logged before any sign-in. Nothing joins an account until you say it is yours.",
+                Text("Training on this phone can join your account. If both have training, you choose Add or Discard.",
                     style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
             } else {
                 Text("Code sent to $sentTo.", style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.ink)

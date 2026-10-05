@@ -94,7 +94,7 @@ class PrefsSessionsTest {
         assertEquals(LocalSession.Absent, PrefsSessions(FakeValues(), vault).localSession)
         for (values in listOf(FakeValues("wm_session" to secret), FakeValues("wm_user.sealed" to "unreadable"),
             FakeValues("wm_session.sealed" to "unreadable", "wm_user.sealed" to "unreadable"),
-            FakeValues("wm_identity.sealed" to "unreadable"))) {
+            FakeValues("wm_identity.sealed" to "unreadable"), FakeValues("wm_proposed.sealed" to "unreadable"))) {
             assertTrue(PrefsSessions(values, vault).localSession is LocalSession.Unresolved)
         }
         val legacy = PrefsSessions(FakeValues("wm_session" to secret,
@@ -130,6 +130,84 @@ class PrefsSessionsTest {
         assertEquals(secret, reopened.read())
         assertEquals(sam, reopened.user())
         assertThrows(java.io.IOException::class.java) { PrefsSessions(FakeValues(), SecretVault { null }).commit(secret, sam) }
+    }
+
+    @Test fun unfinishedSignOutCannotRestoreTheSavedAccountAfterRestart() {
+        val values = FakeValues()
+        val sessions = PrefsSessions(values, vault)
+        sessions.commit(secret, sam)
+        sessions.beginSignOut()
+        val restarted = PrefsSessions(values, vault)
+        assertTrue(restarted.signOutPending)
+        assertEquals(LocalSession.Absent, restarted.localSession)
+        assertEquals(secret, restarted.read())
+        restarted.clear()
+        assertFalse(restarted.signOutPending)
+        assertEquals(LocalSession.Absent, restarted.localSession)
+        assertNull(restarted.read())
+        assertNull(restarted.user())
+    }
+
+    @Test fun proposedIdentityIsSealedAndSurvivesRestartWithoutChangingPublishedAuthority() {
+        val values = FakeValues()
+        val sessions = PrefsSessions(values, vault)
+        sessions.commit(secret, sam)
+        val proposed = ProposedSignIn("secret-B", User("B", "b@example.com"))
+        sessions.stage(proposed)
+        assertFalse(values.held.values.any { it.contains("secret-B") || it.contains("b@example.com") })
+        val restarted = PrefsSessions(values, vault)
+        assertEquals(LocalSession.Owned(sam), restarted.localSession)
+        assertEquals(secret, restarted.read())
+        assertEquals(proposed, restarted.proposed)
+        restarted.publishProposed(proposed)
+        assertEquals(LocalSession.Owned(proposed.user), restarted.localSession)
+        assertEquals(proposed.secret, restarted.read())
+        assertEquals(setOf("wm_identity.sealed"), values.held.keys)
+    }
+
+    @Test fun clearingACancelledProposalPreservesAnAnonymousOrPreviousAccountAndANewerProposal() {
+        val values = FakeValues()
+        val sessions = PrefsSessions(values, vault)
+        val first = ProposedSignIn("secret-A", sam)
+        sessions.stage(first)
+        assertEquals(LocalSession.Absent, sessions.localSession)
+        assertNull(sessions.read())
+        sessions.clearProposed(first)
+        assertEquals(emptyMap<String, String>(), values.held)
+        sessions.commit(secret, sam)
+        sessions.stage(first)
+        val newer = ProposedSignIn("secret-B", User("B", "b@example.com"))
+        sessions.stage(newer)
+        sessions.clearProposed(first)
+        assertEquals(newer, sessions.proposed)
+        assertThrows(IllegalStateException::class.java) { sessions.publishProposed(first) }
+        sessions.clearProposed(newer)
+        assertEquals(LocalSession.Owned(sam), sessions.localSession)
+        assertEquals(secret, sessions.read())
+        assertNull(sessions.proposed)
+    }
+
+    @Test fun failedProposalPublicationKeepsBothSealedPairsForRestartRecovery() {
+        val values = FakeValues()
+        var fail = false
+        val prefs = object : KeptValues {
+            override fun read(key: String) = values.read(key)
+            override fun write(next: Map<String, String?>) {
+                if (fail) throw java.io.IOException("storage unavailable")
+                values.write(next)
+            }
+        }
+        val sessions = PrefsSessions(prefs, vault)
+        sessions.commit(secret, sam)
+        val proposed = ProposedSignIn("secret-B", User("B", "b@example.com"))
+        sessions.stage(proposed)
+        fail = true
+        assertThrows(java.io.IOException::class.java) { sessions.publishProposed(proposed) }
+        val restarted = PrefsSessions(values, vault)
+        assertEquals(LocalSession.Owned(sam), restarted.localSession)
+        assertEquals(proposed, restarted.proposed)
+        restarted.publishProposed(proposed)
+        assertEquals(LocalSession.Owned(proposed.user), restarted.localSession)
     }
 
     private companion object {

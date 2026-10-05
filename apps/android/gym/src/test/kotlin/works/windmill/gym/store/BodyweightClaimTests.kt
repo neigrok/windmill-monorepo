@@ -1,114 +1,47 @@
 package works.windmill.gym.store
 
 import java.io.File
-import java.io.IOException
-import kotlinx.coroutines.test.runTest
-import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
-import org.junit.Assert.assertTrue
+import kotlinx.coroutines.runBlocking
+import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.Session
-import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.domain.WeighIn
-import works.windmill.gym.net.FakeTraining
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
+import works.windmill.gym.domain.*
+import works.windmill.sync.core.Json
+import works.windmill.sync.engine.nextPush
 
-// The claim's last slot: the weigh-ins go out only once every session has landed.
 class BodyweightClaimTests {
-    @get:Rule
-    val tmp = TemporaryFolder()
+    @get:Rule val tmp = TemporaryFolder()
 
-    private fun shelf() = LocalLog(File(tmp.root, "local-${System.nanoTime()}.json"))
-    private fun settings() = LocalPreferences(File(tmp.root, "prefs-${System.nanoTime()}.json"))
-    private fun queue() = SetQueue(File(tmp.root, "queue-${System.nanoTime()}.json"))
-    private fun weights() = LocalBodyweight(File(tmp.root, "bodyweight-${System.nanoTime()}.json"))
-
-    private fun aSet(id: String, at: Long) = TrainingSet(
-        id = id, exerciseId = "bench-press", weightKg = 82.5, reps = 5, completedAtMs = at)
-
-    @Test
-    fun testTheWeighInsClaimLastAfterEverySessionLanded() = runTest {
-        val server = FakeTraining()
-        val localLog = shelf()
-        val weights = weights()
-        localLog.hold(LocalLog.FinishedSession(
-            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000), listOf(aSet("set_a", at = 1_100))))
-        weights.record(WeighIn("2026-08-25", 82.4, recordedAt = 5_000))
-        weights.record(WeighIn("2026-08-26", 82.0, recordedAt = 6_000))
-        weights.delete("2026-08-20")
-
-        val outcome = ClaimReplay(server, localLog, queue(), settings(), weights).run()
-
-        assertEquals(listOf("start", "append", "finish", "putBodyweight", "putBodyweight", "deleteBodyweight"),
-            server.calls)
-        assertEquals(listOf("2026-08-25", "2026-08-26"), server.weighIns.keys.sorted())
-        assertTrue("nothing is owed once the log holds every row", weights.owed.isEmpty() && weights.deletions.isEmpty())
-        assertTrue(outcome.liveLanded)
-        assertFalse(outcome.retryable)
-        assertTrue(outcome.said.isEmpty())
+    @Test fun everyWeighInAndDeletionMigratesWithoutLosingItsDateOrRecordedTime() = runBlocking {
+        val f = LegacyEngineFixture(tmp.root); val weights = f.weights
+        val rows = listOf(WeighIn("2026-08-25", 82.4, f.now - 2_000), WeighIn("2026-08-26", 82.0, f.now - 1_000))
+        rows.forEach(weights::record); weights.delete("2026-08-20")
+        f.engine().use { e -> f.migrate(e); assertEquals(rows, EngineTraining(e) { null }.bodyweight())
+            assertEquals(listOf("2026-08-20"), f.items(e).filter { it["kind"] == Json.of("deleteWeighin") }.map { it.member("id").str() })
+            assertEquals(rows, LocalBodyweight(File(tmp.root, LocalBodyweight.fileName)).entries) }
     }
-
-    @Test
-    fun testAStaleReplayKeepsTheLogsNewerRowOnThisPhoneToo() = runTest {
-        val server = FakeTraining()
-        server.weighIns["2026-08-25"] = WeighIn("2026-08-25", 83.0, recordedAt = 9_000)
-        val weights = weights()
-        weights.record(WeighIn("2026-08-25", 82.4, recordedAt = 5_000))
-
-        ClaimReplay(server, shelf(), queue(), settings(), weights).run()
-
-        assertEquals("the server's newer correction stands", 83.0, server.weighIns.getValue("2026-08-25").weightKg, 0.0)
-        assertEquals(83.0, weights.entries.single().weightKg, 0.0)
-        assertTrue(weights.owed.isEmpty())
+    @Test fun aStaleWriteKeepsTheLogsNewerRowOnThisPhoneToo() = runBlocking {
+        val f = LegacyEngineFixture(tmp.root); f.engine().use { e -> val gym = EngineTraining(e) { null }
+            gym.putBodyweight("2026-08-25", WeighInWrite(83.0, f.now - 1_000))
+            assertEquals(83.0, gym.putBodyweight("2026-08-25", WeighInWrite(82.4, f.now - 2_000)).weightKg, 0.0)
+            assertEquals(83.0, gym.bodyweight().single().weightKg, 0.0) }
     }
-
-    @Test
-    fun testALogThatWentQuietLeavesTheWeighInOwedAndTheClaimRetryable() = runTest {
-        val server = FakeTraining()
-        server.refuseBodyweight = IOException("offline")
-        val weights = weights()
-        weights.record(WeighIn("2026-08-25", 82.4, recordedAt = 5_000))
-
-        val outcome = ClaimReplay(server, shelf(), queue(), settings(), weights).run()
-
-        assertTrue(outcome.retryable)
-        assertEquals(listOf("2026-08-25"), weights.owed.map { it.dateLocal })
-        assertTrue("nothing was lost, so nothing is said", outcome.said.isEmpty())
+    @Test fun anOfflineWeighInRemainsOwedInTheReplicaAcrossRestart() = runBlocking {
+        val f = LegacyEngineFixture(tmp.root); val row = WeighIn("2026-08-25", 82.4, f.now - 1_000); f.weights.record(row)
+        val first = f.engine(); f.migrate(first); assertNull(first.nextPush()); val snapshot = first.snapshot(); first.close()
+        f.engine(snapshot).use { e -> f.migrate(e); assertEquals(listOf(row), EngineTraining(e) { null }.bodyweight()); assertEquals(1, f.outbox(e).size) }
     }
-
-    @Test
-    fun testARefusalWithAReasonIsSaidAndTheRowLetGo() = runTest {
-        val server = FakeTraining()
-        server.refuseBodyweight = WindmillApiException.Refused(400,
-            Refusal(message = "Between 20 and 400 kg — check the number.", code = null))
-        val weights = weights()
-        weights.record(WeighIn("2026-08-25", 82.4, recordedAt = 5_000))
-
-        val outcome = ClaimReplay(server, shelf(), queue(), settings(), weights).run()
-
-        assertFalse(outcome.retryable)
-        assertEquals(listOf("weigh-in · 25 Aug" to "Between 20 and 400 kg — check the number."),
-            outcome.said.map { (it as RefusedClaim).name to it.reason })
-        assertTrue("let go, so no later connect re-sends the same terminal write", weights.owed.isEmpty())
-        assertTrue(weights.entries.isEmpty())
+    @Test fun aStrictRefusalKeepsItsOriginalWeighInOnThePhoneUntilExplicitDiscard() {
+        val f = LegacyEngineFixture(tmp.root); f.weights.record(WeighIn("2026-08-25", 82.4, f.now - 1_000))
+        val file = File(tmp.root, LocalBodyweight.fileName); file.writeText(file.readText().replace("82.4", "900.0")); val original = file.readText()
+        f.engine().use { e -> f.migrate(e); val refusal = LegacyGymMigration.refusals(e).single()
+            assertEquals("2026-08-25", refusal.id); assertEquals(original, file.readText()); assertEquals(Json.of(900.0), f.items(e).single().member("source").member("weightKg"))
+            LegacyGymMigration.discardRefusal(e, refusal.id); assertTrue(LegacyGymMigration.refusals(e).isEmpty()); assertEquals(original, file.readText()) }
     }
-
-    @Test
-    fun testNothingGoesOutWhileAShelfSessionIsStillWaitingOnTheLog() = runTest {
-        val server = FakeTraining()
-        server.open(Session(id = "ses_elsewhere", startedAtMs = 500))
-        val localLog = shelf()
-        localLog.hold(LocalLog.FinishedSession(
-            Session(id = "ses_1", startedAtMs = 1_000, finishedAtMs = 2_000), listOf(aSet("set_a", at = 1_100))))
-        val weights = weights()
-        weights.record(WeighIn("2026-08-25", 82.4, recordedAt = 5_000))
-
-        ClaimReplay(server, localLog, queue(), settings(), weights).run()
-
-        assertFalse("putBodyweight" in server.calls)
-        assertEquals(listOf("2026-08-25"), weights.owed.map { it.dateLocal })
+    @Test fun aWorkoutWaitingForAnExplicitFixDoesNotLoseAnIndependentWeighIn() = runBlocking {
+        val f = LegacyEngineFixture(tmp.root); f.log.hold(f.row(start = f.now + 5_000)); val weight = WeighIn("2026-08-25", 82.4, f.now - 1_000); f.weights.record(weight)
+        f.engine().use { e -> f.migrate(e); assertEquals(listOf(weight), EngineTraining(e) { null }.bodyweight())
+            assertEquals("bad-instant", LegacyGymMigration.refusals(e).single().code); assertEquals(1, f.outbox(e).size) }
     }
 }

@@ -113,6 +113,7 @@ class SetQueue private constructor(
         // turns it false. Absent reads as unclaimed, costing at most one start replay.
         val unclaimed: Boolean? = null,
         val workout: WorkoutState? = null,
+        val engineReplica: String? = null,
     ) {
         val isEmpty: Boolean get() = session == null && entries.isEmpty()
 
@@ -187,6 +188,7 @@ class SetQueue private constructor(
                 try { diskJson.decodeFromJsonElement(WorkoutState.serializer(), it) }
                 catch (error: Exception) { telemetry.failure("gym.storage.decode", error); unreadable = true; null }
             },
+            engineReplica = storage.one(fields["engineReplica"], String.serializer()),
         )
     }
 
@@ -265,6 +267,24 @@ class SetQueue private constructor(
     val ownerKey: String get() = seat
     val workout: WorkoutState get() = mine.workout ?: WorkoutState()
     val writable: Boolean get() = !transferFailed && !unreadable
+    val engineReplica: String? get() = mine.engineReplica
+
+    fun bindEngine(replica: String) {
+        keep(mine.copy(engineReplica = replica))
+    }
+
+    fun project(replica: String, session: Session?, sets: List<TrainingSet>) {
+        val sameSession = mine.session?.id == session?.id
+        val entries = if (session == null) emptyMap() else sets.associate { set ->
+            val previous = mine.entries[set.id]
+            set.id to (previous?.copy(set = set, sessionId = session.id, needsPush = false,
+                attempted = false, write = Owed.Append) ?: Entry(set, session.id, needsPush = false, remints = 0))
+        }
+        keep(mine.copy(session = session, entries = entries, unclaimed = false,
+            order = mine.order.takeIf { sameSession }, chosenMovement = mine.chosenMovement.takeIf { sameSession },
+            workout = mine.workout.takeIf { sameSession }?.let { if (mine.engineReplica == replica) it else it.invalidate() },
+            engineReplica = replica))
+    }
 
     fun latestSet(moment: WorkoutMoment): WorkoutEvent? {
         val live = mine.session ?: return null

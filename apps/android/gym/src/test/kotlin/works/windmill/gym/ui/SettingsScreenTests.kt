@@ -1,7 +1,16 @@
 package works.windmill.gym.ui
 
+import androidx.compose.runtime.CompositionLocalProvider
+import works.windmill.gym.store.GymEngineSession
+import works.windmill.gym.store.LocalGymEngineSession
+import works.windmill.gym.store.LegacyGymMigration
+import works.windmill.sync.engine.*
+import works.windmill.sync.core.Json
+import works.windmill.sync.schema.SyncSchema
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
+import androidx.compose.ui.test.isToggleable
+import androidx.compose.ui.test.onFirst
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
@@ -26,7 +35,6 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.ClaimConsent
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
@@ -35,7 +43,6 @@ import works.windmill.gym.domain.Units
 import works.windmill.gym.net.FakeTraining
 import works.windmill.gym.store.DeviceCopy
 import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalClaimConsent
 import works.windmill.gym.store.LocalLog
 import works.windmill.gym.store.LocalPreferences
 import works.windmill.gym.store.SetQueue
@@ -44,6 +51,7 @@ import works.windmill.gym.store.Withheld
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
+import works.windmill.platform.design.WindmillMaterial
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -53,6 +61,83 @@ class SettingsScreenTests {
 
     @get:Rule
     val tmp = TemporaryFolder()
+
+    private fun editor(refusal: works.windmill.gym.store.LegacyMigrationRefusal,
+        onSave: (LocalLog.FinishedSession, Boolean, Set<String>) -> Unit) {
+        compose.setContent { WindmillMaterial { GymMaterial {
+            MigrationWorkoutEditor(refusal, works.windmill.gym.domain.TheSix.movements, {}, onSave)
+        } } }
+    }
+
+    @Test
+    fun correctingNumberingRequiresTheExplicitChoiceAndPreservesOriginalIdsAndTimes() {
+        val at = 1_800_000_000_123L
+        val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
+        val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", setNumber = 3,
+            weightKg = 80.0, reps = 5, completedAtMs = at + 1_234)
+        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, listOf(set), listOf("set00002"),
+            "source-numbering", "The original set numbering cannot be kept.")
+        val saved = mutableListOf<LocalLog.FinishedSession>()
+        editor(refusal) { row, _, _ -> saved += row }
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(LocalLog.FinishedSession(source, listOf(set), listOf("set00002")), saved.single()) }
+        compose.onAllNodes(isToggleable()).onFirst().performClick()
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(LocalLog.FinishedSession(source, listOf(set.copy(setNumber = 1)), listOf("set00002")), saved.last()) }
+    }
+
+    @Test
+    fun correctingAnAutomaticFinishRequiresTheExplicitChoice() {
+        val at = 1_800_000_000_123L
+        val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
+        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, emptyList(), emptyList(),
+            "source-auto-closed", "The automatic finish marker cannot be kept.")
+        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val marked = mutableListOf<Boolean>()
+        editor(refusal) { row, flag, _ -> saved += row; marked += flag }
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(emptyList<LocalLog.FinishedSession>(), saved) }
+        compose.onNodeWithText("Choose Mark as finished to remove the automatic finish marker, or Cancel to keep it.").assertIsDisplayed()
+        compose.onAllNodes(isToggleable()).onFirst().performClick()
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(source, saved.single().session); assertEquals(listOf(true), marked) }
+    }
+
+    @Test
+    fun anUnfinishedWorkoutEditorKeepsTheStartOpenAndItsOriginalInstant() {
+        val source = works.windmill.gym.domain.Session("session1", 1_800_000_000_123L)
+        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, emptyList(), emptyList(),
+            "bad-instant", "Check the start time.")
+        val saved = mutableListOf<LocalLog.FinishedSession>()
+        editor(refusal) { row, _, _ -> saved += row }
+        compose.onNodeWithText("Finished (yyyy-MM-dd HH:mm)").assertDoesNotExist()
+        compose.onNodeWithText("Pending sets stay saved with this workout.").assertIsDisplayed()
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(source, saved.single().session) }
+    }
+
+    @Test
+    fun anUnrecognizedSetKindRequiresAChoiceBeforeSaving() {
+        val at = 1_800_000_000_123L
+        val source = works.windmill.gym.domain.Session("session1", at, at + 120_000)
+        val set = works.windmill.gym.domain.TrainingSet("set00001", "back-squat", weightKg = 80.0, reps = 5,
+            completedAtMs = at + 1_234)
+        val refusal = works.windmill.gym.store.LegacyMigrationRefusal("source", source, listOf(set), emptyList(),
+            "source-kind", "Choose the kind of this set.", unrecognizedKindSetIds = listOf(set.id))
+        val saved = mutableListOf<LocalLog.FinishedSession>()
+        val kinds = mutableListOf<Set<String>>()
+        editor(refusal) { row, _, ids -> saved += row; kinds += ids }
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle { assertEquals(emptyList<LocalLog.FinishedSession>(), saved) }
+        compose.onNodeWithText("Choose set kind").performScrollTo().performClick()
+        compose.onNodeWithText("Working").performScrollTo().assertIsDisplayed().performClick()
+        compose.onNodeWithText("Kind: Working").assertIsDisplayed()
+        compose.onNodeWithText("Save and retry").performClick()
+        compose.runOnIdle {
+            assertEquals(LocalLog.FinishedSession(source, listOf(set)), saved.single())
+            assertEquals(listOf(setOf(set.id)), kinds)
+        }
+    }
 
     private fun store(scope: CoroutineScope, server: FakeTraining, signedIn: Boolean): TrainingStore {
         val store = TrainingStore(
@@ -90,40 +175,32 @@ class SettingsScreenTests {
     }
 
     @Test
-    fun coldSettingsResumesTheFrozenSignInFlowAndCancellationAllowsANewBatch() {
-        val firstScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val logFile = File(tmp.root, "local.json")
-        val before = Exercise("ex_before", "Before", custom = true)
-        val after = Exercise("ex_after", "After", custom = true)
-        LocalLog(logFile).hold(before)
-        val first = store(firstScope, FakeTraining(), signedIn = false)
-        val flow = requireNotNull(first.requestClaimSignIn())
-        val journalFile = LocalLog(logFile).claimConsentFile
-        val decision = LocalClaimConsent(journalFile).state as ClaimConsent.AwaitingSignIn
-        firstScope.cancel()
-        LocalLog(logFile).hold(after)
-
+    fun signedOutTrainingInvitesSignInWithoutTheRetiredClaimScreen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val restored = store(scope, FakeTraining(), signedIn = false)
+        val logFile = File(tmp.root, LocalLog.fileName)
+        val movement = Exercise("ex_before", "Before", custom = true)
+        LocalLog(logFile).hold(movement)
+        val engine = Engine.memory(SyncSchema.registry)
+        LegacyGymMigration(tmp.root, engine).run()
+        val runtime = SyncRuntime(engine, unavailableTransport, memoryTokens, "test")
+        val session = GymEngineSession(engine, runtime)
+        val store = store(scope, FakeTraining(), signedIn = false)
         val opened = mutableListOf<String>()
         compose.setContent {
-            SettingsScreen(restored, false, "routines", {}, {}, {},
-                onClaimSignIn = { opened += it }, say = {})
+            CompositionLocalProvider(LocalGymEngineSession provides session) {
+                SettingsScreen(store, false, "routines", {}, {}, {}, onAccount = { opened += "account" }, say = {})
+            }
         }
-        compose.onNodeWithText("These are mine").performScrollTo().performClick()
+        compose.onNodeWithText("Saved on this phone").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("1 movement").performScrollTo().assertIsDisplayed()
+        compose.onNodeWithText("These are mine").assertDoesNotExist()
+        compose.onNodeWithText("Not mine").assertDoesNotExist()
+        compose.onNodeWithText("Sign in").performScrollTo().performClick()
         compose.runOnIdle {
-            assertEquals(listOf(flow), opened)
-            assertNull(restored.consentFailure)
-            assertEquals(decision, LocalClaimConsent(journalFile).state)
-            assertEquals(listOf(before, after), LocalLog(logFile).exercises)
-            restored.cancelClaimSignIn(flow)
-            assertNull(LocalClaimConsent(journalFile).state)
-            val nextFlow = requireNotNull(restored.requestClaimSignIn())
-            assertNotEquals(flow, nextFlow)
-            val next = LocalClaimConsent(journalFile).state as ClaimConsent.AwaitingSignIn
-            assertEquals(nextFlow, next.flowId)
-            assertEquals(setOf(before.id, after.id), next.batch.items.map { it.id }.toSet())
+            assertEquals(listOf("account"), opened)
+            assertEquals(listOf(movement), LocalLog(logFile).exercises)
         }
+        session.close()
         scope.cancel()
     }
 
@@ -249,26 +326,30 @@ class SettingsScreenTests {
     // length of the window, so a claim button left drawing could take training a pending discard
     // wipes nine seconds later.
     @Test
-    fun testDiscardingTheShelfTakesTheWholeRowAndSendsNothingWhileTheWindowRuns() {
+    fun selectingAnAccountKeepsSignedOutTrainingAwayFromSettingsClaims() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        File(tmp.root, "local.json").writeText("""{"routines":[{"id":"rt_old","name":"Somebody’s"}]}""")
+        val logFile = File(tmp.root, LocalLog.fileName)
+        val movement = Exercise("ex_elsewhere", "Somebody’s", custom = true)
+        LocalLog(logFile).hold(movement)
         val store = store(scope, FakeTraining(), signedIn = true)
         settings(store, signedIn = true)
-
-        compose.onNodeWithText("Saved on this phone, unclaimed").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("These are mine").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Delete for good?").assertDoesNotExist()
-        compose.onNodeWithText("Not mine").performScrollTo().performClick()
-
-        compose.onNodeWithText("Not mine").assertDoesNotExist()
         compose.onNodeWithText("These are mine").assertDoesNotExist()
-        compose.onNodeWithText("Saved on this phone, unclaimed").assertDoesNotExist()
-        compose.runOnIdle {
-            assertEquals(listOf("unattributed"), store.withheld.map { it.subjectId })
-            assertNotNull("nothing has left the disk while the window is open", store.unattributed)
-            assertEquals("Unclaimed training deleted — it was only on this phone.",
-                Withheld.line(store.withheld))
-        }
+        compose.onNodeWithText("Not mine").assertDoesNotExist()
+        compose.onNodeWithText("Delete for good?").assertDoesNotExist()
+        compose.runOnIdle { assertEquals(listOf(movement), LocalLog(logFile).exercises) }
         scope.cancel()
+    }
+
+    private val unavailableTransport = object : SyncTransport {
+        override suspend fun hello(token: String?) = Reply.Unreachable
+        override suspend fun push(request: Json, token: String) = Reply.Unreachable
+        override suspend fun pull(request: Json, token: String?) = Reply.Unreachable
+        override suspend fun openLive(token: String) = Reply.Unreachable
+    }
+    private val memoryTokens = object : SessionTokens {
+        override fun token(account: String): String? = null
+        override fun save(account: String, token: String) = Unit
+        override fun delete(account: String) = Unit
+        override fun accounts(): Set<String> = emptySet()
     }
 }

@@ -24,6 +24,7 @@ import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
+import works.windmill.sync.engine.signIn
 
 // One window over FOUR verbs, and the property the whole gesture wave stands on: withheld means NOT
 // SENT. A server-only delete — a conversation — is as unsent as a set until its own clock runs out,
@@ -112,16 +113,21 @@ class WithheldWindowTests {
                 ?: Deletion.Bodyweight("2026-08-30").detail)
     }
 
-    // The shelf is the one delete here with no copy anywhere else — the store says so itself — and
-    // the only place that fact used to be said was the armed label of the two-tap this cut removed.
-    // So it rides in the LINE: the lifter is no longer standing on the settings screen when it lands.
     @Test
-    fun theShelfDiscardSaysThatThisPhoneWasTheOnlyPlaceItEverExisted() {
-        assertEquals("Unclaimed training deleted — it was only on this phone.", Deletion.Unattributed.line)
-        assertEquals("one shelf, one window: the id is a constant because the shelf has none",
-            "unattributed", Deletion.Unattributed.subjectId)
-        assertEquals("Unclaimed training deleted — it was only on this phone.",
-            Withheld.line(listOf(WithheldDelete(Deletion.Unattributed, untilMs = 10_000))))
+    fun anonymousDiscardIsAnAccountDecisionWithNoDeleteWindow() = runTest {
+        works.windmill.sync.engine.Engine.memory(works.windmill.sync.schema.SyncSchema.registry).use { engine ->
+            val gym = EngineTraining(engine) { null }
+            val store = TrainingStore(queue = SetQueue(File(tmp.root, "discard-queue")), scope = backgroundScope,
+                sync = { gym }, engineTraining = gym)
+            store.connect(Account(account().api, null))
+            store.create("Unclaimed press", "machine", "exercise1")
+            store.prepareEngineTransition()
+            engine.signIn("u1", mapOf("gym" to true), mapOf("gym" to "discard"))
+            store.connect(account())
+            assertEquals(emptyList<WithheldDelete>(), store.withheld)
+            assertNull(store.holding)
+            assertFalse(store.catalog.any { it.id == "exercise1" })
+        }
     }
 
     // A verb whose delete lands on THIS DEVICE and owes the log a claim has no terminal refusal, so
@@ -134,7 +140,6 @@ class WithheldWindowTests {
         assertEquals("that session is still on the log", Deletion.Session("ses_1").stillThere)
         assertEquals("that note is still here", Deletion.Note("nte_1").stillThere)
         assertNull(Deletion.Bodyweight("2026-08-30").stillThere)
-        assertNull(Deletion.Unattributed.stillThere)
     }
 
     @Test
@@ -499,34 +504,31 @@ class WithheldWindowTests {
         assertEquals(emptyList<String>(), server.calls.filter { it == "deleteBodyweight" })
     }
 
-    // The shelf's discard re-reads the room for the seat already in hand. That re-read may not take
-    // the OTHER windows down with it: a delete dropped there is never sent, never said and its
-    // transient has already promised the lifter it happened.
+    // Settling a deletion must leave the other promised windows running. Anonymous
+    // Discard now belongs to the engine account decision rather than this Undo list.
     @Test
-    fun testTheShelfsDiscardSettlesItselfAndLeavesEveryOtherWindowRunning() = runTest {
-        val server = FakeTraining()
-        LocalLog(File(tmp.root, "local.json")).hold(
-            works.windmill.gym.domain.Exercise("ex_unclaimed", "Unclaimed press", custom = true))
-        val store = seated(server)
-        store.readNotes()
-        server.writeNote("note_1", works.windmill.gym.domain.NoteWrite("Tone", "blunt"))
-        store.readNotes()
-
-        store.withhold(Deletion.Note("note_1"))
-        store.withhold(Deletion.Unattributed)
-        assertEquals(listOf("note_1", "unattributed"), store.withheld.map { it.subjectId })
-
-        store.settleWithheld(Deletion.Unattributed.subjectId)
-        assertNull(store.localDataBatch)
-        assertEquals(emptyList<works.windmill.gym.domain.Exercise>(), LocalLog(File(tmp.root, "local.json")).exercises)
-        assertEquals("the note's own clock is still the lifter's",
-            listOf("note_1"), store.withheld.map { it.subjectId })
-
-        advanceTimeBy(Withheld.windowMs + 1)
-        runCurrent()
-        assertEquals("and it reaches the wire on that clock", listOf("deleteNote"),
-            server.calls.filter { it == "deleteNote" })
-        assertEquals(emptyList<String>(), server.notebook.map { it.id })
+    fun settlingOneEngineDeleteLeavesEveryOtherWindowRunning() = runTest {
+        works.windmill.sync.engine.Engine.memory(works.windmill.sync.schema.SyncSchema.registry,
+            clock = object : works.windmill.sync.engine.EngineClock { override fun now() = clockMs }).use { engine ->
+            val gym = EngineTraining(engine) { error("Gym data cannot use REST.") }
+            val store = TrainingStore(queue = SetQueue(File(tmp.root, "queue.json")), scope = backgroundScope,
+                now = { clockMs }, undoWindowMs = Withheld.windowMs, sync = { gym }, engineTraining = gym)
+            store.connect(Account(account().api, null))
+            val routine = gym.createRoutine(works.windmill.gym.domain.RoutineWrite("routine1", "Push A", 0,
+                listOf(works.windmill.gym.domain.RoutineEntryWrite("bench-press"))))
+            gym.writeNote("note0001", works.windmill.gym.domain.NoteWrite("Tone", "blunt"))
+            store.refreshEngine(); store.readNotes()
+            store.withhold(Deletion.Note("note0001"))
+            store.withhold(Deletion.Routine(routine.id, routine.name))
+            assertEquals(listOf("note0001", routine.id), store.withheld.map { it.subjectId })
+            store.settleWithheld(routine.id)
+            assertNull(gym.routine(routine.id))
+            assertEquals("the note's own clock is still the lifter's", listOf("note0001"), store.withheld.map { it.subjectId })
+            advanceTimeBy(Withheld.windowMs + 1)
+            runCurrent()
+            assertEquals(emptyList<String>(), gym.notes().map { it.id })
+            assertEquals(emptyList<WithheldDelete>(), store.withheld)
+        }
     }
 
     // The notebook is the STORE's, so a settled delete drops the row AND the count together. A

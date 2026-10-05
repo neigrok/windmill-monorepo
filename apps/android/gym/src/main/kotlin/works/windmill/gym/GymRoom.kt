@@ -29,6 +29,7 @@ import androidx.compose.material3.SnackbarHost
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.SnackbarResult
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -46,6 +47,7 @@ import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
 import androidx.compose.ui.Modifier
 import androidx.annotation.DrawableRes
 import androidx.compose.ui.res.painterResource
@@ -84,6 +86,8 @@ import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.store.LocalGymEngineSession
+import works.windmill.gym.store.LegacyGymMigration
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
@@ -437,8 +441,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         AccountActions(
             listOf(YouDestination("settings", "Gym settings") { openDestination(Away.Settings) },
                 YouDestination("connections", "Connected log") { openDestination(Away.Connections) }),
-            beforeSignIn = { user, flow -> store.approveSignIn(user.id, flow) },
-            cancelSignIn = store::cancelClaimSignIn,
+            beforeSignIn = { _, _ -> },
+            cancelSignIn = { _ -> },
         )
     }
     SideEffect { shell.present(accountActions) }
@@ -957,6 +961,11 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val railUp = railStands(live, building != null, away.size)
             val youInitial = account.user?.email?.take(1) ?: ""
             val loggerTransient = live && standing == null
+            val engineSession = LocalGymEngineSession.current
+            val engineStatus = engineSession?.engine?.status?.state?.collectAsState()?.value
+            val migrationRefusals = remember(engineSession, engineStatus, screen) {
+                engineSession?.let { LegacyGymMigration.refusals(it.engine) }.orEmpty()
+            }
 
             Scaffold(
                 modifier = Modifier.fillMaxSize(),
@@ -980,6 +989,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                             }
                             if (railUp) {
+                                if (migrationRefusals.isNotEmpty()) TextButton(
+                                    onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
+                                ) { Text("Saved workouts need review (${migrationRefusals.size})", color = skin.alarmInk) }
                                 TabRail(
                                     current = tab,
                                     onPick = { picked ->
@@ -1038,7 +1050,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             onConnectedLog = { look(Away.Connections) },
                             accountEmail = account.user?.email,
                             onAccount = shell.openYou,
-                            onClaimSignIn = shell.openSignIn,
                             say = { note = it },
                         )
                         standing is Away.Connections -> ConnectedLogScreen(

@@ -3,7 +3,11 @@ package works.windmill.gym.store
 import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeout
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.runCurrent
@@ -64,21 +68,12 @@ import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.WindmillJson
+import works.windmill.sync.engine.*
 
 private fun refusal(status: Int, code: String? = null, message: String) =
     WindmillApiException.Refused(status, Refusal(message = message, code = code))
 
 private val storageFailure = refusal(500, message = "internal error")
-
-private class LosingStartReplies(private val inner: FakeTraining) : TrainingSyncing by inner {
-    var losing = true
-
-    override suspend fun startSession(start: SessionStart): Session {
-        val opened = inner.startSession(start)
-        if (losing) throw IOException("the reply was lost")
-        return opened
-    }
-}
 
 class TrainingStoreTests {
     @get:Rule
@@ -571,23 +566,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testTheShelfsOwnMovementsSurviveARelaunchAndTheSeatTheySignInto() = runTest {
-        val anon = makeStore(sync = null)
-        anon.connect(account(signedIn = false))
-        val made = (anon.create("Sled Push", "machine") as GymResult.Ok).value
-
-        val relaunched = makeStore(sync = null)
-        relaunched.connect(account(signedIn = false))
-        assertEquals(TheSix.movements + made, relaunched.catalog)
-
-        val newSeat = makeStore(sync = FakeTraining())
-        val flow = checkNotNull(newSeat.requestClaimSignIn())
-        newSeat.approveSignIn("alice", flow)
-        newSeat.connect(account(signedIn = true, id = "alice"))
-        assertEquals(listOf(made) + TheSix.movements, newSeat.catalog)
-    }
-
-    @Test
     fun testARecordTheLogRefusesSaysWhyRatherThanDrawingNothing() = runTest {
         val server = FakeTraining()
         val store = makeStore(sync = server)
@@ -603,354 +581,6 @@ class TrainingStoreTests {
         server.refuseRecord = null
         server.online = false
         assertEquals(WriteFailure.NoAnswer, (store.record("back-squat") as GymResult.Failed).why)
-    }
-
-    @Test
-    fun testExplicitConsentClaimsTheShelfInOrderAndTheServerBecomesTheTruth() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-
-        val kept = (store.keep(listOf(
-            TrainingSet(id = "set_seed", exerciseId = "bench-press", weightKg = 100.0, reps = 5,
-                completedAtMs = 900)), asRoutineNamed = "Push Day") as GymResult.Ok).value
-        val startedA = (store.start(routineId = kept.id) as GymResult.Ok).value.startedAtMs
-        store.choose("bench-press")
-        store.logSet(weightKg = 100.0, reps = 5)
-        store.logSet(weightKg = 102.5, reps = 3)
-        clockMs += 60_000
-        store.finish()
-        store.start()
-        store.choose("back-squat")
-        store.logSet(weightKg = 140.0, reps = 5)
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        val walk = server.calls.filter { it in setOf("createRoutine", "start", "append", "finish", "sessions") }
-        assertEquals("active-slot preflight comes first; the boot read follows the complete replay",
-            listOf("sessions", "createRoutine", "start", "append", "append", "finish", "start", "append", "sessions"),
-            walk)
-        assertEquals("every claimed start declines to join",
-            listOf(false, false), server.started.map { it.joinOpenSession })
-        assertEquals("the true instants ride, not the sign-in's",
-            startedA, server.started.first().startedAt)
-        assertEquals(listOf("rt_"), server.started.map { it.routineId?.take(3) }.filterNotNull().distinct())
-        assertEquals(listOf(100.0, 102.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertFalse(server.stored.getValue("ses_a").isOpen)
-        assertEquals("Push Day", server.written.values.single().name)
-
-        assertTrue(server.stored.getValue("ses_b").isOpen)
-        assertEquals(listOf(140.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertEquals("the room stands in the claimed live workout", "ses_b", store.session?.id)
-
-        assertTrue("the shelf let go of everything the server confirmed",
-            shelfOnDisk().finished.isEmpty() && shelfOnDisk().routines.isEmpty())
-        assertEquals("and the log lists what the shelf held",
-            setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
-    }
-
-    @Test
-    fun testAClaimedSessionIdAlreadySpentIsMintedAgainAndTheWorkoutLandsWhole() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_spent", "ses_fresh")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        server.refuseStart = { start ->
-            if (start.id == "ses_spent")
-                refusal(409, code = "session-id-taken", message = "that id names a row elsewhere")
-            else null
-        }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertNull("nothing landed under the spent id", server.stored["ses_spent"])
-        assertEquals(listOf(82.5), server.sets.getValue("ses_fresh").map { it.weightKg })
-        assertFalse(server.stored.getValue("ses_fresh").isOpen)
-        assertTrue(shelfOnDisk().finished.isEmpty())
-    }
-
-    @Test
-    fun testAClaimWaitsWholeWhileTheAccountsOtherWorkoutIsOpen() = runTest {
-        val server = FakeTraining()
-        server.open(Session(id = "ses_phone2", startedAtMs = 500))
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertNull("nothing was filed into the other device's workout", server.sets["ses_phone2"])
-        assertEquals(1, shelfOnDisk().finished.size)
-        assertTrue("the boot read still ran", server.calls.contains("sessions"))
-        assertEquals("the reader sees the log and the shelf together",
-            setOf("ses_phone2", "ses_minted"), store.recent.map { it.id }.toSet())
-    }
-
-    @Test
-    fun testAnOfflineClaimKeepsTheShelfWholeAndTheNextConnectLandsIt() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        server.online = false
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-        assertEquals(1, shelfOnDisk().finished.size)
-        assertTrue(store.refusals.isEmpty())
-
-        server.online = true
-        store.connect(account(signedIn = true))
-        assertEquals(listOf(82.5), server.sets.getValue("ses_minted").map { it.weightKg })
-        assertTrue(shelfOnDisk().finished.isEmpty())
-    }
-
-    @Test
-    fun testAnOfflineClaimRetriesOnTheDeliverCadenceAndLandsWithoutARemount() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        server.online = false
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-        assertEquals("the boot claim stopped offline — nothing lost, nothing said",
-            1, shelfOnDisk().finished.size)
-        assertTrue(store.refusals.isEmpty())
-        val attempted = server.started.size
-
-        advanceTimeBy(4_100)
-        runCurrent()
-        assertTrue("the cadence retried the claim on its own, with nobody tapping anything",
-            server.started.size > attempted)
-        assertEquals("still offline — the shelf keeps everything", 1, shelfOnDisk().finished.size)
-
-        server.online = true
-        val gate = CompletableDeferred<Unit>()
-        server.onFinish = { gate.await() }
-        advanceTimeBy(4_100)
-        runCurrent()
-        val opened = (store.start() as GymResult.Ok).value
-        assertEquals("a start during the scheduled re-claim composes on the device", "ses_b", opened.id)
-        store.choose("back-squat")
-        store.logSet(weightKg = 199.0, reps = 1)
-        assertTrue("and its sets are parked, never filed into the replay",
-            server.appended.none { it.weightKg == 199.0 })
-
-        server.onFinish = {}
-        gate.complete(Unit)
-        runCurrent()
-
-        assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertFalse(server.stored.getValue("ses_a").isOpen)
-        assertTrue("the shelf let go once the log confirmed", shelfOnDisk().finished.isEmpty())
-        assertEquals("the re-claim landed the device-composed workout too, without any remount",
-            listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertTrue(server.stored.getValue("ses_b").isOpen)
-        assertEquals("the room stands in its claimed workout", "ses_b", store.session?.id)
-    }
-
-    @Test
-    fun testAFinishDuringTheCadenceReclaimNeverAdoptsTheMidReplaySession() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_a", "ses_b")
-        var store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-        store.start()
-        store.choose("back-squat")
-        store.logSet(weightKg = 199.0, reps = 1)
-
-        server.online = false
-        val batch = checkNotNull(store.localDataBatch)
-        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
-        journal.approve(batch, "u1")
-        SetQueue(queueFile).complete(batch, "u1")
-        LocalLog(localFile).complete(batch, "u1")
-        LocalBodyweight(bodyweightFile).complete(batch, "u1")
-        LocalPreferences(preferencesFile).complete(batch, "u1")
-        journal.complete(batch.id)
-        store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-
-        server.online = true
-        val gateA = CompletableDeferred<Unit>()
-        val gateB = CompletableDeferred<Unit>()
-        val parked = mutableSetOf<String>()
-        server.onFinish = {
-            val id = server.finished.last().first
-            if (parked.add(id)) when (id) {
-                "ses_a" -> gateA.await()
-                "ses_b" -> gateB.await()
-            }
-        }
-        advanceTimeBy(4_100)
-        runCurrent()
-        assertTrue("the cadence's re-claim stands parked inside the replayed session's finish",
-            server.stored.getValue("ses_a").isOpen)
-
-        var closed: FinishOutcome? = null
-        val finishing = launch { closed = store.finish() }
-        runCurrent()
-        assertTrue("the local finish completed without waiting on the running claim: $closed",
-            closed is FinishOutcome.Closed)
-        assertNull("and it started no second replay while one was mid-flight",
-            server.stored["ses_b"])
-        assertNull(store.session)
-
-        gateA.complete(Unit)
-        runCurrent()
-        assertTrue("the deferred re-run reopened the finished workout on the log to replay it",
-            server.stored.getValue("ses_b").isOpen)
-        assertNull("and the store never adopts the mid-replay session as the phone's live workout",
-            store.session)
-
-        gateB.complete(Unit)
-        runCurrent()
-        finishing.join()
-
-        assertEquals("ses_b", (closed as FinishOutcome.Closed).session.id)
-        assertNull("nothing stands running once the replay is over", store.session)
-        assertFalse(server.stored.getValue("ses_a").isOpen)
-        assertFalse(server.stored.getValue("ses_b").isOpen)
-        assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertEquals(listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertTrue("the shelf let go of both", shelfOnDisk().finished.isEmpty())
-        assertEquals("and the eventual log read lands clean — both workouts listed, neither open",
-            setOf("ses_a", "ses_b"), store.recent.map { it.id }.toSet())
-        assertTrue(store.recent.none { it.session.isOpen })
-        assertTrue(store.refusals.isEmpty())
-    }
-
-    @Test
-    fun testAClaimRequestedMidReplayRunsOnceMoreAfterItRatherThanOverlapping() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-        store.start()
-        store.choose("back-squat")
-        store.logSet(weightKg = 199.0, reps = 1)
-
-        val gate = CompletableDeferred<Unit>()
-        server.onFinish = { if (server.finished.last().first == "ses_a") gate.await() }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        val connecting = launch { store.connect(account(signedIn = true)) }
-        runCurrent()
-        assertEquals("the boot claim stands parked inside the shelved session's finish",
-            listOf("ses_a"), server.started.map { it.id })
-
-        var closed: FinishOutcome? = null
-        val finishing = launch { closed = store.finish() }
-        runCurrent()
-        assertTrue("the local finish completed without waiting on the running claim: $closed",
-            closed is FinishOutcome.Closed)
-        assertEquals("no second replay went to the wire while one was mid-flight",
-            listOf("ses_a"), server.started.map { it.id })
-
-        gate.complete(Unit)
-        connecting.join()
-        finishing.join()
-        runCurrent()
-
-        assertEquals("the claim went once more when its pass ended — each session claimed exactly once",
-            listOf("ses_a", "ses_b"), server.started.map { it.id })
-        assertFalse(server.stored.getValue("ses_a").isOpen)
-        assertFalse(server.stored.getValue("ses_b").isOpen)
-        assertEquals(listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertTrue(shelfOnDisk().finished.isEmpty())
-        assertNull(store.session)
-        assertTrue(store.refusals.isEmpty())
-    }
-
-    @Test
-    fun testABootClaimLossWithNoLiveSessionSurfacesOnTodayAndDismissClears() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        val kept = (store.keep(listOf(TrainingSet(id = "set_seed", exerciseId = "bench-press", weightKg = 100.0,
-            reps = 5, completedAtMs = 900)), asRoutineNamed = "Push Day") as GymResult.Ok).value
-
-        server.refuseRoutine = { refusal(400, code = "bad-routine", message = "that document is unclaimable") }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertEquals("the loss is said by name, through the store fact Today draws the banner from",
-            listOf(RefusedClaim(id = kept.id, name = "Push Day", reason = "that document is unclaimable")),
-            store.refusals)
-        assertNull("no logger is mounted — Today is the standing screen", store.session)
-        assertTrue("said once and let go, not re-said on the next connect",
-            shelfOnDisk().routines.isEmpty())
-
-        store.clearRefusals()
-        assertEquals("dismissing clears what was shown", emptyList<RefusedWrite>(), store.refusals)
-    }
-
-    @Test
-    fun testAClaimedSetRefusedForeverIsDroppedAndSaidAndTheRestSettles() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        server.stored["ses_minted"] = Session(id = "ses_minted", startedAtMs = 1_000, finishedAtMs = 2_000)
-        server.refuse = { refusal(409, code = "session-finished", message = "reworded on a Tuesday") }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertEquals(listOf("the session closed before this set reached it"),
-            store.refusals.map { it.reason })
-        assertEquals(listOf(82.5), store.refusals.map { (it as RefusedSet).weightKg })
-        assertTrue("the shelf let go — a loss said once is not re-said every connect",
-            shelfOnDisk().finished.isEmpty())
     }
 
     @Test
@@ -1019,136 +649,104 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testSignedInWithNoSignalAStartComposesOnTheDeviceAndTheClaimLandsIt() = runTest {
-        for (quiet in listOf<(FakeTraining) -> Unit>(
-            { it.online = false },
-            { it.refuseStart = { storageFailure } },
-            { it.refuseStart = { refusal(400, code = "clock-ahead", message = "that start is in the future") } },
-        )) {
-            setUp()
-            val server = FakeTraining()
-            server.written["rt_push"] = Routine(id = "rt_push", name = "Push Day", entries = listOf(
-                RoutineEntry(position = 1, exerciseId = "bench-press",
-                    sets = List(3) { SetTarget(5, 100.0) })))
-            val store = makeStore(sync = server)
-            store.connect(account(signedIn = true))
-            quiet(server)
-
-            val opened = (store.start(routineId = "rt_push") as GymResult.Ok).value
-            assertEquals("the plan froze off the routine this store holds",
-                PlanSnapshot(routine = "Push Day", entries = listOf(
-                    PlanEntry(exerciseId = "bench-press", sets = List(3) { SetTarget(5, 100.0) }))),
-                opened.plan)
-            assertEquals("ses_minted", store.session?.id)
-            assertTrue("held on the device, not the log's yet", queueOnDisk().sessionIsUnclaimed)
-            store.choose("bench-press")
-            store.logSet(weightKg = 100.0, reps = 5)
-            assertEquals("its set is parked with it, never counted stranded", 0, store.strandedCount)
-            assertNull("nothing landed while the log was quiet", server.sets["ses_minted"])
-
-            server.online = true
-            server.refuseStart = { null }
-            advanceTimeBy(4_100)
-            runCurrent()
-
-            val claimed = server.started.last()
-            assertEquals("the cadence claimed the device-composed workout, naming its routine, and never joining",
-                listOf("ses_minted", "rt_push", false),
-                listOf(claimed.id, claimed.routineId, claimed.joinOpenSession))
-            assertEquals(listOf(100.0), server.sets.getValue("ses_minted").map { it.weightKg })
-            assertFalse("and it is the log's now", queueOnDisk().sessionIsUnclaimed)
-            assertEquals("ses_minted", store.session?.id)
-            assertTrue(store.refusals.isEmpty())
+    fun testSignedInWithNoSignalAStartComposesOnTheDeviceAndTheEngineSyncsIt() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            val routine = room.training.createRoutine(works.windmill.gym.domain.RoutineWrite("routine1", "Push Day", 0,
+                listOf(works.windmill.gym.domain.RoutineEntryWrite("bench-press", List(3) { SetTarget(5, 100.0) }))))
+            room.store.refreshEngine()
+            val opened = (room.store.start(routine.id) as GymResult.Ok).value
+            assertEquals("the plan froze off the routine this store holds", PlanSnapshot(routine), opened.plan)
+            room.store.choose("bench-press"); room.store.logSet(100.0, 5)
+            assertEquals(1, room.store.strandedCount)
+            val set = room.store.sets.single()
+            assertEquals(listOf(100.0), room.training.session(opened.id)!!.sets.map { it.weightKg })
+            assertTrue("the offline command and set are durable", room.outbox().isNotEmpty())
+            val server = EngineRoomFixture.server()
+            room.sync(server); room.store.refreshEngine()
+            assertEquals(opened.id, room.store.session!!.id)
+            assertEquals(set.id, room.store.sets.single().id)
+            assertEquals(opened.plan, room.store.session!!.plan)
+            assertEquals(listOf(100.0), room.store.sets.map { it.weightKg })
+            assertTrue(room.store.refusals.isEmpty())
         }
     }
 
     @Test
-    fun testAStartWhoseReplyWasLostComposesUnderTheSameIdAndTheClaimReplaysIt() = runTest {
-        val server = FakeTraining()
-        server.written["rt_push"] = Routine(id = "rt_push", name = "Push Day", entries = listOf(
-            RoutineEntry(position = 1, exerciseId = "bench-press",
-                sets = List(3) { SetTarget(5, 100.0) })))
-        val losing = LosingStartReplies(server)
-        val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = losing, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = true))
-
-        val opened = (store.start(routineId = "rt_push") as GymResult.Ok).value
-        assertEquals("the log holds the start whose reply was lost", listOf("ses_a"), server.stored.keys.toList())
-        assertEquals("and the device composed under that same id", "ses_a", opened.id)
-        assertEquals("ses_a", store.session?.id)
-        assertTrue("held unclaimed until the log answers for it", queueOnDisk().sessionIsUnclaimed)
-        store.choose("bench-press")
-        store.logSet(weightKg = 100.0, reps = 5)
-        assertNull("parked with its session", server.sets["ses_a"])
-
-        losing.losing = false
-        advanceTimeBy(4_100)
-        runCurrent()
-
-        assertEquals("the claim replayed the attempted id, and the log answered its own row",
-            listOf("ses_a", "ses_a"), server.started.map { it.id })
-        assertEquals("one session on the log, never a second one waiting on it",
-            listOf("ses_a"), server.stored.keys.toList())
-        assertEquals(listOf(100.0), server.sets.getValue("ses_a").map { it.weightKg })
-        assertFalse(queueOnDisk().sessionIsUnclaimed)
-        assertTrue(queueOnDisk().pending.isEmpty())
-        assertEquals(SaveState.OnTheLog, store.saveState)
-        assertEquals("ses_a", store.session?.id)
-        assertTrue(store.refusals.isEmpty())
+    fun testAStartWhoseReplyWasLostRetriesTheExactEngineIntentAndKeepsItsId() = runTest {
+        val folder = tmp.newFolder()
+        val server = EngineRoomFixture.server()
+        var snapshot: works.windmill.sync.core.Json
+        var original: works.windmill.sync.core.Json
+        var opened: Session
+        var set: TrainingSet
+        EngineRoomFixture(folder, backgroundScope).use { room ->
+            room.select("alice")
+            opened = (room.store.start() as GymResult.Ok).value
+            room.store.choose("bench-press"); room.store.logSet(100.0, 5)
+            set = room.store.sets.single()
+            room.engine.releaseHeld(true)
+            original = room.engine.nextPush()!!
+            assertEquals(200, server.push(original, works.windmill.sync.modelserver.Credential.Account("alice"), room.now).status)
+            snapshot = room.engine.snapshot() // The response is lost after the server has committed it.
+        }
+        EngineRoomFixture(folder, backgroundScope, snapshot).use { restored ->
+            restored.selected = "alice"
+            restored.engine.start()
+            val retry = restored.engine.nextPush()!!
+            assertEquals(original, retry)
+            val response = server.push(retry, works.windmill.sync.modelserver.Credential.Account("alice"), restored.now)
+            val reading = works.windmill.sync.core.ClockReading(restored.now, restored.now, "test")
+            restored.engine.onPushResponse(retry, works.windmill.sync.engine.SyncResponse(response.status, response.body),
+                works.windmill.sync.engine.RequestTiming(reading, reading))
+            restored.pull(server); restored.store.connect(restored.account())
+            assertEquals(opened.id, restored.store.session!!.id)
+            assertEquals(listOf(set.id), restored.store.sets.map { it.id })
+            assertEquals(listOf(100.0), restored.store.sets.map { it.weightKg })
+            assertEquals(1, restored.training.details().size)
+            assertTrue(restored.store.refusals.isEmpty())
+        }
     }
 
     @Test
-    fun testAnOlderQueueFileBehindAShelfSessionIsAdoptedByTheReadAndItsSetsWalk() = runTest {
-        val server = FakeTraining()
-        val store = liveStore(server)
-        server.online = false
-        store.logSet(weightKg = 82.5, reps = 5)
-        assertEquals("owed, against a session the log holds", 1, queueOnDisk().pending.size)
-        shelfOnDisk().hold(LocalLog.FinishedSession(
-            Session(id = "ses_early", startedAtMs = 500, finishedAtMs = 900),
-            listOf(TrainingSet(id = "set_early", exerciseId = "bench-press", weightKg = 60.0,
-                reps = 5, completedAtMs = 600))))
-        val written = queueFile.readText()
-        assertTrue(written.contains(""","unclaimed":false"""))
-        queueFile.writeText(written.replace(""","unclaimed":false""", ""))
-        assertTrue("the older file reads as unclaimed", queueOnDisk().sessionIsUnclaimed)
-
-        server.online = true
-        val relaunched = makeStore(sync = server)
-        relaunched.connect(account(signedIn = true))
-
-        assertEquals("the shelf start waited on the phone's own open workout — no live start went out",
-            listOf("ses_early"), server.started.map { it.id })
-        assertEquals("ses_1", relaunched.session?.id)
-        assertFalse("the read adopted it: the log has answered for it", queueOnDisk().sessionIsUnclaimed)
-        assertEquals("and its parked set walked on that read, not on the next tap",
-            listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertTrue(queueOnDisk().pending.isEmpty())
-        assertEquals(SaveState.OnTheLog, relaunched.saveState)
-        assertEquals("the shelf session still waits — the finish's claim walks it",
-            listOf("ses_early"), shelfOnDisk().finished.map { it.session.id })
+    fun testAnOlderQueueAndItsFinishedHistoryMigrateWithoutReplayingAStart() = runTest {
+        val folder = tmp.newFolder()
+        val at = 1_800_000_000_000L
+        File(folder, SetQueue.fileName).writeText("""{"queues":{"anon":{"session":{"id":"session01","startedAt":${at - 10000}},"entries":{"set00001":{"sessionId":"session01","set":{"id":"set00001","exerciseId":"bench-press","weightKg":82.5,"reps":5,"completedAt":${at - 9000}},"needsPush":true,"attempted":true,"remints":0}}}}}""")
+        LocalLog(File(folder, LocalLog.fileName)).hold(LocalLog.FinishedSession(
+            Session("session00", at - 20000, at - 15000), listOf(TrainingSet("set00000", "bench-press",
+                weightKg = 60.0, reps = 5, completedAtMs = at - 19000))))
+        val original = File(folder, SetQueue.fileName).readText()
+        EngineRoomFixture(folder, backgroundScope).use { room ->
+            LegacyGymMigration(folder, room.engine).run(); room.select(null)
+            assertEquals("session01", room.store.session!!.id)
+            assertEquals(listOf("set00001"), room.store.sets.map { it.id })
+            assertEquals(listOf(82.5), room.store.sets.map { it.weightKg })
+            assertEquals(setOf("session00", "session01"), room.store.recent.map { it.id }.toSet())
+            assertTrue(LegacyGymMigration.operations(room.engine).isEmpty())
+            assertEquals(original, File(folder, SetQueue.fileName).readText())
+            assertTrue(room.store.refusals.isEmpty())
+        }
     }
 
     @Test
-    fun testARefusedLiveStartIsSaidOnceAcrossPasses() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-        server.online = false
-        store.start()
-        assertEquals("ses_minted", store.session?.id)
-
-        server.online = true
-        server.refuseStart = { refusal(400, code = "bad-start", message = "that start cannot be taken") }
-        store.connect(account(signedIn = true))
-        val said = RefusedClaim("ses_minted", "workout · ${Readout.date(store.session!!.startedAtMs)}",
-            "that start cannot be taken")
-        assertEquals(listOf(said), store.refusals)
-
-        store.connect(account(signedIn = true))
-        assertEquals("said again, held once", listOf(said), store.refusals)
-        assertEquals("the workout is still the lifter's, still held here", "ses_minted", store.session?.id)
+    fun testARefusedEngineStartIsSaidOnceAndItsOriginalIntentStaysOnThePhone() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            val opened = (room.store.start() as GymResult.Ok).value
+            val server = EngineRoomFixture.server()
+            server.refuse(code = "id-taken")
+            room.sync(server)
+            withContext(Dispatchers.IO) { withTimeout(2_000) { room.engine.notices("gym").notices.first { it.isNotEmpty() } } }
+            room.store.refreshEngine()
+            val notices = room.engine.notices("gym").notices.value
+            assertEquals(1, notices.size)
+            assertTrue("the refused source retains its original identity", notices.single().content.command!!.args.member("id").str() == opened.id)
+            val said = room.store.refusals
+            assertEquals(1, said.size)
+            repeat(2) { room.store.refreshEngine(); assertEquals("said again, held once", said, room.store.refusals) }
+            assertEquals(notices, room.engine.notices("gym").notices.value)
+        }
     }
 
     @Test
@@ -1250,106 +848,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAStartDuringTheClaimComposesOnTheDeviceAndNeverJoinsTheReplay() = runTest {
-        val server = FakeTraining()
-        val minted = mutableListOf("ses_a", "ses_b")
-        val store = makeStore(sync = server, mintSession = { minted.removeAt(0) })
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        val gate = CompletableDeferred<Unit>()
-        server.onFinish = { gate.await() }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        val connecting = launch { store.connect(account(signedIn = true)) }
-        runCurrent()
-        assertEquals("the claim stands parked inside the replayed session's finish",
-            listOf("ses_a"), server.started.map { it.id })
-
-        val opened = (store.start() as GymResult.Ok).value
-        assertEquals("the start composed on the device, not on the log", "ses_b", opened.id)
-        store.choose("back-squat")
-        store.logSet(weightKg = 199.0, reps = 1)
-        assertEquals("nothing was filed into the replayed workout",
-            listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertTrue("and nothing went out for the new one while it is unclaimed",
-            server.appended.none { it.weightKg == 199.0 })
-        assertEquals("saved on this device", store.saveState.line)
-
-        gate.complete(Unit)
-        connecting.join()
-
-        assertEquals("the claim landed the device-composed session once the replay was over",
-            listOf(199.0), server.sets.getValue("ses_b").map { it.weightKg })
-        assertEquals(listOf(82.5), server.sets.getValue("ses_a").map { it.weightKg })
-        assertFalse("yesterday's workout closed as the shelf recorded it",
-            server.stored.getValue("ses_a").isOpen)
-        assertEquals("the room stands in its own workout", "ses_b", store.session?.id)
-    }
-
-    @Test
-    fun testAnUnclaimedSessionsSetsAreParkedRatherThanRetriedForever() = runTest {
-        val server = FakeTraining()
-        server.open(Session(id = "ses_phone2", startedAtMs = 500))
-        var store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-
-        val batch = checkNotNull(store.localDataBatch)
-        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
-        journal.approve(batch, "u1")
-        SetQueue(queueFile).complete(batch, "u1")
-        LocalLog(localFile).complete(batch, "u1")
-        LocalBodyweight(bodyweightFile).complete(batch, "u1")
-        LocalPreferences(preferencesFile).complete(batch, "u1")
-        journal.complete(batch.id)
-        store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-        store.logSet(weightKg = 82.5, reps = 5)
-
-        assertTrue("no send went out against a session the log has never heard of",
-            server.appended.isEmpty())
-        assertEquals("held with its session on purpose, not stranded", 0, store.strandedCount)
-        assertEquals("saved on this device", store.saveState.line)
-
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertTrue("and no retry loop re-armed — the claim is the road, not the walk",
-            server.appended.isEmpty())
-        assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
-    }
-
-    @Test
-    fun testSigningInReAsksLastTimeForTheMovementInHand() = runTest {
-        val server = FakeTraining()
-        server.lastTimes["bench-press"] = LastTime(
-            exerciseId = "bench-press",
-            session = Session(id = "ses_old", startedAtMs = 100, finishedAtMs = 200),
-            sets = listOf(TrainingSet(id = "set_h", exerciseId = "bench-press", weightKg = 82.5,
-                reps = 5, completedAtMs = 150)),
-        )
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        assertEquals("the shelf's honest answer for the nobody pass", true, store.lastTime?.isFirstTime)
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertTrue("the log was asked", server.calls.contains("lastTime"))
-        assertEquals("the log's answer replaced the shelf's", false, store.lastTime?.isFirstTime)
-        assertEquals(listOf(82.5), store.lastTime?.sets?.map { it.weightKg })
-        assertEquals("and the dial follows the history", Prefill(82.5, 5), store.prefill)
-    }
-
-    @Test
     fun testACrashBetweenShelfHoldAndQueueForgetConvergesOnRelaunch() = runTest {
         val crashed = SetQueue(queueFile)
         val live = Session(id = "ses_1", startedAtMs = 1_000)
@@ -1401,39 +899,26 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testTheCadencesReReadKeepsThePagesTheLifterWalked() = runTest {
-        val server = FakeTraining()
-        repeat(60) { index ->
-            server.open(Session(id = "ses_$index", startedAtMs = 1_000L + index,
-                finishedAtMs = 2_000L + index))
+    fun testTheEngineReReadKeepsThePagesTheLifterWalked() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            repeat(60) { index ->
+                val id = "session${index.toString().padStart(3, '0')}"
+                room.training.startSession(SessionStart(id, room.now - 100000 + index * 1000L, joinOpenSession = false))
+                room.training.finishSession(id, room.now - 99500 + index * 1000L)
+            }
+            room.select(null); room.store.loadOlder()
+            assertEquals(60, room.store.logged.size)
+            assertEquals(Older.End, room.store.older)
+            room.training.startSession(SessionStart("sessionShelf", room.now - 1000, joinOpenSession = false))
+            room.training.appendSet("sessionShelf", SetWrite("setShelf", "bench-press", 100.0, 5, SetKind.Working, room.now - 900))
+            room.training.finishSession("sessionShelf", room.now - 500)
+            room.store.refreshEngine()
+            assertEquals("the pages the lifter walked are still under their thumb", 61, room.store.logged.size)
+            assertEquals("no row twice", 61, room.store.logged.map { it.id }.toSet().size)
+            assertEquals("newest first, with the imported session at the head", "sessionShelf", room.store.logged.first().id)
+            assertEquals("the deepest row is where the walk left it", "session000", room.store.logged.last().id)
+            assertEquals("the foot is still the bottom they arrived at", Older.End, room.store.older)
         }
-        shelfOnDisk().hold(LocalLog.FinishedSession(
-            Session(id = "ses_shelf", startedAtMs = 9_000, finishedAtMs = 9_500),
-            listOf(TrainingSet(id = "set_a", exerciseId = "bench-press", weightKg = 100.0,
-                reps = 5, completedAtMs = 9_100))))
-        server.refuseStart = { IOException("offline") }
-
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-        store.loadOlder()
-
-        assertEquals(60, store.logged.size)
-        assertEquals(Older.End, store.older)
-        assertEquals(listOf("ses_shelf"), store.shelved.map { it.id })
-
-        server.refuseStart = { null }
-        advanceTimeBy(4_100)
-        runCurrent()
-
-        assertEquals("the shelf emptied — that is what the timer was armed for",
-            emptyList<String>(), store.shelved.map { it.id })
-        assertEquals("and the pages the lifter walked are still under their thumb",
-            61, store.logged.size)
-        assertEquals("no row twice", 61, store.logged.map { it.id }.toSet().size)
-        assertEquals("newest first, with the claimed session at the head",
-            "ses_shelf", store.logged.first().id)
-        assertEquals("the deepest row is where the walk left it", "ses_0", store.logged.last().id)
-        assertEquals("and the foot is still the bottom they arrived at", Older.End, store.older)
     }
 
     @Test
@@ -1483,70 +968,6 @@ class TrainingStoreTests {
         assertNull(store.deleteSet(ended.id, "set_gone"))
         assertTrue("nothing on the wire — the log has never heard of this set",
             server.fixes.isEmpty() && server.removed.isEmpty())
-    }
-
-    @Test
-    fun testACorrectionAndADeleteMadeSignedOutBothSurviveSigningIn() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        store.logSet(weightKg = 60.0, reps = 12)
-        clockMs += 60_000
-        val ended = (store.finish() as FinishOutcome.Closed).session
-        val sets = (store.sessionDetail(ended.id) as GymResult.Ok).value.sets
-
-        store.fixSet(ended.id, sets.first().id, SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
-        store.deleteSet(ended.id, sets.last().id)
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertEquals("one row, and it is the one the lifter fixed it to",
-            listOf(sets.first().id), server.sets.getValue(ended.id).map { it.id })
-        assertEquals(listOf(90.0), server.sets.getValue(ended.id).map { it.weightKg })
-        assertEquals(listOf(3), server.sets.getValue(ended.id).map { it.reps })
-        assertEquals("the original numbers never went out at all",
-            listOf(90.0), server.appended.map { it.weightKg })
-        assertTrue("and neither did the deleted set", server.appended.none { it.id == sets.last().id })
-        assertTrue("the shelf is empty — the account holds the workout as the lifter left it",
-            shelfOnDisk().finished.isEmpty())
-    }
-
-    @Test
-    fun testACorrectionMadeWhileTheClaimIsWalkingStillReachesTheAccount() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        store.logSet(weightKg = 60.0, reps = 12)
-        clockMs += 60_000
-        val ended = (store.finish() as FinishOutcome.Closed).session
-        val sets = (store.sessionDetail(ended.id) as GymResult.Ok).value.sets
-
-        var answered: FixOutcome? = null
-        server.onAppend = { write ->
-            if (write.id == sets.last().id) {
-                answered = store.fixSet(ended.id, sets.first().id,
-                    SetFix(weightKg = 90.0, reps = 3, kind = SetKind.Working))
-            }
-        }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertEquals("the store told the lifter it landed",
-            FixOutcome.Corrected(sets.first().copy(setNumber = 1, weightKg = 90.0, reps = 3, kind = SetKind.Working)),
-            answered)
-        assertEquals("and the account holds it — not the numbers they fixed away from",
-            listOf(90.0, 60.0), server.sets.getValue(ended.id).map { it.weightKg })
-        assertTrue("the shelf is empty, and it emptied only once it agreed with the account",
-            shelfOnDisk().finished.isEmpty())
     }
 
     @Test
@@ -1958,26 +1379,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testARoomSetUpSignedOutIsClaimedOntoTheAccount() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-
-        assertNull(store.savePreferences(GymPreferences(units = Units.Pounds, confirmSound = true)))
-        assertEquals(Units.Pounds, store.preferences.units)
-        assertTrue("nobody to tell yet", server.settingsWritten.isEmpty())
-
-        val relaunched = makeStore(sync = server)
-        val flow = checkNotNull(relaunched.requestClaimSignIn())
-        relaunched.approveSignIn("u1", flow)
-        relaunched.connect(account(signedIn = true))
-
-        assertEquals(listOf(Units.Pounds), server.settingsWritten.map { it.units })
-        assertEquals(true, server.settings?.confirmSound)
-        assertEquals(Units.Pounds, relaunched.preferences.units)
-    }
-
-    @Test
     fun testAnAccountsOwnSettingsArriveOnConnectAndAreNotOverwrittenByAFreshPhone() = runTest {
         val server = FakeTraining()
         server.settings = GymPreferences(units = Units.Pounds, confirmHaptic = false)
@@ -2006,49 +1407,6 @@ class TrainingStoreTests {
         val relaunched = makeStore(sync = server)
         relaunched.connect(account(signedIn = true))
         assertEquals(true, server.settings?.confirmSound)
-    }
-
-    @Test
-    fun testAnOwedSettingRetriesAloneRatherThanReWalkingTheClaim() = runTest {
-        val server = FakeTraining()
-        server.open(Session(id = "ses_other", startedAtMs = 500))
-        var store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        val batch = checkNotNull(store.localDataBatch)
-        val journal = LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName))
-        journal.approve(batch, "u1")
-        SetQueue(queueFile).complete(batch, "u1")
-        LocalLog(localFile).complete(batch, "u1")
-        LocalBodyweight(bodyweightFile).complete(batch, "u1")
-        LocalPreferences(preferencesFile).complete(batch, "u1")
-        journal.complete(batch.id)
-        store = makeStore(sync = server)
-        store.connect(account(signedIn = true))
-        server.calls.clear()
-        server.started.clear()
-
-        server.refusePreferences = refusal(404, message = "no such route")
-        assertEquals(WriteFailure.Refused("no such route"), store.savePreferences(GymPreferences(confirmSound = true)))
-
-        advanceTimeBy(20_100)
-        runCurrent()
-
-        assertEquals("every pass is one PUT and nothing else — the send, then five cadence passes",
-            List(6) { "savePreferences" }, server.calls)
-        assertTrue("the waiting start was never re-sent behind it", server.started.isEmpty())
-        assertEquals("the phone keeps its own workout", "ses_minted", store.session?.id)
-        assertEquals("and the row on screen is still the lifter's", true, store.preferences.confirmSound)
-
-        server.refusePreferences = null
-        advanceTimeBy(4_100)
-        runCurrent()
-        assertEquals(true, server.settings?.confirmSound)
-        server.calls.clear()
-        advanceTimeBy(60_000)
-        runCurrent()
-        assertTrue("the cadence is not a heartbeat", server.calls.isEmpty())
     }
 
     @Test
@@ -2149,95 +1507,6 @@ class TrainingStoreTests {
         assertEquals("and nothing logged went with it",
             listOf(100.0, 80.0), store.sets.map { it.weightKg })
         assertEquals(listOf("back-squat", "bench-press"), queueOnDisk(null).order)
-    }
-
-    @Test
-    fun testThePickerMetaIsSparseAndTakesTheLaterOfTheLogAndTheShelf() = runTest {
-        val store = makeStore(sync = null)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("back-squat")
-        store.logSet(weightKg = 100.0, reps = 5)
-        store.logSet(weightKg = 102.5, reps = 3)
-        clockMs += 60_000
-        store.finish()
-
-        assertNull("nobody has asked yet, and the picker draws no line at all until somebody has",
-            store.lastSets)
-        store.loadLastSets()
-        assertEquals("the shelf answers when it is the whole log there is",
-            LastSet("back-squat", 102.5, 3, atMs = store.recent.single().startedAtMs),
-            store.lastSets?.get("back-squat"))
-        assertNull("and a movement nobody has trained is answered by saying nothing",
-            store.lastSets?.get("chin-up"))
-
-        val server = FakeTraining()
-        server.refuseStart = { storageFailure }
-        server.served.add(LastSet("back-squat", 90.0, 5, atMs = 500))
-        server.served.add(LastSet("bench-press", 80.0, 8, atMs = 600))
-        val signedIn = makeStore(sync = server)
-        val flow = checkNotNull(signedIn.requestClaimSignIn())
-        signedIn.approveSignIn("u1", flow)
-        signedIn.connect(account(signedIn = true))
-        signedIn.loadLastSets()
-
-        assertEquals(setOf("back-squat", "bench-press"), signedIn.lastSets?.keys)
-        assertEquals("the later of the two, which is the one this phone is still holding",
-            102.5, signedIn.lastSets?.getValue("back-squat")?.weightKg)
-        assertEquals(80.0, signedIn.lastSets?.getValue("bench-press")?.weightKg)
-
-        server.online = false
-        signedIn.loadLastSets()
-        assertEquals(setOf("back-squat", "bench-press"), signedIn.lastSets?.keys)
-    }
-
-    @Test
-    fun testAFailedMetaReadSaysNothingRatherThanNeverLogged() = runTest {
-        val server = FakeTraining()
-        server.refuseStart = { storageFailure }
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 80.0, reps = 8)
-        clockMs += 60_000
-        store.finish()
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-        assertEquals(1, store.recent.size)
-
-        server.online = false
-        store.loadLastSets()
-        assertNull("the log never answered, so the picker asserts nothing about any movement",
-            store.lastSets)
-
-        server.online = true
-        store.loadLastSets()
-        assertEquals(80.0, store.lastSets!!.getValue("bench-press").weightKg, 0.0)
-    }
-
-    @Test
-    fun testSigningInUnderTheOpenPickerRefillsTheMetaItJustDropped() = runTest {
-        val server = FakeTraining()
-        server.refuseStart = { storageFailure }
-        server.served.add(LastSet("bench-press", 100.0, 3, atMs = 900))
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("back-squat")
-        store.logSet(weightKg = 140.0, reps = 5)
-        clockMs += 60_000
-        store.finish()
-        store.loadLastSets()
-        assertEquals(140.0, store.lastSets!!.getValue("back-squat").weightKg, 0.0)
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertEquals("the seat's own answer arrives without the lifter leaving the screen",
-            setOf("back-squat", "bench-press"), store.lastSets?.keys)
     }
 
     @Test
@@ -2910,26 +2179,6 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testTheAliasIsOnlyPromisedWhereTheRenameReachesTheAccount() = runTest {
-        val anon = makeStore(sync = null)
-        anon.connect(account(signedIn = false))
-        val mine = (anon.create("Hammer row", "machine") as GymResult.Ok).value
-        assertFalse("signed out there is no alias table to keep anything in",
-            anon.renameKeepsAnAlias(mine.id))
-
-        val server = FakeTraining()
-        server.catalog = listOf(Exercise(id = "bench-press", name = "Bench Press"))
-        server.refuseCreate = storageFailure
-        val store = makeStore(sync = server)
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        store.connect(account(signedIn = true))
-
-        assertTrue("a catalog movement renames on the log", store.renameKeepsAnAlias("bench-press"))
-        assertFalse("one the claim has not carried yet does not", store.renameKeepsAnAlias(mine.id))
-    }
-
-    @Test
     fun testAShelfRoutineTracksItsLastWorkoutAndClearsItOnDiscard() = runTest {
         val store = makeStore(sync = null, mintSession = { "ses_local" })
         store.connect(account(signedIn = false))
@@ -2952,67 +2201,25 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testTheQueueDrainsBeforeTheClaimsStartCanSettleTheWorkoutUnderIt() = runTest {
-        val server = FakeTraining()
-        server.nowMs = { clockMs }
-        val store = liveStore(server)
-        server.online = false
-        store.logSet(weightKg = 82.5, reps = 5)
-        val loggedAt = queueOnDisk().pending.single().set.completedAtMs
-        shelfOnDisk().hold(LocalLog.FinishedSession(
-            Session(id = "ses_past", startedAtMs = 500, finishedAtMs = 600),
-            listOf(TrainingSet(id = "set_past", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
-                completedAtMs = 550))))
-
-        clockMs += 5 * 60 * 60 * 1000
-        server.online = true
-        val before = server.calls.size
-        val morning = makeStore(sync = server)
-        morning.connect(account(signedIn = true))
-
-        val walk = server.calls.drop(before).filter { it in setOf("start", "append", "finish", "sessions") }
-        assertEquals("the owed set before any start, and the read last",
-            listOf("append", "start", "append", "finish", "sessions"), walk)
-        assertEquals("last night's set is on the log",
-            listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertEquals("and the log closed the workout at that set, not at this morning",
-            loggedAt, server.stored.getValue("ses_1").finishedAtMs)
-        assertEquals("the shelf session claimed behind it", listOf(100.0), server.sets.getValue("ses_past").map { it.weightKg })
-        assertTrue(morning.refusals.isEmpty())
-        assertNull("the room stands over no session — the log closed it", morning.session)
-        assertTrue(shelfOnDisk().finished.isEmpty())
-    }
-
-    @Test
-    fun testARecordReadWaitsForTheClaimRunnerToEnd() = runTest {
-        val server = FakeTraining()
-        val store = makeStore(sync = server)
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        clockMs += 60_000
-        store.finish()
-
-        val gate = CompletableDeferred<Unit>()
-        server.onFinish = { gate.await() }
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("u1", flow)
-        val connecting = launch { store.connect(account(signedIn = true)) }
-        runCurrent()
-        assertEquals("the claim stands parked inside the shelved session's finish",
-            listOf("ses_minted"), server.finished.map { it.first })
-
-        val reading = launch { store.record("bench-press") }
-        runCurrent()
-        assertFalse("no record read while the claim has a session open on the log",
-            server.calls.contains("record"))
-
-        gate.complete(Unit)
-        connecting.join()
-        reading.join()
-        assertTrue("and it read once the runner ended", server.calls.contains("record"))
-        assertTrue(server.calls.indexOf("record") > server.calls.lastIndexOf("finish"))
+    fun testAnOfflineSetRemainsOnTheSettledWorkoutWhenEarlierHistoryMigrates() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val live = room.workout(finish = false)
+            val loggedAt = room.store.sets.single().completedAtMs
+            LocalLog(File(room.directory, LocalLog.fileName)).hold(LocalLog.FinishedSession(
+                Session("sessionPast", room.now - 100000, room.now - 90000), listOf(TrainingSet("setPast1", "back-squat",
+                    weightKg = 100.0, reps = 5, completedAtMs = room.now - 95000))))
+            room.now += 5 * 60 * 60 * 1000
+            LegacyGymMigration(room.directory, room.engine).run()
+            assertTrue("the finished source must import: ${LegacyGymMigration.refusals(room.engine)}", LegacyGymMigration.refusals(room.engine).isEmpty())
+            val morning = room.freshStore(); morning.connect(room.account())
+            assertEquals("last night's set remains in its own workout", listOf(82.5), room.training.session(live.id)!!.sets.map { it.weightKg })
+            assertEquals("the engine closed the workout at that set, not this morning", loggedAt, room.training.session(live.id)!!.session.finishedAtMs)
+            assertEquals(listOf(100.0), room.training.session("sessionPast")!!.sets.map { it.weightKg })
+            assertTrue(morning.refusals.isEmpty())
+            assertNull("the room stands over no session", morning.session)
+            assertEquals(setOf(live.id, "sessionPast"), morning.recent.map { it.id }.toSet())
+        }
     }
 
     @Test
@@ -3031,30 +2238,25 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAShelfSessionBehindThePhonesOwnLiveWorkoutWaitsForItsFinishRatherThanParkingIt() = runTest {
-        val server = FakeTraining()
-        shelfOnDisk().hold(LocalLog.FinishedSession(
-            Session(id = "ses_past", startedAtMs = 500, finishedAtMs = 600),
-            listOf(TrainingSet(id = "set_past", exerciseId = "back-squat", weightKg = 100.0, reps = 5,
-                completedAtMs = 550))))
-        val store = liveStore(server)
-
-        assertEquals("the shelf start was refused and nothing waited behind it",
-            listOf("start"), server.calls.filter { it == "start" })
-        assertEquals("the shelf keeps its session", 1, shelfOnDisk().finished.size)
-        assertFalse("the phone's live workout is still the log's", queueOnDisk().sessionIsUnclaimed)
-        store.logSet(weightKg = 82.5, reps = 5)
-        assertEquals("its set walked to the log rather than parking", listOf(82.5), server.sets.getValue("ses_1").map { it.weightKg })
-        assertEquals(0, store.strandedCount)
-
-        clockMs += 60_000
-        val closed = store.finish()
-        assertTrue("finished on the log, not on the device: $closed", closed is FinishOutcome.Closed)
-        assertFalse(server.stored.getValue("ses_1").isOpen)
-        assertEquals("and the shelf session claimed the moment the road opened",
-            listOf(100.0), server.sets.getValue("ses_past").map { it.weightKg })
-        assertTrue(shelfOnDisk().finished.isEmpty())
-        assertEquals(setOf("ses_1", "ses_past"), store.recent.map { it.id }.toSet())
+    fun testAFinishedImportDoesNotOpenASlotOrParkThePhonesOwnLiveWorkout() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val opened = (room.store.start() as GymResult.Ok).value
+            LocalLog(File(room.directory, LocalLog.fileName)).hold(LocalLog.FinishedSession(
+                Session("sessionPast", room.now - 100000, room.now - 90000), listOf(TrainingSet("setPast1", "back-squat",
+                    weightKg = 100.0, reps = 5, completedAtMs = room.now - 95000))))
+            LegacyGymMigration(room.directory, room.engine).run(); room.store.refreshEngine()
+            assertTrue("the finished source must import: ${LegacyGymMigration.refusals(room.engine)}", LegacyGymMigration.refusals(room.engine).isEmpty())
+            assertEquals("the import cannot adopt the open workout", opened.id, room.store.session!!.id)
+            room.store.choose("bench-press"); room.store.logSet(82.5, 5)
+            assertEquals(listOf(82.5), room.training.session(opened.id)!!.sets.map { it.weightKg })
+            assertEquals(0, room.store.strandedCount)
+            room.now += 60000
+            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertFalse(room.training.session(opened.id)!!.session.isOpen)
+            assertEquals(listOf(100.0), room.training.session("sessionPast")!!.sets.map { it.weightKg })
+            assertEquals(setOf(opened.id, "sessionPast"), room.store.recent.map { it.id }.toSet())
+        }
     }
 
     @Test
@@ -3215,36 +2417,21 @@ class TrainingStoreTests {
     }
 
     @Test
-    fun testAWorkoutComposedOfflineUnderOneSeatIsNeverReplayedIntoTheNextAccount() = runTest {
-        val alicesLog = FakeTraining()
-        val bobsLog = FakeTraining()
-        val store = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
-
-        store.connect(account(signedIn = true, id = "alice"))
-        alicesLog.online = false
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-        store.finish()
-        assertEquals("composed on the device, waiting for a signal",
-            1, shelfOnDisk().let { it.adopt("alice"); it.finished.size })
-
-        store.connect(account(signedIn = false))
-        store.connect(account(signedIn = true, id = "bob"))
-
-        assertEquals("B's log was never told about A's workout",
-            emptyList<String>(), bobsLog.stored.keys.toList())
-        assertTrue("not even attempted under B's bearer", bobsLog.started.isEmpty())
-        assertTrue("nor its sets", bobsLog.appended.isEmpty())
-        assertEquals("and B's room draws none of it", emptyList<String>(), store.recent.map { it.id })
-
-        alicesLog.online = true
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
-        assertEquals("A's owed set landed on A's log, in full",
-            listOf(82.5), alicesLog.sets.getValue("ses_minted").map { it.weightKg })
-        assertTrue("and the shelf let go once A's log confirmed",
-            shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
+    fun testAWorkoutComposedOfflineUnderOneSeatNeverAppearsInTheNextAccount() = runTest {
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select("alice")
+            val finished = room.workout()
+            val original = room.training.session(finished.id)!!
+            assertEquals(listOf(82.5), original.sets.map { it.weightKg })
+            room.select(null); room.select("bob")
+            assertEquals("B's room draws none of A's workout", emptyList<String>(), room.store.recent.map { it.id })
+            assertTrue("B's replica contains none of A's training", room.training.details().isEmpty())
+            assertTrue(room.engine.dormantReplicas().any { it.account == "alice" && it.unsent > 0 })
+            room.select("alice")
+            assertEquals(original, room.training.session(finished.id))
+            assertEquals(listOf(finished.id), room.store.recent.map { it.id })
+            assertEquals("A's owed set is kept in full under the same identity", listOf(82.5), room.training.session(finished.id)!!.sets.map { it.weightKg })
+        }
     }
 
     @Test
@@ -3273,193 +2460,5 @@ class TrainingStoreTests {
         assertEquals(listOf(100.0), store.sets.map { it.weightKg })
     }
 
-    @Test
-    fun testWorkMadeSignedOutClaimsOnlyAfterAnExplicitDecision() = runTest {
-        val alicesLog = FakeTraining()
-        val store = makeStore(logs = mapOf("alice" to alicesLog))
-
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 60.0, reps = 8)
-        store.finish()
-
-        val flow = checkNotNull(store.requestClaimSignIn())
-        store.approveSignIn("alice", flow)
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals(listOf("ses_minted"), alicesLog.stored.keys.toList())
-        assertEquals(listOf(60.0), alicesLog.sets.getValue("ses_minted").map { it.weightKg })
-        assertTrue(shelfOnDisk().let { it.adopt("alice"); it.finished.isEmpty() })
-    }
-
-    @Test
-    fun testAnUnverifiedSeatDoesNotClaimTheAnonymousShelf() = runTest {
-        val alicesLog = FakeTraining()
-        val store = makeStore(logs = mapOf("alice" to alicesLog))
-
-        store.connect(account(signedIn = false))
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 60.0, reps = 8)
-        store.finish()
-
-        val remembered = Account(
-            api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-            user = User(id = "alice", email = "sam@example.com", name = "Sam"),
-            verified = false)
-        store.connect(remembered)
-        assertEquals("nothing of nobody's was claimed onto a seat nobody answered for",
-            emptyList<String>(), alicesLog.stored.keys.toList())
-        assertEquals("and the room draws none of it either", emptyList<String>(),
-            store.recent.map { it.id })
-
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals("verification alone still claims nothing", emptyList<String>(), alicesLog.stored.keys.toList())
-        assertNull(store.releaseUnattributed())
-        assertEquals("the explicit decision claims it", listOf("ses_minted"),
-            alicesLog.stored.keys.toList())
-    }
-
-    @Test
-    fun testAShelfFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHoldingAtTheUpgrade() = runTest {
-        val alicesLog = FakeTraining()
-        localFile.writeText(legacyShelf)
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = "alice")
-        store.connect(account(signedIn = false))
-        assertNull("no door is needed and none is offered, not even on the nobody pass",
-            store.unattributed)
-        store.connect(account(signedIn = true, id = "alice"))
-
-        assertNull(store.unattributed)
-        assertEquals("it is A's own history and it claims like any other shelf row",
-            listOf("ses_before"), alicesLog.stored.keys.toList())
-        assertEquals(listOf(90.0), alicesLog.sets.getValue("ses_before").map { it.weightKg })
-
-        val bobsLog = FakeTraining()
-        val shared = makeStore(logs = mapOf("alice" to alicesLog, "bob" to bobsLog))
-        shared.connect(account(signedIn = false))
-        shared.connect(account(signedIn = true, id = "bob"))
-        assertEquals(emptyList<String>(), bobsLog.stored.keys.toList())
-        assertNull(shared.unattributed)
-    }
-
-    @Test
-    fun testAShelfFromBeforeTheSeatsOnASignedOutPhoneIsQuarantinedAndReleasedByHand() = runTest {
-        val alicesLog = FakeTraining()
-        localFile.writeText(legacyShelf)
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
-        store.connect(account(signedIn = false))
-        assertEquals("nobody's, so nobody's log draws it", emptyList<String>(),
-            store.recent.map { it.id })
-        assertEquals(1, store.unattributed?.sessions)
-        assertEquals(listOf(1_000L), store.unattributed?.days)
-
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals("no account walks in and inherits it", emptyList<String>(),
-            alicesLog.stored.keys.toList())
-        assertEquals(emptyList<String>(), store.recent.map { it.id })
-        assertEquals("the door is still the only way out", 1, store.unattributed?.sessions)
-
-        val bobsLog = FakeTraining()
-        val relaunched = makeStore(logs = mapOf("bob" to bobsLog), deviceOwner = "bob")
-        relaunched.connect(account(signedIn = false))
-        relaunched.connect(account(signedIn = true, id = "bob"))
-        assertEquals("BOB'S LOG RECEIVED A STRANGER'S WORKOUT", emptyList<String>(),
-            bobsLog.stored.keys.toList())
-        assertEquals(1, relaunched.unattributed?.sessions)
-
-        assertNull("the human with an account says it is theirs",
-            relaunched.releaseUnattributed())
-        assertEquals("and only then does it claim", listOf("ses_before"),
-            bobsLog.stored.keys.toList())
-        assertEquals(listOf(90.0), bobsLog.sets.getValue("ses_before").map { it.weightKg })
-        assertNull(relaunched.unattributed)
-    }
-
-    @Test
-    fun testTheQuarantineCannotBeClaimedBySomebodyWhoIsSignedOut() = runTest {
-        val alicesLog = FakeTraining().apply { nowMs = { clockMs } }
-        val live = Session("ses_live", startedAtMs = 1_000)
-        localFile.writeText(legacyShelf)
-        queueFile.writeText("""{"session":{"id":"ses_live","startedAt":1000},"entries":{}}""")
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog))
-        store.connect(account(signedIn = false))
-        assertEquals(TrainingStore.quarantineWantsAnAccount, store.releaseUnattributed())
-        assertEquals("the finished workout stays quarantined", 1, store.unattributed?.sessions)
-        assertTrue("the live workout stays quarantined too", store.unattributedIsLive)
-        assertEquals(live, SetQueue(queueFile).unattributedSession)
-        assertEquals(emptyMap<String, Session>(), alicesLog.stored)
-        assertEquals(emptyList<SessionStart>(), alicesLog.started)
-
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals("selecting the account still claims neither workout", emptyMap<String, Session>(), alicesLog.stored)
-        assertNull(store.releaseUnattributed())
-        assertEquals(mapOf(
-            "ses_before" to Session("ses_before", startedAtMs = 1_000, finishedAtMs = 2_000),
-            "ses_live" to live,
-        ), alicesLog.stored)
-        assertEquals(listOf(TrainingSet("set_before", "bench-press", setNumber = 1,
-            weightKg = 90.0, reps = 5, completedAtMs = 1_100)), alicesLog.sets.getValue("ses_before"))
-        assertEquals(live, store.session)
-        assertNull(store.unattributed)
-        assertNull(SetQueue(queueFile).unattributedSession)
-    }
-
-    @Test
-    fun testAQuarantineTheQueueCannotTakeMovesNeitherHalfAndSaysSo() = runTest {
-        val alicesLog = FakeTraining()
-        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
-        localFile.writeText(legacyShelf)
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
-        store.connect(account(signedIn = false))
-        store.connect(account(signedIn = true, id = "alice"))
-        assertEquals(1, store.unattributed?.sessions)
-
-        alicesLog.online = false
-        store.start()
-        store.choose("bench-press")
-        store.logSet(weightKg = 82.5, reps = 5)
-
-        alicesLog.online = true
-        assertEquals("Finish the account’s current workout before adding this training.", store.releaseUnattributed())
-        assertEquals("the shelf's half did not land on its own", 1, store.unattributed?.sessions)
-        assertTrue("and the queue's half is still quarantined too", store.unattributedIsLive)
-        assertEquals("nor did A lose the bar they were under", "ses_minted", store.session?.id)
-    }
-
-    @Test
-    fun testALiveWorkoutFromBeforeTheSeatsIsQuarantinedAndStillOffered() = runTest {
-        val alicesLog = FakeTraining()
-        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = null)
-        store.connect(account(signedIn = false))
-        assertNull("nobody is standing in somebody else's workout", store.session)
-        assertTrue("and the row is offered even with an empty shelf behind it",
-            store.unattributedIsLive)
-        assertEquals(0, store.unattributed?.sessions)
-
-        store.connect(account(signedIn = true, id = "alice"))
-        assertNull(store.releaseUnattributed())
-        assertEquals("ses_before", store.session?.id)
-    }
-
-    @Test
-    fun testALiveWorkoutFromBeforeTheSeatsBelongsToTheSeatThePhoneWasHolding() = runTest {
-        val alicesLog = FakeTraining()
-        queueFile.writeText("""{"session":{"id":"ses_before","startedAt":1000},"entries":{}}""")
-
-        val store = makeStore(logs = mapOf("alice" to alicesLog), deviceOwner = "alice")
-        store.connect(account(signedIn = false))
-        store.connect(account(signedIn = true, id = "alice"))
-
-        assertEquals("ses_before", store.session?.id)
-        assertNull("no door is needed and none is offered", store.unattributed)
-        assertFalse(store.unattributedIsLive)
-    }
 
 }

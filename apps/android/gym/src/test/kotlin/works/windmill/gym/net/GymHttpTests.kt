@@ -36,110 +36,6 @@ import works.windmill.platform.net.WindmillJson
 
 class GymHttpTests {
     @Test
-    fun routineEditsPreserveUnownedFieldsByMovementWhileTargetsAndOrderComeFromTheDraft() = runBlocking {
-        val requests = mutableListOf<Pair<String, String?>>()
-        val current = """{"id":"r","name":"Original","position":2,"revision":7,"future":"keep","entries":[{"position":1,"exerciseId":"bench","sets":[{"reps":8}],"restSeconds":90,"futureEntry":"keep"},{"position":2,"exerciseId":"squat","sets":[{"reps":5,"weightKg":100}],"restSeconds":120},{"position":3,"exerciseId":"removed","restSeconds":60}]}"""
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            val body = request.body?.let { value -> okio.Buffer().also(value::writeTo).readUtf8() }
-            requests += request.method to body
-            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
-                .body(current.toResponseBody("application/json".toMediaType())).build()
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        gym.replaceRoutine("r", RoutineWrite("r", "Reordered", 0, listOf(
-            RoutineEntryWrite("squat"),
-            RoutineEntryWrite("bench", listOf(SetTarget(6, 80.0))),
-            RoutineEntryWrite("new", listOf(SetTarget(10))),
-        ), expectedRevision = 4))
-        assertEquals(listOf(
-            "GET" to null,
-            "PUT" to """{"future":"keep","id":"r","name":"Reordered","position":0,"entries":[{"restSeconds":120,"exerciseId":"squat"},{"restSeconds":90,"futureEntry":"keep","exerciseId":"bench","sets":[{"reps":6,"weightKg":80.0}]},{"exerciseId":"new","sets":[{"reps":10}]}],"revision":4}""",
-        ), requests)
-    }
-
-    @Test
-    fun routineEditsNeverAcquireARevisionFromThePreservationRead() = runBlocking {
-        val bodies = mutableListOf<String>()
-        val current = """{"id":"r","name":"Routine","position":0,"revision":7,"entries":[]}"""
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            request.body?.let { value -> bodies += okio.Buffer().also(value::writeTo).readUtf8() }
-            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
-                .body(current.toResponseBody("application/json".toMediaType())).build()
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        gym.replaceRoutine("r", RoutineWrite("r", "Routine", 0, emptyList()))
-        assertEquals(listOf("""{"id":"r","name":"Routine","position":0,"entries":[]}"""), bodies)
-    }
-
-    @Test
-    fun aFailedRoutinePreservationReadNeverSendsAReplacement() = runBlocking {
-        val requests = mutableListOf<String>()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            requests += chain.request().method
-            throw java.io.IOException("offline")
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        try {
-            gym.replaceRoutine("r", RoutineWrite("r", "Routine", 0, emptyList()))
-            fail("The write requires the current server document.")
-        } catch (failure: WindmillApiException.Transport) {
-            assertEquals(java.io.IOException::class.java, failure.cause?.javaClass)
-            assertEquals("offline", failure.cause?.message)
-            assertEquals(listOf("GET"), requests)
-        }
-    }
-
-    @Test
-    fun unitWritesPreserveTheFreshServerDocumentIncludingUnownedFields() = runBlocking {
-        val requests = mutableListOf<Pair<String, String?>>()
-        val replies = ArrayDeque(listOf(
-            """{"units":"kg","restSeconds":90,"restSound":false}""",
-            """{"units":"kg","restSeconds":180,"restSound":true,"future":{"mode":"quiet"}}""",
-            """{"units":"lb","restSeconds":180,"restSound":true,"future":{"mode":"quiet"},"confirmHaptic":true,"confirmSound":false}""",
-            """{"units":"lb","restSeconds":180,"restSound":true}""",
-            """{"units":"kg","restSeconds":180,"restSound":true,"confirmHaptic":true,"confirmSound":false}""",
-        ))
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            val request = chain.request()
-            val body = request.body?.let { value -> okio.Buffer().also(value::writeTo).readUtf8() }
-            requests += request.method to body
-            Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(200).message("OK")
-                .body(replies.removeFirst().toResponseBody("application/json".toMediaType())).build()
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        assertEquals(GymPreferences(), gym.preferences())
-        assertEquals(GymPreferences(units = Units.Pounds), gym.savePreferences(GymPreferences(units = Units.Pounds)))
-        assertEquals(GymPreferences(), gym.savePreferences(GymPreferences()))
-        assertEquals(listOf(
-            "GET" to null,
-            "GET" to null,
-            "PUT" to """{"units":"lb","restSeconds":180,"restSound":true,"future":{"mode":"quiet"},"confirmHaptic":true,"confirmSound":false}""",
-            "GET" to null,
-            "PUT" to """{"units":"kg","restSeconds":180,"restSound":true,"confirmHaptic":true,"confirmSound":false}""",
-        ), requests)
-    }
-
-    @Test
-    fun aFailedPreferenceReadCannotReplaceTheServerDocumentWithDefaults() = runBlocking {
-        val requests = mutableListOf<String>()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            requests += chain.request().method
-            throw java.io.IOException("offline")
-        }.build()
-        val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        try {
-            gym.savePreferences(GymPreferences(units = Units.Pounds))
-            fail("The write requires the current server document.")
-        } catch (failure: WindmillApiException.Transport) {
-            assertEquals(java.io.IOException::class.java, failure.cause?.javaClass)
-            assertEquals("offline", failure.cause?.message)
-            assertEquals(listOf("GET"), requests)
-        }
-    }
-
-    @Test
     fun coachKeepsPendingSeparateFromCompletedRepliesAndEncodesOpaquePageCursors() = runBlocking {
         val paths = mutableListOf<String>()
         val bodies = mutableListOf<String>()
@@ -184,13 +80,11 @@ class GymHttpTests {
         }.build()
         val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { "private-bearer" }, client, telemetry))
         val requests = listOf<suspend () -> Any?>(
-            { gym.sessions(50, 100, "private-cursor") },
-            { gym.session("private-session") },
-            { gym.startSession(SessionStart("private-session", 100)) },
-            { gym.appendSet("private-session", SetWrite("private-set", "private-movement", 92.5, 6, SetKind.Working, 200)) },
-            { gym.finishSession("private-session", 300) },
-            { gym.routine("private-routine") },
-            { gym.writeNote("private-note", NoteWrite("private-title", "private training notes")) },
+            { gym.share("private-session") },
+            { gym.revokeShare("private-session") },
+            { gym.grants() },
+            { gym.mcpKeys() },
+            { gym.deleteThread("private-thread") },
             { gym.ask(AskQuestion("private-thread", "private question")) },
         )
         for (request in requests) {
@@ -202,12 +96,11 @@ class GymHttpTests {
             }
         }
         val actions = listOf(
-            "gym_sessions" to "GET", "gym_session" to "GET", "gym_start_session" to "POST",
-            "gym_append_set" to "POST", "gym_finish_session" to "POST", "gym_routine" to "GET",
-            "gym_write_note" to "PUT", "gym_ask" to "POST",
+            "gym_share" to "POST", "gym_revoke_share" to "DELETE", "gym_grants" to "GET",
+            "gym_mcp_keys" to "GET", "gym_delete_thread" to "DELETE", "gym_ask" to "POST",
         )
         val expected = actions.map { (operation, method) -> operation to mapOf(
-            "method" to method, "route" to "/v1/gym", "failure_kind" to "http", "operation" to operation, "status" to "503",
+            "method" to method, "route" to if (operation == "gym_grants") "/v1/oauth" else if (operation == "gym_mcp_keys") "/v1/mcp-keys" else "/v1/gym", "failure_kind" to "http", "operation" to operation, "status" to "503",
             "network_phase" to "response_body",
         ) }
         assertEquals(expected.map { "api_request_failed" to it.second }, events.map { it.first to it.second.minus("duration_ms") })
@@ -223,15 +116,15 @@ class GymHttpTests {
             timeouts += Triple(chain.request().url.encodedPath, chain.readTimeoutMillis(),
                 TimeUnit.NANOSECONDS.toSeconds(chain.call().timeout().timeoutNanos()))
             val body = if (chain.request().url.encodedPath == "/v1/gym/ask")
-                """{"answer":"An answer","read":{}}""" else """{"exercises":[]}"""
+                """{"answer":"An answer","read":{}}""" else """{"grants":[]}"""
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
                 .code(200).message("OK").body(body.toResponseBody("application/json".toMediaType())).build()
         }.build()
         val gym = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
         assertEquals("An answer", gym.ask(AskQuestion("thread", "question")).answer)
-        assertEquals(emptyList<works.windmill.gym.domain.Exercise>(), gym.exercises())
+        assertEquals(emptyList<OAuthGrant>(), gym.grants())
         assertEquals(listOf(Triple("/v1/gym/ask", 660_000, 660L),
-            Triple("/v1/gym/exercises", 10_000, 0L)), timeouts)
+            Triple("/v1/oauth/grants", 10_000, 0L)), timeouts)
     }
 
     @Test

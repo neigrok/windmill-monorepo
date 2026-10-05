@@ -37,6 +37,185 @@ class AuthStoreTest {
 
     private fun store(sessions: SessionStore) = AuthStore(server.url("/"), sessions)
 
+    @Test fun signInSealsIdentityBeforeWaitingForTheEngineDecisionAndPublishesAfterwards() = runTest {
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}""")
+            .addHeader("Set-Cookie", "wm_session=secret-A; Path=/; HttpOnly"))
+        val sessions = MemorySessions()
+        val reached = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
+                assertEquals(User("A", "a@example.com"), user)
+                assertEquals("secret-A", token)
+                assertEquals(LocalSession.Absent, sessions.localSession)
+                assertEquals(ProposedSignIn(token, user), sessions.proposed)
+                assertNull(sessions.read())
+                assertEquals(false, restoring)
+                reached.complete(Unit)
+                release.await()
+            }
+            override suspend fun signOut() = Unit
+        }
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = lifecycle)
+        val completion = async { auth.completeCode("a@example.com", "123456") }
+        reached.await()
+        assertEquals(AuthStatus.Unknown, auth.status)
+        release.complete(Unit)
+        completion.await()
+        assertEquals(AuthStatus.SignedIn(User("A", "a@example.com")), auth.status)
+        assertNull(sessions.proposed)
+    }
+
+    @Test fun refusedOrOfflineHelloLeavesThePublishedAnonymousAuthorityWritable() = runTest {
+        val user = User("A", "a@example.com")
+        for (failure in listOf(WindmillApiException.Offline,
+            WindmillApiException.Refused(426, works.windmill.platform.net.Refusal(code = "client-update-required")))) {
+            val sessions = MemorySessions()
+            val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+                override suspend fun signedIn(user: User, token: String, restoring: Boolean) { throw failure }
+                override suspend fun signOut() = Unit
+            })
+            auth.restore()
+            server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}""")
+                .addHeader("Set-Cookie", "wm_session=secret-A; Path=/; HttpOnly"))
+            assertEquals(failure, runCatching { auth.completeCode(user.email, "123456") }.exceptionOrNull())
+            assertEquals(LocalSession.Absent, sessions.localSession)
+            assertEquals(AuthStatus.SignedOut, auth.status)
+            assertNull(sessions.read())
+            assertEquals(ProposedSignIn("secret-A", user), sessions.proposed)
+        }
+    }
+
+    @Test fun restartResumesASealedProposalWithoutPublishingItBeforeTheEngineCompletes() = runTest {
+        val user = User("A", "a@example.com")
+        val sessions = MemorySessions().apply { stage(ProposedSignIn("secret-A", user)) }
+        val reached = CompletableDeferred<Unit>()
+        val release = CompletableDeferred<Unit>()
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) {
+                assertTrue(restoring)
+                assertEquals(LocalSession.Absent, sessions.localSession)
+                assertEquals("secret-A", token)
+                reached.complete(Unit); release.await()
+            }
+            override suspend fun signOut() = Unit
+        })
+        val restoring = async { auth.restore() }
+        reached.await()
+        assertNull(sessions.read())
+        release.complete(Unit); restoring.await()
+        assertEquals(LocalSession.Owned(user), sessions.localSession)
+        assertEquals(AuthStatus.SignedIn(user), auth.status)
+        assertNull(sessions.proposed)
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun cancellingTheEngineDecisionClearsOnlyItsProposalAndKeepsThePreviousAccount() = runTest {
+        val prior = User("A", "a@example.com")
+        val proposed = User("B", "b@example.com")
+        val sessions = MemorySessions("secret-A", prior)
+        val reached = CompletableDeferred<Unit>()
+        val never = CompletableDeferred<Unit>()
+        val cancelled = mutableListOf<ProposedSignIn>()
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) { reached.complete(Unit); never.await() }
+            override suspend fun signOut() = Unit
+            override suspend fun cancelSignIn(user: User, token: String): Boolean { cancelled += ProposedSignIn(token, user); return false }
+        })
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
+            .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly"))
+        val signingIn = async { auth.completeCode(proposed.email, "123456") }
+        reached.await(); signingIn.cancel(); signingIn.join()
+        assertEquals(listOf(ProposedSignIn("secret-B", proposed)), cancelled)
+        assertNull(sessions.proposed)
+        assertEquals("secret-A", sessions.read())
+        assertEquals(LocalSession.Owned(prior), sessions.localSession)
+        assertEquals(AuthStatus.SignedIn(prior, verified = false), auth.status)
+    }
+
+    @Test fun aDifferentPendingAccountCannotSendItsCredentialForThePublishedAccount() = runTest {
+        val prior = User("A", "a@example.com")
+        val next = User("B", "b@example.com")
+        val sessions = MemorySessions("secret-A", prior)
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) { throw WindmillApiException.Offline }
+            override suspend fun signOut() = Unit
+        })
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
+            .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly"))
+        runCatching { auth.completeCode(next.email, "123456") }
+        assertEquals(LocalSession.Owned(prior), sessions.localSession)
+        assertEquals(ProposedSignIn("secret-B", next), sessions.proposed)
+        server.enqueue(MockResponse().setResponseCode(204))
+        auth.accountApi(prior).send<Unit>("POST", "/v1/prior")
+        server.enqueue(MockResponse().setResponseCode(204))
+        auth.accountApi(next).send<Unit>("POST", "/v1/proposed")
+        server.takeRequest()
+        assertEquals("Bearer secret-A", server.takeRequest().getHeader("Authorization"))
+        assertNull(server.takeRequest().getHeader("Authorization"))
+    }
+
+    @Test fun cancellationAfterTheEngineHasBoundPublishesTheMatchingSealedProposal() = runTest {
+        val user = User("A", "a@example.com")
+        val sessions = MemorySessions().apply { stage(ProposedSignIn("secret-A", user)) }
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) { throw CancellationException("completed race") }
+            override suspend fun signOut() = Unit
+            override suspend fun cancelSignIn(user: User, token: String) = true
+        })
+        assertTrue(runCatching { auth.restore() }.exceptionOrNull() is CancellationException)
+        assertEquals(LocalSession.Owned(user), sessions.localSession)
+        assertNull(sessions.proposed)
+        assertEquals(AuthStatus.SignedIn(user), auth.status)
+    }
+
+    @Test fun restartResumesTheEngineBeforePublishingRestoredIdentity() = runTest {
+        val user = User("A", "a@example.com")
+        val sessions = MemorySessions("secret-A", user)
+        server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
+        val visits = mutableListOf<Triple<User, String, Boolean>>()
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) { visits += Triple(user, token, restoring) }
+            override suspend fun signOut() = Unit
+        })
+        auth.restore()
+        assertEquals(listOf(Triple(user, "secret-A", true)), visits)
+        assertEquals(AuthStatus.SignedIn(user), auth.status)
+    }
+
+    @Test fun failedEngineKeepDoesNotClearTheCredentialOrCallLogout() = runTest {
+        val user = User("A", "a@example.com")
+        val sessions = MemorySessions("secret-A", user)
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) = Unit
+            override suspend fun signOut() { throw IOException("sync storage failed") }
+        })
+        assertTrue(runCatching { auth.signOut() }.exceptionOrNull() is IOException)
+        assertEquals("secret-A", sessions.read())
+        assertEquals(user, sessions.user())
+        assertEquals(0, server.requestCount)
+    }
+
+    @Test fun unfinishedSignOutThatCannotKeepShowsRecoveryAndRetainsItsCredential() = runTest {
+        val user = User("A", "a@example.com")
+        val sessions = object : SessionStore {
+            override val signOutPending = true
+            override fun read() = "secret-A"
+            override fun write(secret: String) = Unit
+            override fun user() = user
+            override fun remember(user: User) = Unit
+            override fun clear() { fail("Failed Keep must retain the saved credential") }
+        }
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) = Unit
+            override suspend fun signOut() { throw IOException("sync storage failed") }
+        })
+        auth.restore()
+        assertEquals(AuthStatus.Unresolved(user), auth.status)
+        assertEquals("secret-A", sessions.read())
+        assertEquals(0, server.requestCount)
+    }
+
     @Test
     fun restoreWithAnEmptyStoreAsksNothing() = runTest {
         val auth = store(MemorySessions())
@@ -508,12 +687,14 @@ class AuthStoreTest {
         val sessions = PrefsSessions(values, vault)
         val ana = User("A", "a@example.com")
         sessions.commit("secret-A", ana)
-        val auth = store(sessions)
+        val auth = AuthStore(server.url("/"), sessions, lifecycle = object : AuthLifecycle {
+            override suspend fun signedIn(user: User, token: String, restoring: Boolean) { if (user.id == "B") fail = true }
+            override suspend fun signOut() = Unit
+        })
         server.enqueue(MockResponse().setBody("""{"user":{"id":"A","email":"a@example.com"}}"""))
         auth.restore()
         val accountA = auth.accountApi(ana)
         val original = held.toMap()
-        fail = true
         server.enqueue(MockResponse().setBody("""{"user":{"id":"B","email":"b@example.com"}}""")
             .addHeader("Set-Cookie", "wm_session=secret-B; Path=/; HttpOnly"))
         assertEquals(IOException::class.java, runCatching { auth.completeCode("b@example.com", "222222") }.exceptionOrNull()?.javaClass)

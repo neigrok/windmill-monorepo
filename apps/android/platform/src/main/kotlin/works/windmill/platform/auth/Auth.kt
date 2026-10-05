@@ -6,6 +6,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.serialization.Serializable
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import works.windmill.platform.User
@@ -31,6 +33,7 @@ class AuthStore(
     private val sessions: SessionStore,
     private val client: OkHttpClient = OkHttpClient(),
     val telemetry: Telemetry = Telemetry.None,
+    private val lifecycle: AuthLifecycle = AuthLifecycle.None,
 ) {
     var status: AuthStatus by mutableStateOf(AuthStatus.Unknown)
         private set
@@ -54,6 +57,28 @@ class AuthStore(
     // Only a 401 spends the secret; an unreachable host or a 5xx keeps it.
     suspend fun restore() {
         val attempt = generation
+        if (sessions.signOutPending) {
+            try {
+                lifecycle.signOut()
+                if (attempt != generation) return
+                sessions.clear()
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                telemetry.failure("auth_sign_out_restore", failure)
+                if (attempt == generation) status = AuthStatus.Unresolved(sessions.user())
+                return
+            }
+        }
+        sessions.proposed?.let { proposed ->
+            try { finishProposed(proposed, attempt, restoring = true) }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                if (attempt != generation) return
+                status = currentStanding()
+                telemetry.event("auth_restore", mapOf("outcome" to "unverified"))
+            }
+            return
+        }
         if (sessions.read() == null) {
             status = if (sessions.localSession == LocalSession.Absent) AuthStatus.SignedOut else AuthStatus.Unresolved(sessions.localSession.user)
             telemetry.identity(status.user?.id)
@@ -65,12 +90,15 @@ class AuthStore(
             val user = api.get<UserResponse>("/v1/me").user
             if (attempt != generation) return
             sessions.remember(user)
+            lifecycle.signedIn(user, requireNotNull(sessions.read()), restoring = true)
+            if (attempt != generation) return
             status = AuthStatus.SignedIn(user)
             telemetry.identity(user.id)
             telemetry.event("auth_restore", mapOf("outcome" to "verified"))
         } catch (unanswered: WindmillApiException) {
             if (attempt != generation) return
             if (unanswered.isUnauthorized) {
+                lifecycle.signOut()
                 sessions.clear()
                 identityRevision += 1
                 status = AuthStatus.SignedOut
@@ -118,7 +146,7 @@ class AuthStore(
         if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
         beforeCommit(answer.reply.user)
         if (attempt != generation) throw CancellationException("Authentication changed.")
-        signedIn(answer)
+        signedIn(answer, attempt)
     }
 
     // Accepts either the whole magic-link URL or the bare token.
@@ -131,27 +159,62 @@ class AuthStore(
         if (answer.session.isNullOrEmpty()) throw MagicLink.unreadable
         beforeCommit(answer.reply.user)
         if (attempt != generation) throw CancellationException("Authentication changed.")
-        signedIn(answer)
+        signedIn(answer, attempt)
     }
 
-    private fun signedIn(answer: Captured<UserResponse>) {
+    private suspend fun signedIn(answer: Captured<UserResponse>, attempt: Long) {
         val session = answer.session
         if (session.isNullOrEmpty()) throw MagicLink.unreadable
-        try { sessions.commit(session, answer.reply.user) }
+        val proposed = ProposedSignIn(session, answer.reply.user)
+        try { sessions.stage(proposed) }
         catch (failure: Exception) {
             identityRevision += 1
-            status = AuthStatus.Unresolved(status.user)
+            status = currentStanding()
+            throw failure
+        }
+        finishProposed(proposed, attempt, restoring = false)
+    }
+
+    private fun currentStanding(): AuthStatus = when (val local = sessions.localSession) {
+        LocalSession.Absent -> AuthStatus.SignedOut
+        is LocalSession.Owned -> AuthStatus.SignedIn(local.user, verified = false)
+        is LocalSession.Unresolved -> AuthStatus.Unresolved(local.user ?: status.user)
+    }
+
+    private suspend fun finishProposed(proposed: ProposedSignIn, attempt: Long, restoring: Boolean) {
+        try {
+            lifecycle.signedIn(proposed.user, proposed.secret, restoring)
+            if (attempt != generation) throw CancellationException("Authentication changed.")
+            sessions.publishProposed(proposed)
+        } catch (cancelled: CancellationException) {
+            val completed = withContext(NonCancellable) { lifecycle.cancelSignIn(proposed.user, proposed.secret) }
+            if (completed && sessions.proposed == proposed) sessions.publishProposed(proposed)
+            else sessions.clearProposed(proposed)
+            if (completed && attempt == generation && sessions.localSession == LocalSession.Owned(proposed.user)) {
+                identityRevision += 1
+                status = AuthStatus.SignedIn(proposed.user)
+                telemetry.identity(proposed.user.id)
+            } else if (attempt == generation) status = currentStanding()
+            throw cancelled
+        } catch (failure: Exception) {
+            if (failure is WindmillApiException && failure.isUnauthorized) {
+                lifecycle.cancelSignIn(proposed.user, proposed.secret)
+                sessions.clearProposed(proposed)
+            }
+            if (attempt == generation) status = currentStanding()
             throw failure
         }
         identityRevision += 1
         linkSentTo = null
-        status = AuthStatus.SignedIn(answer.reply.user)
-        telemetry.identity(answer.reply.user.id)
-        telemetry.event("auth_signed_in")
+        status = AuthStatus.SignedIn(proposed.user)
+        telemetry.identity(proposed.user.id)
+        telemetry.event(if (restoring) "auth_restore" else "auth_signed_in", if (restoring) mapOf("outcome" to "verified") else emptyMap())
     }
 
     suspend fun signOut() {
         val attempt = ++generation
+        sessions.beginSignOut()
+        lifecycle.signOut()
         try {
             api.send<Unit>("POST", "/v1/auth/logout")
         } catch (unreachable: WindmillApiException) {
@@ -164,6 +227,17 @@ class AuthStore(
         status = AuthStatus.SignedOut
         telemetry.identity(null)
         telemetry.event("auth_signed_out")
+    }
+}
+
+interface AuthLifecycle {
+    suspend fun signedIn(user: User, token: String, restoring: Boolean)
+    suspend fun signOut()
+    suspend fun cancelSignIn(user: User, token: String): Boolean = false
+
+    object None : AuthLifecycle {
+        override suspend fun signedIn(user: User, token: String, restoring: Boolean) = Unit
+        override suspend fun signOut() = Unit
     }
 }
 
@@ -188,6 +262,7 @@ object MagicLink {
 
     fun refusal(failure: Throwable, ofCode: Boolean = false): String {
         if (failure is WindmillApiException.Offline) return failure.line
+        if (failure is WindmillApiException.Refused && failure.status == 426) return failure.line
         return if (ofCode) expiredCode else expired
     }
 
@@ -216,7 +291,15 @@ private data class SavedSession(val secret: String, val user: User, val version:
     init { require(version == 1 && secret.isNotBlank() && user.id.isNotBlank()) }
 }
 
+data class ProposedSignIn(val secret: String, val user: User)
+
 interface SessionStore {
+    val signOutPending: Boolean get() = false
+    fun beginSignOut() {}
+    val proposed: ProposedSignIn? get() = null
+    fun stage(proposed: ProposedSignIn) { commit(proposed.secret, proposed.user) }
+    fun publishProposed(expected: ProposedSignIn) {}
+    fun clearProposed(expected: ProposedSignIn? = null) {}
     val localSession: LocalSession get() {
         val secret = read()
         val user = user()
@@ -241,10 +324,14 @@ class PrefsSessions(
         this(SharedPrefsValues(context), vault ?: SecretVault.onThisDevice(telemetry), telemetry)
 
     private var unavailable = false
+    override val signOutPending: Boolean get() = prefs.read(signOutKey) != null
+    override fun beginSignOut() { persist(mapOf(signOutKey to "1")) }
 
     override val localSession: LocalSession get() {
         if (unavailable) return LocalSession.Unresolved()
+        if (signOutPending) return LocalSession.Absent
         if (prefs.read(bundleKey) != null) return saved()?.let { LocalSession.Owned(it.user) } ?: LocalSession.Unresolved()
+        if (prefs.read(proposedKey) != null && proposed == null) return LocalSession.Unresolved()
         val present = listOf(secretKey, secretKey + sealed, userKey, userKey + sealed).any { prefs.read(it) != null }
         val known = (prefs.read(userKey) ?: prefs.read(userKey + sealed)?.let(vault::open))
             ?.let { runCatching { WindmillJson.decodeFromString<User>(it) }.onFailure { telemetry.failure("session_user_decode", it) }.getOrNull() }
@@ -261,10 +348,33 @@ class PrefsSessions(
         vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }.onFailure { telemetry.failure("session_decode", it) }.getOrNull() }
     }
 
+    override val proposed: ProposedSignIn? get() = prefs.read(proposedKey)?.let { encoded ->
+        vault.open(encoded)?.let { runCatching { WindmillJson.decodeFromString<SavedSession>(it) }
+            .onFailure { telemetry.failure("session_decode", java.io.IOException("The proposed account could not be read.")) }
+            .getOrNull()?.let { saved -> ProposedSignIn(saved.secret, saved.user) } }
+    }
+
+    override fun stage(proposed: ProposedSignIn) {
+        val encoded = vault.seal(WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(proposed.secret, proposed.user)))
+            ?: throw java.io.IOException("The proposed session could not be sealed.")
+        persist(mapOf(proposedKey to encoded))
+    }
+
+    override fun publishProposed(expected: ProposedSignIn) {
+        check(proposed == expected) { "The proposed account changed. Sign in again." }
+        val encoded = requireNotNull(prefs.read(proposedKey))
+        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
+            userKey to null, userKey + sealed to null))
+    }
+
+    override fun clearProposed(expected: ProposedSignIn?) {
+        if (expected == null || proposed == expected) persist(mapOf(proposedKey to null))
+    }
+
     override fun commit(secret: String, user: User) {
         val value = WindmillJson.encodeToString(SavedSession.serializer(), SavedSession(secret, user))
         val encoded = vault.seal(value) ?: throw java.io.IOException("The session could not be sealed.")
-        persist(mapOf(bundleKey to encoded, secretKey to null, secretKey + sealed to null,
+        persist(mapOf(bundleKey to encoded, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
@@ -286,7 +396,7 @@ class PrefsSessions(
 
     override fun clear() {
         persist(mapOf(
-            bundleKey to null, secretKey to null, secretKey + sealed to null,
+            bundleKey to null, proposedKey to null, signOutKey to null, secretKey to null, secretKey + sealed to null,
             userKey to null, userKey + sealed to null))
     }
 
@@ -305,6 +415,8 @@ class PrefsSessions(
 
     private companion object {
         const val bundleKey = "wm_identity.sealed"
+        const val proposedKey = "wm_proposed.sealed"
+        const val signOutKey = "wm_sign_out"
         const val secretKey = "wm_session"
         const val userKey = "wm_user"
         const val sealed = ".sealed"
@@ -333,6 +445,15 @@ private class SharedPrefsValues(context: Context) : KeptValues {
 }
 
 class MemorySessions(private var secret: String? = null, private var known: User? = null) : SessionStore {
+    private var staged: ProposedSignIn? = null
+    override val proposed: ProposedSignIn? get() = synchronized(this) { staged }
+    @Synchronized override fun commit(secret: String, user: User) { this.secret = secret; known = user; staged = null }
+    @Synchronized override fun stage(proposed: ProposedSignIn) { staged = proposed }
+    @Synchronized override fun publishProposed(expected: ProposedSignIn) {
+        check(staged == expected) { "The proposed account changed." }
+        secret = expected.secret; known = expected.user; staged = null
+    }
+    @Synchronized override fun clearProposed(expected: ProposedSignIn?) { if (expected == null || staged == expected) staged = null }
     @Synchronized override fun read(): String? = secret
     @Synchronized override fun write(secret: String) { this.secret = secret }
     @Synchronized override fun user(): User? = known
@@ -340,5 +461,6 @@ class MemorySessions(private var secret: String? = null, private var known: User
     @Synchronized override fun clear() {
         secret = null
         known = null
+        staged = null
     }
 }

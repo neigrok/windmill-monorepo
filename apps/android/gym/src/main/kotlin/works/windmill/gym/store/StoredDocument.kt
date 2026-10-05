@@ -82,37 +82,39 @@ internal class StoredDocument(private val file: File, private val telemetry: Tel
     // targetWeightKg` triple and a plan entry's as scalar `sets · reps · weightKg`; both become
     // `sets: [n identical items]`, and a null count becomes no `sets` key — the open line. Read
     // wherever an entry stands, since routines and frozen plans sit at more than one depth.
-    private fun migrated(node: JsonElement): JsonElement = when (node) {
-        is JsonArray -> JsonArray(node.map(::migrated))
-        is JsonObject -> JsonObject(rewritten(node).mapValues { migrated(it.value) })
-        else -> node
-    }
-
-    private fun rewritten(node: JsonObject): Map<String, JsonElement> {
-        if ("exerciseId" !in node) return node
-        val triple = listOf("targetSets", "targetReps", "targetWeightKg")
-        if (triple.any { it in node }) {
-            return scheme(node, count = node["targetSets"], reps = node["targetReps"], load = node["targetWeightKg"], previous = triple)
+    companion object {
+        internal fun migrated(node: JsonElement): JsonElement = when (node) {
+            is JsonArray -> JsonArray(node.map(::migrated))
+            is JsonObject -> JsonObject(rewritten(node).mapValues { migrated(it.value) })
+            else -> node
         }
-        if (node["sets"] is JsonPrimitive) {
-            return scheme(node, count = node["sets"], reps = node["reps"], load = node["weightKg"], previous = listOf("sets", "reps", "weightKg"))
-        }
-        return node
-    }
 
-    private fun scheme(
-        node: JsonObject,
-        count: JsonElement?,
-        reps: JsonElement?,
-        load: JsonElement?,
-        previous: List<String>,
-    ): Map<String, JsonElement> {
-        val kept = node.filterKeys { it !in previous }
-        val sets = (count as? JsonPrimitive)?.intOrNull ?: return kept
-        val set = JsonObject(buildMap {
-            (reps as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { put("reps", it) }
-            (load as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { put("weightKg", it) }
-        })
-        return kept + ("sets" to JsonArray(List(sets) { set }))
+        private fun rewritten(node: JsonObject): Map<String, JsonElement> {
+            if ("exerciseId" !in node) return node
+            val triple = listOf("targetSets", "targetReps", "targetWeightKg")
+            if (triple.any { it in node }) {
+                return scheme(node, count = node["targetSets"], reps = node["targetReps"], load = node["targetWeightKg"], previous = triple)
+            }
+            if (node["sets"] is JsonPrimitive) {
+                return scheme(node, count = node["sets"], reps = node["reps"], load = node["weightKg"], previous = listOf("sets", "reps", "weightKg"))
+            }
+            return node
+        }
+
+        private fun scheme(
+            node: JsonObject,
+            count: JsonElement?,
+            reps: JsonElement?,
+            load: JsonElement?,
+            previous: List<String>,
+        ): Map<String, JsonElement> {
+            val kept = node.filterKeys { it !in previous }
+            val sets = (count as? JsonPrimitive)?.intOrNull ?: return kept
+            val set = JsonObject(buildMap {
+                (reps as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { put("reps", it) }
+                (load as? JsonPrimitive)?.takeIf { it !is JsonNull }?.let { put("weightKg", it) }
+            })
+            return kept + ("sets" to JsonArray(List(sets) { set }))
+        }
     }
 }

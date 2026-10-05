@@ -1,29 +1,35 @@
 package works.windmill.gym.net
 
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.OkHttpClient
-import okhttp3.Protocol
-import okhttp3.Response
-import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Test
 import works.windmill.gym.domain.*
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineTraining
+import works.windmill.sync.api.*
+import works.windmill.sync.core.*
+import works.windmill.sync.core.Command
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.engine.Engine
+import works.windmill.sync.engine.EngineClock
+import works.windmill.sync.schema.Gym
+import works.windmill.sync.schema.SyncSchema
 
 class ProgressWireTests {
     @Test
     fun readsTheCompleteOptInProjectionWithTheExactQueryAndTypedFacts() = runBlocking {
-        val calls = mutableListOf<Pair<String, String>>()
-        val client = OkHttpClient.Builder().addInterceptor { chain ->
-            calls += chain.request().method to chain.request().url.toString()
-            Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1).code(200).message("OK")
-                .body("""{"asOf":99,"sessions":[{"sessionId":"s","startedAt":10,"movements":[{"exerciseId":"bench","workingSetCount":2,"heaviest":{"setId":"h","weightKg":100,"reps":12,"rpe":6},"estimate":{"setId":"e","weightKg":80,"reps":1,"e1rm":80}}]}]}""".toResponseBody("application/json".toMediaType())).build()
-        }.build()
-        val api = GymHttp(WindmillApi("https://windmill.works".toHttpUrl(), { null }, client))
-        assertEquals(StatsProgress(99, listOf(ProgressSession("s", 10, listOf(MovementSessionFact("bench", 2,
-            PerformedFact("h", 100.0, 12, 6.0), EstimatedFact("e", 80.0, 1, null, 80.0)))))), api.progress())
-        assertEquals(listOf("GET" to "https://windmill.works/v1/gym/stats?projection=progress"), calls)
+        Engine.memory(SyncSchema.registry, clock = object : EngineClock { override fun now() = 99L }).use { engine ->
+            val scope = ScopeRef(Gym.scope)
+            engine.commit(scope, Gesture(emptyList(), command = Command(Gym.Commands.start,
+                Json.objectOf("id" to Json.of("session1"), "startedAt" to Json.of(10L))), predict = listOf(
+                Change.create(Gym.Types.session, NewID.Given(RecordID("session1")), mapOf("startedAt" to Json.of(10L), "finishedAt" to Json.of(90L))),
+            )))
+            engine.commit(scope, Gesture(listOf(
+                Change.create(Gym.Types.set, NewID.Given(RecordID("heavyset")), mapOf("sessionId" to Json.of("session1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(100), "reps" to Json.of(12), "rpe" to Json.of(6), "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(20L))),
+                Change.create(Gym.Types.set, NewID.Given(RecordID("estimate")), mapOf("sessionId" to Json.of("session1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(80), "reps" to Json.of(1), "rpe" to Json.Null, "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(30L))),
+            )))
+            val api = EngineTraining(engine) { error("Progress is an engine projection.") }
+            assertEquals(StatsProgress(99, listOf(ProgressSession("session1", 10, listOf(MovementSessionFact("bench-press", 2,
+                PerformedFact("heavyset", 100.0, 12, 6.0), EstimatedFact("estimate", 80.0, 1, null, 80.0)))))), api.progress())
+        }
     }
 }

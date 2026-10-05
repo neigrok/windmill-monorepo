@@ -4,7 +4,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
@@ -76,13 +75,8 @@ import works.windmill.gym.domain.TheSix
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.domain.WeighInWrite
-import works.windmill.gym.net.GymHttp
 import works.windmill.gym.net.RefusalFacts
 import works.windmill.gym.net.TrainingSyncing
-import works.windmill.gym.domain.ClaimBatch
-import works.windmill.gym.domain.ClaimConsent
-import works.windmill.gym.domain.ClaimKind
-import java.util.UUID
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.telemetry.Telemetry
@@ -90,10 +84,10 @@ import works.windmill.platform.telemetry.Telemetry
 // Main-thread boundary for training reads, durable local writes, and account synchronization.
 class TrainingStore(
     private val queue: SetQueue,
-    private val deviceCopy: DeviceCopy,
-    private val localLog: LocalLog,
-    private val localPreferences: LocalPreferences,
-    private val localBodyweight: LocalBodyweight,
+    deviceCopy: DeviceCopy? = null,
+    localLog: LocalLog? = null,
+    localPreferences: LocalPreferences? = null,
+    localBodyweight: LocalBodyweight? = null,
     private val scope: CoroutineScope,
     private val now: () -> Long = System::currentTimeMillis,
     private val mintSession: () -> String = Ids::session,
@@ -102,14 +96,24 @@ class TrainingStore(
     private val mintExercise: () -> String = Ids::exercise,
     private val undoWindowMs: Long = Withheld.windowMs,
     private val retryAfterMs: Long = 4_000,
-    private val sync: (Account) -> TrainingSyncing? = { if (it.isSignedIn) GymHttp(it.api) else null },
-    private val openConsent: () -> LocalClaimConsent = { LocalClaimConsent(localLog.claimConsentFile) },
+    private val sync: (Account) -> TrainingSyncing? = { null },
     private val workoutClock: WorkoutClock = WorkoutClock { val at = now(); WorkoutMoment(at, at, "local") },
     private val workoutAuthority: (String?) -> Boolean = { true },
     private val telemetry: Telemetry = Telemetry.None,
     private val elapsedNanos: () -> Long = System::nanoTime,
     private val localCoach: LocalCoach? = null,
+    private val engineTraining: EngineTraining? = null,
 ) {
+    // Source-format collaborators support legacy storage tests; the application supplies the engine.
+    private val legacyDeviceCopy = deviceCopy
+    private val legacyLocalLog = localLog
+    private val legacyLocalPreferences = localPreferences
+    private val legacyLocalBodyweight = localBodyweight
+    private val deviceCopy: DeviceCopy get() = requireNotNull(legacyDeviceCopy) { "The engine owns the catalogue." }
+    private val localLog: LocalLog get() = requireNotNull(legacyLocalLog) { "The engine owns the training log." }
+    private val localPreferences: LocalPreferences get() = requireNotNull(legacyLocalPreferences) { "The engine owns preferences." }
+    private val localBodyweight: LocalBodyweight get() = requireNotNull(legacyLocalBodyweight) { "The engine owns weigh-ins." }
+
     private fun reportFailure(operation: String, error: Exception) {
         if (error is WindmillApiException || error is CancellationException) return
         telemetry.failure(operation, error)
@@ -139,28 +143,37 @@ class TrainingStore(
     }
     private var workoutReady = false
     private var localWorkoutAuthorized = true
-    private val workoutAuthorized: Boolean get() = localWorkoutAuthorized && workoutAuthority(owner)
+    private val workoutAuthorized: Boolean get() = localWorkoutAuthorized && workoutAuthority(owner) &&
+        ((gym as? EngineTraining)?.let { queue.engineReplica == it.engine.activeReplica() } ?: true)
 
     fun restoreWorkout(cachedOwner: String?, authorized: Boolean, account: Account? = null) {
         if (workoutReady) return
         localWorkoutAuthorized = authorized
         owner = cachedOwner
-        if (authorized && account?.user?.id == cachedOwner) { gym = account?.let(sync); seated = account }
+        if (engineTraining != null) gym = engineTraining
+        if (authorized && account?.user?.id == cachedOwner) { gym = engineTraining ?: account?.let(sync); seated = account }
         try {
             queue.adopt(owner)
-            localLog.adopt(owner)
-            localPreferences.adopt(owner)
-            localBodyweight.adopt(owner)
-            preferences = localPreferences.document
-            val known = deviceCopy.movements(owner) + localLog.exercises
-            catalog = known.distinctBy { it.id } + TheSix.missingFrom(known)
-            routines = Program.overlay(deviceCopy.routines(owner), localLog.routines)
-            val decision = consent?.state
-            if (decision is ClaimConsent.Approved) blockedConsentSeat = Seat.of(decision.owner)
+            projectEngineReplica()
+            val engine = gym as? EngineTraining
+            if (engine != null) {
+                preferences = engine.settings()
+                catalog = engine.catalogue()
+                routines = engine.program()
+                series = engine.weighins()
+            } else {
+                localLog.adopt(owner)
+                localPreferences.adopt(owner)
+                localBodyweight.adopt(owner)
+                preferences = localPreferences.document
+                val known = deviceCopy.movements(owner) + localLog.exercises
+                catalog = known.distinctBy { it.id } + TheSix.missingFrom(known)
+                routines = engine?.program() ?: Program.overlay(deviceCopy.routines(owner), localLog.routines)
+            }
             workoutReady = true
             reconcileWorkoutTime()
             exerciseId = queue.chosenMovement
-            lastTime = exerciseId?.let { LastTime.of(it, localLog.details()) }.takeIf { owner == null }
+            lastTime = exerciseId?.let { LastTime.of(it, (gym as? EngineTraining)?.details() ?: localLog.details()) }.takeIf { owner == null }
             drawFromQueue()
         } catch (error: Exception) {
             reportFailure("gym.restoreWorkout", error)
@@ -170,7 +183,7 @@ class TrainingStore(
 
     fun reconcileWorkoutTime() {
         if (!workoutReady || !queue.writable) return
-        if (!workoutAuthorized || consentRecoveryBlocked) { refreshWorkout(); return }
+        if (!workoutAuthorized) { refreshWorkout(); return }
         val live = queue.session
         if (live != null) {
             val moment = workoutClock.now()
@@ -201,7 +214,7 @@ class TrainingStore(
     }
 
     fun editWorkout(open: Boolean): WorkoutChange {
-        if (!workoutAuthorized || consentRecoveryBlocked) return WorkoutChange.Unavailable("The account must be restored first.")
+        if (!workoutAuthorized) return WorkoutChange.Unavailable("The account must be restored first.")
         return try {
             queue.control(queue.workout.editor(open))
             refreshWorkout()
@@ -214,12 +227,18 @@ class TrainingStore(
 
     fun acceptSet(command: LogSetCommand, scheduleDelivery: Boolean = true): LogSetAcceptance {
         reconcileWorkoutTime()
-        if (!workoutAuthorized || consentRecoveryBlocked || isFinishing || !queue.writable) {
+        if (!workoutAuthorized || isFinishing || !queue.writable) {
             return LogSetAcceptance.Unavailable(workoutFailure ?: "The workout is not ready.")
         }
         return try {
             val accepted = queue.accept(command, workoutClock.now(), lastTime, mintSet)
             if (accepted is LogSetAcceptance.Accepted) {
+                (gym as? EngineTraining)?.let { engine ->
+                    val entry = queue.pending.first { it.set.id == accepted.setId }
+                    val stored = engine.commitAccepted(queue, entry)
+                    queue.appended(stored, entry)
+                    queue.flush()
+                }
                 telemetry.event("gym_set_logged")
                 drawFromQueue()
                 if (scheduleDelivery) scope.launch { deliver() }
@@ -232,7 +251,7 @@ class TrainingStore(
     }
 
     fun showWorkout(key: WorkoutKey, hidden: Boolean): WorkoutChange {
-        if (!workoutAuthorized || consentRecoveryBlocked) return WorkoutChange.Unavailable("The account must be restored first.")
+        if (!workoutAuthorized) return WorkoutChange.Unavailable("The account must be restored first.")
         if (workoutFacts.value?.key != key) return WorkoutChange.Stale
         return try {
             queue.control(queue.workout.visibility(hidden))
@@ -246,26 +265,48 @@ class TrainingStore(
 
     private fun refreshWorkout() {
         if (!workoutReady) return
-        if (!workoutAuthorized || consentRecoveryBlocked) { workoutFacts.value = null; return }
+        if (!workoutAuthorized) { workoutFacts.value = null; return }
         val live = queue.session
         if (live == null) {
             rack = null
             workoutFacts.value = null
             return
         }
-        val ready = workoutAuthorized && !consentRecoveryBlocked && !isFinishing && queue.writable
+        val ready = workoutAuthorized && !isFinishing && queue.writable
         val state = try {
-            if (queue.writable && workoutAuthorized && !consentRecoveryBlocked) queue.prepare(lastTime, workoutClock.now(), ready, mintSet) else queue.workout
+            if (queue.writable && workoutAuthorized) queue.prepare(lastTime, workoutClock.now(), ready, mintSet) else queue.workout
         } catch (error: Exception) {
             reportFailure("gym.refreshWorkout", error)
             refuseWorkout()
             return
         }
+        try { (gym as? EngineTraining)?.persistControls(queue) }
+        catch (failure: Exception) { reportFailure("gym.workout_controls", failure); refuseWorkout(); return }
         rack = state.rack
         val movement = queue.chosenMovement
         val rows = queue.sets.filter { it.exerciseId == movement }
         workoutFacts.value = WorkoutNotification(WorkoutKey(accountKey, live.id), live,
             movement?.let { Readout.movement(it, catalog) } ?: "Choose a movement", rows, state, ready)
+    }
+
+    private fun projectEngineReplica(force: Boolean = false) {
+        val engine = gym as? EngineTraining ?: return
+        val replica = engine.engine.activeReplica()
+        if (queue.engineReplica == replica && !force) return
+        val open = engine.details().firstOrNull { it.session.isOpen }
+        queue.project(replica, open?.session, open?.sets.orEmpty())
+        engine.restoreControls(queue)
+        queue.flush()
+    }
+
+    suspend fun prepareEngineTransition() {
+        val engine = gym as? EngineTraining ?: return
+        engine.reconcileLegacyOperations()
+        deliver()
+        val durableLegacy = LegacyGymMigration.operations(engine.engine).mapTo(mutableSetOf()) { it.entry.set.id }
+        if (queue.pending.any { it.set.id !in durableLegacy }) throw WindmillApiException.Refused(409,
+            works.windmill.platform.net.Refusal("The workout could not be saved safely. Retry before changing accounts."))
+        engine.persistControls(queue)
     }
 
     private fun refuseWorkout(): String {
@@ -274,39 +315,6 @@ class TrainingStore(
         workoutFacts.value = workoutFacts.value?.copy(offer = null)
         return reason
     }
-
-    var consentFailure: String? by mutableStateOf(null)
-        private set
-    private var consent: LocalClaimConsent? = try { openConsent() } catch (failure: Exception) {
-        reportFailure("gym.consent", failure)
-        consentFailure = "Local data could not be read safely. Restart the app to try again."
-        null
-    }
-    private var offeredBatch: ClaimBatch? = null
-    private var blockedConsentSeat: String? = if (consent == null) "unknown" else null
-    private val consentRecoveryBlocked: Boolean get() = blockedConsentSeat == "unknown" || blockedConsentSeat == Seat.of(owner)
-    private var consentDecision = 0L
-    var claimBusy: Boolean by mutableStateOf(false)
-        private set
-
-    val localDataBatch: ClaimBatch?
-        get() {
-            val journal = consent ?: return null
-            val decision = try {
-                journal.state
-            } catch (failure: Exception) {
-                reportFailure("gym.consent", failure)
-                return null
-            }
-            if (decision is ClaimConsent.Approved) return decision.batch.takeIf { decision.owner == owner }
-            if (decision is ClaimConsent.Discarding) return decision.batch
-            if (decision is ClaimConsent.AwaitingSignIn) return decision.batch
-            val items = localLog.claimItems() + queue.claimItems() + localBodyweight.claimItems() + localPreferences.claimItems()
-            if (items.isEmpty()) return null
-            val before = offeredBatch
-            if (before?.items == items) return before
-            return ClaimBatch(UUID.randomUUID().toString(), items).also { offeredBatch = it }
-        }
 
     // Filled by `connect` from the copy the device holds FOR THE SEAT NOW ASKING: a name is
     // per-account the moment a rename exists.
@@ -396,16 +404,16 @@ class TrainingStore(
         get() = program.filterNot { it.id in withheldIds }
         private set(value) {
             program = value
-            if (gym != null) deviceCopy.holdRoutines(owner, value)
+            if (gym != null && gym !is EngineTraining) deviceCopy.holdRoutines(owner, value)
         }
     // The cursor is the oldest row the LOG sent, never one of ours, or `Load older` would page from
     // a session the server has never heard of.
     var logged: List<SessionSummary> by mutableStateOf(emptyList())      // the account's pages, newest first
         private set
     private var logReadRevision = 0L
-    var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // the device's own, unclaimed
+    var shelved: List<SessionSummary> by mutableStateOf(emptyList())     // retained migration refusals
         private set
-    // Both, merged on the clock, until the claim empties the shelf: everything the account and this
+    // Both, merged on the clock: everything the account and this
     // device hold between them, which is what the log's empty stance and the first-session line are
     // read from.
     val allSessions: List<SessionSummary>
@@ -433,7 +441,7 @@ class TrainingStore(
         get() = meta
         private set(value) {
             meta = value
-            if (gym != null && value != null) deviceCopy.holdLastSets(owner, value.values.toList())
+            if (gym != null && gym !is EngineTraining && value != null) deviceCopy.holdLastSets(owner, value.values.toList())
         }
     // The catalog read was asked and did not answer, so what is on screen is only `TheSix` and
     // whatever this device minted.
@@ -469,6 +477,7 @@ class TrainingStore(
         private set
     // What the last walk ended with still owed. A set logged since is on its way, not stuck.
     private var leftBehind by mutableStateOf(emptySet<String>())
+    private var enginePendingSessions by mutableStateOf(emptySet<String>())
     // Set by the walk from the failure it met, never inferred from a set that has not landed.
     var strandedBy: Blocker? by mutableStateOf(null)
         private set
@@ -478,7 +487,8 @@ class TrainingStore(
     var isFinishing: Boolean by mutableStateOf(false)
         private set
 
-    private var gym: TrainingSyncing? = null
+    private var gym: TrainingSyncing? = engineTraining
+    val updateRequired: Boolean get() = (gym as? EngineTraining)?.updateRequired == true
     // Kept only so the quarantine's two verbs can redraw.
     private var seated: Account? = null
     // Whose the names on this device are: the account id, or null for the anonymous seat.
@@ -495,26 +505,9 @@ class TrainingStore(
     // written none" is a claim only an answer can support.
     private var routinesFailed = false
     private var retryTask: Job? = null
-    // While true, the boot read may not trade the phone's own workout for a different open one. It is
-    // the QUEUE's persisted fact, never derived from how a claim pass ended.
+    // The persisted queue fact protects a legacy local start until its engine projection is ready.
     private val liveUnclaimed: Boolean get() = queue.sessionIsUnclaimed
-    // Mid-replay a start may not go to the log at all: a start JOINS whatever session is open, and
-    // mid-replay that is a PAST one the claim reopened. Starts compose on the device instead, and the
-    // boot read stands down.
-    private var claimsRunning = 0
-    private val claiming: Boolean get() = claimsRunning > 0
-    // Completed whenever no claim is running. Every read that SETTLES staleness on the server waits
-    // on it, or it closes a session the claim just reopened and refuses every set still owed into it.
-    private var claimIdle = CompletableDeferred(Unit)
-    // Runners never overlap: the one running goes once more when its pass ends.
-    private var claimAgain = false
-    // Owed to the cadence, the same task that carries the owed sets. Only retryable stops arm it: a
-    // WAIT on the account's other workout stays event-driven.
-    private var claimOwed = false
-
-    // Two independent facts, each carried by its own send: the whole walk for the shelf, one PUT for
-    // the settings document.
-    private val cadenceOwed: Boolean get() = gym != null && (claimOwed || localPreferences.owed)
+    private val cadenceOwed: Boolean get() = gym != null && gym !is EngineTraining && localPreferences.owed
 
     internal companion object {
         private const val accountChanged = "The account changed. Open this again."
@@ -535,8 +528,6 @@ class TrainingStore(
         const val liveSlotTaken =
             "finish the workout you’re in first — the one this phone kept needs the slot"
 
-        const val quarantineWantsAnAccount =
-            "sign in first — this can only be added to an account, and only you can say it is yours"
     }
 
     // Warmups included; `Prefill` is narrower and follows the working sets only.
@@ -555,8 +546,12 @@ class TrainingStore(
     // Signed out, every drawn row owing the log something is on this device and nowhere else; signed
     // in, only the ones whose append or correction a walk could not land. A deleted row is not drawn.
     val stalled: Set<String>
-        get() = queue.pending.filter { it.owes != Owed.Delete && (gym == null || it.set.id in leftBehind) }
-            .mapTo(mutableSetOf()) { it.set.id }
+        get() = (gym as? EngineTraining)?.let { engine -> engine.pendingSetIds() +
+            queue.pending.filter { it.owes != Owed.Delete }.map { it.set.id } }
+            ?: queue.pending.filter { it.owes != Owed.Delete && (gym == null || it.set.id in leftBehind) }
+                .mapTo(mutableSetOf()) { it.set.id }
+    val deviceOnlySessionIds: Set<String>
+        get() = shelved.mapTo(mutableSetOf()) { it.id } + enginePendingSessions
 
     // A routine carries its own pending proposal, so nothing polls and nothing pushes. Newest first.
     val pendingProposals: List<Proposal>
@@ -590,8 +585,7 @@ class TrainingStore(
 
     // Called on launch and on every change of who is signed in. Draws from the device first.
     suspend fun connect(account: Account) {
-        // Whether a lifter ARRIVED, or the room is re-reading for the seat already in hand — the
-        // shelf's claim and its discard both come back through here, mid-window, for the same seat.
+        // A re-read for the same owner preserves open deletion windows.
         if (!account.resolved) return
         if (!workoutAuthority(account.user?.id)) {
             if (!workoutAuthorized) workoutFacts.value = null
@@ -600,7 +594,7 @@ class TrainingStore(
         localWorkoutAuthorized = account.locallyTrusted
         workoutReady = true
         val arriving = seated != account
-        gym = sync(account)
+        gym = engineTraining ?: sync(account)
         seated = account
         // Names and pending writes stay with the seat that owns them.
         if (owner != account.user?.id) {
@@ -611,12 +605,11 @@ class TrainingStore(
             exerciseId = null
         }
         owner = account.user?.id
-        // A workout composed on this device is filed under the seat that composed it, so a claim can
-        // never replay one lifter's training into the account that signed in after them. An
-        // unverified seat draws its own room but may not take ownership of unclaimed work.
+        // The account controller is rebuilt from the active engine replica before it can accept work.
         try {
             check(queue.writable) { "Restart the app to recover the saved workout." }
             queue.adopt(owner)
+            projectEngineReplica(force = arriving)
         }
         catch (error: Exception) {
             reportFailure("gym.connect", error)
@@ -625,16 +618,17 @@ class TrainingStore(
             isLoading = false
             return
         }
-        localLog.adopt(owner)
-        localPreferences.adopt(owner)
-        preferences = localPreferences.document
-        localBodyweight.adopt(owner)
-        val selectedOwner = owner
-        val selectedWriter = gym
-        recoverConsent()
-        if (owner != selectedOwner || gym !== selectedWriter) return
-        preferences = localPreferences.document
-        series = localBodyweight.entries
+        val engine = gym as? EngineTraining
+        if (engine != null) {
+            preferences = engine.settings()
+            series = engine.weighins()
+        } else {
+            localLog.adopt(owner)
+            localPreferences.adopt(owner)
+            localBodyweight.adopt(owner)
+            preferences = localPreferences.document
+            series = localBodyweight.entries
+        }
         bodyweightRevision += 1
         bodyweightRead = gym == null
         bodyweightLoading = false
@@ -645,14 +639,14 @@ class TrainingStore(
         progressLoading = false
         // The six ride with every seat and fill only ids nothing else here holds, so a name this
         // account chose is never overwritten by a constant.
-        val known = deviceCopy.movements(owner).let { held ->
+        val known = engine?.catalogue() ?: deviceCopy.movements(owner).let { held ->
             held + localLog.exercises.filter { mine -> held.none { it.id == mine.id } }
         }
         catalog = known + TheSix.missingFrom(known)
-        deviceCopy.hold(owner, catalog)
+        if (engine == null) deviceCopy.hold(owner, catalog)
         // The copy this device last read for THIS account draws first; the read that follows replaces
         // it.
-        routines = Program.overlay(deviceCopy.routines(owner), localLog.routines)
+        routines = engine?.program() ?: Program.overlay(deviceCopy.routines(owner), localLog.routines)
         // The last-time cache dies with the seat; the picker's meta goes with it.
         lastTimes.clear()
         settledProposals = emptyMap()
@@ -685,13 +679,16 @@ class TrainingStore(
         }
         // A workout both finished on the shelf and live in the queue: the shelf's copy wins, after
         // its sets merge in.
-        queue.session?.let { live ->
+        queue.session?.takeIf { gym !is EngineTraining }?.let { live ->
             val shelved = localLog.detail(live.id)
             if (shelved != null) {
                 localLog.hold(LocalLog.FinishedSession(shelved.session, queue.sets(live.id)))
                 queue.forget(live.id)
                 queue.flush()
             }
+        }
+        if (gym is EngineTraining) queue.session?.let { live ->
+            if ((gym as EngineTraining).details().any { it.session.id == live.id }) queue.claimed(live.id)
         }
         reconcileWorkoutTime()
         drawFromQueue()
@@ -701,20 +698,20 @@ class TrainingStore(
         val seat = owner
         if (log == null) {
             // Signed out the shelf is the whole log, so the foot is already at the bottom.
-            claimOwed = false
             logged = emptyList()
-            shelved = localLog.summaries()
+            shelved = legacyShelf()
             older = Older.End
             saveState = if (queue.pending.isEmpty()) SaveState.Idle else SaveState.OnThisDevice
             resume()
             if (lastSetsWanted) loadLastSets()
             return
         }
-        // The queue goes out first, before anything that can settle, and the claim's starts settle.
-        shelved = localLog.summaries()
-        if (!consentRecoveryBlocked) deliver()
+        // Durably reconcile accepted local operations before refreshing the room.
+        shelved = legacyShelf()
+        if (log is EngineTraining) tried("gym.migration_reconcile") { log.reconcileLegacyOperations() }
+        deliver()
         if (seat != owner || gym !== log) return
-        if (!consentRecoveryBlocked) runClaim()
+        flushMirrors()
         if (seat != owner || gym !== log) return
         // The sets parked behind the live start go out once it has landed.
         deliver()
@@ -732,10 +729,10 @@ class TrainingStore(
                     return@launch
                 }
                 val changed = catalog.filter { before[it.id] != it }.associateBy { it.id }
-                val fetched = served + localLog.exercises.filter { mine -> served.none { it.id == mine.id } }
+                val fetched = if (log is EngineTraining) served else served + localLog.exercises.filter { mine -> served.none { it.id == mine.id } }
                 val whole = fetched.map { changed[it.id] ?: it } + changed.values.filter { fresh -> fetched.none { it.id == fresh.id } }
                 catalog = whole + TheSix.missingFrom(whole)
-                deviceCopy.hold(owner, catalog)
+                if (log !is EngineTraining) deviceCopy.hold(owner, catalog)
                 refreshWorkout()
             }
             launch {
@@ -745,14 +742,16 @@ class TrainingStore(
                     routinesFailed = true
                     return@launch
                 }
-                routines = Program.overlay(written, localLog.routines)
+                routines = if (log is EngineTraining) written else Program.overlay(written, localLog.routines)
             }
             // May not land on top of a document this device still owes; `readBack` refuses that.
             launch {
                 tried("gym.connect") { log.preferences() }?.let {
                     if (seat != owner || gym !== log) return@launch
-                    localPreferences.readBack(it)
-                    preferences = localPreferences.document
+                    if (log is EngineTraining) preferences = it else {
+                        localPreferences.readBack(it)
+                        preferences = localPreferences.document
+                    }
                     refreshWorkout()
                 }
             }
@@ -764,165 +763,57 @@ class TrainingStore(
         if (lastSetsWanted) loadLastSets()
     }
 
-    val unattributed: LocalLog.Unattributed?
-        get() = localDataBatch?.let { batch ->
-            LocalLog.Unattributed(batch.items.count { it.kind == ClaimKind.Session }, batch.routines,
-                batch.movements, batch.items.filter { it.kind == ClaimKind.Session }.mapNotNull { it.atMs }.sortedDescending())
+    private fun shelfDetail(id: String): SessionDetail? = (gym as? EngineTraining)?.let { engine ->
+        LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == id }?.let { refused ->
+            refused.session?.let { SessionDetail(it, refused.sets) }
+        } ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == id }?.let { row ->
+            SessionDetail(row.session, row.sets.filterNot { it.id in row.deleted })
         }
+    } ?: if (gym is EngineTraining) null else localLog.detail(id)
 
-    val unattributedIsLive: Boolean get() = localDataBatch?.items?.any { it.activeSession } == true
-
-    fun requestClaimSignIn(): String? {
-        return try {
-            val journal = checkNotNull(consent)
-            val standing = journal.state
-            if (standing is ClaimConsent.AwaitingSignIn) {
-                consentFailure = null
-                return standing.flowId
-            }
-            val batch = localDataBatch ?: return null
-            val flow = UUID.randomUUID().toString()
-            journal.requestSignIn(batch, flow)
-            consentFailure = null
-            flow
-        } catch (failure: Exception) {
-            reportFailure("gym.requestClaimSignIn", failure)
-            consentFailure = failure.message ?: "The local-data decision could not be saved."
-            null
-        }
+    private fun legacyShelf(): List<SessionSummary> {
+        val engine = gym as? EngineTraining ?: return localLog.summaries()
+        val migrated = engine.details().mapTo(mutableSetOf()) { it.session.id }
+        return LegacyGymMigration.refusals(engine.engine).mapNotNull { refused -> refused.session?.let { session ->
+            SessionSummary(session, refused.sets)
+        } }.filterNot { it.id in migrated }
     }
 
-    fun approveSignIn(userId: String, flowId: String?) {
-        if (flowId == null) return
-        val journal = checkNotNull(consent) { "The local-data decision could not be read safely." }
-        val standing = journal.state
-        if (standing is ClaimConsent.Approved) {
-            check(standing.owner == userId && standing.flowId == flowId) {
-                "That sign-in request no longer owns the local-data decision."
-            }
-            return
-        }
-        val decision = standing as? ClaimConsent.AwaitingSignIn
-            ?: error("That sign-in request no longer owns the local-data decision.")
-        check(decision.flowId == flowId) { "That sign-in request no longer owns the local-data decision." }
-        preflight(decision.batch, userId)
-        journal.approve(decision.batch, userId, flowId)
-    }
-
-    fun cancelClaimSignIn(flowId: String?) {
-        if (flowId == null) return
-        try {
-            val journal = consent ?: return
-            val decision = journal.state as? ClaimConsent.AwaitingSignIn ?: return
-            if (decision.flowId == flowId) journal.complete(decision.batch.id)
-        } catch (failure: Exception) {
-            reportFailure("gym.cancelClaimSignIn", failure)
-            consentFailure = "The local-data decision could not be saved. Restart the app to try again."
-        }
-    }
-
-    private fun preflight(batch: ClaimBatch, target: String?) {
-        queue.preflight(batch, target)
-        localLog.preflight(batch, target)
-        localBodyweight.preflight(batch, target)
-        localPreferences.preflight(batch, target)
-    }
-
-    private fun completeConsent(batch: ClaimBatch, target: String?) {
-        preflight(batch, target)
-        if (target != null) blockedConsentSeat = Seat.of(target)
-        queue.complete(batch, target)
-        localLog.complete(batch, target)
-        localBodyweight.complete(batch, target)
-        localPreferences.complete(batch, target)
-        checkNotNull(consent).complete(batch.id)
-        offeredBatch = null
-        blockedConsentSeat = null
-        consentFailure = null
-    }
-
-    private suspend fun recoverConsent() {
-        val journal = consent ?: return
+    suspend fun refreshEngine() {
+        val log = gym as? EngineTraining ?: return
+        if (queue.engineReplica != log.engine.activeReplica()) return
         val seat = owner
-        val log = gym
-        try {
-            when (val decision = journal.state) {
-                is ClaimConsent.Discarding -> completeConsent(decision.batch, null)
-                is ClaimConsent.Approved -> {
-                    if (decision.owner != seat) return
-                    blockedConsentSeat = Seat.of(seat)
-                    if (seated?.verified != true || log == null) return
-                    if (decision.batch.items.any { it.kind == ClaimKind.Queue && it.activeSession }) {
-                        val open = log.sessions(logPage, null, null).firstOrNull { it.session.isOpen }
-                        if (owner != seat || gym !== log) return
-                        check(open == null || decision.batch.items.any { it.kind == ClaimKind.Queue && it.id == open.id }) {
-                            "Finish the account’s current workout before adding this training."
-                        }
-                    }
-                    completeConsent(decision.batch, seat)
-                }
-                else -> Unit
-            }
-        } catch (failure: Exception) {
-            reportFailure("gym.recoverConsent", failure)
-            if (failure is CancellationException) throw failure
-            if (owner != seat || gym !== log) return
-            consentFailure = failure.message ?: "Local data could not be updated. Restart the app to try again."
+        tried("gym.migration_reconcile") { log.reconcileLegacyOperations() }
+        if (log.firstPullComplete && !log.anonymous) LegacyGymMigration.retireCaches(log.engine)
+        deliver()
+        if (seat != owner || gym !== log) return
+        refusals = log.refusedWrites()
+        loadLog()
+        if (seat != owner || gym !== log) return
+        for (detail in log.details()) {
+            if (!detail.session.isOpen && detail.session.id in closedDetails) retainClosed(detail)
+            for (set in detail.sets) if (withheld.any { held ->
+                val deletion = held.deletion as? Deletion.Set
+                deletion?.sessionId == detail.session.id && deletion.set.id == set.id && deletion.set != set
+            }) changeHeldSet(detail.session.id, set.id, set)
         }
+        catalog = log.exercises()
+        routines = log.routines()
+        preferences = log.preferences()
+        series = log.bodyweight()
+        bodyweightRead = log.anonymous || log.firstPullComplete || series.isNotEmpty()
+        if (lastSetsWanted) loadLastSets()
+        if (progressWanted) loadProgress(force = true)
+        drawFromQueue()
     }
 
-    suspend fun releaseUnattributed(): String? {
-        val seat = owner ?: return quarantineWantsAnAccount
-        val log = gym ?: return quarantineWantsAnAccount
-        if (seated?.verified != true) return "Connect to verify this account before adding local training."
-        val journal = consent ?: return consentFailure
-        val batch = localDataBatch ?: return null
-        if (claimBusy) return null
-        val decision = ++consentDecision
-        claimBusy = true
-        try {
-            if (batch.items.any { it.kind == ClaimKind.Queue && it.activeSession }) {
-                val open = log.sessions(logPage, null, null).firstOrNull { it.session.isOpen }
-                if (owner != seat || gym !== log) return accountChanged
-                if (decision != consentDecision) return null
-                check(open == null || batch.items.any { it.kind == ClaimKind.Queue && it.id == open.id }) {
-                    "Finish the account’s current workout before adding this training."
-                }
-            }
-            if (decision != consentDecision) return null
-            preflight(batch, seat)
-            if (journal.state is ClaimConsent.AwaitingSignIn) journal.complete(batch.id)
-            journal.approve(batch, seat)
-            completeConsent(batch, seat)
-            seated?.let { connect(it) }
-            return consentFailure
-        } catch (failure: Exception) {
-            reportFailure("gym.releaseUnattributed", failure)
-            if (failure is CancellationException) throw failure
-            if (owner != seat || gym !== log) return accountChanged
-            consentFailure = failure.message ?: "The local-data decision could not be saved."
-            return consentFailure
-        } finally {
-            if (decision == consentDecision) claimBusy = false
-        }
-    }
-
-    private fun discardUnattributed(batch: ClaimBatch) {
-        val journal = checkNotNull(consent) { "The local-data decision could not be read safely." }
-        journal.discard(batch)
-        completeConsent(batch, null)
-    }
-
-    // Signed in the session opens on the log and the server freezes the plan snapshot off the
-    // routine's own row; signed out it is composed here off the local row. No signal composes on the
-    // device and the claim lands it; only a refusal WITH A REASON is repeated.
+    // The domain action freezes the routine into the session before any network request.
     suspend fun start(routineId: String? = null): GymResult<Session> {
-        if (!workoutAuthorized || consentRecoveryBlocked || !queue.writable) return GymResult.Failed(WriteFailure.Refused(workoutFailure ?: "The account must be restored first."))
+        if (!workoutAuthorized || !queue.writable) return GymResult.Failed(WriteFailure.Refused(workoutFailure ?: "The account must be restored first."))
         val seat = owner
         val log = gym ?: return startOnDevice(routineId)
-        // Two starts the log cannot take: mid-claim a server start would join the past session the
-        // replay has open, and a routine still on the shelf is a plan the account cannot resolve.
-        if (claiming || routineId?.let { localLog.routine(it) } != null) return startOnDevice(routineId)
+        // Source-format fixtures may hold a routine only in their local shelf.
+        if (gym !is EngineTraining && routineId?.let { localLog.routine(it) } != null) return startOnDevice(routineId)
         // A start SETTLES a stale open session on the log, so every owed set drains first.
         deliver()
         if (!workoutAuthorized || seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
@@ -940,7 +831,7 @@ class TrainingStore(
                 adopt(opened, joined = opened.id != id)
                 if (!workoutAuthorized || seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 val live = session ?: return GymResult.Failed(WriteFailure.NoAnswer)
-                telemetry.event("gym_session_started", mapOf("storage" to "server"))
+                telemetry.event("gym_session_started", mapOf("storage" to if (log is EngineTraining) "engine" else "server"))
                 return GymResult.Ok(live)
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -959,6 +850,7 @@ class TrainingStore(
                 // id that just went out, because a 5xx is not a promise that nothing was written.
                 val facts = RefusalFacts(refusing)
                 if (refused == null || refused.status >= 500 || facts.code == "clock-ahead") {
+                    if (log is EngineTraining) return GymResult.Failed(WriteFailure(refusing))
                     return startOnDevice(routineId, id, startedAt)
                 }
                 // Only a spent session id is worth a second attempt.
@@ -967,6 +859,7 @@ class TrainingStore(
                 collision = WriteFailure(refusing)
             } catch (failed: Exception) {
                 reportFailure("gym.start", failed)
+                if (log is EngineTraining) return GymResult.Failed(WriteFailure.Refused("The workout could not be saved safely. Restart and retry."))
                 if (!workoutAuthorized || seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while starting"))
                 // The start may have landed before the reply was lost, so the same id rides.
                 return startOnDevice(routineId, id, startedAt)
@@ -975,17 +868,13 @@ class TrainingStore(
         return GymResult.Failed(collision)
     }
 
-    // One workout is open on this device at a time: a start over a live one answers with the live
-    // one. The plan freezes off the routine THIS STORE holds. Signed in the session opens UNCLAIMED.
-    //
-    // It runs under the id the server start went out with, when there was one: a fresh id would meet
-    // the log's own row as `session-already-open` on every claim.
+    // Legacy storage fixtures freeze their known routine and preserve an attempted start's identity.
     private suspend fun startOnDevice(
         routineId: String?,
         id: String = mintSession(),
         startedAtMs: Long = now(),
     ): GymResult<Session> {
-        if (!workoutAuthorized || consentRecoveryBlocked || !queue.writable) return GymResult.Failed(WriteFailure.Refused("The account must be restored first."))
+        if (!workoutAuthorized || !queue.writable) return GymResult.Failed(WriteFailure.Refused("The account must be restored first."))
         queue.session?.let { return GymResult.Ok(it) }
         val routine = routineId?.let { wanted -> localLog.routine(wanted) ?: routines.firstOrNull { it.id == wanted } }
         if (routineId != null && routine == null && gym == null) {
@@ -997,8 +886,6 @@ class TrainingStore(
         queue.flush()
         drawFromQueue()
         if (gym != null) {
-            if (claiming) claimAgain = true
-            claimOwed = true
             deliver()
         }
         telemetry.event("gym_session_started", mapOf("storage" to "device"))
@@ -1008,7 +895,7 @@ class TrainingStore(
     // The answer is kept for the life of the session: a last time is a FINISHED session, so none of
     // these answers can change mid-workout.
     suspend fun choose(movement: String) {
-        if (!workoutAuthorized || consentRecoveryBlocked) return
+        if (!workoutAuthorized) return
         queue.choose(movement)
         queue.flush()
         order = queue.order
@@ -1022,7 +909,7 @@ class TrainingStore(
         val log = gym
         val answer = if (log == null) LastTime.of(movement, localLog.details())
             else tried("gym.choose") { log.lastTime(movement) }
-        if (!workoutAuthorized || consentRecoveryBlocked || owner != seat || session?.id != sessionId || gym !== log) return
+        if (!workoutAuthorized || owner != seat || session?.id != sessionId || gym !== log) return
         if (answer?.exerciseId != movement) return
         lastTimes[movement] = answer
         if (exerciseId != movement) return
@@ -1032,7 +919,7 @@ class TrainingStore(
 
     // Sets are keyed by movement and never by position, so only the walk order moves.
     fun reorder(from: Int, to: Int) {
-        if (!workoutAuthorized || consentRecoveryBlocked) return
+        if (!workoutAuthorized) return
         val walked = LiveOrder.moved(order, from, to)
         if (walked == order) return
         queue.hold(order = walked)
@@ -1042,7 +929,7 @@ class TrainingStore(
 
     // False where `LiveOrder.droppable` refuses. Dropping the movement in hand returns to the picker.
     fun drop(exerciseId: String): Boolean {
-        if (!workoutAuthorized || consentRecoveryBlocked) return false
+        if (!workoutAuthorized) return false
         if (!LiveOrder.droppable(exerciseId, sets, session?.plan)) return false
         val walked = order.filterNot { it == exerciseId }
         if (walked == order) return false
@@ -1063,7 +950,7 @@ class TrainingStore(
     // one movement's most recent set rather than an aggregate.
     suspend fun loadLastSets() {
         lastSetsWanted = true
-        val mine = LastSet.of(localLog.details())
+        val mine = if (gym is EngineTraining) emptyList() else LastSet.of(localLog.details())
         val log = gym
         if (log == null) {
             lastSets = mine.associateBy { it.exerciseId }
@@ -1071,7 +958,7 @@ class TrainingStore(
         }
         // A read that missed draws the copy this device last read FOR THIS SEAT. A seat with no copy
         // is left as it was: silence, never `never logged`.
-        val served = tried("gym.loadLastSets") { log.lastSets() } ?: deviceCopy.lastSets(owner) ?: return
+        val served = tried("gym.loadLastSets") { log.lastSets() } ?: (if (log is EngineTraining) null else deviceCopy.lastSets(owner)) ?: return
         lastSets = (served + mine)
             .groupBy { it.exerciseId }
             .mapValues { (_, rows) -> rows.maxBy { it.atMs } }
@@ -1080,7 +967,7 @@ class TrainingStore(
     // The row lands and the device holds it before the network is consulted at all. The kind is the
     // CALLER's and is the one thing about a set that cannot be repaired later.
     suspend fun logSet(weightKg: Double, reps: Int, kind: SetKind = SetKind.Working) {
-        if (!workoutAuthorized || consentRecoveryBlocked) return
+        if (!workoutAuthorized) return
         val live = session ?: return
         val movement = exerciseId ?: return
         if (isFinishing) return
@@ -1109,7 +996,7 @@ class TrainingStore(
     // drawn from what the log holds. A write owed to another session cannot stop it closing. A session
     // the log does not hold closes on the device and moves whole onto the shelf.
     suspend fun finish(): FinishOutcome {
-        if (!workoutAuthorized || consentRecoveryBlocked) return FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first."))
+        if (!workoutAuthorized) return FinishOutcome.Failed(WriteFailure.Refused("The account must be restored first."))
         if (isFinishing) return FinishOutcome.Failed(WriteFailure.Refused("this workout is already finishing"))
         val live = session ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
         val seat = owner
@@ -1144,7 +1031,6 @@ class TrainingStore(
             exerciseId = null
             lastTime = null
             drawFromQueue()
-            if (localLog.finished.isNotEmpty()) runClaim()
             if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             if (detail == null) {
                 loadLog()
@@ -1155,7 +1041,7 @@ class TrainingStore(
                 if (workoutAuthorized && seat == owner && gym === log) loadLog()
             }
             invalidateProgress()
-            telemetry.event("gym_session_finished", mapOf("storage" to "server"))
+            telemetry.event("gym_session_finished", mapOf("storage" to if (log is EngineTraining) "engine" else "server"))
             return FinishOutcome.Closed(detail)
         } finally {
             isFinishing = false
@@ -1170,10 +1056,9 @@ class TrainingStore(
         val detail = localLog.detail(closed.id) ?: return FinishOutcome.Failed(WriteFailure.NoAnswer)
         retainClosed(detail)
         drawFromQueue()
-        shelved = localLog.summaries()
+        shelved = legacyShelf()
         redrawShelfRoutines()
         if (log != null) {
-            runClaim()
             if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
             deliver()
             if (!workoutAuthorized || seat != owner || gym !== log) return FinishOutcome.Failed(WriteFailure.Refused("the account changed while finishing"))
@@ -1215,14 +1100,15 @@ class TrainingStore(
 
     // The log refuses to delete a session somebody may still be logging into.
     suspend fun discard(sessionId: String): Boolean {
-        if (!workoutAuthorized || consentRecoveryBlocked) return false
-        if (localLog.detail(sessionId) != null) {
-            localLog.forget(sessionId)
+        if (!workoutAuthorized) return false
+        if (shelfDetail(sessionId) != null) {
+            val engine = gym as? EngineTraining
+            if (engine == null) localLog.forget(sessionId) else LegacyGymMigration.discardRefusal(engine.engine, sessionId)
             invalidateProgress()
             queue.forget(sessionId)
             queue.flush()
             drawFromQueue()
-            shelved = localLog.summaries()
+            shelved = legacyShelf()
             // A discarded session is one a routine was NOT trained by.
             redrawShelfRoutines()
             return true
@@ -1255,13 +1141,12 @@ class TrainingStore(
             entries = Routine(write).entries, creationId = creationId))
     }
 
-    // Kept on the shelf; the claim sends this same document later.
+    // Source-format fixture writes retain the exact routine document.
     private suspend fun keepOnDevice(write: RoutineWrite): Routine {
         val made = Routine(write)
         localLog.hold(made)
         routines = if (gym == null) localLog.routines else program.filterNot { it.id == made.id } + localLog.routine(made.id)!!
         if (gym != null) {
-            claimOwed = true
             deliver()
         }
         return made
@@ -1271,7 +1156,7 @@ class TrainingStore(
     suspend fun save(sets: List<SetTarget>, toRoutine: String, atPosition: Int,
                      forExercise: String): WriteFailure? {
         // A routine still on the shelf is the device's to move.
-        localLog.routine(toRoutine)?.let { mine ->
+        (if (gym is EngineTraining) null else localLog.routine(toRoutine))?.let { mine ->
             val moved = mine.retargeting(atPosition, forExercise, sets)
                 ?: return WriteFailure.Refused("${mine.name} has changed since this session started")
             localLog.hold(moved)
@@ -1310,15 +1195,15 @@ class TrainingStore(
         val standing = draft.id
         val creationId = draft.creationId ?: mintRoutine()
         if (standing == null) {
-            localLog.routine(creationId)?.let { existing ->
+            (if (gym is EngineTraining) null else localLog.routine(creationId))?.let { existing ->
                 val expected = RoutineWrite(creationId, name, draft.position, draft.write)
                 if (RoutineWrite(existing) != expected) return GymResult.Failed(WriteFailure.Refused(
                     "this save already holds different details — reopen the saved routine to edit it"))
                 return GymResult.Ok(existing)
             }
         }
-        // A routine still on the shelf is the device's to write; the claim sends whatever it finds.
-        if (standing != null && localLog.routine(standing) != null) {
+        // A routine in a source-format fixture is edited in that fixture's local document.
+        if (standing != null && gym !is EngineTraining && localLog.routine(standing) != null) {
             val held = Routine(RoutineWrite(standing, name, draft.position, draft.write))
             localLog.hold(held)
             routines = if (gym == null) localLog.routines
@@ -1360,7 +1245,7 @@ class TrainingStore(
             if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while saving"))
             // A NEW day typed with no signal is kept on the shelf. An EDIT of the account's day
             // cannot be: the shelf's create would land it as a second routine.
-            if (standing != null || Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
+            if (log is EngineTraining || standing != null || Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
                 return GymResult.Failed(WriteFailure(refusing))
             }
             val held = keepOnDevice(write)
@@ -1374,7 +1259,7 @@ class TrainingStore(
     // reference. A routine still on the shelf leaves through `orphanRoutine`, which also drops the
     // dead id off the local sessions that would replay a start the log must refuse. A 404 is success.
     suspend fun dropRoutine(id: String): WriteFailure? {
-        if (localLog.routine(id) != null) {
+        if (gym !is EngineTraining && localLog.routine(id) != null) {
             localLog.orphanRoutine(id)
             routines = program.filterNot { it.id == id }
             return null
@@ -1521,7 +1406,7 @@ class TrainingStore(
         if (seat != owner || gym !== log) return
         val changed = program.filter { before[it.id] != it }.associateBy { it.id }
         val deleted = before.keys - program.map { it.id }.toSet()
-        val fetched = Program.overlay(written, localLog.routines).filterNot { it.id in deleted }
+        val fetched = (if (log is EngineTraining) written else Program.overlay(written, localLog.routines)).filterNot { it.id in deleted }
         routines = fetched.map { changed[it.id] ?: it } + changed.values.filter { row -> fetched.none { it.id == row.id } }
     }
 
@@ -1940,14 +1825,14 @@ class TrainingStore(
             return GymResult.Failed(WriteFailure.Refused("check the movement name and equipment"))
         }
         val write = ExerciseWrite(id, named, Exercise.unclassified, equipment)
-        if (localLog.exercises.any { it.id == write.id }) return createOnDevice(write)
+        if (gym !is EngineTraining && localLog.exercises.any { it.id == write.id }) return createOnDevice(write)
         val seat = owner
         val log = gym ?: return createOnDevice(write)
         return try {
             val made = log.createExercise(write)
             if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
             catalog = catalog.filterNot { it.id == made.id } + made
-            deviceCopy.hold(owner, catalog)
+            if (log !is EngineTraining) deviceCopy.hold(owner, catalog)
             if (made.id != write.id || made.name != write.name || made.equipment != write.equipment || made.pattern != write.pattern) {
                 return GymResult.Failed(WriteFailure.Refused("already saved as ${made.name} (${made.equipment}) — choose it from the movement list"))
             }
@@ -1957,7 +1842,7 @@ class TrainingStore(
         } catch (refusing: Exception) {
             reportFailure("gym.create", refusing)
             if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("the account changed while creating"))
-            if (Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
+            if (log is EngineTraining || Verdict.refusing(RefusalFacts(refusing)) !is Verdict.Retry) {
                 return GymResult.Failed(WriteFailure(refusing))
             }
             val result = createOnDevice(write)
@@ -1966,7 +1851,7 @@ class TrainingStore(
         }
     }
 
-    // The same identity survives an accepted write whose reply was lost; claim replays it once.
+    // Source-format fixtures retain an exercise under its original identity.
     private suspend fun createOnDevice(write: ExerciseWrite): GymResult<Exercise> {
         localLog.exercises.firstOrNull { it.id == write.id }?.let { existing ->
             if (existing.name != write.name || existing.equipment != write.equipment || existing.pattern != write.pattern) {
@@ -1980,18 +1865,26 @@ class TrainingStore(
         catalog = catalog.filterNot { it.id == made.id } + made
         deviceCopy.hold(owner, catalog)
         if (gym != null) {
-            claimOwed = true
             deliver()
         }
         return GymResult.Ok(made)
     }
 
-    // Held on the device FIRST, so the screen obeys it on the next frame whether or not the log
-    // is reachable. A whole-document PUT whose reply is the STORED document rather than the send.
+    // The local commit controls the next frame; domain drafts preserve fields owned by other surfaces.
     suspend fun savePreferences(document: GymPreferences): WriteFailure? {
         if (!workoutAuthorized) return WriteFailure.Refused(accountChanged)
         val seat = owner
         val log = gym
+        if (log is EngineTraining) return preferencesWrite.withLock {
+            try {
+                val saved = log.savePreferences(document)
+                if (!workoutAuthorized || seat != owner || gym !== log) return@withLock WriteFailure.Refused(accountChanged)
+                preferences = saved
+                refreshWorkout()
+                null
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.savePreferences", failure); WriteFailure(failure) }
+        }
         try { localPreferences.save(document) }
         catch (error: Exception) {
             reportFailure("gym.savePreferences", error)
@@ -2026,6 +1919,7 @@ class TrainingStore(
     }
 
     fun clearRefusals() {
+        (gym as? EngineTraining)?.dismissRefusals()
         refusals = emptyList()
     }
 
@@ -2036,6 +1930,12 @@ class TrainingStore(
         if (bodyweightLoading) return
         val seat = owner
         val log = gym
+        if (log is EngineTraining) {
+            series = log.bodyweight()
+            bodyweightRead = log.anonymous || log.firstPullComplete || series.isNotEmpty()
+            bodyweightFailure = null
+            return
+        }
         if (log == null) {
             series = localBodyweight.entries
             bodyweightRead = true
@@ -2077,6 +1977,17 @@ class TrainingStore(
         val log = gym
         dropWithheld(dateLocal)
         bodyweightRevision += 1
+        if (log is EngineTraining) return bodyweightWrite.withLock {
+            try {
+                val previous = series.firstOrNull { it.dateLocal == dateLocal }
+                log.putBodyweight(dateLocal, WeighInWrite(weightKg, maxOf(now(), (previous?.recordedAt ?: -1) + 1)))
+                if (seat != owner || gym !== log) return@withLock WriteFailure.Refused(accountChanged)
+                series = log.bodyweight()
+                bodyweightRead = true
+                null
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.weighIn", failure); WriteFailure(failure) }
+        }
         val previous = localBodyweight.entries.firstOrNull { it.dateLocal == dateLocal }
         val previousOwed = localBodyweight.owed.any { it.dateLocal == dateLocal }
         val recorded = localBodyweight.record(WeighIn(dateLocal, weightKg,
@@ -2103,7 +2014,6 @@ class TrainingStore(
                 reportFailure("gym.weighIn", refusing)
                 if (seat != owner || gym !== log) return@withLock WriteFailure.Refused("The account changed while saving.")
                 if (Verdict.refusing(RefusalFacts(refusing)) is Verdict.Retry) {
-                    claimOwed = true
                     scheduleDeliver(afterMs = retryAfterMs)
                     return@withLock null
                 }
@@ -2123,6 +2033,13 @@ class TrainingStore(
         val seat = owner
         val log = gym
         bodyweightRevision += 1
+        if (log is EngineTraining) {
+            bodyweightWrite.withLock {
+                tried("gym.deleteWeighIn") { log.deleteBodyweight(dateLocal) }
+                if (seat == owner && gym === log) series = log.bodyweight()
+            }
+            return
+        }
         localBodyweight.delete(dateLocal)
         val revision = localBodyweight.revision(dateLocal)
         series = localBodyweight.entries
@@ -2135,7 +2052,6 @@ class TrainingStore(
                 if (revision == localBodyweight.revision(dateLocal)) localBodyweight.deletionLanded(dateLocal)
             }
             else {
-                claimOwed = true
                 scheduleDeliver(afterMs = retryAfterMs)
             }
         }
@@ -2151,7 +2067,6 @@ class TrainingStore(
             progressLoading = true
             progressFailure = null
             try {
-                if (log != null) claimIdle.await()
                 if (seat != owner || gym !== log) return@withLock GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
                 var revision: Long
                 var read: StatsProgress
@@ -2184,7 +2099,7 @@ class TrainingStore(
     // Computed by the DOMAIN and read here, never re-derived. For a session only the shelf holds it
     // runs on the device: no record and no comparison, which need the log's whole history.
     suspend fun review(of: String): Review? {
-        localLog.detail(of)?.let { return Review.of(it) }
+        shelfDetail(of)?.let { return Review.of(it) }
         val log = gym ?: return null
         val seat = owner
         val result = tried("gym.review") { log.review(of) }
@@ -2194,7 +2109,7 @@ class TrainingStore(
     // Off the shelf when only the shelf holds it, otherwise off the log.
     suspend fun sessionDetail(sessionId: String, seed: SessionDetail? = null): GymResult<SessionDetail> {
         val seat = owner
-        localLog.detail(sessionId)?.let { return GymResult.Ok(it) }
+        shelfDetail(sessionId)?.let { return GymResult.Ok(it) }
         val log = gym
             ?: return GymResult.Failed(WriteFailure.Refused("that session is on your account — sign in to read it"))
         if (seed != null && seed.session.id == sessionId && !seed.session.isOpen && closedDetails[sessionId] == null) retainClosed(seed)
@@ -2239,11 +2154,19 @@ class TrainingStore(
             if (!workoutAuthorized || seat != owner || gym !== log) return@withLock FixOutcome.Failed(
                 WriteFailure.Refused("the account changed while fixing"))
             val currentSession = closedDetails[sessionId]?.session?.id ?: sessionId
-            if (localLog.row(currentSession) != null) {
-                val corrected = localLog.fixSet(currentSession, currentSet, fix)
+            shelfDetail(currentSession)?.let { detail ->
+                val corrected = detail.sets.firstOrNull { it.id == currentSet }?.let(fix::corrected)
                     ?: return@withLock FixOutcome.Gone("that set is no longer on this device")
-                claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, corrected))
-                shelved = localLog.summaries()
+                val engine = log as? EngineTraining
+                if (engine == null) localLog.fixSet(currentSession, currentSet, fix) else {
+                    val deleted = LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == currentSession }?.deletedSetIds
+                        ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
+                    LegacyGymMigration.replaceAndRetry(engine.engine, currentSession, LocalLog.FinishedSession(detail.session,
+                        detail.sets.map { if (it.id == currentSet) corrected else it }, deleted),
+                        correctedKinds = if (fix.kind != null) setOf(currentSet) else emptySet())
+                }
+                changedSet(currentSession, currentSet, corrected)
+                shelved = legacyShelf()
                 return@withLock FixOutcome.Corrected(corrected)
             }
             if (log == null) return@withLock FixOutcome.Failed(
@@ -2252,7 +2175,7 @@ class TrainingStore(
                 val stored = log.fixSet(currentSession, currentSet, fix)
                 if (!workoutAuthorized || seat != owner || gym !== log) return@withLock FixOutcome.Failed(
                     WriteFailure.Refused("the account changed while fixing"))
-                claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, stored))
+                changedSet(currentSession, currentSet, stored)
                 rereadRow(currentSession)
                 if (!workoutAuthorized || seat != owner || gym !== log) return@withLock FixOutcome.Failed(
                     WriteFailure.Refused("the account changed while fixing"))
@@ -2283,7 +2206,7 @@ class TrainingStore(
             if (queue.isUnsent(currentSet)) queue.drop(currentSet) else queue.delete(currentSet)
             drawFromQueue()
             deletedSets = deletedSets + currentSet
-            claimChanged(ClaimReplay.Change.SetChanged(live.id, currentSet, null))
+            changedSet(live.id, currentSet, null)
             scope.launch { deliver() }
             return null
         }
@@ -2292,11 +2215,19 @@ class TrainingStore(
         return delivery.withLock {
             if (!workoutAuthorized || seat != owner || gym !== log) return@withLock WriteFailure.Refused("the account changed while deleting")
             val currentSession = closedDetails[sessionId]?.session?.id ?: sessionId
-            if (localLog.row(currentSession) != null) {
-                if (localLog.deleteSet(currentSession, currentSet)) {
+            shelfDetail(currentSession)?.let { detail ->
+                val engine = log as? EngineTraining
+                val changed = if (engine == null) localLog.deleteSet(currentSession, currentSet) else {
+                    val deleted = LegacyGymMigration.refusals(engine.engine).firstOrNull { it.id == currentSession }?.deletedSetIds
+                        ?: LegacyGymMigration.pendingFinished(engine.engine).firstOrNull { it.session.id == currentSession }?.deleted.orEmpty()
+                    LegacyGymMigration.replaceAndRetry(engine.engine, currentSession, LocalLog.FinishedSession(detail.session,
+                        detail.sets.filterNot { it.id == currentSet }, (deleted + currentSet).distinct()))
+                    detail.sets.any { it.id == currentSet }
+                }
+                if (changed) {
                     deletedSets = deletedSets + currentSet
-                    shelved = localLog.summaries()
-                    claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, null))
+                    shelved = legacyShelf()
+                    changedSet(currentSession, currentSet, null)
                 }
                 return@withLock null
             }
@@ -2311,7 +2242,7 @@ class TrainingStore(
             }
             if (!workoutAuthorized || seat != owner || gym !== log) return@withLock WriteFailure.Refused("the account changed while deleting")
             deletedSets = deletedSets + currentSet
-            claimChanged(ClaimReplay.Change.SetChanged(currentSession, currentSet, null))
+            changedSet(currentSession, currentSet, null)
             rereadRow(currentSession)
             null
         }
@@ -2325,8 +2256,7 @@ class TrainingStore(
         val seat = owner
         val at = logged.indexOfFirst { it.id == sessionId }
         if (at < 0) return
-        // One row is still the log read, and the log read settles: not mid-claim.
-        claimIdle.await()
+        // Refresh the affected row after its correction commits.
         if (seat != owner || gym !== log) return
         val above = logged.getOrNull(at - 1)
         val fresh = tried("gym.rereadRow") { log.sessions(limit = 1, before = above?.startedAtMs, beforeId = above?.id) }
@@ -2343,24 +2273,7 @@ class TrainingStore(
     // same row must take the first one's clock down with it: a clock left running would settle the
     // NEW window early, with its Undo still on the screen.
     fun withhold(deletion: Deletion) {
-        val batch = if (deletion == Deletion.Unattributed) localDataBatch ?: return else null
-        if (batch != null) {
-            consentDecision += 1
-            claimBusy = false
-            try {
-                val journal = checkNotNull(consent)
-                val decision = journal.state
-                check(decision !is ClaimConsent.Approved && decision !is ClaimConsent.Discarding) {
-                    "This local-data decision is already being completed."
-                }
-                if (decision is ClaimConsent.AwaitingSignIn) journal.complete(decision.batch.id)
-            } catch (failure: Exception) {
-                reportFailure("gym.withhold", failure)
-                consentFailure = failure.message ?: "The local-data decision could not be saved."
-                return
-            }
-        }
-        val open = WithheldDelete(deletion, untilMs = now() + undoWindowMs, claimBatch = batch)
+        val open = WithheldDelete(deletion, untilMs = now() + undoWindowMs)
         withheld = withheld.filterNot { it.subjectId == open.subjectId } + open
         armDelete(open)
     }
@@ -2452,7 +2365,7 @@ class TrainingStore(
         withheld = withheld.map { if (it.subjectId == subjectId) it.copy(sent = true) else it }
         val seat = owner
         val log = gym
-        val failed = send(settling.deletion, settling.claimBatch)
+        val failed = send(settling.deletion)
         if (seat != owner || gym !== log) return failed
         val currentId = setIds[subjectId] ?: closedDetails[subjectId]?.session?.id ?: subjectId
         withheld = withheld.filterNot { it.subjectId == currentId && it.untilMs == settling.untilMs }
@@ -2466,8 +2379,8 @@ class TrainingStore(
     // The seven verbs behind one window, and they share no shape: a set leaves through the shelf or
     // the wire, a device-held routine through `orphanRoutine`, a conversation and a note are
     // server-only, a session's own discard answers with a bool, and the last two land on this device
-    // and owe the log a claim rather than a refusal.
-    private suspend fun send(deletion: Deletion, batch: ClaimBatch? = null): WriteFailure? = when (deletion) {
+    // and remain recoverable from their archived source.
+    private suspend fun send(deletion: Deletion): WriteFailure? = when (deletion) {
         is Deletion.Set -> deleteSet(deletion.sessionId, deletion.set.id)
         is Deletion.Routine -> dropRoutine(deletion.routineId)
         is Deletion.Thread -> (deleteThread(deletion.threadId) as? GymResult.Failed)?.why
@@ -2477,19 +2390,6 @@ class TrainingStore(
         is Deletion.Bodyweight -> {
             deleteWeighIn(deletion.dateLocal)
             null
-        }
-        Deletion.Unattributed -> {
-            try {
-                discardUnattributed(checkNotNull(batch))
-                seated?.let { connect(it) }
-                null
-            } catch (failure: Exception) {
-                reportFailure("gym.send", failure)
-                if (failure is CancellationException) throw failure
-                blockedConsentSeat = "unknown"
-                consentFailure = failure.message ?: "The local-data decision could not be saved."
-                WriteFailure.Refused(checkNotNull(consentFailure))
-            }
         }
     }
 
@@ -2501,7 +2401,6 @@ class TrainingStore(
         val seat = owner
         val log = gym ?: return
         older = Older.Loading
-        claimIdle.await()
         if (seat != owner || gym !== log) return
         deliver()
         if (seat != owner || gym !== log) return
@@ -2518,7 +2417,7 @@ class TrainingStore(
 
     // Nothing is held: the store keeps no copy to invalidate. Signed out the domain runs over the
     // shelf's own finished sessions. Signed in the log's answer stands ALONE and the shelf is not
-    // merged into it, or one aggregate would mix claimed and unclaimed rows.
+    // merged into it, so a strict refusal cannot change aggregate history.
     suspend fun record(exerciseId: String): GymResult<MovementRecord> {
         val seat = owner
         val log = gym
@@ -2527,9 +2426,8 @@ class TrainingStore(
                 ?: return GymResult.Failed(WriteFailure.Refused("that movement is not on this device"))
             return GymResult.Ok(MovementRecord.of(movement, localLog.details(), program))
         }
-        // The record read SETTLES a stale open session: it waits for a mid-replay claim to end and
+        // The record read includes the engine's projected stale-session closure and
         // drains the queue first.
-        claimIdle.await()
         if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
         deliver()
         if (seat != owner || gym !== log) return GymResult.Failed(WriteFailure.Refused("The account changed while reading."))
@@ -2551,16 +2449,16 @@ class TrainingStore(
     // out. A movement still on the shelf is the device's to rename; anything else is the log's.
     //
     // Whether the old name keeps finding this movement: the alias is a row on the ACCOUNT, so a
-    // movement this device minted and no claim has carried has no alias table.
+    // anonymous movement keeps the signed-out naming promise.
     fun renameKeepsAnAlias(exerciseId: String): Boolean =
-        gym != null && localLog.exercises.none { it.id == exerciseId }
+        gym != null && (if (gym is EngineTraining) owner != null else localLog.exercises.none { it.id == exerciseId })
 
     suspend fun rename(exerciseId: String, to: String): GymResult<Exercise> {
         val seat = owner
         val writer = gym
         val name = to.trim()
         Program.nameProblem(to)?.let { return GymResult.Failed(WriteFailure.Refused(it)) }
-        val renamed = localLog.renameExercise(exerciseId, name) ?: run {
+        val renamed = (if (writer is EngineTraining) null else localLog.renameExercise(exerciseId, name)) ?: run {
             val log = gym ?: return GymResult.Failed(
                 WriteFailure.Refused("renaming a catalog movement needs your account — sign in first"))
             try {
@@ -2576,7 +2474,7 @@ class TrainingStore(
         invalidateProgress()
         // Held under the seat that renamed it: the override belongs to this account.
         catalog = catalog.map { if (it.id == renamed.id) renamed else it } + listOfNotNull(renamed.takeIf { catalog.none { old -> old.id == it.id } })
-        deviceCopy.hold(owner, catalog)
+        if (writer !is EngineTraining) deviceCopy.hold(owner, catalog)
         return GymResult.Ok(renamed)
     }
 
@@ -2612,7 +2510,7 @@ class TrainingStore(
     // One pass over what is owed, per (session, movement) lane, so a set that cannot land holds up
     // its own lane and nothing else.
     private suspend fun deliver() {
-        if (consentRecoveryBlocked) return
+        if ((gym as? EngineTraining)?.let { queue.engineReplica != it.engine.activeReplica() } == true) return
         val seat = owner
         val log = gym
         var reread = false
@@ -2621,7 +2519,8 @@ class TrainingStore(
             retryTask?.cancel()
             retryTask = null
             if (queue.pending.isEmpty()) {
-                // An owed claim keeps the cadence armed even with no set to walk.
+                if (log is EngineTraining) drawFromQueue()
+                // A pending source-format preference keeps this retry scheduled.
                 if (cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
                 return@withLock
             }
@@ -2649,7 +2548,7 @@ class TrainingStore(
                         Owed.Fix -> {
                             val stored = log.fixSet(sent.sessionId, sent.set.id, SetFix(sent.set))
                             if (seat != owner || gym !== log) return@withLock
-                            if (queue.fixed(stored, sent)) claimChanged(ClaimReplay.Change.SetChanged(sent.sessionId, sent.set.id, stored))
+                            if (queue.fixed(stored, sent)) changedSet(sent.sessionId, sent.set.id, stored)
                         }
                         Owed.Delete -> {
                             log.deleteSet(sent.sessionId, sent.set.id)
@@ -2738,7 +2637,7 @@ class TrainingStore(
 
             // The next attempt is scheduled off the queue BEFORE anything is said, or a refusal in one
             // lane takes the retry away from a set merely jammed in another. Parked sets schedule
-            // nothing: the claim is their road.
+            // nothing: their archived operation remains the recovery source.
             val carried = queue.pending.filter { it.sessionId != parked }
             if (carried.isNotEmpty() || cadenceOwed) scheduleDeliver(afterMs = retryAfterMs)
             if (refusal != null) {
@@ -2749,12 +2648,12 @@ class TrainingStore(
                 settle(SaveState.Blocked(blockedBy ?: Blocker.LogFailed))
                 return@withLock
             }
-            settle(if (queue.pending.isEmpty()) SaveState.OnTheLog else SaveState.OnThisDevice)
+            settle(if (log is EngineTraining) saveState else if (queue.pending.isEmpty()) SaveState.OnTheLog else SaveState.OnThisDevice)
         }
         if (reread && seat == owner && gym === log) loadLog()
     }
 
-    // Carries what is still owed: the retry after a failure and the claim's own re-run, both in the
+    // Carries what is still owed after a failed local or injected boundary write, in the
     // application scope.
     private fun scheduleDeliver(afterMs: Long) {
         retryTask?.cancel()
@@ -2763,130 +2662,69 @@ class TrainingStore(
             // Let go of the handle BEFORE the walk: `deliver` cancels whatever send is pending, and a
             // walk still holding its own task would cancel itself.
             retryTask = null
-            if (reclaimed()) return@launch
+            flushMirrors()
             deliver()
         }
     }
 
-    // One door for every runner, and never two abreast: a request landing mid-replay marks the claim
-    // owed again and the running pass goes once more when it ends. A retryable stop leaves the claim
-    // owed to the deliver task; a WAIT and a terminal refusal wait for the next connect. A pass that
-    // outlived its seat settles nothing.
-    private suspend fun runClaim() {
-        if (consentRecoveryBlocked) return
-        claimAgain = true
-        if (claiming) return
-        claimsRunning += 1
-        val idle = CompletableDeferred<Unit>()
-        claimIdle = idle
-        try {
-            while (claimAgain) {
-                claimAgain = false
-                val seat = gym ?: return
-                val outcome = try { replay(seat).run() } catch (_: ClaimReplay.SeatChanged) { continue }
-                if (gym !== seat) continue
-                // A live start the log refuses is said again on every pass; the banner holds one copy.
-                refusals = refusals + outcome.said.filter { it !in refusals }
-                claimOwed = outcome.retryable
-                // A landed claim answers with the STORED settings, so the room draws what the account
-                // now holds rather than what it sent.
-                preferences = localPreferences.document
-                series = localBodyweight.entries
-                drawFromQueue()
-            }
-        } finally {
-            claimsRunning -= 1
-            idle.complete(Unit)
-        }
-    }
-
-    // One argument list, so the cadence's send and the sign-in's walk cannot be handed different
-    // collaborators.
-    private fun replay(log: TrainingSyncing): ClaimReplay {
+    private suspend fun flushMirrors() {
+        val log = gym ?: return
+        if (log is EngineTraining) return
         val seat = owner
-        return ClaimReplay(log, localLog, queue, localPreferences, localBodyweight,
-            mintExercise, mintRoutine, mintSession, mintSet,
-            isCurrent = { seat == owner && gym === log }, onChange = ::claimChanged, bodyweightWrite = bodyweightWrite, preferencesWrite = preferencesWrite, telemetry = telemetry)
+        fun current() = owner == seat && gym === log
+        preferencesWrite.withLock {
+            if (!current() || !localPreferences.owed) return@withLock
+            val document = localPreferences.document
+            val revision = localPreferences.revision
+            try {
+                val stored = log.savePreferences(document)
+                if (current() && revision == localPreferences.revision) localPreferences.landed(stored)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                reportFailure("gym.savePreferences", failure)
+                if (current() && revision == localPreferences.revision && Verdict.refusing(RefusalFacts(failure)) !is Verdict.Retry) {
+                    refusals = refusals + RefusedClaim("preferences", "your gym settings", RefusalFacts(failure).sentence ?: "the log refused these settings")
+                    localPreferences.letGo()
+                }
+            }
+            if (current()) preferences = localPreferences.document
+        }
+        for (date in localBodyweight.owed.map { it.dateLocal }) bodyweightWrite.withLock {
+            if (!current()) return@withLock
+            val owed = localBodyweight.owed.firstOrNull { it.dateLocal == date } ?: return@withLock
+            val revision = localBodyweight.revision(date)
+            try {
+                val stored = log.putBodyweight(date, WeighInWrite(owed.weightKg, owed.recordedAt))
+                if (stored.dateLocal != date) throw WindmillApiException.Malformed
+                if (current() && revision == localBodyweight.revision(date)) localBodyweight.landed(stored)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.weighIn", failure) }
+        }
+        for (date in localBodyweight.deletions.toList()) bodyweightWrite.withLock {
+            if (!current() || date !in localBodyweight.deletions) return@withLock
+            val revision = localBodyweight.revision(date)
+            try {
+                log.deleteBodyweight(date)
+                if (current() && revision == localBodyweight.revision(date)) localBodyweight.deletionLanded(date)
+            } catch (cancelled: CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportFailure("gym.deleteWeighIn", failure) }
+        }
+        if (current()) series = localBodyweight.entries
     }
 
-    private fun claimChanged(change: ClaimReplay.Change) {
+    private fun changedSet(sessionId: String, oldId: String, set: TrainingSet?) {
         invalidateProgress()
-        when (change) {
-            is ClaimReplay.Change.SessionMoved -> {
-                closedDetails = closedDetails.mapValues { (_, detail) ->
-                    if (detail.session.id == change.oldId) detail.copy(session = change.session) else detail
-                }
-                withheld.toList().forEach { held ->
-                    val deletion = when (val current = held.deletion) {
-                        is Deletion.Set -> current.takeIf { it.sessionId == change.oldId }
-                            ?.copy(sessionId = change.session.id)
-                        is Deletion.Session -> current.takeIf { it.sessionId == change.oldId }
-                            ?.copy(sessionId = change.session.id)
-                        else -> null
-                    } ?: return@forEach
-                    clocks.remove(held.subjectId)?.cancel()
-                    val updated = held.copy(deletion = deletion)
-                    withheld = withheld.map { if (it == held) updated else it }
-                    armDelete(updated)
-                }
-            }
-            is ClaimReplay.Change.SetChanged -> {
-                changeHeldSet(change.sessionId, change.oldId, change.set)
-                closedDetails = closedDetails.mapValues { (_, detail) ->
-                    if (detail.session.id != change.sessionId) detail
-                    else detail.copy(sets = detail.sets.mapNotNull {
-                        if (it.id == change.oldId) change.set else it
-                    })
-                }
-            }
-            is ClaimReplay.Change.SessionRefused -> {
-                closedFailures = closedFailures + (change.sessionId to WriteFailure.Refused(change.reason))
-                withheld.filter { held ->
-                    when (val deletion = held.deletion) {
-                        is Deletion.Set -> deletion.sessionId == change.sessionId
-                        is Deletion.Session -> deletion.sessionId == change.sessionId
-                        else -> false
-                    }
-                }.forEach { held ->
-                    clocks.remove(held.subjectId)?.cancel()
-                    withheld = withheld - held
-                }
-            }
-            is ClaimReplay.Change.Closed -> {
-                if (closedDetails.values.any { it.session.id == change.detail.session.id }) retainClosed(change.detail)
-            }
+        enginePendingSessions = (gym as? EngineTraining)?.pendingSessionIds().orEmpty()
+        changeHeldSet(sessionId, oldId, set)
+        closedDetails = closedDetails.mapValues { (_, detail) ->
+            if (detail.session.id != sessionId) detail
+            else detail.copy(sets = detail.sets.mapNotNull { if (it.id == oldId) set else it })
         }
-    }
-
-    // The walk follows the claim exactly as connect's does, the queue going out before any read, and
-    // a claim that stopped being owed re-reads the log. A settings document owed on its own takes the
-    // short road.
-    private suspend fun reclaimed(): Boolean {
-        if (claiming) return false
-        val seat = gym ?: return false
-        if (!claimOwed) {
-            if (!localPreferences.owed) return false
-            val said = try { replay(seat).runPreferences() } catch (_: ClaimReplay.SeatChanged) { return true }
-            // The seat changed while the PUT was in the air: that seat's own connect owns the state.
-            if (gym !== seat) return true
-            refusals = refusals + said.filter { it !in refusals }
-            preferences = localPreferences.document
-            deliver()
-            return true
-        }
-        runClaim()
-        deliver()
-        if (!claimOwed) loadLog()
-        return true
     }
 
     private suspend fun loadLog() {
         if (!workoutAuthorized) return
-        // Never mid-claim, and checked again across the await: the open session a mid-replay log
-        // answers with may be a PAST one the claim just reopened, and the read would SETTLE it. It
-        // stands down rather than awaiting `claimIdle`, because a local finish that calls it must not
-        // block on a replay already walking the shelf.
-        if (claiming) return
+        // Owner and read revision checks prevent an older refresh from replacing current work.
         val seat = owner
         val log = gym ?: return
         val live = queue.session?.id
@@ -2898,7 +2736,6 @@ class TrainingStore(
             older = Older.Failed
             return
         }
-        if (claiming) return
         // A re-read is of the HEAD and does not undo a walk: it can land while a thumb is halfway down
         // the log. The fresh page is authoritative over the span it covers, and every row OLDER than
         // its last one survives, keyed on both halves of the cursor.
@@ -2909,7 +2746,7 @@ class TrainingStore(
         }
         logged = page + deeper
         invalidateProgress()
-        shelved = localLog.summaries()
+        shelved = legacyShelf()
         // The foot is about the deepest row in hand, so it is recomputed only when this page IS the
         // whole of what is held.
         if (deeper.isEmpty()) older = if (page.size < logPage) Older.End else Older.More
@@ -2945,6 +2782,11 @@ class TrainingStore(
             if (!workoutAuthorized || seat != owner || gym !== log || queue.session?.id != opened.id ||
                 readRevision != null && readRevision != logReadRevision) return
             if (detail != null) {
+                if (log is EngineTraining) {
+                    val kept = detail.sets.mapTo(mutableSetOf()) { it.id }
+                    val pending = queue.pending.mapTo(mutableSetOf()) { it.set.id }
+                    for (set in queue.sets(opened.id)) if (set.id !in kept && set.id !in pending) queue.drop(set.id)
+                }
                 queue.hold(detail.session)
                 for (set in detail.sets) queue.store(set, detail.session.id, needsPush = false)
             }
@@ -2965,6 +2807,7 @@ class TrainingStore(
     // routine says with nothing on the wire. The account's rows keep their place and the shelf's go
     // last, the order `connect` composes.
     private fun redrawShelfRoutines() {
+        if (gym is EngineTraining) return
         val mine = localLog.routines
         routines = Program.overlay(program, mine)
     }
@@ -2982,10 +2825,31 @@ class TrainingStore(
         order = merged
         exerciseId = queue.chosenMovement ?: exerciseId?.takeIf { it in merged }
         // The stalled rows, counted off the queue and never off `saveState`. Signed out nothing is
-        // stranded; a set owed to the phone's own unclaimed session is the claim's, not the logger's.
+        // stranded; a legacy start's parked entries remain in its source document.
         val stalledIds = stalled
         val parked = if (liveUnclaimed) session?.id else null
-        strandedCount = if (gym == null) 0 else queue.pending.count { it.set.id in stalledIds && it.sessionId != parked }
+        val engine = gym as? EngineTraining
+        enginePendingSessions = engine?.pendingSessionIds().orEmpty()
+        if (engine == null) strandedCount = if (gym == null) 0 else queue.pending.count { it.set.id in stalledIds && it.sessionId != parked }
+        else {
+            strandedCount = if (engine.anonymous) 0 else sets.count { it.id in stalledIds }
+            val status = engine.engine.status.state.value
+            val blocker = when {
+                status.authPaused -> Blocker.SignInLapsed
+                !status.online -> Blocker.Offline
+                else -> engine.deliveryBlocker
+            }
+            strandedBy = if (strandedCount == 0) null else blocker
+            val waiting = enginePendingSessions.isNotEmpty() || queue.pending.isNotEmpty()
+            val state = when {
+                waiting && !engine.anonymous && blocker != null -> SaveState.Blocked(blocker)
+                waiting -> SaveState.OnThisDevice
+                refusals.isNotEmpty() -> SaveState.Refused(refusals.first().reason)
+                engine.anonymous -> SaveState.Idle
+                else -> SaveState.OnTheLog
+            }
+            if (state != saveState) settle(state)
+        }
         redial()
     }
 

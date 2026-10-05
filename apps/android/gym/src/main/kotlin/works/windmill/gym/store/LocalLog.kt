@@ -51,8 +51,6 @@ class LocalLog(private val file: File, deviceOwner: String? = null, telemetry: T
         const val fileName = "windmill-gym-local.json"
     }
 
-    internal val claimConsentFile: File get() = File(file.absoluteFile.parentFile, LocalClaimConsent.fileName)
-
     private val storage = StoredDocument(file, telemetry)
     private var transferFailed = false
     private var seat: String = Seat.of(deviceOwner)

@@ -47,6 +47,7 @@ fun YouSheet(
     var form by rememberSaveable(flowId, startSignIn) { mutableStateOf(startSignIn) }
     var busy by remember(auth, flowId) { mutableStateOf(false) }
     var closing by remember(auth, flowId) { mutableStateOf(false) }
+    var refusal by remember(auth, flowId) { mutableStateOf<String?>(null) }
     val identity = remember(auth, flowId) { Any() }
     val currentIdentity by rememberUpdatedState(identity)
     val formState = rememberSaveableStateHolder()
@@ -89,6 +90,7 @@ fun YouSheet(
                     Text("You", style = WindmillFont.body(26, FontWeight.Bold).copy(lineHeight = 36.sp), color = palette.ink)
                     auth.status.user?.let { Text(it.email, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = palette.inkDim) }
                     Text("One account across Windmill.", style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = palette.inkDim)
+                    refusal?.let { Text(it, style = WindmillFont.body(14), color = palette.noticeInk) }
                     destinations.forEach { destination ->
                         key(destination.id) {
                             Row(Modifier.fillMaxWidth().heightIn(min = 64.dp)
@@ -108,9 +110,15 @@ fun YouSheet(
                     else {
                         busy = true
                         scope.launch {
-                            try { auth.signOut() }
+                            var signedOut = false
+                            try { auth.signOut(); signedOut = true }
+                            catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                            catch (failure: Exception) {
+                                auth.telemetry.failure("auth_sign_out", failure)
+                                if (currentIdentity === identity) refusal = "Sign-out could not be saved. Your work is still on this phone. Try again."
+                            }
                             finally { if (currentIdentity === identity) busy = false }
-                            if (currentIdentity === identity) dismiss()
+                            if (signedOut && currentIdentity === identity) dismiss()
                         }
                     }
                 }, enabled = !busy && !closing,

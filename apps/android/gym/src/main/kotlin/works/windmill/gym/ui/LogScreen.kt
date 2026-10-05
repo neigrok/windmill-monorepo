@@ -65,7 +65,7 @@ fun LogScreen(
     val scope = rememberCoroutineScope()
     val nowMs = now()
     val zone = ZoneId.systemDefault()
-    val onThisDevice = store.shelved.map { it.id }.toSet()
+    val onThisDevice = store.deviceOnlySessionIds
     val progress = store.progress.takeIf { store.progressFailure == null }
     val oldestDay = if (store.older == Older.End) null else {
         store.allSessions.minOfOrNull { it.startedAtMs }

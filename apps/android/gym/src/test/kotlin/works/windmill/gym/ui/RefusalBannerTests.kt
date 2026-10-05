@@ -15,7 +15,7 @@ class RefusalBannerTests {
             refusalHeadline(RefusedSet(id = "set_a", exerciseId = "bench-press", weightKg = 82.5,
                 reps = 5, reason = "the session closed before this set reached it"), catalog))
 
-        assertEquals("“Push Day” couldn’t be claimed",
+        assertEquals("“Push Day” stays on this phone",
             refusalHeadline(RefusedClaim(id = "rt_push", name = "Push Day", reason = "that document is unclaimable"), catalog))
     }
 }

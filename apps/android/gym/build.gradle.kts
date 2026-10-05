@@ -37,6 +37,10 @@ kotlin {
 
 dependencies {
     implementation(project(":platform"))
+    implementation(project(":sync-engine"))
+    implementation(project(":sync-schema"))
+    implementation(project(":domain-kit"))
+    implementation(project(":gym:domain"))
     implementation(libs.kotlinx.serialization.json)
     // BackHandler — the room decides what the system back gesture means on its own screens.
     implementation(libs.androidx.activity.compose)
@@ -44,6 +48,7 @@ dependencies {
     testImplementation(libs.junit)
     testImplementation(libs.okhttp.mockwebserver)
     testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(project(":sync-model-server"))
     testImplementation(platform(libs.compose.bom))
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.compose.ui.test.manifest)

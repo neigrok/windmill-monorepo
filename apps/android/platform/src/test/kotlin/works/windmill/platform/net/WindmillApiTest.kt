@@ -29,6 +29,20 @@ private data class Wire(val value: String)
 class WindmillApiTest {
     private val server = MockWebServer()
 
+    @Test fun retiredClientKeepsItsWorkAndExplainsTheRequiredUpdate() = runTest {
+        server.enqueue(MockResponse().setResponseCode(410).setBody("""{"error":"client-update-required"}"""))
+        val events = mutableListOf<Pair<String, Map<String, String>>>()
+        val api = WindmillApi(server.url("/"), credential = { null }, telemetry = object : Telemetry {
+            override fun event(name: String, properties: Map<String, String>) { events += name to properties }
+            override fun failure(operation: String, error: Throwable, properties: Map<String, String>) { fail("Retirement is an expected refusal") }
+        })
+        val failure = runCatching { api.send<Unit>("POST", "/v1/gym/sessions") }.exceptionOrNull() as WindmillApiException.Refused
+        assertEquals(410, failure.status)
+        assertEquals("Update Windmill to keep syncing. Your work is saved on this phone.", failure.line)
+        assertTrue(ClientUpdate.required.value)
+        assertTrue(events.contains("client_update_required" to mapOf("state" to "required", "status" to "410")))
+    }
+
     @Before
     fun start() {
         server.start()

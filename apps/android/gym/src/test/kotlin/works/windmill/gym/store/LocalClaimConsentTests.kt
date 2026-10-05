@@ -1,138 +1,67 @@
 package works.windmill.gym.store
 
 import java.io.File
-import works.windmill.platform.storage.AtomicDocument
-import java.io.IOException
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
-import works.windmill.gym.domain.ClaimBatch
-import works.windmill.gym.domain.ClaimConsent
-import works.windmill.gym.domain.ClaimItem
-import works.windmill.gym.domain.ClaimKind
-import works.windmill.gym.domain.ClaimSource
+import works.windmill.gym.domain.*
+import works.windmill.sync.core.Json
+import works.windmill.sync.engine.EngineCrash
+import works.windmill.sync.engine.signIn
 
 class LocalClaimConsentTests {
     @get:Rule val tmp = TemporaryFolder()
+    private fun batch() = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Queue, "session01", "a".repeat(64), "{\"sets\":[\"set00001\"]}", 123, true)))
 
-    @Test
-    fun theExactSignInSnapshotAndOwnerSurviveFreshInstances() {
-        val file = File(tmp.root, "consent.json")
-        val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Queue, "s1", "a".repeat(64), "{\"sets\":[\"set-1\"]}", 123, true)))
-        val store = LocalClaimConsent(file)
-        assertNull(store.state)
-        store.requestSignIn(batch, "flow-1")
-        val reopened = LocalClaimConsent(file)
-        assertEquals(ClaimConsent.AwaitingSignIn(batch, "flow-1"), reopened.state)
-        assertThrows(IllegalStateException::class.java) { reopened.approve(batch, "B", "unrelated-flow") }
-        reopened.approve(batch, "A", "flow-1")
-        val expected = """{"version":1,"consent":{"type":"approved","batch":{"id":"batch","items":[{"source":"Anonymous","kind":"Queue","id":"s1","revision":"${"a".repeat(64)}","payload":"{\"sets\":[\"set-1\"]}","atMs":123,"activeSession":true}]},"owner":"A","flowId":"flow-1"}}"""
-        assertEquals(expected, file.readText())
-        val approved = LocalClaimConsent(file).state as ClaimConsent.Approved
-        assertEquals(batch, approved.resumeFor("A"))
-        assertNull(approved.resumeFor("B"))
-        assertThrows(IllegalStateException::class.java) { LocalClaimConsent(file).approve(batch, "B") }
-        assertEquals(expected, file.readText())
+    @Test fun theExactSignInSnapshotAndOwnerSurviveFreshInstances() {
+        val approved = ClaimConsent.Approved(batch(), "A", "flow1"); legacyConsent(tmp.root, approved)
+        val file = File(tmp.root, LocalClaimConsent.fileName); val original = file.readText()
+        val decoded = LocalClaimConsent(file).state as ClaimConsent.Approved
+        assertEquals(batch(), decoded.resumeFor("A")); assertNull(decoded.resumeFor("B")); assertEquals(approved, LocalClaimConsent(file).state)
+        assertEquals(original, file.readText())
     }
-
-    @Test
-    fun callersCannotMutateTheDurableSnapshotThroughTheirInputOrARead() {
-        val file = File(tmp.root, "consent.json")
-        val item = ClaimItem(ClaimSource.Anonymous, ClaimKind.Session, "s1", "a".repeat(64), "{}")
-        val items = mutableListOf(item, item.copy(id = "s2"))
-        val original = ClaimBatch("batch", items.toList())
-        val store = LocalClaimConsent(file)
-        store.approve(ClaimBatch("batch", items), "A")
-        items.clear()
-        val returned = store.state as ClaimConsent.Approved
-        (returned.batch.items as MutableList<ClaimItem>).clear()
-        assertEquals(ClaimConsent.Approved(original, "A"), store.state)
-        assertEquals(store.state, LocalClaimConsent(file).state)
+    @Test fun callersCannotMutateTheArchivedSnapshotThroughARead() {
+        legacyConsent(tmp.root, ClaimConsent.Approved(batch(), "A")); val file = File(tmp.root, LocalClaimConsent.fileName); val store = LocalClaimConsent(file)
+        val returned = store.state as ClaimConsent.Approved; (returned.batch.items as MutableList<ClaimItem>).clear()
+        assertEquals(ClaimConsent.Approved(batch(), "A"), store.state); assertEquals(store.state, LocalClaimConsent(file).state)
     }
-
-    @Test
-    fun anInterruptedTemporaryWriteCannotReplaceApprovalOrResurrectCompletedWork() {
-        val file = File(tmp.root, "consent.json")
-        val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Routine, "r1", "a".repeat(64), "{}")))
-        LocalClaimConsent(file).approve(batch, "A")
-        File(tmp.root, "consent.json.tmp").writeText("{\"version\":1,\"consent\":")
-        assertEquals(ClaimConsent.Approved(batch, "A"), LocalClaimConsent(file).state)
-        LocalClaimConsent(file).complete(batch.id)
-        assertEquals("""{"version":1,"consent":null}""", file.readText())
-        File(tmp.root, "consent.json.tmp").writeText("old interrupted data")
-        assertNull(LocalClaimConsent(file).state)
+    @Test fun anInterruptedTemporaryWriteCannotReplaceApprovalOrResurrectCompletedWork() {
+        val file = File(tmp.root, LocalClaimConsent.fileName); legacyConsent(tmp.root, ClaimConsent.Approved(batch(), "A"))
+        File(tmp.root, "${LocalClaimConsent.fileName}.tmp").writeText("{\"version\":1,\"consent\":")
+        assertEquals(ClaimConsent.Approved(batch(), "A"), LocalClaimConsent(file).state)
+        legacyConsent(tmp.root, null); assertNull(LocalClaimConsent(file).state)
     }
-
-    @Test
-    fun failureBeforeReplacementLeavesTheOldDecisionAndStopsThisInstance() {
-        val file = File(tmp.root, "consent.json")
-        val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Movement, "m1", "a".repeat(64), "{}")))
-        LocalClaimConsent(file).requestSignIn(batch, "flow")
-        val before = file.readText()
-        val broken = LocalClaimConsent(file) { _, _ -> throw IOException("disk full") }
-        assertThrows(IOException::class.java) { broken.approve(batch, "A", "flow") }
-        assertEquals(before, file.readText())
-        assertThrows(IllegalStateException::class.java) { broken.state }
-        assertThrows(IllegalStateException::class.java) { broken.discard(batch) }
-        assertEquals(ClaimConsent.AwaitingSignIn(batch, "flow"), LocalClaimConsent(file).state)
+    @Test fun anAwaitingSignInDecisionDoesNotApproveOrBindAnyAccountDuringMigration() {
+        val f = LegacyEngineFixture(tmp.root); f.log.hold(f.row()); val frozen = ClaimBatch("batch", f.log.claimItems())
+        legacyConsent(tmp.root, ClaimConsent.AwaitingSignIn(frozen, "flow1"))
+        f.engine().use { e -> f.migrate(e); assertTrue(e.read(LegacyGymMigration.scope) { it.isAnonymous })
+            assertEquals(frozen, LocalClaimConsent(File(tmp.root, LocalClaimConsent.fileName)).state!!.batch)
+            assertEquals(Json.Null, e.snapshot().member("replicas").arr().single().member("meta")["account"] ?: Json.Null) }
     }
-
-    @Test
-    fun anUncertainReplyAfterAtomicReplacementResumesOnlyThePersistedOwner() {
-        val file = File(tmp.root, "consent.json")
-        val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Bodyweight, "2026-09-14", "a".repeat(64), "{\"kg\":80}")))
-        val broken = LocalClaimConsent(file) { destination, text ->
-            AtomicDocument.write(destination, text)
-            throw IOException("process interrupted after replacement")
-        }
-        assertThrows(IOException::class.java) { broken.approve(batch, "A") }
-        assertThrows(IllegalStateException::class.java) { broken.approve(batch, "B") }
-        val reopened = LocalClaimConsent(file)
-        assertEquals(ClaimConsent.Approved(batch, "A"), reopened.state)
-        assertThrows(IllegalStateException::class.java) { reopened.approve(batch, "B") }
-        reopened.approve(batch, "A")
-        assertEquals(batch, (reopened.state as ClaimConsent.Approved).resumeFor("A"))
+    @Test fun aCrashAfterDurableMigrationResumesOnlyThePersistedApprovedOwner() {
+        val f = LegacyEngineFixture(tmp.root); f.log.hold(f.row()); legacyConsent(tmp.root, ClaimConsent.Approved(ClaimBatch("batch", f.log.claimItems()), "A"))
+        val e = f.engine(); e.crashAfterTransactions(1); assertThrows(EngineCrash::class.java) { f.migrate(e) }; val snapshot = e.snapshot(); e.close()
+        f.engine(snapshot).use { reopened -> f.migrate(reopened); reopened.signIn("A", emptyMap())
+            assertTrue(f.outbox(reopened).isEmpty()); assertEquals(listOf(f.row()), LegacyGymMigration.pendingFinished(reopened))
+            assertEquals("u.A", f.items(reopened).first { it["kind"] == Json.of("finished") }.member("seat").str()) }
     }
-
-    @Test
-    fun aDiscardAndItsCompletionAreDurableWithoutSweepingNewData() {
-        val file = File(tmp.root, "consent.json")
-        val item = ClaimItem(ClaimSource.Quarantine, ClaimKind.Session, "old", "a".repeat(64), "{}")
-        val batch = ClaimBatch("discard", listOf(item))
-        LocalClaimConsent(file).discard(batch)
-        val store = LocalClaimConsent(file)
-        assertEquals(ClaimConsent.Discarding(batch), store.state)
-        val newBatch = ClaimBatch("new", listOf(item.copy(source = ClaimSource.Anonymous, id = "new")))
-        assertThrows(IllegalStateException::class.java) { store.discard(newBatch) }
-        assertThrows(IllegalStateException::class.java) { store.complete("new") }
-        assertEquals(batch, store.state!!.batch)
-        store.complete(batch.id)
-        LocalClaimConsent(file).approve(newBatch, "B")
-        assertEquals(ClaimConsent.Approved(newBatch, "B"), LocalClaimConsent(file).state)
+    @Test fun aFrozenDiscardPreservesTrainingEditedAfterTheOriginalDecision() {
+        val f = LegacyEngineFixture(tmp.root); val log = f.log; log.hold(Exercise("exercise1", "Before", custom = true))
+        legacyConsent(tmp.root, ClaimConsent.Discarding(ClaimBatch("discard", log.claimItems()))); log.renameExercise("exercise1", "After")
+        f.engine().use { e -> f.migrate(e); assertEquals("After", EngineTraining(e) { null }.catalogue().first { it.id == "exercise1" }.name); assertEquals(1, f.outbox(e).size) }
     }
-
-    @Test
-    fun corruptUnknownAndIncompleteDocumentsFailClosedWithoutBeingOverwritten() {
-        val file = File(tmp.root, "consent.json")
-        listOf("{", "{}", """{"version":2,"consent":null}""",
-            """{"version":1,"consent":{"type":"approved"}}""",
+    @Test fun corruptUnknownAndIncompleteDocumentsFailClosedWithoutBeingOverwritten() {
+        val file = File(tmp.root, LocalClaimConsent.fileName)
+        listOf("{", "{}", """{"version":2,"consent":null}""", """{"version":1,"version":2,"consent":null}""", """{"version":1,"consent":{"type":"approved"}}""",
             """{"version":1,"consent":null,"unexpected":true}""").forEach { text ->
-            file.writeText(text)
-            assertThrows(Exception::class.java) { LocalClaimConsent(file) }
-            assertEquals(text, file.readText())
+            file.writeText(text); assertThrows(Exception::class.java) { LocalClaimConsent(file) }; assertEquals(text, file.readText())
         }
-        file.delete()
-        assertNull(LocalClaimConsent(file).state)
+        file.delete(); assertNull(LocalClaimConsent(file).state); assertFalse(file.exists())
     }
-
-    @Test
-    fun aRealFilesystemFailureCannotProduceAnInMemoryApproval() {
-        val parent = File(tmp.root, "not-a-folder").apply { writeText("standing file") }
-        val store = LocalClaimConsent(File(parent, "consent.json"))
-        val batch = ClaimBatch("batch", listOf(ClaimItem(ClaimSource.Anonymous, ClaimKind.Preferences, "preferences", "a".repeat(64), "{}")))
-        assertThrows(IOException::class.java) { store.approve(batch, "A") }
-        assertThrows(IllegalStateException::class.java) { store.state }
-        assertEquals("standing file", parent.readText())
+    @Test fun aNewBuildNeverWritesOrManufacturesALegacyConsentFile() {
+        val f = LegacyEngineFixture(tmp.root); f.log.hold(f.row()); val file = File(tmp.root, LocalClaimConsent.fileName)
+        assertNull(LocalClaimConsent(file).state)
+        f.engine().use { e -> f.migrate(e); assertFalse(file.exists()); assertEquals(1, f.outbox(e).size) }
     }
 }

@@ -174,74 +174,68 @@ class WorkoutRecoveryTests {
         scope.cancel()
     }
     @Test
-    fun aLateClaimRemintIsSavedWithTheReceiptAndTheFixDraftAcrossFreshStores() {
-        val account = Account(WindmillApi("https://windmill.works".toHttpUrl(), credential = { null }), User("u1", "sam@example.com", "Sam"))
-        val fake = FakeTraining().apply { online = false; catalog = listOf(Exercise("bench", "Bench Press")) }
-        val gate = CompletableDeferred<Unit>()
-        var localId = ""
-        var canonicalId = ""
-        val reads = mutableListOf<String>()
-        val server = object : TrainingSyncing by fake {
-            override suspend fun startSession(start: SessionStart): Session {
-                if (fake.online && start.id == localId) {
-                    gate.await()
-                    throw works.windmill.platform.net.WindmillApiException.Refused(409,
-                        works.windmill.platform.net.Refusal(code = "session-id-taken", message = "taken"))
-                }
-                return fake.startSession(start).also { canonicalId = it.id }
-            }
-            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                return fake.appendSet(sessionId, write).copy(id = "canonical_set", setNumber = 7).also {
-                    fake.sets[sessionId] = mutableListOf(it)
-                }
-            }
-            override suspend fun session(id: String): SessionDetail? { reads += id; return fake.session(id) }
-        }
+    fun anEngineReceiptAndItsFixDraftKeepTheirIdsAcrossFreshStoresOffline() {
         val firstScope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val first = store(firstScope, server)
-        runBlocking { first.connect(account); first.start(null); first.choose("bench"); first.logSet(60.0, 8) }
-        localId = first.session!!.id
-        fake.online = true
+        var room = works.windmill.gym.store.EngineRoomFixture(tmp.root, firstScope)
+        val account = room.account("u1")
+        runBlocking {
+            room.select("u1"); room.store.start(); room.store.choose("bench-press"); room.store.logSet(60.0, 8)
+        }
+        val localId = room.store.session!!.id
+        val setId = room.store.sets.single().id
         var instances = 0
+        var showing by mutableStateOf(true)
         val restored = StateRestorationTester(compose)
         restored.setContent {
-            val scope = remember { if (instances == 0) firstScope else CoroutineScope(SupervisorJob() + Dispatchers.Main) }
-            val held = remember { if (instances++ == 0) first else store(scope, server) }
-            DisposableEffect(scope) { onDispose { scope.cancel() } }
-            GymMaterial { GymRoom(account, held) }
+            if (showing) {
+                val scope = remember { if (instances == 0) firstScope else CoroutineScope(SupervisorJob() + Dispatchers.Main) }
+                val held = remember { if (instances++ == 0) room.store else room.freshStore(scope) }
+                DisposableEffect(scope) { onDispose { scope.cancel() } }
+                GymMaterial { GymRoom(account, held) }
+            }
         }
         compose.onNodeWithText("Finish").performClick()
         compose.onNodeWithText("Ended early.").assertIsDisplayed()
         compose.onNodeWithText("480").assertIsDisplayed()
-        compose.runOnIdle { gate.complete(Unit) }
-        compose.waitUntil(10_000) { fake.stored.values.any { !it.isOpen } }
-        compose.waitForIdle()
-        assertTrue(canonicalId.isNotEmpty() && canonicalId != localId)
-        reads.clear()
+        val beforeRestore = room
+        compose.runOnIdle {
+            val snapshot = room.engine.snapshot()
+            val at = room.now
+            room = works.windmill.gym.store.EngineRoomFixture(tmp.root, firstScope, snapshot).apply { now = at; selected = "u1" }
+        }
         restored.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("480").assertIsDisplayed()
-        compose.runOnIdle { assertTrue(reads.isNotEmpty()); assertTrue(reads.all { it == canonicalId }) }
+        compose.runOnIdle { runBlocking {
+            assertEquals(localId, room.training.session(localId)!!.session.id)
+            assertEquals(listOf(setId), room.training.session(localId)!!.sets.map { it.id })
+        } }
         compose.onNode(hasContentDescription("Close sheet")).performSemanticsAction(SemanticsActions.OnClick)
         compose.onNodeWithText("60 × 8").performClick()
-        compose.onNodeWithText("Bench Press · Set 7").assertIsDisplayed()
+        compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
         compose.onNodeWithText("Set note").performTextInput("controlled tempo")
         compose.onNodeWithText("Not rated").performClick()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).performScrollTo().performClick()
         compose.onNodeWithText("60").performClick()
         compose.onNodeWithText("5").performClick(); compose.onNodeWithText("2").performClick(); compose.onNodeWithText("0").performClick()
-        compose.runOnIdle { fake.online = false }
         restored.emulateSavedInstanceStateRestore()
         compose.onNodeWithText("520").assertIsDisplayed()
         compose.onNodeWithText("Cancel").performClick()
         compose.onNodeWithText("controlled tempo").assertIsDisplayed()
         compose.onNodeWithText(works.windmill.gym.domain.SetEffort.rpeReading(9.5)).assertIsDisplayed()
-        compose.onNodeWithText("Bench Press · Set 7").assertIsDisplayed()
-        compose.runOnIdle { fake.online = true }
+        compose.onNodeWithText("Bench Press · Set 1").assertIsDisplayed()
         compose.onNodeWithText("Save fix").performScrollTo().performClick()
-        compose.runOnIdle {
-            assertEquals(listOf(Triple(canonicalId, "canonical_set", SetFix(rpe = 9.5, rpeNamed = true, note = "controlled tempo"))), fake.fixes)
+        compose.runOnIdle { runBlocking {
+            val set = room.training.session(localId)!!.sets.single()
+            assertEquals(setId, set.id)
+            assertEquals("controlled tempo", set.note)
+            assertEquals(9.5, set.rpe!!, 0.0)
+            assertEquals(60.0, set.weightKg, 0.0)
             assertEquals(3, instances)
-        }
+        } }
+        compose.runOnIdle { showing = false }
+        compose.waitForIdle()
+        beforeRestore.close()
+        room.close()
     }
 
     @Test

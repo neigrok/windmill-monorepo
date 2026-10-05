@@ -83,16 +83,7 @@ sealed interface Deletion {
         override val stillThere: String? get() = null
     }
 
-    // The shelf this phone holds for nobody. There is one of it, so the id is a constant — the
-    // window is keyed by subject and the shelf has no id of its own. The last-copy fact rides in the
-    // LINE and not in `detail`: it is the whole reason this delete is different from every other one
-    // here, and a caption on a screen the lifter has already left cannot carry it.
-    data object Unattributed : Deletion {
-        override val subjectId: String get() = "unattributed"
-        override val line: String get() = "Unclaimed training deleted — it was only on this phone."
-        // `discardUnattributed` answers with nothing: the device is the only place it lived.
-        override val stillThere: String? get() = null
-    }
+
 }
 
 // A delete this device has made and has NOT told the log about. `sent` is the moment the window
@@ -103,7 +94,6 @@ data class WithheldDelete(
     val deletion: Deletion,
     val untilMs: Long,
     val sent: Boolean = false,
-    val claimBatch: works.windmill.gym.domain.ClaimBatch? = null,
 ) {
     val subjectId: String get() = deletion.subjectId
     val takeable: Boolean get() = !sent

@@ -34,75 +34,74 @@ import works.windmill.gym.domain.WeighIn
 import works.windmill.gym.domain.WeighInWrite
 
 interface TrainingSyncing {
-    suspend fun exercises(): List<Exercise>
-    suspend fun createExercise(write: ExerciseWrite): Exercise
+    private fun <T> engineRequired(): T = throw IllegalStateException("Gym data requires the sync engine.")
+    suspend fun exercises(): List<Exercise> = engineRequired()
+    suspend fun createExercise(write: ExerciseWrite): Exercise = engineRequired()
 
-    // A start joins whatever session is already open: compare the returned id with the sent one.
-    suspend fun startSession(start: SessionStart): Session
+    // Explicit starts refuse an open workout; migration starts join and retain the identity map.
+    suspend fun startSession(start: SessionStart): Session = engineRequired()
 
-    // One row per minted id; a replay answers 200 with the stored set, which may be older than the
-    // one sent.
-    suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet
+    // One row per minted id; retrying preserves the stored identity.
+    suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet = engineRequired()
 
     // Owner-scoped and idempotent: a lost reply is safe to send again.
-    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet = engineRequired()
 
-    suspend fun deleteSet(sessionId: String, setId: String)
+    suspend fun deleteSet(sessionId: String, setId: String): Unit = engineRequired()
 
-    suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session
+    suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session = engineRequired()
 
-    // Refuses a live session 409.
-    suspend fun discardSession(sessionId: String)
+    // Refuses a live session.
+    suspend fun discardSession(sessionId: String): Unit = engineRequired()
 
     // Newest first. The cursor needs both halves of the sort key: sessions can share an instant.
-    suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary>
+    suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> = engineRequired()
 
-    suspend fun session(id: String): SessionDetail?
+    suspend fun session(id: String): SessionDetail? = engineRequired()
 
-    suspend fun review(sessionId: String): Review
+    suspend fun review(sessionId: String): Review = engineRequired()
 
-    suspend fun lastTime(exerciseId: String): LastTime
+    suspend fun lastTime(exerciseId: String): LastTime = engineRequired()
 
     // Sparse: a movement never trained has no entry, and that absence means never logged.
-    suspend fun lastSets(): List<LastSet>
+    suspend fun lastSets(): List<LastSet> = engineRequired()
 
-    suspend fun routines(): List<Routine>
+    suspend fun routines(): List<Routine> = engineRequired()
 
-    suspend fun routine(id: String): Routine?
+    suspend fun routine(id: String): Routine? = engineRequired()
 
-    suspend fun createRoutine(write: RoutineWrite): Routine
+    suspend fun createRoutine(write: RoutineWrite): Routine = engineRequired()
 
-    // Whole-document replace: an omitted line is a deleted line.
-    suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine
+    // Replace owned fields through a guarded domain draft; omitted lines are deleted.
+    suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine = engineRequired()
 
-    suspend fun deleteRoutine(id: String)
+    suspend fun deleteRoutine(id: String): Unit = engineRequired()
 
-    // Owner-scoped and 401 with no session: a proposal has no anonymous story and the claim
-    // replays none.
-    suspend fun proposal(id: String): Proposal?
+    // Proposals belong to the signed-in account.
+    suspend fun proposal(id: String): Proposal? = engineRequired()
 
     // Atomic against the base the diff was written on; a routine that moved first is refused, never
     // merged. The routine comes back with the decision, absent when the proposal removes it.
-    suspend fun applyProposal(id: String): ProposalDecision
+    suspend fun applyProposal(id: String): ProposalDecision = engineRequired()
 
-    suspend fun dismissProposal(id: String): ProposalDecision
+    suspend fun dismissProposal(id: String): ProposalDecision = engineRequired()
 
-    suspend fun progress(): StatsProgress
+    suspend fun progress(): StatsProgress = engineRequired()
 
-    suspend fun record(exerciseId: String): MovementRecord?
+    suspend fun record(exerciseId: String): MovementRecord? = engineRequired()
 
     // The id is unchanged.
-    suspend fun renameExercise(exerciseId: String, name: String): Exercise
+    suspend fun renameExercise(exerciseId: String, name: String): Exercise = engineRequired()
 
     // Idempotent on the session, not on a client-minted id: sharing twice answers the live link.
     suspend fun share(sessionId: String): SessionShare
 
     suspend fun revokeShare(sessionId: String)
 
-    suspend fun preferences(): GymPreferences
+    suspend fun preferences(): GymPreferences = engineRequired()
 
     // Preserve preferences owned by other surfaces when replacing the server document.
-    suspend fun savePreferences(document: GymPreferences): GymPreferences
+    suspend fun savePreferences(document: GymPreferences): GymPreferences = engineRequired()
 
     // The thread id is the client's: a fresh one opens a conversation, a spent one continues it.
     suspend fun ask(question: AskQuestion): AskAnswer
@@ -128,28 +127,28 @@ interface TrainingSyncing {
 
     suspend fun deleteThread(id: String)
 
-    // In precedence order, ten at most. Account-only: nothing on this phone keeps a copy.
-    suspend fun notes(): List<Note>
+    // In precedence order, ten at most; read from the selected account replica.
+    suspend fun notes(): List<Note> = engineRequired()
 
     // Upsert by the client-minted id: a new id lands last, a spent id edits. Past ten notes or past
     // the title and body bounds the log refuses in its own words, and the screen shows those.
-    suspend fun writeNote(id: String, write: NoteWrite): Note
+    suspend fun writeNote(id: String, write: NoteWrite): Note = engineRequired()
 
-    // 204 for a note that is already gone.
-    suspend fun deleteNote(id: String)
+    // Removing an absent note succeeds.
+    suspend fun deleteNote(id: String): Unit = engineRequired()
 
     // Whole-order replace, naming every note of the account exactly once.
-    suspend fun reorderNotes(order: List<String>): List<Note>
+    suspend fun reorderNotes(order: List<String>): List<Note> = engineRequired()
 
     // Ascending by date; both bounds inclusive and optional, absent meaning the whole series.
-    suspend fun bodyweight(from: String? = null, to: String? = null): List<WeighIn>
+    suspend fun bodyweight(from: String? = null, to: String? = null): List<WeighIn> = engineRequired()
 
     // Idempotent by the local date. The reply is the row that STANDS — the newer of the two by
     // `recordedAt` — so a replayed stale write answers with the correction it could not overtake.
-    suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn
+    suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn = engineRequired()
 
-    // 204 whether or not the row was there.
-    suspend fun deleteBodyweight(dateLocal: String)
+    // Removing an absent date succeeds.
+    suspend fun deleteBodyweight(dateLocal: String): Unit = engineRequired()
 
     // The shell's two credential lists, read here because this room draws what reaches its log: a
     // grant approved in the browser, and a static key. Every key is the account-wide grant.

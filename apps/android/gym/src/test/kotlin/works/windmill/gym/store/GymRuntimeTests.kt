@@ -26,6 +26,7 @@ import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.storage.AtomicDocument
+import works.windmill.sync.engine.signIn
 
 @OptIn(kotlinx.coroutines.ExperimentalCoroutinesApi::class)
 class GymRuntimeTests {
@@ -218,57 +219,40 @@ class GymRuntimeTests {
     }
 
     @Test
-    fun approvedOwnerPreflightClearsTheAnonymousCardBeforeItsSuspendedRead() = runTest {
+    fun addedOwnerPreflightRevokesTheAnonymousCardBeforeAccountProjection() = runTest {
         val file = File(tmp.root, "preflight")
-        var moment = WorkoutMoment(101_000, 1_000, "boot")
-        val queue = SetQueue(file)
-        queue.hold(Session("anonymous", 100_000), unclaimed = true); queue.choose("bench-press")
-        val release = CompletableDeferred<Unit>()
-        val server = FakeTraining().apply { nowMs = { moment.wallMs } }
-        val wire = object : TrainingSyncing by server {
-            override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-                release.await()
-                return server.sessions(limit, before, beforeId)
-            }
+        val moment = WorkoutMoment(101_000, 1_000, "boot")
+        works.windmill.sync.engine.Engine.memory(works.windmill.sync.schema.SyncSchema.registry,
+            clock = object : works.windmill.sync.engine.EngineClock { override fun now() = moment.wallMs }).use { engine ->
+            val gym = EngineTraining(engine) { error("Workout data cannot use REST.") }
+            gym.startSession(SessionStart("anonymous", 100_000))
+            var owner: String? = null
+            val api = WindmillApi("https://windmill.works".toHttpUrl(), { null })
+            val store = TrainingStore(queue = SetQueue(file), scope = backgroundScope,
+                now = { moment.wallMs }, workoutClock = WorkoutClock { moment }, sync = { gym }, engineTraining = gym)
+            store.connect(Account(api, null))
+            store.choose("bench-press")
+            val runtime = GymRuntime(store, { owner }, { true }, StandardTestDispatcher(testScheduler))
+            runtime.restoreLocal()
+            val first = requireNotNull(runtime.notification.value?.offer)
+            assertEquals(LogSetAcceptance.Accepted(first.id), runtime.logSet(LogSetCommand(first.key, first.id)))
+            val original = TrainingSet(first.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
+            val old = requireNotNull(runtime.notification.value?.offer)
+            store.prepareEngineTransition()
+            engine.signIn("B", mapOf("gym" to true), mapOf("gym" to "add"))
+            owner = "B"
+            runtime.restoreLocal()
+            assertNull(store.notification.value)
+            assertFalse(runtime.openWorkout(old.key))
+            assertTrue(runtime.logSet(LogSetCommand(old.key, old.id)) !is LogSetAcceptance.Accepted)
+            store.connect(Account(api, User("B", "b@example.com")))
+            assertEquals(LogSetAcceptance.Stale, runtime.logSet(LogSetCommand(old.key, old.id)))
+            assertEquals("u.B", store.accountKey)
+            assertEquals("anonymous", store.session?.id)
+            assertEquals("Add keeps the original set identity and its own workout", listOf(original), store.sets)
+            assertEquals(listOf(original), gym.session("anonymous")!!.sets)
+            assertTrue(engine.snapshot().member("replicas").arr().none { it.member("meta").member("state") == works.windmill.sync.core.Json.of("anon") })
         }
-        var owner: String? = null
-        val local = LocalLog(File(tmp.root, "local-preflight"))
-        val preferences = LocalPreferences(File(tmp.root, "prefs-preflight"))
-        preferences.save(GymPreferences(confirmSound = true))
-        val store = TrainingStore(queue, DeviceCopy(File(tmp.root, "copy-preflight")), local,
-            preferences, LocalBodyweight(File(tmp.root, "weight-preflight")),
-            backgroundScope, now = { moment.wallMs }, workoutClock = WorkoutClock { moment }, sync = { wire })
-        val runtime = GymRuntime(store, { owner }, { true }, StandardTestDispatcher(testScheduler))
-        runtime.restoreLocal()
-        val first = requireNotNull(runtime.notification.value?.offer)
-        assertEquals(LogSetAcceptance.Accepted(first.id), runtime.logSet(LogSetCommand(first.key, first.id)))
-        val original = TrainingSet(first.id, "bench-press", weightKg = 20.0, reps = 5, completedAtMs = moment.wallMs)
-        val old = requireNotNull(runtime.notification.value?.offer)
-        val flow = requireNotNull(store.requestClaimSignIn())
-        store.approveSignIn("B", flow)
-        owner = "B"
-        val connect = async { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), User("B", "b@example.com"))) }
-        runCurrent()
-        assertFalse(connect.isCompleted)
-        assertNull(store.notification.value)
-        assertNull(store.session)
-        assertNull(store.rack)
-        assertEquals(emptyList<TrainingSet>(), store.sets)
-        assertFalse(runtime.openWorkout(old.key))
-        assertTrue(runtime.logSet(LogSetCommand(old.key, old.id)) !is LogSetAcceptance.Accepted)
-        assertEquals(emptyList<SessionStart>(), server.started)
-        assertEquals(listOf(original), SetQueue(file).sets)
-        release.complete(Unit)
-        connect.await()
-        assertEquals(LogSetAcceptance.Stale, runtime.logSet(LogSetCommand(old.key, old.id)))
-        assertEquals("u.B", store.accountKey)
-        assertEquals("anonymous", store.session?.id)
-        val claimed = SetQueue(file, "B")
-        assertEquals("the claim delivers the set at once", listOf(original.copy(setNumber = 1)), claimed.sets)
-        assertEquals(emptyList<SetQueue.Entry>(), claimed.pending)
-        assertEquals(first.id, claimed.latestSet(moment)?.id)
-        assertNull(SetQueue(file).session)
-        moment = moment.copy(wallMs = moment.wallMs + 90_000, elapsedMs = moment.elapsedMs + 90_000)
     }
 
     @Test

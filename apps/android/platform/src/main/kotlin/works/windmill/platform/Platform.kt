@@ -56,3 +56,15 @@ class ShellActions(val openYou: () -> Unit, val openSignIn: (String?) -> Unit = 
 }
 
 val LocalShellActions = staticCompositionLocalOf<ShellActions> { ShellActions(openYou = {}) }
+
+data class ClientUpdateDestination(val url: String = "https://windmill.works", val label: String = "Open Windmill")
+val LocalClientUpdateDestination = staticCompositionLocalOf { ClientUpdateDestination() }
+
+fun ClientUpdateDestination.open(openUri: (String) -> Unit, telemetry: Telemetry): String? {
+    telemetry.event("client_update_required", mapOf("action" to "update"))
+    return try { openUri(url); null }
+    catch (_: Exception) {
+        telemetry.event("client_update_required", mapOf("action" to "update", "outcome" to "failed"))
+        "The link could not be opened. Try again, or open Windmill’s website in your browser."
+    }
+}

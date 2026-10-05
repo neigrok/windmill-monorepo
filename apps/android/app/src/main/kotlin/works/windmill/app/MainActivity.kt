@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.AlertDialog
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
@@ -36,6 +37,8 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
@@ -55,6 +58,13 @@ import works.windmill.platform.telemetry.LocalTelemetry
 import works.windmill.gym.ui.onboarding.OnboardingPager
 import works.windmill.platform.you.YouDestination
 import works.windmill.platform.auth.LocalSession
+import works.windmill.platform.ClientUpdateDestination
+import works.windmill.platform.LocalClientUpdateDestination
+import works.windmill.platform.open
+import works.windmill.platform.net.ClientUpdate
+import works.windmill.gym.store.LocalGymEngineSession
+import works.windmill.gym.store.gymLineageCounts
+import works.windmill.sync.engine.LineageAnswer
 import java.util.UUID
 
 class MainActivity : ComponentActivity() {
@@ -199,7 +209,10 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
     // shell's sheet, so the sheet borrows the hosting room's colours — in gym the brand's gold
     // would read as a personal record. When roadmap and journal mount, each brings its own Skin
     // and the same door takes it.
-    CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides runtime.telemetry) {
+    CompositionLocalProvider(LocalShellActions provides shell, LocalTelemetry provides runtime.telemetry,
+        LocalGymEngineSession provides runtime.engineSession,
+        LocalClientUpdateDestination provides if (BuildConfig.WM_UPDATE_URL.isBlank()) ClientUpdateDestination()
+            else ClientUpdateDestination(BuildConfig.WM_UPDATE_URL, "Get the update")) {
         WindmillMaterial {
             gym.Skin {
                 if (introduction) {
@@ -230,8 +243,72 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
                         destinations = shell.destinations + YouDestination("about_windmill", aboutLabel) { about = true },
                         startSignIn = signIn, flowId = authFlow,
                         onSignedIn = shell::authenticated, onAuthDismiss = shell::authDismissed)
+                    EngineAccountDecision(runtime)
                 }
             }
         }
+    }
+}
+
+@Composable
+private fun EngineAccountDecision(runtime: WindmillApplication) {
+    val session = runtime.engineSession
+    val sync by session.engine.status.state.collectAsState()
+    val retired by ClientUpdate.required.collectAsState()
+    val uri = LocalUriHandler.current
+    val update = LocalClientUpdateDestination.current
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(sync.upgradeRequired, retired) {
+        if (sync.upgradeRequired || retired) runtime.telemetry.event("client_update_required",
+            mapOf("state" to "shown", "status" to if (sync.upgradeRequired) "426" else "410"))
+    }
+    if (sync.upgradeRequired || retired) {
+        var shown by remember { mutableStateOf(true) }
+        var updateFailure by remember { mutableStateOf<String?>(null) }
+        if (shown) AlertDialog(onDismissRequest = {
+            runtime.telemetry.event("client_update_required", mapOf("action" to "dismiss")); shown = false
+        }, title = { Text("Update required") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("Update Windmill to keep syncing. Your work is saved on this phone.")
+                updateFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = { TextButton(onClick = {
+                updateFailure = update.open(uri::openUri, runtime.telemetry)
+            }) { Text(update.label) } },
+            dismissButton = { TextButton(onClick = {
+                runtime.telemetry.event("client_update_required", mapOf("action" to "keep")); shown = false
+            }) { Text("Keep working on this phone") } })
+    }
+    session.decision?.let { decision ->
+        var confirmingDiscard by remember(decision) { mutableStateOf(false) }
+        fun cancelDiscard() {
+            if (session.decisionBusy) return
+            runtime.telemetry.event("gym_sign_in_decision", mapOf("action" to "cancel", "state" to "discard_confirmation"))
+            confirmingDiscard = false
+        }
+        fun cancelSignIn() {
+            if (session.decisionBusy) return
+            scope.launch { session.cancel() }
+        }
+        if (confirmingDiscard) AlertDialog(onDismissRequest = ::cancelDiscard,
+            title = { Text("Discard this phone’s training?") },
+            text = { Text("This removes the signed-out training listed here. Your account’s training stays saved.\n\n" +
+                gymLineageCounts(decision.decisions.firstOrNull { it.product == "gym" }?.count.orEmpty())) },
+            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.discard) } }) { Text("Discard") } },
+            dismissButton = { TextButton(enabled = !session.decisionBusy, onClick = ::cancelDiscard) { Text("Cancel") } })
+        else AlertDialog(onDismissRequest = ::cancelSignIn, title = { Text("Training saved on this phone") },
+            text = { Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
+                Text("This account also has training. Add this phone’s training to it, or discard this phone’s signed-out training.")
+                Text(gymLineageCounts(decision.decisions.firstOrNull { it.product == "gym" }?.count.orEmpty()))
+                session.decisionFailure?.let { Text(it, color = MaterialTheme.colorScheme.error) }
+            } },
+            confirmButton = { TextButton(enabled = !session.decisionBusy, onClick = { scope.launch { session.decide(LineageAnswer.add) } }) { Text("Add") } },
+            dismissButton = { Column {
+                TextButton(enabled = !session.decisionBusy, onClick = {
+                    runtime.telemetry.event("gym_sign_in_decision", mapOf("action" to "discard", "state" to "discard_confirmation"))
+                    confirmingDiscard = true
+                }) { Text("Discard") }
+                TextButton(enabled = !session.decisionBusy, onClick = ::cancelSignIn) { Text("Cancel sign-in") }
+            } })
     }
 }

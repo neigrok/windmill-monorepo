@@ -12,6 +12,13 @@ val windmillVersionCode = providers.gradleProperty("windmill.versionCode").orNul
 
 // Empty means the production host; http://10.0.2.2:8088 reaches the local stack from an emulator.
 val windmillApiBase = providers.gradleProperty("windmill.apiBase").orNull ?: ""
+val windmillUpdateUrl = providers.gradleProperty("windmill.updateUrl").orNull ?: ""
+if (windmillUpdateUrl.isNotBlank()) {
+    val configured = runCatching { URI(windmillUpdateUrl) }.getOrNull()
+    require(configured?.scheme == "https" && !configured.host.isNullOrBlank() && configured.userInfo == null) {
+        "-Pwindmill.updateUrl must be a valid HTTPS URL without embedded credentials."
+    }
+}
 val windmillSentryDsn = providers.gradleProperty("windmill.sentryDsn")
     .orElse(providers.environmentVariable("ANDROID_SENTRY_DSN")).orElse("")
 val windmillSourceRevision = providers.gradleProperty("windmill.sourceRevision")
@@ -48,6 +55,7 @@ android {
         versionCode = windmillVersionCode
         versionName = windmillVersionName
         buildConfigField("String", "WM_API_BASE_URL", "\"$windmillApiBase\"")
+        buildConfigField("String", "WM_UPDATE_URL", quoted(windmillUpdateUrl))
         buildConfigField("String", "WM_SENTRY_DSN", quoted(windmillSentryDsn.get()))
         buildConfigField("String", "WM_SOURCE_REVISION", quoted(windmillSourceRevision.get()))
         buildConfigField("boolean", "WM_DEBUG_TELEMETRY", windmillDebugTelemetry.get())
@@ -97,6 +105,8 @@ kotlin {
 dependencies {
     implementation(project(":platform"))
     implementation(project(":gym"))
+    implementation(project(":sync-engine"))
+    implementation(project(":sync-schema"))
     implementation(libs.androidx.activity.compose)
     testImplementation(libs.junit)
     testImplementation(libs.robolectric)

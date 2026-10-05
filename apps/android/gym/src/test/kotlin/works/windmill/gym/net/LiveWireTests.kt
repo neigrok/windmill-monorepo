@@ -1,6 +1,7 @@
 package works.windmill.gym.net
 
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.delay
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.jsonArray
 import kotlinx.serialization.json.jsonObject
@@ -14,6 +15,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Assert.fail
 import org.junit.Assume.assumeTrue
 import org.junit.Before
+import org.junit.AfterClass
 import org.junit.FixMethodOrder
 import org.junit.Test
 import org.junit.runners.MethodSorters
@@ -29,6 +31,13 @@ import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TopSet
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.Verdict
+import works.windmill.gym.store.EngineTraining
+import works.windmill.sync.engine.*
+import works.windmill.sync.schema.SyncSchema
+import works.windmill.sync.schema.Gym
+import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.RecordID
+import works.windmill.sync.core.RecordKey
 import works.windmill.platform.auth.AuthStatus
 import works.windmill.platform.auth.AuthStore
 import works.windmill.platform.auth.MagicLink
@@ -44,7 +53,61 @@ class LiveWireTests {
         private val bearer: String? = System.getenv("WM_WIRE_BEARER")
         private val base = (System.getenv("WM_WIRE_BASE") ?: "http://localhost:8088").toHttpUrl()
         private val api by lazy { WindmillApi(base, { bearer }) }
-        private val wire by lazy { GymHttp(api) }
+        private val transport by lazy { HTTPTransport(base.toString(), SyncSchema.registry.version.toInt()) }
+        private val probeClock = object : EngineClock { override fun now() = System.currentTimeMillis() }
+        private val engine by lazy { Engine.memory(SyncSchema.registry, clock = probeClock) }
+        private val adapter by lazy { EngineTraining(engine) { GymHttp(api) } }
+        private var connected = false
+        private suspend fun response(reply: Reply<SyncResponse>): SyncResponse = when (reply) {
+            is Reply.Answer -> reply.value
+            is Reply.Failed -> reply.response
+            Reply.Unreachable -> throw WindmillApiException.Offline
+        }
+        private fun pending(key: RecordKey) = engine.read(ScopeRef(Gym.scope)) {
+            it.drawn(key.type, key.id)?.isPending == true
+        }
+        private suspend fun drain(key: RecordKey? = null) {
+            val deadline = System.nanoTime() + 15_000_000_000L
+            while (System.nanoTime() < deadline) {
+                // This transport probe has no runtime to release the normal undo hold.
+                engine.releaseHeld()
+                val pushed = engine.nextPush()
+                if (pushed != null) {
+                    val send = probeClock.reading()
+                    val reply = response(transport.push(pushed, checkNotNull(bearer)))
+                    engine.onPushResponse(pushed, reply, RequestTiming(send, probeClock.reading()))
+                }
+                val pull = checkNotNull(engine.pullRequest(listOf(ScopeRef(Gym.scope))))
+                val send = probeClock.reading()
+                engine.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
+                if (adapter.firstPullComplete && (key == null || !pending(key))) return
+                delay(100)
+            }
+            error("The probe failed to settle through /v1/sync.")
+        }
+        private val wire by lazy { object : TrainingSyncing by adapter {
+            override suspend fun createRoutine(write: RoutineWrite): works.windmill.gym.domain.Routine {
+                adapter.createRoutine(write); drain(RecordKey(Gym.Types.routine, RecordID(write.id))); return checkNotNull(adapter.routine(write.id))
+            }
+            override suspend fun replaceRoutine(id: String, write: RoutineWrite): works.windmill.gym.domain.Routine {
+                adapter.replaceRoutine(id, write); drain(RecordKey(Gym.Types.routine, RecordID(id))); return checkNotNull(adapter.routine(id))
+            }
+            override suspend fun startSession(start: SessionStart): works.windmill.gym.domain.Session {
+                val session = adapter.startSession(start); drain(RecordKey(Gym.Types.session, RecordID(session.id))); return checkNotNull(adapter.session(session.id)).session
+            }
+            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
+                adapter.appendSet(sessionId, write)
+                val key = RecordKey(Gym.Types.set, RecordID(write.id))
+                if (pending(key)) drain(key)
+                return checkNotNull(adapter.session(sessionId)).sets.first { it.id == write.id }
+            }
+            override suspend fun finishSession(sessionId: String, finishedAtMs: Long): works.windmill.gym.domain.Session {
+                adapter.finishSession(sessionId, finishedAtMs); drain(RecordKey(Gym.Types.session, RecordID(sessionId))); return checkNotNull(adapter.session(sessionId)).session
+            }
+            override suspend fun discardSession(sessionId: String) { adapter.discardSession(sessionId); drain(RecordKey(Gym.Types.session, RecordID(sessionId))) }
+            override suspend fun deleteRoutine(id: String) { adapter.deleteRoutine(id); drain(RecordKey(Gym.Types.routine, RecordID(id))) }
+        } }
+        @JvmStatic @AfterClass fun closeProbe() { if (connected) { transport.close(); engine.close() } }
 
         private val tag = "%08x".format(java.security.SecureRandom().nextInt())
         private val routineId = "rt_probe_a$tag"
@@ -70,6 +133,17 @@ class LiveWireTests {
             System.getenv("WM_ANDROID_WIRE_TEST") != null,
         )
         assumeTrue("WM_WIRE_BEARER not set — no probe session to speak as", bearer != null)
+        if (!connected) runBlocking {
+            val send = probeClock.reading()
+            val hello = response(transport.hello(bearer))
+            assertEquals(200, hello.status)
+            engine.onHello(hello, RequestTiming(send, probeClock.reading()))
+            val body = checkNotNull(hello.body)
+            engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() })
+            engine.subscribe(ScopeRef(Gym.scope))
+            connected = true
+            drain()
+        }
     }
 
     @Test
@@ -145,9 +219,10 @@ class LiveWireTests {
         val write = SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000)
         val replayed = wire.appendSet(sessionAId, write)
         assertEquals(storedWorking, replayed)
-        val rawOnce = api.send<JsonObject>("POST", "/v1/gym/sessions/$sessionAId/sets", write)
-        val rawTwice = api.send<JsonObject>("POST", "/v1/gym/sessions/$sessionAId/sets", write)
-        assertEquals(rawOnce, rawTwice)
+        val rawOnce = engine.snapshot()
+        val twice = wire.appendSet(sessionAId, write)
+        assertEquals(replayed, twice)
+        assertEquals(rawOnce, engine.snapshot())
     }
 
     @Test
@@ -239,23 +314,12 @@ class LiveWireTests {
             )
         }
 
-        try {
-            GymHttp(WindmillApi(base, { null })).appendSet(sessionBId,
-                SetWrite("set_probe_a${tag}u", "back-squat", 100.0, 5, SetKind.Working, startB + 50_000))
-            fail("no bearer must refuse 401")
-        } catch (refused: WindmillApiException.Refused) {
-            assertEquals(401, refused.status)
-            assertTrue(refused.isUnauthorized)
-            assertEquals("sign in to open your training log", refused.refusal.message)
-            assertEquals(Verdict.Retry, Verdict.refusing(RefusalFacts(refused)))
-        }
-
-        try {
-            GymHttp(WindmillApi("http://127.0.0.1:9".toHttpUrl(), { bearer })).exercises()
-            fail("a dead port must be offline")
-        } catch (offline: WindmillApiException.Offline) {
-            assertEquals("Can’t reach windmill.works", offline.line)
-            assertEquals(Verdict.Retry, Verdict.refusing(RefusalFacts(offline)))
+        val unauthorized = response(transport.push(works.windmill.sync.core.Json.objectOf(
+            "replica" to works.windmill.sync.core.Json.of("unauthorized-probe"),
+            "intents" to works.windmill.sync.core.Json.array()), ""))
+        assertEquals(401, unauthorized.status)
+        HTTPTransport("http://127.0.0.1:9", SyncSchema.registry.version.toInt()).use { offline ->
+            assertEquals(Reply.Unreachable, offline.hello(bearer))
         }
 
         wire.appendSet(sessionBId, SetWrite(squatId, "back-squat", 100.0, 5, SetKind.Working, startB + 60_000))

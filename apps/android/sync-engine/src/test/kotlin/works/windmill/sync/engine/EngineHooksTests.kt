@@ -31,6 +31,25 @@ class EngineHooksTests {
         return SyncResponse(200, Json.objectOf("epoch" to Json.of("ep-1"), "as" to Json.of("A"), "lastN" to n, "results" to Json.array(result)))
     }
 
+    @Test fun aBornOnlyPrerequisiteThatExceedsTheFinalPushLimitRollsBackTheCommandAndJournal() {
+        engine().use { normal ->
+            normal.commit(scope, Gesture(listOf(Change.create("run", NewID.Given(RecordID("run00001")), mapOf("label" to Json.of("Run"))))))
+            val source = normal.snapshot()
+            val gesture = Gesture(listOf(Change.update("run", RecordID("run00001"))),
+                command = Command("probe.start", Json.objectOf("id" to Json.of("run00002"), "startedAt" to Json.of(5_000), "join" to Json.of(false))),
+                local = listOf(DeviceWrite("rack", Json.of("original source"))))
+            normal.commit(scope, gesture)
+            val cap = widestBytes(normal.device.current(), normal.device.current().entries().last().intent)
+            Engine.memory(registry, source, clock = object : EngineClock { override fun now() = 5_000L },
+                actor = "r_aaaaaaaaaaaa", pushMaxBytes = cap).use { limited ->
+                val before = limited.snapshot()
+                val failure = assertThrows(CommitFailure::class.java) { limited.commitLegacy(scope) { gesture to Unit } }
+                assertEquals("too-large", failure.description); assertEquals(before, limited.snapshot())
+                assertNull(limited.read(scope) { it.device("rack") })
+            }
+        }
+    }
+
     @Test fun commandResultReceivesDeviceSnapshotAndCommitsItsWritesWithTheVerdict() {
         var calls = 0
         engine(writes = { command, result, epoch, rows ->

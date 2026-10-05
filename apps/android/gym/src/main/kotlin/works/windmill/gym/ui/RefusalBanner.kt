@@ -32,7 +32,7 @@ internal fun refusalHeadline(refused: RefusedWrite, catalog: List<Exercise>): St
     is RefusedSet ->
         "${Readout.movement(refused.exerciseId, catalog)} " +
             "${Readout.effort(refused.weightKg, refused.reps)} never reached the log"
-    is RefusedClaim -> "“${refused.name}” couldn’t be claimed"
+    is RefusedClaim -> "“${refused.name}” stays on this phone"
 }
 
 @Composable
