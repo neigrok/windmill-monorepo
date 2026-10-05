@@ -23,3 +23,8 @@ dependencyResolutionManagement {
 rootProject.name = "windmill-android"
 
 include(":app", ":platform", ":gym")
+include(":sync-core", ":sync-schema", ":sync-testing", ":domain-kit", ":domain-kit-testing")
+include(":sync-api")
+include(":sync-engine")
+include(":gym:domain")
+include(":sync-model-server")

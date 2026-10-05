@@ -10,6 +10,20 @@ account and backend. There is no subscription surface.
 | `:platform` | Bearer HTTP transport, account/session storage, sign-in, tokens and product-neutral shell. |
 | `:gym` | Pure domain rules, durable stores, network/notification adapters and Compose UI. |
 | `:app` | Composition root; one auth store, gym runtime, training store and notification adapter shared by activity and receivers. |
+| `:sync-core` | JVM JSON/JCS, registry descriptors, clocks, joins, identities, fractional order and digests. |
+| `:sync-api` | JVM product values, Replica port, transaction readers and typed commit failures; depends only on sync-core. |
+| `:sync-schema` | Generated JVM gym and journal registries and composition. |
+| `:sync-engine` | Android memory/SQLite engine, writer slices, observations, HTTP/live transport, recovery, subscriptions and lifecycle sessions; bounded injected telemetry. |
+| `:sync-model-server` | JVM reference model with probe, gym and journal bindings, admission, replay and live events. |
+| `:sync-testing` | JVM strict client/server corpus, stepped memory engine, simulated network, mandatory properties, replay fuzz and layering. |
+| `:domain-kit` | JVM values, readers, plans, drafts, action runner, ordering and refusal subjects. |
+| `:domain-kit-testing` | JVM strict kit corpus, checks and layering. |
+| `:gym:domain` | JVM gym domain declarations and Notes/Bodyweight rules. |
+
+The eight JVM modules and Android engine library contain the SyncAPI, client runtime, model server
+and kit. The full build enforces corpus coverage, properties, replay fuzz, schema freshness and
+strict layering; see [coverage, gates and remaining work](SYNC_FOUNDATION.md). Product wiring, UI
+and current store migration belong to A2.
 
 Products depend on `:platform`, never on each other. See [repository structure](../../STRUCTURE.md).
 The app is portrait-only. Shared gym rules live in
@@ -23,13 +37,15 @@ Run from `apps/android`:
 
 ```sh
 export JAVA_HOME=…    # JDK 17+; CI uses Temurin 21
-ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build
+ANDROID_SENTRY_DSN=https://local-check@telemetry.invalid/1 ./gradlew build --max-workers=4
 ```
 
 - `local.properties` supplies `sdk.dir`; Android Studio writes it on first open.
 - Modules use `compileSdk 36`, `minSdk 26` and Java/JVM target 17.
 - Keep the full monorepo: the ladder suite reads `packages/api-contract/gym-ladder.json` directly.
 - Compose UI tests use Robolectric; its first run downloads `android-all` from Maven Central.
+- Sync foundation checks read the shared registries and corpora directly; the schema generator and
+  independent JCS oracle checks also require Python 3 and Node.js.
 - `-Pwindmill.apiBase=http://10.0.2.2:8088` targets the host's local backend from an emulator.
   Empty means the production host.
 
