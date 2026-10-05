@@ -52,12 +52,13 @@ internal fun validateFrame(frame: Json) {
     frame["as"]?.orNull()?.str()
 }
 class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineTelemetry = NoEngineTelemetry,
-    client: OkHttpClient = OkHttpClient(), private val requestTimeoutMs: Long = Constants.REQUEST_TIMEOUT_MS.toLong()) : SyncTransport, AutoCloseable {
+    client: OkHttpClient = OkHttpClient(), private val requestTimeoutMs: Long = Constants.REQUEST_TIMEOUT_MS.toLong(),
+    webSocketFactory: WebSocket.Factory? = null) : SyncTransport, AutoCloseable {
     private val base = baseURL.toHttpUrl()
     private val client = client.newBuilder().cookieJar(CookieJar.NO_COOKIES).cache(null).followRedirects(false).followSslRedirects(false)
         .retryOnConnectionFailure(false).connectTimeout(30, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
         .writeTimeout(30, TimeUnit.SECONDS).callTimeout(requestTimeoutMs, TimeUnit.MILLISECONDS).build()
-    private val liveClient = this.client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
+    private val liveClient = webSocketFactory ?: this.client.newBuilder().callTimeout(0, TimeUnit.MILLISECONDS).build()
     private val telemetry = TelemetryQueue(telemetry)
     private val calls = java.util.concurrent.ConcurrentHashMap.newKeySet<Call>()
     private val sockets = java.util.concurrent.ConcurrentHashMap.newKeySet<LiveConnection>()
@@ -108,16 +109,21 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
         val opening = CompletableDeferred<Reply<LiveConnection>>()
         val connection = object : LiveConnection {
             private val receiving = AtomicBoolean(false)
+            private val connectionClosed = AtomicBoolean(false)
             override suspend fun send(request: Json) {
                 val text = request.jcs
-                if (text.encodeToByteArray().size > Constants.LIVE_FRAME_BYTES || socketRef.get()?.let { it.queueSize() + text.encodeToByteArray().size <= Constants.LIVE_FRAME_BYTES && it.send(text) } != true) throw IOException("live-send")
+                if (connectionClosed.get() || text.encodeToByteArray().size > Constants.LIVE_FRAME_BYTES || socketRef.get()?.let { it.queueSize() + text.encodeToByteArray().size <= Constants.LIVE_FRAME_BYTES && it.send(text) } != true) throw IOException("live-send")
             }
             override suspend fun receive(): Json? {
                 check(receiving.compareAndSet(false, true)) { "one-live-reader" }
                 try { return messages.receiveCatching().let { it.exceptionOrNull()?.let { failure -> throw failure }; it.getOrNull() } }
                 finally { receiving.set(false) }
             }
-            override fun close() { opening.complete(Reply.Unreachable); socketRef.get()?.cancel(); messages.close(); sockets.remove(this) }
+            override fun close() {
+                connectionClosed.set(true); opening.complete(Reply.Unreachable)
+                // Cancellation can invoke onFailure before cancel returns.
+                messages.close(); socketRef.get()?.cancel(); sockets.remove(this)
+            }
         }
         sockets.add(connection)
         if (closed.get()) { connection.close(); return Reply.Unreachable }

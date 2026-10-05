@@ -4,10 +4,12 @@ import java.io.IOException
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.*
+import kotlinx.coroutines.test.runTest
 import okhttp3.*
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.SocketPolicy
+import okio.ByteString
 import okio.ByteString.Companion.toByteString
 import org.junit.Assert.*
 import org.junit.Test
@@ -24,6 +26,24 @@ class TransportTests {
     private fun socketResponse(socket: CompletableDeferred<WebSocket>) = MockResponse().withWebSocketUpgrade(object : WebSocketListener() {
         override fun onOpen(webSocket: WebSocket, response: Response) { socket.complete(webSocket) }
     })
+    private class LiveSocket(private val failOnCancel: Boolean = true) : WebSocket, WebSocket.Factory {
+        private lateinit var request: Request
+        private lateinit var listener: WebSocketListener
+        var sends = 0
+        var cancels = 0
+        override fun newWebSocket(request: Request, listener: WebSocketListener): WebSocket {
+            this.request = request; this.listener = listener
+            listener.onOpen(this, Response.Builder().request(request).protocol(Protocol.HTTP_1_1).code(101).message("Switching Protocols").build())
+            return this
+        }
+        override fun request() = request
+        override fun queueSize() = 0L
+        override fun send(text: String): Boolean { sends++; return true }
+        override fun send(bytes: ByteString): Boolean = error("text frames only")
+        override fun close(code: Int, reason: String?): Boolean = error("cancel expected")
+        override fun cancel() { cancels++; if (failOnCancel) fail() }
+        fun fail() { listener.onFailure(this, IOException("disconnected"), null) }
+    }
 
     @Test fun helloPushAndPullUseCanonicalBodiesSchemaHeaderAndBearerAuth() = runBlocking {
         MockWebServer().use { server ->
@@ -242,25 +262,42 @@ class TransportTests {
         }
     }
 
-    @Test fun liveDisconnectCloseAndOversizeSendHaveBoundedFailurePaths() = runBlocking {
-        MockWebServer().use { server ->
-            val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
-            val transport = HTTPTransport(server.url("/").toString(), 4)
-            try {
-                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
+    @Test fun liveDisconnectCloseAndOversizeSendHaveBoundedFailurePaths() = runTest {
+        val disconnected = LiveSocket()
+        HTTPTransport("https://sync.invalid/", 4, webSocketFactory = disconnected).use { transport ->
+            connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
                 assertTrue(runCatching { connection.send(Json.of("x".repeat(Constants.LIVE_FRAME_BYTES))) }.exceptionOrNull() is IOException)
-                server.shutdown()
-                assertTrue(runCatching { withTimeout(2_000) { connection.receive() } }.exceptionOrNull() is IOException)
+                assertEquals(0, disconnected.sends)
+                disconnected.fail()
                 connection.close()
-            } finally { transport.close() }
+                assertTrue(runCatching { withTimeout(2_000) { connection.receive() } }.exceptionOrNull() is IOException)
+            }
         }
+        for (closeTransport in listOf(false, true)) for (failOnCancel in listOf(true, false)) {
+            val socket = LiveSocket(failOnCancel)
+            HTTPTransport("https://sync.invalid/", 4, webSocketFactory = socket).use { transport ->
+                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
+                val waiting = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
+                if (closeTransport) transport.close() else connection.close()
+                assertEquals(1, socket.cancels)
+                assertNull(withTimeout(2_000) { waiting.await() })
+                assertTrue(runCatching { connection.send(Json.objectOf()) }.exceptionOrNull() is IOException)
+                assertEquals(0, socket.sends)
+                socket.fail()
+                assertNull(withTimeout(2_000) { connection.receive() })
+            }
+        }
+    }
+
+    @Test fun liveSocketDisconnectFailsReceive() = runBlocking {
         MockWebServer().use { server ->
             val serverSocket = CompletableDeferred<WebSocket>(); server.enqueue(socketResponse(serverSocket))
             HTTPTransport(server.url("/").toString(), 4).use { transport ->
-                val connection = connected(withTimeout(2_000) { transport.openLive("token") })
-                val waiting = async(start = CoroutineStart.UNDISPATCHED) { connection.receive() }
-                transport.close(); assertNull(withTimeout(2_000) { waiting.await() })
-                assertTrue(runCatching { connection.send(Json.objectOf()) }.exceptionOrNull() is IOException)
+                connected(withTimeout(2_000) { transport.openLive("token") }).use { connection ->
+                    withTimeout(2_000) { serverSocket.await() }
+                    server.shutdown()
+                    assertTrue(runCatching { withTimeout(2_000) { connection.receive() } }.exceptionOrNull() is IOException)
+                }
             }
         }
     }
