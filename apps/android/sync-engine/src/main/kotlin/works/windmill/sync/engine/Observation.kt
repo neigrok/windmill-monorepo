@@ -6,6 +6,7 @@ import kotlinx.coroutines.*
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.FlowCollector
 import works.windmill.sync.api.Notice
 import works.windmill.sync.api.NoticeContent
 import works.windmill.sync.api.UndoOffer
@@ -23,7 +24,14 @@ import works.windmill.sync.core.Json
 import works.windmill.sync.core.RefusalCode
 
 @OptIn(ExperimentalForInheritanceCoroutinesApi::class)
-private class ViewState<T>(val owner: Any, state: StateFlow<T>) : StateFlow<T> by state
+private class ViewState<T>(val owner: Any, private val state: StateFlow<T>) : StateFlow<T> by state {
+    override suspend fun collect(collector: FlowCollector<T>): Nothing = state.collect(object : FlowCollector<T> {
+        // The delegate retains this collector while suspended. Keep its weak-cached native view
+        // here too; delegating collect directly retains only the MutableStateFlow.
+        @Suppress("unused") private val retainedOwner = owner
+        override suspend fun emit(value: T) = collector.emit(value)
+    })
+}
 
 class RecordsView internal constructor(internal val key: Key) {
     internal data class Key(val scope: ScopeRef, val type: String, val field: String?, val id: RecordID?, val mode: ViewMode)

@@ -18,6 +18,32 @@ fun Engine.confirmedLegacyRecords(context: CommitContext, scope: ScopeRef, type:
     store.rows(context.replica, scope).filter { it.key.type == type }.mapNotNull { context.confirmed(type, it.key.id) }
 }
 
+fun Engine.unsubmittedLegacyGestures(context: CommitContext, scope: ScopeRef, records: Set<RecordKey>): List<String> = lock.withLock {
+    ensureOpen()
+    val replica = device.replicas.single { it.id == context.replica }
+    if (replica.state != "anon") throw CommitFailure.malformed("legacy-workout-bound")
+    replica.entries().groupBy { it.gestureId }.filterValues { entries -> entries.any { entry -> entry.scope == scope && entry.deltas.any { it.key in records } } }
+        .map { (gesture, entries) ->
+            if (entries.any { it.scope != scope || it.state !in setOf("ready", "held") || it.intent.n != null ||
+                    it.deltas.isEmpty() || it.deltas.any { delta -> delta.key !in records &&
+                        !(delta.lattice.life == null && delta.lattice.born != null && delta.lattice.fields.isEmpty() && delta.texts.isEmpty()) } }) throw CommitFailure.malformed("legacy-workout-mixed")
+            gesture
+        }
+}
+
+fun Engine.reconcileConfirmedLegacyCommand(context: CommitContext, scope: ScopeRef, gestureId: String, command: String, record: RecordKey): Boolean = lock.withLock {
+    ensureOpen()
+    val replica = device.replicas.single { it.id == context.replica }
+    val known = context.confirmed(record.type, record.id)?.takeIf { it.isVisible && it.born != null } ?: return@withLock false
+    val entries = replica.entries().filter { it.gestureId == gestureId }
+    if (entries.isEmpty()) return@withLock true
+    if (entries.any { it.scope != scope || it.state !in setOf("ready", "held") || it.intent.n != null || it.intent.command?.name != command ||
+            it.intent.deltas.any { delta -> delta.lattice.life != null || delta.lattice.born == null || delta.lattice.fields.isNotEmpty() || delta.texts.isNotEmpty() } ||
+            it.predict.any { delta -> delta.key != RecordKey(known.type, known.id) } }) return@withLock false
+    entries.forEach { replica.move(it, "silent-fold", ended) }
+    true
+}
+
 private fun Engine.commitLegacyGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, at: Long): CommitOutcome {
     val outcome = commitGesture(replica, scope, gesture, at)
     if (outcome !is CommitOutcome.Committed || gesture.command == null) return outcome

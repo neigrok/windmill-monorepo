@@ -50,6 +50,21 @@ class EngineHooksTests {
         }
     }
 
+    @Test fun legacyPackagingNeverRetiresAGestureWithAnotherWorkoutsAuthoredRecords() {
+        Engine.memory(registry, clock = object : EngineClock { override fun now() = 5_000L }, actor = "r_aaaaaaaaaaaa").use { e ->
+            e.commit(scope, Gesture(listOf(
+                Change.create("run", NewID.Given(RecordID("run00001")), mapOf("label" to Json.of("First"))),
+                Change.create("run", NewID.Given(RecordID("run00002")), mapOf("label" to Json.of("Second")))), atomic = true))
+            val before = e.snapshot()
+            val failure = assertThrows(CommitFailure::class.java) { e.commitLegacy(scope) { context ->
+                val selected = e.unsubmittedLegacyGestures(context, scope, setOf(RecordKey("run", RecordID("run00001"))))
+                Gesture(emptyList(), supersede = selected, local = listOf(DeviceWrite("rack", Json.of("original source")))) to Unit
+            } }
+            assertEquals("legacy-workout-mixed", failure.description); assertEquals(before, e.snapshot())
+            assertNull(e.read(scope) { it.device("rack") })
+        }
+    }
+
     @Test fun commandResultReceivesDeviceSnapshotAndCommitsItsWritesWithTheVerdict() {
         var calls = 0
         engine(writes = { command, result, epoch, rows ->

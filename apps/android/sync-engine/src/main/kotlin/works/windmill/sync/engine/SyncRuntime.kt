@@ -374,7 +374,7 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
         val due = scopes.sorted().filter { target ->
             val stopped = engine.lock.withLock { engine.device.current().cursors[target.text]?.get("digestStop") == Json.of(appVersion) }
             val cooldown = pullWaits.getOrPut(target, ::SenderWait)
-            !stopped && (target in dueDoubts || cooldown.due(mono())) && (target in pullWanted || (nextPull[target] ?: 0) <= mono())
+            !stopped && (target in dueDoubts || cooldown.due(mono())) && (target in pullWanted || socket == null && (nextPull[target] ?: 0) <= mono())
         }
         if (due.isEmpty()) return@withLock false
         val batches = mutableListOf<List<ScopeRef>>()

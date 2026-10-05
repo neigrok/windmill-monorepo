@@ -1,6 +1,7 @@
 package works.windmill.sync.engine
 
 import java.io.File
+import java.lang.ref.WeakReference
 import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
@@ -9,6 +10,8 @@ import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeout
@@ -190,6 +193,24 @@ class ObservationTests {
             assertEquals("probe", notice.product); assertEquals(RefusalCode.cap, notice.code)
             engine.dismissNotice(notice.id)
             withTimeout(5_000) { notices.notices.first { it.isEmpty() } }
+        }
+    }
+    @Test fun anActiveNoticeCollectorRetainsItsNativeViewThroughGarbageCollection() = runBlocking<Unit> {
+        engine().use { engine ->
+            val received = Channel<List<Notice>>(Channel.UNLIMITED)
+            val observing = launch {
+                engine.notices("probe").notices.collect { received.send(it) }
+            }
+            try {
+                assertTrue(withTimeout(5_000) { received.receive() }.isEmpty())
+                val reference = WeakReference(engine.notices("probe"))
+                repeat(10) { System.gc(); delay(20) }
+                assertNotNull("a suspended collector must retain the native view that feeds it", reference.get())
+                engine.write { replica -> replica.notices.add(Json.objectOf("id" to Json.of("notice:g2/0"),
+                    "scope" to Json.of(scope.text), "code" to Json.of("cap"), "at" to Json.of(1_000),
+                    "content" to Json.objectOf("d" to Json.array()))) }
+                assertEquals("notice:g2/0", withTimeout(5_000) { received.receive() }.single().id)
+            } finally { observing.cancelAndJoin(); received.close() }
         }
     }
     @Test fun statusReportsNetworkPauseUpgradeAccountAndUnfinishedSignIn() = runBlocking<Unit> {

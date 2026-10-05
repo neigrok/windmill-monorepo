@@ -51,6 +51,323 @@ class LegacyGymMigrationTests {
         }
     }
 
+    @Test fun migratedStartsExplicitlyRefuseJoiningAnotherOpenWorkout() {
+        val queue = SetQueue(File(temporary.root, SetQueue.fileName), "A")
+        queue.hold(Session("session01", 1_000), unclaimed = true)
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run()
+            val start = outbox(local).single().member("intent").member("cmd")
+            assertEquals("gym.start", start.member("name").str())
+            assertFalse(start.member("args").member("joinOpenSession").bool())
+        }
+    }
+
+    @Test fun aMigratedStartMeetingAnotherConfirmedWorkoutRetainsItsOwnSessionAndAttemptsAcrossRestart() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote ->
+            remote.signIn("A", emptyMap()); pull(remote, server)
+            EngineTraining(remote) { null }.startSession(SessionStart("existing1", 500)); push(remote, server)
+        }
+        val queue = SetQueue(File(temporary.root, SetQueue.fileName), "A")
+        val session = Session("session01", 1_000)
+        queue.hold(session, unclaimed = true); queue.store(finished().sets.single(), session.id, needsPush = true)
+        val original = queue.sending(queue.pending.single())
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server); push(local, server)
+            val refusal = LegacyGymMigration.refusals(local).single()
+            assertEquals("session-open", refusal.code); assertEquals(session, refusal.session); assertEquals(listOf(original.set), refusal.sets)
+            assertEquals(LegacyOperation(LegacyGymMigration.operations(local).single().token, session.id, original), LegacyGymMigration.operations(local).single())
+            assertNull(local.read(scope) { it.confirmed("set", RecordID(original.set.id)) })
+            local.notices("gym").notices.value.forEach { local.dismissNotice(it.id) }
+            engine(local.snapshot()).use { reopened ->
+                assertEquals(refusal, LegacyGymMigration.refusals(reopened).single())
+                assertEquals(session.id, LegacyGymMigration.operations(reopened).single().sessionId)
+                assertEquals(original, LegacyGymMigration.operations(reopened).single().entry)
+            }
+        }
+    }
+
+    @Test fun pendingAppendsReplayByPerformedTimeThenStableIdentityAcrossRestart() {
+        val queue = SetQueue(File(temporary.root, SetQueue.fileName), "A")
+        queue.hold(Session("session01", 1_000), unclaimed = true)
+        val sets = listOf("zzzzzzzz" to 3_000L, "bbbbbbbb" to 2_000L, "aaaaaaaa" to 2_000L, "first001" to 1_500L, "late0001" to 4_000L)
+            .map { (id, at) -> finished().sets.single().copy(id = id, completedAtMs = at) }
+        sets.forEach { queue.store(it, "session01", needsPush = true) }
+        queue.sending(queue.pending.first { it.set.id == "bbbbbbbb" })
+        val expected = sets.sortedWith(compareBy<TrainingSet>({ it.completedAtMs }, { it.id })).map { it.id }
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run()
+            assertEquals(expected, LegacyGymMigration.operations(local).map { it.entry.set.id })
+            val original = LegacyGymMigration.operations(local).associate { it.entry.set.id to it.entry }
+            engine(local.snapshot()).use { reopened ->
+                assertEquals(expected, LegacyGymMigration.operations(reopened).map { it.entry.set.id })
+                assertEquals(original, LegacyGymMigration.operations(reopened).associate { it.entry.set.id to it.entry })
+            }
+        }
+    }
+
+    @Test fun onlyTheSameConfirmedSessionIdentityReconcilesAMigratedStartAutomatically() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote ->
+            remote.signIn("A", emptyMap()); pull(remote, server)
+            EngineTraining(remote) { null }.startSession(SessionStart("session01", 1_000)); push(remote, server)
+        }
+        SetQueue(File(temporary.root, SetQueue.fileName), "A").hold(Session("session01", 1_000), unclaimed = true)
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server)
+            val before = local.read(scope) { it.confirmed("session", RecordID("session01")) }
+            LegacyGymMigration.reconcileConfirmed(local)
+            assertTrue(outbox(local).isEmpty()); assertTrue(LegacyGymMigration.refusals(local).isEmpty())
+            assertEquals(before, local.read(scope) { it.confirmed("session", RecordID("session01")) })
+            assertEquals("admitted", sources(local).single().member("state").str())
+        }
+    }
+
+    @Test fun aMigratedPlannedStartRefusesAChangedAccountPlanAndKeepsItsExactSourceForCorrection() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote ->
+            remote.signIn("A", emptyMap()); pull(remote, server)
+            val gym = EngineTraining(remote) { null }
+            val exercise = gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            val routine = gym.createRoutine(RoutineWrite("routine01", "Original", 0,
+                entries = listOf(RoutineEntryWrite(exercise.id, listOf(SetTarget(5, 60.0))))))
+            push(remote, server)
+            val session = Session("session01", 1_000, routineId = routine.id, plan = PlanSnapshot(routine))
+            val set = finished().sets.single().copy(exerciseId = exercise.id)
+            val queue = SetQueue(File(temporary.root, SetQueue.fileName), "A")
+            queue.hold(session, true); queue.store(set, session.id, true)
+            val attempt = queue.sending(queue.pending.single())
+            DeviceCopy(File(temporary.root, DeviceCopy.fileName)).apply {
+                hold("A", listOf(exercise)); holdRoutines("A", listOf(routine))
+            }
+            gym.replaceRoutine(routine.id, RoutineWrite(routine).copy(name = "Changed")); push(remote, server)
+            engine().use { local ->
+                LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server)
+                EngineTraining(local) { null }.reconcileLegacyOperations(); push(local, server)
+                assertNull(local.read(scope) { it.confirmed("session", RecordID(session.id)) })
+                val refusal = LegacyGymMigration.refusals(local).single()
+                assertEquals("frozen-plan-changed", refusal.code); assertEquals(session, refusal.session); assertEquals(listOf(set), refusal.sets)
+                assertEquals(attempt, LegacyGymMigration.operations(local).single().entry)
+                local.notices("gym").notices.value.forEach { local.dismissNotice(it.id) }
+                engine(local.snapshot()).use { reopened ->
+                    assertEquals(refusal, LegacyGymMigration.refusals(reopened).single())
+                    LegacyGymMigration.keepWorkout(reopened, session.id)
+                    val kept = LegacyGymMigration.refusals(reopened).single()
+                    assertEquals("frozen-plan-changed", kept.code); assertEquals(session.copy(finishedAtMs = set.completedAtMs), kept.session)
+                    assertEquals(listOf(set), kept.sets); assertTrue(outbox(reopened).isEmpty())
+                    gym.replaceRoutine(routine.id, RoutineWrite(routine)); push(remote, server); pull(reopened, server)
+                    LegacyGymMigration.retry(reopened, session.id); push(reopened, server)
+                    val actual = EngineTraining(reopened) { null }.session(session.id)!!
+                    assertEquals(kept.session, actual.session); assertEquals(session.plan, actual.session.plan)
+                    assertEquals(listOf(set.copy(setNumber = 1)), actual.sets)
+                }
+            }
+        }
+    }
+
+    @Test fun aPlannedStartChangedAfterItsCleanPullRefusesAtAdmissionWithoutReplacingTheFrozenPlan() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote ->
+            remote.signIn("A", emptyMap()); pull(remote, server)
+            val gym = EngineTraining(remote) { null }
+            val exercise = gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            val routine = gym.createRoutine(RoutineWrite("routine01", "Original", 0,
+                entries = listOf(RoutineEntryWrite(exercise.id, listOf(SetTarget(5, 60.0))))))
+            push(remote, server)
+            val session = Session("session01", 1_000, routineId = routine.id, plan = PlanSnapshot(routine))
+            val set = finished().sets.single().copy(exerciseId = exercise.id)
+            SetQueue(File(temporary.root, SetQueue.fileName), "A").apply { hold(session, true); store(set, session.id, true) }
+            engine().use { local ->
+                LegacyGymMigration(temporary.root, local, "A").run(); assertTrue(outbox(local).isEmpty())
+                pull(local, server); LegacyGymMigration.reconcileConfirmed(local)
+                val intent = outbox(local).single().member("intent")
+                assertEquals("gym.start", intent.member("cmd").member("name").str())
+                assertEquals(2, intent.member("guard").arr().size)
+                assertEquals("routine", intent.member("d").arr().single().member("t").str())
+                gym.replaceRoutine(routine.id, RoutineWrite(routine).copy(name = "Changed")); push(remote, server)
+                push(local, server)
+                val refusal = LegacyGymMigration.refusals(local).single()
+                assertEquals("stale", refusal.code); assertEquals(session, refusal.session); assertEquals(listOf(set), refusal.sets)
+                assertNull(local.read(scope) { it.confirmed("session", RecordID(session.id)) })
+                assertEquals(set, LegacyGymMigration.operations(local).single().entry.set)
+            }
+        }
+    }
+
+    @Test fun aQueuedPlannedStartReconcilesOnlyItsExactlyConfirmedIdentityWithoutAnotherStartIntent() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote ->
+            remote.signIn("A", emptyMap()); pull(remote, server)
+            val gym = EngineTraining(remote) { null }
+            val exercise = gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            val routine = gym.createRoutine(RoutineWrite("routine01", "Original", 0,
+                entries = listOf(RoutineEntryWrite(exercise.id, listOf(SetTarget(5, 60.0))))))
+            push(remote, server)
+            val session = Session("session01", 1_000, routineId = routine.id, plan = PlanSnapshot(routine))
+            SetQueue(File(temporary.root, SetQueue.fileName), "A").hold(session, true)
+            engine().use { local ->
+                LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server); LegacyGymMigration.reconcileConfirmed(local)
+                val source = sources(local).single().member("source")
+                assertEquals("routine", outbox(local).single().member("intent").member("d").arr().single().member("t").str())
+                gym.startSession(SessionStart(session.id, session.startedAtMs, routine.id)); push(remote, server); pull(local, server)
+                val known = local.read(scope) { it.confirmed("session", RecordID(session.id)) }!!
+                LegacyGymMigration.reconcileConfirmed(local)
+                assertTrue(outbox(local).isEmpty()); assertTrue(LegacyGymMigration.refusals(local).isEmpty())
+                assertEquals(known, local.read(scope) { it.confirmed("session", RecordID(session.id)) })
+                assertEquals(source, sources(local).single().member("source")); assertEquals("admitted", sources(local).single().member("state").str())
+            }
+        }
+    }
+
+    @Test fun repackagingLinkedAnonymousHistoryRollsBackOnCrashAndResumesWithOneDurableImport() = kotlinx.coroutines.runBlocking {
+        val log = LocalLog(File(temporary.root, LocalLog.fileName))
+        log.hold(Exercise("exercise1", "Custom", "isolation", "machine", custom = true))
+        val routine = Routine("routine01", "Original", entries = listOf(RoutineEntry(exerciseId = "exercise1", sets = listOf(SetTarget(5, 60.0)))))
+        log.hold(routine)
+        val row = finished().copy(session = finished().session.copy(routineId = routine.id, plan = PlanSnapshot(routine)),
+            sets = listOf(finished().sets.single().copy(exerciseId = "exercise1")), deleted = emptyList())
+        log.hold(row)
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local).run()
+            val before = local.snapshot(); val born = local.read(scope) { it.drawn("routine", RecordID(routine.id))!!.born }
+            local.failNextCommit(); assertThrows(CommitFailure::class.java) { LegacyGymMigration.retainAndImport(local, row) }
+            assertEquals(before, local.snapshot())
+            LegacyGymMigration.retainAndImport(local, row)
+            assertEquals(3, outbox(local).size)
+            val intent = outbox(local).single { it.member("intent")["cmd"] != null }.member("intent")
+            assertEquals("gym.importSession", intent.member("cmd").member("name").str())
+            assertEquals(born!!.json, intent.member("d").arr().single().member("born"))
+            assertEquals(row, LegacyGymMigration.retainedWorkouts(local).single())
+            engine(local.snapshot()).use { reopened ->
+                val stable = reopened.snapshot(); LegacyGymMigration.retainAndImport(reopened, row)
+                assertEquals(stable, reopened.snapshot()); assertEquals(3, outbox(reopened).size)
+                assertEquals(row, LegacyGymMigration.retainedWorkouts(reopened).single())
+            }
+        }
+    }
+
+    @Test fun aFourthOfflineSetAfterMigrationStaysVisibleAndKeepImportsAllFourInPerformedOrder() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote -> remote.signIn("A", emptyMap()); pull(remote, server)
+            EngineTraining(remote) { null }.startSession(SessionStart("existing1", 500)); push(remote, server) }
+        LocalLog(File(temporary.root, LocalLog.fileName)).hold(Exercise("exercise1", "Custom", "isolation", "machine", custom = true))
+        val queue = SetQueue(File(temporary.root, SetQueue.fileName))
+        queue.hold(Session("session01", 1_000), true)
+        val first = finished().sets.single().copy(id = "original1", exerciseId = "exercise1")
+        listOf(first, first.copy(id = "zzzzzzzz", completedAtMs = 2_500), first.copy(id = "aaaaaaaa", completedAtMs = 2_500))
+            .forEach { queue.store(it, "session01", true) }
+        val attempt = queue.sending(queue.pending.first { it.set.id == first.id })
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local).run()
+            val gym = EngineTraining(local) { null }; gym.reconcileLegacyOperations()
+            gym.appendSet("session01", SetWrite(first.copy(id = "fourth01", completedAtMs = 3_000)))
+            val current = gym.details().single().let { LocalLog.FinishedSession(it.session, it.sets) }
+            LegacyGymMigration.retainWorkout(local, current)
+            assertEquals(4, LegacyGymMigration.retainedWorkouts(local).single().sets.size)
+            assertEquals(attempt, LegacyGymMigration.operations(local).first { it.entry.set.id == first.id }.entry)
+            local.signIn("A", emptyMap()); pull(local, server); push(local, server)
+            local.notices("gym").notices.value.forEach { local.dismissNotice(it.id) }
+            engine(local.snapshot()).use { reopened ->
+                assertEquals(4, LegacyGymMigration.retainedWorkouts(reopened).single().sets.size)
+                assertEquals("session-open", LegacyGymMigration.refusals(reopened).single().code)
+                LegacyGymMigration.keepWorkout(reopened, "session01")
+                val command = outbox(reopened).single().member("intent").member("cmd")
+                assertEquals("gym.importSession", command.member("name").str()); assertEquals(3_000L, command.member("args").member("finishedAt").long())
+                assertEquals(listOf("original1", "aaaaaaaa", "zzzzzzzz", "fourth01"), command.member("args").member("sets").arr().map { it.member("id").str() })
+                assertTrue(LegacyGymMigration.operations(reopened).isEmpty()); push(reopened, server)
+                val actual = EngineTraining(reopened) { null }
+                assertTrue(actual.session("existing1")!!.session.isOpen)
+                assertEquals(listOf(1, 2, 3, 4), actual.session("session01")!!.sets.map { it.setNumber })
+            }
+        }
+    }
+
+    @Test fun aFailedKeepRetainsTheFinishedSourceAndAttemptMetadataForRetryAfterRestart() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote -> remote.signIn("A", emptyMap()); pull(remote, server)
+            EngineTraining(remote) { null }.startSession(SessionStart("existing1", 500)); push(remote, server) }
+        val queue = SetQueue(File(temporary.root, SetQueue.fileName), "A")
+        queue.hold(Session("session01", 1_000), true)
+        val set = finished().sets.single().copy(note = "n".repeat(3_000))
+        queue.store(set, "session01", true); val attempt = queue.sending(queue.pending.single())
+        Engine.memory(SyncSchema.registry, clock = object : EngineClock { override fun now() = 100_000L }, pushMaxBytes = 800,
+            commandResultWrites = LegacyGymMigration.commandResultWrites, pendingDeviceWork = LegacyGymMigration.pendingDeviceWork,
+            rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue).use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server); push(local, server)
+            assertEquals("session-open", LegacyGymMigration.refusals(local).single().code)
+            LegacyGymMigration.keepWorkout(local, "session01")
+            val refusal = LegacyGymMigration.refusals(local).single()
+            assertEquals("too-large", refusal.code); assertEquals(2_000L, refusal.session!!.finishedAtMs); assertEquals(listOf(set), refusal.sets)
+            val source = sources(local).single { it["kind"] == Json.of("finished") && it["state"] == Json.of("refused") }
+            assertEquals(attempt, diskJson.decodeFromString(SetQueue.Entry.serializer(), source.member("original").member("entries").member(set.id).jcs))
+            assertTrue(outbox(local).isEmpty()); assertTrue(LegacyGymMigration.operations(local).isEmpty())
+            engine(local.snapshot()).use { reopened ->
+                assertEquals(refusal, LegacyGymMigration.refusals(reopened).single())
+                LegacyGymMigration.retry(reopened, "session01")
+                assertEquals("gym.importSession", outbox(reopened).single().member("intent").member("cmd").member("name").str())
+                assertEquals(source.member("original"), sources(reopened).single { it["kind"] == Json.of("finished") && it["state"] == Json.of("queued") }.member("original"))
+            }
+        }
+    }
+
+    @Test fun refreshedFinishedSnapshotsPreserveExplicitCorrectionsToDefaultValues() = kotlinx.coroutines.runBlocking {
+        engine().use { local ->
+            val gym = EngineTraining(local) { null }; gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            gym.startSession(SessionStart("session01", 1_000))
+            gym.appendSet("session01", SetWrite("set00001", "exercise1", 60.0, 5, SetKind.Warmup, 2_000))
+            gym.fixSet("session01", "set00001", SetFix(rpe = 9.0, rpeNamed = true, note = "Before"))
+            gym.finishSession("session01", 3_000)
+            fun row() = gym.details().single().let { LocalLog.FinishedSession(it.session, it.sets) }
+            LegacyGymMigration.retainAndImport(local, row())
+            gym.fixSet("session01", "set00001", SetFix(kind = SetKind.Working, rpe = null, rpeNamed = true, note = ""))
+            val corrected = row(); LegacyGymMigration.retainAndImport(local, corrected)
+            val sets = outbox(local).single { it.member("intent")["cmd"] != null }.member("intent").member("cmd").member("args").member("sets").arr()
+            assertEquals(Json.of("working"), sets.single().member("kind")); assertEquals(Json.Null, sets.single().member("rpe")); assertEquals(Json.of(""), sets.single().member("note"))
+            assertEquals(corrected, LegacyGymMigration.retainedWorkouts(local).single())
+        }
+    }
+
+    @Test fun adoptionRefreshNeverDropsUnknownKindsOrNestedFrozenPlanFields() {
+        val unknownKindDir = temporary.newFolder("unknown-kind")
+        val row = finished().copy(sets = listOf(finished().sets.single().copy(kind = SetKind.Warmup)), deleted = emptyList())
+        LocalLog(File(unknownKindDir, LocalLog.fileName)).hold(row)
+        val kindFile = File(unknownKindDir, LocalLog.fileName); kindFile.writeText(kindFile.readText().replace("\"warmup\"", "\"future-kind\""))
+        engine().use { local ->
+            LegacyGymMigration(unknownKindDir, local).run(); LegacyGymMigration.retainAndImport(local, row.copy(sets = row.sets.map { it.copy(kind = SetKind.Working) }))
+            val retained = sources(local).single { it["kind"] == Json.of("finished") && it["state"] == Json.of("refused") }
+            assertEquals("future-kind", retained.member("source").member("sets").arr().single().member("kind").str())
+            assertEquals("source-kind", LegacyGymMigration.refusals(local).single().code); assertTrue(outbox(local).isEmpty())
+        }
+        val unknownPlanDir = temporary.newFolder("unknown-plan")
+        val plan = PlanSnapshot("Original", listOf(PlanEntry("squat", listOf(SetTarget(5, 60.0)))))
+        val planned = finished().copy(session = finished().session.copy(routineId = "routine01", plan = plan), deleted = emptyList())
+        LocalLog(File(unknownPlanDir, LocalLog.fileName)).hold(planned)
+        val planFile = File(unknownPlanDir, LocalLog.fileName); planFile.writeText(planFile.readText().replace("\"plan\":{", "\"plan\":{\"futureFrozen\":\"exact\","))
+        engine().use { local ->
+            LegacyGymMigration(unknownPlanDir, local).run(); val original = sources(local).single().member("source").member("session").member("plan")
+            LegacyGymMigration.retainAndImport(local, planned)
+            val retained = sources(local).single { it["kind"] == Json.of("finished") && it["state"] == Json.of("refused") }
+            assertEquals(original, retained.member("source").member("session").member("plan"))
+            assertEquals("source-needs-update", LegacyGymMigration.refusals(local).single().code); assertTrue(outbox(local).isEmpty())
+        }
+    }
+
+    @Test fun aFinishedImportNeverClosesOrJoinsTheAccountsOverlappingOpenWorkout() = kotlinx.coroutines.runBlocking {
+        val server = ModelServer(SyncSchema.registry, GymServerRules())
+        engine().use { remote -> remote.signIn("A", emptyMap()); pull(remote, server)
+            val gym = EngineTraining(remote) { null }; gym.createExercise(ExerciseWrite("exercise1", "Custom", "isolation", "machine"))
+            gym.startSession(SessionStart("existing1", 1_500)); push(remote, server) }
+        val row = finished().copy(sets = listOf(finished().sets.single().copy(exerciseId = "exercise1")), deleted = emptyList())
+        shelf(row, "A")
+        engine().use { local ->
+            LegacyGymMigration(temporary.root, local, "A").run(); pull(local, server); LegacyGymMigration.reconcileConfirmed(local)
+            assertEquals("gym.importSession", outbox(local).single().member("intent").member("cmd").member("name").str()); push(local, server)
+            val gym = EngineTraining(local) { null }
+            assertEquals(row.session, gym.session(row.session.id)!!.session); assertTrue(gym.session("existing1")!!.session.isOpen)
+            assertEquals(1, gym.session(row.session.id)!!.sets.size)
+        }
+    }
+
     @Test fun aLostFinishReplyAdoptsOnlyItsExactlyMatchingConfirmedWorkoutWithoutReminting() = kotlinx.coroutines.runBlocking {
         val server = ModelServer(SyncSchema.registry, GymServerRules())
         val row = finished().copy(sets = listOf(finished().sets.single().copy(exerciseId = "exercise1")), deleted = emptyList())
@@ -332,7 +649,7 @@ class LegacyGymMigrationTests {
             assertThrows(IllegalStateException::class.java) { LegacyGymMigration.retry(e, "session01") }
             assertTrue(outbox(e).isEmpty()); assertTrue(LegacyGymMigration.operations(e).isEmpty())
             e.signIn("A", emptyMap()); LegacyGymMigration.retry(e, "session01")
-            assertTrue(outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool())
+            assertFalse(outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool())
             assertTrue(LegacyGymMigration.operations(e).single().entry.attempted)
             assertEquals("set00001", LegacyGymMigration.operations(e).single().entry.set.id)
         }
@@ -368,15 +685,13 @@ class LegacyGymMigrationTests {
         val q = SetQueue(File(temporary.root, SetQueue.fileName)); val session = Session("session01", 1_000, routineId = "routine01")
         q.hold(session, true); q.store(finished().sets.single(), session.id, true); q.sending(q.pending.single())
         engine().use { e -> LegacyGymMigration(temporary.root, e).run(); val original = sources(e).first { it["kind"] == Json.of("start") }.member("source")
-            e.signIn("A", emptyMap()); val request = e.nextPush()!!; val n = request.member("intents").arr().single().member("n")
-            val reading = ClockReading(100_000, 100_000, "boot")
-            e.onPushResponse(request, SyncResponse(200, Json.objectOf("epoch" to Json.of("ep-1"), "as" to Json.of("A"), "lastN" to n,
-                "results" to Json.array(Json.objectOf("n" to n, "s" to Json.of("refused"), "code" to Json.of("routine-missing"))))), RequestTiming(reading, reading))
+            assertEquals("routine-missing", LegacyGymMigration.refusals(e).single().code)
+            e.signIn("A", emptyMap())
             val attempted = LegacyGymMigration.operations(e).single()
             LegacyGymMigration.replaceStartAndRetry(e, session.id, session.copy(startedAtMs = 900, routineId = null))
             val saved = sources(e).first { it["kind"] == Json.of("start") }
             assertEquals(original, saved.member("original")); assertEquals(original.member("entries"), saved.member("source").member("entries"))
-            assertEquals(attempted, LegacyGymMigration.operations(e).single()); assertTrue(outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool())
+            assertEquals(attempted, LegacyGymMigration.operations(e).single()); assertFalse(outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool())
         }
     }
 
@@ -512,11 +827,11 @@ class LegacyGymMigrationTests {
             assertEquals(null, engine.read(scope) { it.drawn("set", RecordID("set00001")) })
             val start = outbox(engine).single().member("intent").member("cmd")
             assertEquals("gym.start", start.member("name").str())
-            assertTrue(start.member("args").member("joinOpenSession").bool())
+            assertFalse(start.member("args").member("joinOpenSession").bool())
         }
     }
 
-    @Test fun joiningAnExistingWorkoutRewritesTargetsAtomicallyWhileKeepingOriginalAttemptedPayload() {
+    @Test fun aHistoricalStartReceiptMappingAnotherWorkoutNeverReassignsTheRetainedSource() {
         val queue = SetQueue(File(temporary.root, SetQueue.fileName))
         queue.hold(Session("session01", 1_000), unclaimed = true)
         queue.store(finished().sets.single(), "session01", needsPush = true)
@@ -532,14 +847,16 @@ class LegacyGymMigrationTests {
                 "t" to Json.of("session"), "id" to Json.of("existing1"), "from" to Json.of("session01"), "f" to Json.objectOf())))
             engine.onPushResponse(request, SyncResponse(200, Json.objectOf("epoch" to Json.of("ep-1"), "as" to Json.of("A"), "lastN" to n,
                 "results" to Json.array(result))), timing)
-            assertEquals("existing1", LegacyGymMigration.operations(engine).single().sessionId)
+            assertEquals("session01", LegacyGymMigration.operations(engine).single().sessionId)
             assertEquals(original, LegacyGymMigration.operations(engine).single().entry)
-            assertEquals("existing1", LegacyGymMigration.cached(engine, "start").single().member("session").member("id").str())
-            assertEquals("session01", LegacyGymMigration.sourceSessionId(engine, "existing1"))
+            assertEquals("session01", LegacyGymMigration.cached(engine, "start").single().member("session").member("id").str())
+            assertNull(LegacyGymMigration.sourceSessionId(engine, "existing1"))
+            assertEquals("session-open", LegacyGymMigration.refusals(engine).single().code)
             assertEquals("session01", sources(engine).first { it["kind"] == Json.of("start") }.member("source").member("session").member("id").str())
             engine(engine.snapshot()).use { reopened ->
-                assertEquals("existing1", LegacyGymMigration.operations(reopened).single().sessionId)
+                assertEquals("session01", LegacyGymMigration.operations(reopened).single().sessionId)
                 assertEquals(original, LegacyGymMigration.operations(reopened).single().entry)
+                assertEquals("session-open", LegacyGymMigration.refusals(reopened).single().code)
             }
         }
     }
@@ -760,6 +1077,7 @@ class LegacyGymMigrationTests {
             val question = engine.signIn("A", mapOf("gym" to true))
             assertFalse(question.member("complete").bool())
             assertEquals(1L, question.member("due").arr().single().member("count").member("session").long())
+            assertEquals(2L, question.member("due").arr().single().member("count").member("set").long())
             engine.signIn("A", mapOf("gym" to true), mapOf("gym" to "add"))
             assertEquals(setOf("session01", "session02"), LegacyGymMigration.refusals(engine).map { it.id }.toSet())
             assertEquals(2, engine.read(scope) { it.devices(LegacyGymMigration.journalPrefix).size })

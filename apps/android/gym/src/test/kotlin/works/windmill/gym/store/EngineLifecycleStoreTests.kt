@@ -199,7 +199,13 @@ class EngineLifecycleStoreTests {
             LocalLog(File(tmp.root, LocalLog.fileName)).hold(row)
             LegacyGymMigration(tmp.root, engine).run()
             assertEquals(row.sets, LegacyGymMigration.refusals(engine).single().sets)
-            assertNull(EngineTraining(engine) { null }.session(row.session.id))
+            engine.read(ScopeRef(Gym.scope)) { reader ->
+                assertNull(reader.drawn(Gym.Types.session, RecordID(row.session.id)))
+                assertNull(reader.confirmed(Gym.Types.session, RecordID(row.session.id)))
+                assertTrue(reader.drawn(Gym.Types.set).isEmpty())
+                assertTrue(reader.stored(Gym.Types.set).isEmpty())
+            }
+            assertEquals(SessionDetail(row.session, row.sets), EngineTraining(engine) { null }.session(row.session.id))
             assertTrue(outbox(engine).isEmpty())
         }
     }
@@ -392,20 +398,38 @@ class EngineLifecycleStoreTests {
 
     @Test fun anonymousRetryCannotAdoptQuarantinedHistory() = runTest {
         engine().use { engine ->
-            oldShelf(); LegacyGymMigration(tmp.root, engine).run()
+            val original = finished()
+            oldShelf(original); LegacyGymMigration(tmp.root, engine).run()
             assertThrows(IllegalStateException::class.java) { LegacyGymMigration.retry(engine, "session1") }
             assertEquals("identity-unresolved", LegacyGymMigration.refusals(engine).single().code)
-            assertNull(EngineTraining(engine) { null }.session("session1")); assertTrue(outbox(engine).isEmpty())
+            engine.read(ScopeRef(Gym.scope)) { reader ->
+                assertNull(reader.drawn(Gym.Types.session, RecordID(original.session.id)))
+                assertNull(reader.confirmed(Gym.Types.session, RecordID(original.session.id)))
+                assertNull(reader.drawn(Gym.Types.set, RecordID(original.sets.single().id)))
+                assertNull(reader.confirmed(Gym.Types.set, RecordID(original.sets.single().id)))
+            }
+            assertEquals(SessionDetail(original.session, original.sets), EngineTraining(engine) { null }.session("session1"))
+            assertTrue(outbox(engine).isEmpty())
         }
     }
 
     @Test fun quarantinedAttemptedSetsCannotBeFiledIntoAnAnonymousOpenWorkout() = runTest {
         engine().use { engine ->
             val gym = EngineTraining(engine) { null }; gym.startSession(SessionStart("session2", clockMs - 20_000))
+            val previousOutbox = outbox(engine)
+            val original = SessionDetail(Session("session1", clockMs - 10_000), listOf(TrainingSet("set00001", "bench-press",
+                weightKg = 82.5, reps = 5, completedAtMs = clockMs - 9_000)))
             oldLive(); LegacyGymMigration(tmp.root, engine).run()
             assertThrows(IllegalStateException::class.java) { LegacyGymMigration.retry(engine, "session1") }
             assertEquals(emptyList<TrainingSet>(), gym.session("session2")!!.sets)
-            assertNull(gym.session("session1"))
+            engine.read(ScopeRef(Gym.scope)) { reader ->
+                assertNull(reader.drawn(Gym.Types.session, RecordID(original.session.id)))
+                assertNull(reader.confirmed(Gym.Types.session, RecordID(original.session.id)))
+                assertNull(reader.drawn(Gym.Types.set, RecordID(original.sets.single().id)))
+                assertNull(reader.confirmed(Gym.Types.set, RecordID(original.sets.single().id)))
+            }
+            assertEquals(original, gym.session("session1"))
+            assertEquals(previousOutbox, outbox(engine))
             assertTrue(sources(engine).any { it["sourceSeat"] == Json.of("quarantine") || it["code"] == Json.of("identity-unresolved") })
         }
     }

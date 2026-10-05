@@ -38,6 +38,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.CancellationException
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.GymPreferences
@@ -56,6 +57,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.platform.testTag
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.OutlinedTextField
@@ -190,6 +192,7 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     var revision by remember(session) { mutableIntStateOf(0) }
     var fixing by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
     var fixingKind by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
+    var inspecting by remember(session) { mutableStateOf<LegacyMigrationRefusal?>(null) }
     var updateFailure by remember(session) { mutableStateOf<String?>(null) }
     val refused = remember(session, revision, status) { LegacyGymMigration.refusals(session.engine) }
     if (status.upgradeRequired || retired) SettingCard {
@@ -210,7 +213,25 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
         Text(refusal.session?.let { "Workout on ${Readout.date(it.startedAtMs)} stays on this phone" } ?: "Saved training stays on this phone",
             style = WindmillFont.body(15, FontWeight.Bold), color = skin.alarmInk)
         Caption(refusal.reason)
-        Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        if (refusal.session?.isOpen == true && refusal.code in setOf("session-open", "session-already-open"))
+            Caption(if (refusal.sets.isEmpty()) "Keep this empty workout separately by finishing it at its start time."
+                else "Keep this workout separately by finishing it at its last logged set.")
+        Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            if (refusal.session != null) TextButton(onClick = {
+                telemetry.event("gym_migration_recovery", mapOf("action" to "inspect", "state" to "opened")); inspecting = refusal
+            }) { Text("Inspect workout") }
+            if (refusal.session?.isOpen == true && refusal.code in setOf("session-open", "session-already-open"))
+                TextButton(onClick = { scope.launch {
+                    try {
+                        LegacyGymMigration.keepWorkout(session.engine, refusal.id)
+                        store.refreshEngine(); revision++; say(null)
+                        telemetry.event("gym_migration_recovery", mapOf("action" to "keep", "outcome" to "completed"))
+                    } catch (cancelled: CancellationException) { throw cancelled
+                    } catch (failure: Exception) {
+                        telemetry.failure("gym_migration_keep", failure)
+                        say("The original workout is still saved on this phone. Keep could not be completed.")
+                    }
+                } }) { Text("Keep workout") }
             if (refusal.session != null && refusal.code != "source-needs-update") TextButton(onClick = {
                 telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "state" to "opened")); fixing = refusal
             }) { Text("Fix workout") }
@@ -234,6 +255,26 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
             } }) { Text("Retry") }
         }
     } }
+    inspecting?.let { refusal -> AlertDialog(onDismissRequest = { inspecting = null },
+        title = { Text("Saved workout") },
+        text = { LazyColumn(Modifier.fillMaxWidth().height(420.dp).testTag("savedWorkoutSets"), verticalArrangement = Arrangement.spacedBy(12.dp)) {
+            fun at(value: Long) = Instant.ofEpochMilli(value).atZone(ZoneId.systemDefault()).format(DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"))
+            item { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                val saved = requireNotNull(refusal.session)
+                Text("Started ${at(saved.startedAtMs)}")
+                saved.finishedAtMs?.let { Text("Finished ${at(it)}") }
+                saved.plan?.let { Text(it.routine) }
+            } }
+            itemsIndexed(refusal.sets, key = { index, set -> "$index:${set.id}" }) { _, set -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Text(store.catalog.firstOrNull { it.id == set.exerciseId }?.name ?: set.exerciseId)
+                Text("${set.weightKg} kg × ${set.reps} · ${if (set.id in refusal.unrecognizedKindSetIds) "Unrecognized set kind" else set.kind.name}")
+                Text(at(set.completedAtMs))
+                set.rpe?.let { Text("RPE $it") }
+                if (set.note.isNotEmpty()) Text(set.note)
+            } }
+            if (refusal.sets.isEmpty()) item { Text("No sets logged.") }
+        } },
+        confirmButton = { TextButton(onClick = { inspecting = null }) { Text("Close") } }) }
     fixing?.let { refusal -> MigrationWorkoutEditor(refusal, store.catalog, onDismiss = {
         telemetry.event("gym_migration_recovery", mapOf("action" to "fix", "outcome" to "cancelled")); fixing = null
     }, onSave = { corrected, markFinished, correctedKinds ->

@@ -11,6 +11,8 @@ import org.junit.Test
 import org.junit.Rule
 import org.junit.rules.TemporaryFolder
 import okhttp3.HttpUrl.Companion.toHttpUrl
+import okhttp3.mockwebserver.MockResponse
+import okhttp3.mockwebserver.MockWebServer
 import works.windmill.gym.domain.*
 import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.Account
@@ -154,6 +156,221 @@ class EngineTrainingTests {
             room.store.refreshEngine()
             assertEquals(Blocker.SignInLapsed, room.store.strandedBy)
             assertEquals(SaveState.Blocked(Blocker.SignInLapsed), room.store.saveState)
+        }
+    }
+
+    @Test fun aRealHttp503And401DisplayTheSameDeliveryFailureAsFailedReplies() = runTest {
+        val server = MockWebServer()
+        server.start()
+        try {
+            works.windmill.sync.engine.HTTPTransport(server.url("/").toString(), SyncSchema.registry.version.toInt()).use { http ->
+                EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+                    room.select("A"); room.workout(finish = false)
+                    val request = checkNotNull(room.engine.nextPush())
+                    for ((status, blocker) in listOf(503 to Blocker.LogFailed, 401 to Blocker.SignInLapsed)) {
+                        server.enqueue(MockResponse().setResponseCode(status).setBody("{}"))
+                        val reply = http.push(request, "test")
+                        val response = (reply as works.windmill.sync.engine.Reply.Answer<SyncResponse>).value
+                        assertEquals(status, response.status)
+                        assertEquals("/v1/sync/push", server.takeRequest().path)
+                        assertTrue(room.training.reportDelivery(room.engine.activeReplica(), reply))
+                        room.store.refreshEngine()
+                        assertEquals(blocker, room.store.strandedBy)
+                        assertEquals(SaveState.Blocked(blocker), room.store.saveState)
+                        assertTrue(room.training.reportDelivery(room.engine.activeReplica(), works.windmill.sync.engine.Reply.Failed(response)))
+                        room.store.refreshEngine()
+                        assertEquals(SaveState.Blocked(blocker), room.store.saveState)
+                    }
+                }
+            }
+        } finally { server.shutdown() }
+    }
+
+    @Test fun settlingAMigratedAttemptedAppendPreservesConfirmedMutableFieldsUnlessAFixIsOwed() = runTest {
+        for (correcting in listOf(false, true)) {
+            val server = EngineRoomFixture.server()
+            EngineRoomFixture(tmp.newFolder(), backgroundScope).use { remote ->
+                remote.select("A")
+                val opened = remote.workout(finish = false)
+                remote.sync(server)
+                val original = remote.training.session(opened.id)!!.sets.single()
+                val corrected = remote.training.fixSet(opened.id, original.id,
+                    SetFix(weightKg = 95.0, reps = 8, kind = SetKind.Warmup, rpeNamed = true, rpe = 9.0, note = "Server correction"))
+                remote.sync(server)
+                val directory = tmp.newFolder()
+                val queue = SetQueue(File(directory, SetQueue.fileName), "A")
+                queue.hold(opened, unclaimed = false)
+                queue.store(original, opened.id, needsPush = true)
+                queue.sending(queue.pending.single())
+                val requested = original.copy(weightKg = 85.0, reps = 6, rpe = 7.5, note = "Explicit correction")
+                if (correcting) queue.fix(requested)
+                EngineRoomFixture(directory, backgroundScope).use { local ->
+                    LegacyGymMigration(directory, local.engine, "A").run()
+                    local.selected = "A"
+                    local.pull(server)
+                    val born = local.engine.read(LegacyGymMigration.scope) { it.confirmed(Gym.Types.set, RecordID(original.id))!!.born }
+                    local.training.reconcileLegacyOperations()
+                    val expected = if (correcting) requested else corrected
+                    assertEquals(expected, local.training.session(opened.id)!!.sets.single())
+                    local.sync(server)
+                    assertEquals(expected, local.training.session(opened.id)!!.sets.single())
+                    assertEquals(born, local.engine.read(LegacyGymMigration.scope) { it.confirmed(Gym.Types.set, RecordID(original.id))!!.born })
+                    assertTrue(LegacyGymMigration.operations(local.engine).isEmpty())
+                }
+            }
+        }
+    }
+
+    @Test fun aMigratedPendingDeleteNeverReappearsInTheOfflineWorkoutProjection() = runTest {
+        val directory = tmp.newFolder()
+        val session = Session("legacy01", now - 1_000)
+        val removed = TrainingSet("gone0001", "bench-press", weightKg = 82.5, reps = 5, completedAtMs = now)
+        SetQueue(File(directory, SetQueue.fileName), "A").apply {
+            hold(session, unclaimed = true)
+            store(removed, session.id, needsPush = false)
+            delete(removed.id)
+        }
+        EngineRoomFixture(directory, backgroundScope).use { local ->
+            LegacyGymMigration(directory, local.engine, "A").run()
+            local.selected = "A"
+            local.store.connect(local.account())
+            assertEquals(session, local.store.session)
+            assertEquals(emptyList<TrainingSet>(), local.store.sets)
+            assertEquals(emptyList<TrainingSet>(), local.training.session(session.id)!!.sets)
+            assertEquals(Owed.Delete, LegacyGymMigration.operations(local.engine).single().entry.write)
+            assertEquals(removed, LegacyGymMigration.operations(local.engine).single().entry.set)
+        }
+    }
+
+    @Test fun ownedPlannedMigrationCanLogAFourthSetAndFinishOfflineThenResumeOneStrictImport() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { remote ->
+            remote.select("A")
+            val routine = remote.training.createRoutine(RoutineWrite("routine1", "Original", 0,
+                entries = listOf(RoutineEntryWrite("bench-press", listOf(SetTarget(5, 82.5))))))
+            val otherOpen = remote.training.startSession(SessionStart("remote01", remote.now))
+            remote.training.appendSet(otherOpen.id, SetWrite("remoteSet1", "bench-press", 82.5, 5, SetKind.Working, remote.now))
+            remote.now += 60_000
+            remote.sync(server)
+            val directory = tmp.newFolder()
+            val savedSession = Session("legacy01", remote.now - 4_000, routineId = routine.id, plan = PlanSnapshot(routine))
+            val originalSets = (1..3).map { index -> TrainingSet("original$index", "bench-press",
+                weightKg = 82.5, reps = 5, completedAtMs = savedSession.startedAtMs + index * 1_000) }
+            val legacy = SetQueue(File(directory, SetQueue.fileName), "A")
+            legacy.hold(savedSession, unclaimed = true)
+            originalSets.forEach { legacy.store(it, savedSession.id, needsPush = true) }
+            val attempted = legacy.sending(legacy.pending.first())
+            DeviceCopy(File(directory, DeviceCopy.fileName)).apply {
+                hold("A", TheSix.movements)
+                holdRoutines("A", listOf(routine))
+            }
+            val snapshot: Json
+            val closed: SessionDetail
+            EngineRoomFixture(directory, backgroundScope).use { local ->
+                local.now = remote.now
+                LegacyGymMigration(directory, local.engine, "A").run()
+                local.selected = "A"
+                local.store.connect(local.account())
+                assertEquals(savedSession, local.store.session)
+                assertEquals(originalSets, local.store.sets)
+                assertTrue(local.outbox().isEmpty())
+                local.store.choose("bench-press")
+                local.store.logSet(85.0, 6)
+                assertEquals(4, local.store.sets.size)
+                assertEquals(originalSets, local.store.sets.take(3))
+                assertTrue(local.outbox().isEmpty())
+                assertEquals(attempted, LegacyGymMigration.operations(local.engine).first { it.entry.set.id == attempted.set.id }.entry)
+                closed = (local.store.finish() as FinishOutcome.Closed).detail
+                assertEquals(savedSession.plan, closed.session.plan)
+                assertEquals(4, closed.sets.size)
+                assertTrue(local.outbox().isEmpty())
+                snapshot = local.engine.snapshot()
+                runCurrent()
+            }
+            EngineRoomFixture(directory, backgroundScope, snapshot).use { restarted ->
+                restarted.now = closed.session.finishedAtMs!! + 1_000
+                restarted.selected = "A"
+                restarted.store.connect(restarted.account())
+                assertEquals(closed, restarted.training.session(savedSession.id))
+                assertTrue(restarted.outbox().isEmpty())
+                restarted.pull(server)
+                restarted.training.reconcileLegacyOperations()
+                val command = restarted.outbox().single().member("intent").member("cmd")
+                assertEquals("gym.importSession", command.member("name").str())
+                assertEquals(closed.sets.map { it.id }, command.member("args").member("sets").arr().map { it.member("id").str() })
+                restarted.sync(server)
+                assertNotNull("import refusals=${LegacyGymMigration.refusals(restarted.engine)}; notices=${restarted.engine.notices("gym").notices.value}; outbox=${restarted.outbox()}",
+                    restarted.engine.read(LegacyGymMigration.scope) { it.confirmed(Gym.Types.session, RecordID(savedSession.id)) })
+                val confirmed = restarted.training.session(savedSession.id)!!
+                assertEquals(closed.session, confirmed.session)
+                assertEquals(closed.sets.mapIndexed { index, set -> set.copy(setNumber = index + 1) }, confirmed.sets)
+                assertTrue(restarted.training.session(otherOpen.id)!!.session.isOpen)
+            }
+        }
+    }
+
+    @Test fun deletingACachedMigratedWeighInBeforePullSurvivesRestartAndRemovesTheServerRow() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { remote ->
+            remote.select("A")
+            val weight = remote.training.putBodyweight("2026-01-01", WeighInWrite(70.0, remote.now))
+            remote.sync(server)
+            val directory = tmp.newFolder()
+            LocalBodyweight(File(directory, LocalBodyweight.fileName), "A").apply { record(weight); landed(weight) }
+            val snapshot: Json
+            EngineRoomFixture(directory, backgroundScope).use { local ->
+                LegacyGymMigration(directory, local.engine, "A").run()
+                assertFalse(local.training.firstPullComplete)
+                assertEquals(listOf(weight), local.training.bodyweight(null, null))
+                local.training.deleteBodyweight(weight.dateLocal)
+                assertEquals(emptyList<WeighIn>(), local.training.bodyweight(null, null))
+                snapshot = local.engine.snapshot()
+            }
+            EngineRoomFixture(directory, backgroundScope, snapshot).use { restarted ->
+                restarted.selected = "A"
+                assertEquals(emptyList<WeighIn>(), restarted.training.bodyweight(null, null))
+                restarted.pull(server)
+                restarted.training.reconcileLegacyOperations()
+                assertEquals(emptyList<WeighIn>(), restarted.training.bodyweight(null, null))
+                restarted.sync(server)
+                assertEquals(emptyList<WeighIn>(), restarted.training.bodyweight(null, null))
+                remote.pull(server)
+                assertEquals(emptyList<WeighIn>(), remote.training.bodyweight(null, null))
+            }
+        }
+    }
+
+    @Test fun replacingACachedWeighInDeletionResolvesItInTheSameCommitAndSurvivesReconnect() = runTest {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { remote ->
+            remote.select("A")
+            val original = remote.training.putBodyweight("2026-01-01", WeighInWrite(70.0, remote.now))
+            remote.sync(server)
+            val directory = tmp.newFolder()
+            LocalBodyweight(File(directory, LocalBodyweight.fileName), "A").apply { record(original); landed(original) }
+            val snapshot: Json
+            val replacement: WeighIn
+            EngineRoomFixture(directory, backgroundScope).use { local ->
+                LegacyGymMigration(directory, local.engine, "A").run()
+                local.training.deleteBodyweight(original.dateLocal)
+                val before = local.engine.snapshot()
+                local.engine.failNextCommit()
+                try { local.training.putBodyweight(original.dateLocal, WeighInWrite(80.0, local.now)); fail("A failed save must keep the cached deletion.") }
+                catch (_: CommitFailure) {}
+                assertEquals(before, local.engine.snapshot())
+                assertEquals(emptyList<WeighIn>(), local.training.bodyweight(null, null))
+                replacement = local.training.putBodyweight(original.dateLocal, WeighInWrite(80.0, local.now))
+                assertTrue(LegacyGymMigration.edits(local.engine).isEmpty())
+                snapshot = local.engine.snapshot()
+            }
+            EngineRoomFixture(directory, backgroundScope, snapshot).use { restarted ->
+                restarted.selected = "A"
+                assertEquals(listOf(replacement), restarted.training.bodyweight(null, null))
+                restarted.pull(server); restarted.training.reconcileLegacyOperations(); restarted.sync(server)
+                assertEquals(listOf(replacement), restarted.training.bodyweight(null, null))
+                remote.pull(server)
+                assertEquals(listOf(replacement), remote.training.bodyweight(null, null))
+            }
         }
     }
 

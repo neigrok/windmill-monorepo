@@ -1,7 +1,9 @@
 package works.windmill.gym.ui
 
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.mutableStateOf
 import works.windmill.gym.store.GymEngineSession
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.LocalGymEngineSession
 import works.windmill.gym.store.LegacyGymMigration
 import works.windmill.sync.engine.*
@@ -17,6 +19,9 @@ import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performScrollTo
+import androidx.compose.ui.test.performScrollToNode
+import androidx.compose.ui.test.onNodeWithTag
+import androidx.compose.ui.test.hasText
 import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -202,6 +207,101 @@ class SettingsScreenTests {
         }
         session.close()
         scope.cancel()
+    }
+
+    @Test
+    fun anOpenWorkoutConflictCanBeInspectedAndExplicitlyKeptAsItsOwnFinishedImport() = openConflict(true)
+
+    @Test
+    fun anEmptyOpenWorkoutConflictCanBeKeptSeparatelyAtItsOriginalStart() = openConflict(false)
+
+    private fun openConflict(hasSet: Boolean) = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        val server = EngineRoomFixture.server()
+        try {
+            EngineRoomFixture(tmp.newFolder(), scope).use { remote ->
+                remote.select("A")
+                remote.now += 1_000_000
+                remote.training.startSession(works.windmill.gym.domain.SessionStart("remote01", remote.now - 10_000, joinOpenSession = false))
+                remote.training.appendSet("remote01", works.windmill.gym.domain.SetWrite("remoteset", "back-squat", 60.0, 5,
+                    works.windmill.gym.domain.SetKind.Working, remote.now - 9_000))
+                remote.sync(server)
+                val directory = tmp.newFolder()
+                val source = works.windmill.gym.domain.Session("source01", remote.now - 100_000)
+                val set = works.windmill.gym.domain.TrainingSet("sourceset", "bench-press", weightKg = 82.5, reps = 5,
+                    note = "Saved effort", completedAtMs = remote.now - 90_000)
+                SetQueue(File(directory, SetQueue.fileName)).apply {
+                    hold(source, unclaimed = true)
+                    if (hasSet) store(set, source.id, needsPush = true)
+                }
+                EngineRoomFixture(directory, scope, rest = FakeTraining()).use { room ->
+                    room.now = remote.now
+                    LegacyGymMigration(directory, room.engine).run()
+                    room.engine.signIn("A", mapOf("gym" to true), mapOf("gym" to "add"))
+                    room.selected = "A"
+                    room.sync(server)
+                    room.store.connect(room.account())
+                    GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test")).use { session ->
+                        val visible = mutableStateOf(true)
+                        try {
+                        compose.setContent { if (visible.value) WindmillMaterial { GymMaterial {
+                            CompositionLocalProvider(LocalGymEngineSession provides session) {
+                                SettingsScreen(room.store, true, "routines", {}, {}, {}, say = {})
+                            }
+                        } } }
+                        compose.onNodeWithText("Inspect workout").performScrollTo().assertIsDisplayed().performClick()
+                        compose.onNodeWithText(if (hasSet) "Saved effort" else "No sets logged.").assertIsDisplayed()
+                        compose.onNodeWithText("Close").performClick()
+                        if (!hasSet) compose.onNodeWithText("Keep this empty workout separately by finishing it at its start time.").performScrollTo().assertIsDisplayed()
+                        compose.onNodeWithText("Keep workout").performScrollTo().assertIsDisplayed().performClick()
+                        compose.waitForIdle()
+                        assertEquals(source.copy(finishedAtMs = if (hasSet) set.completedAtMs else source.startedAtMs), room.training.session(source.id)!!.session)
+                        assertEquals(if (hasSet) listOf(set) else emptyList(), room.training.session(source.id)!!.sets)
+                        assertEquals(works.windmill.sync.schema.Gym.Commands.importSession,
+                            room.outbox().single().member("intent").member("cmd").member("name").str())
+                        room.sync(server)
+                        assertEquals(if (hasSet) listOf(set.copy(setNumber = 1)) else emptyList(), room.training.session(source.id)!!.sets)
+                        assertEquals(listOf("remoteset"), room.training.session("remote01")!!.sets.map { it.id })
+                        } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
+                    }
+                }
+            }
+        } finally { scope.cancel() }
+    }
+
+    @Test
+    fun inspectingAnOversizedRefusedWorkoutReachesEverySetWithoutChangingOrHidingItsSource() = runBlocking {
+        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
+        try {
+            val directory = tmp.newFolder()
+            val at = 1_800_000_000_000L
+            val source = LocalLog.FinishedSession(works.windmill.gym.domain.Session("source01", at - 10_000, at - 5_000),
+                (0..200).map { index -> works.windmill.gym.domain.TrainingSet("set${index.toString().padStart(5, '0')}", "bench-press",
+                    weightKg = 82.5, reps = 5, note = if (index == 200) "Last set" else "Set $index", completedAtMs = at - 9_000 + index) })
+            LocalLog(File(directory, LocalLog.fileName)).hold(source)
+            val raw = File(directory, LocalLog.fileName).readText()
+            EngineRoomFixture(directory, scope, rest = FakeTraining()).use { room ->
+                LegacyGymMigration(directory, room.engine).run()
+                room.store.connect(room.account(null))
+                GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test")).use { session ->
+                    val visible = mutableStateOf(true)
+                    try {
+                        compose.setContent { if (visible.value) WindmillMaterial { GymMaterial {
+                            CompositionLocalProvider(LocalGymEngineSession provides session) {
+                                SettingsScreen(room.store, false, "routines", {}, {}, {}, say = {})
+                            }
+                        } } }
+                        compose.onNodeWithText("Inspect workout").performScrollTo().performClick()
+                        compose.onNodeWithTag("savedWorkoutSets").performScrollToNode(hasText("Last set"))
+                        compose.onNodeWithText("Last set").assertIsDisplayed()
+                        compose.onNodeWithText("Close").performClick()
+                        compose.onNodeWithText("Inspect workout").performScrollTo().assertIsDisplayed()
+                        assertEquals(source, room.training.session(source.session.id)?.let { LocalLog.FinishedSession(it.session, it.sets) })
+                        assertEquals(raw, File(directory, LocalLog.fileName).readText())
+                    } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
+                }
+            }
+        } finally { scope.cancel() }
     }
 
     // No export door anywhere in gym: the row went, and with it the one browser glyph this screen

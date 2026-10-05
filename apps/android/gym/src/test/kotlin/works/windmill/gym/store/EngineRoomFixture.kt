@@ -14,7 +14,8 @@ import works.windmill.sync.modelserver.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-internal class EngineRoomFixture(val directory: File, val scope: CoroutineScope, snapshot: Json? = null) : AutoCloseable {
+internal class EngineRoomFixture(val directory: File, val scope: CoroutineScope, snapshot: Json? = null,
+    private val rest: works.windmill.gym.net.TrainingSyncing? = null) : AutoCloseable {
     companion object {
         fun server(): ModelServer {
             val state = ServerState().apply {
@@ -34,7 +35,7 @@ internal class EngineRoomFixture(val directory: File, val scope: CoroutineScope,
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
         commandResultWrites = LegacyGymMigration.commandResultWrites, pendingDeviceWork = LegacyGymMigration.pendingDeviceWork,
         rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue)
-    val training = EngineTraining(engine) { error("Training data must use the engine.") }
+    val training = EngineTraining(engine) { rest ?: error("Training data must use the engine.") }
     val store = freshStore()
     fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(queue = SetQueue(File(directory, "control.json")), scope = scope,
         now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },

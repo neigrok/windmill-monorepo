@@ -74,8 +74,12 @@ class ClaimReplayTests {
             assertTrue(runBlocking { EngineTraining(e) { null }.preferences() }.confirmSound) }
     }
     @Test fun aRefusedWorkoutDoesNotPreventAnotherWorkoutFromMigrating() {
-        val f = fixture(); f.log.hold(f.row(start = f.now + 1_000)); f.log.hold(f.row("session02").copy(sets = emptyList()))
-        f.engine().use { e -> f.migrate(e); assertEquals(listOf("session02"), EngineTraining(e) { null }.details().map { it.session.id }) }
+        val f = fixture(); val refused = f.row(start = f.now + 1_000)
+        f.log.hold(refused); f.log.hold(f.row("session02").copy(sets = emptyList()))
+        f.engine().use { e -> f.migrate(e)
+            assertEquals(listOf("session02"), e.read(LegacyGymMigration.scope) { reader -> reader.drawn(Gym.Types.session).filter { it.isVisible }.map { it.id.string } })
+            assertEquals(refused.session, LegacyGymMigration.refusals(e).single().session); assertEquals(refused.sets, LegacyGymMigration.refusals(e).single().sets)
+            assertEquals(setOf("session01", "session02"), EngineTraining(e) { null }.details().map { it.session.id }.toSet()) }
     }
     @Test fun aRackMigrationIsIdempotentAcrossProcessReplacement() {
         val f = fixture(); f.prefs.save(GymPreferences(units = Units.Pounds))
@@ -179,12 +183,12 @@ class ClaimReplayTests {
         val row = f.row().copy(session = f.row().session.copy(routineId = routine.id, plan = PlanSnapshot(routine))); f.log.apply { hold(routine); hold(row) }
         f.engine().use { e -> f.migrate(e); assertEquals(row.session.plan, EngineTraining(e) { null }.details().single().session.plan) }
     }
-    @Test fun bothAcknowledgedAndUnclaimedLiveStartsUseJoinSemanticsOnlyOnce() {
+    @Test fun bothAcknowledgedAndUnclaimedLiveStartsExplicitlyRefuseJoiningAndMigrateOnlyOnce() {
         listOf(false, true).forEach { unclaimed ->
             val directory = tmp.newFolder(); val f = LegacyEngineFixture(directory); val q = f.queue
             q.hold(f.row().session.copy(finishedAtMs = null), unclaimed); q.flush()
             f.engine().use { e -> f.migrate(e); f.migrate(e)
-                assertEquals(1, f.outbox(e).size); assertTrue(f.outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool()) }
+                assertEquals(1, f.outbox(e).size); assertFalse(f.outbox(e).single().member("intent").member("cmd").member("args").member("joinOpenSession").bool()) }
         }
     }
     @Test fun finishedImportsNeverJoinThePhonesOwnLiveWorkout() {

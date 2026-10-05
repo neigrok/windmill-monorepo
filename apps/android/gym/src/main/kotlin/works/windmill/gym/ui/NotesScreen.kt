@@ -56,6 +56,7 @@ fun NotesScreen(
     var failure by remember { mutableStateOf<String?>(null) }
     var order by remember { mutableStateOf<List<Note>?>(null) }
     var savingOrder by remember { mutableStateOf(false) }
+    val hasRead = read && store.notesRead
     LaunchedEffect(store, isSignedIn, attempt) {
         if (!isSignedIn) return@LaunchedEffect
         reading = true
@@ -87,6 +88,7 @@ fun NotesScreen(
                 header = {
                     Text(Notes.sub, style = WindmillFont.body(14).copy(lineHeight = 20.sp), color = skin.inkDim)
                     Text(Notes.honesty, style = WindmillFont.body(16).copy(lineHeight = 22.sp), color = skin.ink)
+                    if (isSignedIn) Refusals(store.noteRefusals, store.catalog, store::clearRefusals)
                     when {
                         !isSignedIn -> Text(Notes.signedOut, style = WindmillFont.body(16), color = skin.inkDim)
                         failure != null -> Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
@@ -94,9 +96,9 @@ fun NotesScreen(
                             Text(failure!!, style = WindmillFont.body(16), color = skin.inkDim)
                             TextButton(onClick = { attempt++ }, enabled = !reading) { Text("Try again") }
                         }
-                        !read -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
+                        !hasRead -> Text("Reading your notes…", style = WindmillFont.body(16), color = skin.inkDim)
                     }
-                    if (isSignedIn && read && failure == null && store.noteCount == 0) {
+                    if (isSignedIn && hasRead && failure == null && store.noteCount == 0) {
                         Notes.placeholders.forEach { title ->
                             Row(Modifier.fillMaxWidth().heightIn(min = 70.dp)
                                 .clickable(role = Role.Button, onClickLabel = "Write a note") { onEdit(null, title) }
@@ -108,14 +110,14 @@ fun NotesScreen(
                             }
                         }
                     }
-                }, showRows = isSignedIn && read && failure == null,
+                }, showRows = isSignedIn && hasRead && failure == null,
                 footer = {
-                    if (isSignedIn && read && failure == null) {
+                    if (isSignedIn && hasRead && failure == null) {
                         if (store.notes.size > 1) Text(Notes.topWins, style = WindmillFont.body(14), color = skin.inkDim)
                         if (store.noteCount >= Notes.maxNotes) Text(Notes.full, style = WindmillFont.body(14), color = skin.inkDim)
                     }
                 })
-            if (!isSignedIn || (read && failure == null && store.noteCount < Notes.maxNotes)) {
+            if (!isSignedIn || (hasRead && failure == null && store.noteCount < Notes.maxNotes)) {
                 Box(Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 12.dp)) {
                     Button(onClick = { if (isSignedIn) onEdit(null, "") else onSignIn() },
                         enabled = !savingOrder, modifier = Modifier.fillMaxWidth().heightIn(min = 56.dp),

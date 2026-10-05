@@ -53,6 +53,7 @@ class GymEngineSession(
         }
         try {
             beforeAccountChange()
+            EngineTraining(engine) { null }.prepareAdoption()
             var session = runtime.signIn(user.id, token)
             while (!session.isComplete) {
                 val completion = CompletableDeferred<Unit>()

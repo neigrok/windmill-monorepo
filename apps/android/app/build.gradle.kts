@@ -112,4 +112,5 @@ dependencies {
     testImplementation(libs.robolectric)
     testImplementation(libs.compose.ui.test.junit4)
     testImplementation(libs.compose.ui.test.manifest)
+    testImplementation(libs.okhttp.mockwebserver)
 }

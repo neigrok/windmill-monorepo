@@ -14,6 +14,7 @@ import works.windmill.sync.api.*
 import works.windmill.sync.core.Json
 import works.windmill.sync.core.PushResult
 import works.windmill.sync.core.ScopeRef
+import works.windmill.sync.core.RecordKey
 import works.windmill.sync.core.Sha256
 import works.windmill.sync.engine.Engine
 import works.windmill.sync.engine.EngineCrash
@@ -21,6 +22,8 @@ import works.windmill.sync.engine.DeviceValueRewrite
 import works.windmill.sync.engine.migrateLegacy
 import works.windmill.sync.engine.confirmedLegacyRecords
 import works.windmill.sync.engine.commitLegacy
+import works.windmill.sync.engine.unsubmittedLegacyGestures
+import works.windmill.sync.engine.reconcileConfirmedLegacyCommand
 import works.windmill.sync.schema.Gym
 import works.windmill.gym.domain.sync.Session as SyncSession
 import works.windmill.gym.domain.sync.TrainingSet as SyncSet
@@ -156,7 +159,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                 if (item.seat != Seat.anonymous && !(item.seat.startsWith("u.") && item.seat.length > 2))
                     throw RefusedMigration("identity-unresolved")
                 gesture = gesture(item, context, engine)
-                value = saved.changed("state" to Json.of(if (gesture.command != null) "queued" else if (item.kind == "operation") "pending" else if (item.kind == "finished") "admitted" else "migrated"))
+                value = saved.changed("state" to Json.of(if (gesture.command != null) "queued" else if (item.kind == "operation") "pending" else if (item.kind in setOf("finished", "start")) "admitted" else "migrated"))
                 if (gesture.command != null) {
                     val gestureId = context.opaqueID()
                     gesture.gestureId = gestureId
@@ -193,6 +196,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
         private val sourceFiles = listOf(SetQueue.fileName, LocalLog.fileName, DeviceCopy.fileName,
             LocalPreferences.fileName, LocalBodyweight.fileName, LocalClaimConsent.fileName)
         private class RefusedMigration(val code: String) : Exception(code)
+        private val snapshotJson = kotlinx.serialization.json.Json(diskJson) { encodeDefaults = true; explicitNulls = true }
         private fun Json.changed(vararg values: Pair<String, Json?>) = Json.Obj(obj().toMutableMap().apply {
             values.forEach { (key, value) -> if (value == null) remove(key) else put(key, value) }
         }.toList())
@@ -208,11 +212,15 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                     "cacheEdit" -> item.member("editKind").str()
                     else -> "pending"
                 } }.eachCount().toMutableMap()
+            val retainedSets = items.values.sumOf { item ->
+                if (item["kind"] == Json.of("finished") && item["state"] in setOf(Json.of("pending"), Json.of("refused"), Json.of("retained")))
+                    item["source"]?.get("sets")?.arr().orEmpty().size else 0
+            }
             val deleted = items.values.sumOf { item ->
-                if (item["kind"] != Json.of("finished") || item["state"] == Json.of("discarded")) 0 else item["source"]?.get("deleted")?.arr().orEmpty()
+                if (item["kind"] != Json.of("finished") || item["state"] in setOf(Json.of("discarded"), Json.of("resolved"))) 0 else item["source"]?.get("deleted")?.arr().orEmpty()
                     .count { it !in item["resolvedDeleted"]?.arr().orEmpty() }
             }
-            if (deleted > 0) count[Gym.Types.set] = (count[Gym.Types.set] ?: 0) + deleted
+            if (retainedSets + deleted > 0) count[Gym.Types.set] = (count[Gym.Types.set] ?: 0) + retainedSets + deleted
             return journal.changed("items" to Json.Obj(items.toList()), "count" to Json.Obj(count.map { it.key to Json.of(it.value) }))
         }
         private fun journal(reader: ScopeReader, key: String) = reader.device(key) ?: Json.objectOf("version" to Json.of(1), "items" to Json.objectOf())
@@ -262,16 +270,36 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                     "position" to Json.of(routine.position), "entries" to Json.Arr(entries)))))
             }
             "start" -> {
+                val authored = Json.objectOf("session" to item.payload.member("session"), "sets" to Json.Arr(item.payload["entries"]?.obj().orEmpty().values.map { it.member("set") }))
+                if (unknownFinishedFields(authored)) throw RefusedMigration("source-needs-update")
                 if (item.payload["entries"]?.obj().orEmpty().values.any { unknownKind(it.member("set")) }) throw RefusedMigration("source-kind")
                 val session = decode(item.payload.member("session"), Session.serializer())
-                val args = mutableMapOf("id" to Json.of(session.id), "startedAt" to Json.of(session.startedAtMs), "joinOpenSession" to Json.of(true))
-                session.routineId?.let { args["routineId"] = Json.of(it) }
-                val predict = Change.create(Gym.Types.session, NewID.Given(RecordID(session.id)), sessionFields(session))
-                Gesture(emptyList(), command = Command(Gym.Commands.start, Json.Obj(args.toList())), predict = listOf(predict), local = buildList {
+                val fields = sessionFields(session)
+                val known = context.confirmed(Gym.Types.session, RecordID(session.id))?.takeIf { it.isVisible && it.born != null }
+                val writes = buildList {
                     item.payload["order"]?.takeIf { it is Json.Arr }?.let { add(DeviceWrite("movementOrder:${session.id}", it)) }
                     item.payload["chosenMovement"]?.takeIf { it is Json.Str }?.let { add(DeviceWrite("movement:${session.id}", it)) }
                     item.payload["workout"]?.takeIf { it is Json.Obj }?.let { add(DeviceWrite("rack:${session.id}", it)) }
-                })
+                }
+                if (known != null) {
+                    if (known.values["startedAt"] != fields["startedAt"] || (known.values["plan"] ?: Json.Null) != fields["plan"] ||
+                        (known.values["historyRoutineId"] ?: known.values["routineId"] ?: Json.Null) != fields["historyRoutineId"]) throw RefusedMigration("session-id-taken")
+                    Gesture(emptyList(), local = writes)
+                } else {
+                    if (session.routineId != null) {
+                        if (!context.isAnonymous && (!context.firstPullComplete() || context.checkpoint().cleanSeq == null)) throw RefusedMigration("waiting-for-firstpull")
+                        val routine = context.drawn(Gym.Types.routine, RecordID(session.routineId))?.takeIf { it.isVisible && it.born != null }
+                            ?: throw RefusedMigration("routine-missing")
+                        val plan = Json.objectOf("routine" to routine.values.getValue("name"), "entries" to routine.values.getValue("entries"))
+                        if (plan != fields["plan"]) throw RefusedMigration("frozen-plan-changed")
+                    }
+                    val args = mutableMapOf("id" to Json.of(session.id), "startedAt" to Json.of(session.startedAtMs), "joinOpenSession" to Json.of(false))
+                    session.routineId?.let { args["routineId"] = Json.of(it) }
+                    val predict = Change.create(Gym.Types.session, NewID.Given(RecordID(session.id)), fields)
+                    Gesture(session.routineId?.let { listOf(Change.update(Gym.Types.routine, RecordID(it))) }.orEmpty(),
+                        command = Command(Gym.Commands.start, Json.Obj(args.toList())), predict = listOf(predict), local = writes,
+                        guards = session.routineId?.let { id -> listOf("name", "entries").map { field -> RegisterRef(Gym.Types.routine, RecordID(id), field) } }.orEmpty())
+                }
             }
             "preferences" -> Gesture(listOf(Change.write(Gym.Types.prefs, RecordID("prefs"), item.payload.obj())))
             "weighin" -> {
@@ -298,7 +326,16 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
             else -> Gesture(emptyList())
         }
 
-        private fun imported(source: Json, context: CommitContext, engine: Engine): Gesture {
+        private fun imported(source: Json, originalContext: CommitContext, engine: Engine, replaced: Set<RecordKey> = emptySet()): Gesture {
+            val context = if (replaced.isEmpty()) originalContext else object : CommitContext by originalContext {
+                private fun visible(row: Record?) = row?.takeUnless { RecordKey(it.type, it.id) in replaced && originalContext.confirmed(it.type, it.id) == null }
+                override fun drawn(type: String, id: RecordID) = visible(originalContext.drawn(type, id))
+                override fun stored(type: String, id: RecordID) = visible(originalContext.stored(type, id))
+                override fun drawn(type: String) = originalContext.drawn(type).mapNotNull(::visible)
+                override fun stored(type: String) = originalContext.stored(type).mapNotNull(::visible)
+                override fun drawn(type: String, field: String, id: RecordID) = originalContext.drawn(type, field, id).mapNotNull(::visible)
+                override fun stored(type: String, field: String, id: RecordID) = originalContext.stored(type, field, id).mapNotNull(::visible)
+            }
             if (unknownFinishedFields(source)) throw RefusedMigration("source-needs-update")
             if (source["sets"]?.arr().orEmpty().any { set ->
                     set["kind"]?.str()?.let { it !in setOf("warmup", "working", "drop", "failure") } == true
@@ -373,7 +410,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
             if (item.member("kind").str() != "operation" || item.member("state").str() != "pending") return@mapNotNull null
             val entry = decode(item.member("source"), SetQueue.Entry.serializer())
             LegacyOperation(token, item["targetSessionId"]?.str() ?: entry.sessionId, entry)
-        } } }
+        } }.sortedWith(compareBy<LegacyOperation>({ it.sessionId }, { it.entry.set.completedAtMs }, { it.entry.set.id }, { it.token })) }
 
         fun resolveOperation(engine: Engine, token: String) { engine.commit(scope) { context ->
             val saved = context.devices(journalPrefix).entries.firstOrNull { token in it.value["items"]?.obj().orEmpty() }
@@ -396,7 +433,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
         } }
 
         fun deferEdit(engine: Engine, kind: String, id: String, source: Json?, base: Json) {
-            require(kind in setOf(Gym.Types.exercise, Gym.Types.routine))
+            require(kind in setOf(Gym.Types.exercise, Gym.Types.routine, Gym.Types.weighin))
             engine.commit(scope) { context ->
                 val key = key("edit:${context.replica}")
                 val journal = journal(context, key)
@@ -418,9 +455,18 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
         fun resolveEdit(engine: Engine, token: String) = resolveOperation(engine, token)
         fun refuseEdit(engine: Engine, token: String, code: String) = refuseOperation(engine, token, code)
 
+        fun resolveEditWrites(reader: ScopeReader, kind: String, id: String): List<DeviceWrite> = reader.devices(journalPrefix).mapNotNull { (key, journal) ->
+            val before = journal["items"]?.obj().orEmpty()
+            val items = before.mapValues { (_, item) ->
+                if (item["kind"] == Json.of("cacheEdit") && item["editKind"] == Json.of(kind) && item["id"] == Json.of(id) &&
+                    item["state"] in setOf(Json.of("pending"), Json.of("refused"))) item.changed("state" to Json.of("resolved")) else item
+            }
+            if (before == items) null else DeviceWrite(key, withItems(journal, items))
+        }
+
         fun deletedSets(engine: Engine): List<LegacyDeletedSet> = engine.read(scope) { reader ->
             reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().flatMap { (token, item) ->
-                if (item["kind"] != Json.of("finished") || item["state"] == Json.of("discarded")) emptyList() else item["source"]?.get("deleted")?.arr().orEmpty()
+                if (item["kind"] != Json.of("finished") || item["state"] in setOf(Json.of("discarded"), Json.of("resolved"))) emptyList() else item["source"]?.get("deleted")?.arr().orEmpty()
                     .filter { it !in item["resolvedDeleted"]?.arr().orEmpty() }.map { id -> LegacyDeletedSet("$token:${id.str()}", item["targetSessionId"]?.str() ?: item.member("id").str(), id.str()) }
             } }
         }
@@ -446,7 +492,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
         }
 
         fun cached(engine: Engine, kind: String): List<Json> = engine.read(scope) { reader -> reader.devices(journalPrefix).values.flatMap { journal ->
-            journal["items"]?.obj().orEmpty().values.filter { it["kind"] == Json.of(kind) && it["state"] != Json.of("discarded") && it["code"] != Json.of("source-kind") && it["cacheConsumed"] != Json.of(true) }.map { item -> effectiveSource(item) } } }
+            journal["items"]?.obj().orEmpty().values.filter { it["kind"] == Json.of(kind) && it["state"] !in setOf(Json.of("discarded"), Json.of("resolved")) && it["code"] != Json.of("source-kind") && it["cacheConsumed"] != Json.of(true) }.map { item -> effectiveSource(item) } } }
 
         fun sourceSessionId(engine: Engine, canonicalId: String): String? = engine.read(scope) { reader ->
             reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.firstOrNull { item ->
@@ -460,11 +506,211 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
             }.map { decode(it.member("source"), LocalLog.FinishedSession.serializer()) }
         }
 
+        fun pendingOwnedStart(engine: Engine, id: String? = null): LocalLog.FinishedSession? = engine.read(scope) { reader ->
+            pendingOwnedSource(reader, id)?.let { source -> LocalLog.FinishedSession(decode(source.member("session"), Session.serializer()),
+                source["entries"]?.obj().orEmpty().values.map { decode(it, SetQueue.Entry.serializer()) }.filter { it.write != Owed.Delete }.map { it.set }
+                    .sortedWith(compareBy({ it.completedAtMs }, { it.id })),
+                source["entries"]?.obj().orEmpty().values.filter { decode(it, SetQueue.Entry.serializer()).write == Owed.Delete }.map { it.member("set").member("id").str() }) }
+        }
+
+        private fun pendingOwnedSource(reader: ScopeReader, id: String?): Json? {
+            if (reader.isAnonymous || reader.firstPullComplete() && reader.checkpoint().cleanSeq != null) return null
+            return reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.firstOrNull { item ->
+                val session = item["source"]?.get("session")
+                item["kind"] == Json.of("start") && item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull") &&
+                    (id == null || item["id"] == Json.of(id)) && session?.get("routineId")?.orNull() != null &&
+                    reader.confirmed(Gym.Types.session, RecordID(item.member("id"))) == null
+            }?.get("source")
+        }
+
+        fun retainPendingWorkout(engine: Engine, row: LocalLog.FinishedSession, entries: List<SetQueue.Entry>, local: List<DeviceWrite>): Boolean =
+            retain(engine, row, !row.session.isOpen, true, entries, local)
+
+        fun retainWorkout(engine: Engine, row: LocalLog.FinishedSession) { retain(engine, row, false) }
+        fun retainAndImport(engine: Engine, row: LocalLog.FinishedSession) { retain(engine, row, true) }
+
+        private fun retain(engine: Engine, row: LocalLog.FinishedSession, finished: Boolean, pendingOwned: Boolean = false,
+            accepted: List<SetQueue.Entry> = emptyList(), local: List<DeviceWrite> = emptyList()): Boolean {
+            var handled = false
+            val result = engine.commitLegacy(scope) { context ->
+                if (pendingOwned) {
+                    if (pendingOwnedSource(context, row.session.id) == null) return@commitLegacy null to null
+                } else check(context.isAnonymous) { "Only training saved on this phone can be prepared for an account." }
+                handled = true
+                val key = key("engine:${context.replica}")
+                val journal = journal(context, key)
+                val items = journal["items"]?.obj().orEmpty().toMutableMap()
+                val kind = if (finished) "finished" else "start"
+                val previous = context.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.firstOrNull {
+                    it["id"] == Json.of(row.session.id) && it["kind"] == Json.of(kind) && it["state"] !in setOf(Json.of("resolved"), Json.of("discarded"))
+                }
+                val priorStart = context.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.firstOrNull {
+                    it["id"] == Json.of(row.session.id) && it["kind"] == Json.of("start") && it["state"] !in setOf(Json.of("discarded"), Json.of("resolved"))
+                }?.get("source")
+                val source = if (finished) {
+                    val typed = Json.parse(snapshotJson.encodeToString(LocalLog.FinishedSession.serializer(), row))
+                    val old = previous?.get("source") ?: priorStart?.let { queue -> Json.objectOf("session" to queue.member("session"),
+                        "sets" to Json.Arr(queue["entries"]?.obj().orEmpty().values.filter { decode(it, SetQueue.Entry.serializer()).write != Owed.Delete }.map { it.member("set") }),
+                        "deleted" to Json.Arr(queue["entries"]?.obj().orEmpty().values.filter { decode(it, SetQueue.Entry.serializer()).write == Owed.Delete }.map { it.member("set").member("id") })) }
+                    val saved = old?.get("sets")?.arr().orEmpty().associateBy { it.member("id").str() }
+                    (old ?: typed).changed("session" to (old?.get("session") ?: typed.member("session")).changed(*typed.member("session").obj()
+                        .filterKeys { it != "plan" || old == null || !unknownFinishedFields(old) }.map { it.key to it.value }.toTypedArray()),
+                        "sets" to Json.Arr(typed.member("sets").arr().map { set ->
+                            val original = saved[set.member("id").str()]
+                            (original ?: set).changed(*set.obj().filterKeys { it != "kind" || original == null || !unknownKind(original) }.map { it.key to it.value }.toTypedArray())
+                        }),
+                        "deleted" to Json.Arr((old?.get("deleted")?.arr().orEmpty() + row.deleted.map(Json::of) +
+                            context.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(row.session.id) }.map { it.member("setId") }).distinct().sortedBy(Json::str)))
+                } else {
+                    val entries = priorStart?.get("entries")?.obj().orEmpty().toMutableMap()
+                    row.sets.forEach { set ->
+                        val saved = entries[set.id]
+                        if (saved == null) entries[set.id] = Json.parse(snapshotJson.encodeToString(SetQueue.Entry.serializer(), SetQueue.Entry(set, row.session.id, true, 0)))
+                        else if (decode(saved, SetQueue.Entry.serializer()).set != set && !unknownKind(saved.member("set"))) {
+                            val previousEntry = decode(saved, SetQueue.Entry.serializer())
+                            val typed = Json.parse(snapshotJson.encodeToString(SetQueue.Entry.serializer(), previousEntry.copy(set = set, needsPush = true, write = if (previousEntry.attempted) Owed.Fix else Owed.Append)))
+                            entries[set.id] = saved.changed("set" to saved.member("set").changed(*typed.member("set").obj().map { it.key to it.value }.toTypedArray()),
+                                "needsPush" to Json.of(true), "write" to typed["write"])
+                        }
+                    }
+                    accepted.forEach { entry ->
+                        check(entry.sessionId == row.session.id)
+                        val typed = Json.parse(snapshotJson.encodeToString(SetQueue.Entry.serializer(), entry))
+                        val saved = entries[entry.set.id]
+                        entries[entry.set.id] = if (saved == null) typed else saved.changed(*typed.obj().filterKeys { it != "set" }.map { it.key to it.value }.toTypedArray(),
+                            "set" to saved.member("set").changed(*typed.member("set").obj().filterKeys { it != "kind" || !unknownKind(saved.member("set")) }.map { it.key to it.value }.toTypedArray()))
+                    }
+                    val typedSession = Json.parse(snapshotJson.encodeToString(Session.serializer(), row.session))
+                    val history = priorStart?.let { Json.objectOf("session" to it.member("session"), "sets" to Json.Arr(entries.values.map { value -> value.member("set") })) }
+                    (priorStart ?: Json.objectOf()).changed("session" to (priorStart?.get("session") ?: typedSession).changed(*typedSession.obj()
+                        .filterKeys { it != "plan" || history == null || !unknownFinishedFields(history) }.map { it.key to it.value }.toTypedArray()), "entries" to Json.Obj(entries.toList()))
+                }
+                if (previous?.get("source") == source && local.all { context.device(it.key) == it.value }) return@commitLegacy null to null
+                val records = (row.sets.map { RecordKey(Gym.Types.set, RecordID(it.id)) } + row.deleted.map { RecordKey(Gym.Types.set, RecordID(it)) } +
+                    context.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(row.session.id) }.map { RecordKey(Gym.Types.set, RecordID(it.member("setId").str())) } +
+                    source["entries"]?.obj().orEmpty().keys.map { RecordKey(Gym.Types.set, RecordID(it)) } +
+                    listOf(RecordKey(Gym.Types.session, RecordID(row.session.id)))).toSet()
+                val supersede = if (context.isAnonymous) engine.unsubmittedLegacyGestures(context, scope, records) else emptyList()
+                val item = Item(Seat.anonymous, kind, row.session.id, source, sourceSeat = "engine:${context.replica}")
+                val gestureId = context.opaqueID()
+                var code: String? = null
+                val gesture = try { if (finished) imported(source, context, engine, records) else gesture(item, context, engine) }
+                    catch (refused: RefusedMigration) { code = refused.code; Gesture(emptyList()) }
+                    catch (_: Exception) { code = "source-needs-correction"; Gesture(emptyList()) }
+                gesture.gestureId = gestureId; gesture.supersede = supersede
+                items[item.token] = Json.objectOf("id" to Json.of(item.id), "kind" to Json.of(kind), "seat" to Json.of(Seat.anonymous),
+                    "sourceSeat" to Json.of(item.sourceSeat), "source" to source, "state" to Json.of(if (code == "waiting-for-firstpull") "pending" else if (code != null) "refused" else "queued"), "gestureId" to Json.of(gestureId))
+                    .changed("code" to code?.let(Json::of), "original" to (previous?.get("original") ?: previous?.get("source") ?: priorStart))
+                for ((otherKey, otherJournal) in context.devices(journalPrefix)) {
+                    val before = otherJournal["items"]?.obj().orEmpty()
+                    val changed = before.mapValues { (_, old) ->
+                        if (old["id"] == Json.of(row.session.id) && old["kind"] in setOf(Json.of("start"), Json.of("finished")) ||
+                            old["kind"] == Json.of("operation") && old["source"]?.get("sessionId") == Json.of(row.session.id)) old.changed("state" to Json.of("resolved")) else old
+                    }
+                    if (otherKey == key) items.putAll(changed)
+                    else if (before != changed) gesture.local += DeviceWrite(otherKey, withItems(otherJournal, changed))
+                }
+                if (!finished) for ((id, entry) in source.member("entries").obj()) {
+                    val operation = Item(Seat.anonymous, "operation", id, entry, sourceSeat = item.sourceSeat)
+                    items[operation.token] = Json.objectOf("id" to Json.of(id), "kind" to Json.of("operation"), "seat" to Json.of(Seat.anonymous),
+                        "sourceSeat" to Json.of(item.sourceSeat), "source" to entry, "state" to Json.of("pending"))
+                }
+                gesture.local += local + DeviceWrite(key, withItems(journal, items))
+                gesture to Triple(key, item.token, gesture)
+            }
+            retainRejected(engine, result)
+            return handled
+        }
+
+        private fun retainRejected(engine: Engine, result: Pair<CommitOutcome?, Triple<String, String, Gesture>?>) {
+            val rejected = result.first as? CommitOutcome.Refused ?: return
+            val prepared = result.second ?: return
+            engine.commitLegacy(scope) { context ->
+                val (key, token, originalGesture) = prepared
+                val writes = originalGesture.local.map { write ->
+                    if (!write.key.startsWith(journalPrefix) || write.value == null) write else {
+                        val journal = journal(context, write.key)
+                        val items = journal["items"]?.obj().orEmpty() + write.value!!.member("items").obj().mapValues { (itemToken, value) ->
+                            if (write.key == key && itemToken == token) value.changed("state" to Json.of("refused"), "code" to Json.of(rejected.code.text)) else value
+                        }
+                        DeviceWrite(write.key, withItems(journal, items))
+                    }
+                }
+                Gesture(emptyList(), supersede = originalGesture.supersede, local = writes) to Unit
+            }
+        }
+
+        fun retainedWorkouts(engine: Engine): List<LocalLog.FinishedSession> = engine.read(scope) { reader ->
+            reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.mapNotNull { item ->
+                if (item["state"] !in setOf(Json.of("queued"), Json.of("pending"), Json.of("refused"), Json.of("retained"))) return@mapNotNull null
+                val source = item.member("source")
+                try { when (item["kind"]?.str()) {
+                    "finished" -> decode(source, LocalLog.FinishedSession.serializer())
+                    "start" -> LocalLog.FinishedSession(decode(source.member("session"), Session.serializer()), source["entries"]?.obj().orEmpty().values
+                        .map { decode(it, SetQueue.Entry.serializer()) }.filter { it.write != Owed.Delete }.map { it.set }
+                        .sortedWith(compareBy({ it.completedAtMs }, { it.id })))
+                    else -> null
+                } } catch (_: Exception) { null }
+            }.distinctBy { it.session.id }
+        }
+
+        fun keepWorkout(engine: Engine, id: String) {
+            val source = retainedWorkouts(engine).firstOrNull { it.session.id == id } ?: return
+            if (source.session.isOpen) {
+                val finish = source.sets.maxOfOrNull { it.completedAtMs } ?: source.session.startedAtMs
+                val result = engine.commitLegacy(scope) { context ->
+                    val saved = context.devices(journalPrefix).entries.firstOrNull { (_, journal) -> journal["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && it["kind"] == Json.of("start") && it["state"] == Json.of("refused") } }
+                        ?: return@commitLegacy null to null
+                    val items = saved.value.member("items").obj().toMutableMap()
+                    val original = items.values.first { it["id"] == Json.of(id) && it["kind"] == Json.of("start") }.member("source")
+                    val entries = original["entries"]?.obj().orEmpty().values
+                    val sets = entries.filter { decode(it, SetQueue.Entry.serializer()).write != Owed.Delete }.map { it.member("set") }
+                        .sortedWith(compareBy({ it.member("completedAt").long() }, { it.member("id").str() }))
+                    val payload = Json.objectOf("session" to original.member("session").changed("finishedAt" to Json.of(finish)), "sets" to Json.Arr(sets),
+                        "deleted" to Json.Arr(entries.filter { decode(it, SetQueue.Entry.serializer()).write == Owed.Delete }.map { it.member("set").member("id") }))
+                    val item = Item(Seat.anonymous, "finished", id, payload, sourceSeat = "keep:${context.replica}")
+                    var code: String? = null
+                    val gesture = try { imported(payload, context, engine) } catch (refused: RefusedMigration) { code = refused.code; Gesture(emptyList()) }
+                    val gestureId = context.opaqueID(); gesture.gestureId = gestureId
+                    items.replaceAll { _, previous -> if (previous["id"] == Json.of(id) && previous["kind"] == Json.of("start") || previous["kind"] == Json.of("operation") && previous["source"]?.get("sessionId") == Json.of(id)) previous.changed("state" to Json.of("resolved")) else previous }
+                    items[item.token] = Json.objectOf("id" to Json.of(id), "kind" to Json.of("finished"), "seat" to Json.of(item.seat),
+                        "sourceSeat" to Json.of(item.sourceSeat), "source" to payload, "original" to original,
+                        "state" to Json.of(if (code == null) "queued" else if (code == "waiting-for-firstpull") "pending" else "refused"), "gestureId" to Json.of(gestureId)).changed("code" to code?.let(Json::of))
+                    gesture.local += DeviceWrite(saved.key, withItems(saved.value, items))
+                    gesture to Triple(saved.key, item.token, gesture)
+                }
+                retainRejected(engine, result)
+            } else retry(engine, id)
+        }
+
         fun reconcileConfirmed(engine: Engine) {
+            engine.commitLegacy(scope) { context ->
+                if (context.isAnonymous || !context.firstPullComplete() || context.checkpoint().cleanSeq == null) return@commitLegacy null to Unit
+                val writes = context.devices(journalPrefix).mapNotNull { (key, journal) ->
+                    val before = journal["items"]?.obj().orEmpty()
+                    val items = before.mapValues { (_, item) ->
+                        if (item["kind"] != Json.of("start") || item["state"] != Json.of("queued")) item else {
+                            val session = decode(item.member("source").member("session"), Session.serializer())
+                            val known = context.confirmed(Gym.Types.session, RecordID(session.id))?.takeIf { it.isVisible && it.born != null }
+                            if (known == null) item else {
+                                val expected = sessionFields(session)
+                                val matches = known.values["startedAt"] == expected["startedAt"] &&
+                                    (known.values["plan"] ?: Json.Null) == expected["plan"] &&
+                                    (known.values["historyRoutineId"] ?: known.values["routineId"] ?: Json.Null) == expected["historyRoutineId"]
+                                val reconciled = engine.reconcileConfirmedLegacyCommand(context, scope, item.member("gestureId").str(), Gym.Commands.start, RecordKey(Gym.Types.session, RecordID(session.id)))
+                                if (!matches) item.changed("state" to Json.of("refused"), "code" to Json.of("session-id-taken"))
+                                else if (reconciled) item.changed("state" to Json.of("admitted")) else item
+                            }
+                        }
+                    }
+                    if (before == items) null else DeviceWrite(key, withItems(journal, items))
+                }
+                if (writes.isEmpty()) null to Unit else Gesture(emptyList(), local = writes) to Unit
+            }
             val waiting = engine.read(scope) { reader ->
                 if (!reader.firstPullComplete() || reader.checkpoint().cleanSeq == null) emptyList() else
                     reader.devices(journalPrefix).values.flatMap { it["items"]?.obj().orEmpty().values }.filter { item ->
-                        item["kind"] == Json.of("finished") && item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull")
+                        item["kind"] in setOf(Json.of("finished"), Json.of("start")) && item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull")
                     }.map { it.member("id").str() }
             }
             waiting.forEach { retry(engine, it) }
@@ -492,7 +738,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
         fun refusals(engine: Engine): List<LegacyMigrationRefusal> = engine.read(scope) { reader ->
             reader.devices(journalPrefix).values.flatMap { journal -> journal["items"]?.obj().orEmpty().values.filter { it["state"] == Json.of("refused") }.map { item ->
                 val source = item.member("source")
-                val row = try { decode(source, LocalLog.FinishedSession.serializer()) } catch (_: Exception) { null }
+                val row = if (item["kind"] == Json.of("finished")) try { decode(source, LocalLog.FinishedSession.serializer()) } catch (_: Exception) { null } else null
                 val start = if (item["kind"] == Json.of("start")) try { decode(source.member("session"), Session.serializer()) } catch (_: Exception) { null } else null
                 val startSets = if (start != null) source["entries"]?.obj().orEmpty().values.mapNotNull { entry ->
                     try { decode(entry, SetQueue.Entry.serializer()).set } catch (_: Exception) { null }
@@ -506,7 +752,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                 }
                 val unknownKinds = savedSets.filter(::unknownKind).map { it.member("id").str() }
                 val description = if (item["kind"] == Json.of("cacheEdit")) {
-                    val name = if (item["editKind"] == Json.of(Gym.Types.exercise)) "movement" else "routine"
+                    val name = when (item["editKind"]?.str()) { Gym.Types.exercise -> "movement"; Gym.Types.weighin -> "weigh-in"; else -> "routine" }
                     "This saved $name change was refused ($code). Open the current $name and edit it again, then retry."
                 } else if (item["kind"] == Json.of("finished") && code in setOf("record-dead", "unknown-record")) reason("routine-missing") else reason(code)
                 LegacyMigrationRefusal(item.member("id").str(), row?.session ?: start,
@@ -530,17 +776,17 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
             startKinds: Map<String, works.windmill.gym.domain.SetKind> = emptyMap()) {
             engine.commitLegacy(scope) { context ->
             val all = context.devices(journalPrefix)
-            val saved = all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && (it["state"] == Json.of("refused") || it["code"] == Json.of("waiting-for-firstpull")) } }
+            val saved = all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) && (it["state"] == Json.of("refused") || it["state"] == Json.of("pending") && it["code"] == Json.of("waiting-for-firstpull")) } }
                 ?: all.entries.firstOrNull { entry -> entry.value["items"]?.obj().orEmpty().values.any { it["id"] == Json.of(id) } }
                 ?: throw IllegalStateException("This saved workout is unavailable.")
             val key = saved.key
             val journal = saved.value
             val items = journal["items"]?.obj().orEmpty().toMutableMap()
-            val token = (items.entries.firstOrNull { it.value["id"] == Json.of(id) && (it.value["state"] == Json.of("refused") || it.value["code"] == Json.of("waiting-for-firstpull")) }
+            val token = (items.entries.firstOrNull { it.value["id"] == Json.of(id) && (it.value["state"] == Json.of("refused") || it.value["state"] == Json.of("pending") && it.value["code"] == Json.of("waiting-for-firstpull")) }
                 ?: items.entries.firstOrNull { it.value["id"] == Json.of(id) })?.key
                 ?: throw IllegalStateException("This saved workout is unavailable.")
             val item = items.getValue(token)
-            if (item["state"] != Json.of("refused") && item["code"] != Json.of("waiting-for-firstpull")) return@commitLegacy null to Unit
+            if (item["state"] != Json.of("refused") && !(item["state"] == Json.of("pending") && item["code"] == Json.of("waiting-for-firstpull"))) return@commitLegacy null to Unit
             check(item["code"] != Json.of("identity-unresolved") || !context.isAnonymous) { reason("identity-unresolved") }
             val before = item.member("source")
             if (corrected != null && unknownFinishedFields(before)) throw IllegalStateException(reason("source-needs-update"))
@@ -579,7 +825,7 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
             }
             val gestureId = context.opaqueID()
             gesture.gestureId = gestureId
-            items[token] = item.changed("source" to source, "state" to Json.of(if (gesture.command != null) "queued" else if (kind in setOf("operation", "cacheEdit")) "pending" else if (kind == "finished") "admitted" else "migrated"), "gestureId" to Json.of(gestureId),
+            items[token] = item.changed("source" to source, "state" to Json.of(if (gesture.command != null) "queued" else if (kind in setOf("operation", "cacheEdit")) "pending" else if (kind in setOf("finished", "start")) "admitted" else "migrated"), "gestureId" to Json.of(gestureId),
                 "original" to (item["original"] ?: item.member("source")), "code" to null)
             if (kind == "finished" && gesture.command == null && item["gestureId"] != null)
                 items[token] = items.getValue(token).changed("resolvedGestureId" to item.member("gestureId"))
@@ -620,7 +866,10 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                     val kind = if (command.name == Gym.Commands.importSession) "finished" else "start"
                     if (item["kind"] != Json.of(kind) || item["id"] != command.args["id"] || item["state"] != Json.of("queued")) item
                     else when (val verdict = result.verdict) {
-                        is PushResult.Verdict.Ok -> item.changed("state" to Json.of("admitted"))
+                        is PushResult.Verdict.Ok -> if (command.name == Gym.Commands.start && verdict.write.orEmpty().any {
+                            it.key.type == Gym.Types.session && it.from == RecordID(item.member("id")) && it.key.id != it.from
+                        }) item.changed("state" to Json.of("refused"), "code" to Json.of("session-open"), "targetSessionId" to null)
+                            else item.changed("state" to Json.of("admitted"))
                         is PushResult.Verdict.Refused -> if (verdict.code.text in setOf("clock-skew", "base-unknown")) item
                             else item.changed("state" to Json.of("refused"), "code" to Json.of(verdict.code.text))
                     }
@@ -642,12 +891,15 @@ class LegacyGymMigration(private val filesDir: File, private val engine: Engine,
                         "start", "finished" -> source?.get("session")?.get("id")
                         else -> null
                     }
-                    if ((item["targetSessionId"] ?: original) == from.json) item.changed("targetSessionId" to to.json) else item
+                    if ((item["targetSessionId"] ?: original) == from.json && from != to && item["kind"] in setOf(Json.of("start"), Json.of("operation"))) {
+                        if (item["kind"] == Json.of("start")) item.changed("state" to Json.of("refused"), "code" to Json.of("session-open"), "targetSessionId" to null) else item
+                    } else if ((item["targetSessionId"] ?: original) == from.json) item.changed("targetSessionId" to to.json) else item
                 }
                 withItems(value, items)
             }
         }
         fun reason(code: String): String = when (code) {
+            "session-open" -> "Another workout is open on the account. Inspect this saved workout, then choose Keep to save it as a finished workout at its last set."
             "session-overlap" -> "This workout overlaps another workout. Correct its dates or times, then retry."
             "session-id-taken" -> "A workout with this identity is already on the log. Review that workout before retrying; this original stays on this phone."
             "bad-instant", "clock-skew" -> "The workout has a future or invalid time. Correct its dates or times, then retry."

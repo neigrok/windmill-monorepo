@@ -40,8 +40,6 @@ import works.windmill.platform.telemetry.SentryErrors
 import works.windmill.sync.engine.AndroidClock
 import works.windmill.sync.engine.AndroidSqlite
 import works.windmill.sync.engine.Engine
-import works.windmill.sync.engine.EngineOutcome
-import works.windmill.sync.engine.EngineTelemetry
 import works.windmill.sync.engine.HTTPTransport
 import works.windmill.sync.engine.SyncRuntime
 import works.windmill.sync.engine.SyncTransport
@@ -86,13 +84,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         onboardingLaunch = OnboardingLaunch(this, telemetry)
         val clock = AndroidWorkoutClock(this, telemetry = telemetry)
         val identities = DeviceIdentities()
-        val engineTelemetry = EngineTelemetry { event ->
-            val labels = mapOf("operation" to event.operation.name, "outcome" to event.outcome.name) +
-                (event.code?.let { mapOf("failure_kind" to it) } ?: emptyMap())
-            telemetry.event("sync_engine", labels)
-            if (event.outcome in setOf(EngineOutcome.failure, EngineOutcome.timeout))
-                telemetry.failure("sync_${event.operation.name}", IllegalStateException("Sync boundary failed"), labels)
-        }
+        val engineTelemetry = engineTelemetry(telemetry)
         val initial = Engine.memory(SyncSchema.registry, identities = identities).use { it.snapshot() }
         val engine = AndroidSqlite.open(File(filesDir, "sync-replica.sqlite"), SyncSchema.registry, initial,
             AndroidClock(this), identities, identities.actorID(), telemetry = engineTelemetry,
@@ -154,10 +146,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
                 workoutNotifications.refreshCapabilities()
             }
         }
-        scope.launch { engine.status.state.collect { store.refreshEngine() } }
-        scope.launch { engine.notices("gym").notices.collect { store.refreshEngine() } }
-        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
-            scope.launch { engine.observe(works.windmill.sync.core.ScopeRef.product("gym"), type).collect { store.refreshEngine() } }
+        store.observeEngine()
         val manager = getSystemService(ConnectivityManager::class.java)
         var knownOnline: Boolean? = null
         fun updateConnectivity() {

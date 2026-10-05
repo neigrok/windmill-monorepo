@@ -108,14 +108,15 @@ class Engine internal constructor(val registry: Registry, internal val store: En
             val oldCursors = before.replicas.firstOrNull { it.id == before.active }?.cursors.orEmpty()
             val newCursors = device.current().cursors
             val cursorScopes = (oldCursors.keys + newCursors.keys).filter { oldCursors[it] != newCursors[it] }.map(::ScopeRef).toSet()
-            if (before.json() != device.json() || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes) {
+            val changed = before.json() != device.json() || changedRows.isNotEmpty() || changedScopes.isNotEmpty() || scopesBefore != selectedScopes || openedBefore != openedScopes
+            if (changed) {
                 version++
                 changes.tryEmit(Invalidation(version, modified.flatMap { entry -> entry.deltas.map { entry.scope to it.key } }.toSet() + changedRows,
                     activeChanged || operation == EngineOperation.lifecycle || operation == EngineOperation.subscription, scopes = changedScopes.toSet(), firstPullScopes = cursorScopes, operation = operation,
                     replica = device.current().id, account = device.current().account))
             }
             val outcome = (result as? Pair<*, *>)?.first as? CommitOutcome
-            if (operation != EngineOperation.commit || outcome != null) telemetry.offer(operation,
+            if (changed || outcome is CommitOutcome.Refused) telemetry.offer(operation,
                 if (outcome is CommitOutcome.Refused) EngineOutcome.refused else EngineOutcome.success, (outcome as? CommitOutcome.Refused)?.code?.text)
             diagnostics.drop(diagnosticsBefore).forEach { report(EngineOperation.sync, EngineOutcome.failure, it["event"]?.str()) }
             for (trace in listOf(ended, events, diagnostics)) if (trace.size > 1_024) trace.subList(0, trace.size - 1_024).clear()

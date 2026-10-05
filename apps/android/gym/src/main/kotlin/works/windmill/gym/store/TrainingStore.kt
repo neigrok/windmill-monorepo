@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import works.windmill.gym.domain.WorkoutClock
@@ -293,7 +294,7 @@ class TrainingStore(
         val engine = gym as? EngineTraining ?: return
         val replica = engine.engine.activeReplica()
         if (queue.engineReplica == replica && !force) return
-        val open = engine.details().firstOrNull { it.session.isOpen }
+        val open = engine.openWorkout()
         queue.project(replica, open?.session, open?.sets.orEmpty())
         engine.restoreControls(queue)
         queue.flush()
@@ -364,14 +365,16 @@ class TrainingStore(
         }
     val accountKey: String get() = Seat.of(owner)
 
-    // The account's notes as the log last answered them, in the log's order. Nothing is kept between
-    // runs — the read on the way in is the whole of it — but the ROOM holds them while it is open,
-    // because a screen keeping a snapshot of its own would draw a note back the moment its window
-    // settled. Writes go to `notebook`, which is the whole of it.
+    // The account replica's notes in precedence order. The first pull distinguishes an unread
+    // notebook from an empty one; the room keeps one projection so an undo window stays hidden.
     private val notebookWrite = Mutex()
     private val conversationWrite = Mutex()
     private val proposalWrite = Mutex()
     private var notebook: List<Note> by mutableStateOf(emptyList())
+    var notesRead by mutableStateOf(false)
+        private set
+    var noteRefusals: List<RefusedWrite> by mutableStateOf(emptyList())
+        private set
     // A note inside its undo window is off the list; `noteCount` still counts it, because the log
     // refuses the eleventh whether or not this screen is drawing the tenth.
     val notes: List<Note>
@@ -673,6 +676,8 @@ class TrainingStore(
             deleteRefused = null
             deletedSets = emptySet()
             notebook = emptyList()
+            notesRead = false
+            noteRefusals = emptyList()
             conversations = emptyList()
             nextThreadCursor = null
             connectedLog = ConnectedLogState.Unknown
@@ -779,6 +784,14 @@ class TrainingStore(
         } }.filterNot { it.id in migrated }
     }
 
+    fun observeEngine() {
+        val engine = (gym as? EngineTraining)?.engine ?: return
+        scope.launch { engine.status.state.collect { refreshEngine() } }
+        scope.launch { engine.notices("gym").notices.collect { refreshEngine() } }
+        for (type in listOf("exercise", "exerciseName", "routine", "routineCreation", "session", "set", "prefs", "note", "weighin", "proposal"))
+            scope.launch { engine.records(works.windmill.sync.core.ScopeRef.product("gym"), type).state.collect { refreshEngine() } }
+    }
+
     suspend fun refreshEngine() {
         val log = gym as? EngineTraining ?: return
         if (queue.engineReplica != log.engine.activeReplica()) return
@@ -800,6 +813,12 @@ class TrainingStore(
         catalog = log.exercises()
         routines = log.routines()
         preferences = log.preferences()
+        notebookWrite.withLock {
+            if (seat != owner || gym !== log) return@withLock
+            notebook = log.notes()
+            notesRead = log.notesReady
+            noteRefusals = log.refusedNotes()
+        }
         series = log.bodyweight()
         bodyweightRead = log.anonymous || log.firstPullComplete || series.isNotEmpty()
         if (lastSetsWanted) loadLastSets()
@@ -1715,10 +1734,8 @@ class TrainingStore(
         return read
     }
 
-    // Notes are the account's and this phone keeps none between runs: every screen reads on the way
-    // in, and a refusal arrives in the log's own words — the ten cap and the two bounds are its to
-    // state. Every one of these four answers the log AND writes what it answered into `notebook`, so
-    // the drawn list is one list nobody holds a copy of.
+    // Notes read from the account replica; REST fixtures still read their server on entry. Both
+    // project into the room's notebook, and a refused save retains its receipt and submitted words.
     suspend fun readNotes(): GymResult<List<Note>> {
         val seat = owner
         val log = gym ?: return GymResult.Failed(WriteFailure.Refused(notesWantAnAccount))
@@ -1728,6 +1745,8 @@ class TrainingStore(
                 val served = log.notes()
                 if (seat != owner || gym !== log) return@withLock GymResult.Failed(WriteFailure.Refused(accountChanged))
                 notebook = served
+                notesRead = log !is EngineTraining || log.notesReady
+                noteRefusals = (log as? EngineTraining)?.refusedNotes().orEmpty()
                 GymResult.Ok(served)
             } catch (interrupted: CancellationException) {
                 throw interrupted
@@ -1921,6 +1940,7 @@ class TrainingStore(
     fun clearRefusals() {
         (gym as? EngineTraining)?.dismissRefusals()
         refusals = emptyList()
+        noteRefusals = emptyList()
     }
 
     // The newest day that has happened: a row dated past this phone's today is not a reading (B2).
@@ -2751,7 +2771,8 @@ class TrainingStore(
         // whole of what is held.
         if (deeper.isEmpty()) older = if (page.size < logPage) Older.End else Older.More
 
-        val open = page.firstOrNull { it.session.isOpen }
+        val open = if (log is EngineTraining) log.openWorkout()?.let { SessionSummary(it.session, it.sets) }
+            else page.firstOrNull { it.session.isOpen }
         if (open == null) {
             // The log holds no open session, so whatever this device was holding is over — unless the
             // log never HELD it. The session row goes; a set still owed does not.

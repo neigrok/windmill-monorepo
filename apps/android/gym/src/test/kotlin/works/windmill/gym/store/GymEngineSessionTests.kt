@@ -1,8 +1,12 @@
 package works.windmill.gym.store
 
 import kotlinx.coroutines.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Test
+import org.junit.Rule
+import org.junit.rules.TemporaryFolder
+import works.windmill.gym.domain.*
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.api.Change
@@ -11,8 +15,12 @@ import works.windmill.sync.api.NewID
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
+import works.windmill.sync.schema.Gym
+import works.windmill.sync.modelserver.ModelServer
+import works.windmill.sync.modelserver.Credential
 
 class GymEngineSessionTests {
+    @get:Rule val tmp = TemporaryFolder()
     private val gym = ScopeRef.product("gym")
     private fun localMovement(engine: Engine, id: String = "local-movement") {
         engine.commit(gym) { Gesture(listOf(Change.create("exercise", NewID.Given(RecordID(id)),
@@ -42,6 +50,124 @@ class GymEngineSessionTests {
     }
     private suspend fun decision(session: GymEngineSession) = withTimeout(2_000) { while (session.decision == null) delay(5); requireNotNull(session.decision) }
     private fun active(engine: Engine): Json { val s = engine.snapshot(); return s.member("replicas").arr().single { it.member("meta").member("replica") == s.member("active") } }
+
+    private fun transport(server: ModelServer, now: () -> Long) = object : SyncTransport {
+        private fun reply(value: works.windmill.sync.modelserver.Reply) = Reply.Answer(SyncResponse(value.status, value.body))
+        override suspend fun hello(token: String?) = reply(server.hello(Credential.Account("A"), now()))
+        override suspend fun push(request: Json, token: String) = reply(server.push(request, Credential.Account("A"), now()))
+        override suspend fun pull(request: Json, token: String?) = reply(server.pull(request, Credential.Account("A"), now()))
+        override suspend fun openLive(token: String) = Reply.Unreachable
+    }
+    private suspend fun signIn(session: GymEngineSession) = coroutineScope {
+        val signingIn = async { session.signedIn(User("A", "a@example.com"), "token-A", false) }
+        decision(session)
+        session.decide(LineageAnswer.add)
+        signingIn.await()
+    }
+    private suspend fun accountWorkout(room: EngineRoomFixture, server: ModelServer) {
+        room.select("A")
+        room.now += 1_000_000
+        room.training.startSession(SessionStart("remote01", room.now - 10_000, joinOpenSession = false))
+        room.training.appendSet("remote01", SetWrite("remoteset", "back-squat", 60.0, 5, SetKind.Working, room.now - 9_000))
+        room.sync(server)
+    }
+
+    @Test fun adoptingAFinishedAnonymousWorkoutPackagesOneAtomicImportWithoutMeetingTheAccountsOpenWorkout() = runBlocking {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), this).use { remote ->
+            accountWorkout(remote, server)
+            EngineRoomFixture(tmp.newFolder(), this).use { source ->
+                source.select(null)
+                val workout = source.workout()
+                val original = source.training.session(workout.id)!!
+                source.now = remote.now
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
+                    session.beforeAccountChange = source.store::prepareEngineTransition
+                    signIn(session)
+                    source.selected = "A"
+                    val workoutIntents = source.outbox().filter { entry ->
+                        entry["intent"]?.get("cmd")?.get("args")?.get("id") == Json.of(workout.id) ||
+                            entry["intent"]?.get("cmd")?.get("args")?.get("sessionId") == Json.of(workout.id) ||
+                            entry["intent"]?.get("d")?.arr().orEmpty().any { it["t"] == Json.of("set") }
+                    }
+                    assertEquals(1, workoutIntents.size)
+                    assertEquals(Gym.Commands.importSession, workoutIntents.single().member("intent").member("cmd").member("name").str())
+                    source.sync(server)
+                    assertEquals(original.session, source.training.session(workout.id)!!.session)
+                    assertEquals(original.sets.map { it.copy(setNumber = 1) }, source.training.session(workout.id)!!.sets)
+                    assertTrue(source.training.session("remote01")!!.session.isOpen)
+                    assertEquals(listOf("remoteset"), source.training.session("remote01")!!.sets.map { it.id })
+                }
+            }
+        }
+    }
+
+    @Test fun anAnonymousOpenWorkoutConflictKeepsItsOriginalContentAndDoesNotJoinTheAccountsWorkout() = runBlocking {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), this).use { remote ->
+            accountWorkout(remote, server)
+            val directory = tmp.newFolder()
+            val snapshot: Json
+            val original: SessionDetail
+            EngineRoomFixture(directory, this).use { source ->
+                source.select(null)
+                val workout = source.workout(finish = false)
+                original = source.training.session(workout.id)!!
+                source.now = remote.now
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
+                    session.beforeAccountChange = source.store::prepareEngineTransition
+                    signIn(session); source.selected = "A"
+                    source.store.connect(source.account())
+                    assertEquals(original.session.id, source.store.session!!.id)
+                    source.sync(server)
+                    assertEquals(original, source.training.session(workout.id))
+                    assertEquals(listOf("remoteset"), source.training.session("remote01")!!.sets.map { it.id })
+                    withContext(Dispatchers.IO) { withTimeout(2_000) { source.engine.notices("gym").notices.first { it.isNotEmpty() } } }
+                    source.store.refreshEngine()
+                    assertEquals("remote01", source.store.session!!.id)
+                    assertEquals(listOf("remoteset"), source.store.sets.map { it.id })
+                    source.training.dismissRefusals()
+                    assertEquals(original, source.training.session(workout.id))
+                    snapshot = source.engine.snapshot()
+                }
+            }
+            EngineRoomFixture(directory, this, snapshot).use { restarted ->
+                assertEquals(original, restarted.training.session(original.session.id))
+                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+            }
+        }
+    }
+
+    @Test fun aRefusedAnonymousFinishedImportStaysInspectableAfterDismissalAndRestart() = runBlocking {
+        val server = EngineRoomFixture.server()
+        EngineRoomFixture(tmp.newFolder(), this).use { remote ->
+            accountWorkout(remote, server)
+            val directory = tmp.newFolder()
+            val snapshot: Json
+            val original: SessionDetail
+            EngineRoomFixture(directory, this).use { source ->
+                source.select(null)
+                val workout = source.workout()
+                original = source.training.session(workout.id)!!
+                source.now = remote.now
+                GymEngineSession(source.engine, SyncRuntime(source.engine, transport(server) { source.now }, Tokens(), "test")).use { session ->
+                    session.beforeAccountChange = source.store::prepareEngineTransition
+                    signIn(session); source.selected = "A"
+                    server.refuse(code = Gym.Codes.payloadConflict)
+                    source.sync(server)
+                    withContext(Dispatchers.IO) { withTimeout(2_000) { source.engine.notices("gym").notices.first { it.isNotEmpty() } } }
+                    assertEquals(original, source.training.session(workout.id))
+                    source.training.dismissRefusals()
+                    assertEquals(original, source.training.session(workout.id))
+                    snapshot = source.engine.snapshot()
+                }
+            }
+            EngineRoomFixture(directory, this, snapshot).use { restarted ->
+                assertEquals(original, restarted.training.session(original.session.id))
+                assertTrue(LegacyGymMigration.refusals(restarted.engine).any { it.id == original.session.id })
+            }
+        }
+    }
 
     @Test fun addWaitsForThePinnedCountsAndRetainsIdsAndAccountLineage() = runBlocking {
         val engine = Engine.memory(SyncSchema.registry)
