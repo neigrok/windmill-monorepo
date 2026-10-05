@@ -91,7 +91,7 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
                                 if (it.code == 200) {
                                     if (json == null) throw JsonError("response")
                                     validateResponse(kind, json)
-                                } else telemetry.offer(operation(kind), EngineOutcome.failure)
+                                } else telemetry.offer(operation(kind), if (it.code in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
                                 Reply.Answer(SyncResponse(it.code, json))
                             } catch (_: Exception) { telemetry.offer(operation(kind), EngineOutcome.failure); Reply.Unreachable }
                         }
@@ -144,7 +144,8 @@ class HTTPTransport(baseURL: String, private val schema: Int, telemetry: EngineT
             override fun onClosed(webSocket: WebSocket, code: Int, reason: String) { messages.close(); sockets.remove(connection) }
             override fun onFailure(webSocket: WebSocket, failure: Throwable, response: Response?) {
                 val status = response?.code
-                response?.close(); telemetry.offer(EngineOperation.live, EngineOutcome.failure)
+                response?.close(); telemetry.offer(EngineOperation.live,
+                    if (status in setOf(400, 401, 403, 404, 409, 410, 422, 426, 429)) EngineOutcome.refused else EngineOutcome.failure)
                 opening.complete(if (status != null) Reply.Failed(SyncResponse(status)) else Reply.Unreachable); messages.close(IOException("live-failed")); sockets.remove(connection)
             }
         }

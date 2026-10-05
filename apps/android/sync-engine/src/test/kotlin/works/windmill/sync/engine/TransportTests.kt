@@ -95,6 +95,25 @@ class TransportTests {
         }
     }
 
+    @Test fun updateAndAuthenticationRefusalsRemainMetricsWithoutFailureIssues() = runBlocking {
+        val events = kotlinx.coroutines.channels.Channel<EngineEvent>(8)
+        MockWebServer().use { server ->
+            HTTPTransport(server.url("/").toString(), 5, telemetry = EngineTelemetry { events.send(it) }).use { transport ->
+                for (status in listOf(401, 410, 426, 503)) {
+                    server.enqueue(MockResponse().setResponseCode(status))
+                    assertEquals(SyncResponse(status, null), answer(transport.hello("token")))
+                    assertEquals(EngineEvent(EngineOperation.hello, if (status == 503) EngineOutcome.failure else EngineOutcome.refused),
+                        withTimeout(2_000) { events.receive() })
+                }
+                server.enqueue(MockResponse().setResponseCode(426))
+                assertEquals(Reply.Failed(SyncResponse(426)), transport.openLive("token"))
+                assertEquals(EngineEvent(EngineOperation.live, EngineOutcome.refused), withTimeout(2_000) { events.receive() })
+            }
+        }
+        events.close()
+        Unit
+    }
+
     @Test fun redirectsAndCookieStateDoNotEscapeTheSyncOrigin() = runBlocking {
         MockWebServer().use { server ->
             var cookieReads = 0
