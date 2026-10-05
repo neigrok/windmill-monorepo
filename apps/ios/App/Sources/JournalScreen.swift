@@ -30,13 +30,14 @@ struct JournalScreen: View {
                 }
                 today(width: geo.size.width - 48)
                   .padding(.horizontal, 24)
-                  .padding(.bottom, focused ? 18 + 44 + 12 : (model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
+                  .padding(.bottom, focused ? 18 : (model.compactAccountSheet ? 18 : (geo.size.height < 700 ? 12 : 92)) + geo.safeAreaInsets.bottom)
                   .id("journal-today")
               }
                 .padding(.top, typeSize.isAccessibilitySize && model.showPlaceholder ? 430 : 50)
                 .frame(minHeight: max(0, geo.size.height + (focused ? 0 : geo.safeAreaInsets.bottom) - 56 - (model.compactAccountSheet ? 350 : 0)), alignment: .bottom)
             }.defaultScrollAnchor(model.compactAccountSheet || (!focused && typeSize.isAccessibilitySize && model.showPlaceholder) ? .top : .bottom).scrollDismissesKeyboard(.interactively)
               .ignoresSafeArea(.container, edges: focused ? [] : .bottom)
+              .padding(.bottom, focused ? 44 + 12 : 0)
           }
         }
       }.overlay(alignment: .bottomTrailing) {
@@ -190,7 +191,11 @@ struct JournalBodyText: UIViewRepresentable {
   }
 
   func makeUIView(context: Context) -> UITextView {
+    #if DEBUG && targetEnvironment(simulator)
+    let view = ProcessInfo.processInfo.arguments.contains("-journal-layout-test") ? JournalLayoutTextView() : UITextView()
+    #else
     let view = UITextView()
+    #endif
     view.delegate = context.coordinator
     view.backgroundColor = .clear
     view.tintColor = UIColor(Design.lamp)
@@ -237,3 +242,25 @@ struct JournalBodyText: UIViewRepresentable {
     func textViewDidEndEditing(_ textView: UITextView) { if parent.focused { parent.focused = false } }
   }
 }
+
+#if DEBUG && targetEnvironment(simulator)
+final class JournalLayoutTextView: UITextView {
+  override var accessibilityValue: String? {
+    get {
+      guard let window, let selection = selectedTextRange,
+            let lastCharacter = position(from: endOfDocument, offset: -1),
+            let lastLine = tokenizer.rangeEnclosingPosition(lastCharacter, with: .line,
+              inDirection: UITextDirection(rawValue: UITextStorageDirection.backward.rawValue)) else { return nil }
+      let caret = convert(caretRect(for: selection.end), to: window)
+      let line = convert(firstRect(for: lastLine), to: window)
+      let metrics = [
+        "caret": [caret.minX, caret.minY, caret.width, caret.height],
+        "lastLine": [line.minX, line.minY, line.width, line.height],
+      ]
+      guard let data = try? JSONSerialization.data(withJSONObject: metrics) else { return nil }
+      return String(data: data, encoding: .utf8)
+    }
+    set { super.accessibilityValue = newValue }
+  }
+}
+#endif

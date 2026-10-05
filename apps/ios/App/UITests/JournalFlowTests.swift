@@ -162,26 +162,48 @@ import XCTest
     XCTAssertFalse(app.buttons["done-writing"].exists)
   }
 
-  func testFilledLinesStayAboveDoneSeat() {
+  func testFilledLinesStayAboveDoneSeat() throws {
     let app = XCUIApplication()
-    app.launchArguments = ["-model-server", "-board", "journal-empty-later"]
+    app.launchArguments = ["-model-server", "-board", "journal-empty-later", "-journal-layout-test"]
     app.launch()
     let write = app.buttons["write-today"]
     XCTAssertTrue(write.waitForExistence(timeout: 10))
     write.tap()
     XCTAssertTrue(app.keyboards.firstMatch.waitForExistence(timeout: 5))
-    let editor = app.textViews["journal-editor"]
     let done = app.buttons["done-writing"]
-    app.typeText("First filled line.\nSecond filled line.\nThird filled line.")
-    XCTAssertLessThanOrEqual(editor.frame.maxY, done.frame.minY)
-    app.typeText(String(repeating: "\nA longer page keeps the caret clear of the Done seat.", count: 12))
-    XCTAssertLessThanOrEqual(editor.frame.maxY, done.frame.minY)
+    for addition in ["First filled line.\nSecond filled line.\nThird filled line.",
+                     String(repeating: "\nA longer page keeps the caret clear of the Done seat.", count: 12), "\n"] {
+      app.typeText(addition)
+      try assertWritingClearsSeat(in: app)
+    }
     let screenshot = XCTAttachment(screenshot: app.screenshot())
     screenshot.name = "journal-long-writing"
     screenshot.lifetime = .keepAlways
     add(screenshot)
     done.tap()
     XCTAssertTrue(write.waitForExistence(timeout: 5))
+  }
+
+  func assertWritingClearsSeat(in app: XCUIApplication,
+                             file: StaticString = #filePath, line: UInt = #line) throws {
+    let editor = app.textViews["journal-editor"]
+    let done = app.buttons["done-writing"]
+    let visibleTop = app.scrollViews.firstMatch.frame.minY
+    let value = try XCTUnwrap(editor.value as? String, file: file, line: line)
+    let metrics = try XCTUnwrap(JSONSerialization.jsonObject(with: Data(value.utf8)) as? [String: [Double]], file: file, line: line)
+    let geometry = XCTAttachment(string: "\(value)\neditor: \(editor.frame)\nseat: \(done.frame)")
+    geometry.name = "journal-writing-geometry"
+    geometry.lifetime = .keepAlways
+    add(geometry)
+    for name in ["caret", "lastLine"] {
+      let rect = try XCTUnwrap(metrics[name], file: file, line: line)
+      guard rect.count == 4 else { XCTFail("Invalid \(name) rectangle: \(rect)", file: file, line: line); return }
+      XCTAssertGreaterThan(rect[2], 0, file: file, line: line)
+      XCTAssertGreaterThan(rect[3], 0, file: file, line: line)
+      XCTAssertGreaterThanOrEqual(rect[1], visibleTop, file: file, line: line)
+      XCTAssertLessThanOrEqual(rect[1] + rect[3], done.frame.minY,
+                              "\(name): \(rect), editor: \(editor.frame), seat: \(done.frame)", file: file, line: line)
+    }
   }
 
   func assertWriteFromHistory(board: String, screenshotName: String) {
