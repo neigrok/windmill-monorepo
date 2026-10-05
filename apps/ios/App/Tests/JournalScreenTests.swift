@@ -1,6 +1,7 @@
 import SwiftUI
 import UIKit
 import Testing
+import CoreText
 @testable import Windmill
 
 @Suite @MainActor struct JournalScreenTests {
@@ -20,6 +21,100 @@ import Testing
     let font = try #require(UIFont(name: "Caveat-Regular", size: 26))
     #expect(font.familyName == "Caveat")
     #expect((Bundle.main.object(forInfoDictionaryKey: "UIAppFonts") as? [String])?.contains("Caveat-Regular.ttf") == true)
+  }
+
+  @Test(arguments: [140.0, 160, 180, 200, 220, 240, 320], [24.0, 32, 40])
+  func inkLetteringPreservesCompleteGlyphOutlines(width: Double, size: Double) throws {
+    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    for text in ["Your journal", "You, and settings", "Today’s page", "Saves as you go.",
+                 "Just start typing", "Just start\ntyping", "Tap to write"] {
+      let words = text.split(whereSeparator: \.isWhitespace).map(String.init)
+      var renderedTexts: Set<String> = [text]
+      for start in words.indices {
+        for end in (start + 1)...words.count {
+          renderedTexts.insert(words[start..<end].joined(separator: " "))
+        }
+      }
+      for renderedText in renderedTexts.sorted() {
+        let lines = renderedText.split(separator: "\n").map { line in
+          CTLineCreateWithAttributedString(NSAttributedString(string: String(line), attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+        }
+        let fits = lines.allSatisfy { CTLineGetTypographicBounds($0, nil, nil, nil) <= width - size / 2 }
+        if width == 320 { #expect(fits, "Full label must fit the widest snapshot: \(renderedText)") }
+        guard fits else { continue }
+        let outlines = lines.map { CTLineGetBoundsWithOptions($0, .useGlyphPathBounds) }
+        let expected = outlines.reduce(CGRect.null) { $0.union($1) }
+        let actual = try renderedInkBounds(renderedText, size: size, width: width)
+        #expect(actual.width + 2.0 / 3 >= expected.width,
+                "Clipped Caveat outline: \(renderedText), size \(size), width \(width); rendered \(actual.width), glyph paths \(expected.width)")
+        if !renderedText.contains("\n") {
+          #expect(actual.height + 2.0 / 3 >= expected.height,
+                  "Clipped Caveat height: \(renderedText), size \(size), width \(width); rendered \(actual.height), glyph paths \(expected.height)")
+        }
+      }
+    }
+  }
+
+  func renderedInkBounds(_ text: String, size: Double, width: Double) throws -> CGRect {
+    let renderer = ImageRenderer(content: InkLabel(text: text, size: size, width: width, index: 0, dim: false, visible: true).lettering)
+    renderer.proposedSize = ProposedViewSize(width: width, height: nil)
+    renderer.scale = 3
+    let image = try #require(renderer.cgImage)
+    return try paintedInkBounds(image, scale: renderer.scale)
+  }
+
+  @Test(arguments: [24.0, 40]) func nativeInkLetteringPreservesCompleteGlyphOutlines(size: Double) async throws {
+    let scene = try #require(UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first)
+    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    for text in ["Your journal", "Just start\ntyping"] {
+      let window = UIWindow(windowScene: scene)
+      window.frame = CGRect(x: 0, y: 0, width: 300, height: 180)
+      window.backgroundColor = .clear
+      let host = UIHostingController(rootView: InkLabel(text: text, size: size, width: 240, index: 0, dim: false, visible: true).lettering
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading).ignoresSafeArea())
+      host.view.backgroundColor = .clear
+      host.view.isOpaque = false
+      window.rootViewController = host
+      defer { window.isHidden = true; window.rootViewController = nil }
+      window.isHidden = false
+      host.view.layoutIfNeeded()
+      try await Task.sleep(for: .milliseconds(100))
+      host.view.layoutIfNeeded()
+      let format = UIGraphicsImageRendererFormat()
+      format.scale = 3; format.opaque = false
+      let snapshot = UIGraphicsImageRenderer(size: host.view.bounds.size, format: format).image { _ in
+        #expect(host.view.drawHierarchy(in: host.view.bounds, afterScreenUpdates: true))
+      }
+      let actual = try paintedInkBounds(#require(snapshot.cgImage), scale: snapshot.scale)
+      let outlines = text.split(separator: "\n").map { line in
+        CTLineGetBoundsWithOptions(CTLineCreateWithAttributedString(NSAttributedString(string: String(line),
+          attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font])), .useGlyphPathBounds)
+      }
+      let expected = outlines.reduce(CGRect.null) { $0.union($1) }
+      #expect(actual.width + 2.0 / 3 >= expected.width,
+              "Native Caveat clipping: \(text), size \(size); painted \(actual.width), glyph paths \(expected.width)")
+      #expect(actual.width <= expected.width + 2,
+              "Native ink snapshot contains unexpected paint: \(text), size \(size); painted \(actual.width), glyph paths \(expected.width)")
+      if !text.contains("\n") { #expect(actual.height + 2.0 / 3 >= expected.height) }
+    }
+  }
+
+  func paintedInkBounds(_ image: CGImage, scale: CGFloat) throws -> CGRect {
+    var pixels = [UInt8](repeating: 0, count: image.width * image.height * 4)
+    try pixels.withUnsafeMutableBytes { buffer in
+      let context = try #require(CGContext(data: buffer.baseAddress, width: image.width, height: image.height,
+                                          bitsPerComponent: 8, bytesPerRow: image.width * 4, space: CGColorSpaceCreateDeviceRGB(),
+                                          bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue | CGBitmapInfo.byteOrder32Big.rawValue))
+      context.draw(image, in: CGRect(x: 0, y: 0, width: image.width, height: image.height))
+    }
+    var bounds = CGRect.null
+    for y in 0..<image.height {
+      for x in 0..<image.width where pixels[(y * image.width + x) * 4 + 3] > 4 {
+        bounds = bounds.union(CGRect(x: x, y: y, width: 1, height: 1))
+      }
+    }
+    #expect(!bounds.isNull, "Ink label rendered no pixels")
+    return bounds.applying(CGAffineTransform(scaleX: 1 / scale, y: 1 / scale))
   }
 
   @Test(arguments: ["", "Short walk, then an early night.", "A walk 🌙 e\u{301}.",

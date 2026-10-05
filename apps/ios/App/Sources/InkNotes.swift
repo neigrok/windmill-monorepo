@@ -1,5 +1,6 @@
 import SwiftUI
 import UIKit
+import CoreText
 
 struct InkNotes: View {
   let frames: [String: CGRect]
@@ -41,7 +42,7 @@ struct InkNotes: View {
         let savingLabel = CGPoint(x: dateLabel.x - 40, y: dateFrame.maxY + 6)
         let savingFrame = labelFrame("Saves as you go.", at: savingLabel, size: savingSize, in: geo.size)
         let showSaving = !large && !compact && fits(savingFrame, in: bounds, avoiding: [dateFrame, typingFrame, titleFrame, youFrame, writeFrame])
-        if fits(typingFrame, in: bounds, avoiding: [dateFrame]) && typingFrame.maxY < caret.minY {
+        if !dateFrame.isEmpty && fits(typingFrame, in: bounds, avoiding: [dateFrame]) && typingFrame.maxY < caret.minY {
         ZStack(alignment: .topLeading) {
           if showTitle {
             note("Your journal", at: titleLabel, size: fontSize, index: 0, in: geo.size)
@@ -119,13 +120,11 @@ struct InkNotes: View {
   }
 
   func labelFrame(_ text: String, at point: CGPoint, size: CGFloat, in screen: CGSize) -> CGRect {
-    let font = UIFont(name: "Caveat-Regular", size: size) ?? .systemFont(ofSize: size)
-    let bounds = (text as NSString).boundingRect(with: CGSize(width: labelWidth(at: point, in: screen), height: .greatestFiniteMagnitude), options: .usesLineFragmentOrigin, attributes: [.font: font], context: nil)
-    return CGRect(origin: point, size: CGSize(width: ceil(bounds.width), height: ceil(bounds.height)))
+    CGRect(origin: point, size: InkLabel.textSize(text, size: size, width: labelWidth(at: point, in: screen)))
   }
 
   func fits(_ frame: CGRect, in bounds: CGRect, avoiding others: [CGRect]) -> Bool {
-    bounds.contains(frame) && !others.contains { $0.insetBy(dx: -6, dy: -6).intersects(frame) }
+    !frame.isEmpty && bounds.contains(frame) && !others.contains { $0.insetBy(dx: -6, dy: -6).intersects(frame) }
   }
 
   func note(_ text: String, at point: CGPoint, size: CGFloat, index: Int, in screen: CGSize, dim: Bool = false) -> some View {
@@ -145,7 +144,7 @@ struct InkNotes: View {
   }
 }
 
-private struct InkLabel: View {
+struct InkLabel: View {
   let text: String
   let size: CGFloat
   let width: CGFloat
@@ -154,10 +153,36 @@ private struct InkLabel: View {
   let visible: Bool
   @Environment(\.accessibilityReduceMotion) var reduceMotion
   @State var shown = false
+  static func textSize(_ text: String, size: CGFloat, width: CGFloat) -> CGSize {
+    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [NSAttributedString.Key(kCTFontAttributeName as String): font]))
+    let bounds = CTFramesetterSuggestFrameSizeWithConstraints(setter, CFRange(), nil,
+      CGSize(width: max(1, width - size / 2), height: .greatestFiniteMagnitude), nil)
+    let path = CGPath(rect: CGRect(x: 0, y: 0, width: max(1, width - size / 2), height: ceil(bounds.height)), transform: nil)
+    guard CFArrayGetCount(CTFrameGetLines(CTFramesetterCreateFrame(setter, CFRange(), path, nil))) <= 2 else { return .zero }
+    return CGSize(width: ceil(bounds.width) + size / 2, height: ceil(bounds.height) + size / 4)
+  }
+  var lettering: some View {
+    let measured = Self.textSize(text, size: size, width: width)
+    let font = CTFontCreateWithName("Caveat-Regular" as CFString, size, nil)
+    let setter = CTFramesetterCreateWithAttributedString(NSAttributedString(string: text, attributes: [
+      NSAttributedString.Key(kCTFontAttributeName as String): font,
+      NSAttributedString.Key(kCTForegroundColorAttributeName as String): UIColor(dim ? Design.dim : Design.lamp).cgColor,
+    ]))
+    // CoreText preserves Caveat's overhang when native Text is rasterized.
+    return Canvas { context, _ in
+      context.withCGContext { cg in
+        cg.textMatrix = .identity
+        cg.translateBy(x: 0, y: measured.height)
+        cg.scaleBy(x: 1, y: -1)
+        let path = CGPath(rect: CGRect(x: size / 4, y: size / 8,
+          width: max(1, width - size / 2), height: measured.height - size / 4), transform: nil)
+        CTFrameDraw(CTFramesetterCreateFrame(setter, CFRange(), path, nil), cg)
+      }
+    }.frame(width: measured.width, height: measured.height)
+  }
   var body: some View {
-    Text(text).font(.custom("Caveat-Regular", fixedSize: size)).foregroundStyle(dim ? Design.dim : Design.lamp)
-      .lineLimit(2).fixedSize(horizontal: false, vertical: true).frame(maxWidth: width, alignment: .leading)
-      .opacity(shown ? 1 : 0).task(id: visible) {
+    lettering.opacity(shown ? 1 : 0).task(id: visible) {
         guard visible else { withAnimation(.easeOut(duration: 0.18)) { shown = false }; return }
         if !reduceMotion {
           try? await Task.sleep(for: .milliseconds(520 + index * 150))
