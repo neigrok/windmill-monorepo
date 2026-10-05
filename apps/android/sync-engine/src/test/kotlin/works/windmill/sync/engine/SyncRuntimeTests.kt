@@ -124,7 +124,7 @@ class SyncRuntimeTests {
         val engine = Engine.memory(registry, snapshot, clock, Identities(), "r_aaaaaaaaaaaa", telemetry = EngineTelemetry { events.add(it) }, pendingDeviceWork = pendingDeviceWork)
         val transport = Transport()
         val runtime = SyncRuntime(engine, transport, tokens, "1", sleeper, listOf("probe"))
-        init { if (bound && snapshot == null) engine.signIn("A", mapOf("probe" to false)); if (bound) tokens.save("A", "token:A") }
+        init { if (bound) tokens.save("A", "token:A"); if (bound && snapshot == null) engine.signIn("A", mapOf("probe" to false)) }
         fun create(held: Boolean = false) = engine.commit(product, Gesture(listOf(Change.create("card", NewID.Given(RecordID("card0001")),
             mapOf("title" to Json.of("Title")))), hold = held))
         suspend fun push() = withTimeout(2_000) { transport.pushes.receive() }
@@ -307,7 +307,7 @@ class SyncRuntimeTests {
             val send = async { fixture.runtime.senderStep(leaving = true) }
             val request = fixture.push()
             assertTrue(fixture.engine.signOut("keep").member("complete").bool())
-            fixture.engine.signIn("B", mapOf("probe" to false)); fixture.tokens.save("B", "token:B")
+            fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             val before = fixture.engine.device.current().json()
             request.answer.complete(ok(request.request)); send.await()
             assertEquals(before, fixture.engine.device.current().json())
@@ -404,7 +404,7 @@ class SyncRuntimeTests {
             val socket = withTimeout(2_000) { fixture.transport.opened.await() }
             until { socket.sends.any { it["op"] == Json.of("sub") } }
             assertTrue(fixture.engine.signOut("keep").member("complete").bool())
-            fixture.engine.signIn("B", mapOf("probe" to false)); fixture.tokens.save("B", "token:B")
+            fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             socket.frames.trySend(Json.objectOf("op" to Json.of("change"), "scope" to Json.of(product.text), "as" to Json.of("A"),
                 "epoch" to Json.of("ep-1"), "seq" to Json.of(1)))
             withTimeout(2_000) { socket.closed.await() }
@@ -735,7 +735,7 @@ class SyncRuntimeTests {
             val send = async { fixture.runtime.senderStep(leaving = true) }
             val request = fixture.push()
             fixture.engine.signOut("keep")
-            fixture.engine.signIn("B", mapOf("probe" to false)); fixture.tokens.save("B", "token:B")
+            fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             fixture.create()
             val before = fixture.engine.device.current().json()
             request.answer.complete(Reply.Failed(SyncResponse(426)))
@@ -752,7 +752,7 @@ class SyncRuntimeTests {
             fixture.runtime.enter()
             val request = fixture.pull()
             fixture.engine.signOut("keep")
-            fixture.engine.signIn("B", mapOf("probe" to false)); fixture.tokens.save("B", "token:B")
+            fixture.tokens.save("B", "token:B"); fixture.engine.signIn("B", mapOf("probe" to false))
             val before = fixture.engine.device.current().json()
             request.answer.complete(Reply.Failed(SyncResponse(426)))
             until { fixture.runtime.upgradeRequired }
