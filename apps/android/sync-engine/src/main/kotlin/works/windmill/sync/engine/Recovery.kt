@@ -154,6 +154,11 @@ private fun Engine.foldDependents(replica: ReplicaState, source: Entry, origin: 
             }
             if (!entry.queued()) continue
             dependents.absorb(entry, part)
+            if (part.commandGone) entry.intent.command?.let { command ->
+                applyCommandResultDeviceWrites(replica, entry.scope, command,
+                    PushResult(entry.intent.n ?: 0, PushResult.Verdict.Refused(RefusalCode.parentDead)),
+                    replica.meta["serverEpoch"]?.orNull()?.str() ?: "")
+            }
             add(removeDependent(entry, part))
             if (entry.intent.deltas.isEmpty() && entry.intent.command == null) {
                 entry.json = entry.json.with("orphanOf" to Json.of(origin))

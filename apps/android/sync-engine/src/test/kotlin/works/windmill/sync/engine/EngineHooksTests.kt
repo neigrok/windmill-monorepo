@@ -93,6 +93,33 @@ class EngineHooksTests {
         }
     }
 
+    @Test fun throwingFoldedCommandHookRollsBackSourceRefusalDependentsAndDeviceJournal() {
+        val failure = IllegalStateException("journal unavailable")
+        var fail = true
+        engine(writes = { command, result, _, rows ->
+            assertEquals("probe.end", command.name)
+            assertEquals(0L, result.n)
+            assertEquals(RefusalCode.parentDead, (result.verdict as PushResult.Verdict.Refused).code)
+            assertEquals(Json.of(true), rows.getValue("rack").member("pending"))
+            if (fail) throw failure
+            listOf(DeviceWrite("rack", Json.objectOf("refused" to Json.of("parent-dead"))))
+        }).use { engine ->
+            assertTrue(engine.commit(scope, Gesture(listOf(Change.create("run", NewID.Given(RecordID("run00001")), mapOf("label" to Json.of("Run")))),
+                local = listOf(DeviceWrite("rack", Json.objectOf("pending" to Json.of(true)))))) is CommitOutcome.Committed)
+            assertTrue(engine.commit(scope, Gesture(emptyList(), command = Command("probe.end", Json.objectOf(
+                "runId" to Json.of("run00001"), "endedAt" to Json.of(5_000))))) is CommitOutcome.Committed)
+            val request = engine.nextPush(1)!!
+            val before = engine.snapshot()
+            assertSame(failure, assertThrows(IllegalStateException::class.java) { engine.onPushResponse(request, response(request, refused = true), timing) })
+            assertEquals(before, engine.snapshot())
+            assertEquals(listOf("sent", "ready"), engine.device.current().entries().map { it.state })
+            fail = false
+            engine.onPushResponse(request, response(request, refused = true), timing)
+            assertTrue(engine.device.current().entries().isEmpty())
+            assertEquals(Json.objectOf("refused" to Json.of("parent-dead")), engine.read(scope) { it.device("rack") })
+        }
+    }
+
     @Test fun writeMapRewritesTheDeviceValueAfterApplyingCommandResultWrites() {
         var calls = 0
         engine(writes = { _, _, _, _ -> listOf(DeviceWrite("rack", Json.objectOf("run" to Json.of("run00001"), "saved" to Json.of(true)))) },

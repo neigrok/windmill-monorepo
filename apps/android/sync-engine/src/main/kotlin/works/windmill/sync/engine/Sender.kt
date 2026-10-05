@@ -101,15 +101,8 @@ fun Engine.onPushResponse(request: Json, response: SyncResponse, timing: Request
             for (result in results.subList(from, to)) {
                 val entry = replica.entries().firstOrNull { it.state == "sent" && it.json.member("n") == result.member("n") } ?: continue
                 if (replica.meta["serverEpoch"] === Json.Null) replica.meta = replica.meta.with("serverEpoch" to body.member("epoch"))
-                entry.intent.command?.let { command -> registry.product(entry.scope)?.let { product ->
-                    val rows = replica.device[product]?.obj().orEmpty().toMutableMap()
-                    for (write in commandResultWrites(command, PushResult(result), body.member("epoch").str(), rows.toMap())) {
-                        if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false)
-                            throw works.windmill.sync.api.CommitFailure.malformed("device-key")
-                        if (write.value == null) rows.remove(write.key) else rows[write.key] = write.value!!
-                    }
-                    if (rows.isEmpty()) replica.device.remove(product) else replica.device[product] = Json.Obj(rows.toList())
-                } }
+                entry.intent.command?.let { command -> applyCommandResultDeviceWrites(replica, entry.scope,
+                    command, PushResult(result), body.member("epoch").str()) }
                 if (result.member("s").str() == "refused") onRefused(replica, entry, result, body)
                 else {
                     replica.move(entry, "ok", ended)
@@ -153,4 +146,16 @@ class SenderWait {
     fun kick(now: Long) { if (afterSkew && now < until) return; k = 0; until = maxOf(now, floor); afterSkew = false }
     fun due(now: Long) = now >= until
     fun leaveMayPush(now: Long) = now >= floor
+}
+
+internal fun Engine.applyCommandResultDeviceWrites(replica: ReplicaState, scope: ScopeRef,
+    command: Command, result: PushResult, epoch: String) {
+    val product = registry.product(scope) ?: return
+    val rows = replica.device[product]?.obj().orEmpty().toMutableMap()
+    for (write in commandResultWrites(command, result, epoch, rows.toMap())) {
+        if (registry.products[product]?.get("device")?.obj()?.values?.none { Pattern(it.member("keyPattern").str()).matches(write.key) } != false)
+            throw works.windmill.sync.api.CommitFailure.malformed("device-key")
+        if (write.value == null) rows.remove(write.key) else rows[write.key] = write.value!!
+    }
+    if (rows.isEmpty()) replica.device.remove(product) else replica.device[product] = Json.Obj(rows.toList())
 }
