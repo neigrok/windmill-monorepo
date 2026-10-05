@@ -262,8 +262,9 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
     }
     suspend fun signOut(): SignOutSession {
         val account = engine.lock.withLock { engine.device.current().account } ?: throw EngineError(EngineError.Code.notSignedIn)
+        val alreadyHeld = signOutHold == account
         engine.releaseHeld(true)
-        if (signOutHold != account) deadline(Constants.SIGNOUT_FLUSH_MS.toLong()) {
+        if (!alreadyHeld) deadline(Constants.SIGNOUT_FLUSH_MS.toLong()) {
             var first = true
             while (true) {
                 if (!runSenderStep(leaving = first, draining = true)) break
@@ -271,32 +272,41 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
                 yield()
             }
         }
-        activePush?.cancel()
-        return withTimeout(Constants.SIGNOUT_FLUSH_MS) { senderTurn.withLock {
-            engine.lock.withLock {
-                if (engine.device.current().let { it.state != "bound" || it.account != account }) throw EngineError(EngineError.Code.notSignedIn)
-            }
-            socket?.close(); socket = null
-            signOutHold = account; signOutSerial++
-            try { SignOutSession(this@SyncRuntime, account, signOutSerial, engine.signOut()).also { wakeAll() } }
-            catch (failure: Throwable) { signOutHold = null; wakeAll(); throw failure }
-        } }
+        val hold = engine.lock.withLock {
+            if (engine.device.current().let { it.state != "bound" || it.account != account }) throw EngineError(EngineError.Code.notSignedIn)
+            signOutHold = account; ++signOutSerial
+        }
+        try {
+            activePush?.cancel()
+            return withTimeout(Constants.SIGNOUT_FLUSH_MS) { senderTurn.withLock {
+                engine.lock.withLock {
+                    if (signOutHold != account || signOutSerial != hold) throw EngineError(EngineError.Code.signOutEnded)
+                    if (engine.device.current().let { it.state != "bound" || it.account != account }) throw EngineError(EngineError.Code.notSignedIn)
+                }
+                socket?.close(); socket = null
+                SignOutSession(this@SyncRuntime, account, hold, engine.signOut()).also { wakeAll() }
+            } }
+        } catch (failure: Throwable) {
+            engine.lock.withLock { if (signOutSerial == hold) { signOutHold = null; signOutSerial++ } }
+            wakeAll(); throw failure
+        }
     }
     internal suspend fun finishSignOut(session: SignOutSession, choice: SignOutChoice): Json = senderTurn.withLock {
-        if (session.hold != signOutSerial || signOutHold != session.account) throw EngineError(EngineError.Code.signOutEnded)
         val result = engine.lock.withLock {
+            if (session.hold != signOutSerial || signOutHold != session.account) throw EngineError(EngineError.Code.signOutEnded)
             val active = engine.device.current()
             if (active.state != "bound" || active.account != session.account) throw EngineError(EngineError.Code.signOutEnded)
-            engine.signOut(choice.name, session.counted)
+            val result = engine.signOut(choice.name, session.counted)
+            if (result.member("complete").bool()) { signOutHold = null; signOutSerial++ }
+            result
         }
         if (!result.member("complete").bool()) throw EngineError(EngineError.Code.signOutChanged,
             ready = result.member("ready").long().toInt(), sent = result.member("sent").long().toInt(), pending = result["pending"]?.long()?.toInt() ?: 0)
-        signOutHold = null; signOutSerial++
         try { tokens.delete(session.account) } catch (_: Exception) { engine.report(EngineOperation.lifecycle, EngineOutcome.failure) }
         wakeAll(); result
     }
     internal suspend fun cancelSignOut(session: SignOutSession) = senderTurn.withLock {
-        if (session.hold == signOutSerial) { signOutHold = null; signOutSerial++; wakeAll() }
+        engine.lock.withLock { if (session.hold == signOutSerial) { signOutHold = null; signOutSerial++; wakeAll() } }
         engine.report(EngineOperation.lifecycle, EngineOutcome.success)
     }
     fun reauthenticate(token: String) {
@@ -318,7 +328,10 @@ class SyncRuntime(private val engine: Engine, private val transport: SyncTranspo
             val request = engine.nextPush(pushLimit) ?: return@withLock false
             if (!current(seat)) return@withLock false
             val send = engine.clock.reading()
-            activePush = currentCoroutineContext()[Job]
+            val job = currentCoroutineContext()[Job]
+            if (!engine.lock.withLock {
+                if (signOutHold == seat.account) false else { activePush = job; true }
+            }) return@withLock false
             val reply = try { deadline(Constants.REQUEST_TIMEOUT_MS.toLong()) { transport.push(request, seat.token!!) } ?: Reply.Unreachable }
                 finally { activePush = null }
             val recv = engine.clock.reading()

@@ -41,8 +41,9 @@ class SyncRuntimeTests {
     }
     private class Clock : EngineClock {
         @Volatile var wall = 5_000L
+        @Volatile var beforeReading: () -> Unit = {}
         override fun now() = wall
-        override fun reading() = ClockReading(wall, wall, "boot-1")
+        override fun reading(): ClockReading { beforeReading(); return ClockReading(wall, wall, "boot-1") }
     }
     private class Push(val request: Json, val token: String) {
         val answer = CompletableDeferred<Reply<SyncResponse>>()
@@ -606,6 +607,61 @@ class SyncRuntimeTests {
             assertFalse(fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure })
             assertTrue(fixture.runtime.signOut().finish(SignOutChoice.keep).member("complete").bool())
             assertEquals("anon", fixture.engine.device.current().state)
+        }
+    }
+
+    @Test fun signOutFencesANumberedWorkerBeforeTransportAndCancellingTheAttemptReleasesItsFence() = runBlocking {
+        for (cancel in listOf(false, true)) {
+            val flushing = CompletableDeferred<Unit>()
+            val expired = CompletableDeferred<Unit>()
+            val sleeper = object : EngineSleeper {
+                override suspend fun sleep(ms: Long) {
+                    if (ms == Constants.SIGNOUT_FLUSH_MS.toLong()) { flushing.complete(Unit); expired.await() }
+                    else awaitCancellation()
+                }
+            }
+            Fixture(sleeper = sleeper).use { fixture ->
+                val numbered = CompletableDeferred<Unit>()
+                val release = java.util.concurrent.CountDownLatch(1)
+                val paused = AtomicBoolean(false)
+                fixture.create()
+                fixture.clock.beforeReading = {
+                    if (fixture.engine.lock.withLock { fixture.engine.device.current().entries().any { it.state == "sent" } } && paused.compareAndSet(false, true)) {
+                        numbered.complete(Unit); release.await()
+                    }
+                }
+                val hold = SyncRuntime::class.java.getDeclaredField("signOutHold").apply { isAccessible = true }
+                val sender = async { fixture.runtime.senderStep(leaving = true) }
+                try {
+                    withTimeout(2_000) { numbered.await() }
+                    val original = fixture.engine.nextPush()!!
+                    val decision = async { fixture.runtime.signOut() }
+                    withTimeout(2_000) { flushing.await() }; expired.complete(Unit)
+                    until { hold.get(fixture.runtime) == "A" }
+                    assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+                    if (cancel) {
+                        decision.cancelAndJoin()
+                        assertNull(hold.get(fixture.runtime))
+                        release.countDown()
+                    } else {
+                        release.countDown()
+                        val question = withTimeout(2_000) { decision.await() }
+                        assertFalse(sender.await())
+                        assertTrue(fixture.transport.pushes.tryReceive().isFailure)
+                        assertEquals(original, fixture.engine.nextPush())
+                        question.cancel()
+                    }
+                    val resumed = if (cancel) sender else async { fixture.runtime.senderStep(leaving = true) }
+                    val request = fixture.push()
+                    assertEquals(original, request.request)
+                    request.answer.complete(ok(request.request))
+                    assertTrue(resumed.await())
+                    assertEquals(Json.of(1), fixture.engine.device.current().meta.member("ackThrough"))
+                    fixture.engine.report(EngineOperation.shutdown, EngineOutcome.success)
+                    until { fixture.events.any { it.operation == EngineOperation.shutdown } }
+                    assertFalse(fixture.events.any { it.operation == EngineOperation.push && it.outcome == EngineOutcome.failure })
+                } finally { release.countDown(); sender.cancelAndJoin() }
+            }
         }
     }
 
