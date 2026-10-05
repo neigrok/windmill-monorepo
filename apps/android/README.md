@@ -77,8 +77,14 @@ in its dormant replica and selecting an independent anonymous replica.
 First launch archives the existing SetQueue, LocalLog, DeviceCopy, preferences, bodyweight and
 claim-consent documents before migrating them. Each engine transaction commits source identity,
 work and its completion marker together; a crash resumes without duplicating completed work.
-Finished signed-out workouts use atomic strict imports. Unfinished starts use join/write-map
-semantics. Attempted operations keep their original identities and payloads until reconciliation.
+Finished signed-out workouts become durable atomic strict imports before adoption. Unfinished
+starts explicitly refuse joining another open workout; only their own confirmed session identity
+reconciles automatically. A migrated planned start waits for the account pull and refuses a changed
+frozen routine plan. Conflicting workouts remain inspectable on the phone, with an explicit
+**Keep** action that imports them finished at their last set. Dismissing a notice does not remove
+workout content. Attempted operations keep their original identities and payloads until
+reconciliation; only an owed correction changes confirmed mutable fields. Pending appends replay
+in performed order, then stable identity order, and the server assigns their set numbers.
 Refused imports retain their source on the phone. Gym settings shows the reason and offers explicit
 correction and retry; dates, sets and frozen routine lineage are never silently changed.
 
@@ -91,6 +97,10 @@ replica. The bundled movement catalogue uses backend seed identities. Coach thre
 shares and connected-log credentials use REST. `LocalCoach` retains account-scoped drafts, request
 identities and partial replies; retry retains identity and Stop preserves completed work.
 
+Notes retain an unread state until the account's first pull completes; subsequent pulls refresh
+the open notebook, and refused saves show their refusal. Deleting a migrated cached weigh-in
+before that pull persists a pending deletion, hiding it through restart until it lands.
+
 Workout logging persists consumed actions and timestamps. Rack, movement, account and finish
 changes invalidate stale actions. Notification logging requires unlock and current identity;
 native paging must settle before rack edits or logging. The silent ongoing notification can become
@@ -101,6 +111,35 @@ signals. The UI displays kilograms even with an account preference of lb.
 A 426 from the engine or 410 `client-update-required` from REST presents **Update required**.
 The local replica remains intact while network synchronization is paused. Update destination
 configuration and observability are documented in [Android observability](../../docs/ANDROID_OBSERVABILITY.md).
+
+## Local verification
+
+Use the full build above for both variants, lint, assembly and shared engine/domain gates. For
+device checks, build with `-Pwindmill.apiBase=http://10.0.2.2:8096` and use `Pixel_API34_Root`.
+Follow [the backend runbook](../../backend/RUNNING.md) with a separate database, `schema.sql`,
+`gym_sync.sql`, `journal_sync.sql`, `gym_sync_v5.sql`, both backfills and the v5 upgrade/audit.
+Enable `SYNC_ENABLED=1`, `GYM_ENGINE_WRITES=1` and `JOURNAL_ENGINE_WRITES=1` on port 8096.
+
+Install an APK built from `android-v0.10.0` with the same test signing key, create finished and
+unfinished workouts, then install this build over its data. Check IDs, frozen routine lineage,
+pending operations, crash/restart and refused-history recovery. Log offline, restart, reconnect
+and verify the server records; exercise Add and Discard with data on both sides, and Keep at
+sign-out. A same-debug-key source upgrade does not establish published release signing.
+
+The live-wire suite requires a fresh local account credential and a single-use magic-link token
+issued against that backend; the runbook's direct-database development code uses the normal auth
+door. Keep credentials out of logs. Run each variant with:
+
+```sh
+WM_ANDROID_WIRE_TEST=1 WM_WIRE_BASE=http://127.0.0.1:8096 \
+  WM_WIRE_BEARER="$WM_LOCAL_BEARER" WM_WIRE_LINK_TOKEN="$WM_LOCAL_LINK" \
+  ./gradlew :gym:testDebugUnitTest --tests '*LiveWireTests' --max-workers=4
+# Repeat with :gym:testReleaseUnitTest and a fresh single-use link.
+```
+
+Stop listeners by the selected port, drop the test database, stop the emulator and any ADB/Gradle
+daemon started for the check, and remove temporary credentials. Verification counts and installed
+app observations belong in the task report, rather than a lasting evidence file.
 
 ## CI and releases
 

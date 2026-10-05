@@ -69,7 +69,11 @@ storage, read, writer, transport and lifecycle failures report under `sync_<oper
 HTTP refusals, including update-required responses, emit metrics without Sentry issues. The engine
 owns hello, push, pull, live, retries, deadlines and cancellation. Engine network failures use
 bounded operation/outcome labels; intentional request/socket close and coroutine cancellation do
-not report issues. No replica/account identifier,
+not report issues. Unchanged engine transactions enqueue no success telemetry. The application
+forwards engine refusals and failures; successful user steps already have their product events,
+so background housekeeping never becomes `sync_engine` traffic. A healthy live socket suppresses
+periodic fallback pulls; first reads, live hints, doubt resolution and socket recovery still pull.
+No replica/account identifier,
 record key, source document, workout content or credential enters these reports.
 
 Legacy migration reports unexpected boundary failures under `gym.migration`. Its durable source
@@ -101,7 +105,7 @@ properties are bounded labels. The event schema is `{id, name, clientMs, props}`
 | Coach | `gym_ask_started`, `gym_ask_outcome` | outcome, failure_kind, status, duration_ms, cap |
 | Training | `gym_session_started`, `gym_session_finished`, `gym_set_logged` | storage |
 | Routines/proposals | `gym_routine_saved`, `gym_proposal_outcome` | action, storage, outcome |
-| Engine | `sync_engine` | operation, outcome, failure_kind |
+| Engine refusals/failures | `sync_engine` | operation, outcome, failure_kind |
 | Migration | `gym_migration_completed`, `gym_migration_recovery` | outcome; action, state |
 | Account decisions | `gym_sign_in_decision`, `gym_sign_out` | state, action, outcome |
 | Connectivity | `sync_connectivity` | state |
@@ -162,6 +166,12 @@ suppression, one delivery report per failure streak and exact onboarding names/f
 HTTP tests cover concurrent diagnostics,
 listener composition, timeouts and response decoding. Release-tool tests cover signing custody,
 provenance and telemetry configuration.
+
+`EngineIdleTests` drives an online and an offline hour using the shipping engine, runtime,
+HTTP transport, telemetry adapter and durable event queue with a stepped clock and real local
+HTTP/WebSocket collectors. It checks zero idle HTTP requests and queued events, then verifies
+recovery after a closed live connection. `EngineNotesScreenTests` checks unread versus empty
+notebooks, first-pull refresh and server-refused saves through the gym engine.
 
 Native crash delivery and vendor receipt require a separate installed-app check. Local collectors
 and a successful build do not establish either.

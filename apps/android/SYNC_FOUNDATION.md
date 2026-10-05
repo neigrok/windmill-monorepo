@@ -3,7 +3,7 @@
 A1 provides the Kotlin sync engine, domain kit and gym domain surface. The Gradle build enforces
 client and kit corpus coverage, mandatory properties, replay fault coverage, schema freshness and
 strict layering. A2 now composes that engine into the shipping gym, migrates the device stores and
-uses engine account decisions. See [A2 verification](A2_VERIFICATION.md) for the current app gates.
+uses engine account decisions. See [the app verification loop](README.md#local-verification).
 
 ## A1 module baseline
 
@@ -90,8 +90,8 @@ through `Telemetry`.
 
 ## A1 gate baseline
 
-The following counts record the foundation commit; current A2 results live in
-[A2 verification](A2_VERIFICATION.md).
+The following counts record the foundation commit. Re-run
+[the app verification loop](README.md#local-verification) for current results.
 
 Run from `apps/android`, with `ANDROID_HOME` pointing to the SDK:
 

@@ -81,13 +81,15 @@ apps store carries across.
   - Silent adoption where canon asks. The web roadmap adopts every signed-out tree on this device,
     adding it beside the account's (`claimLocalTrees.js`). The web journal joins signed-out drafts
     into the account's pages for those days (`pageStore.js` `claimAnonymousDrafts`, `joinBodies`).
-  - Standing claim rows where canon asks once at sign-in. Android asks *These are mine* / *Not
-    mine* on a settings row (`SettingsScreen.kt`), and its sign-in door says *Logged before any
-    sign-in. Nothing joins an account until you say it is yours.* (`SignInDoor.kt`).
-  - Replay order. Android sends a claim grouped by kind — settings, movements, routines, finished
-    workouts oldest first, the live one, then weigh-ins (`ClaimReplay.kt` `run`) — where canon
-    sends changes in the order they were made (`gym/briefs/11-bodyweight.md`,
-    `gym/android-delivery.md`).
+  - Android uses the engine's one-time **Add** / **Discard** sign-in decision with real pinned
+    counts, including retained refused workouts. Its old claim rows and replay path are removed.
+    Finished anonymous workouts become durable strict imports before adoption; an account's open
+    workout does not block them. Unfinished workouts never join another automatically: they stay
+    inspectable with explicit **Keep**, importing them finished at their last set. Refusals survive
+    restart and remain retryable; dismissing a notice never removes workout content.
+  - Android's migrated pending appends replay in performed order per session, then stable identity
+    order; the server assigns set numbers. Only the same confirmed session identity reconciles
+    automatically, and attempted append reconciliation never overwrites an unowed correction.
   - Figma: the Gym board *Account · Sign-in and connections* (`678:11123`) draws the claim row
     *Unclaimed log* (`678:11183`, These are mine / Not mine) and its *Local log removed* Undo
     (`678:11192`), which the sign-in question replaces; the Android *Account / Sign in* board
