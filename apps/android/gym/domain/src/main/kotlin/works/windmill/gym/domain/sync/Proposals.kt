@@ -39,7 +39,7 @@ data class RoutineChange(val kind: String, val exerciseId: Id<Exercise>, val bef
 data class Proposal(override val id: Id<Proposal>, val routineId: Id<Routine>, val intent: String, val proposedName: String,
     val summary: String, val changes: List<RoutineChange>, val door: String = "ask", val connection: String = "", val agent: String = "",
     val state: String = "pending", val supersededBy: Id<Proposal>? = null, val settledAt: Instant? = null,
-    val baseRevision: Int? = null, val baseName: String? = null, val threadId: String? = null) : Writable<Proposal> {
+    val baseRevision: Int? = null, val baseName: String? = null, val threadId: String? = null, val changeCount: Int? = null) : Writable<Proposal> {
     override fun fields(): Map<String, Json> = mapOf("routineId" to routineId.json, "intent" to Json.of(intent), "proposedName" to Json.of(proposedName),
         "summary" to Json.of(summary), "changes" to Json.Arr(changes.map { it.json }), "door" to Json.of(door), "connection" to Json.of(connection), "agent" to Json.of(agent))
     val document: List<RoutineEntry> get() = changes.filter { it.kind != "removed" }.map { RoutineEntry(it.exerciseId, it.after?.sets, it.after?.restSeconds) }
@@ -54,7 +54,8 @@ data class Proposal(override val id: Id<Proposal>, val routineId: Id<Routine>, v
         override val scope = ScopeRef(Gym.scope)
         override fun decode(f: Fields) = Proposal(Id(f.id, this), f.ref("routineId", Routine), f.string("intent"), f.string("proposedName", ""), f.string("summary", ""),
             f.list("changes", RoutineChange), f.string("door", "ask"), f.string("connection", ""), f.string("agent", ""), f.string("state", "pending"),
-            f.optionalRef("supersededBy", this), f.optionalInstant("settledAt"), f.optionalInt("baseRevision"), f.optionalString("baseName"), f.optionalString("threadId"))
+            f.optionalRef("supersededBy", this), f.optionalInstant("settledAt"), f.optionalInt("baseRevision"), f.optionalString("baseName"), f.optionalString("threadId"),
+            f.optionalInt("changeCount"))
         override val checks = listOf(
             Check<Proposal>("intent") { value, _ -> value.copy(intent = ProposalRules.intent.apply(value.intent, Path("intent"))) },
             Check<Proposal>("proposedName") { value, _ -> value.copy(proposedName = ProposalRules.name.apply(value.proposedName, Path("proposedName"))) },

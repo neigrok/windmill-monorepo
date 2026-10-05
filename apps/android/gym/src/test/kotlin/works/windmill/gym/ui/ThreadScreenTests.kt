@@ -4,6 +4,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.test.assertIsDisplayed
+import androidx.compose.ui.test.isDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.performClick
@@ -94,6 +95,7 @@ class ThreadScreenTests {
         compose.setContent { ThreadScreen("thread-old", store, emptyList(), emptySet(), "History", {}, {}, {}) }
         compose.onNodeWithContentDescription("Question").performTextReplacement("Question 5")
         compose.onNodeWithContentDescription("Send").performClick()
+        compose.waitUntil(10_000) { compose.onNodeWithText("nothing has moved in three weeks.").isDisplayed() }
         compose.onNodeWithText("nothing has moved in three weeks.").assertIsDisplayed()
         compose.runOnIdle {
             assertEquals("thread-old", server.asked.single().thread)

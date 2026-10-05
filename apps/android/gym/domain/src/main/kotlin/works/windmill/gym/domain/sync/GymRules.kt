@@ -48,7 +48,7 @@ sealed interface GymRefusal {
 }
 
 object GymRules {
-    val book = RuleBook(SyncSchema.registry, listOf(Note, WeighIn, Routine, Exercise, ExerciseName, Session, TrainingSet, Preferences, Proposal),
+    val book = RuleBook(SyncSchema.registry, listOf(Note, WeighIn, Routine, RoutineCreation, Exercise, ExerciseName, Session, TrainingSet, Preferences, Proposal),
         NoteRules.rules + WeighInRules.rules + RoutineRules.rules + ExerciseRules.rules + SetRules.rules + PreferencesRules.rules + ProposalRules.rules +
         GymCommand.specs.values.flatten().map(Rule::local) + listOf(
             Rule.local("routine.order", Routine.type),

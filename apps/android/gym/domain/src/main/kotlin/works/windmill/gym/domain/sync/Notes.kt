@@ -6,7 +6,7 @@ import works.windmill.sync.core.MeasureUnit
 import works.windmill.sync.core.ScopeRef
 import works.windmill.sync.schema.Gym
 
-data class Note(override val id: Id<Note>, val title: String = "", val body: String = "") : Writable<Note> {
+data class Note(override val id: Id<Note>, val title: String = "", val body: String = "", val updatedAt: Instant? = null) : Writable<Note> {
     override fun fields(): Map<String, Json> = mapOf("title" to Json.of(title), "body" to Json.of(body))
 
     companion object : DraftableType<Note>, RemovableType<Note>, OrderedType<Note> {
@@ -15,12 +15,12 @@ data class Note(override val id: Id<Note>, val title: String = "", val body: Str
         override val orderField = "ord"
         override val savesGuarded = true
         override val heldRemoval = true
-        override fun decode(f: Fields) = Note(Id(f.id, this), f.string("title"), f.string("body", ""))
+        override fun decode(f: Fields) = Note(Id(f.id, this), f.string("title"), f.string("body", ""), f.optionalInstant("updatedAt"))
         override val checks = listOf(
             Check<Note>("title") { note, _ -> note.copy(title = NoteRules.title.apply(note.title, Path("title"))) },
             Check<Note>("body") { note, _ -> note.copy(body = NoteRules.body.apply(note.body, Path("body"))) },
         )
-        fun position(id: Id<Note>, stored: List<Note>): Int? = stored.indexOfFirst { it.id == id }.takeIf { it >= 0 }?.plus(1)
+        fun position(id: Id<Note>, stored: List<Note>): Int? = stored.indexOfFirst { it.id == id }.takeIf { it >= 0 }
     }
 }
 

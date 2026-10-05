@@ -55,7 +55,7 @@ class Corpus(val root: File) {
             "text/" to CorpusRole.SERVER, "envelope/credentials.json" to CorpusRole.SERVER, "push/serve.json" to CorpusRole.SERVER,
             "pull/serve.json" to CorpusRole.SERVER, "pull/hello.json" to CorpusRole.SERVER, "live/death.json" to CorpusRole.SERVER,
             "machine/scope.json" to CorpusRole.SERVER, "gym/admit.json" to CorpusRole.SERVER,
-            "gym/backfill.json" to CorpusRole.CPP_ONLY, "journal/admit.json" to CorpusRole.SERVER,
+            "gym/backfill.json" to CorpusRole.CPP_ONLY, "gym/metadata.json" to CorpusRole.CPP_ONLY, "journal/admit.json" to CorpusRole.SERVER,
             "journal/revisions.json" to CorpusRole.SERVER, "journal/backfill.json" to CorpusRole.CPP_ONLY,
             "journal/client.json" to CorpusRole.CLIENT, "journal/content-clock.json" to CorpusRole.CLIENT,
             "journal/claim-edit.json" to CorpusRole.CLIENT, "hlc/offset.json" to CorpusRole.CLIENT,

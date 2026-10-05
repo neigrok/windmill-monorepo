@@ -9,6 +9,7 @@ import org.junit.Assert.*
 import org.junit.Test
 import works.windmill.sync.api.*
 import works.windmill.sync.core.*
+import works.windmill.sync.core.Command
 import works.windmill.sync.core.RecordID
 
 class EngineTests {
@@ -186,6 +187,65 @@ class EngineTests {
             assertTrue(engine.read(scope) { it.stored("card", RecordID("card0001"))!!.isHeld })
             assertEquals(1, engine.read(scope) { it.stored("card").size })
             assertTrue(engine.read(scope) { it.drawn("card").isEmpty() })
+        }
+    }
+    @Test fun refusingAnIntentDeletionFoldsInheritedLifePredictions() = endingDeletion(true, false)
+    @Test fun undoingAnIntentDeletionFoldsInheritedLifePredictions() = endingDeletion(false, false)
+    @Test fun refusingAPredictedDeletionFoldsInheritedLifePredictions() = endingDeletion(true, true)
+    @Test fun undoingAPredictedDeletionFoldsInheritedLifePredictions() = endingDeletion(false, true)
+    private fun endingDeletion(refuse: Boolean, predictedDeletion: Boolean) = runBlocking<Unit> {
+        val command = Command("probe.predictDay", Json.objectOf())
+        val commands = registry.json.items("commands") + Json.objectOf("name" to Json.of(command.name),
+            "scope" to Json.of("product:probe"), "origins" to Json.array(Json.of("replica")), "serverInternal" to Json.of(false),
+            "args" to Json.objectOf(), "predicts" to Json.array(Json.of("day")))
+        val predictingRegistry = Registry(registry.json.with("commands" to Json.Arr(commands)))
+        Engine.memory(predictingRegistry, clock = object : EngineClock { override fun now() = 5_000L }, actor = "actor").use { engine ->
+            engine.signIn("A", mapOf("probe" to false))
+            val id = RecordID("2026-01-01"); val laterId = RecordID("2026-01-02")
+            val stamp = Stamp("1000:0:server")
+            val row = Row(RecordKey("day", id), Lattice(Life("alive", stamp), fields = mapOf("score" to Register(Json.of(1), stamp))), seq = 1)
+            engine.store.transaction { engine.store.put(engine.device.current().id, scope, row) }
+            val before = engine.read(scope) { it.confirmed("day", id) }
+            val view = engine.records(scope, "day")
+            suspend fun visible(ids: List<RecordID>) = withTimeout(5_000) {
+                view.state.first { it is RecordsView.State.Loaded && it.snapshot.records.map(Record::id) == ids }
+            }
+            visible(listOf(id))
+            val deletion = Change.delete("day", id)
+            val receipt = (engine.commit(scope, Gesture(if (predictedDeletion) emptyList() else listOf(deletion), hold = !refuse,
+                command = if (predictedDeletion) command else null, predict = if (predictedDeletion) listOf(deletion) else emptyList(),
+                gestureId = "delete")) as CommitOutcome.Committed).receipt
+            engine.commit(scope, Gesture(listOf(Change.put("day", laterId, true, mapOf("score" to Json.of(9)))), command = command,
+                predict = listOf(Change.put("day", id, null, mapOf("score" to Json.of(2)))), gestureId = "later"))
+            engine.commit(scope, Gesture(emptyList(), command = command,
+                predict = listOf(Change.put("day", id, null, mapOf("score" to Json.of(3)))), gestureId = "last"))
+            val pending = engine.device.current().entries()
+            assertEquals(listOf("delete/0", "later/0", "last/0"), pending.map { it.id })
+            assertEquals(List(if (predictedDeletion) 3 else 2) { Life("dead", receipt.stamp) },
+                pending.flatMap { it.predict }.filter { it.key == row.key }.map { it.lattice.life })
+            assertFalse(engine.read(scope) { it.drawn("day", id)!!.isVisible })
+            visible(listOf(laterId))
+            if (refuse) {
+                val request = engine.nextPush(1)!!
+                assertEquals(listOf(Json.of(1)), request.items("intents").map { it.member("n") })
+                val timing = RequestTiming(ClockReading(5_000, 5_000, "boot"), ClockReading(5_000, 5_000, "boot"))
+                engine.onPushResponse(request, SyncResponse(200, Json.objectOf("epoch" to Json.of("ep-1"), "as" to Json.of("A"),
+                    "lastN" to Json.of(1), "results" to Json.array(Json.objectOf("n" to Json.of(1), "s" to Json.of("refused"),
+                        "code" to Json.of("invalid"))))), timing)
+            } else {
+                assertNull(engine.nextPush())
+                assertTrue(engine.undo(receipt.gestureId))
+            }
+            val remaining = engine.device.current().entries().single()
+            assertEquals("later/0", remaining.id); assertEquals("ready", remaining.state)
+            assertEquals(listOf(RecordKey("day", laterId)), remaining.intent.deltas.map { it.key })
+            assertNull(remaining.intent.command); assertEquals(emptyList<Delta>(), remaining.predict)
+            assertEquals(before, engine.read(scope) { it.drawn("day", id) })
+            assertEquals(before, engine.read(scope) { it.confirmed("day", id) })
+            visible(listOf(id, laterId))
+            if (refuse) assertEquals(2, engine.device.current().notices.single().member("content").items("dependents").size)
+            else assertTrue(engine.device.current().notices.isEmpty())
+            assertTrue(engine.undoOffers().isEmpty())
         }
     }
     @Test fun stalledAndThrowingTelemetryCannotBlockOrRollBackTheWriter() = runBlocking {

@@ -108,9 +108,9 @@ class GymServerRules : ServerRules {
     private fun applyProposal(cmd: CheckedCommand, c: RuleContext): CommandOutcome {
         val proposal = alive(key("proposal", cmd.string("proposalId")), c)
         if (proposalState(proposal) == "applied") return CommandOutcome(product = c.product)
-        unsettled(proposal, c); c.ensure("revisions"); c.ensure("bases")
+        unsettled(proposal, c)
         val routineId = value(proposal, "routineId")!!.str()
-        if (c.entry("revisions", routineId) != c.entry("bases", proposal.key.id.toString())?.get("revision")) throw superseded("routine-changed")
+        if (value(c.idState(key("routine", routineId)).row, "revision") != value(proposal, "baseRevision")) throw superseded("routine-changed")
         val routine = alive(key("routine", routineId), c)
         val settle = PlannedDelta.update(proposal.key, proposal.lattice.born, mapOf("state" to Json.of("applied"), "settledAt" to Json.of(c.serverNow)))
         if (value(proposal, "intent") == Json.of("remove")) return CommandOutcome(listOf(settle, PlannedDelta.delete(routine.key, routine.lattice.born)), product = c.product)
@@ -129,29 +129,34 @@ class GymServerRules : ServerRules {
         if (state in listOf("applied", "dismissed")) throw Refusal("proposal-settled", Json.objectOf("state" to Json.of(state)))
         if (state != "superseded") return
         if (value(proposal, "supersededBy")?.orNull() != null) throw superseded("replaced")
-        if (c.entry("revisions", value(proposal, "routineId")!!.str()) != c.entry("bases", proposal.key.id.toString())?.get("revision")) throw superseded("routine-changed")
+        if (value(c.idState(key("routine", value(proposal, "routineId")!!.str())).row, "revision") != value(proposal, "baseRevision")) throw superseded("routine-changed")
         throw superseded("superseded")
     }
     override fun check(changes: List<RecordChange>, context: RuleContext): List<PlannedDelta> {
         val c = context
-        for (change in changes.filter { it.key.type == "routine" }) {
-            c.ensure("revisions")
-            when {
-                change.diesHere -> c.store("revisions", change.key.id.toString(), null)
-                change.after.isAlive && !change.before.isAlive -> c.store("revisions", change.key.id.toString(), Json.of(1))
-                changed(change, "name") || changed(change, "entries") -> c.store("revisions", change.key.id.toString(), Json.of((c.entry("revisions", change.key.id.toString())?.long() ?: 1) + 1))
-            }
+        val metadata = mapOf("routine" to listOf("revision", "createdEntries"), "proposal" to listOf("baseRevision", "baseName", "changeCount"), "note" to listOf("updatedAt"))
+        if (c.deltas.any { it.key.type == "routineCreation" || metadata[it.key.type].orEmpty().any(it.fields::containsKey) }) {
+            throw Refusal("invalid")
         }
         val appended = mutableListOf<PlannedDelta>(); val numbered = c.storedRecords("set").toMutableList()
-        val staged = listOf("set", "session", "routine", "proposal", "exercise", "exerciseName").flatMap(c::records).associateBy { it.key }.toMutableMap()
+        val staged = listOf("set", "session", "routine", "routineCreation", "proposal", "exercise", "exerciseName", "note").flatMap(c::records).associateBy { it.key }.toMutableMap()
         val newly = changes.filter { it.after.isAlive && !it.before.isAlive }.map { it.key }.toSet(); val checked = mutableSetOf<RecordKey>()
         fun records(type: String) = staged.values.filter { it.key.type == type }.sortedBy { it.key }
         fun append(delta: PlannedDelta) {
-            appended.add(delta); val row = staged[delta.key] ?: return
+            appended.add(delta); val row = staged[delta.key] ?: Row(delta.key, seq = 0)
             val life = delta.life?.let { Life(it.state, row.lattice.life?.stamp ?: Stamp.UNSET) } ?: row.lattice.life
             staged[delta.key] = row.copy(lattice = Lattice(life, row.lattice.born, row.lattice.fields + delta.fields.mapValues { (name, reg) -> Register(reg.value, row.lattice.fields[name]?.stamp ?: Stamp.UNSET) }))
         }
         fun known(id: Json?): Boolean = (id as? Json.Str)?.let { c.product["seeds"]?.get(it.value) != null || staged[key("exercise", it.value)]?.isAlive == true } ?: false
+        for (change in changes.filter { it.key.type == "routine" && it.after.isAlive }) {
+            val created = !change.before.isAlive
+            if (!created && !changed(change, "name") && !changed(change, "entries")) continue
+            val revision = if (created) 1 else (value(change.before.row, "revision")?.long() ?: throw Refusal("invalid")) + 1
+            if (revision > 2_147_483_647) throw Refusal("invalid")
+            val fields = mutableMapOf("revision" to Json.of(revision))
+            if (created) fields["createdEntries"] = Json.of(value(change.after, "entries")?.arr()?.size ?: 0)
+            append(PlannedDelta.update(change.key, change.after.lattice.born, fields))
+        }
         for (change in changes) {
             val row = change.after; val before = change.before.row; val created = row.isAlive && !change.before.isAlive
             when (row.key.type) {
@@ -196,6 +201,13 @@ class GymServerRules : ServerRules {
                         if (entries.isEmpty() || entries.any { it["sets"]?.arr()?.isEmpty() == true }) throw Refusal("invalid")
                         if (entries.any { !known(it["exerciseId"]) }) throw Refusal("unknown-exercise")
                     }
+                    if (created && value(row, "createdDoor") == Json.of("ask")) {
+                        if (staged[key("routineCreation", row.key.id.toString())] != null) throw Refusal("invalid")
+                        val snapshot = Json.objectOf("id" to row.key.id.json, "name" to value(row, "name")!!,
+                            "position" to (value(row, "position") ?: Json.of(0)), "revision" to Json.of(1),
+                            "entries" to Json.Arr(value(row, "entries")!!.arr().mapIndexed { index, entry -> entry.with("position" to Json.of(index + 1)) }))
+                        append(PlannedDelta.update(key("routineCreation", row.key.id.toString()), null, mapOf("snapshot" to snapshot)))
+                    }
                     if (!created && (changed(change, "name") || changed(change, "entries"))) records("proposal").filter { it.isAlive && value(it, "routineId") == row.key.id.json && proposalState(it) == "pending" }.forEach { append(PlannedDelta.update(it.key, it.lattice.born, mapOf("state" to Json.of("superseded"), "settledAt" to Json.of(c.serverNow)))) }
                 }
                 "exercise" -> {
@@ -209,13 +221,15 @@ class GymServerRules : ServerRules {
                     if (bn != an) append(PlannedDelta.update(row.key, null, mapOf("aliases" to renamed(value(row, "aliases"), bn, an))))
                 }
                 "weighin" -> if (row.isAlive && row.key.id.toString() > utcDay(c.serverNow + 86_400_000)) throw Refusal("bad-instant")
+                "note" -> if (created || changed(change, "title") || changed(change, "body")) append(PlannedDelta.update(row.key, row.lattice.born, mapOf("updatedAt" to Json.of(c.serverNow))))
                 "proposal" -> {
                     if (!created) continue
                     if (c.origin.isReplica && (value(row, "door") != Json.of("ask") || (value(row, "connection") ?: Json.of("")) != Json.of("") || (value(row, "agent") ?: Json.of("")) != Json.of(""))) throw Refusal("invalid")
                     val routineId = value(row, "routineId")?.str() ?: throw Refusal("unknown-record"); val routine = staged[key("routine", routineId)]?.takeIf { it.isAlive } ?: throw Refusal("unknown-record")
                     if (c.origin.isReplica) for (field in listOf("entries", "name")) if (c.guards.none { it.key == routine.key && it.field == field && it.stamp == routine.lattice.fields[field]?.stamp }) throw Refusal("invalid")
                     checkProposal(row, routine, ::known)
-                    c.store("bases", row.key.id.toString(), Json.objectOf("revision" to (c.entry("revisions", routineId) ?: Json.of(1)), "name" to (value(routine, "name") ?: Json.Null)))
+                    append(PlannedDelta.update(row.key, row.lattice.born, mapOf("baseRevision" to value(routine, "revision")!!,
+                        "baseName" to value(routine, "name")!!, "changeCount" to Json.of(proposalChangeCount(row, routine)))))
                     records("proposal").filter { (it.key !in newly || it.key in checked) && it.key != row.key && it.isAlive && proposalState(it) == "pending" && value(it, "routineId") == Json.of(routineId) && value(it, "door") == value(row, "door") && (value(it, "connection") ?: Json.of("")) == (value(row, "connection") ?: Json.of("")) }.forEach {
                         append(PlannedDelta.update(it.key, it.lattice.born, mapOf("state" to Json.of("superseded"), "supersededBy" to row.key.id.json, "settledAt" to Json.of(c.serverNow))))
                     }
@@ -224,6 +238,18 @@ class GymServerRules : ServerRules {
             }
         }
         return appended
+    }
+    private fun proposalChangeCount(proposal: Row, routine: Row): Int {
+        val changes = value(proposal, "changes")!!.arr(); val base = value(routine, "entries")!!.arr()
+        var count = changes.count { it["kind"] != Json.of("kept") } + if (value(routine, "name") == value(proposal, "proposedName")) 0 else 1
+        val matched = mutableSetOf<Int>(); var highest = -1
+        for (change in changes.filter { it["kind"] !in listOf(Json.of("added"), Json.of("removed")) }) {
+            val index = base.indices.first { it !in matched && base[it]["exerciseId"] == change["exerciseId"] }
+            matched.add(index)
+            if (index < highest) { count++; break }
+            highest = index
+        }
+        return count
     }
     private fun checkProposal(proposal: Row, routine: Row, known: (Json?) -> Boolean) {
         val changes = value(proposal, "changes")!!.arr(); val base = value(routine, "entries")!!.arr()

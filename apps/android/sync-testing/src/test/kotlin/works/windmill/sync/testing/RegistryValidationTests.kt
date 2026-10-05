@@ -222,7 +222,7 @@ class RegistryCompositionTests {
         assertEquals(setOf("gym", "journal"), composed.products.keys)
         assertEquals(parts.flatMap { it.types.map(TypeDef::json) }, composed.types.map(TypeDef::json))
         assertEquals(parts.flatMap { it.commands }, composed.commands)
-        assertEquals(4L, composed.version)
+        assertEquals(5L, composed.version)
         assertEquals(4L, composed.minVersion)
     }
 
@@ -233,7 +233,7 @@ class RegistryCompositionTests {
         assertThrows(IllegalArgumentException::class.java) { Registry.compose("Windmill", listOf(gym)) }
         assertThrows(IllegalArgumentException::class.java) { Registry.compose("windmill", listOf(gym, gym)) }
         for (key in listOf("version", "minVersion")) {
-            val mismatch = Registry(Json.Obj(journal.json.obj().map { (name, value) -> name to if (name == key) Json.of(5) else value }))
+            val mismatch = Registry(Json.Obj(journal.json.obj().map { (name, value) -> name to if (name == key) Json.of(value.long() + 1) else value }))
             assertThrows(IllegalArgumentException::class.java) { Registry.compose("windmill", listOf(gym, mismatch)) }
         }
     }

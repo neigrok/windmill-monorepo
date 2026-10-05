@@ -30,7 +30,7 @@ internal class Dependents(private val registry: Registry) {
         val commandGone = command != null && (entry.scope in governed || registry.command(command.name)?.args?.values?.any { arg ->
             val ref = arg.ref
             ref != null && command.args[arg.name] is Json.Str && names(entry.scope, RecordKey(ref, RecordID(command.args.member(arg.name))))
-        } == true)
+        } == true || entry.predict.any { delta -> delta.lattice.life?.let { Triple(entry.scope, delta.key, it) in lives } == true })
         return DependentPart(removed, commandGone, removed.size == intent.deltas.size && (command == null || commandGone))
     }
     fun absorb(entry: Entry, part: DependentPart) = absorb(entry.scope, part.removed + if (part.commandGone) entry.predict else emptyList(), entry.stamp)

@@ -26,6 +26,7 @@ class CoverageTests {
     val handlers = CorpusTests.handlers
     @Test fun everyFileHasAnExplicitRole() {
         for (path in corpus.paths) Corpus.role(path)
+        assertEquals(CorpusRole.CPP_ONLY, Corpus.role("gym/metadata.json"))
         assertThrows(IllegalStateException::class.java) { Corpus.role("journal/new-unclassified.json") }
         check(handlers.keys.all { it in corpus.clientPaths })
         println("client corpus: ${handlers.size}/${corpus.clientPaths.size} files, ${handlers.keys.sumOf { corpus.vectors(it).size }}/${corpus.clientPaths.sumOf { corpus.vectors(it).size }} vectors")
@@ -44,7 +45,7 @@ class CoverageTests {
         val composition = Json.parse(File(contract, "composition.json").readBytes())
         val registries = composition.member("registries").arr().map { Registry(Json.parse(File(contract, it.str()).readBytes())) }
         assertEquals(Registry.compose(composition.member("composition").str(), registries).json, SyncSchema.registry.json)
-        assertEquals(4L, SyncSchema.version)
+        assertEquals(5L, SyncSchema.version)
         assertEquals(4L, SyncSchema.registry.minVersion)
         assertEquals(setOf("gym", "journal"), SyncSchema.registry.products.keys)
     }

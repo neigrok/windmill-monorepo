@@ -71,10 +71,21 @@ internal class DeltaBuilder(private val engine: Engine, private val replica: Rep
         val key = RecordKey(type.name, id)
         val before = current(key)
         if (prediction) {
+            if (op is Change.Operation.Delete && !type.life) malformed("delete-life")
             val born = if (!type.hasBorn) null else if (op is Change.Operation.Create) stamp else before?.born ?: malformed("prediction-absent")
             val life = if (!type.life) null else when {
                 op is Change.Operation.Create -> Life("alive", stamp)
-                op is Change.Operation.Delete || op is Change.Operation.Put && op.present == false -> Life("dead", stamp)
+                op is Change.Operation.Delete -> Life("dead", stamp)
+                op is Change.Operation.Put && type.identity == "keyed" -> {
+                    if (op.present == null && before == null) malformed("prediction-absent")
+                    val previous = before?.life?.isAlive == true
+                    val present = op.present ?: previous
+                    when {
+                        present && (!previous || type.json.flag("wholePut")) -> Life("alive", stamp)
+                        !present && previous -> Life("dead", stamp)
+                        else -> before?.life
+                    }
+                }
                 else -> null
             }
             return Delta(key, Lattice(life, born,

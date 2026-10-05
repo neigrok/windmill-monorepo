@@ -47,4 +47,36 @@ class ModelServerTests {
         server.close(socket); assertFalse(server.isOpen(socket)); server.subscribe(socket, listOf(ScopeRef.tree("b_00000000")))
         assertTrue(server.frames(socket).isEmpty())
     }
+    @Test fun gymDocumentEditsCannotInventOrOverflowRevisions() {
+        val vector = gymVector("R118 a name and entries edit increments revision once and preserves creation metadata")
+        val gym = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/gym.registry.json").readBytes()))
+        for (revision in listOf(null, 2_147_483_647L)) {
+            val state = ServerState(vector.member("input").member("state")); val scope = "acct:A/gym"
+            val key = RecordKey("routine", RecordID("routine0002")); val row = Row(state.rows.getValue(scope).getValue(key))
+            val fields = row.lattice.fields.toMutableMap()
+            if (revision == null) fields.remove("revision") else fields["revision"] = Register(Json.of(revision), fields.getValue("revision").stamp)
+            state.rows.getValue(scope)[key] = row.copy(lattice = Lattice(row.lattice.life, row.lattice.born, fields)).json
+            state.scopes.getValue(scope).digest = ScopeDigest.rows(state.rows.getValue(scope).values.toList())
+            val before = state.json; val input = vector.member("input")
+            val (after, admitted) = Admission(gym, GymServerRules()).admit(input.member("intent"), IntentOrigin("A"), input.member("serverNow").long(), state)
+            assertEquals(Json.objectOf("s" to Json.of("refused"), "code" to Json.of("invalid")), admitted.result)
+            assertEquals(emptyList<LiveEvent>(), admitted.events)
+            assertEquals(before, after.json); assertEquals(before, state.json)
+        }
+    }
+    @Test fun gymCapRefusalRollsBackMetadataSnapshotAndServerClock() {
+        val create = gymVector("a routine created with entries takes revision 1").member("input")
+        val cap = gymVector("an eleventh note is refused cap").member("input")
+        val routine = create.member("intent").member("d").arr().single()
+        val fields = routine.member("f").obj().mapValues { Json.array(it.value.arr()[0], Json.Null) } + ("createdDoor" to Json.array(Json.of("ask"), Json.Null))
+        val delta = routine.with("born" to Json.Null, "life" to Json.array(Json.of("alive"), Json.Null), "f" to Json.Obj(fields.toList()))
+        val intent = Json.objectOf("scope" to Json.of("self/gym"), "d" to Json.Arr(listOf(delta) + cap.member("intent").member("d").arr()))
+        val state = ServerState(cap.member("state")); val before = state.json
+        val gym = Registry(Json.parse(File(System.getProperty("windmill.contract"), "sync/gym.registry.json").readBytes()))
+        val (after, admitted) = Admission(gym, GymServerRules()).admit(intent, IntentOrigin("A"), cap.member("serverNow").long(), state)
+        assertEquals(Json.objectOf("s" to Json.of("refused"), "code" to Json.of("cap"), "detail" to Json.objectOf("type" to Json.of("note"), "cap" to Json.of(10))), admitted.result)
+        assertEquals(emptyList<LiveEvent>(), admitted.events)
+        assertEquals(before, after.json); assertEquals(before, state.json)
+    }
+    private fun gymVector(name: String) = Json.parse(File(System.getProperty("windmill.contract"), "sync/corpus/gym/admit.json").readBytes()).arr().single { it.member("name") == Json.of(name) }
 }
