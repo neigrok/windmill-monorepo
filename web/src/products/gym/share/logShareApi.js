@@ -22,6 +22,5 @@ export const logShareApi = {
   list: async () => (await request('/log-shares')).shares,
   create: (body) => request('/log-shares', { method: 'POST', body: JSON.stringify(body) }),
   revoke: (id) => request(`/log-shares/${encodeURIComponent(id)}`, { method: 'DELETE' }),
-  preview: (query = {}) => request(`/history?${queryString({ ...query, projection: 'progress' })}`),
   read: (token, query = {}) => request(`/shared-logs/${encodeURIComponent(token)}?${queryString({ ...query, projection: 'progress' })}`, { credentials: 'omit' }),
 };

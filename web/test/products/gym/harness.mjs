@@ -202,7 +202,7 @@ export function roomLog({ settled = [], ...overrides } = {}) {
 let loaderRegistered = false;
 export async function loadScreen(relativeToSrc) {
   if (!loaderRegistered) {
-    register('../../jsxLoader.mjs', import.meta.url);
+    register('./screenLoader.mjs', import.meta.url);
     loaderRegistered = true;
   }
   const src = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../../../src');

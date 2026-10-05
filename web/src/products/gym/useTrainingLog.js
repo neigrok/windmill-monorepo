@@ -1,131 +1,92 @@
-// The training log, read: the catalog, the page of sessions and the walk deeper into them, the
-// settings, the movement mint, the one toast voice and the one withheld-delete window. The web never
-// starts, drives or finishes a live session — an open session is MIRRORED by a poll and drawn
-// read-only.
-
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSyncRecords } from '../../platform/sync/react.js';
 import { UNDO_MS } from './fix.js';
-import { failureReason, gymApi, UNCHANGED } from './gymApi.js';
+import { failureReason } from './gymApi.js';
+import { useGymApi, gymStep } from './gymSync.js';
+import { projectGym } from './syncProjections.js';
 import { mintId } from './mint.js';
 import { CREATED_PATTERN } from './logger/movements.js';
-import { DEFAULT_PREFERENCES, readPreferences } from './settings/preferences.js';
+import { readPreferences } from './settings/preferences.js';
 import { spellWeightsIn } from './units.js';
 import { goneIds, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, withheldKey } from './withheld.js';
 
-const POLL_MS = 5000;
-// The watch for a workout starting, while none is mirrored; the visibilitychange asks at once.
-const WATCH_MS = 30_000;
-// How long a SAID sentence stands. Pinned equal to `UNDO_MS` (fix.js) so the room reads as one span
-// to a lifter — but they are two: a withheld window retires its own transient when its last clock
-// closes, and never on this one.
-const TOAST_MS = 9000;
-// The handler clamps `limit` to 200, and `end` is a page coming back short of what was asked for —
-// so asking for more would be answered 200 and misread as the bottom of the log.
-const SERVER_PAGE_CAP = 200;
 const LOG_PAGE = 50;
+const TOAST_MS = 9000;
 
-// Cleared on the way in. The queue key ('windmill.gym.queue') is never touched: entries under it are
-// sets owed to the log.
-const RETIRED_LIVE_KEY = 'windmill.gym.live';
-
-// A page shorter than the one asked for is the bottom of the log; the read carries no total.
-function olderAfter(page, asked) {
-  if (page.length < asked) return 'end';
-  return 'more';
-}
-
-// `onSignedOut` fires when the boot is answered 401; the frame settles the auth state.
-export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
-  const [phase, setPhase] = useState('loading');
-  const [progress, setProgress] = useState({ phase: 'loading', data: null });
-  const [revision, setRevision] = useState(0);
-  const progressRequest = useRef(0);
-  const progressLive = useRef(false);
-  const [session, setSession] = useState(null);
-  const [sets, setSets] = useState([]);
-  const [catalog, setCatalog] = useState([]);
-  const [summaries, setSummaries] = useState([]);
-  // Read once on the way in; the defaults stand until it answers.
-  const [preferences, setPreferences] = useState(DEFAULT_PREFERENCES);
-  // 'more' until a read says otherwise, so the boot page settles it.
-  const [olderStatus, setOlderStatus] = useState('more');
+export function useTrainingLog({ api: injected } = {}) {
+  const boundApi = useGymApi();
+  const api = injected ?? boundApi;
+  const records = useSyncRecords('self/gym');
+  const [depth, setDepth] = useState(LOG_PAGE);
+  const [expiry, expire] = useState(0);
   const [toast, setToast] = useState(null);
-  // Not read: bumping it is how the withheld window's ref reaches the screen.
   const [, redrawWindow] = useState(0);
-  // Bumping this asks the boot read again.
-  const [bootAttempt, setBootAttempt] = useState(0);
-  // 'signal' is a request that never got an answer, 'server' a store that answered and failed,
-  // 'signed-out' a 401.
-  const [failure, setFailure] = useState(null);
-
-  // Stamps the walk, so a page fetched against a discarded tail is dropped rather than appended.
-  const walk = useRef(0);
-
-  // How far down the log has been read. A ref and not state, because `reloadLog` must keep one
-  // identity for the life of the room: a withheld delete hangs off a callback built on it.
-  const reach = useRef(LOG_PAGE);
-
-  // The mirror's freshness tag, sent back up as If-None-Match. A ref: it must never cause a render.
-  const mirrorTag = useRef(null);
-  // The id the mirror holds; `reloadLog` keeps one identity and so cannot read `session` off state.
-  const mirrored = useRef(null);
-  // A ref, so a caller handing a fresh closure each render cannot make the boot read run again.
-  const signedOut = useRef(onSignedOut);
-  signedOut.current = onSignedOut;
-
-  // What the tab coming back should ask for: the mirror's read while a session is mirrored, the
-  // watch's look while none is. The two are never both running, and each clears this on its way out
-  // only if it is still the one holding it, so the order they tear down in cannot matter.
-  const wake = useRef(null);
-
-  // What was said last, and what is held last: a counter and not a clock, so the transient is chosen
-  // by what happened after what, and never by two readings of the same millisecond.
   const spoke = useRef(0);
+  const [injectedData, setInjectedData] = useState(null);
+  const projection = useMemo(() => projectGym(records.drawn, {
+    timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+  }), [records, expiry]);
+  const ready = api.ready !== false && (Boolean(injected) || records.firstPullComplete || records.drawn.length > 0);
+  const phase = ready ? 'ready' : 'loading';
+  const summaries = [];
+  while (summaries.length < depth) {
+    const last = summaries.at(-1);
+    const page = projection.sessions({ limit: Math.min(200, depth - summaries.length),
+      ...(last ? { before: last.startedAt, beforeId: last.id } : {}) });
+    summaries.push(...page);
+    if (page.length === 0) break;
+  }
+  if (injectedData) summaries.splice(0, summaries.length, ...injectedData.summaries);
+  const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+  const detail = open ? projection.session(open.id) : null;
+  const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
+  const sets = session ? detail.sets : [];
+  const catalog = injectedData?.catalog ?? projection.exercises();
+  const preferences = readPreferences(injectedData?.preferences ?? projection.preferences());
+  const progress = ready ? { phase: 'ready', data: projection.progress() } : { phase: 'loading', data: null };
+  useEffect(() => { spellWeightsIn(preferences.units); }, [preferences.units]);
+  useEffect(() => {
+    const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+    if (!open) return undefined;
+    const activity = Math.max(open.f.startedAt[0], ...records.drawn.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
+    const remaining = activity + 4 * 3600_000 - Date.now();
+    if (remaining <= 0) return undefined;
+    const timer = setTimeout(() => expire((count) => count + 1), remaining);
+    return () => clearTimeout(timer);
+  }, [records]);
+  useEffect(() => {
+    if (!injected) return;
+    let alive = true;
+    Promise.all([injected.exercises(), injected.sessions({ limit: depth }), injected.preferences()]).then(([catalog, summaries, preferences]) => {
+      if (alive) setInjectedData({ catalog, summaries, preferences });
+    }).catch(() => {});
+    return () => { alive = false; };
+  }, [injected, depth]);
 
-  // The one voice. A sentence, and at most one move beside it: a saved workout's Undo, which opens
-  // the discard's own window. The withheld window's Undo is the window's to hand over.
   const say = useCallback((text, { action = null } = {}) => {
     spoke.current += 1;
     setToast({ text, at: spoke.current, action });
   }, []);
   const dismissToast = useCallback(() => setToast(null), []);
 
-  // The withheld window, and a ref because a clock firing nine seconds from now must read the window
-  // as it stands THEN, not as it stood when the clock was armed. Every screen in the room draws
-  // around `withheld.current`, so it outlives every screen in it.
   const withheld = useRef([]);
+  const roomLive = useRef(true);
   const clocks = useRef(new Map());
-  // What the store has CONFIRMED gone, `{ kind, id }`, for as long as this room lives. It is the
-  // room's and not a screen's: a screen rebuilt mid-window reads a store that still has the row, so
-  // the settle that lands afterwards has to reach whoever is drawing then, not whoever armed it.
-  // An id leaves it one way only, through `writtenAgain`: six of the seven verbs are keyed by a mint
-  // that never reissues, and a weigh-in is keyed by its local date, which is the lifter's to write
-  // again.
   const settled = useRef([]);
   const publish = useCallback((next) => {
     withheld.current = next;
     redrawWindow((count) => count + 1);
   }, []);
 
-  // The clock ran out. The delete is settling — no longer offered back — and its send goes; it stays
-  // in the window until the send has answered, so the row it hid can never flash back on screen
-  // between the two. The room owns the sequence: a send that resolves is a delete the store took and
-  // is recorded gone, a send that throws is a refusal and the entry says it in the screen's words.
   const close = useCallback(async (key) => {
     clocks.current.delete(key);
     const closing = withheld.current.find((each) => each.key === key);
     if (!closing) return;
     publish(withheld.current.map((each) => (each.key === key ? { ...each, settling: true } : each)));
-    // `finally`: a send that throws may not wedge the window open and leave a row hidden for the
-    // life of the room.
     try {
-      await closing.send?.();
-      // Only a verb that reached the store settles, and only while the room is still holding it. A
-      // draft line sends nothing, so nothing about it is a fact the store confirmed; and a subject
-      // written again under the same id took this delete back while the send was in the air, so its
-      // id is not gone either.
+      if (!closing.engineDeath) await closing.send?.();
       const stillHeld = withheld.current.some((each) => each.key === key);
-      if (closing.send && stillHeld) settled.current = [...settled.current, { kind: closing.kind, id: closing.id }];
+      if (!closing.engineDeath && closing.send && stillHeld) settled.current = [...settled.current, { kind: closing.kind, id: closing.id }];
     } catch (error) {
       closing.refused?.(error);
     } finally {
@@ -133,32 +94,46 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     }
   }, [publish]);
 
-  // A delete the lifter can still take back. Nothing is sent for the length of the window, and a
-  // second delete settles nothing: each one arrives with a clock of its own.
-  const withhold = useCallback(({ kind, id, line, detail = null, send = null, refused = null, undo = null }) => {
+  const withhold = useCallback(({ kind, id, line, detail = null, send = null, refused = null, undo = null, engineDeath = null }) => {
+    if (engineDeath && api.ready === false) return;
     const key = withheldKey(kind, id);
+    if (withheld.current.some((each) => each.key === key)) return;
+    const durable = engineDeath && api.holdDeath;
+    const pending = durable ? api.holdDeath(engineDeath.type, engineDeath.id) : null;
     spoke.current += 1;
-    publish([...withheld.current, { key, kind, id, line, detail, send, refused, undo, at: spoke.current, settling: false }]);
-    clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
-  }, [close, publish]);
+    publish([...withheld.current, { key, kind, id, line, detail, send, refused, undo,
+      engineDeath: durable ? engineDeath : null, pending, at: spoke.current, settling: false }]);
+    if (pending) pending.then(() => {
+      if (roomLive.current && withheld.current.some((each) => each.key === key)) clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
+    }).catch((error) => {
+      if (!roomLive.current) return;
+      clearTimeout(clocks.current.get(key));
+      clocks.current.delete(key);
+      publish(withheld.current.filter((each) => each.key !== key));
+      refused?.(error);
+    });
+    else clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));
+  }, [api, close, publish]);
 
-  // The newest first, and the transient re-reads for the rest. Nothing was sent, so taking one back
-  // is a local act everywhere except a draft, which is the only verb that owns an `undo`.
-  const undoWithheld = useCallback(() => {
+  const undoWithheld = useCallback(async () => {
     const open = openHeld(withheld.current);
     if (open.length === 0) {
       say(WINDOW_CLOSED);
       return;
     }
     const newest = open[open.length - 1];
+    if (newest.pending) {
+      try {
+        const gesture = await newest.pending;
+        if (!await api.undoDeath(gesture)) { say(WINDOW_CLOSED); return; }
+      } catch { say('That delete could not be taken back.'); return; }
+    }
     clearTimeout(clocks.current.get(newest.key));
     clocks.current.delete(newest.key);
     publish(withheld.current.filter((each) => each.key !== newest.key));
     newest.undo?.();
-  }, [publish, say]);
+  }, [api, publish, say]);
 
-  // A draft that no longer exists has nowhere to put a line back, so its window closes with it. Only
-  // the `entry` verb reaches this: it sends nothing, so closing it early sends nothing either.
   const dropWithheld = useCallback((kind) => {
     withheld.current.filter((each) => each.kind === kind).forEach((each) => {
       clearTimeout(clocks.current.get(each.key));
@@ -167,16 +142,8 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     publish(withheld.current.filter((each) => each.kind !== kind));
   }, [publish]);
 
-  // A subject WRITTEN AGAIN under an id it already carried. Only a verb whose id the lifter can
-  // reissue reaches this — a weigh-in is keyed by its local date — and for that verb both of the
-  // window's answers are wrong: a delete still holding would destroy the new row when its clock
-  // fires, and an id already recorded gone would hide the new row for the life of the room. Writing
-  // the subject again IS the way back, so the delete is taken back — nothing was sent — and the id
-  // stops being gone. Called BEFORE the write reaches the store, so the two never cross on the wire.
   const writtenAgain = useCallback((kind, id) => {
     const key = withheldKey(kind, id);
-    // A delete already settling has no clock left to clear: its send is in the air, and dropping it
-    // from the list is what keeps the row it hid on screen under the number just written.
     const clock = clocks.current.get(key);
     if (clock !== undefined) {
       clearTimeout(clock);
@@ -186,334 +153,93 @@ export function useTrainingLog({ api = gymApi, onSignedOut = null } = {}) {
     publish(withheld.current.filter((each) => each.key !== key));
   }, [publish]);
 
-  // The window lives only while the room is ON SCREEN. Leaving it — to another product, by closing
-  // the page, or by putting the tab behind another one — ABANDONS everything still held: every clock
-  // is cleared, the rows come back, nothing goes on the wire, and nothing is said afterwards,
-  // because nothing happened. Sending instead would commit a delete whose Undo expired where nobody
-  // could see it, reached by an ordinary pair of acts — the same hazard as swipe-then-back, moved to
-  // a different exit. A delete already SETTLING is not abandoned: its send is in the air, and a row
-  // that came back while the store was taking it would be the one lie this window may never tell.
   const abandon = useCallback(() => {
-    const open = openHeld(withheld.current);
+    const open = openHeld(withheld.current).filter((each) => !each.engineDeath);
     if (open.length === 0) return;
     open.forEach((each) => {
       clearTimeout(clocks.current.get(each.key));
       clocks.current.delete(each.key);
-      // Only a draft line carries one: every other verb's row is hidden by the window itself, so
-      // dropping it from the list is what puts the row back.
       each.undo?.();
     });
-    publish(withheld.current.filter((each) => each.settling));
+    publish(withheld.current.filter((each) => each.settling || each.engineDeath));
   }, [publish]);
 
-  // The room's ONE watch on the tab, for everything in it that cares which side of the flip we are
-  // on. Hidden is this room leaving the foreground — the browser's spelling of the phones' `ON_STOP`
-  // — so the window abandons; a dialog or an overlay over the room is still the room, and only the
-  // document itself going hidden counts, never a blur or a focus change. Visible asks the mirror, or
-  // the watch, whichever is running, at once. One listener and not three: three would be three
-  // answers to one event, taken in whatever order they happened to be bound.
   useEffect(() => {
     const flipped = () => {
       if (document.visibilityState !== 'visible') {
         abandon();
+        withheld.current.filter((each) => each.engineDeath).forEach((each) => {
+          clearTimeout(clocks.current.get(each.key));
+          clocks.current.delete(each.key);
+        });
+        publish(withheld.current.filter((each) => !each.engineDeath));
         return;
       }
-      wake.current?.();
     };
     document.addEventListener('visibilitychange', flipped);
     return () => document.removeEventListener('visibilitychange', flipped);
-  }, [abandon]);
-
-  // The room itself going, which no `visibilitychange` precedes when gym is left for another
-  // product. A settling send is already in the air and is left to land; nothing here waits for it,
-  // because there is no longer a room to answer to. A screen unmounting settles nothing: the window
-  // follows the lifter through the room, and only the room going ends it.
-  useEffect(() => () => {
-    clocks.current.forEach((timer) => clearTimeout(timer));
-    clocks.current.clear();
-    withheld.current = [];
-  }, []);
-
-  const reloadProgress = useCallback(async () => {
-    if (!api.progress || !progressLive.current) return;
-    const request = ++progressRequest.current;
-    try {
-      const data = await api.progress();
-      if (progressLive.current && request === progressRequest.current) setProgress({ phase: 'ready', data });
-    } catch {
-      if (progressLive.current && request === progressRequest.current) setProgress((current) => ({ ...current, phase: 'failed' }));
-    }
-  }, [api]);
+  }, [abandon, publish]);
 
   useEffect(() => {
-    progressLive.current = true;
-    reloadProgress();
-    return () => { progressLive.current = false; progressRequest.current += 1; };
-  }, [reloadProgress]);
-
-  // The mirror updates its session, sets and freshness tag together.
-
-  const hold = useCallback((detail) => {
-    mirrorTag.current = detail.etag ?? null;
-    mirrored.current = detail.session.id;
-    setSession(detail.session);
-    setSets(detail.sets);
-  }, []);
-  const release = useCallback(() => {
-    mirrorTag.current = null;
-    mirrored.current = null;
-    setSession(null);
-    setSets([]);
-  }, []);
-
-  // The open row on the log becomes the mirror's session. It fails like a poll and not like the
-  // boot: the summaries stand, the surface opens, and the watch asks again.
-  const adopt = useCallback(async (log) => {
-    const open = log.find((summary) => summary.finishedAt == null);
-    if (!open || open.id === mirrored.current) return;
-    const detail = await api.session(open.id).catch(() => null);
-    // A poll may have taken this session meanwhile, and its read is the newer one.
-    if (!detail || detail.session.finishedAt != null || mirrored.current === open.id) return;
-    hold(detail);
-  }, [api, hold]);
-
-  useEffect(() => {
-    let alive = true;
-    try {
-      window.localStorage.removeItem(RETIRED_LIVE_KEY);
-    } catch {
-      // A store that cannot be read is holding nothing this needs.
-    }
-    (async () => {
-      try {
-        // The settings ride the boot read and cannot fail it; the spelling is set before the phase
-        // moves, so the first frame is already in this account's unit.
-        const [exercises, log, settings] = await Promise.all([
-          api.exercises(),
-          api.sessions({ limit: LOG_PAGE }),
-          api.preferences().catch(() => null),
-        ]);
-        if (!alive) return;
-        const held = readPreferences(settings);
-        spellWeightsIn(held.units);
-        setPreferences(held);
-        setCatalog(exercises);
-        // Every wholesale replacement bumps the walk: an older page in flight continues a discarded tail.
-        walk.current += 1;
-        setSummaries(log);
-        setOlderStatus(olderAfter(log, LOG_PAGE));
-        await adopt(log);
-        if (!alive) return;
-        setFailure(null);
-        setPhase('ready');
-      } catch (error) {
-        if (!alive) return;
-        // A 401 is the account gone from under the tab rather than a failure of the log.
-        if (error?.status === 401) {
-          setFailure('signed-out');
-          signedOut.current?.();
-        } else {
-          setFailure(error?.status ? 'server' : 'signal');
-        }
-        setPhase('failed');
-      }
-    })();
-    return () => { alive = false; };
-  }, [api, adopt, bootAttempt]);
-
-  useEffect(() => { reach.current = summaries.length; }, [summaries.length]);
-
-  // The 'online' event never fires for a store that answered 5xx, so Retry is the other recovery.
-  const retryBoot = useCallback(() => setBootAttempt((count) => count + 1), []);
-  useEffect(() => {
-    if (phase !== 'failed') return undefined;
-    window.addEventListener('online', retryBoot);
-    return () => window.removeEventListener('online', retryBoot);
-  }, [phase, retryBoot]);
-
-  // The cursor is both halves of the last row in hand: `startedAt` alone is not unique, so two
-  // sessions sharing an instant across a page edge would leave one of them in no page, ever.
-  // A page that does not come back is a failure of this page alone; `phase` is untouched.
-  const loadOlder = useCallback(async () => {
-    const last = summaries[summaries.length - 1];
-    if (!last || olderStatus === 'loading') return;
-    const mine = walk.current;
-    setOlderStatus('loading');
-    try {
-      const page = await api.sessions({ before: last.startedAt, beforeId: last.id, limit: LOG_PAGE });
-      if (walk.current !== mine) return;
-      // Appended, never merged: (startedAt, id) is stable, so no row crosses a page edge.
-      setSummaries((current) => [...current, ...page]);
-      setOlderStatus(olderAfter(page, LOG_PAGE));
-    } catch {
-      if (walk.current === mine) setOlderStatus('failed');
-    }
-  }, [api, summaries, olderStatus]);
-
-  // The log, re-read to the depth it is already open to: a re-read of the top fifty would drop the
-  // rows already walked and could miss the row it was fired to move. It is replaced, never patched,
-  // and the walk is stamped so a page in the air cannot land on the new list. The catch must reset
-  // the foot, which that bump has otherwise left loading forever. It adopts what it reads.
-  const reloadLog = useCallback(async () => {
-    setRevision((current) => current + 1);
-    reloadProgress();
-    const depth = Math.min(SERVER_PAGE_CAP, Math.max(LOG_PAGE, reach.current));
-    walk.current += 1;
-    let log;
-    try {
-      log = await api.sessions({ limit: depth });
-    } catch {
-      setOlderStatus('more');
-      return;
-    }
-    setSummaries(log);
-    setOlderStatus(olderAfter(log, depth));
-    await adopt(log);
-  }, [api, adopt, reloadProgress]);
-
-  // The mirror's beat: visible tab only, one immediate read on the way back to it, and the last
-  // read's ETag as If-None-Match so the steady state is a 304. A failed poll keeps the last true
-  // read on screen and says nothing. The mirror ends on a finished session or a 404.
-  useEffect(() => {
-    const id = session?.id;
-    if (!id) return undefined;
-    let alive = true;
-    const read = async () => {
-      let detail;
-      try {
-        detail = await api.session(id, { etag: mirrorTag.current });
-      } catch {
-        return;
-      }
-      if (!alive) return;
-      if (detail === UNCHANGED) return;
-      if (detail == null || detail.session.finishedAt != null) {
-        release();
-        reloadLog();
-        return;
-      }
-      hold(detail);
-    };
-    const beat = setInterval(() => { if (document.visibilityState === 'visible') read(); }, POLL_MS);
-    wake.current = read;
+    roomLive.current = true;
     return () => {
-      alive = false;
-      clearInterval(beat);
-      if (wake.current === read) wake.current = null;
+      roomLive.current = false;
+      clocks.current.forEach((timer) => clearTimeout(timer));
+      clocks.current.clear();
+      withheld.current = [];
     };
-  }, [api, session?.id, reloadLog, hold, release]);
-
-  // The watch, while nothing is mirrored: one row is enough, and the summaries on screen are not
-  // touched by it. Visible tab only, and at once on the way back to it.
-  const watching = phase === 'ready' && session == null;
+  }, []);
   useEffect(() => {
-    if (!watching) return undefined;
-    let alive = true;
-    const look = async () => {
-      let log;
-      try {
-        log = await api.sessions({ limit: 1 });
-      } catch {
-        return;
-      }
-      if (alive) await adopt(log);
-    };
-    const beat = setInterval(() => { if (document.visibilityState === 'visible') look(); }, WATCH_MS);
-    wake.current = look;
-    return () => {
-      alive = false;
-      clearInterval(beat);
-      if (wake.current === look) wake.current = null;
-    };
-  }, [api, adopt, watching]);
+    const released = withheld.current.filter((each) => each.engineDeath && records.stored.some((row) =>
+      row.t === each.engineDeath.type && row.id === each.id && row.life?.[0] === 'dead'));
+    if (!released.length) return;
+    for (const each of released) { clearTimeout(clocks.current.get(each.key)); clocks.current.delete(each.key); }
+    publish(withheld.current.filter((each) => !released.includes(each)));
+  }, [records, publish]);
 
-  // Lands in the one catalog instance this product holds, so every picker has it a render later.
+  const reloadLog = useCallback(async () => {}, []);
+  const retryBoot = reloadLog;
   const createMovement = useCallback(async ({ name, equipment }) => {
-    // A refusal the store would not take must not be reported as a network problem.
-    let refused = null;
-    for (let attempt = 0; attempt < 2; attempt += 1) {
-      try {
-        const made = await api.createExercise({
-          id: mintId('ex_'), name: name.trim(), equipment, pattern: CREATED_PATTERN,
-        });
-        setCatalog((current) => [...current, made]);
-        return made;
-      } catch (error) {
-        refused = error;
-        if (!error.exerciseIdTaken) break;
-      }
-    }
-    say(`That movement wasn’t created — ${failureReason(refused)}.`);
-    return null;
+    try { return await api.createExercise({ id: mintId('ex_'), name: name.trim(), equipment, pattern: CREATED_PATTERN }); }
+    catch (error) { say(`That movement wasn’t created — ${failureReason(error)}.`); return null; }
   }, [api, say]);
-
-  // The store answers under the id the movement already had, so the row is replaced, not appended.
-  const renameMovement = useCallback(async (exerciseId, name) => {
-    try {
-      const renamed = await api.renameExercise(exerciseId, name.trim());
-      setCatalog((current) => current.map((each) => (each.id === renamed.id ? renamed : each)));
-      return renamed;
-    } catch (error) {
-      say(`That name wasn’t saved — ${failureReason(error)}.`);
-      return null;
-    }
+  const renameMovement = useCallback(async (id, name) => {
+    try { return await api.renameExercise(id, name.trim()); }
+    catch (error) { say(`That name wasn’t saved — ${failureReason(error)}.`); return null; }
   }, [api, say]);
-
-  // A clock only ever clears the toast it was set for: cancelling is a render behind the change, so
-  // two updates can land in one batch with the older clock last.
+  const seen = useRef(new Map());
+  useEffect(() => {
+    for (const notice of records.notices) {
+      if (notice.dismissed) continue;
+      const fingerprint = JSON.stringify(notice.content);
+      if (seen.current.get(notice.id) === fingerprint) continue;
+      seen.current.set(notice.id, fingerprint);
+      say('A change could not be saved to the log. Your other changes are still here.');
+      gymStep('refusal', 'refused');
+    }
+  }, [records.notices, say]);
   useEffect(() => {
     if (!toast) return undefined;
-    const timer = setTimeout(() => setToast((current) => (current === toast ? null : current)), TOAST_MS);
+    const timer = setTimeout(() => setToast((current) => current === toast ? null : current), TOAST_MS);
     return () => clearTimeout(timer);
   }, [toast]);
-
-  // One transient for the room, drawn once by `GymApp`: the sentence said last, or the window, and
-  // never both. The window's own carries the Undo and refuses the dismiss.
-  const hidden = (kind) => hiddenIds(withheld.current, settled.current, kind);
-  const gone = (kind) => goneIds(settled.current, kind);
-
+  const dead = (kind, rows = records.drawn) => {
+    const type = kind === 'bodyweight' ? 'weighin' : kind;
+    return rows.filter((row) => row.t === type && row.life?.[0] === 'dead').map((row) => ({ kind, id: row.id }));
+  };
+  const hidden = (kind) => hiddenIds(withheld.current, [...settled.current, ...dead(kind)], kind);
+  const gone = (kind) => goneIds([...settled.current, ...dead(kind, records.stored)], kind);
   const spoken = transientOf(toast, withheld.current);
   const transient = spoken == null ? null : {
-    text: spoken.text,
-    detail: spoken.detail ?? null,
+    text: spoken.text, detail: spoken.detail ?? null,
     action: spoken.undoable ? { label: UNDO_LABEL, run: undoWithheld } : spoken.action ?? null,
     dismiss: spoken.undoable ? null : dismissToast,
   };
-
   return {
-    phase,
-    revision,
-    progress,
-    reloadProgress,
-    // 'signal' · 'server' · 'signed-out'. Null in every other phase.
-    failure,
-    // The boot read, asked again.
-    retryBoot,
-    // The mirrored open session, or null; nothing handed out here can write into it.
-    session,
-    sets,
-    catalog,
-    summaries,
-    preferences,
-    older: { status: olderStatus, load: loadOlder },
-    reloadLog,
-    createMovement,
-    renameMovement,
-    say,
-    transient,
-    // The withheld window, for the screens that must draw around what it is holding.
-    held: withheld.current,
-    // The one question a screen asks before it draws a row under a verb: is this id gone from the
-    // screen? True while the window holds it, and true for good once the store has answered.
-    hidden,
-    // The other question, which only a screen with a stance about the ACCOUNT asks: is this id gone
-    // from the STORE? False for everything the window is still holding, because that is a row a
-    // lifter can still have back.
-    gone,
-    withhold,
-    undoWithheld,
-    dropWithheld,
-    // What a screen calls before it writes a subject the lifter can address by an id they choose.
-    writtenAgain,
+    phase, revision: records, progress, reloadProgress: reloadLog, failure: null, retryBoot,
+    session, sets, catalog, summaries, preferences,
+    older: { status: summaries.length < depth ? 'end' : 'more', load: () => setDepth((count) => count + LOG_PAGE) },
+    reloadLog, createMovement, renameMovement, say, transient, held: withheld.current, hidden, gone,
+    withhold, undoWithheld, dropWithheld, writtenAgain,
   };
 }

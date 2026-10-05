@@ -21,23 +21,14 @@ function wordCount(body) {
   return trimmed ? trimmed.split(/\s+/).length : 0;
 }
 
-const WHY_KEY = 'windmill:journal-scales-why';
 const WHY_LINE = 'Mood is what you see when you zoom out to the year. Zero is a real answer; leaving it blank is too.';
-const WHY_READ_MS = 2500;   // on screen this long before the one showing counts as spent
-
-function whySaid() {
-  try {
-    return localStorage.getItem(WHY_KEY) === 'said';
-  } catch {
-    return false;   // no storage — the one line may be said twice rather than never
-  }
-}
+const WHY_READ_MS = 2500;
 
 export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWriter = null }) {
   const {
     today, history, loading, firstRun, readState, reach,
     body, mood, energy, saveState, saveTick,
-    setBody, setMood, setEnergy, extendTo, reachBack,
+    setBody, setMood, setEnergy, extendTo, reachBack, scalesInvitation, retireScales,
   } = usePages();
 
   const scrollRef = useRef(null);
@@ -87,14 +78,12 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
     return () => holdWriter(null);
   }, [holdWriter, setBody]);
 
-  // Said once ever, on the first save, and spent by being read rather than by being rendered.
-  const [whyDue] = useState(() => !whySaid());
-  const why = whyDue && saveTick > 0 && mood == null ? WHY_LINE : null;
+  const why = scalesInvitation && mood == null ? WHY_LINE : null;
+  const retireRef = useRef(retireScales);
+  retireRef.current = retireScales;
   useEffect(() => {
-    if (!why) return undefined;
-    const timer = setTimeout(() => {
-      try { localStorage.setItem(WHY_KEY, 'said'); } catch { /* no storage — it may say itself twice */ }
-    }, WHY_READ_MS);
+    if (!why) return;
+    const timer = setTimeout(() => retireRef.current?.(), WHY_READ_MS);
     return () => clearTimeout(timer);
   }, [why]);
 
@@ -271,6 +260,8 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
                 className="journal-input"
                 rows={1}
                 value={body}
+                readOnly={loading}
+                aria-busy={loading}
                 onChange={(event) => setBody(event.target.value)}
                 placeholder={firstRun ? 'Start anywhere. Nothing here is graded.' : ''}
                 aria-label="Write today"
@@ -283,7 +274,7 @@ export function Canvas({ focusDate = null, flyTo = null, echoes = null, holdWrit
             {echoes && <PageEchoes echoes={echoes} day={today} standing={today === standingOn} />}
           </div>
           <ScaleStrip day={today} mood={mood} energy={energy} onMood={setMood} onEnergy={setEnergy} why={why} />
-          {firstRun && <p className="journal-privacy">Nobody sees this but you.</p>}
+          {firstRun && <p className="journal-privacy">Only you. No prompts, no fields, nothing to fill in — write a line or a page.</p>}
         </article>
       </div>
     </div>

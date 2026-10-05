@@ -1,3 +1,4 @@
+import { offlineShell } from './scripts/offlineShell.js';
 import { defineConfig } from 'vite';
 import react from '@vitejs/plugin-react';
 import { staticPageAssets } from './scripts/staticPageAssets.js';
@@ -26,7 +27,7 @@ export default defineConfig({
   // which never enter the module graph the SPA entry gets its faces and its chrome from.
   // appBoot puts the room's ground into <head> before the bundle lands, so refreshing an app room
   // stops flashing the brand root's cream hero on the way to a dark canvas (scripts/appBoot.js).
-  plugins: [react(), staticPageAssets(), appBoot()],
+  plugins: [react(), staticPageAssets(), appBoot(), offlineShell()],
   server: {
     port: 5173,
     open: false,

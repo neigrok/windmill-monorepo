@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason, gymApi } from './gymApi.js';
+import { failureReason } from './gymApi.js';
 import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
 import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
@@ -14,6 +14,7 @@ import {
 import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
+import { useGymApi } from './gymSync.js';
 import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, workoutTotals, yearsOf } from './logbook/history.js';
 import { useHistory, useHistoryDates } from './logbook/useHistory.js';
 import { DateJump } from './logbook/DateJump.jsx';
@@ -195,13 +196,16 @@ function SessionRow({ summary, selected, href, unit }) {
 }
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
+  const api = useGymApi();
   const { say, reloadLog, withhold } = log;
   const view = useGymRead(
-    () => Promise.all([gymApi.session(id), gymApi.exercises()])
+    () => Promise.all([api.session(id), api.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
     [id],
+    { sync: true, ready: api.ready !== false },
   );
   const [moves, setMoves] = useState(() => new Map());
+  useEffect(() => setMoves(new Map()), [view.data]);
   const [fixing, setFixing] = useState(null);
   const [expanded, setExpanded] = useState(() => new Set());
   const closeFix = () => { setFixing(null); window.location.hash = `${sessionHref(id)}?from=${encodeURIComponent(from)}`; };
@@ -211,9 +215,10 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
     withhold({
       kind: 'set',
       id: set.id,
+      engineDeath: { type: 'set', id: set.id },
       line: deletedLine(set),
       send: async () => {
-        await gymApi.deleteSet(id, set.id);
+        await api.deleteSet(id, set.id);
         await reloadLog();
       },
       refused: (error) => say(deleteFailure(error)),
@@ -225,9 +230,10 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
     withhold({
       kind: 'session',
       id,
+      engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
       send: async () => {
-        await gymApi.discardSession(id);
+        await api.discardSession(id);
         await reloadLog();
       },
       refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
@@ -243,7 +249,7 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   const saveFix = async (set, fix) => {
     if (Object.keys(fix).length === 0) { closeFix(); return null; }
     try {
-      const stored = await gymApi.fixSet(id, set.id, fix);
+      const stored = await api.fixSet(id, set.id, fix);
       setMoves((current) => new Map(current).set(set.id, stored));
       closeFix();
     } catch (error) {

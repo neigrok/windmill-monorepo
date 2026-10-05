@@ -550,6 +550,22 @@ test('receiptLine — derived from the server’s reply, never the prose; turned
   assert.equal(receiptLine({ verb: 'dismiss', proposal: applied }), 'Turned down · nothing changed.');
 });
 
+test('missing frozen names and change counts leave only the authoritative proposal diff', () => {
+  const incomplete = { name: 'Push B', intent: 'revise', changes: [
+    { kind: 'retargeted', exerciseId: 'bench-press', before: { sets: [{ reps: 5, weightKg: 60 }] }, after: { sets: [{ reps: 5, weightKg: 65 }] } },
+  ] };
+  assert.deepEqual(diffRows(incomplete), [{ kind: 'retargeted', exerciseId: 'bench-press', moves: [
+    { field: 'set 1', from: '60 × 5', to: '65 × 5' },
+  ] }]);
+  assert.equal(countedLabel(incomplete), 'changes');
+  assert.equal(applyLabel(incomplete), 'Apply');
+  assert.equal(atomicLine(incomplete), 'Nothing is applied until you tap.');
+  assert.equal(applyLabel({ ...incomplete, intent: 'remove' }), 'Remove routine');
+  assert.equal(receiptLine({ verb: 'apply', proposal: { intent: 'remove' } }), 'Applied · routine · routine removed');
+  assert.equal(settledLine({ state: 'applied', settledAt: SETTLED_AT }, READ_AT).includes('undefined'), false);
+  assert.equal(settledLine({ state: 'superseded', settledAt: SETTLED_AT }, READ_AT).includes('undefined'), false);
+});
+
 test('the review’s words are pinned: the kicker, the caveat, the waiting card, the text row', () => {
   assert.equal(wroteKicker({ door: 'ask' }), 'Coach wrote:');
   assert.equal(wroteKicker({ door: 'mcp', agent: 'Claude' }), 'Claude wrote:');

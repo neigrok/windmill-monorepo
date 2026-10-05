@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { spellWeightsIn, weightUnit } from '../../../../src/products/gym/units.js';
 import { logShareApi } from '../../../../src/products/gym/share/logShareApi.js';
+import { screenApi } from '../legacyScreenApi.mjs';
 import { browserWith, elementsOf, findByClass, loadScreen, renderHook, settle, textOf } from '../harness.mjs';
 
 function button(tree, label) {
@@ -11,7 +12,7 @@ function button(tree, label) {
 test('setup previews without mutation, requires a successful read, and retries creation with the same identity', async (t) => {
   browserWith();
   t.mock.method(logShareApi, 'list', async () => []);
-  t.mock.method(logShareApi, 'preview', async () => ({ sessions: [], summary: { sessions: 0 } }));
+  t.mock.method(screenApi, 'history', async () => ({ sessions: [], summary: { sessions: 0 } }));
   const requests = [];
   t.mock.method(logShareApi, 'create', async (body) => {
     requests.push(body);
@@ -39,7 +40,7 @@ test('active links retain scope and expiry, copy exact URL, and revoke into a re
   browserWith();
   const share = { id: 'link', mode: 'live', scope: 'all', url: 'https://windmill.test/#/gym/shared-log/token', expiresAt: 1000 };
   t.mock.method(logShareApi, 'list', async () => [share]);
-  t.mock.method(logShareApi, 'preview', async () => ({ sessions: [], summary: { sessions: 0 } }));
+  t.mock.method(screenApi, 'history', async () => ({ sessions: [], summary: { sessions: 0 } }));
   const revoke = t.mock.method(logShareApi, 'revoke', async () => null);
   const copied = [];
   navigator.clipboard = { writeText: async (value) => copied.push(value) };
@@ -62,7 +63,7 @@ test('a public deep link loads bounded pages until the selected workout and neve
     const older = Boolean(query.before);
     return { sessions: [{ id: older ? 'older' : 'newer', startedAt: older ? 10 : 20, sets: [] }], next: older ? null : { before: 20, beforeId: 'newer' }, summary: { sessions: 2, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], share: { mode: 'snapshot', scope: 'all' } };
   });
-  t.mock.method(logShareApi, 'preview', () => { throw new Error('owner API must not be used'); });
+  t.mock.method(screenApi, 'history', () => { throw new Error('owner API must not be used'); });
   const { ReadOnlyLog } = await loadScreen('products/gym/share/LogShare.jsx');
   const screen = renderHook(t, () => ReadOnlyLog({ token: 'token', hash: '#/gym/shared-log/token?session=older' }));
   await settle(); await settle();
@@ -99,7 +100,7 @@ test('shared collapsed and expanded sets stay in kilograms without changing the 
 test('narrow preview opens the history list and permits selecting a workout without leaving preview', async (t) => {
   browserWith();
   window.matchMedia = () => ({ matches: false });
-  t.mock.method(logShareApi, 'preview', async () => ({ sessions: [{ id: 'latest', startedAt: 1000, finishedAt: 2000, sets: [] }], summary: { sessions: 1, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null }));
+  t.mock.method(screenApi, 'history', async () => ({ sessions: [{ id: 'latest', startedAt: 1000, finishedAt: 2000, sets: [] }], summary: { sessions: 1, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null }));
   const { ReadOnlyLog } = await loadScreen('products/gym/share/LogShare.jsx');
   const preview = { id: 'draft', mode: 'snapshot', scope: 'all' };
   const screen = renderHook(t, () => ReadOnlyLog({ preview }));

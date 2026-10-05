@@ -1,6 +1,5 @@
-// Routines as pure rules. Everything here hands back either a WRITE document — the shape POST and PUT
-// read, its order carried by the order of its entries and no `position` on an entry, the server
-// renumbering densely from what it was sent — or the editor's DRAFT of that same routine. An absent
+// Routines as pure rules. Writes and editor drafts keep the ordered entries and set targets of
+// the presentation document. The sync adapter strips presentation fields before committing. An absent
 // optional is omitted, never null. Nothing here mints an id, invents a name, or reads a routine out
 // of a plan snapshot: an edit is always a read of the routine itself, changed and written whole.
 

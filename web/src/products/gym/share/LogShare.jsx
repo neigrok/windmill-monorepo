@@ -11,11 +11,13 @@ import { mintId } from '../mint.js';
 import { ProgressCards } from '../progress/Progress.jsx';
 import { consistencyLine } from '../progress/progress.js';
 import { useGymRead } from '../useGymRead.js';
+import { useGymApi } from '../gymSync.js';
 import { logShareDescription, logShareRequest, publicLogHref, shareHistoryScope, sharedSetScheme, shareDateLabel } from './logShare.js';
 import { logShareApi } from './logShareApi.js';
 import './logShare.css';
 
 export function LogShareScreen() {
+  const api = useGymApi();
   const [draft, setDraft] = useState({ mode: 'snapshot', scope: 'all', from: '', until: '' });
   const [preview, setPreview] = useState(null);
   const [previewReady, setPreviewReady] = useState(false);
@@ -27,8 +29,8 @@ export function LogShareScreen() {
   const historyCount = useGymRead(() => {
     const scope = logShareRequest(draft, 'preview-count');
     if (scope.error) return Promise.resolve(null);
-    return logShareApi.preview(shareHistoryScope(scope.value, { limit: 1 }));
-  }, [draft.scope, draft.from, draft.until]);
+    return api.history({ ...shareHistoryScope(scope.value, { limit: 1 }), projection: 'progress' });
+  }, [draft.scope, draft.from, draft.until], { sync: true, ready: api.ready !== false });
   const identity = useRef(null);
   const previewBox = useRef(null);
   const detailHistory = useGymRead(() => detail?.token && !detail.revoked ? logShareApi.read(detail.token, { limit: 1 }) : Promise.resolve(null), [detail?.id, detail?.revoked]);
@@ -141,6 +143,7 @@ export function SharedLogScreen({ token, hash = globalThis.location?.hash ?? '' 
 }
 
 export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady = null }) {
+  const localApi = useGymApi();
   const [olderFor, setOlderFor] = useState(null);
   const initialSelection = useRef(false);
   const [localFilters, setLocalFilters] = useState({ year: null, month: null, exercise: '', routine: '', density: 'comfortable', selected: null });
@@ -150,8 +153,8 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
     if (!preview) return logShareApi.read(token, query);
     const scope = shareHistoryScope(preview, query);
     if (scope.from >= scope.until) return Promise.resolve({ sessions: [], summary: { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null });
-    return logShareApi.preview(scope);
-  } }), [token, preview]);
+    return localApi.history({ ...scope, projection: 'progress' });
+  }, sync: Boolean(preview), ready: !preview || localApi.ready !== false }), [token, preview, localApi]);
   const history = useHistory(filters, 0, api);
   const dates = useHistoryDates(filters, 0, api);
   useEffect(() => { onReady?.(history.phase === 'ready'); }, [history.phase, onReady]);

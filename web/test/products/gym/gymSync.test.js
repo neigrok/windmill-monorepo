@@ -1,0 +1,268 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
+import { registry } from '../../../src/platform/sync/schema.js';
+import { environment, until } from '../../platform/sync/fakes.js';
+import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
+import { createGymApi, prepareGymSync } from '../../../src/products/gym/gymSync.js';
+
+async function open(t) {
+  const env = environment();
+  env.options.registry = registry;
+  env.transport.request = async () => ({ response: hello({ state: env.state, registry, account: 'A', serverTime: env.timers.time }), timing: {
+    send: { wall: env.timers.time, mono: env.timers.time, boot: 'test' }, recv: { wall: env.timers.time, mono: env.timers.time, boot: 'test' },
+  } });
+  let engine = await BrowserSyncEngine.open(env.options);
+  assert.equal((await engine.signIn('A')).complete, true);
+  const events = [], failures = [];
+  const api = createGymApi(engine, { event: (operation, outcome) => events.push({ operation, outcome }), failure: (operation) => failures.push(operation) });
+  t.after(() => engine.close());
+  return { env, get engine() { return engine; }, api, events, failures, reopen: async () => { engine.close(); engine = await BrowserSyncEngine.open(env.options); return createGymApi(engine); } };
+}
+async function confirm(engine) {
+  const rows = engine.observe('self/gym').getSnapshot().stored;
+  await engine.write(null, (device) => {
+    const replica = device.activeReplica;
+    replica.outbox = [];
+    rows.forEach((row, index) => replica.putConfirmed('self/gym', { ...row, rc: 1000, ru: 1000, seq: index + 1 }));
+  }, ['self/gym']);
+}
+const routine = { id: 'routine00001', name: 'Lower A', position: 0, entries: [{ exerciseId: 'back-squat', sets: [{ reps: 5, weightKg: 60 }, { reps: 3, weightKg: 80 }] }] };
+
+test('v5 authoritative gym fields and independent routine creation snapshots survive persisted engine restart', async (t) => {
+  const opened = await open(t);
+  const { api, engine, reopen } = opened;
+  assert.equal(registry.version, 5);
+  assert.equal(registry.minVersion, 4);
+  const receipt = { id: routine.id, name: 'Original lower', position: 0, revision: 1, entries: [{ position: 1, exerciseId: 'bench-press' }] };
+  const rows = [
+    { t: 'routine', id: routine.id, born: '1000:0:srv', life: ['alive', '1000:0:srv'], fields: { name: routine.name, position: routine.position, entries: routine.entries, revision: 7, createdEntries: 3 } },
+    { t: 'routineCreation', id: routine.id, fields: { snapshot: receipt } },
+    { t: 'proposal', id: 'proposal0001', born: '1000:0:srv', life: ['alive', '1000:0:srv'], fields: { routineId: routine.id, baseRevision: 6, baseName: 'Frozen lower', changeCount: 2, intent: 'revise', proposedName: 'Next lower', door: 'ask', changes: [] } },
+    { t: 'note', id: 'note000001', born: '1000:0:srv', life: ['alive', '1000:0:srv'], fields: { title: 'First', body: '', ord: 'a0', updatedAt: 500 } },
+  ].map(({ fields, ...row }, index) => ({ ...row, rc: 1000, ru: 2000, seq: index + 1,
+    f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, '1000:0:srv']])) }));
+  await engine.write(null, (device) => rows.forEach((row) => device.activeReplica.putConfirmed('self/gym', row)), ['self/gym']);
+  const original = await api.routine(routine.id);
+  assert.equal(original.revision, 7);
+  assert.equal(original.history.at(-1).movements, 3);
+  assert.equal(original.pendingProposal.changeCount, 2);
+  await api.replaceRoutine(routine.id, { ...original, name: 'Edited lower', createdEntries: 999 }, original);
+  await api.saveNote('note000001', { title: 'Edited', body: '', updatedAt: 999 }, (await api.notes())[0]);
+  const deltas = engine.device.activeReplica.entries().flatMap((entry) => entry.intent.d);
+  assert.deepEqual(deltas.map(({ t, f }) => ({ t, fields: Object.keys(f).sort() })), [
+    { t: 'routine', fields: ['name'] }, { t: 'note', fields: ['title'] },
+  ]);
+  const pending = structuredClone(engine.device.activeReplica.outbox);
+  for (const [type, id, field, value] of [
+    ['routine', routine.id, 'revision', 999], ['routine', routine.id, 'createdEntries', 999],
+    ['proposal', 'proposal0001', 'baseRevision', 999], ['proposal', 'proposal0001', 'baseName', 'Forged'],
+    ['proposal', 'proposal0001', 'changeCount', 999], ['note', 'note000001', 'updatedAt', 999],
+    ['routineCreation', routine.id, 'snapshot', {}],
+  ]) {
+    await assert.rejects(engine.commit('self/gym', [{ op: type === 'routineCreation' ? 'write' : 'update', t: type, id, f: { [field]: value } }]), /written by the server/);
+    assert.deepEqual(engine.device.activeReplica.outbox, pending);
+  }
+  const resumed = await reopen();
+  const saved = await resumed.routine(routine.id);
+  assert.equal(saved.revision, 7);
+  assert.deepEqual(saved.history.at(-1), { kind: 'created', at: 1000, movements: 3 });
+  const proposal = await resumed.proposal('proposal0001');
+  assert.deepEqual({ baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount }, { baseRevision: 6, baseName: 'Frozen lower', changeCount: 2 });
+  assert.deepEqual((await resumed.notes()).map(({ id, position, title, body, updatedAt }) => ({ id, position, title, body, updatedAt })), [{ id: 'note000001', position: 0, title: 'Edited', body: '', updatedAt: 500 }]);
+  await resumed.holdDeath('routine', routine.id);
+  assert.equal(await resumed.routine(routine.id), null);
+  assert.equal(registry.type('routineCreation').field('snapshot').writer, 'server');
+  assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routineCreation').f.snapshot[0], receipt);
+  assert.equal(opened.engine.device.activeReplica.outbox.some((entry) => entry.intent.d.some((delta) => delta.t === 'routineCreation')), false);
+});
+
+test('routine saves persist schemes and guards; stale bases refuse without partial work', async (t) => {
+  const { api, engine, failures } = await open(t);
+  await api.createRoutine(routine);
+  const base = await api.routine(routine.id);
+  assert.deepEqual(base.entries[0].sets, routine.entries[0].sets);
+  await api.replaceRoutine(routine.id, { ...routine, name: 'Lower B' }, base);
+  assert.deepEqual(engine.device.activeReplica.entries()[1].intent.guard.map(({ field }) => field).sort(), ['entries', 'name', 'position']);
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.replaceRoutine(routine.id, { ...routine, name: 'Stale' }, base), { code: 'routine-stale' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
+  assert.deepEqual(failures, []);
+});
+
+test('notes append; reorder writes only the moved note order register', async (t) => {
+  const { api, engine } = await open(t);
+  for (let n = 1; n <= 3; n++) await api.saveNote(`note00000${n}`, { title: String(n), body: '' });
+  assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000001', 'note000002', 'note000003']);
+  await confirm(engine);
+  await api.reorderNotes(['note000003', 'note000001', 'note000002']);
+  assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
+  assert.deepEqual(Object.keys(engine.device.activeReplica.entries().at(-1).intent.d[0].f), ['ord']);
+  await assert.rejects(api.reorderNotes(['note000001']), { code: 'invalid' });
+});
+
+test('note editor guards refuse changed content and preserve the original local draft', async (t) => {
+  const { api, engine } = await open(t);
+  await api.saveNote('note000001', { title: 'First', body: 'Context' });
+  await confirm(engine);
+  const base = (await api.notes())[0];
+  await api.saveNote('note000001', { title: 'First', body: 'Changed' }, base);
+  await assert.rejects(api.saveNote('note000001', { title: 'First', body: 'Stale' }, base), { code: 'routine-stale' });
+  assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.guard.map(({ field }) => field), ['title', 'body']);
+});
+
+test('held deaths survive process exit; Undo restores the drawn row', async (t) => {
+  const { api, engine, reopen } = await open(t);
+  await api.saveNote('note000001', { title: 'First', body: '' });
+  const gesture = await api.holdDeath('note', 'note000001');
+  assert.equal(engine.device.activeReplica.entries().at(-1).state, 'held');
+  assert.equal(engine.observe('self/gym').getSnapshot().drawn[0].life[0], 'dead');
+  assert.equal((await api.notes()).length, 1);
+  const resumed = await reopen();
+  assert.equal(await resumed.undoDeath(gesture), true);
+  assert.equal((await resumed.notes())[0].title, 'First');
+});
+
+test('account polls and focus refreshes keep a gym delete held for its full nine seconds', async (t) => {
+  const { api, engine, env } = await open(t);
+  const endpoints = [], request = env.transport.request;
+  env.transport.request = (...args) => { endpoints.push(args[0]); return request(...args); };
+  await engine.start(); await until(() => engine.leader);
+  await api.saveNote('note000001', { title: 'First', body: '' }); await confirm(engine);
+  const first = await api.holdDeath('note', 'note000001');
+  env.timers.advance(4000);
+  for (let n = 0; n < 3; n++) {
+    await engine.signIn('A'); await engine.send();
+    assert.equal(engine.device.activeReplica.entries().at(-1).state, 'held');
+  }
+  assert.equal(endpoints.includes('push'), false);
+  assert.equal(await api.undoDeath(first), true);
+  await api.holdDeath('note', 'note000001');
+  env.timers.advance(8999); await engine.signIn('A'); await engine.send();
+  assert.equal(engine.device.activeReplica.entries().at(-1).state, 'held');
+  assert.equal(endpoints.includes('push'), false);
+  env.timers.advance(1);
+  await until(() => engine.device.activeReplica.entries().at(-1).state === 'ready');
+});
+
+test('held note deaths occupy the cap slot and allow siblings to reorder', async (t) => {
+  const { api } = await open(t);
+  for (let n = 0; n < 10; n++) await api.saveNote(`note0000${String(n).padStart(2, '0')}`, { title: String(n), body: '' });
+  await api.holdDeath('note', 'note000000');
+  const order = (await api.notes()).map(({ id }) => id);
+  [order[1], order[2]] = [order[2], order[1]];
+  await api.reorderNotes(order);
+  assert.deepEqual((await api.notes()).map(({ id }) => id), order);
+  await assert.rejects(api.saveNote('note000099', { title: 'Extra', body: '' }), { code: 'notes-full' });
+});
+
+test('weigh-in puts use the transaction clock and atomically retire a held death', async (t) => {
+  const { api, engine, env } = await open(t);
+  await api.saveBodyweight('1970-01-01', { weightKg: 80.25, recordedAt: 999999 });
+  await api.holdDeath('weighin', '1970-01-01');
+  env.timers.advance(100);
+  const entry = await api.saveBodyweight('1970-01-01', { weightKg: 81, recordedAt: 1 });
+  assert.equal(entry.recordedAt, env.timers.time);
+  assert.equal(engine.device.activeReplica.outbox.some((entry) => entry.state === 'held'), false);
+  assert.deepEqual((await api.bodyweight()).latest, entry);
+});
+
+test('imports and corrections use atomic commands; offline reload retains the pending workout', async (t) => {
+  const { api, engine, reopen } = await open(t);
+  const imported = { id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] };
+  await api.importSession(imported);
+  assert.deepEqual(engine.device.activeReplica.entries().at(-1).intent.cmd, { name: 'gym.importSession', args: imported });
+  const resumed = await reopen();
+  assert.equal((await resumed.session(imported.id)).sets[0].reps, 5);
+  assert.equal((await resumed.session(imported.id)).sets[0].setNumber, 1);
+  await resumed.correctSession(imported.id, { requestId: 'request00001', startedAt: 100, finishedAt: 900, routineName: 'Bench', sets: [{ ...imported.sets[0], setNumber: 1, reps: 6 }] });
+  assert.equal((await resumed.session(imported.id)).sets[0].reps, 6);
+  for (const method of ['start', 'finish', 'logSet']) assert.equal(api[method], undefined);
+});
+
+test('offline corrections retain only named sets and their replacement serial numbers after restart', async (t) => {
+  const { api, engine, reopen } = await open(t);
+  const sets = [
+    { id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 600 },
+    { id: 'set00000002', exerciseId: 'back-squat', weightKg: 80, reps: 5, completedAt: 700 },
+    { id: 'set00000003', exerciseId: 'bench-press', weightKg: 65, reps: 5, completedAt: 800 },
+  ];
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets });
+  assert.deepEqual((await api.session('session00001')).sets.map(({ id, setNumber }) => ({ id, setNumber })), [
+    { id: 'set00000001', setNumber: 1 }, { id: 'set00000002', setNumber: 1 }, { id: 'set00000003', setNumber: 2 },
+  ]);
+  await confirm(engine);
+  await api.correctSession('session00001', { requestId: 'request00001', startedAt: 100, finishedAt: 900,
+    routineName: 'Corrected', sets: [{ ...sets[2], setNumber: 1, reps: 6 }] });
+  const resumed = await reopen();
+  assert.deepEqual(await resumed.session('session00001'), {
+    session: { id: 'session00001', startedAt: 100, finishedAt: 900, routineName: 'Corrected' },
+    sets: [{ id: 'set00000003', exerciseId: 'bench-press', setNumber: 1, weightKg: 65, reps: 6, kind: 'working', note: '', completedAt: 800 }],
+  });
+});
+
+test('an offline removal proposal hides its routine durably before the authoritative pull', async (t) => {
+  const { api, engine, reopen } = await open(t);
+  await api.createRoutine(routine);
+  await confirm(engine);
+  await engine.write(null, (device) => device.activeReplica.putConfirmed('self/gym', {
+    t: 'proposal', id: 'proposal0001', born: '1000:0:srv', life: ['alive', '1000:0:srv'], rc: 1000, ru: 1000, seq: 2,
+    f: Object.fromEntries(Object.entries({ routineId: routine.id, intent: 'remove', proposedName: routine.name,
+      summary: 'Remove', door: 'ask', changes: [] }).map(([field, value]) => [field, [value, '1000:0:srv']])),
+  }), ['self/gym']);
+  await api.applyProposal('proposal0001');
+  const resumed = await reopen();
+  assert.equal(await resumed.routine(routine.id), null);
+  assert.deepEqual(await resumed.routines(), []);
+  assert.equal((await resumed.proposal('proposal0001')).state, 'applied');
+});
+
+test('storage denial leaves no durable partial write and reports only a static operation', async (t) => {
+  const { api, engine, failures, events } = await open(t);
+  t.mock.method(engine.store, 'transact', async () => { throw new Error('SECRET workout'); });
+  await assert.rejects(api.createRoutine(routine), /SECRET/);
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+  assert.deepEqual(failures, ['routine-create']);
+  assert.deepEqual(events, [{ operation: 'routine-create', outcome: 'failed' }]);
+});
+
+test('an adapter pinned to a previous replica cannot write into another account', async (t) => {
+  const { api, engine } = await open(t);
+  t.mock.method(engine, 'commit', async (scope, read) => read({ replica: 'anotherAccount' }));
+  await assert.rejects(api.createRoutine(routine), { code: 'not-writable', status: 401 });
+});
+
+test('liveHint follows the phone session and expires after four idle hours', async (t) => {
+  const { engine } = await open(t);
+  const now = Date.now();
+  let rows = [{ t: 'session', id: 'session0001', life: ['alive', 's'], f: { startedAt: [now - 1000, 's'] } }];
+  t.mock.method(engine, 'observe', () => ({ getSnapshot: () => ({ drawn: rows }) }));
+  prepareGymSync(engine);
+  assert.equal(engine.liveHint(), true);
+  rows[0] = { ...rows[0], f: { startedAt: [now - 4 * 3600_000, 's'] } };
+  assert.equal(engine.liveHint(), false);
+  rows.push({ t: 'set', id: 'set0000001', f: { sessionId: ['session0001', 's'], completedAt: [now, 's'] } });
+  assert.equal(engine.liveHint(), true);
+});
+
+test('known overlap, future instants and live corrections refuse before queuing', async (t) => {
+  const { api, engine } = await open(t);
+  const imported = { id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] };
+  await api.importSession(imported);
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.importSession({ ...imported, id: 'session00002', sets: [{ ...imported.sets[0], id: 'set00000002' }] }), { code: 'session-overlap' });
+  await assert.rejects(api.importSession({ ...imported, id: 'session00002', finishedAt: 2000 }), { code: 'bad-instant' });
+  await engine.commit('self/gym', [], { cmd: { name: 'gym.start', args: { id: 'phoneSession0', startedAt: 1000, joinOpenSession: true } },
+    predict: [{ op: 'create', t: 'session', id: 'phoneSession0', f: { startedAt: 1000 } }] });
+  await assert.rejects(api.correctSession('phoneSession0', { requestId: 'correction00', startedAt: 100, finishedAt: 900, routineName: '', sets: imported.sets }), { code: 'session-open' });
+  assert.deepEqual(engine.device.activeReplica.entries().filter((entry) => entry.intent.cmd?.name === 'gym.importSession'), before.filter((entry) => entry.intent.cmd?.name === 'gym.importSession'));
+});
+
+test('a tombstoned set cannot be corrected as if its value were saved', async (t) => {
+  const { api, engine } = await open(t);
+  await api.importSession({ id: 'session00001', startedAt: 100, finishedAt: 900, sets: [{ id: 'set00000001', exerciseId: 'bench-press', weightKg: 60, reps: 5, completedAt: 850 }] });
+  await api.holdDeath('set', 'set00000001');
+  const before = structuredClone(engine.device.activeReplica.outbox);
+  await assert.rejects(api.fixSet('session00001', 'set00000001', { reps: 6 }), { code: 'set-not-found' });
+  assert.deepEqual(engine.device.activeReplica.outbox, before);
+});

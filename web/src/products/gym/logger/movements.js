@@ -39,8 +39,8 @@ function matchesQuery(exercise, term) {
   return exercise.name.toLowerCase().includes(term) || aliasHit(exercise, term) != null;
 }
 
-// The six are counted over a FIXED depth of the log and never over more. `useTrainingLog` boots on
-// fifty sessions and appends another fifty every time the lifter taps Older on the Log tab, so
+// The six are counted over a FIXED depth of the log and never over more. `useTrainingLog` displays
+// fifty cached sessions and reveals another fifty when Older is tapped, so
 // counting over everything the page happens to hold would hand the same account a different six
 // depending on where else it had been that visit. The sessions are newest first, so this is the
 // newest fifty, whatever has been walked since.

@@ -1,13 +1,15 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason, gymApi } from '../gymApi.js';
+import { failureReason } from '../gymApi.js';
+import { useGymApi } from '../gymSync.js';
 import { dayLabel, fmtKg, groupByExercise, NO_ROUTINE, routineNameOf, sessionHref, shortDayLabel } from '../log.js';
 import { mintId } from '../mint.js';
 import { workoutTotals } from '../logbook/history.js';
 import { correctionDraft, correctionScheme, correctionWrite } from './correction.js';
 
 export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
+  const api = useGymApi();
   const [draft, setDraft] = useState(() => correctionDraft(session, sets));
   const [failure, setFailure] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -50,7 +52,7 @@ export function WorkoutEditor({ session, sets, catalog, log, from, onDelete }) {
     if (!request.current || request.current.signature !== signature) request.current = { signature, id: mintId('fix_') };
     setBusy(true);
     try {
-      await gymApi.correctSession(session.id, { ...parsed.value, requestId: request.current.id });
+      await api.correctSession(session.id, { ...parsed.value, requestId: request.current.id });
       await log.reloadLog();
       window.location.hash = back;
     } catch (error) {

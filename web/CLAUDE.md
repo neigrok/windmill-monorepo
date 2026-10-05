@@ -69,3 +69,15 @@ this only for preview builds.
 `.github/workflows/web.yml` builds and rsyncs `dist/` on trusted runs. On a fresh host, web must
 land before backend deployment because the embedder mounts weights from the web directory.
 See [embedder operations](../services/embedder/README.md).
+
+## Offline rooms and browser replicas
+
+The auth provider opens the browser sync engine once for this document and owns cookie cleanup.
+Product preparations run before networking; occupied rooms pin Add/Discard, and sign-out pins
+Keep/Discard after the bounded flush. `platform/sync/react.js` exports `useSyncEngine()` and
+`useSyncRecords(scope)`. The anonymous journal uses record observations; Gym retains its account gate.
+The worker stages the shell and room dependencies listed by `offline-assets.json` in one verified
+cache generation before promoting it; a failed update retains the previous complete shell. The build
+enforces a 4 MiB precache budget. Neural search loads its worker and WASM runtime on first search use.
+API/model responses bypass the worker, and bounded network navigation falls back to the cached shell.
+Server features name their connection requirement in the offline state.

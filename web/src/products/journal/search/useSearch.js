@@ -1,16 +1,18 @@
 // Owns the on-device index: the first open builds the lexical index, then the neural model loads in the
 // background and the same corpus is rebuilt, swapped in with a `version` bump so a query on screen
 // re-ranks. If the model never loads, search stays lexical, and the query never leaves the device either
-// way. The corpus is the account's pages and this device's (pageStore.js `corpus`); `source` rides out
+// way. The corpus is the account's pages and this device's (pages.js `corpus`); `source` rides out
 // with the results. The index belongs to one account and is dropped when `account` changes.
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { corpus } from '../pageStore.js';
+import { corpus, SCOPE } from '../pages.js';
+import { useSyncRecords } from '../../../platform/sync/react.js';
 import { SearchIndex } from './searchIndex.js';
 import { LexicalEmbedder } from './embedders.js';
-import { NeuralEmbedder } from './neural/neuralEmbedder.js';
 
 export function useSearch(active, account = null) {
+  const records = useSyncRecords(SCOPE);
+  const build = useRef(0);
   const activeIndexRef = useRef(null);
   const neuralRef = useRef(null);
   const aliveRef = useRef(true);
@@ -23,55 +25,58 @@ export function useSearch(active, account = null) {
   const [source, setSource] = useState('account'); // where the indexed pages came from
 
   useEffect(() => {
-    if (builtForRef.current === account) return;
+    if (!active) return;
     // Whatever is in hand was built for somebody else: it stops answering the moment the account changes.
     activeIndexRef.current = null;
     setReady(false);
     setMode('lexical');
-    if (!active) return;   // rebuilt on the next open, for whoever is signed in by then
-    builtForRef.current = account;
-    const generation = account;
+    builtForRef.current = { account, replica: records.replica };
+    const generation = ++build.current;
+    neuralRef.current?.dispose();
     (async () => {
       setIndexing(true);
       const read = await corpus({ account });
       const pages = read.pages;
-      if (!aliveRef.current || builtForRef.current !== generation) return;
+      if (!aliveRef.current || build.current !== generation) return;
       setSource(read.source);
 
       const lexical = new SearchIndex(new LexicalEmbedder());
       await lexical.ingest(pages);
-      if (!aliveRef.current || builtForRef.current !== generation) return;
+      if (!aliveRef.current || build.current !== generation) return;
       activeIndexRef.current = lexical;
       setReady(true);
       setIndexing(false);
       setVersion((v) => v + 1);
 
       try {
+        const { NeuralEmbedder } = await import('./neural/neuralEmbedder.js');
+        if (!aliveRef.current || build.current !== generation) return;
         const neural = new NeuralEmbedder();
         neuralRef.current = neural;
         await neural.ready;
-        if (!aliveRef.current || builtForRef.current !== generation) return;
+        if (!aliveRef.current || build.current !== generation) return;
         setSharpening(true);
         const meaning = new SearchIndex(neural);
         await meaning.ingest(pages);
-        if (!aliveRef.current || builtForRef.current !== generation) return;
+        if (!aliveRef.current || build.current !== generation) return;
         activeIndexRef.current = meaning;
         setMode('neural');
         setSharpening(false);
         setVersion((v) => v + 1);
       } catch {
-        if (aliveRef.current) setSharpening(false);   // no model — search stays lexical, silently
+        if (aliveRef.current && build.current === generation) setSharpening(false);   // no model — search stays lexical, silently
       }
     })();
-  }, [active, account]);
+  }, [active, account, records]);
 
-  useEffect(() => () => { aliveRef.current = false; neuralRef.current?.dispose(); }, []);
+  useEffect(() => { aliveRef.current = true; return () => { aliveRef.current = false; build.current++; neuralRef.current?.dispose(); }; }, []);
 
   const search = useCallback(async (text) => {
     const index = activeIndexRef.current;
-    if (!index || !text.trim()) return [];
+    if (!index || builtForRef.current?.account !== account || builtForRef.current?.replica !== records.replica || !text.trim()) return [];
     return index.query(text.trim());
-  }, []);
+  }, [account, records.replica]);
 
-  return { ready, indexing, sharpening, mode, version, source, search };
+  return { ready: ready && builtForRef.current?.account === account && builtForRef.current?.replica === records.replica,
+    indexing, sharpening, mode, version, source, search };
 }

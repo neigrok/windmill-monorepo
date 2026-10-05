@@ -1,5 +1,5 @@
-// A product may only be handed an account the server confirmed on this document load, and
-// confirmation lives in memory, never in storage. Replacing a confirmed account with a different
+// The session owner confirms the account with the server, or restores an offline bound replica whose
+// account matches the cached hint. Replacing a confirmed account with a different
 // one makes every product forget its device residue; a ghost becoming signed-in is not a replacement.
 
 import { PRODUCTS } from '../products.js';

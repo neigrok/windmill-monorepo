@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import { gymApi, GymError } from '../../../src/products/gym/gymApi.js';
+import { GymError } from '../../../src/products/gym/gymApi.js';
+import { screenApi as gymApi } from './legacyScreenApi.mjs';
 import { browserWith, elementsOf, findByClass, loadScreen, renderHook, roomLog, settle, textOf } from './harness.mjs';
 
 function proposal(over = {}) {

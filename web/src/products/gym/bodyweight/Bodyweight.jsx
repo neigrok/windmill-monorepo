@@ -1,10 +1,11 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button, DotChart, Tabs } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { gymApi } from '../gymApi.js';
+
 import { BODYWEIGHT_HREF, dayLabel } from '../log.js';
 import { weightUnit } from '../units.js';
 import { useGymRead } from '../useGymRead.js';
+import { useGymApi } from '../gymSync.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
   dateLocalOf, DEFAULT_WINDOW, DELETE_FAILED, DELETE_VERB, entriesAfter, FAILED,
@@ -13,7 +14,7 @@ import {
   WEIGH_IN_DELETED, WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
 } from './bodyweight.js';
 
-// The series, read once, with this screen's own writes folded over it until the next read, and
+// The projected series, with this screen's own writes folded over it until the next snapshot, and
 // answered TWICE: `entries` is what the ACCOUNT holds — the read, less the days the store has
 // answered a delete for — and `rows` is what the withheld window leaves to draw. A screen's stance
 // reads the account and its rows read the window: a window decides which rows are drawn and never
@@ -25,8 +26,10 @@ import {
 // is reading a number off. A weigh-in's id is its local date — the one id in this room a lifter can
 // write again, which takes the delete back and puts the day back in both answers at once.
 export function useBodyweight(log) {
-  const view = useGymRead(() => gymApi.bodyweight(), []);
+  const api = useGymApi();
+  const view = useGymRead(() => api.bodyweight(), [], { sync: true, ready: api.ready !== false });
   const [moves, setMoves] = useState(() => new Map());
+  useEffect(() => setMoves(new Map()), [view.data]);
   const gone = log.gone('bodyweight');
   const hidden = log.hidden('bodyweight');
   const entries = entriesAfter(view.data?.entries, moves).filter((entry) => !gone.has(entry.dateLocal));
@@ -38,7 +41,7 @@ export function useBodyweight(log) {
     // lifter just typed is what stands, and no clock is left to destroy it.
     log.writtenAgain('bodyweight', write.dateLocal);
     try {
-      const stored = await gymApi.saveBodyweight(write.dateLocal, write);
+      const stored = await api.saveBodyweight(write.dateLocal, write);
       setMoves((current) => new Map(current).set(stored.dateLocal, stored));
       return null;
     } catch (error) {
@@ -46,14 +49,13 @@ export function useBodyweight(log) {
     }
   };
 
-  // Withheld like every other delete in this room: nothing reaches the store for the length of the
-  // window, and the transient carries the only way back. The window abandons what it holds when the
-  // room leaves the foreground, so a weigh-in abandoned on backgrounding puts its dot back.
+  // The death is durable; the transient offers Undo until the engine releases it.
   const remove = (dateLocal) => log.withhold({
     kind: 'bodyweight',
     id: dateLocal,
+    engineDeath: { type: 'weighin', id: dateLocal },
     line: WEIGH_IN_DELETED,
-    send: () => gymApi.deleteBodyweight(dateLocal),
+    send: () => api.deleteBodyweight(dateLocal),
     refused: () => log.say(DELETE_FAILED),
   });
 

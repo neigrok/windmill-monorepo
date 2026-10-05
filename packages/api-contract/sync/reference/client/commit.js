@@ -63,17 +63,36 @@ class DeltaBuilder {
     }
   }
 
-  // A command's prediction: a create or an update of any field, server-written ones included.
+  // A command's prediction may write server fields and text, and change record presence.
   predicted(change) {
     const type = this.typeOf(change);
     const current = this.drawnView.get(recordKey(change.t, change.id));
     const delta = { t: change.t, id: change.id };
+    if (change.op === 'delete') {
+      if (!type.life) throw new CommitError(`${type.type} has no life`);
+      if (type.hasBorn) {
+        if (!current) throw new CommitError(`predicted delete of ${change.t} ${change.id} absent from drawn`);
+        delta.born = current.born;
+      }
+      delta.life = ['dead', this.stamp];
+      return delta;
+    }
+    if (!['create', 'update', 'put', 'write'].includes(change.op)) throw new CommitError('a prediction is a create, update, delete, put or write');
     if (change.op === 'create' && type.life) {
       delta.born = this.stamp;
       delta.life = ['alive', this.stamp];
     } else if (type.hasBorn) {
       if (!current) throw new CommitError(`predicted update of ${change.t} ${change.id} absent from drawn`);
       delta.born = current.born;
+    }
+    if (change.op === 'put' && type.identity === 'keyed' && type.life) {
+      if (change.present === undefined && !current) throw new CommitError(`predicted put keeping the presence of ${change.t} ${change.id} absent from drawn`);
+      const presentBefore = current?.life?.[0] === 'alive';
+      const present = change.present ?? presentBefore;
+      let life = current?.life;
+      if (present && (!presentBefore || type.wholePut)) life = ['alive', this.stamp];
+      if (!present && presentBefore) life = ['dead', this.stamp];
+      if (life !== undefined) delta.life = life;
     }
     const f = this.fields(type, change.f, change.op === 'create' ? undefined : current, { server: true });
     if (Object.keys(f).length) delta.f = f;

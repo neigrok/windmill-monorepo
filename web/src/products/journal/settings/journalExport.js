@@ -2,7 +2,7 @@
 // and at full precision — a zero is an answer and prints; unset omits the line.
 
 import { journalApi } from '../journalApi.js';
-import { isWritten, normalizePage } from '../pageCache.js';
+import { isWritten, normalizePage } from '../pages.js';
 
 export function journalMarkdown(pages) {
   const written = pages.map(normalizePage).filter(isWritten).sort((a, b) => (a.day < b.day ? -1 : 1));

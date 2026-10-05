@@ -46,7 +46,7 @@ export async function verifyToken(token) {
 
 export async function fetchMe() {
   try {
-    const response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include' });
+    const response = await fetch(`${API_BASE}/v1/me`, { credentials: 'include', signal: AbortSignal.timeout(10000) });
     if (response.status === 401) return null;
     if (!response.ok) return undefined;
     const body = await response.json();
@@ -58,7 +58,8 @@ export async function fetchMe() {
 
 export async function logout() {
   try { sessionStorage.removeItem(LINK_SENT_KEY); } catch { /* storage unavailable */ }
-  await fetch(`${API_BASE}/v1/auth/logout`, { method: 'POST', credentials: 'include' }).catch(() => {});
+  const response = await fetch(`${API_BASE}/v1/auth/logout`, { method: 'POST', credentials: 'include', signal: AbortSignal.timeout(10000) });
+  if (!response.ok) throw new AuthError('Sign out failed', { code: 'unreachable', status: response.status });
 }
 
 async function send(path, body) {

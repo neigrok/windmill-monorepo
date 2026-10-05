@@ -19,16 +19,14 @@ test('preview filters narrow the chosen scope, and public navigation retains eve
   assert.equal(publicLogHref('safe token', { year: 2024, month: 2, exercise: 'bench', routine: 'push', density: 'compact', selected: 's3' }), '#/gym/shared-log/safe%20token?year=2024&month=02&exercise=bench&routine=push&density=compact&session=s3');
 });
 
-test('preview is an owner read without link mutation; recipient reads omit credentials and request complete progress', async (t) => {
+test('recipient reads omit credentials and request complete progress', async (t) => {
   const requests = [];
   t.mock.method(globalThis, 'fetch', async (url, options) => {
     requests.push({ path: new URL(url).pathname + new URL(url).search, ...options });
     return { ok: true, status: 200, json: async () => ({ sessions: [] }) };
   });
-  await logShareApi.preview({ from: 100, until: 500 });
   await logShareApi.read('token', { limit: 50 });
   assert.deepEqual(requests, [
-    { path: '/v1/gym/history?from=100&until=500&projection=progress', credentials: 'include', headers: { 'content-type': 'application/json' } },
     { path: '/v1/gym/shared-logs/token?limit=50&projection=progress', credentials: 'omit', headers: { 'content-type': 'application/json' } },
   ]);
 });

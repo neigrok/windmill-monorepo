@@ -1,35 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { compareStamps, mintStamp, localDay, daysBefore, msUntilNextDay, watchLocalDay } from '../../../src/products/journal/hlc.js';
-
-test('compareStamps — milliseconds, then counter, then actor, in that order', () => {
-  assert.equal(compareStamps('1700:0:a', '1699:9:z'), 1);
-  assert.equal(compareStamps('1700:0:z', '1700:1:a'), -1);
-  assert.equal(compareStamps('1700:3:b', '1700:3:a'), 1);
-  assert.equal(compareStamps('1700:3:a', '1700:3:a'), 0);
-});
-
-// Everything past the second colon is the actor, exactly as the server parses it.
-test('compareStamps — the actor keeps every colon it contains', () => {
-  assert.equal(compareStamps('1700:0:d:1', '1700:0:d:0'), 1);
-  assert.equal(compareStamps('1700:0:d:0', '1700:0:d:0'), 0);
-});
-
-// An unparseable stamp reads as zero and loses every race; '' is what an unstamped held draft carries.
-test('compareStamps — anything unparseable, and the empty stamp, read as zero', () => {
-  assert.equal(compareStamps('', '0:0:'), 0);
-  assert.equal(compareStamps('nonsense', '1:0:a'), -1);
-  assert.equal(compareStamps('1:0:a', ''), 1);
-  assert.equal(compareStamps(undefined, ''), 0);
-});
-
-test('mintStamp — strictly increasing within one millisecond, and parseable', () => {
-  const first = mintStamp();
-  const second = mintStamp();
-  assert.equal(compareStamps(second, first), 1);
-  assert.equal(first.split(':').length >= 3, true);
-});
+import { localDay, daysBefore, msUntilNextDay, watchLocalDay } from '../../../src/products/journal/hlc.js';
 
 test('localDay and daysBefore — the writer’s own calendar, never UTC', () => {
   assert.equal(localDay(new Date(2026, 7, 7, 23, 59)), '2026-08-07');

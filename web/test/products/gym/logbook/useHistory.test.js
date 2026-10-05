@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { useHistory, useHistoryDates } from '../../../../src/products/gym/logbook/useHistory.js';
+import { syncSession } from '../../../../src/platform/sync/session.js';
 import { renderHook, settle } from '../harness.mjs';
 
 test('history appends once and a changed filter never draws or appends an old scope', async (t) => {
@@ -51,4 +52,83 @@ test('date facets ignore date selection, track other filters and carry the local
   reads[1].resolve({ months: [{ month: '2026-09', sessions: 1 }] });
   await settle();
   assert.deepEqual(screen.log.months, [{ month: '2026-09', sessions: 1 }]);
+});
+
+test('local history reacts to sync while a token-scoped REST reader keeps its existing request', async (t) => {
+  let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  t.mock.method(syncSession, 'getSnapshot', () => session);
+  const calls = [];
+  const api = { sync: true, history: async (query) => { calls.push(query); return { sessions: [{ id: String(calls.length) }], next: null }; } };
+  let publicReads = 0;
+  const rest = { history: async () => { publicReads += 1; return { sessions: [], next: null }; } };
+  const local = renderHook(t, () => useHistory({}, 0, api));
+  const shared = renderHook(t, () => useHistory({}, 0, rest));
+  await settle();
+  assert.deepEqual(local.log.data.sessions, [{ id: '1' }]);
+  records = { ...records, drawn: [{ id: 'phone-workout' }] };
+  local.redraw(); shared.redraw();
+  assert.deepEqual(local.log.data.sessions, [{ id: '1' }]);
+  assert.equal(local.log.phase, 'ready');
+  await settle();
+  assert.deepEqual(local.log.data.sessions, [{ id: '2' }]);
+  assert.equal(calls.length, 2);
+  assert.equal(publicReads, 1);
+});
+
+test('a sync refresh preserves every loaded row past the projection page limit', async (t) => {
+  let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  t.mock.method(syncSession, 'getSnapshot', () => session);
+  let rows = Array.from({ length: 320 }, (_, index) => ({ id: `workout-${index}`, startedAt: 320 - index }));
+  const calls = [];
+  const api = { sync: true, history: async (query) => {
+    calls.push(query);
+    const available = rows.filter((row) => row.startedAt < (query.before ?? Infinity));
+    const sessions = available.slice(0, Math.min(200, query.limit));
+    const last = sessions.at(-1);
+    return { sessions, next: available.length > sessions.length ? { before: last.startedAt, beforeId: last.id } : null };
+  } };
+  const screen = renderHook(t, () => useHistory({}, 0, api));
+  await settle();
+  for (let page = 0; page < 4; page += 1) await screen.log.load();
+  assert.equal(screen.log.data.sessions.length, 250);
+  rows = [{ id: 'phone-workout', startedAt: 321 }, ...rows];
+  records = { ...records, drawn: [{ id: 'phone-workout' }] };
+  screen.redraw();
+  await settle();
+  assert.deepEqual(calls.slice(-2).map((query) => query.limit), [200, 50]);
+  assert.deepEqual(screen.log.data.sessions, rows.slice(0, 250));
+  assert.deepEqual(screen.log.data.next, { before: rows[249].startedAt, beforeId: rows[249].id });
+});
+
+test('a refresh whose continuation stalls fails while retaining the loaded history', async (t) => {
+  let records = { replica: null, drawn: [], stored: [], notices: [], firstPullComplete: true };
+  const observation = { subscribe: () => () => {}, getSnapshot: () => records };
+  const session = { ready: true, signedIn: false, engine: { observe: () => observation } };
+  t.mock.method(syncSession, 'getSnapshot', () => session);
+  const rows = Array.from({ length: 250 }, (_, index) => ({ id: String(index) }));
+  let refresh = false;
+  let calls = 0;
+  const api = { sync: true, history: async (query) => {
+    calls += 1;
+    if (refresh) return { sessions: query.before ? [] : rows.slice(0, 200), next: { before: 1, beforeId: 'same' } };
+    const start = query.before ?? 0;
+    const sessions = rows.slice(start, start + query.limit);
+    return { sessions, next: start + sessions.length < rows.length ? { before: start + sessions.length } : null };
+  } };
+  const screen = renderHook(t, () => useHistory({}, 0, api));
+  await settle();
+  for (let page = 0; page < 4; page += 1) await screen.log.load();
+  assert.deepEqual(screen.log.data.sessions, rows);
+  refresh = true;
+  records = { ...records, drawn: [{ id: 'phone' }] };
+  screen.redraw();
+  await settle();
+  assert.equal(calls, 7);
+  assert.equal(screen.log.phase, 'failed');
+  assert.equal(screen.log.failure, true);
+  assert.deepEqual(screen.log.data.sessions, rows);
 });

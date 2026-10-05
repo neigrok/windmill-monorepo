@@ -1,9 +1,10 @@
 // This week as a small arc, then every month as a row of day cells; tapping a day flies the canvas there.
-// Read-only, over the account's pages and this device's (pageStore.js `corpus`). A year it could not read
+// Read-only, over the account's pages and this device's (pages.js `corpus`). A year it could not read
 // says so rather than drawing a grid of empty squares.
 
 import React, { useEffect, useMemo, useState } from 'react';
-import { corpus } from '../pageStore.js';
+import { corpus, SCOPE } from '../pages.js';
+import { useSyncRecords } from '../../../platform/sync/react.js';
 import { useToday } from '../usePages.js';
 import { buildYear } from './yearGrid.js';
 import { weekReadout } from './weekReadout.js';
@@ -25,6 +26,7 @@ function dow(iso) {
 }
 
 export function ZoomView({ onClose, onPick, account = null }) {
+  const records = useSyncRecords(SCOPE);
   const [read, setRead] = useState(null);
   const pages = read?.pages ?? null;
   const today = useToday();
@@ -33,7 +35,7 @@ export function ZoomView({ onClose, onPick, account = null }) {
     let cancelled = false;
     corpus({ account }).then((loaded) => { if (!cancelled) setRead(loaded); });
     return () => { cancelled = true; };
-  }, [account]);
+  }, [account, records]);
 
   useEffect(() => {
     const onKey = (event) => { if (event.key === 'Escape') onClose(); };

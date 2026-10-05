@@ -1,6 +1,6 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { Button } from '../../design-system/index.js';
-import { failureReason, gymApi } from './gymApi.js';
+import { failureReason } from './gymApi.js';
 import { arrivedLabel, nameOfMovement, proposalHref, recordHref, threadHref } from './log.js';
 import {
   atomicLine, collapseKept, conversationOf, CONVERSATION_VERB, countedLabel, diffRows,
@@ -8,11 +8,13 @@ import {
   sourceLabel, stateChip, summaryLine, TURN_DOWN_VERB,
 } from './proposals.js';
 import { useGymRead } from './useGymRead.js';
+import { useGymApi } from './gymSync.js';
 import './coach/coach.css';
 
 export function ProposalPreview({ routine, onExpand, log }) {
+  const api = useGymApi();
   const id = routine.pendingProposal.id;
-  const view = useGymRead(() => gymApi.proposal(id), [id]);
+  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: api.ready !== false });
   const changed = view.data ? diffRows(view.data).filter((row) => row.kind !== 'kept') : [];
   return <section className="gym-routine-review" aria-label={`Pending change to ${routine.name}`}>
     <header><span className="gym-proposal-name">{countedLabel(routine.pendingProposal)}</span><a className="gym-proposal-review" href={proposalHref(id)} onClick={(event) => { event.preventDefault(); onExpand(id); }}>Review</a></header>
@@ -22,8 +24,10 @@ export function ProposalPreview({ routine, onExpand, log }) {
 }
 
 export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inConversation = false }) {
-  const view = useGymRead(() => gymApi.proposal(id), [id]);
+  const api = useGymApi();
+  const view = useGymRead(() => api.proposal(id), [id], { sync: true, ready: api.ready !== false });
   const [settled, setSettled] = useState(null);
+  useEffect(() => setSettled(null), [view.data]);
   const [busy, setBusy] = useState(false);
   const [expanded, setExpanded] = useState(() => new Set());
   const [refusal, setRefusal] = useState('');
@@ -36,7 +40,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
     setBusy(true);
     setRefusal('');
     try {
-      const answer = verb === 'apply' ? await gymApi.applyProposal(id) : await gymApi.dismissProposal(id);
+      const answer = verb === 'apply' ? await api.applyProposal(id) : await api.dismissProposal(id);
       const stored = answer?.proposal ?? { ...proposal, state: verb === 'apply' ? 'applied' : 'dismissed' };
       setSettled(stored);
       onSettled?.({ verb, proposal: stored });
@@ -59,7 +63,7 @@ export function ProposalPanel({ id, log, onChanged = null, onSettled = null, inC
   </article>;
 
   return <article className={`gym-coach-proposal gym-proposal-inline is-${proposal.state}`}>
-    <p className="gym-proposal-kicker"><span className="gym-proposal-name">{proposal.baseName}</span><span>{` · ${countedLabel(proposal)}`}</span></p>
+    <p className="gym-proposal-kicker">{proposal.baseName && <span className="gym-proposal-name">{proposal.baseName}</span>}<span>{`${proposal.baseName ? ' · ' : ''}${countedLabel(proposal)}`}</span></p>
     {proposal.source?.door !== 'ask' && <p className="gym-proposal-from">{`from ${sourceLabel(proposal.source)} · ${arrivedLabel(proposal.createdAt)}`}</p>}
     {!inConversation && conversationOf(proposal.source) && <a className="gym-proposal-thread" href={threadHref(conversationOf(proposal.source))}>{CONVERSATION_VERB}</a>}
     {log.session && pending && <p className="gym-proposal-caveat">{MID_WORKOUT_CAVEAT}</p>}

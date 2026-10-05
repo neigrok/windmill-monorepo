@@ -1,7 +1,7 @@
 import React, { useRef, useState } from 'react';
 import { Button } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason, gymApi } from './gymApi.js';
+import { failureReason } from './gymApi.js';
 import {
   cappedName, entryLabel, fromSession, isFirstSession, nameOfMovement, recordHref, routineNameOf, sessionHref,
   weekdayName,
@@ -11,16 +11,19 @@ import { comparison, finishHead, RECORD_TITLE, recordSentence, SESSION_DELETED, 
 import { NAME_IT_TO_SAVE_IT, routineFromSession } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
+import { useGymApi } from './gymSync.js';
 
 export function FinishScreen({ id, log }) {
+  const api = useGymApi();
   const view = useGymRead(
     () => Promise.all([
-      gymApi.session(id),
-      gymApi.review(id),
-      gymApi.exercises(),
-      gymApi.sessions({ limit: 2 }),
+      api.session(id),
+      api.review(id),
+      api.exercises(),
+      api.sessions({ limit: 2 }),
     ]).then(([detail, review, catalog, recent]) => (detail ? { detail, review, catalog, recent } : null)),
     [id],
+    { sync: true, ready: api.ready !== false },
   );
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the review…</p>;
@@ -105,17 +108,19 @@ export function FinishScreen({ id, log }) {
   );
 }
 
-// Discarding a workout is a withheld delete like the others: the session leaves the log at once,
-// nothing reaches the store for the length of the window, and the transient carries the way back.
+// Discarding a workout is a durable held death: the session leaves the mirror at once,
+// and the transient carries the way back until release.
 // There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
+  const api = useGymApi();
   const discard = () => {
     log.withhold({
       kind: 'session',
       id,
+      engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
       send: async () => {
-        await gymApi.discardSession(id);
+        await api.discardSession(id);
         await log.reloadLog();
       },
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
@@ -137,6 +142,7 @@ function ShortSession({ id, log }) {
 }
 
 function KeepAsRoutine({ session, sets, catalog, log }) {
+  const api = useGymApi();
   const [name, setName] = useState(() => weekdayName(session.startedAt));
   const [offered, setOffered] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -176,7 +182,7 @@ function KeepAsRoutine({ session, sets, catalog, log }) {
             if (name.trim() === '' || saving) return;
             setSaving(true);
             try {
-              await gymApi.createRoutine(composed);
+              await api.createRoutine(composed);
               setOffered(false);
               log.say(`${name.trim()} is in your routines.`);
             } catch (error) {

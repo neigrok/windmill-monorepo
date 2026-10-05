@@ -6,23 +6,34 @@
   "description": "Windmill \u2014 roadmap tracker that renders any roadmap as an RPG skill tree. Design-system component library.",
   "scripts": {
     "dev": "vite",
-    "test": "node --test --test-timeout=30000 test/",
+    "test": "node scripts/test.mjs",
+    "test:sync": "node scripts/test.mjs test/platform/sync",
+    "test:sync:properties": "node --test --test-timeout=30000 test/platform/sync/core/merge.test.js test/platform/sync/core/fracindex.test.js test/platform/sync/core/digest.test.js test/platform/sync/client/convergence.test.js test/platform/sync/client/refusal.test.js test/platform/sync/properties.test.js",
+    "test:sync:fuzz": "FUZZ_N=500 FUZZ_SEED=1 FUZZ_STEPS=300 node scripts/test.mjs test/platform/sync/fuzz",
     "prebuild": "node scripts/fetch-model.mjs",
-    "build": "node --test --test-timeout=30000 test/ && vite build && node scripts/build-landing-shells.mjs",
+    "build": "node scripts/install-sync-browser.mjs && node scripts/test.mjs && node scripts/check-sync-browser.mjs && vite build && node scripts/build-landing-shells.mjs",
     "preview": "vite preview",
-    "test:model": "node scripts/verify-model.mjs"
+    "test:model": "node scripts/verify-model.mjs",
+    "pretest": "node scripts/install-sync-browser.mjs",
+    "pretest:sync": "node scripts/install-sync-browser.mjs",
+    "test:sync:browser": "node scripts/install-sync-browser.mjs && node --test --test-timeout=30000 test/platform/sync/browser.test.js test/platform/sync/transport-browser.test.js",
+    "test:sync:server": "node scripts/replay-sync-server.mjs",
+    "test:journal:server": "node scripts/install-sync-browser.mjs && node scripts/e2e-journal.mjs"
   },
   "dependencies": {
     "@fontsource/baloo-2": "^5.2.7",
     "@fontsource/jetbrains-mono": "^5.2.8",
     "@fontsource/nunito": "^5.2.7",
     "@huggingface/transformers": "3.8.1",
+    "@noble/hashes": "^1.8.0",
     "lucide-react": "^0.400.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1"
   },
   "devDependencies": {
     "@vitejs/plugin-react": "^4.3.4",
+    "fake-indexeddb": "^6.2.4",
+    "playwright": "^1.58.2",
     "vite": "^5.4.11"
   }
 }

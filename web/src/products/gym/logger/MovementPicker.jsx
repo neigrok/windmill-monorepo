@@ -1,8 +1,9 @@
 import React, { useRef, useState } from 'react';
 import { Button, Icon, Input } from '../../../design-system/index.js';
-import { gymApi } from '../gymApi.js';
+
 import { cappedName, isNameOverCap, nameCountLabel, showsNameCount } from '../log.js';
 import { useGymRead } from '../useGymRead.js';
+import { useGymApi } from '../gymSync.js';
 import {
   DEFAULT_EQUIPMENT, EQUIPMENT_CHOICES, FEATURED_HEAD, lastSetLabel, lastSetsById, movementOptions,
   TRAINED_WINDOW,
@@ -14,17 +15,18 @@ import {
 // The window is read once, at the first read that ANSWERS: a picker opened before the log has
 // landed would otherwise keep the generic openers for its whole life, so an empty window is
 // re-seeded on every render until one arrives. The moment it holds sessions it is frozen — the log
-// behind it keeps moving — the mirror's poll lands a finished session, Older appends a page — and
+// behind it keeps moving — sync receives a finished session, Older appends a page — and
 // the six may not reshuffle under a finger that is already reaching for one of them.
 export function MovementPicker({
   catalog, order = [], sessions = [], query, onQuery, onPick, onCreate, onClose, title = 'Movements', pane = false,
 }) {
+  const api = useGymApi();
   const held = useRef([]);
   if (held.current.length === 0) held.current = sessions.slice(0, TRAINED_WINDOW);
   const opened = held.current;
   const { featured, matches, empty, create } = movementOptions({ catalog, order, query, sessions: opened });
   const [minting, setMinting] = useState(null);
-  const last = useGymRead(() => gymApi.lastSets(), []);
+  const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: api.ready !== false });
   const meta = last.phase === 'ready' ? lastSetsById(last.data) : null;
   const row = (each) => (
     <li key={each.id}>

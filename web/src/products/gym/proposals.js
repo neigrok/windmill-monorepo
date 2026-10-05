@@ -56,6 +56,7 @@ export function conversationOf(source) {
 }
 
 export function changeLabel(count) {
+  if (typeof count !== 'number') return 'changes';
   return count === 1 ? '1 change' : `${count} changes`;
 }
 
@@ -64,8 +65,8 @@ export const REVIEW_VERB = 'Review';
 
 // The store's count and not the rows this screen drew: the store is what applies.
 export function applyLabel(proposal) {
-  if (proposal.intent === 'remove') return `Remove ${proposal.baseName}`;
-  if (proposal.changeCount === 1) return 'Apply';
+  if (proposal.intent === 'remove') return proposal.baseName ? `Remove ${proposal.baseName}` : 'Remove routine';
+  if (proposal.changeCount === 1 || typeof proposal.changeCount !== 'number') return 'Apply';
   return `Apply all ${proposal.changeCount}`;
 }
 
@@ -74,6 +75,7 @@ export function atomicLine(proposal) {
   if (proposal.intent === 'remove') {
     return 'Removes the routine from your program · every logged set stays.';
   }
+  if (typeof proposal.changeCount !== 'number') return 'Nothing is applied until you tap.';
   return `All ${numberWord(proposal.changeCount)} or none. Nothing is applied until you tap.`;
 }
 
@@ -121,14 +123,14 @@ export function historyLabel(head) {
 export function settledLine(proposal, now = Date.now()) {
   const when = `${agoLabel(proposal.settledAt, now)} at ${timeLabel(proposal.settledAt)}`;
   if (proposal.state === 'applied') {
-    return `Applied to ${proposal.baseName} ${when}. Kept on the routine as a dated record — the program’s history, not a toast that disappears.`;
+    return `Applied to ${proposal.baseName ?? 'the routine'} ${when}. Kept on the routine as a dated record — the program’s history, not a toast that disappears.`;
   }
   // A record and never a way back: the wire has no path that reopens one.
   if (proposal.state === 'dismissed') {
     return `Turned down ${when}. Nothing changed, and it stays in the routine’s history as a record.`;
   }
   if (proposal.state === 'superseded') {
-    return `${proposal.baseName} changed ${when}, after this was written. Nothing from it was applied, and it stays in the routine’s history.`;
+    return `${proposal.baseName ?? 'The routine'} changed ${when}, after this was written. Nothing from it was applied, and it stays in the routine’s history.`;
   }
   return null;
 }
@@ -198,7 +200,7 @@ export function collapseKept(rows, expanded = new Set()) {
 // Settled receipts use the stored proposal state and server count, never the model's prose.
 export function receiptLine({ verb, proposal }) {
   if (verb === 'dismiss') return 'Turned down · nothing changed.';
-  const name = proposal?.name ?? proposal?.baseName;
+  const name = proposal?.name ?? proposal?.baseName ?? 'routine';
   if (proposal?.intent === 'remove') return `Applied · ${name} · routine removed`;
   if (typeof proposal?.changeCount !== 'number') return `Applied · ${name}`;
   return `Applied · ${name} · ${changeLabel(proposal.changeCount)}`;
@@ -266,7 +268,7 @@ export function documentLine(proposal) {
 // order moving.
 export function diffRows(proposal) {
   const rows = [];
-  if (typeof proposal.name === 'string' && proposal.name !== proposal.baseName) {
+  if (typeof proposal.name === 'string' && typeof proposal.baseName === 'string' && proposal.name !== proposal.baseName) {
     rows.push({ kind: 'renamed', from: proposal.baseName, to: proposal.name });
   }
   const changes = proposal.changes ?? [];

@@ -1,16 +1,23 @@
-// Every call is cookie-credentialed with the wm_session the shell holds, and same-origin in production.
+// Server features use the session cookie. Page reads come from the active browser replica.
 
+import { corpus } from './pages.js';
+import { captureError } from '../../telemetry/sentry.js';
+import { syncSession } from '../../platform/sync/session.js';
 import { API_BASE } from '../../shell/apiBase.js';
 
 const base = `${API_BASE}/v1/journal`;
 
 async function call(path, options = {}) {
-  const response = await fetch(`${base}${path}`, {
-    credentials: 'include',
-    ...options,
-    headers: { 'content-type': 'application/json', ...(options.headers || {}) },
-  });
-  return response;
+  try {
+    const response = await fetch(`${base}${path}`, {
+      credentials: 'include',
+      ...options,
+      headers: { 'content-type': 'application/json', ...(options.headers || {}) },
+      signal: options.signal ?? AbortSignal.timeout(30000),
+    });
+    if (response.status >= 500) captureError('journal', 'journal-rest', '', '/journal');
+    return response;
+  } catch (error) { captureError('journal', 'journal-rest', '', '/journal'); throw error; }
 }
 
 async function json(response) {
@@ -31,30 +38,11 @@ export class JournalError extends Error {
 }
 
 export const journalApi = {
-  // A single day; null on a 404, which is a day never written rather than an error.
   async page(date) {
-    const response = await call(`/page/${date}`);
-    if (response.status === 404) return null;
-    return json(response);
+    return (await corpus({ account: syncSession.engine?.device.activeReplica.meta.account ?? null })).pages.find((page) => page.day === date) ?? null;
   },
-
-  // `stamp` is the device's HLC (hlc.js), the sole convergence key; the reply is whatever won the upsert.
-  async putPage(date, { body, mood, energy, source, stamp }) {
-    return json(await call(`/page/${date}`, {
-      method: 'PUT',
-      body: JSON.stringify({ body, mood, energy, source, stamp }),
-    }));
-  },
-
-  // A window of the canvas [from, to] (ISO dates), oldest first.
-  async range(from, to) {
-    return (await json(await call(`/pages?from=${from}&to=${to}`))).pages;
-  },
-
-  // The whole corpus, ascending by day. `/pages` with no parameters is uncapped; the `since` feed clamps
-  // to 1000 and orders by stamp, so it must not be used for this.
   async allPages() {
-    return (await json(await call('/pages'))).pages;
+    return (await corpus({ account: syncSession.engine?.device.activeReplica.meta.account ?? null })).pages;
   },
 
   async exportAll() {

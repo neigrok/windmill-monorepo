@@ -34,9 +34,9 @@ test('the routine row’s overflow is Log past above Delete, and no surface offe
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
   // The gate 13-gestures.md put in front of Delete is met: it is withheld, and the room's window is
   // the only thing that ever sends it.
-  assert.equal((source.match(/gymApi\.deleteRoutine/g) ?? []).length, 1);
+  assert.equal((source.match(/api\.deleteRoutine/g) ?? []).length, 1);
   assert.equal(source.includes("log.withhold({\n    kind: 'routine',"), true);
-  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf('gymApi.deleteRoutine'));
+  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf('api.deleteRoutine'));
 });
 
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
@@ -391,17 +391,17 @@ test('a deleted set is withheld for the window, never sent and re-posted, and th
   assert.equal(source.includes('setTimeout'), false, 'the screen arms no clock of its own');
   assert.equal(source.includes('UNDO_MS'), false);
   assert.equal(source.includes("kind: 'set',"), true);
-  assert.ok(source.indexOf('withhold({') < source.indexOf('gymApi.deleteSet'));
+  assert.ok(source.indexOf('withhold({') < source.indexOf('api.deleteSet'));
   const room = read('useTrainingLog.js');
   assert.equal(room.includes('clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));'), true);
   assert.equal(room.includes("import { UNDO_MS } from './fix.js';"), true);
 });
 
-test('the window lives only while the room is on screen: leaving it commits nothing', () => {
+test('leaving the room retires its UI clocks without sending a REST delete', () => {
   const room = read('useTrainingLog.js');
   // The room's one unmount cleanup. A send here would settle a delete past every way back, reached
   // by an ordinary pair of acts — swipe, then leave — which is the hazard the window exists to close.
-  const teardown = /useEffect\(\(\) => \(\) => \{([\s\S]*?)\n  \}, \[\]\);/.exec(room);
+  const teardown = /roomLive\.current = true;\n    return \(\) => \{([\s\S]*?)\n    \};/.exec(room);
   assert.notEqual(teardown, null, 'the room lost its unmount cleanup');
   assert.equal(/send/.test(teardown[1]), false, 'the room commits a held delete on the way out');
   assert.equal(teardown[1].includes('clocks.current.clear();'), true, 'a clock outlives the room');
@@ -434,7 +434,7 @@ test('a said sentence stands exactly as long as a withheld delete is held', () =
 test('the toast’s own clock clears only that toast, never the one said after it', () => {
   const source = read('useTrainingLog.js');
   assert.equal(
-    source.includes('setTimeout(() => setToast((current) => (current === toast ? null : current)), TOAST_MS)'),
+    source.includes('setTimeout(() => setToast((current) => current === toast ? null : current), TOAST_MS)'),
     true,
   );
   assert.equal((source.match(/setToast\(null\)/g) ?? []).length, 1);
@@ -466,7 +466,7 @@ test('the CSV export is out of the product: no door, no string, no href, and no 
 
 test('the picker reads every movement’s last set when it opens, and never on a keystroke', () => {
   const picker = read('logger/MovementPicker.jsx');
-  assert.equal(picker.includes('const last = useGymRead(() => gymApi.lastSets(), []);'), true);
+  assert.equal(picker.includes('const last = useGymRead(() => api.lastSets(), [], { sync: true, ready: api.ready !== false });'), true);
   assert.equal((picker.match(/useGymRead\(/g) ?? []).length, 1);
   assert.equal(/useGymRead\([^;]*\[[^\]]*query/.test(picker), false);
   for (const host of ['Routines.jsx', 'backfill/Backfill.jsx', 'Record.jsx']) {
@@ -574,7 +574,7 @@ test('no gym screen argues for its own design — the swept prose stays swept', 
 
 test('nothing settles a proposal on a render, and no toggle offers to', () => {
   const source = read('Proposals.jsx');
-  assert.equal(source.includes('useEffect'), false);
+  assert.equal(source.includes('useEffect(() => setSettled(null), [view.data]);'), true);
   assert.equal(source.includes('setInterval'), false);
   assert.equal(source.includes('setTimeout'), false);
   for (const file of gymFiles()) {
@@ -675,9 +675,9 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes('setConfirming'), false);
   assert.equal(finish.includes('gym-confirm'), false);
   assert.equal(finish.includes('DISCARD_CONFIRM'), false);
-  assert.equal((finish.match(/gymApi\.discardSession/g) ?? []).length, 1);
+  assert.equal((finish.match(/api\.discardSession/g) ?? []).length, 1);
   assert.equal(finish.includes("kind: 'session',"), true);
-  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf('gymApi.discardSession'));
+  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf('api.discardSession'));
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
   assert.equal(read('review.js').includes("export const SESSION_DELETED = 'Session deleted.';"), true);
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
@@ -905,7 +905,7 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(picker.includes('{EQUIPMENT_CHOICES.map((choice) => ('), true);
   assert.equal(/'(cable|kettlebell)'/.test(picker), false);
   assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
-  assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name: name.trim(), equipment, pattern: CREATED_PATTERN,'), true);
+  assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name: name.trim(), equipment, pattern: CREATED_PATTERN'), true);
   assert.equal(picker.includes('<button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>'), true);
   const sheet = picker.slice(picker.indexOf('function NewMovement'));
   assert.equal(sheet.includes('gym-sheet-close'), false);
@@ -922,7 +922,7 @@ test('the rename sheet’s proof is the page’s own read, and no number on it i
   assert.equal(source.includes('record={view.data.record}'), true);
   assert.equal(source.includes('const proof = renameProofOf(record);'), true);
   assert.equal((source.match(/useGymRead\(/g) ?? []).length, 1);
-  assert.equal(source.includes('gymApi.record'), true);
+  assert.equal(source.includes('api.record'), true);
   const sheet = source.slice(source.indexOf('function RenameSheet'));
   assert.equal(/\d+ sessions|\d+ PRs|unchanged|kept/.test(spoken(sheet)), false);
   assert.equal(sheet.includes('<button type="button" className="gym-name-cancel" onClick={onClose}>Cancel</button>'), true);
@@ -954,7 +954,7 @@ test('every name a lifter types is capped once, in code points, and the counter 
 test('a routine’s name moves with its own document, and claims nothing about what follows it', () => {
   const source = read('Routines.jsx');
   assert.equal(source.includes('renameRoutine'), false);
-  assert.equal(source.includes('gymApi.replaceRoutine(draft.id, write)'), true);
+  assert.equal(source.includes('api.replaceRoutine(draft.id, write, view.data)'), true);
   assert.equal(source.includes('renameProofOf'), false);
   assert.equal(speech('Routines.jsx').includes('unchanged'), false);
 });
@@ -981,7 +981,7 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
   assert.equal((screen.match(/log\.gone\('bodyweight'\)/g) ?? []).length, 1);
   // The stance reads the account, the rows read the window, and the delete's send is the store call
   // and nothing else — a screen's own record of what the store took is the thing this replaced.
-  assert.equal(screen.includes('send: () => gymApi.deleteBodyweight(dateLocal),'), true);
+  assert.equal(screen.includes('send: () => api.deleteBodyweight(dateLocal),'), true);
   assert.equal(screen.includes('const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));'), true);
   assert.equal(screen.includes('weights.entries.length === 0'), true);
   assert.equal(screen.includes('windowOf(weights.rows, windowId, now)'), true);
@@ -1005,8 +1005,8 @@ test('the finished session’s detail has the discard door, through the same win
   const log = read('Log.jsx');
   assert.equal(log.includes('{isFinished(session) && <div className="gym-detail-discard">'), true);
   assert.equal(log.includes('<button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>'), true);
-  assert.equal((log.match(/gymApi\.discardSession/g) ?? []).length, 1);
-  assert.ok(log.indexOf("kind: 'session',") < log.indexOf('gymApi.discardSession'));
+  assert.equal((log.match(/api\.discardSession/g) ?? []).length, 1);
+  assert.ok(log.indexOf("kind: 'session',") < log.indexOf('api.discardSession'));
   assert.equal(log.includes('line: SESSION_DELETED,'), true, 'the same sentence as the review’s discard');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
   assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');

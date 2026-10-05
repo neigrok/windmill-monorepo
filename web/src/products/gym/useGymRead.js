@@ -3,14 +3,17 @@
 // screen that learned its data moved can re-read without unmounting whatever it holds open.
 
 import { useCallback, useEffect, useState } from 'react';
+import { useSyncRecords } from '../../platform/sync/react.js';
 
-export function useGymRead(read, deps) {
+export function useGymRead(read, deps, { sync = false, ready = true } = {}) {
+  const records = useSyncRecords('self/gym');
   const [view, setView] = useState({ phase: 'loading' });
   const [attempt, setAttempt] = useState({ count: 0, inPlace: false });
 
   useEffect(() => {
     let live = true;
-    if (!attempt.inPlace) setView({ phase: 'loading' });
+    if (!ready) { setView({ phase: 'loading' }); return; }
+    if (!attempt.inPlace) setView((current) => sync && current.phase === 'ready' ? current : { phase: 'loading' });
     read()
       .then((data) => {
         if (!live) return;
@@ -20,7 +23,7 @@ export function useGymRead(read, deps) {
     return () => { live = false; };
     // `read` is out of deps: re-reading every render would wipe screen drafts.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [...deps, attempt]);
+  }, [...deps, attempt, ready, sync ? records : null]);
 
   const retry = useCallback(() => setAttempt((held) => ({ count: held.count + 1, inPlace: false })), []);
   const refresh = useCallback(() => setAttempt((held) => ({ count: held.count + 1, inPlace: true })), []);

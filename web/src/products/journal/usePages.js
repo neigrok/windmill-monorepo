@@ -1,14 +1,10 @@
-// One store per mounted canvas; everything that decides anything lives in pageStore.js. Connected on
-// every settled change of the confirmed account id, which is what the device tier is scoped by
-// (pageCache.js) — never the shell's remembered hint. 'loading' is not a connect: an unresolved status is
-// not a signed-out writer.
-
 import { useCallback, useEffect, useRef, useState, useSyncExternalStore } from 'react';
-import { useAuth } from '../../shell/auth/AuthProvider.jsx';
+import { useSyncRecords } from '../../platform/sync/react.js';
+import { syncSession } from '../../platform/sync/session.js';
+import { captureError } from '../../telemetry/sentry.js';
 import { localDay, watchLocalDay } from './hlc.js';
-import { PageStore, holdStore } from './pageStore.js';
+import { isWritten, pagesOf, savePage, SCOPE } from './pages.js';
 
-// One clock for the whole room, so the canvas, the echoes and the year grid never stand on different days.
 export function useToday() {
   const [today, setToday] = useState(localDay);
   useEffect(() => watchLocalDay(setToday), []);
@@ -16,36 +12,63 @@ export function useToday() {
 }
 
 export function usePages() {
-  const { status, account: confirmed } = useAuth();
+  const session = useSyncExternalStore(syncSession.subscribe, syncSession.getSnapshot, syncSession.getSnapshot);
+  const records = useSyncRecords(SCOPE);
   const today = useToday();
-  const storeRef = useRef(null);
-  if (!storeRef.current) storeRef.current = new PageStore();
-  const store = storeRef.current;
-  const account = confirmed?.id ?? null;
-
-  const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
-
-  useEffect(() => {
-    if (status === 'loading') return;
-    store.connect(account);
-  }, [store, status, account]);
-
-  // Ordered after connect: a rollover reads the account's window and needs to know whose journal it is.
-  useEffect(() => {
-    store.rollOver(today);
-  }, [store, today]);
-
-  // A store is only forgettable while a canvas is holding it.
-  useEffect(() => holdStore(store), [store]);
-
-  useEffect(() => () => store.dispose(), [store]);
-
-  return {
-    ...snapshot,
-    setBody: useCallback((body) => store.type(body), [store]),
-    setMood: useCallback((value) => store.set('mood', value), [store]),
-    setEnergy: useCallback((value) => store.set('energy', value), [store]),
-    extendTo: useCallback((date) => store.extendTo(date), [store]),
-    reachBack: useCallback(() => store.reachBack(), [store]),
+  const [editor, setEditor] = useState(null);
+  const [failure, setFailure] = useState(false);
+  const [saveTick, setSaveTick] = useState(0);
+  const draft = useRef(null);
+  const writes = useRef(0);
+  const key = `${records.replica}:${today}`;
+  const engine = session.engine;
+  const pages = engine && session.ready ? pagesOf(engine, records) : [];
+  const held = pages.find((page) => page.day === today) ?? { day: today, body: '', mood: null, energy: null, source: 'typed' };
+  const shown = editor?.key === key ? editor.doc : held;
+  const change = useCallback((field, value) => {
+    if (!engine || !session.ready) return;
+    const current = draft.current?.key === key ? draft.current.doc
+      : pagesOf(engine).find((page) => page.day === today) ?? held;
+    const doc = { day: today, body: current.body, mood: current.mood, energy: current.energy,
+      source: current.source, [field]: value };
+    const writing = { key, doc, saved: false };
+    draft.current = writing;
+    setEditor(draft.current); setFailure(false);
+    writes.current++;
+    savePage(engine, doc, records.replica).then(() => {
+      writing.saved = true;
+      setSaveTick((tick) => tick + 1);
+    }).catch(() => {
+      if (draft.current === writing) setFailure(true);
+      captureError('journal', 'journal-save', '', '/journal');
+    }).finally(() => {
+      writes.current--;
+      if (!writes.current && draft.current?.saved) {
+        draft.current = null;
+        setEditor(null);
+      }
+    });
+  }, [engine, session.ready, key, today, held.body, held.mood, held.energy, held.source, records.replica]);
+  useEffect(() => { draft.current = null; setEditor(null); setFailure(false); }, [key]);
+  const hasPending = engine?.device.activeReplica.entries(SCOPE).length > 0
+    || Object.keys(engine?.device.activeReplica.deviceRows('journal') ?? {}).some((key) => key.startsWith('pendingClaim:'));
+  const state = records.drawn.find((row) => row.t === 'journalState');
+  const retained = Object.assign({}, ...Object.values(engine?.device.activeReplica.deviceRows('journal') ?? {})
+    .filter((row) => row?.claimId).map((row) => row.retirements));
+  const retireScales = () => {
+    if (engine && session.ready) savePage(engine, { day: today, body: shown.body, mood: shown.mood, energy: shown.energy, source: shown.source }, records.replica, { scales: 'retired' })
+      .catch(() => captureError('journal', 'journal-invitation', '', '/journal'));
+  };
+  const readState = !session.ready ? 'loading' : engine.device.activeReplica.meta.state === 'anon' ? 'device'
+    : records.firstPullComplete ? 'ready' : 'failed';
+  const saveState = records.notices.some((notice) => !notice.dismissed) ? 'refused' : failure ? 'unsaved' : !session.online ? 'offline'
+    : engine?.device.activeReplica.meta.state === 'anon' || hasPending ? 'device' : 'saved';
+  return { today, history: pages.filter((page) => page.day < today && isWritten(page)).map((page) => ({ ...page, date: page.day })),
+    loading: !session.ready, readState, reach: records.firstPullComplete || readState === 'device' ? 'end' : 'loading',
+    firstRun: session.ready && records.firstPullComplete && !pages.some(isWritten) && state?.f.placeholder?.[0] !== 'retired',
+    scalesInvitation: state?.f.firstPage?.[0] === 'retired' && (retained.scales ?? state?.f.scales?.[0]) !== 'retired', retireScales,
+    body: shown.body, mood: shown.mood, energy: shown.energy, saveState, saveTick,
+    setBody: (value) => change('body', value), setMood: (value) => change('mood', value), setEnergy: (value) => change('energy', value),
+    extendTo: () => {}, reachBack: () => engine?.kickPull([SCOPE]),
   };
 }

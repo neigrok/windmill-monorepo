@@ -3,7 +3,6 @@ import React, { useEffect, useRef, useState } from 'react';
 import { Menu } from '../../../design-system/index.js';
 import { ImagePlus, Square } from 'lucide-react';
 import { CoachPhoto } from './CoachPhoto.jsx';
-import { gymApi } from '../gymApi.js';
 import { COACH_HREF, NOTES_HREF, routineHref, THREADS_HREF } from '../log.js';
 import { ProposalPanel } from '../Proposals.jsx';
 import './coach.css';

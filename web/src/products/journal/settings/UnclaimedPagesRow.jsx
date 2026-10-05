@@ -1,11 +1,12 @@
-// Unattributable unsent pages, waiting in quarantine (pageCache.js) and offered once to a signed-in
+// Unattributable unsent pages, waiting in quarantine (pages.js) and offered once to a signed-in
 // person. This surface may say the day and the length, never the words.
 
 import React, { useState } from 'react';
+import { captureError } from '../../../telemetry/sentry.js';
 import { Button } from '../../../design-system';
 import { styles } from '../../../shell/settings/Section.jsx';
-import { dropUnclaimedPages, unclaimedPages } from '../pageCache.js';
-import { restoreUnclaimedPages } from '../pageStore.js';
+import { dropUnclaimedPages, unclaimedPages } from '../pages.js';
+import { restoreUnclaimedPages } from '../pages.js';
 
 function words(body) {
   const count = body.trim() ? body.trim().split(/\s+/).length : 0;
@@ -32,16 +33,24 @@ export function UnclaimedPagesRow({ account }) {
       setPhase('done');
       setNote(`Restored ${taken} page${taken === 1 ? '' : 's'} into your journal.`);
     } catch {
+      captureError('journal', 'journal-restore', '', '/journal');
       setPhase('error');
       setNote('Something went wrong — they are still here, nothing was lost.');
     }
   };
 
-  const discard = () => {
-    dropUnclaimedPages();
-    setWaiting([]);
-    setPhase('done');
-    setNote('Deleted from this browser.');
+  const discard = async () => {
+    setPhase('working');
+    try {
+      await dropUnclaimedPages();
+      setWaiting([]);
+      setPhase('done');
+      setNote('Deleted from this browser.');
+    } catch {
+      captureError('journal', 'journal-discard', '', '/journal');
+      setPhase('error');
+      setNote('This browser could not delete them just now — they are still here, try again.');
+    }
   };
 
   return (

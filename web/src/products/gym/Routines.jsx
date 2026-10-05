@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button, Icon, Menu, Tag } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { failureReason, gymApi } from './gymApi.js';
+import { failureReason } from './gymApi.js';
 import {
   agoLabel, backfillHref, cappedName, entryLabel, FROM_ROUTINE_MENU, isNameOverCap, MOVEMENTS_HREF,
   movementOf, nameCountLabel, nameOfMovement, NEW_ROUTINE_ID, routineHref,
@@ -18,11 +18,13 @@ import {
   withEntryAdded, withEntryAt, withEntryRemoved, withEntrySet,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
+import { useGymApi } from './gymSync.js';
 import { TargetEditor } from './planning/TargetEditor.jsx';
 import './planning/planning.css';
 
 export function RoutinesList({ log, onSignIn, reviewing = null }) {
-  const view = useGymRead(() => gymApi.routines(), []);
+  const api = useGymApi();
+  const view = useGymRead(() => api.routines(), [], { sync: true, ready: api.ready !== false });
   const [reviewId, setReviewId] = useState(reviewing);
   useEffect(() => setReviewId(reviewing), [reviewing]);
 
@@ -34,8 +36,9 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
   const remove = (routine) => log.withhold({
     kind: 'routine',
     id: routine.id,
+    engineDeath: { type: 'routine', id: routine.id },
     line: routineDeletedLine(routine.name),
-    send: () => gymApi.deleteRoutine(routine.id),
+    send: () => api.deleteRoutine(routine.id),
     refused: (error) => log.say(`${routine.name} is still in your program — ${failureReason(error)}.`),
   });
 
@@ -93,15 +96,20 @@ export function RoutinesList({ log, onSignIn, reviewing = null }) {
 }
 
 export function RoutineEditor({ id, log }) {
+  const api = useGymApi();
   // The id is the idempotency key: mint once so a retried create is one routine.
   const minted = useRef(null);
   if (minted.current === null) minted.current = mintId('rt_');
   const fresh = id === NEW_ROUTINE_ID;
 
-  const view = useGymRead(
-    () => (fresh ? Promise.resolve(blankRoutine({ id: minted.current })) : gymApi.routine(id)),
+  const projection = useGymRead(
+    () => (fresh ? Promise.resolve(blankRoutine({ id: minted.current })) : api.routine(id)),
     [id],
+    { sync: true, ready: api.ready !== false },
   );
+  const base = useRef(null);
+  if (base.current === null && projection.phase === 'ready') base.current = projection.data;
+  const view = base.current ? { ...projection, phase: 'ready', data: base.current } : projection;
   const [edits, setEdits] = useState(null);
   const [picking, setPicking] = useState(false);
   const [query, setQuery] = useState('');
@@ -157,18 +165,18 @@ export function RoutineEditor({ id, log }) {
   const commit = async () => {
     if (missing || saving) return false;
     setSaving(true);
-    // The write carries the revision it read; a stale routine is refused, not overwritten.
+    // The draft retains the registers it read, even while the mirror receives newer data.
     const write = routineWrite({ ...draft, name: draft.name.trim() }, fresh ? null : view.data.revision);
     try {
-      if (fresh) await gymApi.createRoutine(write);
-      else await gymApi.replaceRoutine(draft.id, write);
+      if (fresh) await api.createRoutine(write);
+      else await api.replaceRoutine(draft.id, write, view.data);
       setSaving(false);
       return true;
     } catch (error) {
       setSaving(false);
       if (error?.code === 'routine-stale') {
         setConflict(true);
-        try { const latest = await gymApi.routine(id); if (latest) setConflict(latest); } catch {}
+        try { const latest = await api.routine(id); if (latest) setConflict(latest); } catch {}
         return false;
       }
       log.say(`That routine wasn’t saved — ${failureReason(error)}.`);
@@ -194,7 +202,7 @@ export function RoutineEditor({ id, log }) {
       if (saving) return;
       setSaving(true);
       try {
-        await gymApi.createRoutine(routineWrite({ ...draft, id: minted.current, name: draft.name.trim() }));
+        await api.createRoutine(routineWrite({ ...draft, id: minted.current, name: draft.name.trim() }));
         window.location.hash = ROUTINES_HREF;
       } catch (error) { log.say(`Your draft is still here — ${failureReason(error)}.`); }
       setSaving(false);
@@ -226,7 +234,7 @@ export function RoutineEditor({ id, log }) {
         <p>Your edits are still here. Load the latest routine to compare before saving this draft.</p>
         <Button variant="secondary" onClick={async () => {
           try {
-            const latest = await gymApi.routine(id);
+            const latest = await api.routine(id);
             if (!latest) { log.say('This routine is no longer in your program.'); return; }
             setConflict(latest);
           } catch (error) { log.say(`The latest routine didn’t load — ${failureReason(error)}.`); }

@@ -115,8 +115,8 @@ function sessionKey() {
 }
 
 if (typeof window !== 'undefined') {
-  window.addEventListener('pagehide', () => flush('beacon'));
-  document.addEventListener('visibilitychange', () => {
+  window.addEventListener?.('pagehide', () => flush('beacon'));
+  globalThis.document?.addEventListener?.('visibilitychange', () => {
     if (document.visibilityState === 'hidden') flush('beacon');
   });
 }

@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import { Back } from '../Back.jsx';
-import { failureReason, gymApi } from '../gymApi.js';
+import { failureReason } from '../gymApi.js';
 import {
   BACKFILL_HREF, backfillHref, FREE_SESSION, FROM_PICK, FROM_ROUTINE_MENU, isFinished, lastTrainedDayLabel, movementOf, nameOfMovement,
   NEW_ROUTINE_ID, NO_ROUTINE, routineHref, routineSizeLabel, ROUTINES_HREF, sessionHref, shortDayLabel,
@@ -10,6 +10,7 @@ import { MovementPicker } from '../logger/MovementPicker.jsx';
 import { mintId } from '../mint.js';
 import { SESSION_DELETED } from '../review.js';
 import { useGymRead } from '../useGymRead.js';
+import { useGymApi } from '../gymSync.js';
 import { UNDO_LABEL } from '../withheld.js';
 import {
   alreadySavedLine, collapses, discardedLine, draftFromRoutine, freeDraft, importOf, inTheLogLine, isOverLimit,
@@ -53,7 +54,8 @@ export function Backfill({ target, from = FROM_PICK, log }) {
 }
 
 function RoutinePick({ log }) {
-  const view = useGymRead(() => gymApi.routines(), []);
+  const api = useGymApi();
+  const view = useGymRead(() => api.routines(), [], { sync: true, ready: api.ready !== false });
   const hidden = log.hidden('routine');
 
   if (view.phase === 'loading') return <ScreenNote back={LOG_BACK}>Opening your routines…</ScreenNote>;
@@ -91,13 +93,14 @@ function RoutinePick({ log }) {
 // is read in parallel before one pure pass fills every set. A last time that did not answer leaves
 // that movement to its target, and claims nothing about its history.
 function RoutineWorkout({ id, back, log }) {
+  const api = useGymApi();
   const view = useGymRead(async () => {
-    const routine = await gymApi.routine(id);
+    const routine = await api.routine(id);
     if (!routine) return null;
     const movements = [...new Set(routine.entries.map((entry) => entry.exerciseId))];
-    const replies = await Promise.all(movements.map((exerciseId) => gymApi.lastTime(exerciseId).catch(() => null)));
+    const replies = await Promise.all(movements.map((exerciseId) => api.lastTime(exerciseId).catch(() => null)));
     return draftFromRoutine(routine, new Map(movements.map((exerciseId, at) => [exerciseId, replies[at]])));
-  }, [id]);
+  }, [id], { sync: true, ready: api.ready !== false });
 
   if (view.phase === 'loading') return <ScreenNote back={back}>Opening the routine…</ScreenNote>;
   if (view.phase === 'absent') return <ScreenNote back={back}>This routine isn’t in your program.</ScreenNote>;
@@ -127,6 +130,7 @@ function ReadFailed({ back, onRetry, children }) {
 }
 
 function PastWorkout({ opening, back, log, noRoutines = false }) {
+  const api = useGymApi();
   // One clock for the life of the form, so the same form always builds the same request.
   const [now] = useState(() => Date.now());
   const [sessionId] = useState(() => mintId('ses_'));
@@ -240,7 +244,7 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
 
   const addMovement = async (exerciseId) => {
     setPicking(false);
-    const reply = await gymApi.lastTime(exerciseId).catch(() => null);
+    const reply = await api.lastTime(exerciseId).catch(() => null);
     setDraft((held) => withMovementAdded(held, exerciseId, reply));
     setFocus(`m${draft.minted}`);
   };
@@ -249,9 +253,10 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
     log.withhold({
       kind: 'session',
       id,
+      engineDeath: { type: 'session', id },
       line: SESSION_DELETED,
       send: async () => {
-        await gymApi.discardSession(id);
+        await api.discardSession(id);
         await log.reloadLog();
       },
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
@@ -264,11 +269,11 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   // and the session the store holds under it is what landed.
   const send = async (request) => {
     try {
-      const stored = await gymApi.importSession(request);
+      const stored = await api.importSession(request);
       return { session: stored.session, already: false };
     } catch (error) {
       if (!error.sessionIdTaken && !error.sessionDeleted) return { error };
-      const held = await gymApi.session(request.id).catch(() => null);
+      const held = await api.session(request.id).catch(() => null);
       if (held?.session) return { session: held.session, already: true };
       return { error };
     }

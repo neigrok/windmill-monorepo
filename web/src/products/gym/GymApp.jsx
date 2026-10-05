@@ -68,7 +68,7 @@ export function GymApp({ hash, inShell = false }) {
         </>
       )}
       {status === 'signed-in' && (
-        <TrainingRoom hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
+        <TrainingRoom key={user?.id} hash={hash} inShell={inShell} user={user} status={status} onSignIn={openSignInDoor} onSignOut={signOut} />
       )}
     </div>
   );
@@ -107,9 +107,8 @@ function SignInPitch({ onSignIn }) {
 }
 
 function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
-  const { refresh, account } = useAuth();
-  // One instance only: a second doubles the boot read and the poll.
-  const log = useTrainingLog({ onSignedOut: refresh });
+  const { account } = useAuth();
+  const log = useTrainingLog();
   const screen = screenOf(hash);
   const historyPositions = React.useRef(new Map());
   const pagePositions = React.useRef(new Map());

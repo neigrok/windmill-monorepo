@@ -4,6 +4,7 @@
 import { lazy } from 'react';
 import { gymLandingHead } from './marketing/landingHead.js';
 import { sharedLogTokenOf, sharedTokenOf } from './log.js';
+import { prepareGymSync } from './gymSync.js';
 
 const importGymApp = () => import('./GymApp.jsx').then((m) => ({ default: m.GymApp }));
 const GymApp = lazy(importGymApp);
@@ -40,6 +41,7 @@ function render({ hash, pathname }) {
 
 export const gymRoutes = {
   id: 'gym',
+  prepareSync: prepareGymSync,
   label: 'Gym',
   switchHash: '#/gym',
   home,

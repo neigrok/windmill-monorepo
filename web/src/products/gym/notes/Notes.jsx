@@ -1,14 +1,15 @@
-import React, { useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import { Button } from '../../../design-system/index.js';
 import '../coach/coach.css';
 import './notes.css';
 import { Back } from '../Back.jsx';
-import { gymApi } from '../gymApi.js';
+
 import { COACH_HREF, NOTES_HREF } from '../log.js';
 import { CoachNavigation } from '../coach/CoachNavigation.jsx';
 import { COACH_TITLE } from '../coach/coach.js';
 import { useRail } from '../rail.js';
 import { useGymRead } from '../useGymRead.js';
+import { useGymApi } from '../gymSync.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
   isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED, NOTES_TITLE,
@@ -23,9 +24,11 @@ function countReadout(label) {
 // Reached only signed in, like the Coach room it is a door off. The list is the store's order; a
 // drag moves it here first and the store's answer replaces it.
 export function Notes({ log }) {
-  const view = useGymRead(() => gymApi.notes(), []);
+  const api = useGymApi();
+  const view = useGymRead(() => api.notes(), [], { sync: true, ready: api.ready !== false });
   const [held, setHeld] = useState(null);
   const [editing, setEditing] = useState(null);
+  useEffect(() => setHeld(null), [view.data]);
 
   // The store's list, and the rows that may be drawn over it: a note the window is holding is off
   // the screen for the length of its window and off it for good once the store has answered — but
@@ -47,27 +50,27 @@ export function Notes({ log }) {
     if (moved === notes) return;
     setHeld(moved);
     try {
-      setHeld(await gymApi.reorderNotes(orderOf(moved)));
+      setHeld(await api.reorderNotes(orderOf(moved)));
     } catch (error) {
       log.say(noteRefusal(error, 'reordered'));
       settle(null);
     }
   };
 
-  // Withheld like every other delete in this room: nothing reaches the store for the length of the
-  // window, the editor is left in the same act, and the room's transient carries the only way back.
+  // The durable death is held while Undo is available, and the editor leaves in the same act.
   // Nothing is confirmed — a question in front of an act that can be undone is ceremony
   // (13-gestures.md Law 2).
   const remove = (note) => {
     log.withhold({
       kind: 'note',
       id: note.id,
+      engineDeath: { type: 'note', id: note.id },
       line: NOTE_DELETED,
       // In place, never `settle`: the store renumbers the rest, and a reorder sent afterwards must
       // carry the store's own list — but a re-read from `loading` would blank the screen nine
       // seconds after the act, for a row that is already off it.
       send: async () => {
-        await gymApi.deleteNote(note.id);
+        await api.deleteNote(note.id);
         setHeld(null);
         view.refresh();
       },
@@ -222,6 +225,7 @@ function NoteList({ notes, onOpen, onMove }) {
 // A refusal for a full account (`notes-full`) means the list behind the editor is behind the store:
 // `onStale` re-reads it while the editor stays open with the sentence.
 export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete, onStale }) {
+  const api = useGymApi();
   const [title, setTitle] = useState(note.title);
   const [body, setBody] = useState(note.body);
   const [saving, setSaving] = useState(false);
@@ -234,7 +238,7 @@ export function NoteEditor({ note, noteCount = null, onClose, onSaved, onDelete,
     setSaving(true);
     setRefused('');
     try {
-      onSaved(await gymApi.saveNote(note.id, { title: title.trim(), body: body.trim() }));
+      onSaved(await api.saveNote(note.id, { title: title.trim(), body: body.trim() }, note));
     } catch (error) {
       setSaving(false);
       setRefused(noteRefusal(error, 'saved'));

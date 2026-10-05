@@ -30,8 +30,6 @@ export function JournalApp({ hash }) {
   const openSignInDoor = useSignInDoor();
   const lendDoorSkin = useSignInDoorHost();
   const { account: confirmed } = useAuth();
-  // The device tier is scoped by account (pageCache.js), and it must be the confirmed account: the
-  // shell's remembered hint may not open anybody's pages.
   const account = confirmed?.id ?? null;
   // The clock is the one the canvas turns over on, so a tab left open across midnight cannot leave the
   // echoes reading yesterday.

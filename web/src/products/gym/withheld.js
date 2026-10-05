@@ -1,33 +1,9 @@
-// The withheld delete — the one window this room holds a delete open in, and one abstraction over
-// every verb that deletes. WITHHELD MEANS NOT SENT: nothing here reaches the store until the clock
-// runs out, so a delete taken back never happened at all.
-//
-// It is a LIST and never a slot. Each delete carries its own clock, so a second delete settles
-// nothing, and the transient reads the whole list: one held delete says which, several say how many.
-// Undo takes the newest and the transient re-reads for the rest.
-//
-// An entry is `{ kind, id, line, detail, send, refused, undo }`: the id is what the screen hides its
-// row by, `detail` is the one fact the act leaves behind, and `undo` puts a row back where the row
-// lives in a draft rather than on the wire.
-//
-// `send` is what the closing window does — the store call, and any re-read that must follow it. It
-// THROWS when the store refuses; the room catches and hands the error to `refused`, which states the
-// sentence in the screen's own words. The screens own no try/catch of their own: one place decides
-// what a settled delete means, so no screen can be written that forgets. (Nothing after the store
-// call inside a `send` may throw, or a delete the store TOOK would be reported as one it refused.)
-//
-// A send that resolves SETTLES the delete: the room records `{ kind, id }` as gone for as long as
-// the room lives. That fact is the room's and not a screen's, because a screen can be rebuilt
-// mid-window around a read taken while the row was still there — and then the delete that landed
-// afterwards would reach a screen that no longer exists, and the row would come back on screen
-// having really gone from the store. A delete that lied is the one thing this window exists to
-// prevent.
+// Engine deaths are committed durably while held, and Undo removes the held gesture. The room
+// tracks their visible offer; release and restart belong to the engine. REST Coach deletes wait
+// for this room's timer, and draft entry deletes only change the draft. Each has its own clock.
+// Entries carry {kind, id, line, detail, engineDeath, pending, send, refused, undo}. Engine deaths
+// never invoke send; REST sends settle on success and restore the row on failure.
 
-// The verbs. `set` · `routine` · `session` · `thread` · `note` · `bodyweight` are on the wire, and a
-// server-only delete like a conversation is withheld for exactly the same reason as a set: an Undo
-// offered after the send would be a lie. `entry` is a line of an unsaved routine draft, which sends
-// nothing at all and is taken back inside the draft. Every verb here destroys, and every one of them
-// answers `are you sure` with this window instead of a question.
 export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight'];
 
 export function withheldKey(kind, id) {

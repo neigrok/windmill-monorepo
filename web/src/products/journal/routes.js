@@ -3,7 +3,8 @@
 
 import { lazy } from 'react';
 import { journalLandingHead } from './marketing/landingHead.js';
-import { forgetOpenStores } from './pageStore.js';
+import { migratePages } from './migrate.js';
+import { onSyncResult, watchClaims } from './pages.js';
 
 const importJournalApp = () => import('./JournalApp.jsx').then((m) => ({ default: m.JournalApp }));
 const JournalApp = lazy(importJournalApp);
@@ -39,12 +40,6 @@ function render({ hash }) {
   return null;
 }
 
-// Called by the shell when the signed-in account changes; never for ghost→signed-in, which is the claim.
-// Drops in-memory state only: the departing account's pages stay on disk under their own key.
-function forgetDevice() {
-  forgetOpenStores();
-}
-
 export const journalRoutes = {
   id: 'journal',
   label: 'Journal',
@@ -53,7 +48,8 @@ export const journalRoutes = {
   landingAfterSignIn,
   render,
   preloadApp: importJournalApp,
-  forgetDevice,
+  prepareSync: async (engine) => { await migratePages(engine); watchClaims(engine); },
+  onSyncResult,
   settingsSections: {
     data: [YourJournalSection],
   },

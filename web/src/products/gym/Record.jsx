@@ -1,13 +1,14 @@
 import React, { useState } from 'react';
 import { Button, Input } from '../../design-system/index.js';
 import { Back } from './Back.jsx';
-import { gymApi } from './gymApi.js';
+
 import { cappedName, isNameOverCap, nameCountLabel, recordHref, ROUTINES_HREF, showsNameCount } from './log.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import { backOf, NEVER_LOGGED, NEVER_LOGGED_LINE, RENAME_PROOF, recordView, renameProofOf } from './record.js';
 import { recordProgress } from './progress/progress.js';
 import { MovementChart } from './progress/Progress.jsx';
 import { useGymRead } from './useGymRead.js';
+import { useGymApi } from './gymSync.js';
 
 // `from` is where the record was opened (log.js `recordFromOf`); its back link returns there.
 export function MovementRecord({ id, from, log }) {
@@ -34,10 +35,12 @@ function MovementChooser({ log }) {
 // Opened from a workout, the session is read beside the record: the back link is named by its
 // routine. A session read that fails costs the link its name, never the record.
 function OneMovement({ id, from, log }) {
+  const api = useGymApi();
   const view = useGymRead(
-    () => Promise.all([gymApi.record(id), from.screen === 'session' ? gymApi.session(from.id).catch(() => null) : null])
+    () => Promise.all([api.record(id), from.screen === 'session' ? api.session(from.id).catch(() => null) : null])
       .then(([record, detail]) => (record ? { record, session: detail?.session ?? null } : null)),
     [id, from.screen, from.id],
+    { sync: true, ready: api.ready !== false },
   );
   const [renaming, setRenaming] = useState(false);
 

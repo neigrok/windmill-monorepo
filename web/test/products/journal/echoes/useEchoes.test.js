@@ -4,6 +4,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 
 import { browserWith, renderHook, settle } from '../../gym/harness.mjs';
+import { journalApi } from '../../../../src/products/journal/journalApi.js';
 import { locate, stillStanding, useEchoes } from '../../../../src/products/journal/echoes/useEchoes.js';
 
 const TWICE = "i don't know. and then i don't know.";
@@ -98,7 +99,7 @@ const ECHO_PAGES = [
   { day: '2026-08-20', entitled: true, matches: [{ day: '2026-01-19', text: 'older still', occurrenceHint: 0 }] },
 ];
 
-// The echoes read AND the page reads behind it, because the hook re-locates every quote it is handed
+// The REST echoes read AND the replica page reads behind it, because the hook re-locates every quote it is handed
 // before it will hold it: a fake that answers the echo list alone is a fake of a server that retires
 // every echo it sends, and every page here would come straight back off the canvas.
 function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
@@ -124,13 +125,13 @@ function reading({ wide, reduced = false, pages = ECHO_PAGES }) {
   ]);
   const asked = { echoes: 0, page: 0 };
   const held = [];
+  journalApi.page = async (day) => {
+    asked.page += 1;
+    const reply = { day, body: bodies().get(day) ?? '' };
+    if (answer.hold) return new Promise((keep) => held.push(() => keep(reply)));
+    return reply;
+  };
   globalThis.fetch = async (url) => {
-    const day = /\/page\/(\d{4}-\d{2}-\d{2})$/.exec(String(url));
-    if (day) {
-      asked.page += 1;
-      if (answer.hold) return new Promise((keep) => held.push(() => keep({ ok: true, status: 200, json: async () => ({ date: day[1], body: bodies().get(day[1]) ?? '' }) })));
-      return { ok: true, status: 200, json: async () => ({ date: day[1], body: bodies().get(day[1]) ?? '' }) };
-    }
     asked.echoes += 1;
     // Captured at the moment of asking, the way a server answers: a reply held in the air carries
     // what was true when it was asked for, not what became true while it was in flight.
