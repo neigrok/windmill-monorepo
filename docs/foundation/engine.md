@@ -2877,9 +2877,9 @@ Signed-in pages never show Keep. State comes from the active replica's drawn row
 waits for the account's first complete pull before concluding that it has no pages or retired
 copy. Appendix D retires all four first-run fields for accounts with written pages, so existing
 writers see no re-onboarding. A failed read is never an empty account. Ink notes use an install
-preference outside the engine, surviving sign-in and sign-out; they show automatically only once per install when the
-absence of written pages is known. Manual Show ink notes is a UI action. Geometry, keyboard,
-motion and invitation timing are canon, not registry fields.
+preference outside the engine, surviving sign-in and sign-out; they show once per install, when
+the absence of written pages is known, and nothing shows them again. Geometry, keyboard, motion
+and invitation timing are canon, not registry fields.
 
 A page is written and visible when body is not `""`, or either scale is non-null; whitespace
 counts, as in the web cache. Such days sort oldest first, with today at the bottom and unwritten

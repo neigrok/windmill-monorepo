@@ -251,11 +251,6 @@ exception to `guidelines/superapp-flow.md` §3 and §8. Nothing is built.
   Account controls appear only for a configured engine server; production sync is not live.
   AX3 keeps the longer privacy fact and scales in a scrollable page.
 
-- **6w · Ink notes in the foundation docs.** `../foundation/engine.md` (the install flag, *Show ink
-  notes* as a UI action) and `../foundation/domain-kit.md` (the once-per-install ink-note flag, the
-  room-menu item) still describe Journal's ink notes. Canon has none since 2026-10-05
-  (`journal/onboarding.md` §1, `guidelines/superapp-shell.md` §3): strike both passages.
-
 - **Mood and energy entry.** [Input alternatives](https://www.figma.com/design/pC6ciOUnfLmI42oMihd7l3?node-id=176-837)
   compare quiet rails, a folded picker and a number ribbon. The folded picker is the recommendation,
   pending entry-frequency and focus/caret checks. Preserve independent optional integers 0–10,

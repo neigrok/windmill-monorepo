@@ -2080,8 +2080,8 @@ pages has all four fields retired and sees no re-onboarding.
 The once-per-install ink-note flag is app device settings, outside the replicated journal state.
 It survives sign-in. Automatic ink requires both that flag and established absence of pages; an
 unread account or a failed read never establishes absence. The layer takes no hits, keeps the
-first keystroke, and can be reopened from **Show ink notes** in Journal's room menu. Arrow frames,
-fonts, accessibility fallbacks and keyboard state belong to the UI.
+first keystroke, and nothing reopens it. Arrow frames, fonts, accessibility fallbacks and keyboard
+state belong to the UI.
 
 A save status names its real durability. Signed out, kept content is saved on this phone and the
 quiet Keep invitation appears only after the scale invitation is answered or dismissed, one

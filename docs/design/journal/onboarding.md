@@ -7,14 +7,18 @@ shell flow: `../guidelines/superapp-flow.md` §8.
 
 ## 1. The principle
 
-> **Journal opens on a live page, with nothing drawn over it.**
+> **Journal opens on a live page, with hand-drawn ink notes over the real canvas, once.**
 > Everything else appears later, on a trigger, once the user's own writing has made it relevant.
 
-There is no onboarding layer: no overlay, no coach marks, no tour. The page invites writing by its
-own geometry — the parked caret, the page-sized tap target and the Write seat (`journal.md` §4) —
-every night, not once. The drawings are section *2 · Journal first run* of the Figma page
+The ink notes (§2) show once per install, only on a first open with no pages. They never block
+writing: the first keystroke or tap lifts them, and nothing brings them back. They point only at
+what is on that screen and works. Under them there is no onboarding layer: no overlay, no coach
+marks, no tour. The page invites writing by its own geometry — the parked caret, the page-sized
+tap target and the Write seat (`journal.md` §4a) — every night, not once. The drawings are
+sections *2 · Journal first run* and *2b · Journal onboarding · Ink notes* of the Figma page
 [iOS · First run](https://www.figma.com/design/qoOwNbWOYE1GFi0yR5uGY2/?node-id=112-2): board 05
-is the first open, 07c and 07d the empty and the one-line page later.
+is the first open, 07j-a1 the same open under the ink, 07c and 07d the empty and the one-line
+page later.
 
 A person arriving with written pages sees no re-onboarding: the placeholder, privacy fact,
 first-page cue and scale invitation are retired. The mood and energy controls remain available
@@ -27,8 +31,8 @@ and be worth reopening.**
 ## 2. Session one — the whole screen
 
 The canvas opens at today, cursor placed, keyboard **not** raised. Only today's page is writable;
-past days stay read-only, as on web. Exactly two pieces of copy exist, and both retire permanently
-after the first save:
+past days stay read-only, as on web. Beside the ink notes, exactly two pieces of copy exist, and
+both retire permanently after the first save:
 
 | Element | Copy | Retires |
 |---|---|---|
@@ -36,9 +40,10 @@ after the first save:
 | The one fact | "Only you. No prompts, no fields, nothing to fill in — write a line or a page." | first save |
 
 - **Nothing animates before you can type** (`journal.md` §3.7). The caret is parked on the first
-  frame and still; there is no entrance or fade-in of chrome.
+  frame and still; there is no entrance or fade-in of chrome, and the ink draws on over a canvas
+  that already takes input.
 - **The keyboard is not raised for the user.** The whole of today's page takes the tap, and the
-  Write seat sits bottom-right for the thumb (`journal.md` §4). Neither is first-run furniture;
+  Write seat sits bottom-right for the thumb (`journal.md` §4a). Neither is first-run furniture;
   both are there every night.
 - **The room's name, top-left, is a plain title** while Journal is the only room on the phone — no
   chevron, no menu. It becomes the room menu, in the same seat, when Gym joins
@@ -46,6 +51,60 @@ after the first save:
 - **Mood and energy are visible and unasked** — the strip is there, dimmed, asking nothing.
 - **"saved" is stated in mono**, never a button, never a spinner.
 - No account, no permission.
+
+### The ink notes
+
+Hand-drawn notes in lamp ink over the first-open canvas, written in **Caveat**
+(`brand-foundations.md`).
+
+**When.** Once per install, on a Journal first open with no pages. A person whose account already
+holds pages never sees them. The shown-once flag survives sign-in and sign-out.
+
+**What.** Six callouts, 17 words, listed in priority order:
+
+| # | Note | Arrow tip |
+|---|---|---|
+| 1 | "Just start typing" | the parked caret, leading edge |
+| 2 | "Today's page", with the line "Saves as you go." | the day marker, trailing edge |
+| 3 | an underline, no words | the words "Only you" in the one fact |
+| 4 | "Tap to write" | the Write seat |
+| 5 | "You, and settings" | the You button |
+| 6 | "Your journal" | the plain Journal title |
+
+No note points at the mood and energy strip. No note names another room.
+
+**Draw-on.** Strokes run top to bottom: the title at 200 ms, the You button at 350 ms, the day
+marker at 500 ms, the caret at 650 ms, the underline at 800 ms and the Write seat at 950 ms. Each
+reveals along its path in 320 ms, ease-out. A label fades in over 160 ms as its arrowhead lands.
+The notes are still by 1.5 s; the caret stays the only moving thing.
+
+**Lift.** The first keystroke, or a tap anywhere on the page or on the Write seat, lifts the ink:
+opacity 1 → 0 and blur 0 → 3 pt over 360 ms, labels first. The keystroke is kept and the tap
+reaches its target. The notes never return: there is no replay — no menu row, no setting, no
+gesture. Every night after, the page itself carries the invitation (`journal.md` §4a). No haptic
+marks the ink.
+
+**Anchoring.** Every arrow tip sits on a named element's live frame: the plain title, the You
+button, the day marker, the parked caret, the one fact and the Write seat. Labels take the free
+space above the page, and the seat's label the free space beside it; each curve is fitted per
+layout from the label's edge to its anchor, never in fixed pixels. The layer takes no hits; taps
+and keys reach the canvas.
+
+**Small screens.** When labels collide or leave the free space, labels move and curves refit first.
+Then the line "Saves as you go." drops, then callout 6, then callout 5, then callout 4. Callouts
+1–3 never drop. At 375 × 667 all six fit.
+
+**Largest text.** Labels scale with Dynamic Type, relative to body, up to 40 pt, and wrap to two
+lines. At the accessibility sizes the drop order usually leaves callouts 1–3. If callout 1 cannot
+fit, the notes are not shown: the placeholder and the one fact already say it.
+
+**Localisation.** A label may run about 35% longer. It wraps to two lines within 60% of the screen
+width before anything drops.
+
+**Reduce Motion.** Strokes appear with no draw-on and fade in over 200 ms; the lift is a 360 ms fade
+with no blur.
+
+**VoiceOver.** The layer is hidden from VoiceOver: every element it points at carries its own label.
 
 ## 3. The schedule — what appears when
 
@@ -68,7 +127,7 @@ invitation is answered or dismissed. Signed-in pages never show Keep
 only after the first kept page and the scale invitation is answered or dismissed —
 `../guidelines/superapp-flow.md` §6), the notification
 permission (asked *after* "yes", never before), and anything about the other rooms (the room
-menu, once there is one, lists them).
+menu, once there is one, lists them; no ink note names another room).
 
 **Never at all:** streaks, scores, percentages, "you missed 3 days", a congratulation for
 showing up, a first-page celebration, a prompt library, a required mood check-in — and any
@@ -108,7 +167,11 @@ feature does not rely on a settings page to be honest.
 4. **Nothing in this flow may read the user's text for anything but search and echoes**
    (`journal.md` §12).
 5. **The write invitation is permanent, not first-run state**: the tap target, the parked caret
-   and the Write seat (`journal.md` §4) hold on every page, in both auth states, after reinstall.
+   and the Write seat (`journal.md` §4a) hold on every page, in both auth states, after reinstall.
+6. **The ink notes need live anchors** — each arrow is fitted to its element's frame per layout
+   (§2), and Caveat ships in the app bundle under the SIL Open Font License. The shown-once flag
+   is install state outside the account data: it survives sign-in and sign-out, and no in-app
+   action resets it.
 
 ## 7. What the corpus buys
 

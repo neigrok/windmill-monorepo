@@ -49,7 +49,8 @@ values are `web/src/styles/tokens/`.
   headers, big numbers. A product room's page title is Baloo 2 Bold 32px on a 40px line, 28px on
   a 36px line at narrow width, letter-spacing 0 (Gym Figma style `Gym/Web/Title`). **Nunito**
   (rounded, readable) for body/UI text. **JetBrains Mono** for count readouts ("6/17 done") and
-  item IDs only — never for prose.
+  item IDs only — never for prose. **Caveat** is the ink-notes hand, used only for Journal's ink
+  notes (`journal/onboarding.md` §2) and bundled in the app under the SIL Open Font License.
 - **Spacing**: 4px base unit, scale runs 4→128px (`--space-1`…`--space-32`). Generous padding
   throughout — nothing feels cramped.
 - **Backgrounds**: flat color, no photography, no gradients as backgrounds. The one gradient

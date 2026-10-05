@@ -94,8 +94,10 @@ The page invites writing by its own geometry, every night, without a word of chr
   *Done writing*. Today's page reads *Today's page*, a text view, double-tap to edit; the parked
   caret is not read. Order: the room's name (a heading), You, the days oldest first, today's
   marker, today's page, Mood, Energy, the seat.
-- **Copy.** Nothing on screen. No caption explains the seat (`guidelines/text-budget.md`): an
-  affordance that needs a sentence is a design failure.
+- **Copy.** Nothing on screen, every night. No caption explains the seat
+  (`guidelines/text-budget.md`): an affordance that needs a sentence is a design failure. The one
+  exception is the first open's ink note at the seat — three words, once, lifted by the first tap
+  (`onboarding.md` §2).
 - **Dynamic Type.** The caret and the three-line minimum scale with the body; the seat stays 44 pt
   and its glyph 18 pt.
 
