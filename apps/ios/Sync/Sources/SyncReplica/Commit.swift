@@ -375,14 +375,33 @@ struct DeltaBuilder {
       delta.lattice.born = stamp
       delta.lattice.life = Life(.alive, stamp)
       delta.lattice.fields = try fields(type, change.values, current: nil, server: true)
+    case .delete:
+      guard type.life else { throw CommitFailure.malformed("\(type.name) has no life") }
+      if type.hasBorn {
+        guard let current else { throw CommitFailure.malformed("a predicted delete of \(key) absent from drawn") }
+        delta.lattice.born = current.lattice.born
+      }
+      delta.lattice.life = Life(.dead, stamp)
+      return delta
     case .update, .write, .put:
       if type.hasBorn {
         guard let current else { throw CommitFailure.malformed("a predicted update of \(key) absent from drawn") }
         delta.lattice.born = current.lattice.born
       }
+      if case .put(_, let present) = change.operation, type.identity == .keyed, type.life {
+        guard present != nil || current != nil else {
+          throw CommitFailure.malformed("a predicted put keeping the presence of \(key) finds it absent from drawn")
+        }
+        let presentBefore = current?.lattice.life?.isAlive == true
+        let present = present ?? presentBefore
+        var life = current?.lattice.life
+        if present && (!presentBefore || type.wholePut) { life = Life(.alive, stamp) }
+        if !present && presentBefore { life = Life(.dead, stamp) }
+        delta.lattice.life = life
+      }
       delta.lattice.fields = try fields(type, change.values, current: current, server: true)
     default:
-      throw CommitFailure.malformed("a prediction is a create, update, put or write")
+      throw CommitFailure.malformed("a prediction is a create, update, delete, put or write")
     }
     for (name, edit) in change.texts {
       guard let field = type.field(name), case .text = field.kind else {
