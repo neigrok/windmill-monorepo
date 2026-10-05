@@ -801,6 +801,85 @@ class SyncRuntimeTests {
         }
     }
 
+    @Test fun abandoningAnAppSignInClearsItsResumeCredentialAndKeepsAnonymousWork() = runBlocking {
+        Fixture(bound = false).use { fixture ->
+            fixture.create()
+            fixture.transport.holdsRecords = true
+            val session = fixture.runtime.signIn("A", "token:A")
+            val work = fixture.engine.device.current().entries().single().json
+            session.cancel()
+            assertFalse(fixture.runtime.abandonSignIn("A", "token:A"))
+            assertNull(fixture.engine.device.meta["pendingSignIn"])
+            assertNull(fixture.tokens.token("A"))
+            assertNull(fixture.runtime.resumeSignIn())
+            assertEquals("anon", fixture.engine.device.current().state)
+            assertEquals(work, fixture.engine.device.current().entries().single().json)
+        }
+    }
+
+    @Test fun anAbandonedStalledHelloCannotSelectItsAccountWhenItEventuallyAnswers() = runBlocking {
+        Fixture(bound = false).use { fixture ->
+            fixture.create()
+            val answer = CompletableDeferred<Reply<SyncResponse>>()
+            fixture.transport.helloAnswer = answer
+            val pending = async { runCatching { fixture.runtime.signIn("A", "token:A") } }
+            assertEquals("token:A", withTimeout(2_000) { fixture.transport.hellos.receive() })
+            val work = fixture.engine.device.current().entries().single().json
+            assertFalse(fixture.runtime.abandonSignIn("A", "token:A"))
+            answer.complete(Reply.Answer(SyncResponse(200, Json.objectOf("serverTime" to Json.of(5_000),
+                "epoch" to Json.of("ep-1"), "as" to Json.of("A"), "schema" to Json.of(2), "minSchema" to Json.of(2),
+                "holdsRecords" to Json.objectOf("probe" to Json.of(false))))))
+            assertEquals(EngineError.Code.signInEnded, (pending.await().exceptionOrNull() as EngineError).code)
+            assertEquals("anon", fixture.engine.device.current().state)
+            assertEquals(work, fixture.engine.device.current().entries().single().json)
+        }
+    }
+
+    @Test fun abandoningAnOldTokenCannotCancelANewerAttemptForTheSameAccount() = runBlocking {
+        Fixture(bound = false).use { fixture ->
+            fixture.create()
+            fixture.transport.holdsRecords = true
+            fixture.runtime.signIn("A", "token:A")
+            fixture.tokens.save("A", "replacement:A")
+            val before = fixture.engine.snapshot()
+            assertFalse(fixture.runtime.abandonSignIn("A", "token:A"))
+            assertEquals(before, fixture.engine.snapshot())
+            assertEquals("replacement:A", fixture.tokens.token("A"))
+            assertEquals(Json.of("A"), fixture.engine.device.meta.member("pendingSignIn").member("account"))
+        }
+    }
+
+    @Test fun aCompletedSignInWinsALateAppCancellationAndKeepsItsCredential() = runBlocking {
+        Fixture(bound = false).use { fixture ->
+            fixture.create()
+            fixture.transport.holdsRecords = true
+            val session = fixture.runtime.signIn("A", "token:A")
+            session.complete(mapOf("probe" to LineageAnswer.add))
+            val before = fixture.engine.snapshot()
+            assertTrue(fixture.runtime.abandonSignIn("A", "token:A"))
+            assertEquals(before, fixture.engine.snapshot())
+            assertEquals("token:A", fixture.tokens.token("A"))
+            assertEquals("A", fixture.engine.device.current().account)
+        }
+    }
+
+    @Test fun failedCredentialDeletionDoesNotResumeAnAbandonedSignInOrLoseItsWork() = runBlocking {
+        Fixture(bound = false).use { fixture ->
+            fixture.create()
+            fixture.transport.holdsRecords = true
+            fixture.runtime.signIn("A", "token:A")
+            val work = fixture.engine.device.current().entries().single().json
+            fixture.tokens.failDelete = true
+            assertNotNull(runCatching { fixture.runtime.abandonSignIn("A", "token:A") }.exceptionOrNull())
+            assertNull(fixture.engine.device.meta["pendingSignIn"])
+            assertEquals("anon", fixture.engine.device.current().state)
+            assertEquals(work, fixture.engine.device.current().entries().single().json)
+            fixture.tokens.failDelete = false
+            assertFalse(fixture.runtime.abandonSignIn("A", "token:A"))
+            assertNull(fixture.tokens.token("A"))
+        }
+    }
+
     @Test fun replacedSignOutCannotFinishOrCancelTheNewSessionsSenderHold() = runBlocking {
         Fixture().use { fixture ->
             val replaced = fixture.runtime.signOut()
