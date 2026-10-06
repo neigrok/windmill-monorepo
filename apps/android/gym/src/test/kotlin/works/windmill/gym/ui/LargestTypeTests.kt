@@ -63,6 +63,7 @@ import works.windmill.gym.domain.sync.ProposeRoutine
 import works.windmill.gym.net.FakeGymRest
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.GymResult
+import works.windmill.sync.core.Json
 import works.windmill.sync.modelserver.ModelServer
 import works.windmill.gym.domain.sync.Exercise as EngineExercise
 import works.windmill.gym.domain.sync.Proposal as EngineProposal
@@ -197,7 +198,7 @@ class LargestTypeTests {
                     presses.map { press -> EngineEntry(Id(press, EngineExercise), List(5) { EngineTarget(3) }) },
                     "Heavier triples across the whole day.")) is Outcome.Committed)
                 coach.sync(server)
-                assertEquals("the log took the proposal", emptyList<Any>(), coach.engine.notices("gym").notices.value)
+                assertEquals("the log took the proposal", emptyList<Json>(), coach.notices())
             } } } finally { coachScope.cancel() }
             room.pull(server)
             runBlocking { room.store.refreshEngine() }

@@ -106,5 +106,10 @@ internal class EngineRoomFixture(
         pull(server)
     }
     fun outbox() = engine.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() }
+    // The selected replica's refusal notices as the engine holds them. `engine.notices(...)` is an
+    // observation the engine refreshes on its own thread, so it can trail the sync that just ran.
+    fun notices(): List<Json> = engine.snapshot().let { device ->
+        device.member("replicas").arr().first { it.member("meta").member("replica") == device.member("active") }["notices"]?.arr().orEmpty()
+    }
     override fun close() = engine.close()
 }

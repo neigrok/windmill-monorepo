@@ -316,7 +316,7 @@ class CoachOwnershipTests {
                 runCurrent()
                 server.refuse(code = code)
                 room.sync(server)
-                assertEquals(1, room.engine.notices("gym").notices.value.size)
+                assertEquals(listOf(code), room.notices().map { it.member("code").str() })
                 room.select("b")
                 advanceTimeBy(25); runCurrent()
                 assertEquals(ProposalOutcome.Failed(WriteFailure.Refused("The account changed. Open this again.")), result.await())
