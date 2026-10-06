@@ -124,7 +124,7 @@ TEST(gym_training_engine_join_reserves_alias_for_retries_audit_next_writes_and_r
   REQUIRE(refused);
   CHECK_EQ(refused->result["code"].asString(), "id-spent");
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
-  CHECK(!h.log.session(h.user, SessionId{"session_joinalias"}));
+  CHECK(!h.repo.log.session(h.user, SessionId{"session_joinalias"}));
   CHECK(backfill.auditCurrent(h.user.str())[0]["audit"].asBool());
   CHECK(h.failures.messages.empty());
 }
@@ -310,7 +310,7 @@ TEST(gym_training_engine_correction_admits_trimmed_name_and_keeps_raw_receipt) {
   SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
                          {setAt("set_trimmed01", end - 1500)}};
   REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
-  const auto stored = h.log.setOf(h.user, imported.sets[0].id);
+  const auto stored = h.repo.log.setOf(h.user, imported.sets[0].id);
   REQUIRE(stored);
   SessionCorrectionIn incoming{"correct_trimmed1", end - 2000, end - 1000,
                                "  Corrected workout  ", {{*stored, true, true}}};
@@ -344,7 +344,7 @@ TEST(gym_training_engine_correction_admits_long_padding_and_validated_numbers) {
   SessionImport imported{session, end - 2000, end - 1000, std::nullopt,
                          {setAt("set_padding01", end - 1500)}};
   REQUIRE_EQ(h.door.importSession(h.user, imported).error, BatchLogError::none);
-  auto existing = h.log.setOf(h.user, imported.sets[0].id);
+  auto existing = h.repo.log.setOf(h.user, imported.sets[0].id);
   REQUIRE(existing);
   existing->weightKg = 20.2500000001;
   existing->rpe = 7.5000000001;
@@ -393,7 +393,7 @@ TEST(gym_training_engine_stale_settle_is_a_command_and_freeze_preserves_rows) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
   EngineSwitch enabled;
   Harness h;
-  TrainingService training{h.log, h.program, h.clock, h.tokens, &h.door};
+  TrainingService training{h.repo.log, h.repo.program, h.clock, h.tokens, &h.door};
   const auto at = h.clock.now;
   REQUIRE(training.start(h.user, startAt("session_stale1", at)).session);
   h.clock.now += kAutoCloseMs;
@@ -410,7 +410,7 @@ TEST(gym_training_engine_stale_settle_is_a_command_and_freeze_preserves_rows) {
   if (previous) setenv("GYM_WRITE_FREEZE", previous->c_str(), 1);
   else unsetenv("GYM_WRITE_FREEZE");
   CHECK(!training.openSession(h.user));
-  const auto settled = h.log.session(h.user, SessionId{"session_stale1"});
+  const auto settled = h.repo.log.session(h.user, SessionId{"session_stale1"});
   REQUIRE(settled);
   CHECK_EQ(settled->finishedAtMs, std::optional<std::uint64_t>{at});
   CHECK_EQ(settled->closedBy, std::optional<ClosedBy>{ClosedBy::stale});

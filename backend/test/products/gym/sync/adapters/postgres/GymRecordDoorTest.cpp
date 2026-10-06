@@ -33,7 +33,7 @@ TEST(gym_record_engine_routine_doors_keep_replay_revision_and_spent_identity) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  ProgramService program{h.program, h.clock, &h.door};
+  ProgramService program{h.repo.program, h.clock, &h.door};
   const auto created = program.createRoutine(h.user, routineWrite(), std::nullopt);
   REQUIRE(created.routine);
   CHECK_EQ(created.error, RoutineWriteError::none);
@@ -59,7 +59,7 @@ TEST(gym_record_engine_routines_translate_unknown_exercise_and_foreign_ids) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  ProgramService program{h.program, h.clock, &h.door};
+  ProgramService program{h.repo.program, h.clock, &h.door};
   auto missing = routineWrite(); missing.entries = {RoutineEntry{1, ExerciseId{"unknown-move"}, {}, std::nullopt}};
   CHECK_EQ(program.createRoutine(h.user, missing, std::nullopt).error, RoutineWriteError::unknownExercise);
   auto malformed = missing; malformed.entries = {RoutineEntry{1, ExerciseId{"."}, {}, std::nullopt}};
@@ -78,7 +78,7 @@ TEST(gym_record_engine_proposal_doors_translate_identity_and_settled_states) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  ProgramService program{h.program, h.clock, &h.door};
+  ProgramService program{h.repo.program, h.clock, &h.door};
   CHECK_EQ(program.propose(h.user, proposalWrite()).error, ProposalMintError::unknownRoutine);
   REQUIRE(program.createRoutine(h.user, routineWrite(), std::nullopt).routine);
   const auto minted = program.propose(h.user, proposalWrite());
@@ -117,7 +117,7 @@ TEST(gym_record_engine_proposals_translate_every_supersession_reason) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  ProgramService program{h.program, h.clock, &h.door};
+  ProgramService program{h.repo.program, h.clock, &h.door};
   REQUIRE(program.createRoutine(h.user, routineWrite(), std::nullopt).routine);
   const auto replaced = program.propose(h.user, proposalWrite());
   REQUIRE(replaced.proposal);
@@ -143,7 +143,7 @@ TEST(gym_record_engine_proposal_removal_composes_reply_before_death) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  ProgramService program{h.program, h.clock, &h.door};
+  ProgramService program{h.repo.program, h.clock, &h.door};
   REQUIRE(program.createRoutine(h.user, routineWrite(), std::nullopt).routine);
   const auto proposal = program.proposeRemoval(h.user, ProposalId{"proposal_001"}, RoutineId{"routine_0001"}, "Drop this day", ProposalSource{ProposalDoor::mcp, "", "", std::nullopt});
   REQUIRE(proposal.proposal);
@@ -159,7 +159,7 @@ TEST(gym_record_engine_catalog_create_rename_and_seed_override_keep_aliases) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  CatalogService catalog{h.catalog, &h.door};
+  CatalogService catalog{h.repo.catalog, &h.door};
   const ExerciseWrite incoming{ExerciseId{"exercise_001"}, "Custom press", Pattern::press, Equipment::barbell, std::nullopt};
   const auto created = catalog.createExercise(h.user, incoming);
   REQUIRE(created.exercise);
@@ -184,7 +184,7 @@ TEST(gym_record_engine_notes_translate_cap_foreign_spent_and_order_mismatch) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   std::vector<NoteId> order;
   for (int i = 0; i < 10; ++i) {
     const Note incoming{NoteId{"note_0000" + std::to_string(i)}, h.user, "Title " + std::to_string(i), "Body"};
@@ -212,7 +212,7 @@ TEST(gym_record_engine_insight_receipts_preserve_snapshot_after_edit_and_delete)
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   const Note incoming{NoteId{"note_0000001"}, h.user, "Constraint", "Keep sessions short"};
   const auto saved = notes.saveInsight(incoming);
   REQUIRE(saved.note);
@@ -236,7 +236,7 @@ namespace {
 void insightReceiptRace(bool remove) {
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   const Note incoming{NoteId{"note_atomic1"}, h.user, "Constraint", "Keep sessions short"};
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
@@ -309,7 +309,7 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_note_and_scope) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   FailingInsightReceipt inject;
   const Note incoming{NoteId{"note_atomic1"}, h.user, "Constraint", "Keep sessions short"};
   bool failed = false;
@@ -328,7 +328,7 @@ TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_rep
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   const auto original = notes.saveInsight(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
   REQUIRE(original.note);
   const Note duplicate{NoteId{"note_duplicate1"}, h.user, "Constraint", "Same text"};
@@ -383,7 +383,7 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_alias_reservation_and_
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   const auto original = notes.saveNote(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
   REQUIRE(original.note);
   const Note duplicate{NoteId{"note_duplicate1"}, h.user, "Constraint", "Same text"};
@@ -462,8 +462,8 @@ TEST(gym_record_engine_weighin_whole_put_and_preferences_keep_sql_reads) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  BodyweightService weight{h.bodyweight, &h.door};
-  PreferencesService preferences{h.preferences, &h.door};
+  BodyweightService weight{h.repo.bodyweight, &h.door};
+  PreferencesService preferences{h.repo.preferences, &h.door};
   const Bodyweight original{h.user, "2023-11-14", 80.0, h.clock.now};
   CHECK_EQ(weight.save(original), original);
   CHECK_EQ(weight.save(Bodyweight{h.user, original.dateLocal, 70.0, h.clock.now - 1}), original);
@@ -484,7 +484,7 @@ TEST(gym_record_engine_weighin_translates_bad_instant_to_forecast_sentence) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  BodyweightService weight{h.bodyweight, &h.door};
+  BodyweightService weight{h.repo.bodyweight, &h.door};
   bool refused = false;
   try {
     weight.save(Bodyweight{h.user, "2023-11-16", 80.0, h.clock.now});
@@ -500,7 +500,7 @@ TEST(gym_record_engine_d3_door_and_replica_weighins_follow_whole_put_stamp_order
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  BodyweightService weight{h.bodyweight, &h.door};
+  BodyweightService weight{h.repo.bodyweight, &h.door};
   const Bodyweight doorReading{h.user, "2023-11-14", 80.0, h.clock.now - 100};
   CHECK_EQ(weight.save(doorReading), doorReading);
   sync::SyncCatalog catalog{engine::registry()};
@@ -547,7 +547,7 @@ TEST(gym_record_engine_insight_global_receipt_race_has_one_owner_and_snapshot) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_PG_TEST");
   doortest::Harness h;
   doortest::EngineSwitch enabled;
-  NotesService notes{h.notes, h.clock, &h.door};
+  NotesService notes{h.repo.notes, h.clock, &h.door};
   const auto ownerNote = notes.saveNote(Note{NoteId{"note_user001"}, h.user, "Constraint", "Same text"});
   const auto otherNote = notes.saveNote(Note{NoteId{"note_other01"}, h.other, "Constraint", "Same text"});
   REQUIRE(ownerNote.note);

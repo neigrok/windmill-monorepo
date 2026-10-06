@@ -3,16 +3,32 @@
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
 #include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
 #include "platform/infra/SyncProducts.h"
+#include "products/gym/adapters/mcp/GymTools.h"
+#include "products/gym/adapters/postgres/PgAskThreadRepository.h"
 #include "products/gym/adapters/postgres/PgLogRepository.h"
 #include "products/gym/adapters/postgres/PgProgramRepository.h"
 #include "products/gym/adapters/postgres/PgCatalogRepository.h"
 #include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgBodyweightRepository.h"
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
+#include "products/gym/application/BodyweightService.h"
+#include "products/gym/application/CatalogService.h"
+#include "products/gym/application/NotesService.h"
+#include "products/gym/application/PreferencesService.h"
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/ThreadService.h"
+#include "products/gym/application/TrainingService.h"
 #include "test/platform/Fakes.h"
+#include "test/products/gym/Fakes.h"
 
 #include <pqxx/pqxx>
 
+#include <memory>
+#include <string>
+#include <vector>
+
+// The gym as main.cpp builds it, over the sync database: every write a test makes here is admitted by the
+// engine through the one door. Cases using it skip unless WM_PG_TEST is set (RUNNING.md §7).
 namespace wm::gym::doortest {
 
 inline std::shared_ptr<PgPool> pool() {
@@ -29,19 +45,45 @@ struct Failures : FailureReporter {
   void report(const std::string&, const std::string&, const std::string& detail) override { messages.push_back(detail); }
 };
 
+using EngineSwitch = fake::EngineWrites;
+
+// The gym's Postgres repositories, under the names FakeGym gives its in-memory ones.
+struct Repositories {
+  PgLogRepository log{pool()};
+  PgCatalogRepository catalog{pool()};
+  PgProgramRepository program{pool()};
+  PgAskThreadRepository threads{pool()};
+  PgPreferencesRepository preferences{pool()};
+  PgNotesRepository notes{pool()};
+  PgBodyweightRepository bodyweight{pool()};
+};
+
+// A shared_ptr that owns nothing, for the adapters that hold their services that way.
+template <class T>
+std::shared_ptr<T> borrowed(T& held) {
+  return std::shared_ptr<T>(std::shared_ptr<void>{}, &held);
+}
+
+// Two accounts, an empty gym, and the services and tools over the door. The clock is the door's and the
+// services' alike, so a test that moves it moves the engine's server time with it.
 struct Harness {
+  EngineSwitch engine;
   UserId user{"77777777-7777-4777-8777-777777777777"};
   UserId other{"77777777-7777-4777-8777-777777777778"};
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
   Failures failures;
-  PgLogRepository log{pool()};
-  PgProgramRepository program{pool()};
-  PgCatalogRepository catalog{pool()};
-  PgNotesRepository notes{pool()};
-  PgBodyweightRepository bodyweight{pool()};
-  PgPreferencesRepository preferences{pool()};
-  GymDoor door{pool(), clock, failures, log, program, catalog, notes, bodyweight, preferences, sync::productCatalog()};
+  Repositories repo;
+  GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, repo.notes, repo.bodyweight,
+               repo.preferences, sync::productCatalog()};
+  TrainingService training{repo.log, repo.program, clock, tokens, &door};
+  CatalogService catalog{repo.catalog, &door};
+  ProgramService program{repo.program, clock, &door};
+  NotesService notes{repo.notes, clock, &door};
+  BodyweightService bodyweight{repo.bodyweight, &door};
+  PreferencesService preferences{repo.preferences, &door};
+  ThreadService threads{repo.threads, clock, &door};
+  GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
 
   Harness() {
     PgLease lease{*pool()};
@@ -52,17 +94,20 @@ struct Harness {
     txn.commit();
     engine::PgGymMetadataUpgrade(pool()).run();
   }
-};
 
-struct EngineSwitch {
-  std::optional<std::string> previous;
-  EngineSwitch() {
-    if (const char* value = std::getenv("GYM_ENGINE_WRITES")) previous = value;
-    setenv("GYM_ENGINE_WRITES", "1", 1);
+  // A write a phone makes through /v1/sync, admitted as the server's own intent: the deltas in, the result
+  // out. GymDoor::delta builds one.
+  Json::Value admit(const UserId& account, const std::vector<Json::Value>& deltas) {
+    return door.execute(account, "test_admit", Json::Value(Json::objectValue), [&](sync::SyncTxn&) {
+      Json::Value intent = GymDoor::intent();
+      for (const Json::Value& delta : deltas) intent["d"].append(delta);
+      return std::optional<Json::Value>{intent};
+    });
   }
-  ~EngineSwitch() {
-    if (previous) setenv("GYM_ENGINE_WRITES", previous->c_str(), 1);
-    else unsetenv("GYM_ENGINE_WRITES");
+
+  // A record a phone deleted: its death delta, admitted.
+  void kill(const UserId& account, const std::string& type, const std::string& id) {
+    GymDoor::requireOk(admit(account, {GymDoor::delta(type, id, Json::Value(Json::objectValue), false, true)}));
   }
 };
 

@@ -2,10 +2,13 @@
 
 #include <chrono>
 
+#include "products/gym/application/ProgramService.h"
+#include "products/gym/application/TrainingService.h"
 #include "products/gym/ports/AskAgent.h"
 #include "products/gym/ports/AskThreadRepository.h"
 #include "products/gym/ports/BodyweightRepository.h"
 #include "products/gym/ports/CatalogRepository.h"
+#include "products/gym/ports/GymWriteDoor.h"
 #include "products/gym/ports/LogRepository.h"
 #include "products/gym/ports/NotesRepository.h"
 #include "products/gym/ports/PreferencesRepository.h"
@@ -16,6 +19,7 @@
 #include <set>
 #include <cmath>
 #include <cstdint>
+#include <cstdlib>
 #include <functional>
 #include <map>
 #include <optional>
@@ -127,6 +131,17 @@ struct FakeGymStore {
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
     customs.push_back({owner.str(), exercise});
+  }
+  // The rows as the store holds them once the engine admitted them, written straight in: a set takes
+  // the next number of its movement within its session, as the set trigger numbers it.
+  void seedSession(const Session& session) { sessions.push_back(session); }
+  Set seedSet(Set set) {
+    set.setNumber = 1;
+    for (const Set& held : sets)
+      if (held.session == set.session && held.exercise == set.exercise)
+        set.setNumber = std::max(set.setNumber, held.setNumber + 1);
+    sets.push_back(set);
+    return set;
   }
 
   // Seeds under the name THIS account calls them, then its own movements, sorted on the resolved name.
@@ -1767,6 +1782,57 @@ struct FakeGym {
   FakePreferencesRepository preferences{db};
   FakeNotesRepository notes{db};
   FakeBodyweightRepository bodyweight{db};
+};
+
+// GYM_ENGINE_WRITES on for one harness's life, so every service write takes the door it was handed.
+struct EngineWrites {
+  std::optional<std::string> previous;
+  EngineWrites() {
+    if (const char* value = std::getenv("GYM_ENGINE_WRITES")) previous = value;
+    setenv("GYM_ENGINE_WRITES", "1", 1);
+  }
+  ~EngineWrites() {
+    if (previous) setenv("GYM_ENGINE_WRITES", previous->c_str(), 1);
+    else unsetenv("GYM_ENGINE_WRITES");
+  }
+  EngineWrites(const EngineWrites&) = delete;
+  EngineWrites& operator=(const EngineWrites&) = delete;
+};
+
+// The door an in-memory harness hands its services. A read settles nothing and every write is refused:
+// the write rules are the engine's, and their tests run on the real door (GymDoorFixture.h).
+struct ReadOnlyDoor : GymWriteDoor {
+  [[noreturn]] static void refuse() {
+    throw std::logic_error("an in-memory gym harness writes nothing: seed FakeGymStore, or test the write on GymDoor");
+  }
+  void closeStale(const UserId&) override {}
+  void unlinkThread(const UserId&, const ThreadId&) override {}
+  StartOutcome start(const UserId&, const SessionStart&) override { refuse(); }
+  AppendOutcome append(const UserId&, const SessionId&, const SetWrite&) override { refuse(); }
+  BatchLogOutcome appendSets(const UserId&, const SessionId&, const std::vector<SetWrite>&) override { refuse(); }
+  BatchLogOutcome importSession(const UserId&, const SessionImport&) override { refuse(); }
+  FinishOutcome finish(const UserId&, const SessionId&, std::uint64_t) override { refuse(); }
+  std::optional<Set> fixSet(const UserId&, const SessionId&, const SetId&, const SetFix&) override { refuse(); }
+  void deleteSet(const UserId&, const SessionId&, const SetId&) override { refuse(); }
+  DiscardOutcome discard(const UserId&, const SessionId&) override { refuse(); }
+  CorrectionOutcome correctSession(const UserId&, const SessionId&, const SessionCorrectionIn&) override { refuse(); }
+  RoutineWriteOutcome createRoutine(const Routine&, std::optional<ProposalDoor>) override { refuse(); }
+  RoutineWriteOutcome replaceRoutine(const Routine&, std::optional<int>) override { refuse(); }
+  bool deleteRoutine(const UserId&, const RoutineId&) override { refuse(); }
+  ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override { refuse(); }
+  ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
+                                     const ProposalSource&) override { refuse(); }
+  ProposalSettleOutcome apply(const UserId&, const ProposalId&) override { refuse(); }
+  ProposalSettleOutcome dismiss(const UserId&, const ProposalId&) override { refuse(); }
+  ExerciseInsertOutcome createExercise(const UserId&, const Exercise&) override { refuse(); }
+  std::optional<Exercise> renameExercise(const UserId&, const ExerciseId&, const std::string&) override { refuse(); }
+  NoteWriteOutcome saveNote(const Note&) override { refuse(); }
+  NoteWriteOutcome saveInsight(const Note&) override { refuse(); }
+  void deleteNote(const UserId&, const NoteId&) override { refuse(); }
+  NotesOrderOutcome reorderNotes(const UserId&, const std::vector<NoteId>&) override { refuse(); }
+  Bodyweight saveBodyweight(const Bodyweight&) override { refuse(); }
+  void deleteBodyweight(const UserId&, const std::string&) override { refuse(); }
+  GymPreferences savePreferences(const GymPreferences&) override { refuse(); }
 };
 
 // An AskAgent that never leaves the process: it records what it was handed, runs its plan, answers.

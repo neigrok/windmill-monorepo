@@ -305,11 +305,7 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ReadReceiptTest.cpp
   test/products/gym/domain/NoteTest.cpp
   test/products/gym/domain/BodyweightTest.cpp
-  test/products/gym/application/TrainingServiceTest.cpp
-  test/products/gym/application/CatalogServiceTest.cpp
-  test/products/gym/application/ProgramServiceTest.cpp
   test/products/gym/application/ThreadServiceTest.cpp
-  test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/application/BodyweightServiceTest.cpp)
 target_link_libraries(windmill_domain_tests PRIVATE windmill_roadmap windmill_journal windmill_gym windmill_probe windmill_product_sync)
 # The corpus and the product registries are read from the contract at run time, so the tests see every file the
@@ -647,6 +643,10 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/http/AskApiTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
+  test/products/gym/application/TrainingServiceTest.cpp
+  test/products/gym/application/ProgramServiceTest.cpp
+  test/products/gym/application/CatalogServiceTest.cpp
+  test/products/gym/application/NotesServiceTest.cpp
   test/products/gym/adapters/postgres/PgLogHistoryTest.cpp
   test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp
