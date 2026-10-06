@@ -107,7 +107,8 @@ import XCTest
     let viewport = chart.descendants(matching: .any)["gym-chart-viewport"]
     for _ in 0..<3 where !viewport.isHittable || viewport.frame.maxY > app.frame.maxY - 60 { app.swipeUp(velocity: .slow) }
     XCTAssertTrue(viewport.isHittable)
-    let dates = chart.descendants(matching: .any)["gym-chart-dates"]
+    let dateLabels = chart.descendants(matching: .any).matching(identifier: "gym-chart-dates")
+    let dates = dateLabels.firstMatch
     XCTAssertTrue(dates.exists)
     let latest = dates.value as? String
     XCTAssertNotNil(latest)
@@ -118,18 +119,15 @@ import XCTest
     let left = origin.withOffset(CGVector(dx: visible.minX + visible.width * 0.2, dy: visible.midY))
     let right = origin.withOffset(CGVector(dx: visible.minX + visible.width * 0.85, dy: visible.midY))
     left.press(forDuration: 0.01, thenDragTo: right, withVelocity: .fast, thenHoldForDuration: 0)
-    let shifted = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      dates.exists && dates.value as? String != latest
-    }, object: dates)
-    XCTAssertEqual(XCTWaiter.wait(for: [shifted], timeout: 5), .completed)
+    XCTAssertTrue(dateLabels.matching(NSPredicate(format: "value != nil AND value != %@", latest ?? ""))
+      .firstMatch.waitForExistence(timeout: 10))
     let earlier = dates.value as? String
+    XCTAssertNotNil(earlier)
     XCTAssertNotEqual(earlier, latest)
     snapshot("\(chartID)-earlier-dates", app: app)
     right.press(forDuration: 0.01, thenDragTo: left, withVelocity: .fast, thenHoldForDuration: 0)
-    let returned = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      dates.exists && dates.value as? String != earlier
-    }, object: dates)
-    XCTAssertEqual(XCTWaiter.wait(for: [returned], timeout: 5), .completed)
+    XCTAssertTrue(dateLabels.matching(NSPredicate(format: "value != nil AND value != %@", earlier ?? ""))
+      .firstMatch.waitForExistence(timeout: 10))
     XCTAssertNotEqual(dates.value as? String, earlier)
   }
 

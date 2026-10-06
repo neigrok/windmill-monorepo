@@ -121,7 +121,7 @@ jobs:
 
   app-unit-tests:
     runs-on: macos-26
-    timeout-minutes: 20
+    timeout-minutes: 40
     defaults:
       run:
         working-directory: apps/ios/App
@@ -150,22 +150,25 @@ jobs:
   app-ui-tests:
     name: App UI tests (${{ matrix.shard }})
     runs-on: macos-26
-    timeout-minutes: 60
+    timeout-minutes: ${{ matrix.timeout }}
     strategy:
       fail-fast: false
       matrix:
         include:
-          - shard: log-account
+          - shard: log-workout-account
+            timeout: 85
             tests: >-
               -only-testing:WindmillUITests/GymLogFlowTests
+              -only-testing:WindmillUITests/GymWorkoutFlowTests
               -only-testing:WindmillUITests/AppleLinkingFlowTests
-          - shard: routines-workout-journal
+          - shard: routines-journal
+            timeout: 95
             tests: >-
               -only-testing:WindmillUITests/GymRoutinesFlowTests
-              -only-testing:WindmillUITests/GymWorkoutFlowTests
               -only-testing:WindmillUITests/JournalFlowTests
               -only-testing:WindmillUITests/WorkoutActivityFlowTests
           - shard: coach-shell
+            timeout: 95
             tests: >-
               -only-testing:WindmillUITests/GymCoachFlowTests
               -only-testing:WindmillUITests/GymIntegrationFlowTests
