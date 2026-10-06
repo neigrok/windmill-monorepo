@@ -20,20 +20,16 @@ import UIKit
   }
   func more(_ name: String, _ app: XCUIApplication, snapshot: String? = nil) {
     let menu = app.buttons["coach-more"]
-    let menuReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in menu.exists && menu.isHittable }, object: menu)
-    XCTAssertEqual(XCTWaiter.wait(for: [menuReady], timeout: 5), .completed)
+    XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
     menu.tap()
     let ids = ["History": "history", "Notes": "notes", "Connected log": "connections", "Gym settings": "settings"]
     let choices = app.sheets.firstMatch
     XCTAssertTrue(choices.waitForExistence(timeout: 5))
     if let snapshot { capture(snapshot, app) }
     let item = choices.buttons[name]
-    let itemReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in
-      guard item.exists else { return false }
-      let frame = item.frame
-      return frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0 && item.isHittable
-    }, object: item)
-    XCTAssertEqual(XCTWaiter.wait(for: [itemReady], timeout: 5), .completed)
+    XCTAssertTrue(item.wait(for: \.isHittable, toEqual: true, timeout: 10))
+    let frame = item.frame
+    XCTAssertTrue(frame.minX.isFinite && frame.minY.isFinite && frame.width > 0 && frame.height > 0)
     item.tap()
     if ids[name] != nil { XCTAssertTrue(app.navigationBars[name].waitForExistence(timeout: 5)) }
   }
@@ -45,8 +41,7 @@ import UIKit
       XCTAssertTrue(app.navigationBars[title].waitForExistence(timeout: 5))
       XCTAssertTrue(app.navigationBars[previousTitle].waitForNonExistence(timeout: 5))
       let menu = app.buttons["coach-more"]
-      let ready = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in menu.exists && menu.isHittable }, object: menu)
-      XCTAssertEqual(XCTWaiter.wait(for: [ready], timeout: 5), .completed)
+      XCTAssertTrue(menu.wait(for: \.isHittable, toEqual: true, timeout: 10))
     }
   }
   func screens(_ appearance: String) {
@@ -69,8 +64,7 @@ import UIKit
     app.buttons["Close"].tap()
     XCTAssertTrue(app.navigationBars["Photo"].waitForNonExistence(timeout: 5))
     let sources = app.buttons["read 214 sets · 6 weeks · 18 sessions"]
-    let sourcesReady = XCTNSPredicateExpectation(predicate: NSPredicate { _, _ in sources.exists && sources.isHittable }, object: sources)
-    XCTAssertEqual(XCTWaiter.wait(for: [sourcesReady], timeout: 5), .completed)
+    XCTAssertTrue(sources.wait(for: \.isHittable, toEqual: true, timeout: 10))
     sources.tap()
     let sourceWorkout = app.buttons["Push A workout"]
     XCTAssertTrue(sourceWorkout.waitForExistence(timeout: 5)); sourceWorkout.tap()
