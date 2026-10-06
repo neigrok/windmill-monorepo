@@ -1,10 +1,17 @@
-// Engine deaths are committed durably while held, and Undo removes the held gesture. The room
-// tracks their visible offer; release and restart belong to the engine. REST Coach deletes wait
-// for this room's timer, and draft entry deletes only change the draft. Each has its own clock.
-// Entries carry {kind, id, line, detail, engineDeath, pending, send, refused, undo}. Engine deaths
-// never invoke send; REST sends settle on success and restore the row on failure.
+// The engine holds set, routine, session, note and weigh-in deletes durably and offers their Undo
+// until its own deadline; the room's clock holds a Coach conversation's REST delete and a dropped draft line.
+
+import { WEIGH_IN_DELETED } from './bodyweight/bodyweight.js';
+import { deletedLine } from './fix.js';
+import { NOTE_DELETED } from './notes/notes.js';
+import { SESSION_DELETED } from './review.js';
+import { routineDeletedLine } from './routines.js';
 
 export const WITHHELD_KINDS = ['set', 'routine', 'session', 'thread', 'entry', 'note', 'bodyweight'];
+
+// The record type each engine-held kind deletes, and back.
+export const HELD_TYPES = { set: 'set', routine: 'routine', session: 'session', note: 'note', bodyweight: 'weighin' };
+export const HELD_KINDS = Object.fromEntries(Object.entries(HELD_TYPES).map(([kind, type]) => [type, kind]));
 
 export function withheldKey(kind, id) {
   return `${kind}:${id}`;
@@ -32,10 +39,25 @@ export function goneIds(settled, kind) {
   return new Set(settled.filter((each) => each.kind === kind).map((each) => each.id));
 }
 
+const countLine = (count) => `${count} deleted.`;
+
 export function heldLine(open) {
   if (open.length === 0) return null;
   if (open.length === 1) return open[0].line;
-  return `${open.length} deleted.`;
+  return countLine(open.length);
+}
+
+// An engine-held delete named from the store, which keeps the record until the delete is released.
+export function deleteLineOf(kind, id, projection) {
+  if (kind === 'set') {
+    const set = projection.set(id);
+    return set ? deletedLine(set) : countLine(1);
+  }
+  if (kind === 'routine') {
+    const routine = projection.routines().find((each) => each.id === id);
+    return routine ? routineDeletedLine(routine.name) : countLine(1);
+  }
+  return { session: SESSION_DELETED, note: NOTE_DELETED, bodyweight: WEIGH_IN_DELETED }[kind];
 }
 
 // What the act does NOT take with it, said at the moment of the act rather than standing on the

@@ -4,6 +4,7 @@ import { BrowserSyncEngine } from '../../../src/platform/sync/engine.js';
 import { registry } from '../../../src/platform/sync/schema.js';
 import { environment, until } from '../../platform/sync/fakes.js';
 import { hello } from '../../../../packages/api-contract/sync/reference/server/pull.js';
+import { GymRefusal, isStoreFailure } from '../../../src/products/gym/errors.js';
 import { createGymApi, prepareGymSync } from '../../../src/products/gym/gymSync.js';
 
 async function open(t) {
@@ -225,13 +226,68 @@ test('an offline removal proposal hides its routine durably before the authorita
   assert.equal((await resumed.proposal('proposal0001')).state, 'applied');
 });
 
-test('storage denial leaves no durable partial write and reports only a static operation', async (t) => {
-  const { api, engine, failures, events } = await open(t);
+test('a store that cannot commit leaves no partial write, is the device’s failure, and the engine alone reports it', async (t) => {
+  const { api, engine, env, failures, events } = await open(t);
   t.mock.method(engine.store, 'transact', async () => { throw new Error('SECRET workout'); });
-  await assert.rejects(api.createRoutine(routine), /SECRET/);
+  await assert.rejects(api.createRoutine(routine), (error) => isStoreFailure(error) && error.message === 'the device store did not commit');
   assert.deepEqual(engine.device.activeReplica.outbox, []);
-  assert.deepEqual(failures, ['routine-create']);
+  assert.deepEqual(failures, []);
+  assert.deepEqual(env.failures, ['storage']);
   assert.deepEqual(events, [{ operation: 'routine-create', outcome: 'failed' }]);
+});
+
+// What each display-name write commits: the record and the name it writes.
+const namesWritten = (engine) => engine.device.activeReplica.entries()
+  .flatMap(({ intent }) => intent.d.map(({ t, id, f }) => [t, id, f.name?.[0] ?? f.title?.[0]]));
+
+test('a rename writes the name trimmed and composed, and a blank one is refused before anything is written', async (t) => {
+  const { api, engine, events, failures } = await open(t);
+  assert.deepEqual(await api.renameExercise('back-squat', '  Cafe\u0301 squat\u3000'),
+    { id: 'back-squat', name: 'Café squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false });
+  assert.deepEqual(namesWritten(engine), [['exerciseName', 'back-squat', 'Café squat']]);
+  for (const blank of ['   ', ' \u3000', '\u00a0\u3000\t', '\u2028\ufeff']) {
+    await assert.rejects(api.renameExercise('back-squat', blank),
+      (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === 'A movement needs a name.');
+  }
+  await assert.rejects(api.renameExercise('back-squat', 'ü'.repeat(61)),
+    (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === 'A name runs to 60 characters.');
+  assert.deepEqual(namesWritten(engine), [['exerciseName', 'back-squat', 'Café squat']], 'nothing refused was written');
+  assert.deepEqual(events.map(({ outcome }) => outcome), ['saved-local', 'failed', 'failed', 'failed', 'failed', 'failed']);
+  assert.deepEqual(failures, [], 'a refusal is expected, and reports nothing');
+});
+
+test('a rename to the name the store already holds writes nothing; an unknown movement is refused', async (t) => {
+  const { api, engine, events } = await open(t);
+  assert.deepEqual(await api.renameExercise('back-squat', ' Back Squat '),
+    { id: 'back-squat', name: 'Back Squat', pattern: 'squat', equipment: 'barbell', stepKg: 2.5, custom: false });
+  await assert.rejects(api.renameExercise('ex_unknown', 'New'), (error) => error instanceof GymRefusal && error.code === 'unknown-record');
+  assert.deepEqual(engine.device.activeReplica.outbox, []);
+  assert.deepEqual(events, [{ operation: 'exercise-rename', outcome: 'unchanged' }, { operation: 'exercise-rename', outcome: 'failed' }]);
+});
+
+test('a movement, a routine and a note are each created with their name trimmed, and none is written blank', async (t) => {
+  const { api, engine } = await open(t);
+  await api.createExercise({ id: 'ex_custom01', name: ' Zercher squat ', pattern: 'isolation', equipment: 'barbell' });
+  await api.renameExercise('ex_custom01', ' Zercher ');
+  await api.createRoutine({ ...routine, name: '\u3000Lower A ' });
+  await api.replaceRoutine(routine.id, { ...routine, name: ' Lower B' }, await api.routine(routine.id));
+  await api.saveNote('note000001', { title: ' First\u00a0', body: '' });
+  const refusals = [
+    [() => api.createExercise({ id: 'ex_custom02', name: '\u3000', pattern: 'isolation', equipment: 'barbell' }), 'A movement needs a name.'],
+    [() => api.createRoutine({ ...routine, id: 'routine00002', name: ' \t ' }), 'Name it to save it.'],
+    [async () => api.replaceRoutine(routine.id, { ...routine, name: '\u00a0' }, await api.routine(routine.id)), 'Name it to save it.'],
+    [() => api.saveNote('note000002', { title: '\u3000 ', body: '' }), 'a note needs a title'],
+  ];
+  for (const [write, sentence] of refusals) {
+    await assert.rejects(write(), (error) => error instanceof GymRefusal && error.code === 'invalid' && error.sentence === sentence);
+  }
+  assert.deepEqual(namesWritten(engine), [
+    ['exercise', 'ex_custom01', 'Zercher squat'],
+    ['exercise', 'ex_custom01', 'Zercher'],
+    ['routine', 'routine00001', 'Lower A'],
+    ['routine', 'routine00001', 'Lower B'],
+    ['note', 'note000001', 'First'],
+  ]);
 });
 
 test('an adapter pinned to a previous replica cannot write into another account', async (t) => {

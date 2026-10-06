@@ -267,7 +267,7 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
   const view = await form(t, 'free', roomLog({
     catalog: CATALOG,
     say: (text, options) => said.push([text, options?.action]),
-    withhold: (entry) => held.push(entry),
+    holdDelete: (entry) => held.push(entry),
   }));
   assert.deepEqual(named(view.tree, 'Back').map((back) => [back.props.href, back.props.children]), [['#/gym/backfill', 'Past workout']]);
   assert.deepEqual(findByClass(view.tree, 'gym-title').map(textOf), ['Free session']);
@@ -289,7 +289,7 @@ test('a free session’s movement arrives with last time’s sets, and Save’s 
   assert.deepEqual(said.map(([text, action]) => [text, action.label]), [['Free session is in the log.', 'Undo']]);
   said[0][1].run();
   assert.equal(window.location.hash, '#/gym/log');
-  assert.deepEqual(held.map(({ kind, id, line }) => [kind, id, line]), [['session', saved, 'Session deleted.']]);
+  assert.deepEqual(held.map(({ kind, id }) => [kind, id]), [['session', saved]]);
 });
 
 test('a time the lifter sets is checked against the log — the open session included — and refused in place with its two doors', async (t) => {
@@ -388,22 +388,25 @@ test('a press the browser could not keep is pressed again with the same request,
   t.mock.timers.enable({ apis: ['Date'], now: NOW });
   browserWith();
   const gym = await pushAAccount(t);
-  // Every press's command is read on its way into the replica; the first one fails inside the
-  // browser's transaction, the way a full IndexedDB fails it.
+  // Every press's command is read on its way into the replica; the first one's transaction then
+  // fails in the browser, the way a full IndexedDB fails it.
   const pressed = [];
   let refusing = true;
   const commit = gym.engine.commit.bind(gym.engine);
   gym.engine.commit = (scope, build, options) => commit(scope, (views) => {
     const write = build(views);
     pressed.push(JSON.stringify(write.gesture.opts.cmd.args));
-    if (refusing) throw new DOMException('storage refused', 'QuotaExceededError');
     return write;
   }, options);
+  const transact = gym.engine.store.transact.bind(gym.engine.store);
+  gym.engine.store.transact = (change, options = {}) => (refusing && !options.readonly
+    ? transact((device) => { change(device); throw new DOMException('storage refused', 'QuotaExceededError'); }, options)
+    : transact(change, options));
   const said = [];
   const view = await form(t, 'routinePushA', roomLog({ catalog: CATALOG, say: (text) => said.push(text) }));
   saveButton(view.tree).props.onClick();
   await settle();
-  assert.deepEqual(said, ['That workout didn’t reach the log — the log didn’t answer. Try again when you have signal.']);
+  assert.deepEqual(said, ['That workout didn’t reach the log — this device couldn’t store it.']);
   assert.equal(textOf(saveButton(view.tree)), 'Save · 9 sets');
   assert.deepEqual(gym.owed(), []);
   refusing = false;

@@ -8,7 +8,6 @@ import {
 } from '../log.js';
 import { MovementPicker } from '../logger/MovementPicker.jsx';
 import { mintId } from '../mint.js';
-import { SESSION_DELETED } from '../review.js';
 import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import { UNDO_LABEL } from '../withheld.js';
@@ -250,11 +249,9 @@ function PastWorkout({ opening, back, log, noRoutines = false }) {
   };
 
   const discard = (id) => {
-    log.withhold({
+    log.holdDelete({
       kind: 'session',
       id,
-      engineDeath: { type: 'session', id },
-      line: SESSION_DELETED,
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym/log';

@@ -4,14 +4,13 @@ import { Back } from './Back.jsx';
 import { failureReason } from './errors.js';
 import { BodyweightReading, useBodyweight, WeighInSheet } from './bodyweight/Bodyweight.jsx';
 import { WEIGH_IN_VERB } from './bodyweight/bodyweight.js';
-import { deletedLine, deleteFailure, fixFailure, setsAfter } from './fix.js';
+import { deleteFailure, fixFailure, setsAfter } from './fix.js';
 import { FixSheet } from './FixSheet.jsx';
 import {
   BACKFILL_HREF, CLOSED_ITSELF_NOTE, closedOnItsOwn, dayLabel, finishHref, fixSetHref, fromSession,
   groupByExercise, isFinished, logWhenLabel, NO_ROUTINE, planFrozenLabel, recordHref,
   routineNameOf, sessionHref, setLoadLabel, shortDayLabel, timeLabel, tonnageLabel,
 } from './log.js';
-import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymSync.js';
@@ -180,7 +179,7 @@ function SessionRow({ summary, selected, href, unit }) {
 
 export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', edit = false, fixSetId = null }) {
   const api = useGymApi();
-  const { say, withhold } = log;
+  const { say, holdDelete } = log;
   const view = useGymRead(
     () => Promise.all([api.session(id), api.exercises()])
       .then(([detail, catalog]) => (detail ? { detail, catalog } : null)),
@@ -195,22 +194,18 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
 
   const dropSet = (set) => {
     closeFix();
-    withhold({
+    holdDelete({
       kind: 'set',
       id: set.id,
-      engineDeath: { type: 'set', id: set.id },
-      line: deletedLine(set),
       refused: (error) => say(deleteFailure(error)),
     });
   };
 
   const discard = () => {
     setFixing(null);
-    withhold({
+    holdDelete({
       kind: 'session',
       id,
-      engineDeath: { type: 'session', id },
-      line: SESSION_DELETED,
       refused: (error) => say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym/log';

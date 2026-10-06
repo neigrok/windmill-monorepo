@@ -64,7 +64,7 @@ test('a refused apply retains the complete inline proposal and says why in place
   gym.refuseWrites();
   await button(screen.tree, 'Apply').props.onClick();
   await settle();
-  assert.equal(textOf(findByClass(screen.tree, 'gym-proposal-refusal')[0]), 'That wasn’t applied — the log didn’t answer. Try again when you have signal.');
+  assert.equal(textOf(findByClass(screen.tree, 'gym-proposal-refusal')[0]), 'That wasn’t applied — this device couldn’t store it.');
   assert.equal(findByClass(screen.tree, 'gym-diff-row').length, 2);
   assert.equal(button(screen.tree, 'Apply').props.disabled, false);
   assert.deepEqual(gym.owed(), []);

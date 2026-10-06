@@ -277,7 +277,63 @@ test('a delete held when the room unmounts goes on the engine’s clock, and a r
   assert.deepEqual(again.log().held, []);
 });
 
-test('a hidden tab ends the Undo: the offer leaves with the foreground, the row stays off, and nothing is said', async (t) => {
+// The room is torn down while the engine still holds the delete — a switch to the journal and back, inside
+// the window. 13-gestures.md: staying in the app keeps the hold, and the transient returns with the time it has left.
+test('a delete held when the room unmounts is offered back on return, with the deadline it had and not a fresh window', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
+
+  menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
+  t.mock.timers.tick(4000);
+  home.view.unmount();
+  t.mock.timers.tick(2000);
+  await settle();
+
+  const again = await routinesHome(t);
+  assert.deepEqual(findByClass(again.screen(), 'gym-routine-name').map(textOf), [], 'the row is still off');
+  assert.deepEqual(again.log().held.map(({ key, kind, id, line, releaseAt, settling }) => ({ key, kind, id, line, releaseAt, settling })),
+    [{ key: 'routine:routinePushA', kind: 'routine', id: 'routinePushA', line: 'Push A deleted.', releaseAt: NOW + UNDO_MS, settling: false }]);
+  assert.deepEqual([again.log().transient.text, again.log().transient.action.label], ['Push A deleted.', 'Undo']);
+
+  // Six seconds were spent before the room came back; the window closes three seconds after it did.
+  t.mock.timers.tick(UNDO_MS - 6000 - 1);
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete routine routinePushA']);
+  assert.equal(again.log().transient.action.label, 'Undo');
+  t.mock.timers.tick(1);
+  await settle();
+  assert.deepEqual(gym.owed(), ['ready delete routine routinePushA']);
+  assert.equal(again.log().transient, null);
+  assert.deepEqual(again.log().held, []);
+});
+
+test('Undo in a room drawn again inside the window takes the delete off the device, and the row is back', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await gymAccount(t, [pushA()]);
+  const home = await routinesHome(t);
+
+  menuOf(home.screen()).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
+  t.mock.timers.tick(4000);
+  home.view.unmount();
+  const again = await routinesHome(t);
+
+  again.log().transient.action.run();
+  await settle();
+  assert.deepEqual(gym.owed(), []);
+  assert.deepEqual(findByClass(again.screen(), 'gym-routine-name').map(textOf), ['Push A']);
+  assert.equal(again.log().transient, null);
+
+  t.mock.timers.tick(UNDO_MS * 2);
+  await settle();
+  assert.deepEqual(gym.owed(), [], 'a delete taken back never happened');
+});
+
+test('a hidden tab ends the Undo when the engine leaves: the hold goes into the queue, the row stays off, and nothing is said', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   const browser = browserWith();
   const gym = await gymAccount(t, [pushA()]);
@@ -287,18 +343,19 @@ test('a hidden tab ends the Undo: the offer leaves with the foreground, the row 
   await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
-  // Another tab, four seconds in. A hidden tab is the app leaving the foreground — the exact
-  // counterpart of the phones' ON_STOP — and leaving lets every held delete go into the queue.
+  // Another tab, four seconds in. Hidden is not yet leaving: the hold and its Undo stay the engine's.
   t.mock.timers.tick(4000);
   browser.hide();
   await settle();
-  assert.deepEqual(home.log().held, [], 'the window let go of everything it was holding');
-  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row stays off: the delete stands');
-  assert.equal(home.log().transient, null, 'and nothing is offered back or said');
+  assert.equal(home.log().transient.action.label, 'Undo');
 
-  t.mock.timers.tick(UNDO_MS * 2);
+  // No tab of the app visible past the engine's debounce: it leaves, and every hold goes into the queue.
+  await gym.engine.leave();
   await settle();
   assert.deepEqual(gym.owed(), ['ready delete routine routinePushA'], 'the delete went into the queue');
+  assert.deepEqual(home.log().held, [], 'the window let go of everything the engine was holding');
+  assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), [], 'the row stays off: the delete stands');
+  assert.equal(home.log().transient, null, 'and nothing is offered back or said');
 
   // Back to the tab: the routine is still gone, and still no sentence about it.
   browser.show();
@@ -415,7 +472,7 @@ test('a refusal reaches the room even though the screen that armed it is gone, a
   assert.deepEqual(namesOn(home), ['Push A'], 'the device kept it, so the home draws it');
   assert.equal(
     home.log().transient.text,
-    'Push A is still in your program — the log didn’t answer. Try again when you have signal.',
+    'Push A is still in your program — this device couldn’t store it.',
   );
 });
 
@@ -431,7 +488,7 @@ test('a routine delete the device cannot keep says the routine is still in the p
   assert.deepEqual(gym.owed(), []);
   assert.equal(
     home.log().transient.text,
-    'Push A is still in your program — the log didn’t answer. Try again when you have signal.',
+    'Push A is still in your program — this device couldn’t store it.',
   );
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), ['Push A']);
 });
@@ -648,7 +705,7 @@ test('the count over the log follows its rows: a held session leaves it, and Und
   const count = () => findByClass(logScreen.screen(), 'gym-log-count').map(textOf);
   assert.deepEqual(count(), ['2 workouts · 2 sets · 10 reps · loads in kg']);
 
-  logScreen.log().withhold({ kind: 'session', id: 'session0002', engineDeath: { type: 'session', id: 'session0002' }, line: 'Session deleted.' });
+  logScreen.log().holdDelete({ kind: 'session', id: 'session0002' });
   await settle();
   assert.deepEqual(gym.owed(), ['held delete session session0002']);
   assert.deepEqual(count(), ['1 workout · 1 sets · 5 reps · loads in kg']);
@@ -668,7 +725,7 @@ test('the live session’s sets follow the window: a held set leaves the mirror,
   await settle();
   assert.deepEqual(view.log.sets.map((each) => each.id), ['set0000001', 'set0000002']);
 
-  view.log.withhold({ kind: 'set', id: 'set0000002', engineDeath: { type: 'set', id: 'set0000002' }, line: '60 × 5 is out of the log.' });
+  view.log.holdDelete({ kind: 'set', id: 'set0000002' });
   await settle();
   assert.deepEqual(gym.owed(), ['held delete set set0000002']);
   assert.deepEqual(view.log.sets.map((each) => each.id), ['set0000001']);
@@ -688,7 +745,7 @@ test('a detail discard the device cannot keep says the session was not discarded
   assert.deepEqual(gym.owed(), []);
   assert.equal(
     detail.log().transient.text,
-    'That session wasn’t discarded — the log didn’t answer. Try again when you have signal.',
+    'That session wasn’t discarded — this device couldn’t store it.',
   );
   assert.equal(detail.log().hidden('session').has('session0001'), false, 'the device kept it, so the log draws it');
 });
@@ -787,7 +844,7 @@ test('the past workout’s overlap refusal reads the account: it stands while th
   assert.equal(refusal().length, 1, 'the account holds that session, so the workout that crosses it is refused');
   assert.deepEqual(door(), ['#/gym/session/session0001']);
 
-  past.log().withhold({ kind: 'session', id: 'session0001', engineDeath: { type: 'session', id: 'session0001' }, line: 'Session deleted.' });
+  past.log().holdDelete({ kind: 'session', id: 'session0001' });
   await settle();
   past.view.redraw();
   assert.deepEqual(gym.owed(), ['held delete session session0001']);
@@ -928,7 +985,7 @@ test('a note delete the device cannot keep is said in the room’s words, and th
   noteEditor(notes.screen()).props.onDelete(held);
   await settle();
 
-  assert.equal(notes.log().transient.text, 'That note wasn’t deleted — the log didn’t answer. Try again when you have signal.');
+  assert.equal(notes.log().transient.text, 'That note wasn’t deleted — this device couldn’t store it.');
   assert.equal(notes.log().transient.action, null, 'a refusal carries no way back');
   assert.deepEqual(gym.owed(), []);
   // Nothing was taken, so the row is back — which is the state the sentence names, and the reason
@@ -1049,7 +1106,7 @@ test('a weigh-in delete the device cannot keep is said in the screen’s own wor
   room.sheet().props.onDelete(today);
   await settle();
 
-  assert.equal(room.log().transient.text, 'That weigh-in wasn’t deleted. Try again in a moment.');
+  assert.equal(room.log().transient.text, 'That weigh-in wasn’t deleted — this device couldn’t store it.');
   assert.equal(room.log().transient.action, null);
   assert.deepEqual(room.owed(), []);
   // The same rule on the other verb: nothing was taken, so the dot and the head reading are back.

@@ -111,7 +111,7 @@ test('a delete the browser cannot keep says the set is still in the log, and put
 
   assert.equal(
     room.transient().text,
-    'That set is still in the log — the log didn’t answer. Try again when you have signal.',
+    'That set is still in the log — this device couldn’t store it.',
   );
   assert.equal(room.transient().action, null, 'nothing is left to undo');
   assert.equal(findByClass(room.screen(), 'gym-set').length, 1, 'the set the log kept is drawn again');

@@ -34,9 +34,8 @@ test('the routine row’s overflow is Log past above Delete, and no surface offe
   assert.equal(/gym-routine-copy|gym-editor-duplicate|gym-editor-foot/.test(read('gym.css')), false);
   // The gate 13-gestures.md put in front of Delete is met: it is a held engine death, and the room's
   // window is its way back.
-  assert.equal((source.match(/engineDeath: \{ type: 'routine', id: routine\.id \}/g) ?? []).length, 1);
-  assert.equal(source.includes("log.withhold({\n    kind: 'routine',"), true);
-  assert.ok(source.indexOf('const remove = (routine) => log.withhold(') < source.indexOf("engineDeath: { type: 'routine'"));
+  assert.equal(source.includes("const remove = (routine) => log.holdDelete({\n    kind: 'routine',\n    id: routine.id,"), true);
+  assert.equal((source.match(/log\.holdDelete\(/g) ?? []).length, 1);
 });
 
 test('every list of a routine’s entries is keyed on the position as well as the movement', () => {
@@ -390,8 +389,7 @@ test('a deleted set is withheld for the window, never sent and re-posted, and th
   // lifter walked to another screen, which is the defect 13-gestures.md names by name.
   assert.equal(source.includes('setTimeout'), false, 'the screen arms no clock of its own');
   assert.equal(source.includes('UNDO_MS'), false);
-  assert.equal(source.includes("kind: 'set',"), true);
-  assert.ok(source.indexOf('withhold({') < source.indexOf("engineDeath: { type: 'set', id: set.id }"));
+  assert.equal(source.includes("holdDelete({\n      kind: 'set',\n      id: set.id,"), true);
   const room = read('useTrainingLog.js');
   assert.equal(room.includes('clocks.current.set(key, setTimeout(() => close(key), UNDO_MS));'), true);
   assert.equal(room.includes("import { UNDO_MS } from './fix.js';"), true);
@@ -405,7 +403,7 @@ test('leaving the room retires its UI clocks without sending a REST delete', () 
   assert.notEqual(teardown, null, 'the room lost its unmount cleanup');
   assert.equal(/send/.test(teardown[1]), false, 'the room commits a held delete on the way out');
   assert.equal(teardown[1].includes('clocks.current.clear();'), true, 'a clock outlives the room');
-  assert.equal(teardown[1].includes('withheld.current = [];'), true, 'what was held is abandoned');
+  assert.equal(teardown[1].includes('withheld.current = [];'), true, 'what the room held on its own clock is abandoned');
   // An unload handler cannot make it safe either: a request sent during teardown has no promise of
   // arriving, so a "committed" delete might or might not have happened — worse than either answer.
   for (const file of gymFiles()) {
@@ -675,9 +673,8 @@ test('discarding a session is withheld and undoable, so it is not confirmed and 
   assert.equal(finish.includes('setConfirming'), false);
   assert.equal(finish.includes('gym-confirm'), false);
   assert.equal(finish.includes('DISCARD_CONFIRM'), false);
-  assert.equal((finish.match(/engineDeath: \{ type: 'session', id \}/g) ?? []).length, 1);
-  assert.equal(finish.includes("kind: 'session',"), true);
-  assert.ok(finish.indexOf('log.withhold({') < finish.indexOf("engineDeath: { type: 'session', id }"));
+  assert.equal(finish.includes("log.holdDelete({\n      kind: 'session',\n      id,"), true);
+  assert.equal((finish.match(/log\.holdDelete\(/g) ?? []).length, 1);
   assert.equal(finish.includes('<button type="button" className="gym-short-discard" onClick={discard}>'), true);
   assert.equal(read('review.js').includes("export const SESSION_DELETED = 'Session deleted.';"), true);
   // The sentence became false the day the delete gained a way back, so it is nowhere in the room.
@@ -905,7 +902,7 @@ test('the create door asks how a movement is loaded, and mints nothing before it
   assert.equal(picker.includes('{EQUIPMENT_CHOICES.map((choice) => ('), true);
   assert.equal(/'(cable|kettlebell)'/.test(picker), false);
   assert.equal(picker.includes('onCreate({ name: draft.name.trim(), equipment: draft.equipment })'), true);
-  assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name: name.trim(), equipment, pattern: CREATED_PATTERN'), true);
+  assert.equal(read('useTrainingLog.js').includes('id: mintId(\'ex_\'), name, equipment, pattern: CREATED_PATTERN'), true);
   assert.equal(picker.includes('<button type="button" className="gym-sheet-cancel" onClick={onCancel}>Cancel</button>'), true);
   const sheet = picker.slice(picker.indexOf('function NewMovement'));
   assert.equal(sheet.includes('gym-sheet-close'), false);
@@ -981,7 +978,7 @@ test('bodyweight: the log actions open one sheet, the reading stays in options, 
   assert.equal((screen.match(/log\.gone\('bodyweight'\)/g) ?? []).length, 1);
   // The stance reads the account, the rows read the window, and the delete is the engine's held death
   // and nothing else — a screen's own record of what the store took is the thing this replaced.
-  assert.equal(screen.includes("engineDeath: { type: 'weighin', id: dateLocal },"), true);
+  assert.equal(screen.includes("const remove = (dateLocal) => log.holdDelete({\n    kind: 'bodyweight',\n    id: dateLocal,"), true);
   assert.equal(screen.includes('const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));'), true);
   assert.equal(screen.includes('weights.entries.length === 0'), true);
   assert.equal(screen.includes('windowOf(weights.rows, windowId, now)'), true);
@@ -1005,9 +1002,8 @@ test('the finished session’s detail has the discard door, through the same win
   const log = read('Log.jsx');
   assert.equal(log.includes('{isFinished(session) && <div className="gym-detail-discard">'), true);
   assert.equal(log.includes('<button type="button" className="gym-short-discard" onClick={discard}>Discard session</button>'), true);
-  assert.equal((log.match(/engineDeath: \{ type: 'session', id \}/g) ?? []).length, 1);
-  assert.ok(log.indexOf("kind: 'session',") < log.indexOf("engineDeath: { type: 'session', id }"));
-  assert.equal(log.includes('line: SESSION_DELETED,'), true, 'the same sentence as the review’s discard');
+  assert.equal(log.includes("holdDelete({\n      kind: 'session',\n      id,"), true);
+  assert.equal(read('withheld.js').includes('session: SESSION_DELETED'), true, 'the room names every discard with the review’s sentence');
   assert.equal(log.includes("window.location.hash = '#/gym/log';"), true);
   assert.equal(/gym-confirm|confirming/.test(log), false, 'no confirmation in front of an undoable act');
   assert.equal(/[Dd]iscard/.test(speech('Mirror.jsx')), false, 'the phone owns the open session');

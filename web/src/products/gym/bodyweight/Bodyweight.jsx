@@ -8,10 +8,10 @@ import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import {
   axisDate, axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, DATE_LABEL,
-  dateLocalOf, DEFAULT_WINDOW, DELETE_FAILED, DELETE_VERB, entriesAfter, FAILED,
+  dateLocalOf, DEFAULT_WINDOW, deleteRefusal, DELETE_VERB, entriesAfter, FAILED,
   fieldValueOf, gapLabel, joinsAcross, latestOf, msOfDateLocal, NO_WEIGH_INS,
   NO_WEIGH_INS_IN_WINDOW, NO_WEIGH_INS_LINE, OPENING, readingLine, SAVE_VERB, saveRefusal,
-  WEIGH_IN_DELETED, WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
+  WEIGH_IN_VERB, weighInWrite, WINDOWS, windowOf,
 } from './bodyweight.js';
 
 // The projected series, with this screen's own writes folded over it until the next snapshot, and
@@ -36,10 +36,8 @@ export function useBodyweight(log) {
   const rows = entries.filter((entry) => !hidden.has(entry.dateLocal));
 
   const save = async (write) => {
-    // The id is a local date, so this may be the day a delete is still holding or has already taken.
-    // Writing the day again takes that delete back before anything reaches the store: the number the
-    // lifter just typed is what stands, and no clock is left to destroy it.
-    log.writtenAgain('bodyweight', write.dateLocal);
+    // The id is a local date, so this may be the day a delete is still holding: the save retires that
+    // hold in its own write, so the number the lifter just typed is what stands.
     try {
       const stored = await api.saveBodyweight(write.dateLocal, write);
       setMoves((current) => new Map(current).set(stored.dateLocal, stored));
@@ -50,12 +48,10 @@ export function useBodyweight(log) {
   };
 
   // The death is durable; the transient offers Undo until the engine releases it.
-  const remove = (dateLocal) => log.withhold({
+  const remove = (dateLocal) => log.holdDelete({
     kind: 'bodyweight',
     id: dateLocal,
-    engineDeath: { type: 'weighin', id: dateLocal },
-    line: WEIGH_IN_DELETED,
-    refused: () => log.say(DELETE_FAILED),
+    refused: (error) => log.say(deleteRefusal(error)),
   });
 
   return {

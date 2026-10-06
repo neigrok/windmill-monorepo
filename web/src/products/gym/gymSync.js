@@ -2,10 +2,13 @@ import { useMemo } from 'react';
 import { useSyncEngine, useSyncRecords } from '../../platform/sync/react.js';
 import { recordKey } from '../../platform/sync/core/rows.js';
 import { jcs } from '../../platform/sync/core/jcs.js';
+import { CommitError } from '../../platform/sync/client/commit.js';
 import { captureError } from '../../telemetry/sentry.js';
 import { track } from '../../telemetry/beacon.js';
-import { GymRefusal } from './errors.js';
+import { GymRefusal, isStoreFailure } from './errors.js';
+import { isNameOverCap, NAME_MAX } from './log.js';
 import { BODY_BYTES, FULL_LINE, isBodyOverCap, isTitleOverCap, TITLE_MAX } from './notes/notes.js';
+import { NAME_IT_TO_SAVE_IT } from './routines.js';
 import { projectGym } from './syncProjections.js';
 import { readPreferences } from './settings/preferences.js';
 
@@ -17,7 +20,7 @@ const STEPS = { barbell: 2.5, dumbbell: 2, machine: 5, cable: 2.5, bodyweight: 2
 const OPERATIONS = new Set(['routine-create', 'routine-save', 'exercise-create', 'exercise-rename',
   'preferences-save', 'note-save', 'note-reorder', 'bodyweight-save', 'set-correct', 'delete', 'undo',
   'session-import', 'session-correct', 'proposal-apply', 'proposal-dismiss', 'refusal']);
-const OUTCOMES = new Set(['saved-local', 'failed', 'held', 'undone', 'closed', 'refused']);
+const OUTCOMES = new Set(['saved-local', 'unchanged', 'failed', 'held', 'undone', 'closed', 'refused']);
 
 export function gymStep(operation, outcome) {
   if (!OPERATIONS.has(operation) || !OUTCOMES.has(outcome)) return;
@@ -42,7 +45,28 @@ const SENTENCES = {
 
 const refusal = (code, { sentence = SENTENCES[code], overlapping = null } = {}) => new GymRefusal(code, { sentence, overlapping });
 
+// Display names follow domain-kit §4.3 (NFC, `trim`'s `\s` set, code points); blank is refused as engine A.2 refuses it.
+const NAMES = {
+  exercise: { blank: 'A movement needs a name.', tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
+  routine: { blank: NAME_IT_TO_SAVE_IT, tooLong: `A name runs to ${NAME_MAX} characters.`, isOverCap: isNameOverCap },
+  note: { blank: 'a note needs a title', tooLong: `a title runs to ${TITLE_MAX} characters`, isOverCap: isTitleOverCap },
+};
+
+function displayName(typed, { blank, tooLong, isOverCap }) {
+  const name = typed.normalize('NFC').trim();
+  if (name === '') throw refusal('invalid', { sentence: blank });
+  if (isOverCap(name)) throw refusal('invalid', { sentence: tooLong });
+  return name;
+}
+
 export function createGymApi(engine, { event = gymStep, failure = gymFailure } = {}) {
+  // Engine §7.1: an unwritable replica is a refusal, and a store failure is the device's, which the engine reports.
+  const failed = (operation, thrown) => {
+    const error = thrown instanceof CommitError && thrown.kind === 'not-writable' ? refusal('not-writable') : thrown;
+    event(operation, 'failed');
+    if (!(error instanceof GymRefusal) && !isStoreFailure(error)) failure(operation);
+    return error;
+  };
   const replica = engine.activeReplica();
   const snapshot = () => engine.observe(SCOPE).getSnapshot();
   const project = (rows = snapshot().stored, now = Date.now()) => projectGym(rows, {
@@ -61,13 +85,9 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
         return build(views);
       });
       if (result.outcome?.refused) throw refusal(result.outcome.refused);
-      event(operation, 'saved-local');
+      event(operation, result.outcome ? 'saved-local' : 'unchanged');
       return result.value;
-    } catch (error) {
-      event(operation, 'failed');
-      if (!(error instanceof GymRefusal)) failure(operation);
-      throw error;
-    }
+    } catch (error) { throw failed(operation, error); }
   };
   const guarded = (views, t, id, fields, base) => {
     const row = views.drawn.get(recordKey(t, id));
@@ -90,36 +110,43 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
     return value;
     } catch (error) { failure('projection'); throw error; }
   };
-  api.createRoutine = (routine) => commit('routine-create', () => ({
-    gesture: { changes: [{ op: 'create', t: 'routine', id: routine.id, f: fieldsOfRoutine(routine) }] }, value: routine,
-  }));
-  api.replaceRoutine = (id, routine, base) => commit('routine-save', (views) => ({
-    gesture: { changes: [{ op: 'update', t: 'routine', id, f: fieldsOfRoutine(routine) }],
-      opts: { guard: guarded(views, 'routine', id, ['name', 'entries', 'position'], base) } }, value: routine,
-  }));
-  api.createExercise = (exercise) => commit('exercise-create', () => ({
-    gesture: { changes: [{ op: 'create', t: 'exercise', id: exercise.id,
-      f: { name: exercise.name, pattern: exercise.pattern, equipment: exercise.equipment,
-        stepKg: STEPS[exercise.equipment] } }] }, value: { ...exercise, stepKg: STEPS[exercise.equipment], aliases: [] },
-  }));
-  api.renameExercise = (id, name) => commit('exercise-rename', (views) => {
-    const custom = views.drawn.get(recordKey('exercise', id));
+  api.createRoutine = (routine) => commit('routine-create', () => {
+    const named = { ...routine, name: displayName(routine.name, NAMES.routine) };
+    return { gesture: { changes: [{ op: 'create', t: 'routine', id: routine.id, f: fieldsOfRoutine(named) }] }, value: named };
+  });
+  api.replaceRoutine = (id, routine, base) => commit('routine-save', (views) => {
+    const named = { ...routine, name: displayName(routine.name, NAMES.routine) };
+    return { gesture: { changes: [{ op: 'update', t: 'routine', id, f: fieldsOfRoutine(named) }],
+      opts: { guard: guarded(views, 'routine', id, ['name', 'entries', 'position'], base) } }, value: named };
+  });
+  api.createExercise = (exercise) => commit('exercise-create', () => {
+    const name = displayName(exercise.name, NAMES.exercise);
+    return { gesture: { changes: [{ op: 'create', t: 'exercise', id: exercise.id,
+      f: { name, pattern: exercise.pattern, equipment: exercise.equipment, stepKg: STEPS[exercise.equipment] } }] },
+    value: { ...exercise, name, stepKg: STEPS[exercise.equipment], aliases: [] } };
+  });
+  // Compared with the name the store holds, the way the domain kit's RenameExercise compares it.
+  api.renameExercise = (id, typed) => commit('exercise-rename', (views) => {
+    const exercise = project([...views.stored.values()], views.now).exercises().find((each) => each.id === id);
+    if (!exercise) throw refusal('unknown-record');
+    const name = displayName(typed, NAMES.exercise);
+    if (name === exercise.name) return { gesture: null, value: exercise };
+    const custom = views.stored.has(recordKey('exercise', id));
     return { gesture: { changes: [{ op: custom ? 'update' : 'write', t: custom ? 'exercise' : 'exerciseName', id, f: { name } }] },
-      value: { ...project([...views.drawn.values()], views.now).exercises().find((each) => each.id === id), name } };
+      value: { ...exercise, name } };
   });
   api.savePreferences = (document) => commit('preferences-save', () => ({
     gesture: { changes: [{ op: 'write', t: 'prefs', id: 'prefs', f: readPreferences(document) }] }, value: readPreferences(document),
   }));
   api.saveNote = (id, note, base) => commit('note-save', (views) => {
-    if (!note.title.trim()) throw refusal('invalid', { sentence: 'a note needs a title' });
-    if (isTitleOverCap(note.title)) throw refusal('invalid', { sentence: `a title runs to ${TITLE_MAX} characters` });
+    const title = displayName(note.title, NAMES.note);
     if (isBodyOverCap(note.body)) throw refusal('invalid', { sentence: `a note runs to ${BODY_BYTES} bytes` });
     const exists = views.drawn.get(recordKey('note', id));
     const changes = [{ op: exists ? 'update' : 'create', t: 'note', id,
-      f: { title: note.title, body: note.body },
+      f: { title, body: note.body },
       ...(!exists ? { anchor: { field: 'ord', below: project([...views.stored.values()], views.now).notes().at(-1)?.id ?? null } } : {}) }];
     const guard = exists ? guarded(views, 'note', id, ['title', 'body'], base) : [];
-    return { gesture: { changes, opts: { guard } }, value: { id, ...note, position: base?.position ?? project([...views.stored.values()], views.now).notes().length } };
+    return { gesture: { changes, opts: { guard } }, value: { id, ...note, title, position: base?.position ?? project([...views.stored.values()], views.now).notes().length } };
   });
   api.moveNote = (id, below) => commit('note-reorder', (views) => {
     const notes = project([...views.stored.values()], views.now).notes();
@@ -149,11 +176,11 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
       if (result?.refused) throw refusal(result.refused);
       event('delete', 'held');
       return result.localIds[0]?.slice(0, result.localIds[0].lastIndexOf('/'));
-    } catch (error) { event('delete', 'failed'); if (!(error instanceof GymRefusal)) failure('delete'); throw error; }
+    } catch (error) { throw failed('delete', error); }
   };
   api.undoDeath = async (gestureId) => {
     try { const result = await engine.undo(gestureId); event('delete', result ? 'undone' : 'closed'); return result; }
-    catch (error) { failure('undo'); throw error; }
+    catch (error) { throw failed('undo', error); }
   };
   const command = (operation, name, args, predict, value) => commit(operation, (views) => ({
     gesture: { changes: [], opts: { cmd: { name, args }, predict: predict(views) } }, value: value(views),

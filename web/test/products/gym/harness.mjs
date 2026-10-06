@@ -267,9 +267,9 @@ export function roomLog({ settled = [], ...overrides } = {}) {
     gone: (kind) => goneIds(settled, kind),
     say: () => {},
     withhold: () => {},
+    holdDelete: () => {},
     undoWithheld: () => {},
     dropWithheld: () => {},
-    writtenAgain: () => {},
     createMovement: async () => null,
     ...overrides,
   };

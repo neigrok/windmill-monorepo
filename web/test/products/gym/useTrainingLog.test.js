@@ -1,5 +1,6 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { CommitError } from '../../../src/platform/sync/client/commit.js';
 import { syncSession } from '../../../src/platform/sync/session.js';
 import { useTrainingLog } from '../../../src/products/gym/useTrainingLog.js';
 import { browserWith, renderHook, settle } from './harness.mjs';
@@ -8,7 +9,7 @@ const stamp = '1000:0:r_aaaaaaaaaaaa';
 const row = (t, id, fields) => ({ t, id, born: stamp, life: ['alive', stamp], f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
 function log(t, rows = []) {
   browserWith();
-  let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], firstPullComplete: true };
+  let records = { replica: 'bound', drawn: rows, stored: rows, notices: [], undoOffers: [], firstPullComplete: true };
   const observation = { subscribe: () => () => {}, getSnapshot: () => records };
   const engine = { activeReplica: () => 'bound', observe: () => observation,
     getSnapshot: () => ({ state: 'bound' }), observeEngine: () => () => {} };
@@ -62,29 +63,44 @@ test('older history is a local slice and preserves observations while paging', (
   assert.equal(view.log.older.status, 'end');
 });
 
-test('held engine deletes persist before Undo and never call the obsolete delayed sender', async (t) => {
-  t.mock.timers.enable({ apis: ['setTimeout'] });
-  const { view, engine } = log(t);
-  let committed = false, undone = false, sent = false;
-  engine.commit = async () => { committed = true; return { outcome: { localIds: ['gesture1/0'] }, value: null }; };
-  engine.undo = async (gesture) => { assert.equal(gesture, 'gesture1'); undone = true; return true; };
-  view.log.withhold({ kind: 'note', id: 'note000001', engineDeath: { type: 'note', id: 'note000001' }, line: 'Note deleted.', send: async () => { sent = true; } });
+test('a held delete is offered from the engine’s own offer, and Undo hands its gesture back to the engine', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: 1_800_000_000_000 });
+  const note = row('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' });
+  const { view, engine, update } = log(t, [note]);
+  const undone = [];
+  engine.commit = async () => {
+    update({ undoOffers: [{ id: 'gesture1', releaseAt: 1_800_000_009_000, records: [{ t: 'note', id: 'note000001' }] }] });
+    return { outcome: { localIds: ['gesture1/0'] }, value: null };
+  };
+  engine.undo = async (gesture) => { undone.push(gesture); update({ undoOffers: [] }); return true; };
+  view.log.holdDelete({ kind: 'note', id: 'note000001' });
   await settle();
-  assert.equal(committed, true);
+  assert.deepEqual(view.log.held.map(({ key, kind, id, line, gestureId, releaseAt }) => ({ key, kind, id, line, gestureId, releaseAt })),
+    [{ key: 'note:note000001', kind: 'note', id: 'note000001', line: 'Note deleted.', gestureId: 'gesture1', releaseAt: 1_800_000_009_000 }]);
   assert.equal(view.log.transient.action.label, 'Undo');
   await view.log.undoWithheld();
-  assert.equal(undone, true);
-  t.mock.timers.tick(9000);
-  await settle();
-  assert.equal(sent, false);
-  assert.equal(view.log.held.length, 0);
+  assert.deepEqual(undone, ['gesture1']);
+  assert.deepEqual(view.log.held, []);
+  assert.equal(view.log.transient, null);
 });
 
-test('storage failure restores a held row and displays the refusal', async (t) => {
+test('an offer whose deadline has passed is not offered, even before the engine has released it', (t) => {
+  t.mock.timers.enable({ apis: ['Date'], now: 1_800_000_009_000 });
+  const note = row('note', 'note000001', { title: 'Kept', body: '', ord: 'a0' });
+  const { view, update } = log(t, [note]);
+  update({ undoOffers: [{ id: 'gesture1', releaseAt: 1_800_000_009_000, records: [{ t: 'note', id: 'note000001' }] }] });
+  assert.deepEqual(view.log.held, []);
+  assert.equal(view.log.transient, null);
+});
+
+test('a held delete this device cannot store puts the row back and says the screen’s refusal', async (t) => {
   const { view, engine } = log(t);
-  engine.commit = async () => { throw new Error('private content must not be reported'); };
-  view.log.withhold({ kind: 'note', id: 'note000001', engineDeath: { type: 'note', id: 'note000001' }, line: 'Deleted.', refused: () => view.log.say('Not deleted.') });
+  const refused = [];
+  engine.commit = async () => { throw new CommitError('the device store did not commit', 'store'); };
+  view.log.holdDelete({ kind: 'note', id: 'note000001', refused: (error) => { refused.push(error.kind); view.log.say('Not deleted.'); } });
+  assert.equal(view.log.hidden('note').has('note000001'), true, 'off the screen from the act');
   await settle();
+  assert.deepEqual(refused, ['store']);
   assert.equal(view.log.hidden('note').has('note000001'), false);
   assert.equal(view.log.transient.text, 'Not deleted.');
 });
@@ -104,7 +120,7 @@ test('a stalled durable writer keeps its Undo offer and creates no clock after r
   const { view, engine } = log(t);
   let complete;
   engine.commit = () => new Promise((resolve) => { complete = resolve; });
-  view.log.withhold({ kind: 'note', id: 'note000001', engineDeath: { type: 'note', id: 'note000001' }, line: 'Deleted.' });
+  view.log.holdDelete({ kind: 'note', id: 'note000001' });
   t.mock.timers.tick(9000);
   assert.equal(view.log.transient.action.label, 'Undo');
   view.unmount();

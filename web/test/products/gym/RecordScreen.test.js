@@ -49,3 +49,53 @@ test('the back link stands on its own line above the name, and Rename shares the
   assert.deepEqual(page.order, ['gym-record-screen', 'BackTo', 'gym-record-head']);
   assert.deepEqual(page.head, [['Bench Press', 'Rename']]);
 });
+
+// The record inside a real room, with its rename sheet open: a rename speaks through the room's transient.
+async function renameSheetIn(t) {
+  browserWith();
+  const gym = await gymAccount(t, [pushA]);
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { MovementRecord } = await loadScreen('products/gym/Record.jsx');
+  const room = renderHook(t, () => useTrainingLog(), { live: true });
+  await settle();
+  const outer = renderHook(t, () => MovementRecord({ id: 'bench-press', from: FROM_ROUTINES, log: room.log }));
+  const drawn = elementsOf(outer.tree)[0];
+  const screen = renderHook(t, () => drawn.type(drawn.props), { live: true });
+  await settle();
+  findByClass(screen.tree, 'gym-record-rename')[0].props.onClick();
+  const opened = elementsOf(screen.tree).find((each) => typeof each.type === 'function' && each.type.name === 'RenameSheet');
+  const sheet = renderHook(t, () => opened.type(opened.props));
+  const named = (name) => elementsOf(sheet.tree).find((each) => typeof each.type === 'function' && each.type.name === name);
+  return {
+    gym, room, screen,
+    type: (value) => named('Input').props.onChange({ target: { value } }),
+    typed: () => named('Input').props.value,
+    rename: () => named('Button'),
+  };
+}
+
+test('a blank name cannot be renamed to, and a name is written trimmed', async (t) => {
+  const { gym, type, rename } = await renameSheetIn(t);
+  for (const blank of ['   ', ' 　']) {
+    type(blank);
+    assert.equal(rename().props.disabled, true);
+  }
+  type('  Flat bench　');
+  assert.equal(rename().props.disabled, false);
+  await rename().props.onClick();
+  await settle();
+  assert.deepEqual(gym.owed(), ['ready write exerciseName bench-press name']);
+  assert.equal(gym.engine.device.activeReplica.entries()[0].intent.d[0].f.name[0], 'Flat bench');
+});
+
+test('a rename this device cannot store says so in the room, and the sheet keeps what was typed', async (t) => {
+  const { gym, room, type, typed, rename } = await renameSheetIn(t);
+  type('Flat bench');
+  gym.refuseWrites();
+  await rename().props.onClick();
+  await settle();
+  assert.equal(room.log.transient.text, 'That name wasn’t saved — this device couldn’t store it.');
+  assert.equal(typed(), 'Flat bench');
+  assert.equal(rename().props.disabled, false, 'the press can be made again');
+  assert.deepEqual(gym.owed(), []);
+});

@@ -3,10 +3,11 @@ import assert from 'node:assert/strict';
 
 import {
   axisValue, BODYWEIGHT_TITLE, chartCaption, chartDomainOf, chartPointsOf, dateLocalOf,
-  DEFAULT_WINDOW, DELETE_VERB, entriesAfter, GAP_DAYS, gapLabel, joinsAcross, latestOf,
+  DEFAULT_WINDOW, deleteRefusal, DELETE_VERB, entriesAfter, GAP_DAYS, gapLabel, joinsAcross, latestOf,
   msOfDateLocal, parseWeighIn, readingLine, REFUSALS, saveRefusal, WEIGH_IN_DELETED, WEIGH_IN_VERB,
   weighInWrite, weightReading, WINDOWS, windowOf, windowStartOf,
 } from '../../../../src/products/gym/bodyweight/bodyweight.js';
+import { CommitError } from '../../../../src/platform/sync/client/commit.js';
 import { GymRefusal } from '../../../../src/products/gym/errors.js';
 import { KG, LB, spellWeightsIn } from '../../../../src/products/gym/units.js';
 
@@ -209,9 +210,14 @@ test('chartPointsOf and gapLabel — a dot per row in the display unit, and the 
   assert.equal(chartPointsOf([{ dateLocal: '2026-07-07', weightKg: 82.4 }])[0].label, '181.7 lb · 7 Jul');
 });
 
-test('saveRefusal — the log’s sentence where it refused, and the wordless fallback otherwise', () => {
+test('saveRefusal — the log’s sentence where it refused, this device where its store failed, and the wordless fallback otherwise', () => {
   assert.equal(saveRefusal(new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' })), 'Sign in to save to your training log.');
   assert.equal(saveRefusal(new GymRefusal('invalid')), 'The log wouldn’t take this change as written.');
-  assert.equal(saveRefusal(new DOMException('storage refused', 'QuotaExceededError')), 'That weigh-in wasn’t saved — the log didn’t answer. Try again when you have signal.');
+  assert.equal(saveRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })), 'That weigh-in wasn’t saved — this device couldn’t store it.');
   assert.equal(saveRefusal(undefined), 'That weigh-in wasn’t saved — the log didn’t answer. Try again when you have signal.');
+});
+
+test('deleteRefusal — this device where its store failed, and the brief’s sentence otherwise', () => {
+  assert.equal(deleteRefusal(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })), 'That weigh-in wasn’t deleted — this device couldn’t store it.');
+  assert.equal(deleteRefusal(new GymRefusal('not-writable', { sentence: 'Sign in to save to your training log.' })), 'That weigh-in wasn’t deleted. Try again in a moment.');
 });

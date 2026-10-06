@@ -43,5 +43,5 @@ test('a units save the device cannot keep reverts to the units the store holds, 
   assert.deepEqual(pressed(), [['kg', false], ['lb', true]]);
   assert.equal((await stored()).units, 'lb');
   assert.equal(textOf(screen.tree.props.children),
-    'UnitskglbA backfill, a correction, a routine target — typed in kg.Noteswhat you write for Coach›that setting didn’t save — the log didn’t answer. Try again in a moment');
+    'UnitskglbA backfill, a correction, a routine target — typed in kg.Noteswhat you write for Coach›that setting didn’t save — this device couldn’t store it');
 });

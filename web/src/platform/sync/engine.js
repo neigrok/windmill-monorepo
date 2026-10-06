@@ -9,7 +9,7 @@ import { compareRecords, recordKey } from './core/rows.js';
 import { bodyBytes, Cursor } from './core/wire.js';
 import { Stamp } from './core/stamp.js';
 import { CommitError, commit } from './client/commit.js';
-import { release, releaseAll, releaseDue, undo } from './client/hold.js';
+import { release, releaseAll, releaseDue, undo, undoOffers } from './client/hold.js';
 import { anonCount, discardUnsent, engineStart, epochChange, signIn, signOut } from './client/lifecycle.js';
 import { applyChunk, applyPage, finishPage, onFrame, onPullResponse, pullRequest, settle } from './client/puller.js';
 import { dismiss } from './client/refusal.js';
@@ -104,13 +104,18 @@ export class BrowserSyncEngine {
   async write(operation, change, scopes = []) {
     let context;
     let answer;
+    let thrown;
     try {
       answer = await this.store.transact((device) => {
         context = this.context(device);
-        return change(device, context);
+        try { return change(device, context); } catch (error) { thrown = error; throw error; }
       }, { scopes: (device) => [...this.governingScopes(device), ...scopes] });
     } catch (error) {
-      if (!(error instanceof CommitError)) this.telemetry.failure('storage');
+      if (error !== thrown) {
+        this.telemetry.failure('storage');
+        throw new CommitError('the device store did not commit', 'store', { cause: error });
+      }
+      if (!(error instanceof CommitError) && error !== context.callerError) this.telemetry.failure('storage');
       throw error;
     }
     this.actor = context.actor;
@@ -238,6 +243,7 @@ export class BrowserSyncEngine {
           drawn: records(drawn(replica, this.registry, scope)),
           stored: records(stored(replica, this.registry, scope)),
           notices: structuredClone(replica.notices.filter((notice) => notice.scope === scope)),
+          undoOffers: undoOffers(replica, scope),
           firstPullComplete: firstPullComplete(replica, scope, this.scopes(replica)) });
         this.notify(listeners);
       },
@@ -336,8 +342,14 @@ export class BrowserSyncEngine {
     return this.write(null, (device, ctx) => reconcile(device.activeReplica, ctx, this.scopes(device.activeReplica)));
   }
 
+  // A read-and-commit function's own throw is the caller's (§7.1), so it passes through unreported.
   async commit(scope, changes, opts) {
-    const result = await this.write('sync-commit', (device, ctx) => commit(device.activeReplica, ctx, scope, changes, opts), [scope]);
+    const result = await this.write('sync-commit', (device, ctx) => {
+      const read = typeof changes === 'function'
+        ? (views) => { try { return changes(views); } catch (error) { ctx.callerError = error; throw error; } }
+        : changes;
+      return commit(device.activeReplica, ctx, scope, read, opts);
+    }, [scope]);
     this.requestPersistence();
     this.kick();
     return result;

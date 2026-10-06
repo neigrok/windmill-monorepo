@@ -7,7 +7,7 @@ import {
   weekdayName,
 } from './log.js';
 import { mintId } from './mint.js';
-import { comparison, finishHead, RECORD_TITLE, recordSentence, SESSION_DELETED, statTiles } from './review.js';
+import { comparison, finishHead, RECORD_TITLE, recordSentence, statTiles } from './review.js';
 import { NAME_IT_TO_SAVE_IT, routineFromSession } from './routines.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
@@ -114,11 +114,9 @@ export function FinishScreen({ id, log }) {
 // There is no confirmation, because a dialog in front of an act that can be undone is ceremony.
 function ShortSession({ id, log }) {
   const discard = () => {
-    log.withhold({
+    log.holdDelete({
       kind: 'session',
       id,
-      engineDeath: { type: 'session', id },
-      line: SESSION_DELETED,
       refused: (error) => log.say(`That session wasn’t discarded — ${failureReason(error)}.`),
     });
     window.location.hash = '#/gym';

@@ -12,7 +12,7 @@ import { useGymRead } from '../useGymRead.js';
 import { useGymApi } from '../gymSync.js';
 import {
   ADD_VERB, byteCountLabel, DELETE_VERB, firstLineOf, FULL_LINE, HEAD_LINE, HONESTY_LINE,
-  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, NOTE_DELETED, noteRefusal, NOTES_FAILED, NOTES_TITLE,
+  isBodyOverCap, isFull, isTitleOverCap, mintNoteId, noteRefusal, NOTES_FAILED, NOTES_TITLE,
   noteAbove, PLACEHOLDER_TITLES, PRECEDENCE_CAPTION, reorderNotes, showsByteCount, showsTitleCount,
   titleCountLabel,
 } from './notes.js';
@@ -62,11 +62,9 @@ export function Notes({ log }) {
   // Nothing is confirmed — a question in front of an act that can be undone is ceremony
   // (13-gestures.md Law 2).
   const remove = (note) => {
-    log.withhold({
+    log.holdDelete({
       kind: 'note',
       id: note.id,
-      engineDeath: { type: 'note', id: note.id },
-      line: NOTE_DELETED,
       refused: (error) => log.say(noteRefusal(error, 'deleted')),
     });
     setEditing(null);

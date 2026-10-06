@@ -1,7 +1,7 @@
 import { useMemo, useSyncExternalStore } from 'react';
 import { syncSession } from './session.js';
 
-const EMPTY = Object.freeze({ replica: null, drawn: [], stored: [], notices: [], firstPullComplete: false });
+const EMPTY = Object.freeze({ replica: null, drawn: [], stored: [], notices: [], undoOffers: [], firstPullComplete: false });
 const boot = { subscribe: () => () => {}, getSnapshot: () => null };
 const idle = { subscribe: () => () => {}, getSnapshot: () => EMPTY };
 

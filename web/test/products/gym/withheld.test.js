@@ -1,8 +1,9 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
+import { projectGym } from '../../../src/products/gym/syncProjections.js';
 import {
-  heldDetail, heldLine, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, WITHHELD_KINDS,
+  deleteLineOf, heldDetail, heldLine, hiddenIds, openHeld, transientOf, UNDO_LABEL, WINDOW_CLOSED, WITHHELD_KINDS,
   withheldKey,
 } from '../../../src/products/gym/withheld.js';
 
@@ -112,4 +113,24 @@ test('the transient is whichever spoke last, and the window’s own carries the 
 test('the two words the window says for itself', () => {
   assert.equal(UNDO_LABEL, 'Undo');
   assert.equal(WINDOW_CLOSED, 'The window closed — that delete already went.');
+});
+
+test('an engine-held delete is named from the store, and one the store no longer holds is counted', () => {
+  const stamp = '1000:0:srv';
+  const row = (t, id, fields, v) => ({ t, id, born: stamp, life: ['alive', stamp], ...(v ? { v } : {}),
+    f: Object.fromEntries(Object.entries(fields).map(([name, value]) => [name, [value, stamp]])) });
+  const projection = projectGym([
+    row('routine', 'routinePushA', { name: 'Push A', position: 0, entries: [{ exerciseId: 'bench-press' }] }),
+    row('session', 'session0001', { startedAt: 1000, finishedAt: 2000 }),
+    row('set', 'set0000001', { sessionId: 'session0001', exerciseId: 'bench-press', weightKg: 100, reps: 5, kind: 'working', note: '', completedAt: 1500 }, { setNumber: 1 }),
+  ]);
+  assert.deepEqual([
+    deleteLineOf('set', 'set0000001', projection),
+    deleteLineOf('routine', 'routinePushA', projection),
+    deleteLineOf('session', 'session0001', projection),
+    deleteLineOf('note', 'note000001', projection),
+    deleteLineOf('bodyweight', '2026-10-06', projection),
+    deleteLineOf('set', 'set_gone', projection),
+    deleteLineOf('routine', 'routine_gone', projection),
+  ], ['100 × 5 is out of the log.', 'Push A deleted.', 'Session deleted.', 'Note deleted.', 'Weigh-in deleted.', '1 deleted.', '1 deleted.']);
 });

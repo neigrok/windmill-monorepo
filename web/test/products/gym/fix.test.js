@@ -7,6 +7,7 @@ import {
   SET_NOTE_BYTES, SET_NOTE_CAPTION, setNoteCountLabel, SET_NOTE_LABEL, setNoteRefusal, setsAfter,
   showsSetNoteCount, UNDO_MS,
 } from '../../../src/products/gym/fix.js';
+import { CommitError } from '../../../src/platform/sync/client/commit.js';
 import { GymRefusal } from '../../../src/products/gym/errors.js';
 import { readSetFields, setFields } from '../../../src/products/gym/correction/correction.js';
 
@@ -136,12 +137,12 @@ test('a refused fix is spoken by its code, and the missing set is not blamed on 
     'That fix didn’t land — the log wouldn’t take it as written.',
   );
   assert.equal(
-    fixFailure(new DOMException('storage refused', 'QuotaExceededError')),
-    'That fix didn’t land — the log didn’t answer. Try again when you have signal.',
+    fixFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
+    'That fix didn’t land — this device couldn’t store it.',
   );
   assert.equal(
-    deleteFailure(new DOMException('storage refused', 'QuotaExceededError')),
-    'That set is still in the log — the log didn’t answer. Try again when you have signal.',
+    deleteFailure(new CommitError('the device store did not commit', 'store', { cause: new DOMException('storage refused', 'QuotaExceededError') })),
+    'That set is still in the log — this device couldn’t store it.',
   );
 });
 

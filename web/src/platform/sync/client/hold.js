@@ -30,6 +30,15 @@ export function undo(replica, registry, ended, gestureId) {
   return true;
 }
 
+// Held gestures in commit order, with their deadline and records; Undo stands while `releaseAt` is ahead of the device clock.
+export function undoOffers(replica, scope) {
+  const gestures = new Map();
+  for (const entry of replica.entries(scope)) gestures.set(entry.gestureId, [...(gestures.get(entry.gestureId) ?? []), entry]);
+  return [...gestures.values()].filter((entries) => entries.every((entry) => entry.state === 'held'))
+    .map((entries) => ({ id: entries[0].gestureId, releaseAt: entries[0].releaseAt,
+      records: entries.flatMap((entry) => (entry.intent.d ?? []).map(({ t, id }) => ({ t, id }))) }));
+}
+
 export function undoOffered(replica, gestureId, deviceNow) {
   const gesture = replica.entries().filter((entry) => entry.gestureId === gestureId);
   return gesture.length > 0 && gesture.every((entry) => entry.state === 'held' && entry.releaseAt > deviceNow);

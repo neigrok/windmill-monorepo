@@ -39,10 +39,13 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   the last tab closing — lets it go into the queue, which sends it when it can, and Undo is not
   offered on return. A screen recreated in place keeps the Undo with its remaining time; sign-in lets
   holds go before its question, and a discarded room's go with it unsent; a hold cut off by the
-  process dying is let go on the next start. The apps let holds go the other way, putting the rows
-  back and sending nothing: the web when the document hides or the room unmounts
-  (`useTrainingLog.js`), Android on `ON_STOP` and on disposal (`GymRoom.kt`, `abandonWithheld`).
-  Every hold is in memory.
+  process dying is let go on the next start. The web's engine-held deletes follow this: the engine
+  stores and releases them, and the gym room draws their Undo from the engine's offers
+  (`useTrainingLog.js`). These holds still go the other way, putting the row back and sending
+  nothing: the web's Coach conversation delete, a REST call held in the gym room's memory, when the
+  document hides or the room unmounts; iOS's withheld Coach deletes when the scene goes to the
+  background (`CoachHistory.swift`); and Android's holds, which are in memory, on `ON_STOP` and on
+  disposal (`GymRoom.kt`, `abandonWithheld`).
 - **7b · Notes reorder.** Canon (`gym/briefs/10-notes.md` "A move writes one note",
   `13-gestures.md`; owner ruling 2026-09-26): moving a note writes that note's position only, right
   after the row drawn above the drop point in stored order, so a note inside a delete window keeps
@@ -105,6 +108,18 @@ of 2026-09-26 on its lifecycle; the entries below are where an app still differs
   the engine a commit rounds to the quantum (0.01) and admission checks the rounded value (A.2
   `weighin` `kg` 20–400; engine §7.1 step 4), so 19.996 is saved as 20.00. Rule whether the sheet
   accepts such an entry as 20 or refuses it before rounding, and align the clients.
+- **7j · A write this device cannot store.** Canon names no sentence for an engine write that the
+  device's own store fails (a full, closed or failing IndexedDB). The web gym ends the act's sentence
+  with *this device couldn’t store it* (*That set is still in the log — this device couldn’t store
+  it.*; `web/src/products/gym/errors.js` `failureReason`) and keeps *the log didn’t answer. Try again
+  when you have signal* for its REST doors. The journal says *not saved — no room on this device*
+  (`Canvas.jsx`) for every failed save, which claims a full store when the store may be closed or
+  failing instead. Confirm one storage sentence for both products. `gym/briefs/11-bodyweight.md`
+  still says the web's weigh-in delete reaches the log and pins *That weigh-in wasn’t deleted. Try
+  again in a moment.*; the web holds that delete on the device like the phones, and says *That
+  weigh-in wasn’t deleted — this device couldn’t store it.* when its store fails. The same brief has
+  the web's window come down before a day written again goes in; the web's save retires the held
+  delete in its own write.
 
 ### Sign-in doors
 

@@ -14,7 +14,7 @@ import { useRail } from './rail.js';
 import { MovementPicker } from './logger/MovementPicker.jsx';
 import {
   blankRoutine, draftFrom, entryDroppedLine, entryPlaceLabel,
-  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, routineDeletedLine, routineWrite, saysNeverLogged,
+  NAME_IT_TO_SAVE_IT, reorderEntries, routineConflictRows, routineWrite, saysNeverLogged,
   withEntryAdded, withEntryAt, withEntryRemoved, withEntrySet,
 } from './routines.js';
 import { useGymRead } from './useGymRead.js';
@@ -33,11 +33,9 @@ export function RoutinesList({ log, reviewing = null }) {
   const program = view.phase === 'ready' ? view.data.filter((routine) => !gone.has(routine.id)) : [];
   const routines = program.filter((routine) => !hidden.has(routine.id));
 
-  const remove = (routine) => log.withhold({
+  const remove = (routine) => log.holdDelete({
     kind: 'routine',
     id: routine.id,
-    engineDeath: { type: 'routine', id: routine.id },
-    line: routineDeletedLine(routine.name),
     refused: (error) => log.say(`${routine.name} is still in your program — ${failureReason(error)}.`),
   });
 
