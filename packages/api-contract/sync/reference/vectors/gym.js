@@ -277,7 +277,6 @@ function sessions() {
   ];
 }
 
-// M7: notes order by `ord`; the cap counts alive notes.
 function adversarial() {
   const phone = (extra = {}) => create('proposal', 'proposal003', s(T + 9 * H), {
     routineId: 'routine0001', intent: 'revise', proposedName: 'Lower A', summary: 'Heavier',
@@ -365,6 +364,35 @@ function adversarial() {
   ];
 }
 
+// M8: a display name holds more than whitespace once a writer names it; a stored one that does not stands
+// until it is next changed.
+function names() {
+  const blank = '  　 ';
+  const rename = (name, origin = A) => gym([update('exercise', 'sledpush01', s(T), origin === SERVER_A ? null : s(T + 9 * H), { name })]);
+  const blankRoutine = rec('routine', 'routine0001', { stamp: s(T + 1), seq: 2, f: { name: '  ', position: 0, entries: SQUAT, revision: 1, createdEntries: 1 } });
+  const titled = gymState({ rows: { [GYM_A]: [rec('note', 'note0000001', { stamp: s(T), seq: 1, f: { title: 'Grip', body: '', ord: 'a0', updatedAt: T } })], [GYM_B]: [] } });
+  const proposal = (proposedName) => gym([{ t: 'proposal', id: 'proposal003', born: null, life: ['alive', null], f: regs(null, {
+    routineId: 'routine0001', intent: 'revise', proposedName, summary: 'Lighter', changes: CHANGES, door: 'mcp', connection: 'conn-1', agent: 'Claude',
+  }) }]);
+  return [
+    admitted('a custom movement renamed to whitespace is invalid', { state: base(), intent: rename('   ') }),
+    admitted('a server-origin rename to whitespace is invalid alike', { state: base(), origin: SERVER_A, intent: rename(blank, SERVER_A) }),
+    admitted('a custom movement created with a whitespace name is invalid', { state: base(), intent: gym([create('exercise', 'kbswing001', s(T + 9 * H), { name: '\t', pattern: 'hinge', equipment: 'kettlebell', stepKg: 4 })]) }),
+    admitted('a seed renamed to whitespace is invalid', { state: base(), intent: gym([{ t: 'exerciseName', id: 'back-squat', f: regs(s(T + 9 * H), { name: blank }) }]) }),
+    admitted('a name padded with whitespace is admitted as written: clients trim, admission refuses only a blank one', { state: base(), intent: rename(' Prowler ') }),
+    admitted('a zero-width space is not whitespace: a name of one is admitted', { state: base(), intent: rename('​') }),
+    admitted('a routine created with a whitespace name is invalid', { state: base(), intent: gym([create('routine', 'routine0002', s(T + 9 * H), { name: ' ', entries: [{ exerciseId: 'dip' }] })]) }),
+    admitted('a routine renamed to whitespace is invalid', { state: base(), intent: gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { name: '\n' })]) }),
+    admitted('a stored whitespace routine name stands through a position-only change', {
+      state: gymState({ rows: { [GYM_A]: [EXERCISE, blankRoutine], [GYM_B]: [] } }),
+      intent: gym([update('routine', 'routine0001', s(T + 1), s(T + 9 * H), { position: 4 })]) }),
+    admitted('a note created with a whitespace title is invalid', { state: base(), intent: gym([create('note', 'note0000002', s(T + 9 * H), { title: blank, body: '', ord: 'a0' })]) }),
+    admitted('a note retitled to whitespace is invalid', { state: titled, intent: gym([update('note', 'note0000001', s(T), s(T + 9 * H), { title: '  ' })]) }),
+    admitted('a revision proposal whose proposedName is whitespace is invalid', { state: base(), origin: SERVER_A, intent: proposal('  ') }),
+  ];
+}
+
+// M7: notes order by `ord`; the cap counts alive notes.
 function notes() {
   const note = (id, seq, ord) => rec('note', id, { stamp: s(T + seq), seq, f: { title: `Note ${seq}`, body: '', ord, updatedAt: T } });
   const ten = gymState({ rows: { [GYM_A]: Array.from({ length: 10 }, (_, i) => note(`note000000${i}`, i + 1, `a${i}`)), [GYM_B]: [] } });
@@ -447,6 +475,6 @@ function metadata() {
 
 export function files() {
   return {
-    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...adversarial(), ...metadata()],
+    'gym/admit.json': [...weighins(), ...catalog(), ...sets(), ...routines(), ...proposals(), ...sessions(), ...notes(), ...names(), ...adversarial(), ...metadata()],
   };
 }

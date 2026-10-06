@@ -436,6 +436,13 @@ function renamed(aliases, before, after) {
   return [before, ...(aliases ?? []).filter((name) => name !== before && name !== after)].slice(0, MAX_ALIASES);
 }
 
+// A.2 display names: one created or changed to nothing but whitespace (§6.11's set, ECMAScript `\s`) is
+// `invalid`, whoever writes it. A stored one stands until it is next changed.
+function blankNamed(record, field) {
+  const name = valueOf(record.after, field);
+  return typeof name === 'string' && /^\s*$/.test(name) && (created(record) || changed(record, field));
+}
+
 const RULES = {
   set(ctx, record, { current, append, numbered }) {
     const { after } = record;
@@ -491,6 +498,7 @@ const RULES = {
       return;
     }
     if (!isAlive(after)) return;
+    if (blankNamed(record, 'name')) throw new Refusal('invalid');
     const isNew = created(record);
     const moved = !isNew && (changed(record, 'name') || changed(record, 'entries'));
     if (isNew || changed(record, 'entries')) {
@@ -515,6 +523,7 @@ const RULES = {
     const { after } = record;
     if (died(record)) throw new Refusal('invalid');
     if (created(record) && !isSet(valueOf(after, 'stepKg'))) throw new Refusal('invalid');
+    if (blankNamed(record, 'name')) throw new Refusal('invalid');
     if (changed(record, 'name')) {
       const aliases = renamed(valueOf(after, 'aliases'), valueOf(record.original, 'name'), valueOf(after, 'name'));
       append({ t: 'exercise', id: after.id, born: after.born, f: { aliases: [aliases, null] } });
@@ -525,6 +534,7 @@ const RULES = {
     const { after } = record;
     const seed = ownValue(ctx.productState.seeds, after.id);
     if (!seed) throw new Refusal('invalid');
+    if (blankNamed(record, 'name')) throw new Refusal('invalid');
     const before = valueOf(record.original, 'name') ?? seed.name;
     const now = valueOf(after, 'name') ?? seed.name;
     if (before === now) return;
@@ -536,6 +546,7 @@ const RULES = {
   },
 
   note(ctx, record, { append }) {
+    if (blankNamed(record, 'title')) throw new Refusal('invalid');
     if (created(record) || changed(record, 'title') || changed(record, 'body')) {
       append({ t: 'note', id: record.after.id, born: record.after.born, f: { updatedAt: [ctx.serverNow, null] } });
     }
@@ -561,7 +572,7 @@ const RULES = {
     const proposed = changes.filter((change) => change.kind !== 'removed').map((change) => ({ exerciseId: change.exerciseId, ...change.after }));
     const removing = valueOf(after, 'intent') === 'remove';
     if ((removing ? proposed.length !== 0 : proposed.length === 0 || proposed.length > 50
-      || !valueOf(after, 'proposedName') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
+      || /^\s*$/.test(valueOf(after, 'proposedName') ?? '') || proposed.some((entry) => entry.sets !== undefined && entry.sets.length === 0))
       || !sameJson(changes, proposalChanges(valueOf(routine, 'entries'), proposed))) throw new Refusal('invalid');
     if (proposed.some((entry) => !exerciseKnown(ctx, entry.exerciseId, current))) throw new Refusal('unknown-exercise');
     const base = valueOf(routine, 'entries');
