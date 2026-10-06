@@ -14,7 +14,6 @@ import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import works.windmill.gym.domain.*
-import works.windmill.gym.net.FakeTraining
 import works.windmill.platform.Account
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
@@ -576,20 +575,14 @@ class EngineTrainingTests {
         assertEquals(listOf(RecordMark(90.0, 5, 2000, 105.0)), record.records)
     }
     @Test fun trainingStoreUsesEngineForAnonymousAndNotificationLogThenFinish() = runTest {
-        engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
-            var nextSet = 0
-            val store = TrainingStore(SetQueue(File(tmp.root, "queue")), DeviceCopy(File(tmp.root, "copy")), LocalLog(File(tmp.root, "log")),
-                LocalPreferences(File(tmp.root, "preferences")), LocalBodyweight(File(tmp.root, "weight")), backgroundScope,
-                now = { now - 9_000 }, mintSession = { "session1" }, mintSet = { "set0000${++nextSet}" }, sync = { gym }, engineTraining = gym)
-            val account = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), user = null)
-            store.connect(account)
-            assertTrue(store.start() is GymResult.Ok)
-            store.choose("back-squat")
-            store.logSet(80.0, 5)
-            assertEquals(1, gym.session("session1")!!.sets.size)
-            assertTrue(store.finish() is FinishOutcome.Closed)
-            assertFalse(gym.session("session1")!!.session.isOpen)
+        EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val session = (room.store.start() as GymResult.Ok).value
+            room.store.choose("back-squat")
+            room.store.logSet(80.0, 5)
+            assertEquals(1, room.training.session(session.id)!!.sets.size)
+            assertTrue(room.store.finish() is FinishOutcome.Closed)
+            assertFalse(room.training.session(session.id)!!.session.isOpen)
         }
     }
     @Test fun migratedAccountCacheStartsItsFrozenRoutineAndLogsItsCustomMovementOfflineBeforeFirstPull() = runBlocking {
@@ -688,31 +681,24 @@ class EngineTrainingTests {
         }
     }
     @Test fun addAndDiscardThenKeepSignoutCannotResurrectAnOldAnonymousMirror() = runTest {
-        for (choice in listOf("add", "discard")) engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
-            val directory = File(tmp.root, choice).also { it.mkdirs() }
-            var nextSet = 0
-            val store = TrainingStore(SetQueue(File(directory, "queue")), DeviceCopy(File(directory, "copy")), LocalLog(File(directory, "log")),
-                LocalPreferences(File(directory, "preferences")), LocalBodyweight(File(directory, "weight")), backgroundScope,
-                now = { now - 9_000 }, mintSession = { "session1" }, mintSet = { "set0000${++nextSet}" }, sync = { gym }, engineTraining = gym)
-            val api = WindmillApi("https://windmill.works".toHttpUrl(), { null })
-            store.connect(Account(api, null))
-            store.start()
-            store.choose("back-squat")
-            val offer = store.notification.value!!.offer!!
-            assertTrue(store.acceptSet(LogSetCommand(offer.key, offer.id), scheduleDelivery = false) is LogSetAcceptance.Accepted)
-            assertEquals(1, gym.session("session1")!!.sets.size)
-            store.prepareEngineTransition()
-            engine.signIn("A", mapOf("gym" to true), mapOf("gym" to choice))
-            store.connect(Account(api, User("A", "a@example.com")))
-            if (choice == "add") assertEquals("session1", store.session!!.id) else assertNull(store.session)
-            store.prepareEngineTransition()
-            engine.signOut("keep")
-            store.connect(Account(api, null))
-            assertNull(store.session)
-            assertEquals(emptyList<SessionSummary>(), store.allSessions)
-            store.flushPendingSets()
-            assertEquals(emptyList<SessionDetail>(), gym.details())
+        for (choice in listOf("add", "discard")) EngineRoomFixture(tmp.newFolder(), backgroundScope).use { room ->
+            room.select(null)
+            val session = (room.store.start() as GymResult.Ok).value
+            room.store.choose("back-squat")
+            val offer = room.store.notification.value!!.offer!!
+            assertTrue(room.store.acceptSet(LogSetCommand(offer.key, offer.id), scheduleDelivery = false) is LogSetAcceptance.Accepted)
+            assertEquals(1, room.training.session(session.id)!!.sets.size)
+            room.store.prepareEngineTransition()
+            room.engine.signIn("A", mapOf("gym" to true), mapOf("gym" to choice))
+            room.store.connect(room.account("A"))
+            if (choice == "add") assertEquals(session.id, room.store.session!!.id) else assertNull(room.store.session)
+            room.store.prepareEngineTransition()
+            room.engine.signOut("keep")
+            room.store.connect(room.account(null))
+            assertNull(room.store.session)
+            assertEquals(emptyList<SessionSummary>(), room.store.allSessions)
+            room.store.flushPendingSets()
+            assertEquals(emptyList<SessionDetail>(), room.training.details())
         }
     }
     @Test fun productionActionContextCopiesNestingAcrossHopsAndIsolatesIndependentEntriesAfterCancel() = runBlocking {

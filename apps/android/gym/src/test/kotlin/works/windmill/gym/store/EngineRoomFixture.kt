@@ -8,6 +8,7 @@ import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
+import works.windmill.platform.storage.AtomicDocument
 import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
@@ -30,6 +31,7 @@ internal class EngineRoomFixture(
     private val elapsedNanos: () -> Long = System::nanoTime,
     private val mintRoutine: () -> String = Ids::routine,
     private val mintExercise: () -> String = Ids::exercise,
+    private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
 ) : AutoCloseable {
     companion object {
         fun server(): ModelServer {
@@ -52,8 +54,9 @@ internal class EngineRoomFixture(
         rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue)
     // As in the application: the REST doors answer only while an account is signed in.
     val training = EngineTraining(engine) { rest.takeIf { selected != null } }
+    val controlsFile = File(directory, "control.json")
     val store = freshStore()
-    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(queue = SetQueue(File(directory, "control.json")), scope = scope,
+    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(queue = SetQueue(controlsFile, write = controlsWrite), scope = scope,
         now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
         mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
         undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
