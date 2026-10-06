@@ -43,7 +43,10 @@ Each is a `git format-patch` file against the pinned release, with a message wri
   does.
 
 `test/third_party/drogon/PatchesTest.cpp` pins all three against Drogon's own parser, on a loopback
-connection in the test process.
+connection in the test process. It also pins Trantor's listener-wide SIGPIPE protection: a closed
+client's socket write cannot terminate the server. `test/e2e/http_disconnect_test.py` resets twelve
+connections during large replies from the production server, checking it serves a read after each;
+the deployment conformance runs it against both server compositions in CI.
 
 ## Moving to another Drogon
 

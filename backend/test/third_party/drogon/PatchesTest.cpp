@@ -5,6 +5,7 @@
 #include <drogon/HttpResponse.h>
 
 #include <algorithm>
+#include <csignal>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -18,6 +19,17 @@
 // upstream's 501.
 
 using wm::test::DrogonLoopback;
+
+TEST(drogon_listener_ignores_sigpipe_and_keeps_serving) {
+  DrogonLoopback::Connection client;
+  struct sigaction disposition{};
+  REQUIRE_EQ(sigaction(SIGPIPE, nullptr, &disposition), 0);
+  REQUIRE(disposition.sa_handler == SIG_IGN);
+  REQUIRE_EQ(raise(SIGPIPE), 0);
+  const auto reply = client.exchange("GET / HTTP/1.1\r\nHost: localhost\r\n\r\n");
+  REQUIRE(reply.request);
+  CHECK(reply.answer.starts_with("HTTP/1.1 204 No Content\r\n"));
+}
 
 namespace {
 

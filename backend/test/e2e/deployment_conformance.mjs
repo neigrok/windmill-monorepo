@@ -522,6 +522,7 @@ async function edgeAnswers() {
 }
 
 console.log(`origin: 127.0.0.1:${PORT}, ${CATALOG} catalog (schema ${SCHEMA}), ${corpus.length} vectors`);
+execFileSync('python3', [path.join(backend, 'test/e2e/http_disconnect_test.py')], { stdio: 'inherit' });
 await runHttp1(false);
 if (EDGE_PORT) {
   console.log(`edge: the production Caddyfile on 127.0.0.1:${EDGE_PORT}`);

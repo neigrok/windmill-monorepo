@@ -455,3 +455,17 @@ TEST(heartbeat_drains_queued_mutations_before_explicit_shutdown) {
   CHECK_EQ(completions[0].product, std::string("journal"));
   CHECK_EQ(completions[0].outcome, std::string("ok"));
 }
+
+TEST(heartbeat_shutdown_drains_work_before_closing_the_loop) {
+  for (int iteration = 0; iteration < 1000; ++iteration) {
+    std::vector<int> ran;
+    Heartbeat heartbeat{"shutdown"};
+    heartbeat.queue([&] { ran.push_back(1); });
+    heartbeat.queue([&] { ran.push_back(2); });
+    heartbeat.stop();
+    heartbeat.stop();
+    heartbeat.queue([&] { ran.push_back(3); });
+    heartbeat.start(0, 1, [&] { ran.push_back(4); });
+    CHECK_EQ(ran, (std::vector<int>{1, 2}));
+  }
+}
