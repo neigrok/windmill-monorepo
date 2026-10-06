@@ -18,6 +18,9 @@ saves retire their older notices.
 `npm run test:journal:server -- /absolute/backend/build` runs the journal Playwright acceptance on
 ports 8094/5181 with its own database and `schema.sql`. Build `windmill_server` using
 `backend/RUNNING.md` first. It requires Postgres client tools (`/tmp` on macOS), stops its listeners
-by port and drops its database. The server acceptance script is callable in CI with that same binary
+by port and drops its database. `WM_E2E_PORT`, `WM_E2E_WEB_PORT` and `WM_E2E_DB_PREFIX` select isolated
+backend/web ports and a database prefix. Its seven cases cover offline convergence, claim choices,
+migration, current-session Keep/Discard and account closure that discards device data; the account
+flows wait for completed sign-out before navigating. The server acceptance script is callable in CI with that same binary
 and Postgres tools; the existing web workflow runs the complete tests/build, but has no backend-stack
 step.

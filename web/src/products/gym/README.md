@@ -61,6 +61,7 @@ node web/test/products/gym/stack.mjs /absolute/backend/build
 ```
 
 The runner uses ports 8094/5181 and a unique database, applies `schema.sql`, and starts the server.
+`WM_E2E_PORT`, `WM_E2E_WEB_PORT` and `WM_E2E_DB_PREFIX` select isolated backend/web ports and a database prefix.
 It seeds the fixture through the doors production uses: MCP under a personal key for the custom
 movement, the agent's routine and both proposals, and a phone replica for everything else. It
 stops owned listeners by port and drops the database even on failure. A full-stack workflow

@@ -24,14 +24,13 @@ export function SessionsSection() {
   const retry = () => { setSessions(null); setFailed(false); setAttempt((n) => n + 1); };
 
   const revoke = async (session) => {
+    if (session.current) {
+      if (await signOut()) window.location.hash = '#/';
+      return;
+    }
     try {
       await revokeSession(session.id);
     } catch { /* already gone or unreachable */ }
-    if (session.current) {
-      await signOut();
-      window.location.hash = '#/';
-      return;
-    }
     setSessions((rows) => rows.filter((row) => row.id !== session.id));
   };
 
