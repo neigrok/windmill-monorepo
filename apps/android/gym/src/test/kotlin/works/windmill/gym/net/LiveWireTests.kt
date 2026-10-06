@@ -27,6 +27,8 @@ import works.windmill.gym.domain.TopSet
 import works.windmill.gym.domain.TrainingSet
 import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
+import works.windmill.gym.store.WorkoutImports
+import works.windmill.gym.domain.Session
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.schema.Gym
@@ -60,24 +62,43 @@ class LiveWireTests {
         private fun pending(key: RecordKey) = engine.read(ScopeRef(Gym.scope)) {
             it.drawn(key.type, key.id)?.isPending == true
         }
-        private suspend fun drain(key: RecordKey? = null) {
+        private suspend fun drain(key: RecordKey? = null) = drain(engine) { adapter.firstPullComplete && (key == null || !pending(key)) }
+        private suspend fun drain(phone: Engine, settled: () -> Boolean) {
             val deadline = System.nanoTime() + 15_000_000_000L
             while (System.nanoTime() < deadline) {
                 // This transport probe has no runtime to release the normal undo hold.
-                engine.releaseHeld()
-                val pushed = engine.nextPush()
+                phone.releaseHeld()
+                val pushed = phone.nextPush()
                 if (pushed != null) {
                     val send = probeClock.reading()
                     val reply = response(transport.push(pushed, checkNotNull(bearer)))
-                    engine.onPushResponse(pushed, reply, RequestTiming(send, probeClock.reading()))
+                    phone.onPushResponse(pushed, reply, RequestTiming(send, probeClock.reading()))
                 }
-                val pull = checkNotNull(engine.pullRequest(listOf(ScopeRef(Gym.scope))))
+                val pull = checkNotNull(phone.pullRequest(listOf(ScopeRef(Gym.scope))))
                 val send = probeClock.reading()
-                engine.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
-                if (adapter.firstPullComplete && (key == null || !pending(key))) return
+                phone.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
+                if (settled()) return
                 delay(100)
             }
             error("The probe failed to settle through /v1/sync.")
+        }
+        // As the application signs a phone in: hello, then the account's own decision, adding what
+        // the phone holds when both sides hold training.
+        private suspend fun signIn(phone: Engine) {
+            val send = probeClock.reading()
+            val hello = response(transport.hello(bearer))
+            assertEquals(200, hello.status)
+            phone.onHello(hello, RequestTiming(send, probeClock.reading()))
+            val body = checkNotNull(hello.body)
+            val account = body.member("as").str()
+            val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
+            val question = phone.signIn(account, holds)
+            if (!question.member("complete").bool()) {
+                val pins = question.member("due").arr().associate { due ->
+                    due.member("product").str() to due.member("counted").arr().map { it.str() } }
+                assertTrue(phone.signIn(account, holds, mapOf("gym" to "add"), pins).member("complete").bool())
+            }
+            phone.subscribe(ScopeRef(Gym.scope))
         }
         private val rest by lazy { GymHttp(api) }
         // Each write commits to the replica and is then carried through /v1/sync until the log holds it.
@@ -118,6 +139,11 @@ class LiveWireTests {
 
         private var openedA: works.windmill.gym.domain.Session? = null
         private var storedWorking: TrainingSet? = null
+
+        private val importedId = "ses_probe_a${tag}3"
+        private val importedSetId = "set_probe_a${tag}i"
+        private val startC = startA - 1_800_000
+        private val finishC = startC + 120_000
     }
 
     @Before
@@ -128,13 +154,7 @@ class LiveWireTests {
         )
         assumeTrue("WM_WIRE_BEARER not set — no probe session to speak as", bearer != null)
         if (!connected) runBlocking {
-            val send = probeClock.reading()
-            val hello = response(transport.hello(bearer))
-            assertEquals(200, hello.status)
-            engine.onHello(hello, RequestTiming(send, probeClock.reading()))
-            val body = checkNotNull(hello.body)
-            engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() })
-            engine.subscribe(ScopeRef(Gym.scope))
+            signIn(engine)
             connected = true
             drain()
         }
@@ -395,6 +415,34 @@ class LiveWireTests {
         assertNull(adapter.session(sessionBId))
         assertNull(adapter.routine(routineId))
         assertTrue(adapter.sessions(50, null, null).none { it.id == sessionAId || it.id == sessionBId })
+    }
+
+    // Signed-out training is prepared as an import before the sign-in and lands on the account whole,
+    // with the phone's own ids.
+    @Test
+    fun t12_aSignedOutWorkoutLandsOnTheAccountAsAnImportAtSignIn() = runBlocking {
+        Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+            val signedOut = EngineTraining(phone)
+            signedOut.startSession(SessionStart(importedId, startC))
+            signedOut.appendSet(importedId, SetWrite(importedSetId, "back-squat", 60.0, 5, SetKind.Working, startC + 60_000))
+            signedOut.finishSession(importedId, finishC)
+            signedOut.prepareAdoption()
+            assertEquals(listOf(importedId), signedOut.imports.retainedWorkouts().map { it.session.id })
+
+            signIn(phone)
+            drain(phone) { signedOut.firstPullComplete && signedOut.imports.retainedWorkouts().isEmpty() }
+            assertEquals(emptyList<String>(), signedOut.imports.refusals().map { it.id })
+        }
+
+        drain(RecordKey(Gym.Types.session, RecordID(importedId)))
+        val landed = checkNotNull(adapter.session(importedId))
+        assertEquals(Session(importedId, startC, finishC), landed.session)
+        assertEquals(listOf(TrainingSet(importedSetId, "back-squat", 1, 60.0, 5, SetKind.Working, null, "", startC + 60_000)),
+            landed.sets)
+
+        discardSession(importedId)
+        assertNull(adapter.session(importedId))
     }
 
     @Test
