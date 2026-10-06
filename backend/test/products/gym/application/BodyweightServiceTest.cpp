@@ -16,10 +16,8 @@ namespace {
 
 // Reads over weigh-ins seeded straight into the store: the writes arrive through /v1/sync.
 struct Harness {
-  EngineWrites engine;
-  ReadOnlyDoor door;
   FakeGym repo;
-  BodyweightService bodyweight{repo.bodyweight, &door};
+  BodyweightService bodyweight{repo.bodyweight};
 
   void weighed(const std::string& day, double weightKg, std::uint64_t recordedAtMs,
                const std::string& user = "u1") {

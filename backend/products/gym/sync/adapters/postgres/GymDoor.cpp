@@ -3,7 +3,6 @@
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/application/WorkerPool.h"
 #include "platform/application/sync/ServerCall.h"
-#include "products/gym/application/GymSwitches.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/GymRegistry.h"
@@ -17,24 +16,22 @@ namespace wm::gym {
 struct GymDoor::Impl {
   std::shared_ptr<sync::SyncCatalog> catalog;
   sync::PgSyncStore store;
-  sync::NullChangeFeed noFeed;
   sync::ServerClock stamps;
   sync::PhysicalClock now;
   sync::Admission admission;
   WorkerPool workers{"gym-sync", 4, 256};
 
   Impl(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
-       std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed* feed)
+       std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed& feed)
       : catalog(std::move(bound)), store(std::move(pool), sync::Limits{}.lockTimeoutMs), now(clock),
-        admission(*catalog, store, feed ? *feed : noFeed, stamps, failures) {}
+        admission(*catalog, store, feed, stamps, failures) {}
 };
 
 GymDoor::GymDoor(std::shared_ptr<PgPool> pool, Clock& clock, FailureReporter& failures,
                  LogRepository& log, ProgramRepository& program, CatalogRepository& catalog,
-                 NotesRepository& notes, BodyweightRepository& bodyweight, PreferencesRepository& preferences,
-                 std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed* feed)
+                 NotesRepository& notes, std::shared_ptr<sync::SyncCatalog> bound, sync::ChangeFeed& feed)
     : impl_(std::make_unique<Impl>(std::move(pool), clock, failures, std::move(bound), feed)), clock_(clock), log_(log),
-      program_(program), catalog_(catalog), notes_(notes), bodyweight_(bodyweight), preferences_(preferences) {}
+      program_(program), catalog_(catalog), notes_(notes) {}
 
 GymDoor::~GymDoor() = default;
 
@@ -90,18 +87,11 @@ Json::Value GymDoor::execute(const UserId& user, const std::string& tool, const 
                              const Builder& builder, std::optional<std::string> requestId) {
   auto observation = std::make_shared<WriteObservation>("gym.server_call", "gym", "server-origin");
   WriteContext context(*observation);
-  try {
-    requireGymWrite();
-  } catch (const GymUnavailable& refused) {
-    observation->finish(refused.code);
-    throw;
-  }
   auto answer = std::make_shared<std::promise<Json::Value>>();
   auto future = answer->get_future();
   const bool posted = impl_->workers.post([&, answer, requestId = std::move(requestId), observation] {
     WriteContext workerContext(*observation);
     try {
-      requireGymWrite();
       const auto build = [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
         std::optional<Json::Value> built;
         try {
@@ -174,7 +164,6 @@ Json::Value GymDoor::command(const UserId& user, const std::string& name, const 
 }
 
 void GymDoor::closeStale(const UserId& user) {
-  if (gymWriteFrozen()) return;
   requireOk(command(user, "gym.closeStale", Json::Value(Json::objectValue)));
 }
 

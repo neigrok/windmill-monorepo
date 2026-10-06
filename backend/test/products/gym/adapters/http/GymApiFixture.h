@@ -32,7 +32,6 @@ using namespace wm::gym::fake;
 
 // The in-memory gym: rows are seeded into `repo.db` as the engine leaves them, and every write is refused.
 struct Harness {
-  EngineWrites engine;
   FakeAuthRepository authRepo;
   FakeEmail email;
   FakeTokens tokens;
@@ -46,24 +45,24 @@ struct Harness {
   FakeGym repo;
   ReadOnlyDoor door;
   std::shared_ptr<TrainingService> trainingService =
-      std::make_shared<TrainingService>(repo.log, repo.program, clock, tokens, &door);
-  std::shared_ptr<CatalogService> catalogService = std::make_shared<CatalogService>(repo.catalog, &door);
+      std::make_shared<TrainingService>(repo.log, clock, tokens, door);
+  std::shared_ptr<CatalogService> catalogService = std::make_shared<CatalogService>(repo.catalog, door);
   std::shared_ptr<ProgramService> programService =
-      std::make_shared<ProgramService>(repo.program, clock, &door);
+      std::make_shared<ProgramService>(repo.program, door);
   std::shared_ptr<PreferencesService> preferencesService =
-      std::make_shared<PreferencesService>(repo.preferences, &door);
+      std::make_shared<PreferencesService>(repo.preferences);
   std::shared_ptr<ThreadService> threadService =
-      std::make_shared<ThreadService>(repo.threads, clock, &door);
-  std::shared_ptr<NotesService> notesService = std::make_shared<NotesService>(repo.notes, clock, &door);
+      std::make_shared<ThreadService>(repo.threads, clock, door);
+  std::shared_ptr<NotesService> notesService = std::make_shared<NotesService>(repo.notes, door);
   std::shared_ptr<BodyweightService> bodyweightService =
-      std::make_shared<BodyweightService>(repo.bodyweight, &door);
+      std::make_shared<BodyweightService>(repo.bodyweight);
   TrainingApi training{trainingService, auth, "https://windmill.works"};
   CatalogApi catalog{catalogService, trainingService, auth};
   ProgramApi program{programService, auth};
   PreferencesApi preferences{preferencesService, auth};
   ThreadsApi threads{threadService, auth};
   NotesApi notes{notesService, auth};
-  BodyweightApi bodyweight{bodyweightService, auth, clock};
+  BodyweightApi bodyweight{bodyweightService, auth};
 
   Harness() {
     repo.db.seed(benchPress());

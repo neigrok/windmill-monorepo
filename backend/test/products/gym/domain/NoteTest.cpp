@@ -148,16 +148,3 @@ TEST(a_note_sits_at_one_of_ten_positions) {
   CHECK_EQ(kMaxNoteBodyBytes, std::size_t{500});
 }
 
-// The whole-order rule, decided one way for the fake and the SQL.
-TEST(an_order_names_every_note_exactly_once) {
-  const std::vector<Note> standing{Note{NoteId{"note_00000001"}, kLifter, "A", "", 0},
-                                   Note{NoteId{"note_00000002"}, kLifter, "B", "", 1}};
-
-  CHECK(namesEveryNoteOnce(standing, {NoteId{"note_00000002"}, NoteId{"note_00000001"}}));
-  CHECK(namesEveryNoteOnce({}, {}));
-  CHECK_FALSE(namesEveryNoteOnce(standing, {NoteId{"note_00000001"}}));
-  CHECK_FALSE(namesEveryNoteOnce(standing, {NoteId{"note_00000001"}, NoteId{"note_00000001"}}));
-  CHECK_FALSE(namesEveryNoteOnce(standing, {NoteId{"note_00000001"}, NoteId{"note_00000009"}}));
-  CHECK_FALSE(namesEveryNoteOnce(
-      standing, {NoteId{"note_00000001"}, NoteId{"note_00000002"}, NoteId{"note_00000003"}}));
-}

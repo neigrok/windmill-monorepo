@@ -93,7 +93,7 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
                           SetWrite{SetId{"set_pg000001"}, mine.id, 60.0, 8, SetKind::working, std::nullopt, "", kNow})
             .error == AppendError::none);
   CHECK(h.program.createRoutine(h.user, RoutineWrite{RoutineId{"rt_pg000001"}, "Push A", 0,
-                                                     {entryAt(1, "pg-zercher-squat")}, std::nullopt},
+                                                     {entryAt(1, "pg-zercher-squat")}},
                                 ProposalDoor::mcp)
             .error == RoutineWriteError::none);
 }

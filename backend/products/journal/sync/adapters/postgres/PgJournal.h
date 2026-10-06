@@ -35,7 +35,6 @@ public:
   explicit PgJournal(const sync::Registry& registry);
   void bindTo(sync::SyncCatalog&, bool checkAdoption = true);
   void requireReady(sync::SyncTxn&, const sync::ScopeKey&) override;
-  void requireWritable(sync::SyncTxn&, const sync::ScopeKey&) override;
 
 private:
   PgJournalState state_;

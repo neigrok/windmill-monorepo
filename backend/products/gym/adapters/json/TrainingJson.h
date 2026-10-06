@@ -21,21 +21,19 @@ namespace wm::gym {
 // never null; note is always present.
 //
 //   session in  : { "id": "ses_…", "startedAt": ms, "joinOpenSession"?: bool, "routineId"?: "rt_…" }
+//                                                       the start_session tool
 //   import in   : { "id": "ses_…", "startedAt": ms, "finishedAt": ms, "routineId"?: "rt_…",
 //                   "sets": [ <set in>, … ] }        0 to 200 sets    POST /v1/gym/sessions/import
 //   set in      : { "id": "set_…", "exerciseId": "…", "weightKg": n, "reps": n, "completedAt": ms,
 //                   "kind"?: "warmup"|"working"|"drop"|"failure", "rpe"?: n, "note"?: "…" }
-//   fix in      : { "weightKg"?: n, "reps"?: n, "kind"?: "…", "rpe"?: n|null, "note"?: "…" }
-//                                                       PATCH /v1/gym/sessions/{id}/sets/{setId}
 //   routine in  : { "id": "rt_…", "name": "…", "position": n,
 //                   "entries": [ { "exerciseId": "…", "sets"?: [ <set target> ], "restSeconds"?: n } ] }
 //   set target  : { "reps"?: 1–100, "weightKg"?: ±500 }   one per set, in lifting order, 1 to 20
 //   movement in : { "id": "ex_…", "name": "…", "pattern": "squat"|…, "equipment": "barbell"|…,
 //                   "stepKg"?: n }
-//   rename in   : { "name": "…" }                       PATCH /v1/gym/exercises/{id}
-//   settings i/o: { "units": "kg"|"lb", "restSeconds"?: n,
+//   settings out: { "units": "kg"|"lb", "restSeconds"?: n,
 //                   "restSound": bool, "confirmHaptic": bool, "confirmSound": bool }
-//                                                       GET · PUT /v1/gym/preferences
+//                                                       GET /v1/gym/preferences
 //   session out : { "id", "startedAt", "finishedAt"?, "routineId"?, "plan"? }
 //   log row out : the session, plus { "setCount", "workingSetCount", "tonnageKg",
 //                                     "exercises": ["…"], "topSet"?: { "weightKg", "reps" },
@@ -116,23 +114,19 @@ namespace wm::gym {
 // Entry order is the routine's order: entries in carry no position, the codec numbers them 1..n in
 // arrival order, and entries out carry the number.
 
-//   note in     : { "title": "…", "body": "…" }          PUT /v1/gym/notes/{id}
+//   note in     : { "title": "…", "body": "…" }          the save_note tool, beside its id
 //   note out    : { "id": "note_…", "position": n, "title": "…", "body": "…", "updatedAt": ms }
 //   notes out   : { "notes": [ <note> ] }                  GET /v1/gym/notes, position ascending
-//   order in    : { "order": [ "note_…", … ] }             PUT /v1/gym/notes — every note, once
 //
 // A note's id is the client's to mint (`note_<hex>`), the same discipline as `thr_<hex>`. Position
-// is precedence and the store's to assign: a new id lands last, and the whole order is replaced
-// with one write.
-//   weigh-in in : { "weightKg": n, "recordedAt": ms }     PUT /v1/gym/bodyweight/{dateLocal}
+// is precedence: a new note lands last.
 //   weigh-in out: { "dateLocal": "YYYY-MM-DD", "weightKg": n, "recordedAt": ms }
 //   weigh-ins out: { "entries": [ <weigh-in> ], "latest": <weigh-in> | null }
 //                                                       GET /v1/gym/bodyweight?from=&to=
 //
 // The day is the identity — the lifter's own calendar, never an instant — and kilograms are the
 // only unit on the wire, rounded to two decimals as the column stores them. `recordedAt` is the
-// device's clock at the save and decides only which of two writes to one day is newer. `latest` is
-// the account's newest day whatever window was asked for.
+// device's clock at the save. `latest` is the account's newest day whatever window was asked for.
 //   threads out : { "threads": [ <thread> ] }                GET /v1/gym/threads
 //   thread out  : { "id": "thr_…", "title": "…", "createdAt": ms, "askedAt": ms,
 //                   "outcome": { "kind": "read-only"|"proposed"|"applied"|"dismissed"|"superseded",
@@ -153,14 +147,10 @@ namespace wm::gym {
 // Every instant on the wire is parsed against the domain's (0, kMaxInstantMs] band.
 
 // `joinOpenSession` omitted is true: the start continues whatever workout is open. `false` is
-// refused 409 `session-already-open` rather than joined.
+// refused rather than joined while another workout is open.
 
 SessionStart parseSessionStart(const Json::Value& body);   // throws InvalidTraining
 SetWrite parseSetWrite(const Json::Value& body);           // throws InvalidTraining
-// A correction carries only the fields it changes: an absent field leaves the stored value alone,
-// `rpe: null` clears an rpe and `note: ""` clears a note (`note: null` is a type error, not a
-// clear), and an empty body is legal.
-SetFix parseSetFix(const Json::Value& body);               // throws InvalidTraining
 std::uint64_t parseFinish(const Json::Value& body);        // { "finishedAt": ms }; throws InvalidTraining
 // Unknown fields are refused at both levels; each set is otherwise read as parseSetWrite reads it.
 SessionImport parseSessionImport(const Json::Value& body); // throws InvalidTraining
@@ -168,16 +158,8 @@ RoutineWrite parseRoutineWrite(const Json::Value& body);   // throws InvalidTrai
 // `position` is not a field here.
 ProposalWrite parseProposalWrite(const Json::Value& body, const ProposalSource& source);
 ExerciseWrite parseExerciseWrite(const Json::Value& body); // throws InvalidTraining
-std::string parseExerciseRename(const Json::Value& body);  // throws InvalidTraining
-// The whole document. The owner is the caller's, never the body's; omitted fields take their
-// defaults, and every refusal carries a machine `code`.
-GymPreferences parsePreferences(const Json::Value& body, const UserId& user);  // throws InvalidPreference
-// The id is the path's and the owner the caller's; the entity applies the three bounds.
+// The id and the owner are the caller's; the entity applies the three bounds.
 Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user);  // throws InvalidTraining
-std::vector<NoteId> parseNotesOrder(const Json::Value& body);                        // throws InvalidTraining
-// The day is the path's and the owner the caller's; the entity applies the band and the calendar.
-Bodyweight parseBodyweightWrite(const Json::Value& body, const std::string& dateLocal,
-                                const UserId& user);   // throws InvalidTraining
 
 Json::Value toJson(const Session& session);
 // `topE1rm` is the best estimate over every working set; `topSet` is only the heaviest, and no e1RM
@@ -223,8 +205,6 @@ Json::Value toJson(const Statistics& statistics);
 Json::Value toJson(const StatsProgress& progress);
 Json::Value toJson(const MovementRecord& record);
 Json::Value toJson(const SharedSession& shared);
-SessionCorrectionIn parseSessionCorrection(const Json::Value& body, const SessionId& session);
-Json::Value toJson(const SessionCorrectionIn& incoming);
 Json::Value toJson(const HistoryWorkout& workout);
 Json::Value toJson(const HistoryPage& page);
 Json::Value toJson(const LogShare& share);

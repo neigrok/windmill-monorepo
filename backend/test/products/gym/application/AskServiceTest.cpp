@@ -1197,7 +1197,7 @@ TEST(coach_admission_classifies_more_requests_than_model_workers_without_waiting
   h.repo.threads.saveGeneration(h.user, completeThread, complete);
   const ThreadId deleted{"thr_gone0001"};
   h.repo.threads.openThread(h.user, deleted, "Deleted", h.clock.now);
-  h.repo.threads.deleteThread(h.user, deleted);
+  h.threads.deleteThread(h.user, deleted);
   AskService service{h.training, h.repo.threads, h.clock, agent, h.tools, h.entitlements};
   struct Release {
     std::promise<void>& first;

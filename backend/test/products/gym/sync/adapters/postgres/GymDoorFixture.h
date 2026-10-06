@@ -48,8 +48,6 @@ struct Failures : FailureReporter {
   void report(const std::string&, const std::string&, const std::string& detail) override { messages.push_back(detail); }
 };
 
-using EngineSwitch = fake::EngineWrites;
-
 // The movement catalog exactly as schema.sql seeds it, re-planted for every case: the sync suite's corpus
 // worlds replace the seeds on the same database.
 inline const std::string& catalogSeed() {
@@ -86,22 +84,21 @@ std::shared_ptr<T> borrowed(T& held) {
 // Two accounts, an empty gym, and the services and tools over the door. The clock is the door's and the
 // services' alike, so a test that moves it moves the engine's server time with it.
 struct Harness {
-  EngineSwitch engine;
   UserId user{"77777777-7777-4777-8777-777777777777"};
   UserId other{"77777777-7777-4777-8777-777777777778"};
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
   Failures failures;
   Repositories repo;
-  GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, repo.notes, repo.bodyweight,
-               repo.preferences, sync::productCatalog()};
-  TrainingService training{repo.log, repo.program, clock, tokens, &door};
-  CatalogService catalog{repo.catalog, &door};
-  ProgramService program{repo.program, clock, &door};
-  NotesService notes{repo.notes, clock, &door};
-  BodyweightService bodyweight{repo.bodyweight, &door};
-  PreferencesService preferences{repo.preferences, &door};
-  ThreadService threads{repo.threads, clock, &door};
+  sync::NullChangeFeed feed;
+  GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, repo.notes, sync::productCatalog(), feed};
+  TrainingService training{repo.log, clock, tokens, door};
+  CatalogService catalog{repo.catalog, door};
+  ProgramService program{repo.program, door};
+  NotesService notes{repo.notes, door};
+  BodyweightService bodyweight{repo.bodyweight};
+  PreferencesService preferences{repo.preferences};
+  ThreadService threads{repo.threads, clock, door};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
 
   Harness() {

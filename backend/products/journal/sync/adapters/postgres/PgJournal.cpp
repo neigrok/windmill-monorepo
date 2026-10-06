@@ -2,7 +2,6 @@
 
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "platform/domain/sync/Jcs.h"
-#include "products/journal/application/JournalSwitches.h"
 
 #include <algorithm>
 #include <stdexcept>
@@ -252,11 +251,6 @@ void PgJournal::requireReady(SyncTxn& txn, const ScopeKey& scope) {
   } catch (const pqxx::undefined_table&) {
     throw ProductScopeUnavailable("journal adoption schema is unavailable");
   }
-}
-
-void PgJournal::requireWritable(SyncTxn& txn, const ScopeKey& scope) {
-  if (journalWriteFrozen()) throw ProductScopeUnavailable("journal writes are frozen");
-  requireReady(txn, scope);
 }
 
 }

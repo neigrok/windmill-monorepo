@@ -1,6 +1,5 @@
 #include "products/gym/adapters/http/ThreadsApi.h"
 #include "products/gym/adapters/http/CoachImage.h"
-#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -18,7 +17,7 @@ ThreadsApi::ThreadsApi(std::shared_ptr<ThreadService> threads, std::shared_ptr<A
     : threads_(std::move(threads)), auth_(std::move(auth)), ask_(std::move(ask)) { uploads_.start(); }
 
 
-void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -56,12 +55,10 @@ void ThreadsApi::listThreads(const drogon::HttpRequestPtr& req, HttpCallback&& c
   Json::Value body = toJson(page);
   body["nextCursor"] = next;
   cb(jsonResponse(body));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                       const std::string& id) try {
+                       const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -96,14 +93,11 @@ void ThreadsApi::getThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
   if (paged) body["nextCursor"] = held->nextCursor.empty() ? Json::Value{} : Json::Value(held->nextCursor);
   if (!body.isMember("turns")) body["turns"] = Json::Value(Json::arrayValue);
   cb(jsonResponse(body));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // The turns go with the row; the proposals it minted stay.
 void ThreadsApi::deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                           const std::string& id) try {
-  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -126,8 +120,7 @@ void ThreadsApi::deleteThread(const drogon::HttpRequestPtr& req, HttpCallback&& 
 }
 
 
-void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) try {
-  requireGymWrite();
+void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
   const auto caller = callerOf(req, *auth_);
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to upload a photo")); return; }
   if (!wellFormedId(thread) || !wellFormedId(id)) { cb(error(drogon::k400BadRequest, "invalid attachment identity")); return; }
@@ -151,7 +144,6 @@ void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
     };
     drogon::HttpResponsePtr response;
     try { response = upload(); }
-    catch (const GymUnavailable& unavailable) { response = error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()); }
     catch (const std::exception& failure) {
       writeHttpFailure(req, failure);
       response = error(drogon::k503ServiceUnavailable, "photo could not be saved; try again shortly");
@@ -159,11 +151,9 @@ void ThreadsApi::putImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
     --uploadCount_;
     cb(response);
   });
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
-void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) try {
+void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& id) {
   const auto caller = callerOf(req, *auth_);
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to open a photo")); return; }
   const auto image = threads_->image(*caller, ThreadId{thread}, id);
@@ -174,12 +164,9 @@ void ThreadsApi::getImage(const drogon::HttpRequestPtr& req, HttpCallback&& cb, 
   response->addHeader("x-content-type-options", "nosniff");
   response->setBody(image->data);
   cb(response);
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void ThreadsApi::stopGeneration(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& thread, const std::string& requestId) try {
-  requireGymWrite();
   const auto caller = callerOf(req, *auth_);
   if (!caller) { cb(error(drogon::k401Unauthorized, "sign in to stop Coach")); return; }
   const auto generation = ask_ ? ask_->stop(*caller, ThreadId{thread}, requestId)

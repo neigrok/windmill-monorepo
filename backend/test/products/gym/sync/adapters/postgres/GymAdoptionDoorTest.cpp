@@ -1,6 +1,5 @@
 #include "test/products/gym/sync/adapters/postgres/GymDoorFixture.h"
 #include "test/testing.h"
-#include "products/gym/application/GymSwitches.h"
 
 using namespace wm;
 using namespace wm::sync;

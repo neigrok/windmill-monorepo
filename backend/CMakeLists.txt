@@ -139,7 +139,6 @@ add_library(windmill_gym
   products/gym/domain/Proposal.cpp
   products/gym/domain/Thread.cpp
   products/gym/domain/Review.cpp
-  products/gym/domain/Correction.cpp
   products/gym/domain/History.cpp
   products/gym/domain/Statistics.cpp
   products/gym/domain/Record.cpp
@@ -298,7 +297,6 @@ add_executable(windmill_domain_tests
   test/products/gym/domain/ProposalTest.cpp
   test/products/gym/domain/ThreadTest.cpp
   test/products/gym/domain/ReviewTest.cpp
-  test/products/gym/domain/CorrectionTest.cpp
   test/products/gym/domain/HistoryTest.cpp
   test/products/gym/domain/StatisticsTest.cpp
   test/products/gym/domain/RecordTest.cpp
@@ -416,7 +414,6 @@ target_sources(windmill_roadmap PRIVATE
 # Journal adapters: the Pg storage, the JSON wire boundary, the REST surface, and the route seam.
 # They reach Drogon + libpqxx through windmill_platform (linked PUBLIC by the core lib above).
 target_sources(windmill_journal PRIVATE
-  products/journal/sync/adapters/postgres/JournalDoor.cpp
   products/journal/adapters/email/ResendNudgeSender.cpp
   products/journal/adapters/json/PageJson.cpp
   products/journal/adapters/postgres/PgJournalRepository.cpp
@@ -504,20 +501,8 @@ add_test(NAME log_lifecycle COMMAND ${Python3_EXECUTABLE}
   ${CMAKE_SOURCE_DIR}/test/platform/adapters/sentry/log_lifecycle_test.py
   $<TARGET_FILE:windmill_mcp> $<TARGET_FILE:windmill_gym_backfill>)
 
-add_executable(windmill_gym_snapshot platform/infra/gym_snapshot_main.cpp)
-target_link_libraries(windmill_gym_snapshot PRIVATE windmill_gym)
-
-add_executable(windmill_gym_rehearsal_seed platform/infra/gym_rehearsal_seed_main.cpp)
-target_link_libraries(windmill_gym_rehearsal_seed PRIVATE windmill_gym)
-
 add_executable(windmill_journal_backfill platform/infra/journal_backfill_main.cpp)
 target_link_libraries(windmill_journal_backfill PRIVATE windmill_journal_sync)
-
-add_executable(windmill_journal_snapshot platform/infra/journal_snapshot_main.cpp)
-target_link_libraries(windmill_journal_snapshot PRIVATE windmill_journal)
-
-add_executable(windmill_journal_rehearsal_seed platform/infra/journal_rehearsal_seed_main.cpp)
-target_link_libraries(windmill_journal_rehearsal_seed PRIVATE windmill_journal)
 
 add_executable(windmill_mcp_tests
   test/http_main.cpp

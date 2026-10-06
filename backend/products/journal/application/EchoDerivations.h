@@ -3,7 +3,7 @@
 #include "platform/application/Heartbeat.h"
 #include "platform/ports/Clock.h"
 #include "products/journal/application/EchoSweep.h"
-#include "products/journal/application/PageService.h"
+#include "products/journal/ports/PageWatcher.h"
 
 #include <cstddef>
 #include <cstdint>

@@ -17,7 +17,7 @@ using namespace wm::gym;
 namespace {
 
 RoutineWrite routineWrite(std::string id = "routine_0001", std::string name = "Press") {
-  return RoutineWrite{RoutineId{id}, name, 2, {RoutineEntry{1, ExerciseId{"dip"}, {}, std::nullopt}}, std::nullopt};
+  return RoutineWrite{RoutineId{id}, name, 2, {RoutineEntry{1, ExerciseId{"dip"}, {}, std::nullopt}}};
 }
 
 ProposalWrite proposalWrite(std::string id = "proposal_001", ProposalDoor door = ProposalDoor::mcp) {

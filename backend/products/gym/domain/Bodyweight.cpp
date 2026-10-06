@@ -42,15 +42,6 @@ bool wellFormedLocalDate(std::string_view text) {
   return day >= 1 && day <= daysIn(year, month);
 }
 
-bool beyondTomorrowUtc(std::string_view dateLocal, std::uint64_t nowMs) {
-  const std::time_t tomorrow = static_cast<std::time_t>((nowMs + kDayMs) / 1000);
-  std::tm utc{};
-  gmtime_r(&tomorrow, &utc);
-  char day[11];
-  std::strftime(day, sizeof(day), "%Y-%m-%d", &utc);
-  return dateLocal > std::string_view(day);
-}
-
 Bodyweight::Bodyweight(UserId user, std::string dateLocal, double weightKg,
                        std::uint64_t recordedAtMs)
     : user(std::move(user)), dateLocal(std::move(dateLocal)),

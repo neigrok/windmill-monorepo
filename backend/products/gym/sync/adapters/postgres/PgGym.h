@@ -45,7 +45,6 @@ public:
   explicit PgGym(const sync::Registry& registry);
   void bindTo(sync::SyncCatalog& catalog, bool checkAdoption = true);
   void requireReady(sync::SyncTxn&, const sync::ScopeKey&) override;
-  void requireWritable(sync::SyncTxn&, const sync::ScopeKey&) override;
 
 private:
   PgGymState state_;

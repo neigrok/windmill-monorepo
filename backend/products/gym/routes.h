@@ -1,7 +1,6 @@
 #pragma once
 
 #include "platform/application/AuthService.h"
-#include "platform/ports/Clock.h"
 #include "products/gym/application/AskService.h"
 #include "products/gym/application/BodyweightService.h"
 #include "products/gym/application/CatalogService.h"
@@ -21,8 +20,7 @@ namespace wm::gym {
 // Everything the gym product's routes need, built once in main.cpp and handed across the seam —
 // the same shape roadmap and journal use, in its own namespace so the three registerRoutes never
 // collide. Seven services — one per aggregate port, and each adapter below takes only the ones it
-// reads — one auth seam, the clock (read by `BodyweightApi` alone, for the forecast gate), nothing
-// mailed.
+// reads — one auth seam, nothing mailed.
 //
 // This is the HTTP half of the product and not the whole of it: `adapters/mcp/GymTools` is the
 // second seam, registered as a `ToolModule` on the shared MCP host, and it holds the SAME
@@ -40,7 +38,6 @@ struct GymDeps {
   std::shared_ptr<NotesService> notesService;
   std::shared_ptr<BodyweightService> bodyweightService;
   std::shared_ptr<AuthService> authService;
-  std::shared_ptr<Clock> clock;
   std::shared_ptr<AskService> askService;  // null (or unconfigured) ⇒ no /v1/gym/ask route exists
   std::string appBaseUrl;                  // the browser app's origin — a workout share's link
   std::function<void(std::function<void()>)> onShutdown;

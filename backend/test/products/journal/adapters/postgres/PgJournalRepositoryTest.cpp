@@ -20,18 +20,6 @@ const char* kNeedsPostgres = "WM_PG_TEST unset — needs a live Postgres, see RU
 
 const std::string kUser = "11111111-1111-1111-1111-111111111111";
 
-struct JournalEngineMode {
-  std::optional<std::string> previous;
-  explicit JournalEngineMode(bool enabled) {
-    if (const char* value = std::getenv("JOURNAL_ENGINE_WRITES")) previous = value;
-    setenv("JOURNAL_ENGINE_WRITES", enabled ? "1" : "0", 1);
-  }
-  ~JournalEngineMode() {
-    if (previous) setenv("JOURNAL_ENGINE_WRITES", previous->c_str(), 1);
-    else unsetenv("JOURNAL_ENGINE_WRITES");
-  }
-};
-
 void reset() {
   PgLease c{*pgTestPool()};
   pqxx::work w{*c};
@@ -94,7 +82,6 @@ TEST(pg_journal_load_reads_every_field_of_the_stored_row) {
 // Equal stamps tie-break on the day, so a page of the feed never splits a cohort differently from the next read.
 TEST(pg_journal_since_orders_equal_stamps_by_day) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
-  JournalEngineMode on(true);
   reset();
   PgJournalRepository repo{pgTestPool()};
   const UserId user(kUser);

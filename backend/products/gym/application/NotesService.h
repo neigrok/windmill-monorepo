@@ -1,30 +1,26 @@
 #pragma once
 
-#include "platform/ports/Clock.h"
+#include "products/gym/ports/GymWriteDoor.h"
 #include "products/gym/ports/NotesRepository.h"
 
+#include <optional>
 #include <vector>
 
 namespace wm::gym {
 
-class GymWriteDoor;
-
-// Notes hold the lifter's instructions and useful user-provided insights saved by Coach.
+// Notes hold the lifter's instructions, written on a phone, and the useful insights Coach and connected
+// agents save. An insight save appends and never changes a note that stands.
 class NotesService {
 public:
-  NotesService(NotesRepository& notes, Clock& clock, GymWriteDoor* door = nullptr);
+  NotesService(NotesRepository& notes, GymWriteDoor& door);
 
   std::vector<Note> notes(const UserId& user);
-  NoteWriteOutcome saveNote(const Note& incoming);
   NoteWriteOutcome saveInsight(const Note& incoming);
   std::optional<Note> noteSave(const UserId& user, const NoteId& id);
-  void deleteNote(const UserId& user, const NoteId& id);
-  NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order);
 
 private:
-  GymWriteDoor* door_;
   NotesRepository& notes_;
-  Clock& clock_;
+  GymWriteDoor& door_;
 };
 
 }

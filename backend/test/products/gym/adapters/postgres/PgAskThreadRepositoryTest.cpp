@@ -32,7 +32,7 @@ struct CoachDesk {
 };
 
 RoutineWrite dayOf(const std::string& id, const std::string& name) {
-  return RoutineWrite{RoutineId{id}, name, 0, {entryAt(1, "bench-press")}, std::nullopt};
+  return RoutineWrite{RoutineId{id}, name, 0, {entryAt(1, "bench-press")}};
 }
 
 ProposalWrite askedFor(const std::string& id, const std::string& routine, const ThreadId& thread) {
@@ -498,7 +498,7 @@ TEST(pg_coach_generation_replays_creation_after_an_uncertain_commit_and_keeps_te
   CHECK_EQ(replay.generation, recovered.generation);
   CHECK_EQ(desk.agent.runs, 2);
   CHECK(asked(desk.ask, owner, thread, "A changed question", "req_durable01").refusal == AskRefusal::requestConflict);
-  CHECK(threads.deleteThread(owner, thread));
+  CHECK(h.threads.deleteThread(owner, thread));
   CHECK(asked(desk.ask, owner, thread, "Create my upper body routine", "req_durable01").refusal == AskRefusal::threadTaken);
   CHECK_EQ(desk.agent.runs, 2);
   CHECK(h.repo.program.routines(owner).empty());
@@ -553,12 +553,12 @@ TEST(pg_coach_conversation_lease_is_exclusive_and_deletion_cannot_race_a_tool_ef
   REQUIRE(lease != nullptr);
   CHECK(second.tryLease(owner, thread) == nullptr);
   bool refused = false;
-  try { second.deleteThread(owner, thread); }
+  try { second.deleteThread(owner, thread, [] {}); }
   catch (const ThreadBusy&) { refused = true; }
   CHECK(refused);
-  CHECK_FALSE(second.deleteThread(wm::UserId{kOther}, thread));
+  CHECK_FALSE(second.deleteThread(wm::UserId{kOther}, thread, [] {}));
   lease.reset();
-  CHECK(second.deleteThread(owner, thread));
+  CHECK(second.deleteThread(owner, thread, [] {}));
 }
 
 TEST(pg_coach_failed_exchanges_do_not_evict_completed_model_context) {
@@ -625,7 +625,7 @@ TEST(pg_coach_images_stay_private_and_drafts_do_not_create_history) {
   }
   CHECK(repository.putImage(owner, ThreadId{"thr_picture02"}, CoachImage{{"img_picture02", "image/png", 1, 1, 3}, "new"}) == ImageWriteError::none);
   CHECK(repository.image(owner, thread, image.attachment.id).has_value());
-  CHECK(repository.deleteThread(owner, thread));
+  CHECK(repository.deleteThread(owner, thread, [] {}));
   CHECK_FALSE(repository.image(owner, thread, image.attachment.id).has_value());
   CHECK(repository.openThread(owner, thread, "Delayed retry", kNow).error == ThreadOpenError::idTaken);
   CHECK(repository.openThread(wm::UserId{kOther}, thread, "Delayed retry", kNow).error == ThreadOpenError::idTaken);
@@ -654,7 +654,7 @@ TEST(pg_coach_upload_limits_expiry_and_account_cascade_cover_unlinked_images) {
   CHECK_FALSE(repository.image(owner, thread, "img_upload1000").has_value());
   CHECK(repository.putImage(owner, thread, extra) == ImageWriteError::none);
   repository.openThread(owner, thread, "Question", kNow);
-  CHECK(repository.deleteThread(owner, thread));
+  CHECK(repository.deleteThread(owner, thread, [] {}));
   {
     wm::PgLease conn{*wm::pgTestPool()};
     pqxx::work tx{*conn};

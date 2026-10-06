@@ -59,16 +59,4 @@ Exercise exerciseFrom(const Row& row) {
                   std::move(aliases)};
 }
 
-// A movement this account may name on a write: a seed, or one it created. The foreign key only asks
-// whether the row exists, and another lifter's private movement exists. Read inside the caller's own
-// transaction, against the owner of the row being written.
-inline bool namesVisibleMovement(pqxx::work& txn, const std::string& owner,
-                                 const ExerciseId& exercise) {
-  return !txn
-              .exec_params("SELECT 1 FROM gym_exercises "
-                           "WHERE id = $1 AND (created_by IS NULL OR created_by = $2::uuid)",
-                           exercise.str(), owner)
-              .empty();
-}
-
 }

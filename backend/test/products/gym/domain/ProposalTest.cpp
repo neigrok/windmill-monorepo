@@ -186,10 +186,8 @@ TEST(counted_changes_counts_a_run_the_proposal_reorders) {
   CHECK_EQ(changes[0].kind, ChangeKind::kept);
   CHECK_EQ(changes[1].kind, ChangeKind::kept);
   CHECK_EQ(countedChanges(base, changes, "Push A", "Push A"), 1);
-  const std::vector<RoutineEntry> document =
-      documentOf(RoutineProposal{head(ProposalIntent::revise, 1), 1, "Push A", "Push A", changes});
-  CHECK_EQ(document[0].exercise, ExerciseId{"overhead-press"});
-  CHECK_EQ(document[1].exercise, ExerciseId{"bench-press"});
+  CHECK_EQ(changes[0].exercise, ExerciseId{"overhead-press"});
+  CHECK_EQ(changes[1].exercise, ExerciseId{"bench-press"});
 }
 
 TEST(counted_changes_does_not_read_a_removal_or_an_insertion_as_a_reorder) {
@@ -243,53 +241,6 @@ TEST(is_replay_of_reads_the_scheme_set_for_set) {
   CHECK_FALSE(isReplayOf(minted, RoutineProposal{head(), 1, "Push A", "Push A",
                                                  changesBetween(base, {line(1, "back-squat",
                                                                             oneSetOff)})}));
-}
-
-TEST(document_of_reads_the_rows_up_to_the_first_removal_and_renumbers_them) {
-  const std::vector<RoutineEntry> base{line(1, "bench-press"),
-                                       line(2, "cable-fly", straight(3, 12, 22.5))};
-  const std::vector<RoutineEntry> proposed{line(1, "bench-press", straight(5, 3, 87.5)),
-                                           line(2, "incline-db-press", straight(3, 10, 24))};
-  const RoutineProposal proposal{head(ProposalIntent::revise, 3), 1, "Push A", "Push A",
-                                 changesBetween(base, proposed)};
-
-  const std::vector<RoutineEntry> document = documentOf(proposal);
-  CHECK_EQ(document.size(), std::size_t(2));
-  CHECK_EQ(document[0].position, 1);
-  CHECK_EQ(document[0].exercise, ExerciseId{"bench-press"});
-  CHECK_EQ(document[0].sets, straight(5, 3, 87.5));
-  CHECK_EQ(document[1].position, 2);
-  CHECK_EQ(document[1].exercise, ExerciseId{"incline-db-press"});
-}
-
-TEST(document_of_and_applied_to_carry_a_ramp_set_for_set) {
-  const Routine base = pushA({line(1, "bench-press")});
-  const RoutineProposal proposal{
-      head(ProposalIntent::revise, 2), 1, "Push A", "Push A",
-      changesBetween(base.entries, {line(1, "back-squat", ramp(), 240)})};
-
-  const std::vector<RoutineEntry> document = documentOf(proposal);
-  const Routine applied = appliedTo(base, proposal);
-
-  CHECK_EQ(document, std::vector<RoutineEntry>{line(1, "back-squat", ramp(), 240)});
-  CHECK_EQ(applied.entries, std::vector<RoutineEntry>{line(1, "back-squat", ramp(), 240)});
-  CHECK_EQ(applied.revision, 2);
-}
-
-TEST(applied_to_moves_the_document_the_name_and_the_revision_and_nothing_else) {
-  const Routine base = pushA({line(1, "bench-press"), line(2, "cable-fly", straight(3, 12, 22.5))}, 4);
-  const RoutineProposal proposal{
-      head(ProposalIntent::revise, 2), 4, "Push A", "Push A — heavy",
-      changesBetween(base.entries, {line(1, "bench-press", straight(5, 3, 87.5))})};
-
-  const Routine applied = appliedTo(base, proposal);
-  CHECK_EQ(applied.id, base.id);
-  CHECK_EQ(applied.user, base.user);
-  CHECK_EQ(applied.position, base.position);
-  CHECK_EQ(applied.name, std::string("Push A — heavy"));
-  CHECK_EQ(applied.revision, 5);
-  CHECK_EQ(applied.entries.size(), std::size_t(1));
-  CHECK_EQ(applied.entries[0].sets, straight(5, 3, 87.5));
 }
 
 TEST(proposal_refuses_what_it_could_never_be_applied_as) {

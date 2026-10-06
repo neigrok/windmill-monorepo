@@ -17,8 +17,8 @@ struct BodyweightRange {
   bool operator==(const BodyweightRange&) const = default;
 };
 
-// The weigh-ins' door to gym storage. Every read and write is owner-scoped by the UserId it
-// carries; absent is byte-identical to forbidden. One row per (account, local day).
+// The weigh-ins as the engine stores them, read: one row per (account, local day). Owner-scoped by the
+// UserId it carries; absent is byte-identical to forbidden.
 struct BodyweightRepository {
   virtual ~BodyweightRepository() = default;
 
@@ -26,12 +26,6 @@ struct BodyweightRepository {
   // The newest day's row whatever window a read asked for, so one read draws the chart and the
   // reading at the head of the log; absent when the account has never weighed in.
   virtual std::optional<Bodyweight> latest(const UserId& user) = 0;
-  // Upsert by (account, day), and the later `recordedAtMs` wins: an incoming write at or after the
-  // stored row's instant replaces it, an older one leaves it standing. Always answers the row as it
-  // now stands, so a replayed stale write reads back the newer correction rather than undoing it.
-  virtual Bodyweight save(const Bodyweight& incoming) = 0;
-  // Absent and already gone are one answer. `dateLocal` is well-formed by the time it reaches here.
-  virtual void remove(const UserId& user, const std::string& dateLocal) = 0;
 };
 
 }

@@ -64,49 +64,6 @@ SessionStart parseSessionStart(const Json::Value& body) {
   return start;
 }
 
-SessionCorrectionIn parseSessionCorrection(const Json::Value& body, const SessionId& session) {
-  if (!body.isObject() || !body["requestId"].isString() || !body["routineName"].isString() ||
-      !body["sets"].isArray()) throw InvalidTraining{"could not read that correction"};
-  for (const std::string& field : body.getMemberNames()) {
-    if (field == "requestId" || field == "startedAt" || field == "finishedAt" ||
-        field == "routineName" || field == "sets") continue;
-    throw InvalidTraining{"unknown correction field"};
-  }
-  SessionCorrectionIn incoming{body["requestId"].asString(), instantOf(body, "startedAt"),
-      instantOf(body, "finishedAt"), body["routineName"].asString(), {}};
-  for (const Json::Value& row : body["sets"]) {
-    if (!row.isObject() || !row["setNumber"].isInt()) throw InvalidTraining{"bad corrected set"};
-    for (const std::string& field : row.getMemberNames()) {
-      if (field == "id" || field == "exerciseId" || field == "setNumber" || field == "weightKg" ||
-          field == "reps" || field == "rpe" || field == "note" || field == "completedAt") continue;
-      throw InvalidTraining{"unknown corrected set field"};
-    }
-    const SetWrite set = parseSetWrite(row);
-    incoming.sets.push_back(CorrectionSetIn{Set{set.id, session, set.exercise, row["setNumber"].asInt(),
-        set.weightKg, set.reps, SetKind::working, set.rpe, set.note, set.completedAtMs},
-        row.isMember("rpe"), row.isMember("note")});
-  }
-  return incoming;
-}
-
-Json::Value toJson(const SessionCorrectionIn& incoming) {
-  Json::Value body(Json::objectValue);
-  body["requestId"] = incoming.requestId;
-  body["startedAt"] = Json::UInt64(incoming.startedAtMs);
-  body["finishedAt"] = Json::UInt64(incoming.finishedAtMs);
-  body["routineName"] = incoming.routineName;
-  body["sets"] = Json::Value(Json::arrayValue);
-  for (const CorrectionSetIn& row : incoming.sets) {
-    Json::Value set = toJson(row.set);
-    set.removeMember("kind");
-    if (!row.noteNamed) set.removeMember("note");
-    if (row.rpeNamed && !row.set.rpe) set["rpe"] = Json::Value();
-    if (!row.rpeNamed) set.removeMember("rpe");
-    body["sets"].append(set);
-  }
-  return body;
-}
-
 SetWrite parseSetWrite(const Json::Value& body) {
   if (!body.isObject()) throw InvalidTraining("a set must be a json object");
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
@@ -172,45 +129,6 @@ SessionImport parseSessionImport(const Json::Value& body) {
     }
   }
   return incoming;
-}
-
-// Every field is optional and checked for presence alone, so a `null` weight is a type error;
-// `"rpe": null` is the exception and removes one.
-SetFix parseSetFix(const Json::Value& body) {
-  if (!body.isObject()) throw InvalidTraining("a fix must be a json object");
-  for (const std::string& field : body.getMemberNames()) {
-    if (field == "weightKg" || field == "reps" || field == "kind" || field == "rpe" ||
-        field == "note")
-      continue;
-    throw InvalidTraining("unknown fix field \"" + field +
-                          "\". A fix takes: weightKg, reps, kind, rpe, note. A set's movement, its "
-                          "instant and its number are not a correction.");
-  }
-  SetFix fix;
-  if (body.isMember("weightKg")) {
-    if (!body["weightKg"].isNumeric()) throw InvalidTraining("weightKg must be a number");
-    fix.weightKg = body["weightKg"].asDouble();
-  }
-  if (body.isMember("reps")) {
-    if (!body["reps"].isInt()) throw InvalidTraining("reps must be a whole number");
-    fix.reps = body["reps"].asInt();
-  }
-  if (body.isMember("kind")) {
-    if (!body["kind"].isString()) throw InvalidTraining("kind must be a string");
-    fix.kind = parseSetKind(body["kind"].asString());
-  }
-  if (body.isMember("note")) {
-    if (!body["note"].isString()) throw InvalidTraining("note must be a string");
-    fix.note = body["note"].asString();
-  }
-  if (body.isMember("rpe")) {
-    fix.rpeNamed = true;
-    if (!body["rpe"].isNull()) {
-      if (!body["rpe"].isNumeric()) throw InvalidTraining("rpe must be a number");
-      fix.rpe = body["rpe"].asDouble();
-    }
-  }
-  return fix;
 }
 
 std::uint64_t parseFinish(const Json::Value& body) {
@@ -284,15 +202,8 @@ RoutineWrite parseRoutineWrite(const Json::Value& body) {
   if (!body["id"].isString()) throw InvalidTraining("id must be a string");
   if (!body["name"].isString()) throw InvalidTraining("name must be a string");
   if (!body["position"].isInt()) throw InvalidTraining("position must be a whole number");
-  // A writer that names the revision it read asks not to overwrite a routine that moved since; one
-  // that says nothing lands regardless.
-  std::optional<int> expectedRevision;
-  if (body.isMember("revision") && !body["revision"].isNull()) {
-    if (!body["revision"].isInt()) throw InvalidTraining("revision must be a whole number");
-    expectedRevision = body["revision"].asInt();
-  }
   return RoutineWrite{RoutineId{body["id"].asString()}, body["name"].asString(),
-                      body["position"].asInt(), entriesFrom(body), expectedRevision};
+                      body["position"].asInt(), entriesFrom(body)};
 }
 
 // An absent `name` keeps the routine's own; an absent `summary` draws the diff.
@@ -333,66 +244,6 @@ ExerciseWrite parseExerciseWrite(const Json::Value& body) {
     write.stepKg = body["stepKg"].asDouble();
   }
   return write;
-}
-
-std::string parseExerciseRename(const Json::Value& body) {
-  if (!body.isObject()) throw InvalidTraining("a rename must be a json object");
-  // Only the name is renamable: a body naming `pattern` or `stepKg` is refused.
-  for (const std::string& field : body.getMemberNames())
-    if (field != "name")
-      throw InvalidTraining("unknown rename field \"" + field + "\". A rename takes: name.");
-  if (!body["name"].isString()) throw InvalidTraining("name must be a string");
-  return body["name"].asString();
-}
-
-GymPreferences parsePreferences(const Json::Value& body, const UserId& user) {
-  if (!body.isObject())
-    throw InvalidPreference("preferences-unreadable", "settings must be a json object");
-  // Strict about field names: an omission is a default, so a misspelled `restSecond` would silently
-  // turn the timer off.
-  for (const std::string& field : body.getMemberNames()) {
-    if (field == "units" || field == "restSeconds" || field == "restSound" ||
-        field == "confirmHaptic" || field == "confirmSound")
-      continue;
-    throw InvalidPreference("preferences-unreadable",
-                            "unknown settings field \"" + field +
-                                "\". Settings take: units, restSeconds, restSound, confirmHaptic, "
-                                "confirmSound.");
-  }
-
-  const GymPreferences fallback{user};
-  Unit units = fallback.units;
-  if (body.isMember("units") && !body["units"].isNull()) {
-    if (!body["units"].isString())
-      throw InvalidPreference("unknown-unit", "units are \"kg\" or \"lb\"");
-    units = parseUnit(body["units"].asString());
-  }
-  // Omitted and null both mean no timer.
-  std::optional<int> restSeconds;
-  if (body.isMember("restSeconds") && !body["restSeconds"].isNull()) {
-    if (!body["restSeconds"].isInt())
-      throw InvalidPreference("rest-target", "restSeconds must be a whole number of seconds");
-    restSeconds = body["restSeconds"].asInt();
-  }
-  bool restSound = fallback.restSound;
-  if (body.isMember("restSound") && !body["restSound"].isNull()) {
-    if (!body["restSound"].isBool())
-      throw InvalidPreference("preferences-unreadable", "restSound must be true or false");
-    restSound = body["restSound"].asBool();
-  }
-  bool confirmHaptic = fallback.confirmHaptic;
-  if (body.isMember("confirmHaptic") && !body["confirmHaptic"].isNull()) {
-    if (!body["confirmHaptic"].isBool())
-      throw InvalidPreference("preferences-unreadable", "confirmHaptic must be true or false");
-    confirmHaptic = body["confirmHaptic"].asBool();
-  }
-  bool confirmSound = fallback.confirmSound;
-  if (body.isMember("confirmSound") && !body["confirmSound"].isNull()) {
-    if (!body["confirmSound"].isBool())
-      throw InvalidPreference("preferences-unreadable", "confirmSound must be true or false");
-    confirmSound = body["confirmSound"].asBool();
-  }
-  return GymPreferences{user, units, restSeconds, restSound, confirmHaptic, confirmSound};
 }
 
 Json::Value toJson(const GymPreferences& preferences) {
@@ -1127,24 +978,12 @@ std::vector<SetTarget> setTargetsFrom(const Json::Value& stored) {
   return sets;
 }
 
-// The title and the body are the whole write; the id comes off the path and the owner off the
-// caller. Anything else on the body — a row read back and sent whole — is ignored, and a missing or
-// non-string half is the one sentence every unreadable note gets.
+// The title and the body are the whole write; the id and the owner are the caller's. Anything else on
+// the body is ignored, and a missing or non-string half is the one sentence every unreadable note gets.
 Note parseNoteWrite(const Json::Value& body, const NoteId& id, const UserId& user) {
   if (!body.isObject() || !body["title"].isString() || !body["body"].isString())
     throw InvalidTraining("could not read that note");
   return Note{id, user, body["title"].asString(), body["body"].asString()};
-}
-
-std::vector<NoteId> parseNotesOrder(const Json::Value& body) {
-  if (!body.isObject() || !body["order"].isArray())
-    throw InvalidTraining("could not read that order");
-  std::vector<NoteId> order;
-  for (const Json::Value& id : body["order"]) {
-    if (!id.isString()) throw InvalidTraining("could not read that order");
-    order.push_back(NoteId{id.asString()});
-  }
-  return order;
 }
 
 Json::Value toJson(const Note& note) {
@@ -1161,17 +1000,6 @@ Json::Value toJson(const std::vector<Note>& notes) {
   Json::Value out(Json::arrayValue);
   for (const Note& note : notes) out.append(toJson(note));
   return out;
-}
-
-// The weight and the device instant are the whole write; the day comes off the path and the owner
-// off the caller. A body that is not an object, a weight that is not a number, or an instant that
-// is not an integer is the one sentence every unreadable weigh-in gets; the band and the calendar
-// are the entity's to refuse, with their own sentences.
-Bodyweight parseBodyweightWrite(const Json::Value& body, const std::string& dateLocal,
-                                const UserId& user) {
-  if (!body.isObject() || !body["weightKg"].isNumeric() || !body["recordedAt"].isUInt64())
-    throw InvalidTraining("could not read that weigh-in");
-  return Bodyweight{user, dateLocal, body["weightKg"].asDouble(), body["recordedAt"].asUInt64()};
 }
 
 Json::Value toJson(const Bodyweight& entry) {

@@ -59,7 +59,6 @@ private:
 // Settled BEFORE a single token is spent.
 enum class AskRefusal {
   none,
-  frozen,
   threadMalformed,  // the id is not one this product can hold (domain/Training.h's id shape)
   threadTaken,      // the id names a conversation this account cannot see — refused, never appended
   questionEmpty,

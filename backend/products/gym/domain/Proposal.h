@@ -142,11 +142,4 @@ int countedChanges(const std::vector<RoutineEntry>& base, const std::vector<Rout
 // else must be refused.
 bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming);
 
-// The run rows `1..k` describe, renumbered 1..n — the document an Apply writes.
-std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal);
-
-// Built from the base through the Routine constructor, so a proposal that could not be stored as a
-// plan is refused there. The revision moves.
-Routine appliedTo(const Routine& base, const RoutineProposal& proposal);
-
 }

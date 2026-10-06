@@ -119,25 +119,6 @@ TEST(a_weigh_in_refuses_the_day_before_the_number_and_the_number_before_the_inst
            std::string("could not read that weigh-in"));
 }
 
-// The server's forecast gate: UTC tomorrow is the last day it takes, whatever the hour, so a local
-// calendar a day ahead of UTC is never refused and a day past that is never anyone's today.
-TEST(beyond_tomorrow_utc_draws_the_line_one_day_past_the_utc_day) {
-  constexpr std::uint64_t kFirstMsOf27Aug2026 = 1'787'788'800'000ull;
-  constexpr std::uint64_t kLastMsOf27Aug2026 = 1'787'875'199'999ull;
-  for (const std::uint64_t now : {kFirstMsOf27Aug2026, kLastMsOf27Aug2026}) {
-    CHECK_FALSE(beyondTomorrowUtc("2026-08-27", now));
-    CHECK_FALSE(beyondTomorrowUtc("2026-08-28", now));
-    CHECK(beyondTomorrowUtc("2026-08-29", now));
-    CHECK(beyondTomorrowUtc("2027-01-01", now));
-    CHECK_FALSE(beyondTomorrowUtc("2026-08-26", now));
-    CHECK_FALSE(beyondTomorrowUtc("0001-01-01", now));
-  }
-  constexpr std::uint64_t kLastMsOf2026 = 1'798'761'599'999ull;   // 2026-12-31T23:59:59.999Z
-  CHECK_FALSE(beyondTomorrowUtc("2027-01-01", kLastMsOf2026));
-  CHECK(beyondTomorrowUtc("2027-01-02", kLastMsOf2026));
-  CHECK_FALSE(beyondTomorrowUtc("2026-12-31", kLastMsOf2026));
-}
-
 TEST(well_formed_local_date_is_the_one_rule_for_a_day_on_the_wire) {
   CHECK(wellFormedLocalDate("2026-08-25"));
   CHECK(wellFormedLocalDate("2024-02-29"));

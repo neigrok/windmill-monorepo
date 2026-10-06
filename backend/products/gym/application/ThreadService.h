@@ -2,6 +2,7 @@
 
 #include "platform/ports/Clock.h"
 #include "products/gym/ports/AskThreadRepository.h"
+#include "products/gym/ports/GymWriteDoor.h"
 
 #include <optional>
 #include <string>
@@ -9,14 +10,12 @@
 
 namespace wm::gym {
 
-class GymWriteDoor;
-
 // Separate from AskService so a deployment with no vendor key wired, which registers no
 // `POST /v1/gym/ask`, still reads and deletes the threads it already has.
 // The OUTCOME is derived where it is drawn (`outcomeOf`) and never stored.
 class ThreadService {
 public:
-  ThreadService(AskThreadRepository& threads, Clock& clock, GymWriteDoor* door = nullptr);
+  ThreadService(AskThreadRepository& threads, Clock& clock, GymWriteDoor& door);
 
   std::optional<CoachImage> image(const UserId& user, const ThreadId& thread, const std::string& id);
   ImageWriteError putImage(const UserId& user, const ThreadId& thread, const CoachImage& image);
@@ -26,8 +25,8 @@ public:
   std::vector<AskThread> threads(const UserId& user, const ThreadCursor& cursor);
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id, std::uint64_t before, int limit);
   std::optional<AskThread> thread(const UserId& user, const ThreadId& id);
-  // The conversation goes, the consequence stays: an applied change is still in the routine's
-  // history.
+  // The conversation goes, the consequence stays: the proposals it minted keep their rows and lose
+  // only the link, unlinked through the door before the thread row goes.
   bool deleteThread(const UserId& user, const ThreadId& id);
 
   ThreadOpenOutcome openThread(const UserId& user, const ThreadId& id, const std::string& title);
@@ -37,7 +36,7 @@ public:
 private:
   AskThreadRepository& threads_;
   Clock& clock_;
-  GymWriteDoor* door_;
+  GymWriteDoor& door_;
 };
 
 }

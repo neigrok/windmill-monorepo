@@ -26,19 +26,6 @@ using namespace wm::sync;
 
 namespace {
 
-struct WriteFreeze {
-  const char* name;
-  std::optional<std::string> previous;
-  explicit WriteFreeze(const char* name) : name(name) {
-    if (const char* value = std::getenv(name)) previous = value;
-    setenv(name, "1", 1);
-  }
-  ~WriteFreeze() {
-    if (previous) setenv(name, previous->c_str(), 1);
-    else unsetenv(name);
-  }
-};
-
 // An empty engine: the probe world seeded with nothing but accounts A and B.
 test::PgWorld& emptyWorld() {
   static test::PgWorld world;
@@ -210,23 +197,6 @@ TEST(product_sync_unadopted_history_is_unavailable_and_never_consumes_a_native_i
       REQUIRE_EQ(adopted.body["pages"][0]["kind"].asString(), "rows");
       CHECK_FALSE(adopted.body["pages"][0]["rows"].empty());
       live.subscribe(*socket, refs);
-      {
-        WriteFreeze frozen(product == "gym" ? "GYM_WRITE_FREEZE" : "JOURNAL_WRITE_FREEZE");
-        for (int attempt = 0; attempt < 4; ++attempt) {
-          CHECK_EQ(service.hello(credential).status, 200);
-          CHECK_EQ(service.pull(credential, pull).status, 200);
-          live.subscribe(*socket, refs);
-          const auto retry = service.push(credential, jcs(push), budget);
-          CHECK_EQ(retry.status, 200);
-          CHECK_EQ(retry.body["lastN"].asUInt64(), 0u);
-          CHECK_EQ(jcs(retry.body["results"]), "[]");
-          CHECK_EQ(jcs(retry.body["retry"]), R"({"n":1,"retryAfterMs":1000})");
-        }
-        auto txn = store.begin(TxnMode::snapshot);
-        CHECK_FALSE(store.storedResult(*txn, push["replica"].asString(), 1).has_value());
-        CHECK_EQ(jcs(socket->frames), "[]");
-        CHECK(gymWorld.failures.reports.empty());
-      }
       const auto answer = service.push(credential, jcs(push), budget);
       CHECK_EQ(answer.body["lastN"].asUInt64(), 1u);
       CHECK_EQ(answer.body["results"][0]["s"].asString(), "ok");

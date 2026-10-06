@@ -28,16 +28,15 @@ namespace {
 
 // The tools over an in-memory store holding two seeds and a door that writes nothing, for cases that write no row.
 struct MemoryHarness {
-  EngineWrites engine;
   FakeGym repo;
   wm::fake::FakeClock clock;
   wm::fake::FakeTokens tokens;
   ReadOnlyDoor door;
-  TrainingService training{repo.log, repo.program, clock, tokens, &door};
-  CatalogService catalog{repo.catalog, &door};
-  ProgramService program{repo.program, clock, &door};
-  NotesService notes{repo.notes, clock, &door};
-  BodyweightService bodyweight{repo.bodyweight, &door};
+  TrainingService training{repo.log, clock, tokens, door};
+  CatalogService catalog{repo.catalog, door};
+  ProgramService program{repo.program, door};
+  NotesService notes{repo.notes, door};
+  BodyweightService bodyweight{repo.bodyweight};
   GymTools tools{training, catalog, program, notes, bodyweight, "https://windmill.works"};
 
   MemoryHarness() {

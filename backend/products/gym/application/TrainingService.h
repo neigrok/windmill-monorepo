@@ -2,8 +2,8 @@
 
 #include "platform/ports/Clock.h"
 #include "platform/ports/TokenGenerator.h"
+#include "products/gym/ports/GymWriteDoor.h"
 #include "products/gym/ports/LogRepository.h"
-#include "products/gym/ports/ProgramRepository.h"
 
 #include <cstdint>
 #include <optional>
@@ -11,68 +11,6 @@
 #include <vector>
 
 namespace wm::gym {
-
-class GymWriteDoor;
-
-// Everything the client says, nothing the server decides — the set number and the owner are the
-// store's and the session's to assign.
-// joinOpenSession true puts the caller into whatever session is open; false creates exactly the
-// session named, which is what backfill and import need. Defaults to the join.
-// routine is read only where a session is CREATED: the server loads it and freezes its name and
-// entries onto the session; the client never composes the copy. Omitted is the ad-hoc session.
-struct SessionStart {
-  SessionId id;
-  std::uint64_t startedAtMs;
-  bool joinOpenSession = true;
-  std::optional<RoutineId> routine;
-};
-
-struct SetWrite {
-  SetId id;
-  ExerciseId exercise;
-  double weightKg;
-  int reps;
-  SetKind kind;
-  std::optional<double> rpe;
-  std::string note;
-  std::uint64_t completedAtMs;
-};
-
-// A workout that already happened, written whole: the web's past workout and an agent's import. The
-// routine, when named, is frozen onto the session as its plan and never edited.
-struct SessionImport {
-  SessionId id;
-  std::uint64_t startedAtMs;
-  std::uint64_t finishedAtMs;
-  std::optional<RoutineId> routine;
-  std::vector<SetWrite> sets;
-};
-
-// Refusals cross as values the HTTP edge maps to statuses; InvalidTraining stays reserved for
-// malformed input. idTaken: a client-minted id is already spent, never by whom, so absent stays
-// byte-identical to forbidden. alreadyOpen is reachable only by a caller that said it would not
-// join. unknownRoutine is a CREATING start naming a plan this account cannot read, refused rather
-// than started ad-hoc. `deleted` names a set this lifter TOOK OUT of the log — never answer it as
-// idTaken, whose repair (mint a fresh id and resend) would bring the deleted set back.
-enum class StartError { none, idTaken, alreadyOpen, unknownRoutine, clockAhead };
-enum class AppendError { none, notFound, finished, idTaken, unknownExercise, deleted };
-enum class FinishError { none, notFound, badInstant };
-
-struct StartOutcome {
-  std::optional<Session> session;
-  StartError error;
-  std::uint64_t clockAheadMs = 0;  // clockAhead only: how far the named start sits past the log's now
-};
-
-struct AppendOutcome {
-  std::optional<Set> set;
-  AppendError error;
-};
-
-struct FinishOutcome {
-  std::optional<Session> session;
-  FinishError error;
-};
 
 struct SessionDetail {
   Session session;
@@ -94,19 +32,14 @@ struct LogRow {
   bool operator==(const LogRow&) const = default;
 };
 
-// `open` refuses to delete a workout still being logged into, whose queued sets are in flight.
-enum class DiscardOutcome { done, notFound, open };
-
-// The HTTP adapter and the MCP tools talk to this, never to the repository. Every write returns the
-// resolved row, so a replayed or double-tapped client sees the winning truth in one round trip. No
-// cron, no sweep: staleness is settled lazily, before a start and before every read whose answer a
-// close rewrites.
-// The program port serves one write: a start naming a routine freezes that day's plan onto the
-// session. The token generator serves one: minting a workout share's secret.
+// The HTTP adapter, the MCP tools and Coach talk to this, never to the repository. Every write goes
+// through the door, which admits it as the engine's intent and answers with the resolved row, so a
+// replayed or double-tapped caller sees the winning truth in one round trip. No cron, no sweep:
+// staleness is settled lazily through the door, before every read whose answer a close rewrites.
+// The token generator serves one write: minting a workout share's secret.
 class TrainingService {
 public:
-  TrainingService(LogRepository& log, ProgramRepository& program, Clock& clock,
-                  TokenGenerator& tokens, GymWriteDoor* door = nullptr);
+  TrainingService(LogRepository& log, Clock& clock, TokenGenerator& tokens, GymWriteDoor& door);
 
   StartOutcome start(const UserId& user, const SessionStart& incoming);
   AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
@@ -116,13 +49,6 @@ public:
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids);
   FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
 
-  // Both name the SESSION as well as the set, so a set id resolving under this account but in
-  // another workout is the same absent fact as one that never existed. `deleteSet` answers nothing,
-  // which makes a lost reply safe to send again. Neither reaches `gym_sessions.plan` or a routine
-  // entry.
-  std::optional<Set> fixSet(const UserId& user, const SessionId& session, const SetId& id,
-                            const SetFix& fix);
-  void deleteSet(const UserId& user, const SessionId& session, const SetId& id);
   std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
   // Settled first, so a session walked away from yesterday answers as the closed thing it is.
@@ -135,8 +61,6 @@ public:
   std::optional<Review> review(const UserId& user, const SessionId& session);
   DiscardOutcome discard(const UserId& user, const SessionId& session);
 
-  CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
-      const SessionCorrectionIn& incoming);
   HistoryPage history(const UserId& user, const HistoryQuery& query);
   std::optional<LogShare> shareLog(const UserId& user, const std::string& id, LogShareMode mode,
       bool range, std::uint64_t fromMs, std::uint64_t untilMs);
@@ -158,10 +82,9 @@ public:
 
 private:
   LogRepository& log_;
-  ProgramRepository& program_;
   Clock& clock_;
   TokenGenerator& tokens_;
-  GymWriteDoor* door_;
+  GymWriteDoor& door_;
 };
 
 }

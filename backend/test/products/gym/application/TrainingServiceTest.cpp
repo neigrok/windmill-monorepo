@@ -107,10 +107,23 @@ struct Harness : wm::gym::doortest::Harness {
     GymDoor::requireOk(admit(user, {GymDoor::delta(type, id, fields)}));
   }
 
-  // A finished workout a phone corrected: the whole workout as it should stand, pushed as its command.
-  void correct(const SessionId& session, const SessionCorrectionIn& incoming) {
-    Json::Value args = toJson(incoming);
+  // A finished workout a phone corrected: the whole workout as it should stand, pushed as its command. A set
+  // names its rpe only when it holds one, and never its note.
+  void correct(const SessionId& session, const std::string& requestId, std::uint64_t startedAtMs,
+               std::uint64_t finishedAtMs, const std::vector<Set>& sets) {
+    Json::Value args(Json::objectValue);
     args["sessionId"] = session.str();
+    args["requestId"] = requestId;
+    args["startedAt"] = Json::UInt64(startedAtMs);
+    args["finishedAt"] = Json::UInt64(finishedAtMs);
+    args["routineName"] = "";
+    args["sets"] = Json::Value(Json::arrayValue);
+    for (const Set& set : sets) {
+      Json::Value row = toJson(set);
+      row.removeMember("kind");
+      row.removeMember("note");
+      args["sets"].append(row);
+    }
     GymDoor::requireOk(door.command(user, "gym.correctSession", args));
   }
 
@@ -1633,16 +1646,14 @@ TEST(progress_reads_corrections_and_deletions_without_cached_or_legacy_estimates
       {session, startedAtMs, {{exercise, 1, {set, 100, 1, std::nullopt},
           EstimatedFact{{set, 100, 1, std::nullopt}, 100}}}}}}));
 
-  h.correct(session, SessionCorrectionIn{"correct_00000001", startedAtMs, startedAtMs + 3'600'000, "",
-      {CorrectionSetIn{Set{set, session, exercise, 1, 90, 10, SetKind::working, 7.0, "", startedAtMs + 60'000},
-                       true, false}}});
+  h.correct(session, "correct_00000001", startedAtMs, startedAtMs + 3'600'000,
+            {Set{set, session, exercise, 1, 90, 10, SetKind::working, 7.0, "", startedAtMs + 60'000}});
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 90, 10, 7},
           EstimatedFact{{set, 90, 10, 7}, 120}}}}}}));
 
-  h.correct(session, SessionCorrectionIn{"correct_00000002", startedAtMs, startedAtMs + 3'600'000, "",
-      {CorrectionSetIn{Set{set, session, exercise, 1, 90, 10, SetKind::working, 6.5, "", startedAtMs + 60'000},
-                       true, false}}});
+  h.correct(session, "correct_00000002", startedAtMs, startedAtMs + 3'600'000,
+            {Set{set, session, exercise, 1, 90, 10, SetKind::working, 6.5, "", startedAtMs + 60'000}});
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {session, startedAtMs, {{exercise, 1, {set, 90, 10, 6.5}, std::nullopt}}}}}));
 
@@ -2070,13 +2081,11 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   const std::optional<Review> before = h.training.review(h.user, sid("ses_00000002"));
   REQUIRE(before.has_value());
   REQUIRE(before->record.has_value());   // 120 kg, the PR
-  SessionCorrectionIn correction{"correct_00000001", week1, week1 + 3'600'000, "", {}};
-  for (Set set : h.repo.log.setsOf(sid("ses_00000002"))) {
+  std::vector<Set> corrected = h.repo.log.setsOf(sid("ses_00000002"));
+  for (Set& set : corrected)
     if (set.id == setId("set_00000024")) set.weightKg = 90.0;
-    correction.sets.push_back(CorrectionSetIn{set, false, false});
-  }
 
-  h.correct(sid("ses_00000002"), correction);
+  h.correct(sid("ses_00000002"), "correct_00000001", week1, week1 + 3'600'000, corrected);
 
   // the session itself
   std::optional<SessionDetail> detail = h.training.detail(h.user, sid("ses_00000002"));

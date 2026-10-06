@@ -16,12 +16,6 @@ struct InvalidPage : std::runtime_error {
   using std::runtime_error::runtime_error;
 };
 
-struct PageTooLarge : InvalidPage {
-  using InvalidPage::InvalidPage;
-};
-
-constexpr std::size_t kMaxPageBytes = 128 * 1024;
-
 // The floor of the addressable calendar. Cannot be raised while the web client sends "0001-01-01"
 // as its open-ended echo window.
 constexpr int kFirstJournalYear = 1;

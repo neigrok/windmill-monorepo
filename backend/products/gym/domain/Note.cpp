@@ -88,11 +88,4 @@ Note::Note(NoteId id, UserId user, std::string title, std::string body, int posi
   if (updatedAtMs > kMaxInstantMs) throw InvalidTraining("a note was written at an instant");
 }
 
-bool namesEveryNoteOnce(const std::vector<Note>& standing, const std::vector<NoteId>& order) {
-  if (order.size() != standing.size()) return false;
-  for (const Note& note : standing)
-    if (std::count(order.begin(), order.end(), note.id) != 1) return false;
-  return true;
-}
-
 }

@@ -186,21 +186,4 @@ bool isReplayOf(const RoutineProposal& stored, const RoutineProposal& incoming) 
   return true;
 }
 
-std::vector<RoutineEntry> documentOf(const RoutineProposal& proposal) {
-  std::vector<RoutineEntry> entries;
-  for (const RoutineChange& change : proposal.changes) {
-    if (change.kind == ChangeKind::removed) break;   // the rows past here are what it takes away
-    entries.push_back(RoutineEntry{static_cast<int>(entries.size()) + 1, change.exercise,
-                                   change.after->sets, change.after->restSeconds});
-  }
-  return entries;
-}
-
-// The id, the owner, where the day sits in the week and when it was last trained stay the base's; a
-// proposal changes the document and the name and nothing else.
-Routine appliedTo(const Routine& base, const RoutineProposal& proposal) {
-  return Routine{base.id,          base.user,          proposal.proposedName, base.position,
-                 documentOf(proposal), base.lastTrainedAtMs, base.revision + 1};
-}
-
 }

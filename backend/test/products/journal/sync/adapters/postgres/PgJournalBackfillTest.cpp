@@ -1,7 +1,6 @@
 #include "products/journal/sync/adapters/postgres/PgJournalBackfill.h"
 
 #include "products/journal/sync/domain/JournalRules.h"
-#include "products/journal/sync/adapters/json/JournalIntent.h"
 #include "products/journal/adapters/postgres/PgJournalRepository.h"
 #include "products/journal/adapters/json/PageJson.h"
 #include "platform/application/WorkerPool.h"
@@ -271,9 +270,8 @@ TEST(journal_backfill_online_audit_keeps_its_snapshot_across_a_concurrent_save) 
   }
   REQUIRE(blocked);
   Admission admission(world.catalog(), world.store(), world.feed, world.clock(), world.failures);
-  const auto raw = parseJson(R"({"body":"Concurrent save","stamp":"9000000000000:0:writer:phone"})");
-  const auto outcome = admission.admit(ServerOrigin{user, std::nullopt},
-      journal::engine::savePageIntent(raw, user, LocalDate("2026-10-01")), input["M"].asUInt64() + 1);
+  const auto intent = parseJson(R"({"scope":"self/journal","d":[],"cmd":{"name":"journal.savePage","args":{"day":"2026-10-01","body":"Concurrent save","mood":null,"energy":null,"source":"typed","stamp":{"ms":9000000000000,"counter":0,"actor":"writer:phone"}}}})");
+  const auto outcome = admission.admit(ServerOrigin{user, std::nullopt}, intent, input["M"].asUInt64() + 1);
   const auto* admitted = std::get_if<Admitted>(&outcome);
   REQUIRE(admitted != nullptr);
   REQUIRE_EQ(admitted->result["s"].asString(), "ok");

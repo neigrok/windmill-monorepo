@@ -48,11 +48,4 @@ Routine::Routine(RoutineId id, UserId user, std::string name, int position,
   if (revision < 1) throw InvalidTraining("a routine stands at a revision from 1");
 }
 
-PlanSnapshot snapshotOf(const Routine& routine) {
-  std::vector<PlanEntry> entries;
-  for (const RoutineEntry& entry : routine.entries)
-    entries.push_back(PlanEntry{entry.exercise, entry.sets, entry.restSeconds});
-  return PlanSnapshot{routine.name, std::move(entries)};
-}
-
 }

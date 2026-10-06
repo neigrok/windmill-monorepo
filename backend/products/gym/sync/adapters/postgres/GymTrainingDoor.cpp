@@ -1,9 +1,7 @@
 #include "products/gym/sync/adapters/postgres/GymDoor.h"
 
 #include "platform/adapters/postgres/PgSyncStore.h"
-#include "platform/domain/sync/Jcs.h"
 #include "products/gym/adapters/json/TrainingJson.h"
-#include "products/gym/application/GymSwitches.h"
 #include "products/gym/sync/adapters/postgres/GymDoorHash.h"
 
 #include <algorithm>
@@ -21,15 +19,12 @@ Json::Value gymCommand(const std::string& name, const Json::Value& args) {
   return value;
 }
 
-Json::Value setFields(const Set& set, bool create) {
+// A new set's fields, as a phone's create delta carries them.
+Json::Value setFields(const Set& set) {
   auto fields = toJson(set);
   fields.removeMember("id");
   fields.removeMember("setNumber");
-  if (create) fields["sessionId"] = set.session.str();
-  else {
-    fields.removeMember("exerciseId");
-    fields.removeMember("completedAt");
-  }
+  fields["sessionId"] = set.session.str();
   fields["rpe"] = set.rpe ? Json::Value(*set.rpe) : Json::Value();
   return fields;
 }
@@ -164,7 +159,7 @@ AppendOutcome GymDoor::append(const UserId& user, const SessionId& session, cons
     canonical.weightKg = normalized[0][0].as<double>();
     if (!normalized[0][1].is_null()) canonical.rpe = normalized[0][1].as<double>();
     auto value = intent();
-    value["d"].append(delta("set", incoming.id.str(), setFields(canonical, true), true));
+    value["d"].append(delta("set", incoming.id.str(), setFields(canonical), true));
     return value;
   });
   const auto code = refusal(result);
@@ -215,7 +210,7 @@ BatchLogOutcome GymDoor::appendSets(const UserId& user, const SessionId& session
       if (standing.finishedAtMs && !late) { answer.error = BatchLogError::finished; return std::nullopt; }
       if (!visibleMovement(sql, user, set.exercise)) { answer.error = BatchLogError::unknownExercise; return std::nullopt; }
       if (late) standing.finishedAtMs = std::max(*standing.finishedAtMs, set.completedAtMs);
-      value["d"].append(delta("set", set.id.str(), setFields(set, true), true));
+      value["d"].append(delta("set", set.id.str(), setFields(set), true));
     }
     answer.errorIndex.reset();
     answer.replayed = value["d"].empty();
@@ -328,40 +323,6 @@ FinishOutcome GymDoor::finish(const UserId& user, const SessionId& session, std:
   return {log_.session(user, session), FinishError::none};
 }
 
-std::optional<Set> GymDoor::fixSet(const UserId& user, const SessionId& session, const SetId& id, const SetFix& fix) {
-  std::optional<Set> answer;
-  const auto result = execute(user, "correct_set", Json::Value(id.str()), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const auto current = log_.setOf(user, id);
-    if (!current || current->session != session) return std::nullopt;
-    Set set = corrected(*current, fix);
-    pqxx::params precision{set.weightKg};
-    if (set.rpe) precision.append(*set.rpe); else precision.append();
-    const auto normalized = sync::sqlOf(txn).exec("select $1::numeric(6,2)::float8,$2::numeric(3,1)::float8", precision);
-    set.weightKg = normalized[0][0].as<double>();
-    if (!normalized[0][1].is_null()) set.rpe = normalized[0][1].as<double>();
-    answer = set;
-    auto value = intent();
-    value["d"].append(delta("set", id.str(), setFields(set, false)));
-    return value;
-  });
-  const auto code = refusal(result);
-  if (code == "unknown-record" || code == "record-dead") return std::nullopt;
-  requireOk(result);
-  if (!answer) return std::nullopt;
-  return log_.setOf(user, id);
-}
-
-void GymDoor::deleteSet(const UserId& user, const SessionId& session, const SetId& id) {
-  const auto result = execute(user, "delete_set", Json::Value(id.str()), [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    const auto set = log_.setOf(user, id);
-    if (!set || set->session != session) return std::nullopt;
-    auto value = intent();
-    value["d"].append(delta("set", id.str(), Json::Value(Json::objectValue), false, true));
-    return value;
-  });
-  requireOk(result);
-}
-
 DiscardOutcome GymDoor::discard(const UserId& user, const SessionId& session) {
   DiscardOutcome answer = DiscardOutcome::done;
   const auto result = execute(user, "discard_session", Json::Value(session.str()), [&](sync::SyncTxn&) -> std::optional<Json::Value> {
@@ -376,69 +337,6 @@ DiscardOutcome GymDoor::discard(const UserId& user, const SessionId& session) {
   if (code == "unknown-record" || code == "record-dead") return DiscardOutcome::notFound;
   if (code == "session-open") return DiscardOutcome::open;
   requireOk(result);
-  return answer;
-}
-
-CorrectionOutcome GymDoor::correctSession(const UserId& user, const SessionId& session, const SessionCorrectionIn& incoming) {
-  if (!wellFormedId(incoming.requestId)) throw InvalidTraining{"bad correction request id"};
-  auto args = toJson(incoming);
-  args["sessionId"] = session.str();
-  CorrectionOutcome answer;
-  const auto result = execute(user, "correct_session", args, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    answer.session = log_.session(user, session);
-    if (!answer.session) { answer.error = CorrectionError::notFound; return std::nullopt; }
-    answer.sets = log_.setsOf(session);
-    auto& sql = sync::sqlOf(txn);
-    const auto receipt = sql.exec("select user_id::text,session_id,request_hash from gym_correction_receipts where id=$1",
-                                  pqxx::params{incoming.requestId});
-    if (!receipt.empty()) {
-      if (receipt[0][0].as<std::string>() != user.str() || receipt[0][1].as<std::string>() != session.str() || receipt[0][2].as<std::string>() != gymCorrectionRequestHash(args)) {
-        answer.error = CorrectionError::payloadConflict;
-        return std::nullopt;
-      }
-      answer.replayed = true;
-      return std::nullopt;
-    }
-    if (!answer.session->finishedAtMs) { answer.error = CorrectionError::open; return std::nullopt; }
-    const SessionCorrectionBatch batch{*answer.session, answer.sets, incoming, clock_.nowMs()};
-    std::vector<Set> ordered = batch.sets;
-    std::sort(ordered.begin(), ordered.end(), [](const auto& a, const auto& b) { return a.id < b.id; });
-    for (const auto& set : ordered) {
-      if (!visibleMovement(sql, user, set.exercise)) { answer.error = CorrectionError::unknownExercise; return std::nullopt; }
-      if (std::any_of(answer.sets.begin(), answer.sets.end(), [&](const auto& prior) { return prior.id == set.id; })) continue;
-      const auto taken = sql.exec("select 1 from gym_write_receipts where kind='set' and id=$1 union all select 1 from gym_sets where id=$1 union all select 1 from gym_set_revisions where set_id=$1 and deleted union all select 1 from sync_spent where type='set' and id=$1 limit 1",
-                                  pqxx::params{set.id.str()});
-      if (!taken.empty()) { answer.error = CorrectionError::idTaken; return std::nullopt; }
-    }
-    SessionCorrectionIn admitted{incoming.requestId, batch.session.startedAtMs,
-                                 *batch.session.finishedAtMs, *batch.session.displayName, {}};
-    for (const auto& set : batch.sets) admitted.sets.push_back({set, true, true});
-    auto effects = toJson(admitted);
-    effects["sessionId"] = session.str();
-    dynamic_cast<sync::PgSyncTxn&>(txn).beforeCommit([&txn, original = args,
-        expectedHash = gymCorrectionRequestHash(effects), id = incoming.requestId,
-        owner = user.str(), sessionId = session.str()] {
-      const auto saved = sync::sqlOf(txn).exec(
-          "update gym_correction_receipts set request_hash=$1,sync_args=$2::jsonb "
-          "where id=$3 and user_id=$4::uuid and session_id=$5 and request_hash=$6 returning id",
-          pqxx::params{gymCorrectionRequestHash(original), sync::jcs(original), id, owner, sessionId, expectedHash});
-      if (saved.empty()) throw std::runtime_error("gym correction receipt was not reserved");
-    });
-    return gymCommand("gym.correctSession", effects);
-  });
-  const auto code = refusal(result);
-  if (code == "unknown-record" || code == "record-dead") answer.error = CorrectionError::notFound;
-  else if (code == "session-open") answer.error = CorrectionError::open;
-  else if (code == "session-overlap") {
-    answer.error = CorrectionError::overlap;
-    answer.overlapping = log_.session(user, SessionId{result["detail"]["sessionId"].asString()});
-  } else if (code == "unknown-exercise") answer.error = CorrectionError::unknownExercise;
-  else if (code == "payload-conflict" || code == "request-conflict") answer.error = CorrectionError::payloadConflict;
-  else if (code == "id-taken" || code == "id-spent") answer.error = CorrectionError::idTaken;
-  else requireOk(result);
-  if (answer.error != CorrectionError::none) return answer;
-  answer.session = log_.session(user, session);
-  answer.sets = log_.setsOf(session);
   return answer;
 }
 

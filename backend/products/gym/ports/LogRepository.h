@@ -1,6 +1,5 @@
 #pragma once
 
-#include "products/gym/domain/Correction.h"
 #include "products/gym/domain/History.h"
 #include "products/gym/domain/Record.h"
 #include "products/gym/domain/Review.h"
@@ -92,38 +91,6 @@ struct LogCursor {
   int limit;
 };
 
-// Every insertSet refusal crosses as a value, never an exception. idTaken: the id is spent on a row
-// this session does not hold, never whose. unknownExercise: no movement this account's catalog
-// holds. finished: the session was already closed when the write took its lock. deleted: the id
-// belongs to a set the lifter deleted — never conflate with idTaken, whose repair (mint a fresh id
-// and resend) would undo the deletion.
-enum class SetInsertError { none, idTaken, unknownExercise, finished, deleted };
-
-struct SetInsertOutcome {
-  std::optional<Set> set;
-  SetInsertError error;
-};
-
-// `overlap` is an import's alone: its span crosses a finished session (`crossedBy`), which
-// `overlapping` names.
-enum class BatchLogError { none, notFound, idTaken, unknownExercise, unknownRoutine, finished, deleted, payloadConflict, overlap };
-
-struct RecordedSet {
-  SetId id;
-  std::optional<Set> current;
-  bool replayed = false;
-};
-
-struct BatchLogOutcome {
-  std::optional<Session> session;
-  std::vector<RecordedSet> sets;
-  BatchLogError error = BatchLogError::none;
-  std::optional<std::size_t> errorIndex;
-  bool replayed = false;
-  bool sessionDeleted = false;
-  std::optional<Session> overlapping;
-};
-
 struct SessionRows {
   Session session;
   std::vector<Set> sets;
@@ -163,56 +130,16 @@ struct SharedSession {
   bool operator==(const SharedSession&) const = default;
 };
 
-enum class CorrectionError { none, notFound, open, idTaken, payloadConflict, unknownExercise, overlap };
-
-struct CorrectionOutcome {
-  std::optional<Session> session;
-  std::vector<Set> sets;
-  CorrectionError error = CorrectionError::none;
-  bool replayed = false;
-  std::optional<Session> overlapping;
-};
-
-// Sessions, their sets, what corrections left behind, and the workout share, which goes with the
-// session. Every read and write is owner-scoped by the UserId it carries; absent is byte-identical
-// to forbidden. insertSession and insertSet are idempotent by client-minted id: they no-op on
-// conflict and answer with the row that is stored, and one open session per user is a partial unique
-// index, never a guard flag. The two writes that CHANGE a stored set are idempotent by shape —
-// a correction assigns absolute values, and a delete of an already-gone set is a delete.
-// A set id is spent once and for good: insertSet refuses an id gym_set_revisions holds as deleted,
-// with `deleted` rather than `idTaken`.
+// The log as the engine stores it, read: sessions, their sets, what corrections and deletions left
+// behind, and the two shares, which are this port's only writes. Every read and write is owner-scoped
+// by the UserId it carries; absent is byte-identical to forbidden.
 struct LogRepository {
   virtual ~LogRepository() = default;
 
   virtual std::optional<Session> open(const UserId& user) = 0;
   virtual std::optional<Session> session(const UserId& user, const SessionId& id) = 0;
   virtual std::optional<Set> setOf(const UserId& user, const SetId& id) = 0;
-  virtual std::optional<std::uint64_t> lastActivity(const SessionId& id) = 0;
-  virtual void insertSession(const Session& incoming) = 0;                // conflict = no-op
-  // Lands on an open session and records who closed. A lifter's finish is final: a replay or a race
-  // keeps whichever landed first. A stale close is revisable — by a late set (lateSetLands), and by
-  // the lifter's own finish, which upgrades closed_by to finish and moves finished_at as
-  // finishAfterStaleClose says.
-  virtual void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) = 0;
-  // Assigns the set number and returns the stored row; every refusal is decided here. Answers
-  // `finished` for every write arriving after the locked row closed, except the one lateSetLands
-  // admits — a set continuing a STALE-closed workout lands and moves that workout's finish forward
-  // to it in the same transaction. An id held as deleted is refused before either.
-  virtual SetInsertOutcome insertSet(const Set& incoming) = 0;
-  virtual BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) = 0;
-  virtual BatchLogOutcome importSession(const Session& session, const SetBatch& batch) = 0;
   virtual std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) = 0;
-
-  // What these replace is appended to gym_set_revisions; gym_sets keeps one row per set that stands.
-  // `updateSet` takes the WHOLE corrected row, never a patch to merge, and answers with the stored
-  // row. Absent covers no such set, another account's, and one this session does not hold alike.
-  // `deleteSet` answers nothing, so a lost reply is repaired by sending the same delete again.
-  // Neither write is refused for a finished session.
-  virtual std::optional<Set> updateSet(const UserId& user, const Set& corrected) = 0;
-  virtual void deleteSet(const UserId& user, const SessionId& session, const SetId& id) = 0;
-
-  virtual CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
-      const SessionCorrectionIn& incoming, std::uint64_t nowMs) = 0;
   virtual HistoryPage history(const UserId& user, const HistoryQuery& query) = 0;
   virtual std::optional<LogShare> createLogShare(const LogShare& share) = 0;
   virtual std::vector<LogShare> logShares(const UserId& user, std::uint64_t nowMs) = 0;
@@ -231,8 +158,6 @@ struct LogRepository {
   // Everything the review rules need that the session does not hold, in one pass: the marks of the
   // movements it works, and the earlier session it stands against with its sets.
   virtual SessionHistory historyFor(const UserId& user, const Session& session) = 0;
-  // The sets go with the row (`on delete cascade`).
-  virtual bool deleteSession(const UserId& user, const SessionId& id) = 0;  // false = nothing to remove
 
   // One movement's whole page in one pass; the store hands over orderings only, no e1RM.
   virtual MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) = 0;

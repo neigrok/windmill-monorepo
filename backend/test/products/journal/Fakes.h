@@ -70,17 +70,6 @@ public:
     return out;
   }
 
-  PageWrite save(const Page& incoming) override {
-    auto k = key(incoming.user, incoming.day);
-    auto it = byKey.find(k);
-    if (it == byKey.end()) {
-      byKey.emplace(k, incoming);
-      return PageWrite::stored;
-    }
-    if (!(it->second.stamp < incoming.stamp)) return PageWrite::ignoredStale;   // stored wins ties
-    it->second = incoming;
-    return PageWrite::superseded;
-  }
 };
 
 // Records what it was asked in order: DECIDE → CLAIM → SEND. claimDay is the whole mutex — the ledger row IS the primary key, and a claim clears next_due_at so the served instant can never fire twice.

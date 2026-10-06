@@ -60,13 +60,6 @@ inline Session sessionAt(const std::string& id, std::uint64_t startedAtMs) {
   return Session{SessionId{id}, wm::UserId{kUser}, startedAtMs};
 }
 
-// The create as the app's own route makes one: the LIFTER's hand, naming no agent door.
-constexpr std::uint64_t kBuiltAtMs = 1'700'000'000'000;
-
-inline RoutineWriteOutcome inserted(ProgramRepository& repo, const Routine& incoming) {
-  return repo.insertRoutine(incoming, std::nullopt, kBuiltAtMs);
-}
-
 inline RoutineEntry entryAt(int position, const std::string& exercise,
                             std::vector<SetTarget> sets = fake::straight(5, 5, 82.5),
                             std::optional<int> restSeconds = 180) {

@@ -2,7 +2,6 @@
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
-#include "products/journal/application/JournalSwitches.h"
 #include "products/journal/adapters/json/PageJson.h"
 
 #include <algorithm>
@@ -44,50 +43,6 @@ void JournalApi::getPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
     return;
   }
   cb(jsonResponse(toJson(*page)));
-}
-
-void JournalApi::putPage(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                         const std::string& date) {
-  if (journal::journalWriteFrozen()) {
-    cb(error(drogon::k503ServiceUnavailable, "journal writes are temporarily frozen", "journal-frozen"));
-    return;
-  }
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your journal"));
-    return;
-  }
-  std::optional<LocalDate> day = dayOf(date);
-  if (!day) {
-    cb(error(drogon::k400BadRequest, "bad date"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  std::optional<Page> incoming;
-  try {
-    incoming = parsePageWrite(*json, *caller, *day);
-  } catch (const PageTooLarge&) {
-    cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
-    return;
-  } catch (const std::exception&) {
-    cb(error(drogon::k400BadRequest, "could not read that page"));
-    return;
-  }
-  // The reply is always the winning row.
-  try {
-    WriteOutcome out = pages_->write(*incoming);
-    cb(jsonResponse(toJson(out.page)));
-  } catch (const journal::JournalUnavailable& unavailable) {
-    cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-  } catch (const PageTooLarge&) {
-    cb(error(drogon::k413RequestEntityTooLarge, "that page is too long to store"));
-  } catch (const InvalidPage&) {
-    cb(error(drogon::k400BadRequest, "could not read that page"));
-  }
 }
 
 void JournalApi::listPages(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

@@ -1,27 +1,8 @@
 #include "products/journal/application/PageService.h"
-#include "products/journal/application/JournalSwitches.h"
 
 namespace wm {
 
-PageService::PageService(JournalRepository& repo, PageWatcher* watcher, journal::JournalWriteDoor* door)
-    : repo_(repo), watcher_(watcher), door_(door) {}
-
-// A write that lost the last-writer-wins guard announces nothing; the announcement names the
-// winning body, not the incoming one.
-WriteOutcome PageService::write(const Page& incoming) {
-  journal::requireJournalWrite();
-  if (journal::journalEngineWrites()) {
-    if (!door_) throw journal::JournalUnavailable("journal-not-adopted",
-        "journal history must be adopted before engine writes are enabled");
-    return door_->savePage(incoming);
-  }
-  PageWrite result = repo_.save(incoming);
-  std::optional<Page> winner = repo_.load(incoming.user, incoming.day);
-  const Page settled = winner ? *winner : incoming;
-  if (watcher_ && result != PageWrite::ignoredStale)
-    watcher_->pageSaved(settled.user, settled.day, settled.body.size());
-  return {settled, result};
-}
+PageService::PageService(JournalRepository& repo) : repo_(repo) {}
 
 std::optional<Page> PageService::page(const UserId& user, const LocalDate& day) {
   return repo_.load(user, day);

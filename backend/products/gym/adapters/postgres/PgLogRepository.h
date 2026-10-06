@@ -8,16 +8,9 @@
 
 namespace wm::gym {
 
-// Sessions, their sets, the revisions a correction or a delete leaves behind, and the workout share.
-// Idempotent writes by client-minted id, every query scoped to the owner, and each method borrows a
-// connection for exactly one transaction.
-//
-// insertSession no-ops on any unique conflict; insertSet locks the session row, computes max+1
-// numbering in the INSERT and reads the stored row back scoped to that session; updateSet and
-// deleteSet each write gym_set_revisions in the same statement that moves the row. All three writes
-// that change what a workout holds take the session row first and its set rows after — one lock
-// order, so two of them cannot deadlock. Every pqxx error the store has an answer for is translated
-// into the port's typed facts; the rest ride to the house 500.
+// Sessions, their sets, the revisions a correction or a delete leaves behind, and the two shares.
+// Every query is scoped to the owner, and each method borrows a connection for exactly one
+// transaction.
 class PgLogRepository : public LogRepository {
 public:
   explicit PgLogRepository(std::shared_ptr<PgPool> pool);
@@ -25,17 +18,7 @@ public:
   std::optional<Session> open(const UserId& user) override;
   std::optional<Session> session(const UserId& user, const SessionId& id) override;
   std::optional<Set> setOf(const UserId& user, const SetId& id) override;
-  std::optional<std::uint64_t> lastActivity(const SessionId& id) override;
-  void insertSession(const Session& incoming) override;
-  void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override;
-  SetInsertOutcome insertSet(const Set& incoming) override;
-  BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) override;
-  BatchLogOutcome importSession(const Session& session, const SetBatch& batch) override;
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) override;
-  std::optional<Set> updateSet(const UserId& user, const Set& corrected) override;
-  void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override;
-  CorrectionOutcome correctSession(const UserId& user, const SessionId& session,
-      const SessionCorrectionIn& incoming, std::uint64_t nowMs) override;
   HistoryPage history(const UserId& user, const HistoryQuery& query) override;
   std::optional<LogShare> createLogShare(const LogShare& share) override;
   std::vector<LogShare> logShares(const UserId& user, std::uint64_t nowMs) override;
@@ -47,7 +30,6 @@ public:
   LastTimeOutcome lastTime(const UserId& user, const ExerciseId& exercise) override;
   std::vector<LastSet> lastSets(const UserId& user) override;
   SessionHistory historyFor(const UserId& user, const Session& session) override;
-  bool deleteSession(const UserId& user, const SessionId& id) override;
   MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override;
   TrainingLog trainingLog(const UserId& user) override;
   std::vector<ProgressSet> progressHistory(const UserId& user) override;
@@ -58,8 +40,6 @@ public:
                                              std::uint64_t nowMs) override;
 
 private:
-  BatchLogOutcome writeBatch(const UserId& user, const SetBatch& batch, const std::optional<Session>& imported);
-
   std::shared_ptr<PgPool> pool_;
 };
 

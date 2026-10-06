@@ -269,7 +269,7 @@ bool PgAskThreadRepository::deleteThread(const UserId& user, const ThreadId& id,
   }
   auto lease = tryLease(user, id);
   if (!lease) throw ThreadBusy{};
-  if (beforeDelete) beforeDelete();
+  beforeDelete();
   PgLease conn{*pool_};
   pqxx::work txn{*conn};
   pqxx::result removed = txn.exec_params(

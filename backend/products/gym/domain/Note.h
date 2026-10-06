@@ -39,8 +39,4 @@ struct Note {
   bool operator==(const Note&) const = default;
 };
 
-// Whether `order` names every note in `standing` exactly once — the rule a whole-order replace is
-// refused against. Pure, so the fake and the SQL adapter decide it one way.
-bool namesEveryNoteOnce(const std::vector<Note>& standing, const std::vector<NoteId>& order);
-
 }

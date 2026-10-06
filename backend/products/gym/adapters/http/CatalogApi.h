@@ -22,9 +22,6 @@ public:
              std::shared_ptr<AuthService> auth);
 
   void listExercises(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // GET  /v1/gym/exercises
-  void createExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb);  // POST /v1/gym/exercises
-  void renameExercise(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                      const std::string& id);                                 // PATCH /v1/gym/exercises/{id}
   void exerciseRecord(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
                       const std::string& id);                                 // GET  /v1/gym/exercises/{id}/record
 

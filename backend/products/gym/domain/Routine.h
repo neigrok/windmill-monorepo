@@ -54,7 +54,4 @@ struct Routine {
   bool operator==(const Routine&) const = default;
 };
 
-// Frozen onto the session row at start from the store's own routine, never from a client body.
-PlanSnapshot snapshotOf(const Routine& routine);
-
 }

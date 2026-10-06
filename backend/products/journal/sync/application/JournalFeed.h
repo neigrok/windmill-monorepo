@@ -1,7 +1,7 @@
 #pragma once
 
 #include "platform/ports/ChangeFeed.h"
-#include "products/journal/application/PageService.h"
+#include "products/journal/ports/PageWatcher.h"
 
 #include <exception>
 

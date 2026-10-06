@@ -2,8 +2,6 @@
 
 #include <chrono>
 
-#include "products/gym/application/ProgramService.h"
-#include "products/gym/application/TrainingService.h"
 #include "products/gym/ports/AskAgent.h"
 #include "products/gym/ports/AskThreadRepository.h"
 #include "products/gym/ports/BodyweightRepository.h"
@@ -19,7 +17,6 @@
 #include <set>
 #include <cmath>
 #include <cstdint>
-#include <cstdlib>
 #include <functional>
 #include <map>
 #include <optional>
@@ -75,26 +72,13 @@ inline Routine pushA(std::vector<RoutineEntry> entries = {benchEntry()},
   return Routine{rtId(std::move(id)), uid(), "Push A", 0, std::move(entries)};
 }
 
-// An in-memory gym store applying the SAME rules as the SQL; the six Fake…Repositories are its ports.
+// An in-memory gym store read the way the SQL reads it; the Fake…Repositories are its ports. Tests write
+// its rows straight in: every gym write is the engine's, tested on the real door (GymDoorFixture.h).
 struct FakeGymStore {
-  // gym_set_revisions: what a correction replaced and what a delete took out of the log.
-  struct KeptSet {
-    Set set;
-    bool deleted;
-
-    bool operator==(const KeptSet&) const = default;
-  };
-
-  struct SetReceipt { UserId user; Set request; };
-  struct SessionReceipt { Session request; std::vector<Set> sets; bool imported = false; };
-  std::map<SetId, SetReceipt> setReceipts;
-  std::map<SessionId, SessionReceipt> sessionReceipts;
-
   std::vector<Exercise> seeds;
   std::vector<std::pair<std::string, Exercise>> customs;   // (owner, row)
   std::vector<Session> sessions;
   std::vector<Set> sets;              // one row per set that currently stands
-  std::vector<KeptSet> kept;          // what corrections replaced, and what deletes took
   std::vector<Routine> routineRows;   // the stored rows; lastTrainedAtMs is derived on every read
   // gym_proposals + gym_proposal_changes as one value: the rows are one document (domain/Proposal.h).
   std::vector<RoutineProposal> proposalRows;
@@ -106,9 +90,6 @@ struct FakeGymStore {
   std::map<std::string, Note> noteSaves;
   std::vector<Note> noteRows;                   // gym_notes: dense on position per account
   std::vector<Bodyweight> bodyweightRows;       // gym_bodyweight: one per (account, local day)
-  // gym_proposals.superseded_by: the id of the proposal that took a pending one's slot, by the
-  // replaced proposal's id. Absent for a row the routine's own move superseded, and for a legacy row.
-  std::map<std::string, std::string> supersededBy;
   // gym_exercise_names: what one account calls one SEED, keyed (owner, movement) and coalesced over it.
   std::vector<std::pair<std::pair<std::string, std::string>, std::string>> displayNames;
   // gym_exercise_aliases: what one account USED to call a movement; `at` stands in for created_at.
@@ -126,7 +107,6 @@ struct FakeGymStore {
     int movements;
   };
   std::map<std::string, Created> createdRoutines;   // by routine id
-  std::uint64_t renames = 0;   // stands in for gym_exercise_aliases.created_at: rename order
 
   void seed(const Exercise& exercise) { seeds.push_back(exercise); }
   void seedCustom(const UserId& owner, const Exercise& exercise) {
@@ -239,212 +219,11 @@ public:
     return std::nullopt;
   }
 
-  std::optional<std::uint64_t> lastActivity(const SessionId& id) override {
-    std::optional<std::uint64_t> last;
-    for (const Set& set : db.sets) {
-      if (!(set.session == id)) continue;
-      if (!last || set.completedAtMs > *last) last = set.completedAtMs;
-    }
-    return last;
-  }
-
-  void insertSession(const Session& incoming) override {
-    if (db.sessionReceipts.count(incoming.id)) return;
-    // routine_id is a real foreign key and is NOT owner-scoped: a broken pointer is a storage failure.
-    bool plannedExists = !incoming.routine;
-    for (const Routine& routine : db.routineRows)
-      if (incoming.routine == routine.id) plannedExists = true;
-    if (!plannedExists) throw std::runtime_error("no such routine");
-    for (const Session& session : db.sessions)
-      if (session.id == incoming.id) return;                              // the PK no-op
-    for (const Session& session : db.sessions)
-      if (session.user == incoming.user && !session.finishedAtMs) return; // one open per user
-    db.sessions.push_back(incoming);
-    db.sessionReceipts.emplace(incoming.id, FakeGymStore::SessionReceipt{incoming, {}});
-  }
-
-  void close(const SessionId& id, std::uint64_t finishedAtMs, ClosedBy closedBy) override {
-    // An open row takes the instant and the word; a stale close upgrades to a FINISH; nothing lands over a finish.
-    for (Session& session : db.sessions) {
-      if (!(session.id == id)) continue;
-      if (!session.finishedAtMs) {
-        session.finishedAtMs = finishedAtMs;
-        session.closedBy = closedBy;
-        continue;
-      }
-      if (session.closedBy == ClosedBy::stale && closedBy == ClosedBy::finish) {
-        session.finishedAtMs = finishAfterStaleClose(session, finishedAtMs);
-        session.closedBy = ClosedBy::finish;
-      }
-    }
-  }
-
-  SetInsertOutcome insertSet(const Set& incoming) override {
-    // The lock statement READS the state it locks: whose session this is, and whether it is closed.
-    std::optional<Session> ran;
-    for (const Session& session : db.sessions)
-      if (session.id == incoming.session) ran = session;
-    if (!ran) return {std::nullopt, SetInsertError::idTaken};
-    const auto receipt = db.setReceipts.find(incoming.id);
-    if (receipt != db.setReceipts.end()) {
-      if (receipt->second.user != ran->user) return {std::nullopt, SetInsertError::idTaken};
-      const auto current = setOf(ran->user, incoming.id);
-      if (!current) return {std::nullopt, SetInsertError::deleted};
-      if (current->session != incoming.session) return {std::nullopt, SetInsertError::idTaken};
-      return {*current, SetInsertError::none};
-    }
-    // The revisions read under the same lock: a DELETED id is spent for good, asked before the closed refusal.
-    for (const FakeGymStore::KeptSet& row : db.kept) {
-      if (!row.deleted || !(row.set.id == incoming.id)) continue;
-      if (db.ownsSession(ran->user, row.set.session))
-        return {std::nullopt, SetInsertError::deleted};
-    }
-    // The one door through the finished boundary: a set continuing a STALE close lands and moves the finish forward.
-    const bool continuesStaleClose = ran->finishedAtMs && lateSetLands(*ran, incoming.completedAtMs);
-    if (ran->finishedAtMs && !continuesStaleClose) return {std::nullopt, SetInsertError::finished};
-    // Scoped on the SESSION's owner: a foreign key alone would admit another lifter's private movement.
-    if (!db.visibleTo(ran->user, incoming.exercise))
-      return {std::nullopt, SetInsertError::unknownExercise};
-    // The read-back, scoped to (id, session_id) and taken last, as the statement order has it.
-    for (const Set& set : db.sets) {
-      if (!(set.id == incoming.id)) continue;
-      if (set.session == incoming.session)
-        return {set, SetInsertError::none};                // the PK no-op: replay returns stored
-      return {std::nullopt, SetInsertError::idTaken};      // the id is spent outside this session
-    }
-    int number = 1;
-    for (const Set& set : db.sets)
-      if (set.session == incoming.session && set.exercise == incoming.exercise)
-        number = std::max(number, set.setNumber + 1);
-    Set stored = incoming;
-    stored.setNumber = number;
-    db.sets.push_back(stored);
-    Set canonical = incoming;
-    canonical.setNumber = 0;
-    canonical.weightKg = std::round(canonical.weightKg * 100) / 100;
-    if (canonical.weightKg == 0) canonical.weightKg = 0;
-    if (canonical.rpe) canonical.rpe = std::round(*canonical.rpe * 10) / 10;
-    db.setReceipts.emplace(incoming.id, FakeGymStore::SetReceipt{ran->user, canonical});
-    if (continuesStaleClose)
-      for (Session& session : db.sessions)
-        if (session.id == incoming.session)
-          session.finishedAtMs = std::max(*session.finishedAtMs, incoming.completedAtMs);
-    return {stored, SetInsertError::none};
-  }
-
-  BatchLogOutcome appendSets(const UserId& user, const SetBatch& batch) override {
-    return writeBatch(user, batch, std::nullopt);
-  }
-
-  BatchLogOutcome importSession(const Session& session, const SetBatch& batch) override {
-    return writeBatch(session.user, batch, session);
-  }
-
-  BatchLogOutcome writeBatch(const UserId& user, const SetBatch& batch, const std::optional<Session>& imported) {
-    const auto receipt = db.sessionReceipts.find(batch.sessionId);
-    if (imported && receipt != db.sessionReceipts.end()) {
-      const Session& original = receipt->second.request;
-      if (!receipt->second.imported || original.user != user || original.startedAtMs != imported->startedAtMs ||
-          original.finishedAtMs != imported->finishedAtMs || original.routine != imported->routine || receipt->second.sets != batch.sets)
-        return {std::nullopt, {}, BatchLogError::payloadConflict};
-      BatchLogOutcome outcome;
-      outcome.session = session(user, batch.sessionId);
-      outcome.sessionDeleted = !outcome.session;
-      outcome.replayed = true;
-      for (const Set& set : batch.sets) outcome.sets.push_back({set.id, setOf(user, set.id), true});
-      return outcome;
-    }
-    FakeGymStore next = db;
-    FakeLogRepository planned(next);
-    BatchLogOutcome outcome;
-    if (imported) {
-      for (const Session& old : next.sessions)
-        if (old.id == batch.sessionId) return {std::nullopt, {}, BatchLogError::idTaken};
-      if (imported->routine && !imported->plan) return {std::nullopt, {}, BatchLogError::unknownRoutine};
-      std::vector<Session> logged;
-      for (const Session& old : next.sessions)
-        if (old.user == user) logged.push_back(old);
-      if (const std::optional<Session> crossed = crossedBy(*imported, logged)) {
-        BatchLogOutcome refused{std::nullopt, {}, BatchLogError::overlap};
-        refused.overlapping = crossed;
-        return refused;
-      }
-      next.sessions.push_back(*imported);
-      next.sessionReceipts.emplace(batch.sessionId, FakeGymStore::SessionReceipt{*imported, batch.sets, true});
-      outcome.session = *imported;
-    } else {
-      outcome.session = planned.session(user, batch.sessionId);
-      if (!outcome.session) return {std::nullopt, {}, BatchLogError::notFound};
-    }
-    batch.checkInterval(*outcome.session, imported.has_value());
-    bool allReplayed = true;
-    for (std::size_t index = 0; index < batch.sets.size(); ++index) {
-      const Set& set = batch.sets[index];
-      const auto existing = next.setReceipts.find(set.id);
-      if (existing != next.setReceipts.end()) {
-        if (existing->second.user != user || existing->second.request != set)
-          return {std::nullopt, {}, BatchLogError::payloadConflict, index};
-        if (imported) return {std::nullopt, {}, BatchLogError::idTaken, index};
-        outcome.sets.push_back({set.id, planned.setOf(user, set.id), true});
-        continue;
-      }
-      allReplayed = false;
-      for (const auto& kept : next.kept)
-        if (kept.deleted && kept.set.id == set.id && next.ownsSession(user, kept.set.session))
-          return {std::nullopt, {}, BatchLogError::deleted, index};
-      for (const Set& old : next.sets)
-        if (old.id == set.id) return {std::nullopt, {}, BatchLogError::idTaken, index};
-      const bool late = !imported && outcome.session->finishedAtMs && lateSetLands(*outcome.session, set.completedAtMs);
-      if (!imported && outcome.session->finishedAtMs && !late) return {std::nullopt, {}, BatchLogError::finished, index};
-      if (!next.visibleTo(user, set.exercise)) return {std::nullopt, {}, BatchLogError::unknownExercise, index};
-      Set stored = set;
-      stored.setNumber = 1;
-      for (const Set& old : next.sets)
-        if (old.session == batch.sessionId && old.exercise == set.exercise)
-          stored.setNumber = std::max(stored.setNumber, old.setNumber + 1);
-      next.sets.push_back(stored);
-      next.setReceipts.emplace(set.id, FakeGymStore::SetReceipt{user, set});
-      outcome.sets.push_back({set.id, stored, false});
-      if (late) {
-        outcome.session->finishedAtMs = std::max(*outcome.session->finishedAtMs, set.completedAtMs);
-        for (Session& current : next.sessions)
-          if (current.id == batch.sessionId) current.finishedAtMs = outcome.session->finishedAtMs;
-      }
-    }
-    outcome.replayed = !imported && allReplayed;
-    db = std::move(next);
-    return outcome;
-  }
-
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids) override {
     std::vector<SessionRows> rows;
     for (const SessionId& id : ids)
       if (const auto stored = session(user, id)) rows.push_back({*stored, setsOf(id)});
     return rows;
-  }
-
-  // The correction, scoped (id, session, owner); what it replaces is kept BEFORE the row is rewritten.
-  std::optional<Set> updateSet(const UserId& user, const Set& corrected) override {
-    for (Set& set : db.sets) {
-      if (!(set.id == corrected.id) || !(set.session == corrected.session)) continue;
-      if (!db.ownsSession(user, set.session)) return std::nullopt;
-      // Kept only where the row actually MOVES, the SQL's `IS DISTINCT FROM` guard: `{}` is a legal fix.
-      if (!(set == corrected)) db.kept.push_back(FakeGymStore::KeptSet{set, false});
-      set = corrected;
-      return set;
-    }
-    return std::nullopt;
-  }
-
-  // The delete, same scope: the row moves whole into the kept list marked deleted, and numbers are left alone.
-  void deleteSet(const UserId& user, const SessionId& session, const SetId& id) override {
-    for (auto row = db.sets.begin(); row != db.sets.end(); ++row) {
-      if (!(row->id == id) || !(row->session == session)) continue;
-      if (!db.ownsSession(user, session)) return;
-      db.kept.push_back(FakeGymStore::KeptSet{*row, true});
-      db.sets.erase(row);
-      return;
-    }
   }
 
   LogPage log(const UserId& user, const LogCursor& cursor) override {
@@ -640,19 +419,6 @@ public:
     return history;
   }
 
-  bool deleteSession(const UserId& user, const SessionId& id) override {
-    for (auto row = db.sessions.begin(); row != db.sessions.end(); ++row) {
-      if (!(row->id == id) || !(row->user == user)) continue;
-      db.sessions.erase(row);
-      // `on delete cascade`: the sets go with the session, and the revisions with them.
-      std::erase_if(db.sets, [&](const Set& set) { return set.session == id; });
-      std::erase_if(db.kept,
-                    [&](const FakeGymStore::KeptSet& held) { return held.set.session == id; });
-      return true;
-    }
-    return false;   // absent and another account's are the same fact
-  }
-
   // The record read: the catalog predicate first, then the routines naming it, the sessions, the recent days.
   MovementHistory movementHistory(const UserId& user, const ExerciseId& exercise) override {
     MovementHistory history;
@@ -764,46 +530,6 @@ public:
       log.weeks.push_back(held->second);
     }
     return log;
-  }
-
-  struct CorrectionReceipt { UserId user; SessionId session; SessionCorrectionIn request; };
-  std::map<std::string, CorrectionReceipt> correctionReceipts;
-
-  CorrectionOutcome correctSession(const UserId& user, const SessionId& id,
-      const SessionCorrectionIn& incoming, std::uint64_t nowMs) override {
-    const auto stored = session(user, id);
-    if (!stored) return {std::nullopt, {}, CorrectionError::notFound};
-    const auto current = setsOf(id);
-    const auto receipt = correctionReceipts.find(incoming.requestId);
-    if (receipt != correctionReceipts.end()) {
-      if (receipt->second.user != user || receipt->second.session != id || receipt->second.request != incoming)
-        return {std::nullopt, {}, CorrectionError::payloadConflict};
-      return {stored, current, CorrectionError::none, true};
-    }
-    if (!stored->finishedAtMs) return {std::nullopt, {}, CorrectionError::open};
-    const SessionCorrectionBatch batch{*stored, current, incoming, nowMs};
-    std::vector<Session> logged;
-    for (const Session& session : db.sessions) if (session.user == user) logged.push_back(session);
-    if (const auto overlap = crossedBy(batch.session, logged))
-      return {std::nullopt, {}, CorrectionError::overlap, false, overlap};
-    for (const Set& set : batch.sets) {
-      if (!db.nameOf(user, set.exercise)) return {std::nullopt, {}, CorrectionError::unknownExercise};
-      if (std::any_of(current.begin(), current.end(), [&](const auto& before) { return before.id == set.id; })) continue;
-      if (db.setReceipts.contains(set.id) ||
-          std::any_of(db.sets.begin(), db.sets.end(), [&](const auto& held) { return held.id == set.id; }) ||
-          std::any_of(db.kept.begin(), db.kept.end(), [&](const auto& held) { return held.deleted && held.set.id == set.id; }))
-        return {std::nullopt, {}, CorrectionError::idTaken};
-    }
-    for (const Set& set : batch.replaced) db.kept.push_back({set, false});
-    for (const Set& set : batch.removed) db.kept.push_back({set, true});
-    std::erase_if(db.sets, [&](const auto& set) { return set.session == id; });
-    for (const Set& set : batch.sets) {
-      db.sets.push_back(set);
-      db.setReceipts.emplace(set.id, FakeGymStore::SetReceipt{user, set});
-    }
-    for (Session& session : db.sessions) if (session.id == id) session = batch.session;
-    correctionReceipts.emplace(incoming.requestId, CorrectionReceipt{user,id,incoming});
-    return {batch.session, batch.sets};
   }
 
   std::vector<LogShare> logShareRows;
@@ -1023,72 +749,6 @@ public:
 
   // The store's projection, which is also the predicate every write naming a movement checks (visibleTo).
   std::vector<Exercise> catalog(const UserId& user) override { return db.catalogOf(user); }
-
-  ExerciseInsertOutcome insertExercise(const UserId& owner, const Exercise& incoming) override {
-    for (const Exercise& seed : db.seeds)
-      if (seed.id == incoming.id) return {std::nullopt, ExerciseInsertError::idTaken};
-    for (const auto& [heldBy, exercise] : db.customs) {
-      if (!(exercise.id == incoming.id)) continue;
-      if (heldBy == owner.str())
-        return {exercise, ExerciseInsertError::none};      // the caller's own id: a replay
-      return {std::nullopt, ExerciseInsertError::idTaken};
-    }
-    db.seedCustom(owner, incoming);
-    return {incoming, ExerciseInsertError::none};
-  }
-
-  // A movement this account created renames in place; a SEED is global and takes a per-account name.
-  // Renaming a seed back to its own name deletes that line rather than storing a copy.
-  std::optional<Exercise> renameExercise(const UserId& user, const ExerciseId& id,
-                                         const std::string& name) override {
-    for (const Exercise& row : db.seeds) {
-      if (!(row.id == id)) continue;
-      const std::string was = *db.nameOf(user, id);
-      const Exercise renamed{row.id, name, row.pattern, row.equipment, row.stepKg, row.custom};
-      std::erase_if(db.displayNames, [&](const auto& held) {
-        return held.first.first == user.str() && held.first.second == id.str();
-      });
-      if (renamed.name != row.name)
-        db.displayNames.push_back({{user.str(), id.str()}, renamed.name});
-      keepOldName(user, id, was, renamed.name);
-      return Exercise{row.id,        *db.nameOf(user, id), row.pattern,
-                      row.equipment, row.stepKg,        row.custom,
-                      db.aliasesOf(user, id)};
-    }
-    for (auto& [owner, exercise] : db.customs) {
-      if (!(exercise.id == id) || owner != user.str()) continue;
-      const std::string was = exercise.name;
-      exercise = Exercise{exercise.id,        name,           exercise.pattern,
-                          exercise.equipment, exercise.stepKg, exercise.custom};
-      keepOldName(user, id, was, exercise.name);
-      return Exercise{exercise.id,        exercise.name, exercise.pattern,
-                      exercise.equipment, exercise.stepKg, exercise.custom,
-                      db.aliasesOf(user, id)};
-    }
-    return std::nullopt;   // absent and another account's are the one fact
-  }
-
-private:
-  // The old name becomes one this account USED to use, the new one stops being one, newest kMaxAliases kept.
-  void keepOldName(const UserId& user, const ExerciseId& id, const std::string& was,
-                   const std::string& now) {
-    if (was != now) {
-      std::erase_if(db.aliasRows, [&](const FakeGymStore::Alias& held) {
-        return held.user == user.str() && held.exercise == id.str() && held.name == was;
-      });
-      db.aliasRows.push_back(FakeGymStore::Alias{user.str(), id.str(), was, ++db.renames});
-    }
-    std::erase_if(db.aliasRows, [&](const FakeGymStore::Alias& held) {
-      return held.user == user.str() && held.exercise == id.str() && held.name == now;
-    });
-    std::vector<std::string> kept = db.aliasesOf(user, id);
-    if (kept.size() <= kMaxAliases) return;
-    kept.resize(kMaxAliases);
-    std::erase_if(db.aliasRows, [&](const FakeGymStore::Alias& held) {
-      if (held.user != user.str() || held.exercise != id.str()) return false;
-      return std::find(kept.begin(), kept.end(), held.name) == kept.end();
-    });
-  }
 };
 
 class FakeProgramRepository : public ProgramRepository {
@@ -1145,63 +805,6 @@ public:
     return history;
   }
 
-  // The creation row is written by the winner of the id and by nobody else (ON CONFLICT DO NOTHING).
-  RoutineWriteOutcome insertRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent,
-                                    std::uint64_t nowMs) override {
-    for (const Routine& routine : db.routineRows) {
-      if (!(routine.id == incoming.id)) continue;
-      if (routine.user == incoming.user)
-        return {db.readRoutine(routine), RoutineWriteError::none};   // the PK no-op: a replay reads back stored
-      return {std::nullopt, RoutineWriteError::idTaken};   // the id is spent by an account we can't see
-    }
-    // Every line names a movement this account may see; one transaction, so a refused line leaves no row.
-    for (const RoutineEntry& entry : incoming.entries)
-      if (!db.visibleTo(incoming.user, entry.exercise))
-        return {std::nullopt, RoutineWriteError::unknownExercise};
-    db.routineRows.push_back(incoming);
-    if (byAgent == ProposalDoor::ask) db.routineCreations.push_back(incoming);
-    db.createdRoutines[incoming.id.str()] =
-        FakeGymStore::Created{nowMs, byAgent, static_cast<int>(incoming.entries.size())};
-    return {db.readRoutine(incoming), RoutineWriteError::none};
-  }
-
-  // A write moving the document or the NAME bumps the revision and supersedes every pending proposal on it.
-  RoutineWriteOutcome replaceRoutine(const Routine& incoming, std::uint64_t nowMs,
-                                     std::optional<int> expectedRevision) override {
-    for (Routine& routine : db.routineRows) {
-      if (!(routine.id == incoming.id) || !(routine.user == incoming.user)) continue;
-      for (const RoutineEntry& entry : incoming.entries)
-        if (!db.visibleTo(incoming.user, entry.exercise))
-          return {std::nullopt, RoutineWriteError::unknownExercise};
-      const bool moved =
-          routine.name != incoming.name || !(routine.entries == incoming.entries);
-      if (moved && expectedRevision && routine.revision != *expectedRevision)
-        return {std::nullopt, RoutineWriteError::stale};
-      routine = Routine{incoming.id,       incoming.user,           incoming.name,
-                        incoming.position, incoming.entries,        incoming.lastTrainedAtMs,
-                        moved ? routine.revision + 1 : routine.revision};
-      if (moved) supersedeOnRoutine(incoming.user, incoming.id, ProposalId{}, nowMs);
-      return {db.readRoutine(routine), RoutineWriteError::none};
-    }
-    return {std::nullopt, RoutineWriteError::notFound};   // absent and another's are one answer
-  }
-
-  bool deleteRoutine(const UserId& user, const RoutineId& id) override {
-    for (auto row = db.routineRows.begin(); row != db.routineRows.end(); ++row) {
-      if (!(row->id == id) || !(row->user == user)) continue;
-      db.routineRows.erase(row);
-      db.createdRoutines.erase(id.str());   // the row is gone, and its creation columns with it
-      // `on delete set null`: the sessions keep their frozen snapshots and lose only the pointer.
-      for (Session& session : db.sessions)
-        if (session.routine == id) session.routine = std::nullopt;
-      // `on delete cascade`: the proposals on a routine go with it, settled ones included.
-      std::erase_if(db.proposalRows,
-                    [&](const RoutineProposal& held) { return held.head.routine == id; });
-      return true;
-    }
-    return false;
-  }
-
   std::vector<ProposalHead> proposalHeads(const UserId& user, const ProposalQuery& query) override {
     std::vector<ProposalHead> out;
     for (const RoutineProposal& held : db.proposalRows) {
@@ -1225,107 +828,7 @@ public:
     return std::nullopt;   // another account's is the same fact as no proposal at all
   }
 
-  // The mint's steps in the SQL's order: resolve the routine, answer a spent id, supersede the door's pending, then insert.
-  ProposalMintOutcome insertProposal(const RoutineProposal& incoming) override {
-    std::optional<Routine> base = routine(incoming.head.user, incoming.head.routine);
-    if (!base) return {std::nullopt, ProposalMintError::unknownRoutine};
-    for (const RoutineProposal& held : db.proposalRows) {
-      if (!(held.head.id == incoming.head.id)) continue;
-      if (!(held.head.user == incoming.head.user))
-        return {std::nullopt, ProposalMintError::idTaken};
-      if (isReplayOf(held, incoming))
-        return {withLoggedSets(held, incoming.head.user), ProposalMintError::none};
-      return {std::nullopt, ProposalMintError::idReused};
-    }
-    // Every line names a movement this account may see, refused HERE at the mint.
-    for (const RoutineChange& change : incoming.changes)
-      if (!db.visibleTo(incoming.head.user, change.exercise))
-        return {std::nullopt, ProposalMintError::unknownExercise};
-    supersedeFromDoor(incoming);
-    db.proposalRows.push_back(incoming);
-    return {withLoggedSets(incoming, incoming.head.user), ProposalMintError::none};
-  }
-
-  ProposalSettleOutcome applyRevision(const UserId& user, const ProposalId& id,
-                                      const Routine& becomes, std::uint64_t nowMs) override {
-    RoutineProposal* held = pendingOrSettled(user, id);
-    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-    std::optional<Routine> base = routine(user, held->head.routine);
-    if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-    if (held->head.state == ProposalState::applied)
-      return {withLoggedSets(*held, user), base, ProposalSettleError::none};   // the replayed tap
-    if (held->head.state == ProposalState::dismissed)
-      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
-    if (held->head.state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
-    if (base->revision != held->baseRevision) {
-      held->head.state = ProposalState::superseded;
-      held->head.settledAtMs = nowMs;
-      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
-    }
-
-    for (Routine& row : db.routineRows) {
-      if (!(row.id == becomes.id) || !(row.user == user)) continue;
-      row = becomes;
-    }
-    held->head.state = ProposalState::applied;
-    held->head.settledAtMs = nowMs;
-    // The routine just moved, so every other proposal waiting on it is superseded.
-    supersedeOnRoutine(user, becomes.id, id, nowMs);
-    return {withLoggedSets(*held, user), routine(user, becomes.id), ProposalSettleError::none};
-  }
-
-  ProposalSettleOutcome applyRemoval(const UserId& user, const ProposalId& id,
-                                     std::uint64_t nowMs) override {
-    RoutineProposal* held = pendingOrSettled(user, id);
-    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-    std::optional<Routine> base = routine(user, held->head.routine);
-    if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-    if (held->head.state == ProposalState::applied ||
-        held->head.state == ProposalState::dismissed)
-      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
-    if (held->head.state == ProposalState::superseded)
-      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
-    if (base->revision != held->baseRevision) {
-      held->head.state = ProposalState::superseded;
-      held->head.settledAtMs = nowMs;
-      return {std::nullopt, std::nullopt, ProposalSettleError::routineMoved};
-    }
-
-    // Composed BEFORE the delete, because the delete cascades this very row away with the routine.
-    RoutineProposal answer = withLoggedSets(*held, user);
-    answer.head.state = ProposalState::applied;
-    answer.head.settledAtMs = nowMs;
-    deleteRoutine(user, base->id);
-    return {answer, std::nullopt, ProposalSettleError::none};
-  }
-
-  ProposalSettleOutcome dismissProposal(const UserId& user, const ProposalId& id,
-                                        std::uint64_t nowMs) override {
-    RoutineProposal* held = pendingOrSettled(user, id);
-    if (!held) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-    if (held->head.state == ProposalState::applied)
-      return {std::nullopt, std::nullopt, ProposalSettleError::settled};
-    if (held->head.state == ProposalState::superseded) {
-      std::optional<Routine> base = routine(user, held->head.routine);
-      if (!base) return {std::nullopt, std::nullopt, ProposalSettleError::notFound};
-      return {std::nullopt, std::nullopt, supersededReason(*held, *base)};
-    }
-    if (held->head.state == ProposalState::pending) {
-      held->head.state = ProposalState::dismissed;
-      held->head.settledAtMs = nowMs;
-    }
-    return {withLoggedSets(*held, user), std::nullopt, ProposalSettleError::none};
-  }
-
 private:
-  // The stored row itself, so a settle can move it. Owner-scoped like every read here.
-  RoutineProposal* pendingOrSettled(const UserId& user, const ProposalId& id) {
-    for (RoutineProposal& held : db.proposalRows)
-      if (held.head.id == id && held.head.user == user) return &held;
-    return nullptr;
-  }
-
   // The `loggedSets` pass, which the SQL does with a LEFT JOIN onto gym_sets at READ time.
   RoutineProposal withLoggedSets(RoutineProposal held, const UserId& user) const {
     for (RoutineChange& change : held.changes) {
@@ -1338,41 +841,6 @@ private:
     return held;
   }
 
-  // What every pending proposal on a routine becomes when that routine MOVES — every door's, and not a delete.
-  void supersedeOnRoutine(const UserId& user, const RoutineId& routine, const ProposalId& except,
-                          std::uint64_t nowMs) {
-    for (RoutineProposal& held : db.proposalRows) {
-      if (!(held.head.user == user) || !(held.head.routine == routine)) continue;
-      if (held.head.state != ProposalState::pending || held.head.id == except) continue;
-      held.head.state = ProposalState::superseded;
-      held.head.settledAtMs = nowMs;
-    }
-  }
-
-  // The partial unique index's rule: one pending proposal per (routine, door, connection). The
-  // replaced row records who replaced it (`superseded_by`).
-  void supersedeFromDoor(const RoutineProposal& incoming) {
-    for (RoutineProposal& held : db.proposalRows) {
-      if (!(held.head.user == incoming.head.user) ||
-          !(held.head.routine == incoming.head.routine))
-        continue;
-      if (held.head.state != ProposalState::pending || held.head.id == incoming.head.id) continue;
-      // Keyed on (routine, door, connection), not the whole source.
-      if (held.head.source.door != incoming.head.source.door ||
-          held.head.source.connection != incoming.head.source.connection)
-        continue;
-      held.head.state = ProposalState::superseded;
-      held.head.settledAtMs = incoming.head.createdAtMs;
-      db.supersededBy[held.head.id.str()] = incoming.head.id.str();
-    }
-  }
-
-  // The SQL's `supersededReason`: the reason column first, the revision second, legacy last.
-  ProposalSettleError supersededReason(const RoutineProposal& held, const Routine& base) const {
-    if (db.supersededBy.count(held.head.id.str())) return ProposalSettleError::replaced;
-    if (base.revision != held.baseRevision) return ProposalSettleError::routineMoved;
-    return ProposalSettleError::superseded;
-  }
 };
 
 class FakeAskThreadRepository : public AskThreadRepository {
@@ -1554,11 +1022,11 @@ public:
   }
 
   bool deleteThread(const UserId& user, const ThreadId& id,
-                    const std::function<void()>& beforeDelete = {}) override {
+                    const std::function<void()>& beforeDelete) override {
     if (!thread(user, id)) return false;
     auto lease = tryLease(user, id);
     if (!lease) throw ThreadBusy{};
-    if (beforeDelete) beforeDelete();
+    beforeDelete();
     const std::size_t before = db.threadRows.size();
     std::erase_if(db.threadRows,
                   [&](const AskThread& held) { return held.id == id && held.user == user; });
@@ -1631,15 +1099,6 @@ public:
     return std::nullopt;
   }
 
-  GymPreferences savePreferences(const GymPreferences& incoming) override {
-    for (GymPreferences& row : db.preferenceRows) {
-      if (!(row.user == incoming.user)) continue;
-      row = incoming;
-      return row;
-    }
-    db.preferenceRows.push_back(incoming);
-    return incoming;
-  }
 };
 
 class FakeNotesRepository : public NotesRepository {
@@ -1658,72 +1117,12 @@ public:
     return out;
   }
 
-  // The store's steps in the SQL's order: the id asked globally, a replay read back untouched, an
-  // edit stamped, else the cap and an append at position n.
-  NoteWriteOutcome saveNote(const Note& incoming, std::uint64_t nowMs) override {
-    for (Note& held : db.noteRows) {
-      if (!(held.id == incoming.id)) continue;
-      if (!(held.user == incoming.user)) return {std::nullopt, NoteWriteError::idTaken};
-      if (held.title == incoming.title && held.body == incoming.body)
-        return {held, NoteWriteError::none};
-      held = Note{held.id, held.user, incoming.title, incoming.body, held.position, nowMs};
-      return {held, NoteWriteError::none};
-    }
-    const std::vector<Note> standing = notes(incoming.user);
-    if (standing.size() >= kMaxNotes) return {std::nullopt, NoteWriteError::full};
-    db.noteRows.push_back(Note{incoming.id, incoming.user, incoming.title, incoming.body,
-                               static_cast<int>(standing.size()), nowMs});
-    return {db.noteRows.back(), NoteWriteError::none};
-  }
-
   std::optional<Note> noteSave(const UserId& user, const NoteId& id) override {
     const auto saved = db.noteSaves.find(id.str());
     if (saved == db.noteSaves.end() || saved->second.user != user) return std::nullopt;
     return saved->second;
   }
 
-  NoteWriteOutcome saveInsight(const Note& incoming, std::uint64_t nowMs) override {
-    const auto saved = db.noteSaves.find(incoming.id.str());
-    if (saved != db.noteSaves.end()) {
-      if (saved->second.user != incoming.user || saved->second.title != incoming.title || saved->second.body != incoming.body)
-        return {std::nullopt, NoteWriteError::idTaken};
-      return {saved->second, NoteWriteError::none};
-    }
-    for (const auto& note : db.noteRows)
-      if (note.id == incoming.id && (note.user != incoming.user || note.title != incoming.title || note.body != incoming.body))
-        return {std::nullopt, NoteWriteError::idTaken};
-    for (const auto& note : notes(incoming.user))
-      if (note.title == incoming.title && note.body == incoming.body) {
-        db.noteSaves.emplace(incoming.id.str(), note);
-        return {note, NoteWriteError::none};
-      }
-    const auto outcome = saveNote(incoming, nowMs);
-    if (outcome.note) db.noteSaves.emplace(incoming.id.str(), *outcome.note);
-    return outcome;
-  }
-
-  // Absent and another account's are one no-op; the rows after the gap move up one.
-  void deleteNote(const UserId& user, const NoteId& id) override {
-    for (auto row = db.noteRows.begin(); row != db.noteRows.end(); ++row) {
-      if (!(row->id == id) || !(row->user == user)) continue;
-      const int gap = row->position;
-      db.noteRows.erase(row);
-      for (Note& held : db.noteRows)
-        if (held.user == user && held.position > gap) --held.position;
-      return;
-    }
-  }
-
-  // Precedence is not the note's text: `updatedAtMs` stays where it was.
-  NotesOrderOutcome reorderNotes(const UserId& user, const std::vector<NoteId>& order) override {
-    if (!namesEveryNoteOnce(notes(user), order)) return {{}, NotesOrderError::mismatch};
-    for (Note& held : db.noteRows) {
-      if (!(held.user == user)) continue;
-      held.position =
-          static_cast<int>(std::find(order.begin(), order.end(), held.id) - order.begin());
-    }
-    return {notes(user), NotesOrderError::none};
-  }
 };
 
 class FakeBodyweightRepository : public BodyweightRepository {
@@ -1753,23 +1152,6 @@ public:
     return all.back();
   }
 
-  // The upsert's guarded UPDATE arm: at or after the stored instant replaces, older leaves it, and
-  // the answer is always the row that stands.
-  Bodyweight save(const Bodyweight& incoming) override {
-    for (Bodyweight& held : db.bodyweightRows) {
-      if (!(held.user == incoming.user) || held.dateLocal != incoming.dateLocal) continue;
-      if (held.recordedAtMs <= incoming.recordedAtMs) held = incoming;
-      return held;
-    }
-    db.bodyweightRows.push_back(incoming);
-    return incoming;
-  }
-
-  void remove(const UserId& user, const std::string& dateLocal) override {
-    std::erase_if(db.bodyweightRows, [&](const Bodyweight& held) {
-      return held.user == user && held.dateLocal == dateLocal;
-    });
-  }
 };
 
 // The whole store and its seven doors, in the shape a harness holds them.
@@ -1782,21 +1164,6 @@ struct FakeGym {
   FakePreferencesRepository preferences{db};
   FakeNotesRepository notes{db};
   FakeBodyweightRepository bodyweight{db};
-};
-
-// GYM_ENGINE_WRITES on for one harness's life, so every service write takes the door it was handed.
-struct EngineWrites {
-  std::optional<std::string> previous;
-  EngineWrites() {
-    if (const char* value = std::getenv("GYM_ENGINE_WRITES")) previous = value;
-    setenv("GYM_ENGINE_WRITES", "1", 1);
-  }
-  ~EngineWrites() {
-    if (previous) setenv("GYM_ENGINE_WRITES", previous->c_str(), 1);
-    else unsetenv("GYM_ENGINE_WRITES");
-  }
-  EngineWrites(const EngineWrites&) = delete;
-  EngineWrites& operator=(const EngineWrites&) = delete;
 };
 
 // The door an in-memory harness hands its services. A read settles nothing and every write is refused:
@@ -1812,27 +1179,13 @@ struct ReadOnlyDoor : GymWriteDoor {
   BatchLogOutcome appendSets(const UserId&, const SessionId&, const std::vector<SetWrite>&) override { refuse(); }
   BatchLogOutcome importSession(const UserId&, const SessionImport&) override { refuse(); }
   FinishOutcome finish(const UserId&, const SessionId&, std::uint64_t) override { refuse(); }
-  std::optional<Set> fixSet(const UserId&, const SessionId&, const SetId&, const SetFix&) override { refuse(); }
-  void deleteSet(const UserId&, const SessionId&, const SetId&) override { refuse(); }
   DiscardOutcome discard(const UserId&, const SessionId&) override { refuse(); }
-  CorrectionOutcome correctSession(const UserId&, const SessionId&, const SessionCorrectionIn&) override { refuse(); }
   RoutineWriteOutcome createRoutine(const Routine&, std::optional<ProposalDoor>) override { refuse(); }
-  RoutineWriteOutcome replaceRoutine(const Routine&, std::optional<int>) override { refuse(); }
-  bool deleteRoutine(const UserId&, const RoutineId&) override { refuse(); }
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override { refuse(); }
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
                                      const ProposalSource&) override { refuse(); }
-  ProposalSettleOutcome apply(const UserId&, const ProposalId&) override { refuse(); }
-  ProposalSettleOutcome dismiss(const UserId&, const ProposalId&) override { refuse(); }
   ExerciseInsertOutcome createExercise(const UserId&, const Exercise&) override { refuse(); }
-  std::optional<Exercise> renameExercise(const UserId&, const ExerciseId&, const std::string&) override { refuse(); }
-  NoteWriteOutcome saveNote(const Note&) override { refuse(); }
   NoteWriteOutcome saveInsight(const Note&) override { refuse(); }
-  void deleteNote(const UserId&, const NoteId&) override { refuse(); }
-  NotesOrderOutcome reorderNotes(const UserId&, const std::vector<NoteId>&) override { refuse(); }
-  Bodyweight saveBodyweight(const Bodyweight&) override { refuse(); }
-  void deleteBodyweight(const UserId&, const std::string&) override { refuse(); }
-  GymPreferences savePreferences(const GymPreferences&) override { refuse(); }
 };
 
 // An AskAgent that never leaves the process: it records what it was handed, runs its plan, answers.

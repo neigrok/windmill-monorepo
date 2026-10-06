@@ -16,11 +16,10 @@ namespace {
 
 // The threads a lifter reads, over rows seeded straight into the store: the writes are the engine's.
 struct Harness {
-  EngineWrites engine;
   ReadOnlyDoor door;
   FakeGym repo;
   wm::fake::FakeClock clock;
-  ThreadService threads{repo.threads, clock, &door};
+  ThreadService threads{repo.threads, clock, door};
 };
 
 }  // namespace

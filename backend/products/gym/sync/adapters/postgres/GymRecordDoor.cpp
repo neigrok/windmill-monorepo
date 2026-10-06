@@ -41,30 +41,6 @@ Json::Value proposalFields(const RoutineProposal& proposal) {
   return fields;
 }
 
-void guardFields(Json::Value& intent, sync::SyncTxn& txn, const std::string& table,
-                 const std::string& type, const std::string& id, const Json::Value& fields) {
-  for (const auto& field : fields.getMemberNames()) {
-    const auto rows = sync::sqlOf(txn).exec("select " + field + "_stamp from " + table + " where id=$1", pqxx::params{id});
-    Json::Value guard(Json::objectValue);
-    guard["t"] = type;
-    guard["id"] = id;
-    guard["field"] = field;
-    guard["stamp"] = rows.empty() || rows[0][0].is_null() ? Json::Value() : Json::Value(rows[0][0].as<std::string>());
-    intent["guard"].append(guard);
-  }
-}
-
-ProposalSettleError settleError(const Json::Value& result) {
-  const std::string code = GymDoor::refusal(result);
-  if (code == "unknown-record" || code == "record-dead") return ProposalSettleError::notFound;
-  if (code == "proposal-settled") return ProposalSettleError::settled;
-  if (code != "proposal-superseded") return ProposalSettleError::none;
-  const std::string reason = result["detail"]["reason"].asString();
-  if (reason == "routine-changed") return ProposalSettleError::routineMoved;
-  if (reason == "replaced") return ProposalSettleError::replaced;
-  return ProposalSettleError::superseded;
-}
-
 }
 
 RoutineWriteOutcome GymDoor::createRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent) {
@@ -91,46 +67,6 @@ RoutineWriteOutcome GymDoor::createRoutine(const Routine& incoming, std::optiona
   requireOk(result);
   if (held) return {held, RoutineWriteError::none};
   return {program_.routine(incoming.user, incoming.id), RoutineWriteError::none};
-}
-
-RoutineWriteOutcome GymDoor::replaceRoutine(const Routine& incoming, std::optional<int> revision) {
-  RoutineWriteError error = RoutineWriteError::none;
-  std::optional<Routine> held;
-  const Json::Value result = execute(incoming.user, "replace_routine", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    held = program_.routine(incoming.user, incoming.id);
-    if (!held) { error = RoutineWriteError::notFound; return std::nullopt; }
-    const bool moved = held->name != incoming.name || held->entries != incoming.entries;
-    if (moved && revision && held->revision != *revision) { error = RoutineWriteError::stale; return std::nullopt; }
-    Json::Value fields(Json::objectValue);
-    if (held->name != incoming.name) fields["name"] = incoming.name;
-    if (held->position != incoming.position) fields["position"] = incoming.position;
-    if (held->entries != incoming.entries) fields["entries"] = entriesOf(incoming);
-    if (fields.empty()) return std::nullopt;
-    if (moved && !knownEntries(catalog_, incoming.user, incoming.entries)) { error = RoutineWriteError::unknownExercise; return std::nullopt; }
-    Json::Value built = intent();
-    built["d"].append(delta("routine", incoming.id.str(), fields));
-    guardFields(built, txn, "gym_routines", "routine", incoming.id.str(), fields);
-    return built;
-  });
-  if (error != RoutineWriteError::none) return {std::nullopt, error};
-  if (refusal(result) == "unknown-exercise") return {std::nullopt, RoutineWriteError::unknownExercise};
-  if (refusal(result) == "stale") return {std::nullopt, RoutineWriteError::stale};
-  if (refusal(result) == "unknown-record" || refusal(result) == "record-dead") return {std::nullopt, RoutineWriteError::notFound};
-  requireOk(result);
-  return {program_.routine(incoming.user, incoming.id), RoutineWriteError::none};
-}
-
-bool GymDoor::deleteRoutine(const UserId& user, const RoutineId& id) {
-  bool found = false;
-  Json::Value args(Json::objectValue); args["id"] = id.str();
-  const Json::Value result = execute(user, "delete_routine", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    found = program_.routine(user, id).has_value();
-    if (!found) return std::nullopt;
-    Json::Value built = intent(); built["d"].append(delta("routine", id.str(), Json::Value(Json::objectValue), false, true));
-    return built;
-  });
-  requireOk(result);
-  return found;
 }
 
 ProposalMintOutcome GymDoor::propose(const UserId& user, const ProposalWrite& incoming) {
@@ -199,41 +135,6 @@ ProposalMintOutcome GymDoor::proposeRemoval(const UserId& user, const ProposalId
   return {held ? held : program_.proposal(user, id), ProposalMintError::none};
 }
 
-ProposalSettleOutcome GymDoor::apply(const UserId& user, const ProposalId& id) {
-  std::optional<RoutineProposal> before;
-  Json::Value args(Json::objectValue); args["proposalId"] = id.str();
-  const Json::Value result = execute(user, "gym.applyProposal", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    before = program_.proposal(user, id);
-    Json::Value built = intent(); built["cmd"]["name"] = "gym.applyProposal"; built["cmd"]["args"] = args; return built;
-  });
-  const ProposalSettleError error = settleError(result);
-  if (error == ProposalSettleError::routineMoved) {
-    requireOk(execute(user, "supersede_proposal", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-      const auto current = program_.proposal(user, id);
-      if (!current || current->head.state != ProposalState::pending) return std::nullopt;
-      Json::Value fields(Json::objectValue); fields["state"] = "superseded"; fields["settledAt"] = Json::UInt64(clock_.nowMs());
-      Json::Value built = intent(); built["d"].append(delta("proposal", id.str(), fields)); return built;
-    }));
-  }
-  if (error != ProposalSettleError::none) return {std::nullopt, std::nullopt, error};
-  requireOk(result);
-  auto settled = program_.proposal(user, id);
-  if (!settled && before && before->head.intent == ProposalIntent::remove) {
-    settled = before; settled->head.state = ProposalState::applied; settled->head.settledAtMs = clock_.nowMs();
-  }
-  const auto routine = settled && settled->head.intent == ProposalIntent::revise ? program_.routine(user, settled->head.routine) : std::nullopt;
-  return {settled, routine, ProposalSettleError::none};
-}
-
-ProposalSettleOutcome GymDoor::dismiss(const UserId& user, const ProposalId& id) {
-  Json::Value args(Json::objectValue); args["proposalId"] = id.str();
-  const Json::Value result = command(user, "gym.dismissProposal", args);
-  const ProposalSettleError error = settleError(result);
-  if (error != ProposalSettleError::none) return {std::nullopt, std::nullopt, error};
-  requireOk(result);
-  return {program_.proposal(user, id), std::nullopt, ProposalSettleError::none};
-}
-
 ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise& incoming) {
   std::optional<Exercise> held;
   const Json::Value result = execute(user, "create_exercise", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
@@ -248,52 +149,6 @@ ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise
   if (held) return {held, ExerciseInsertError::none};
   for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == incoming.id) return {exercise, ExerciseInsertError::none};
   return {std::nullopt, ExerciseInsertError::idTaken};
-}
-
-std::optional<Exercise> GymDoor::renameExercise(const UserId& user, const ExerciseId& id, const std::string& name) {
-  std::optional<Exercise> held;
-  Json::Value args(Json::objectValue); args["id"] = id.str(); args["name"] = name;
-  const Json::Value result = execute(user, "rename_exercise", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == id) { held = exercise; break; }
-    if (!held) return std::nullopt;
-    const Exercise named{id, name, held->pattern, held->equipment, held->stepKg, held->custom};
-    if (named.name == held->name) return std::nullopt;
-    Json::Value fields(Json::objectValue); fields["name"] = named.name;
-    Json::Value built = intent(); built["d"].append(delta(held->custom ? "exercise" : "exerciseName", id.str(), fields)); return built;
-  });
-  requireOk(result);
-  if (!held) return std::nullopt;
-  for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == id) return exercise;
-  return std::nullopt;
-}
-
-NoteWriteOutcome GymDoor::saveNote(const Note& incoming) {
-  NoteWriteError error = NoteWriteError::none;
-  std::optional<Note> held;
-  const Json::Value result = execute(incoming.user, "save_note_editor", toJson(incoming), [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
-    const auto ids = sync::sqlOf(txn).exec("select user_id=$2::uuid from gym_notes where id=$1", pqxx::params{incoming.id.str(), incoming.user.str()});
-    if (!ids.empty() && !ids[0][0].as<bool>()) { error = NoteWriteError::idTaken; return std::nullopt; }
-    const auto standing = notes_.notes(incoming.user);
-    for (const auto& note : standing) if (note.id == incoming.id) { held = note; break; }
-    Json::Value fields(Json::objectValue);
-    if (!held || held->title != incoming.title) fields["title"] = incoming.title;
-    if (!held || held->body != incoming.body) fields["body"] = incoming.body;
-    if (fields.empty()) return std::nullopt;
-    if (!held) {
-      const auto rows = sync::sqlOf(txn).exec("select ord from gym_notes where user_id=$1::uuid order by ord collate \"C\" desc nulls last,id collate \"C\" desc limit 1", pqxx::params{incoming.user.str()});
-      const std::optional<std::string> last = rows.empty() || rows[0][0].is_null() ? std::nullopt : std::optional(rows[0][0].as<std::string>());
-      fields["ord"] = sync::between(last, std::nullopt);
-    }
-    Json::Value built = intent(); built["d"].append(delta("note", incoming.id.str(), fields, !held));
-    if (held) guardFields(built, txn, "gym_notes", "note", incoming.id.str(), fields);
-    return built;
-  });
-  if (error != NoteWriteError::none) return {std::nullopt, error};
-  if (refusal(result) == "cap") return {std::nullopt, NoteWriteError::full};
-  if (refusal(result) == "id-spent" || refusal(result) == "id-taken") return {std::nullopt, NoteWriteError::idTaken};
-  requireOk(result);
-  for (const auto& note : notes_.notes(incoming.user)) if (note.id == incoming.id) return {note, NoteWriteError::none};
-  return {std::nullopt, NoteWriteError::idTaken};
 }
 
 NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
@@ -346,70 +201,6 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
   if (refusal(result) == "id-spent" || refusal(result) == "id-taken") return {std::nullopt, NoteWriteError::idTaken};
   requireOk(result);
   return {saved, NoteWriteError::none};
-}
-
-void GymDoor::deleteNote(const UserId& user, const NoteId& id) {
-  Json::Value args(Json::objectValue); args["id"] = id.str();
-  requireOk(execute(user, "delete_note", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    const auto notes = notes_.notes(user);
-    if (std::none_of(notes.begin(), notes.end(), [&](const Note& note) { return note.id == id; })) return std::nullopt;
-    Json::Value built = intent(); built["d"].append(delta("note", id.str(), Json::Value(Json::objectValue), false, true)); return built;
-  }));
-}
-
-NotesOrderOutcome GymDoor::reorderNotes(const UserId& user, const std::vector<NoteId>& order) {
-  bool mismatch = false;
-  Json::Value args(Json::arrayValue); for (const auto& id : order) args.append(id.str());
-  const Json::Value result = execute(user, "reorder_notes", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    if (!namesEveryNoteOnce(notes_.notes(user), order)) { mismatch = true; return std::nullopt; }
-    if (order.empty()) return std::nullopt;
-    Json::Value built = intent(); std::optional<std::string> last;
-    for (const auto& id : order) {
-      last = sync::between(last, std::nullopt);
-      Json::Value fields(Json::objectValue); fields["ord"] = *last; built["d"].append(delta("note", id.str(), fields));
-    }
-    return built;
-  });
-  if (mismatch) return {{}, NotesOrderError::mismatch};
-  requireOk(result);
-  return {notes_.notes(user), NotesOrderError::none};
-}
-
-Bodyweight GymDoor::saveBodyweight(const Bodyweight& incoming) {
-  std::optional<Bodyweight> held;
-  const Json::Value result = execute(incoming.user, "save_bodyweight", toJson(incoming), [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    const auto entries = bodyweight_.entries(incoming.user, BodyweightRange{incoming.dateLocal, incoming.dateLocal});
-    if (!entries.empty() && entries[0].recordedAtMs > incoming.recordedAtMs) { held = entries[0]; return std::nullopt; }
-    Json::Value fields(Json::objectValue); fields["kg"] = incoming.weightKg; fields["recordedAt"] = Json::UInt64(incoming.recordedAtMs);
-    Json::Value put = delta("weighin", incoming.dateLocal, fields, true); put.removeMember("born");
-    Json::Value built = intent(); built["d"].append(put); return built;
-  });
-  if (refusal(result) == "bad-instant") throw InvalidTraining("A weigh-in is not a forecast — today or earlier.");
-  requireOk(result);
-  if (held) return *held;
-  const auto entries = bodyweight_.entries(incoming.user, BodyweightRange{incoming.dateLocal, incoming.dateLocal});
-  if (entries.empty()) throw std::runtime_error("admitted weigh-in is missing");
-  return entries[0];
-}
-
-void GymDoor::deleteBodyweight(const UserId& user, const std::string& date) {
-  Json::Value args(Json::objectValue); args["date"] = date;
-  requireOk(execute(user, "delete_bodyweight", args, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    if (bodyweight_.entries(user, BodyweightRange{date, date}).empty()) return std::nullopt;
-    Json::Value built = intent(); built["d"].append(delta("weighin", date, Json::Value(Json::objectValue), false, true)); return built;
-  }));
-}
-
-GymPreferences GymDoor::savePreferences(const GymPreferences& incoming) {
-  Json::Value fields = toJson(incoming);
-  fields["restSeconds"] = incoming.restSeconds ? Json::Value(*incoming.restSeconds) : Json::Value();
-  const Json::Value result = execute(incoming.user, "save_preferences", fields, [&](sync::SyncTxn&) -> std::optional<Json::Value> {
-    const auto held = preferences_.preferences(incoming.user);
-    if (held && *held == incoming) return std::nullopt;
-    Json::Value built = intent(); built["d"].append(delta("prefs", "prefs", fields)); return built;
-  });
-  requireOk(result);
-  return preferences_.preferences(incoming.user).value_or(GymPreferences{incoming.user});
 }
 
 }

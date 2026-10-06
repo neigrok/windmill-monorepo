@@ -25,12 +25,6 @@ void registerRoutes(drogon::HttpAppFramework& app, const JournalDeps& deps) {
         api->getPage(req, std::move(cb), date);
       },
       {drogon::Get});
-  routes.registerLegacyWriteHandler(
-      "/v1/journal/page/{date}",
-      [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& date) {
-        api->putPage(req, std::move(cb), date);
-      },
-      {drogon::Put});
   routes.registerHandler(
       "/v1/journal/pages",
       [api](const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

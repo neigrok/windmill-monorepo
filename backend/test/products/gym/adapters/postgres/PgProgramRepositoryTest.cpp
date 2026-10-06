@@ -33,7 +33,7 @@ Routine dayOf(const UserId& owner, const std::string& id, const std::string& nam
 
 // create_routine, the MCP tool's write.
 RoutineWriteOutcome mcpCreate(doortest::Harness& h, const Routine& day) {
-  return h.program.createRoutine(day.user, RoutineWrite{day.id, day.name, day.position, day.entries, std::nullopt},
+  return h.program.createRoutine(day.user, RoutineWrite{day.id, day.name, day.position, day.entries},
                                  ProposalDoor::mcp);
 }
 
@@ -161,8 +161,10 @@ TEST(pg_gym_an_open_routine_line_round_trips_with_no_set_rows) {
       h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, RoutineId{"rt_pg000001"}});
   REQUIRE(started.session.has_value());
   const std::optional<Session> logged = h.repo.log.session(h.user, SessionId{"ses_pg000001"});
+  const PlanSnapshot frozen{"Heavy Thursday", {PlanEntry{ExerciseId{"bench-press"}, fake::straight(5, 5, 82.5), 180},
+                                               PlanEntry{ExerciseId{"dip"}, {}, std::nullopt}}};
   CHECK_EQ(logged, std::optional<Session>(Session{SessionId{"ses_pg000001"}, h.user, kNow, std::nullopt,
-                                                  RoutineId{"rt_pg000001"}, snapshotOf(*read)}));
+                                                  RoutineId{"rt_pg000001"}, frozen}));
   REQUIRE(logged.has_value());
   CHECK_EQ(logged->plan->entries[1].sets, std::vector<SetTarget>{});
 }

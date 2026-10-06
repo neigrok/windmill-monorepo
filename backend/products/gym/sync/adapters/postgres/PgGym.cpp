@@ -7,7 +7,6 @@
 #include "products/gym/sync/adapters/postgres/GymDoorHash.h"
 #include "products/gym/sync/adapters/postgres/PgGymBackfill.h"
 #include "products/gym/sync/adapters/postgres/PgGymMetadataUpgrade.h"
-#include "products/gym/application/GymSwitches.h"
 
 #include <algorithm>
 #include <cctype>
@@ -649,11 +648,6 @@ void PgGym::requireReady(SyncTxn& txn, const ScopeKey& scope) {
   } catch (const MetadataUpgradeError&) {
     throw ProductScopeUnavailable("gym metadata upgrade is incomplete");
   }
-}
-
-void PgGym::requireWritable(SyncTxn& txn, const ScopeKey& scope) {
-  if (gymWriteFrozen()) throw ProductScopeUnavailable("gym writes are frozen");
-  requireReady(txn, scope);
 }
 
 }

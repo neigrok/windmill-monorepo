@@ -5,8 +5,10 @@
 
 #include <drogon/drogon.h>
 
+#include <algorithm>
 #include <functional>
 #include <memory>
+#include <stdexcept>
 #include <string>
 #include <utility>
 #include <vector>
@@ -22,7 +24,7 @@ struct WriteRoute {
   std::string product;
   std::string door;
   std::vector<drogon::HttpMethod> methods;
-  bool legacyRestWrite = false;
+  bool retired = false;
 };
 
 bool mutatingMethod(drogon::HttpMethod method);
@@ -30,7 +32,10 @@ std::string routeOperation(const std::string& product, const std::string& path,
                            const std::vector<drogon::HttpMethod>& methods);
 void declareWriteRoute(WriteRoute route);
 std::vector<WriteRoute> registeredWriteRoutes();
-bool legacyRestWriteRetired(const drogon::HttpRequestPtr& request);
+// Whether the request matched a retired write path: its tombstone answers it, and no rate limit counts it.
+bool retiredRoute(const drogon::HttpRequestPtr& request);
+// What a retired write path answers: 410 `client-update-required`, with the sentence an old client shows.
+drogon::HttpResponsePtr retiredWriteResponse();
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request);
 std::shared_ptr<WriteObservation> beginWriteRequest(const drogon::HttpRequestPtr& request,
                                                   const WriteRoute& route);
@@ -85,11 +90,6 @@ struct ObservedHttpHandler<void (Host::*)(const drogon::HttpRequestPtr&, WriteHt
             finishWriteRequest(request, response);
           });
       observeHttpWork(request, [&] {
-        if (legacyRestWriteRetired(request)) {
-          observed(error(drogon::k410Gone, "This version of the app can no longer save; update it.",
-                         "client-update-required"));
-          return;
-        }
         handler(request, std::move(observed), std::forward<Arguments>(arguments)...);
       });
     };
@@ -123,11 +123,26 @@ public:
     registerRoute({path, operation, product_, door_, methods}, std::move(handler));
   }
 
-  template <typename Handler>
-  void registerLegacyWriteHandler(const std::string& path, Handler handler,
-                                  const std::vector<drogon::HttpMethod>& methods) {
-    registerRoute({path, routeOperation(product_, path, methods), product_, door_, methods, true},
-                  std::move(handler));
+  // A write path an installed client still calls after its writes moved elsewhere: it answers
+  // retiredWriteResponse() before auth with nothing behind it, and is observed like any write.
+  void retire(drogon::HttpMethod method, const std::string& path) {
+    const WriteRoute route{path, routeOperation(product_, path, {method}), product_, door_, {method}, true};
+    switch (std::count(path.begin(), path.end(), '{')) {
+      case 0:
+        registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb) { cb(retiredWriteResponse()); });
+        return;
+      case 1:
+        registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb, const std::string&) {
+          cb(retiredWriteResponse());
+        });
+        return;
+      case 2:
+        registerRoute(route, [](const drogon::HttpRequestPtr&, WriteHttpCallback&& cb, const std::string&,
+                                const std::string&) { cb(retiredWriteResponse()); });
+        return;
+      default:
+        throw std::logic_error("a retired path names at most two parameters: " + path);
+    }
   }
 
 private:

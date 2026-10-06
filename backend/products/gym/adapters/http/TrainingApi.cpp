@@ -1,5 +1,4 @@
 #include "products/gym/adapters/http/TrainingApi.h"
-#include "products/gym/application/GymSwitches.h"
 
 #include "platform/adapters/http/Caller.h"
 #include "platform/adapters/http/JsonReply.h"
@@ -59,60 +58,10 @@ TrainingApi::TrainingApi(std::shared_ptr<TrainingService> training,
                          std::shared_ptr<AuthService> auth, std::string appBaseUrl)
     : training_(std::move(training)), auth_(std::move(auth)), appBaseUrl_(std::move(appBaseUrl)) {}
 
-void TrainingApi::startSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  // A storage failure rides past to the house 500; a replay reads its own row.
-  StartOutcome outcome{std::nullopt, StartError::none};
-  try {
-    outcome = training_->start(*caller, parseSessionStart(*json));
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that session"));
-    return;
-  }
-  if (outcome.error == StartError::idTaken) {
-    // The id is spent; whose account holds it is never said.
-    cb(error(drogon::k409Conflict, "that session id is taken", "session-id-taken"));
-    return;
-  }
-  if (outcome.error == StartError::unknownRoutine) {
-    // Never-existed and someone else's are one answer.
-    cb(error(drogon::k404NotFound, "no such routine"));
-    return;
-  }
-  if (outcome.error == StartError::clockAhead) {
-    // Its own code: a flush queue treats every other 400 as terminal.
-    cb(error(drogon::k400BadRequest,
-             "this device's clock is " + std::to_string((outcome.clockAheadMs + 59'999) / 60'000) +
-                 " minutes ahead of the log — a workout cannot start in the future. Check the "
-                 "clock and start again.",
-             "clock-ahead"));
-    return;
-  }
-  if (outcome.error == StartError::alreadyOpen) {
-    // Only a caller that sent `joinOpenSession: false` reaches this.
-    cb(error(drogon::k409Conflict, "another session is already open", "session-already-open"));
-    return;
-  }
-  cb(jsonResponse(toJson(*outcome.session)));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
 // A past workout written whole: it lands with every set or not at all, and answers in the shape
 // `GET /v1/gym/sessions/{id}` does — 201 when it landed now, 200 when this exact import landed
 // before. A refusal naming one set says which as `sets[i] (id)`.
 void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
-  requireGymWrite();
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -183,139 +132,6 @@ void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&
   body["session"] = toJson(stored->session);
   body["sets"] = toJson(stored->sets);
   cb(jsonResponse(body, outcome.replayed ? drogon::k200OK : drogon::k201Created));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-void TrainingApi::appendSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                       const std::string& id) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  AppendOutcome outcome{std::nullopt, AppendError::none};
-  try {
-    outcome = training_->append(*caller, SessionId{id}, parseSetWrite(*json));
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that set"));
-    return;
-  }
-  if (outcome.error == AppendError::notFound) {
-    // Absent and another account's are byte-identical.
-    cb(error(drogon::k404NotFound, "no such session"));
-    return;
-  }
-  if (outcome.error == AppendError::finished) {
-    // Terminal for the flush queue; a set that already landed replays 200 with its stored row.
-    cb(error(drogon::k409Conflict, "that session is finished", "session-finished"));
-    return;
-  }
-  if (outcome.error == AppendError::idTaken) {
-    // The id names a row outside this session; whose is never said.
-    cb(error(drogon::k409Conflict, "that set id is already used", "set-id-taken"));
-    return;
-  }
-  if (outcome.error == AppendError::unknownExercise) {
-    cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise"));
-    return;
-  }
-  if (outcome.error == AppendError::deleted) {
-    // The append is a replay of a deleted set: drop it. Not `set-id-taken`, whose repair would put
-    // that set back in the log.
-    cb(error(drogon::k409Conflict, "that set was deleted", "set-deleted"));
-    return;
-  }
-  cb(jsonResponse(toJson(*outcome.set)));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-// A fix names only the numbers that were wrong and answers the stored row, so a retry reads back the
-// same values rather than compounding a change.
-void TrainingApi::fixSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
-                    const std::string& setId) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json", "fix-unreadable"));
-    return;
-  }
-  std::optional<Set> fixed;
-  try {
-    fixed = training_->fixSet(*caller, SessionId{id}, SetId{setId}, parseSetFix(*json));
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that fix", "fix-unreadable"));
-    return;
-  }
-  if (!fixed) {
-    // Gone, another account's and in a different workout are one answer, byte for byte, so a set id
-    // cannot be probed for existence.
-    cb(error(drogon::k404NotFound, "no such set", "set-not-found"));
-    return;
-  }
-  cb(jsonResponse(toJson(*fixed)));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-// Refuses nothing: the same request twice gets the same 204.
-void TrainingApi::deleteSet(const drogon::HttpRequestPtr& req, HttpCallback&& cb, const std::string& id,
-                       const std::string& setId) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  training_->deleteSet(*caller, SessionId{id}, SetId{setId});
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k204NoContent);
-  cb(response);
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-void TrainingApi::finishSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                           const std::string& id) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  std::shared_ptr<Json::Value> json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  FinishOutcome outcome{std::nullopt, FinishError::none};
-  try {
-    outcome = training_->finish(*caller, SessionId{id}, parseFinish(*json));
-  } catch (const InvalidTraining&) {
-    cb(error(drogon::k400BadRequest, "could not read that finish"));
-    return;
-  }
-  if (outcome.error == FinishError::notFound) {
-    cb(error(drogon::k404NotFound, "no such session"));
-    return;
-  }
-  if (outcome.error == FinishError::badInstant) {
-    cb(error(drogon::k400BadRequest, "a session cannot finish before it began"));
-    return;
-  }
-  cb(jsonResponse(toJson(*outcome.session)));
 } catch (const GymUnavailable& unavailable) {
   cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
@@ -399,7 +215,7 @@ void TrainingApi::getSession(const drogon::HttpRequestPtr& req, HttpCallback&& c
 }
 
 void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                           const std::string& id) try {
+                           const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -411,32 +227,6 @@ void TrainingApi::reviewSession(const drogon::HttpRequestPtr& req, HttpCallback&
     return;
   }
   cb(jsonResponse(toJson(*review)));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                            const std::string& id) try {
-  requireGymWrite();
-  std::optional<UserId> caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
-    return;
-  }
-  DiscardOutcome outcome = training_->discard(*caller, SessionId{id});
-  if (outcome == DiscardOutcome::notFound) {
-    cb(error(drogon::k404NotFound, "no such session"));
-    return;
-  }
-  if (outcome == DiscardOutcome::open) {
-    cb(error(drogon::k409Conflict, "that session is still running", "session-open"));
-    return;
-  }
-  auto response = drogon::HttpResponse::newHttpResponse();
-  response->setStatusCode(drogon::k204NoContent);
-  cb(response);
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 //   { "exerciseId": "bench-press",
@@ -445,7 +235,7 @@ void TrainingApi::discardSession(const drogon::HttpRequestPtr& req, HttpCallback
 //     "sets":    [ … ] }                                   omitted with the session; never empty
 //
 // A first-ever movement answers 200 with the movement echoed back and nothing else.
-void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -469,12 +259,10 @@ void TrainingApi::lastTime(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
     body["sets"] = toJson(outcome.lastTime->sets);
   }
   cb(jsonResponse(body));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // A movement absent here has never been logged.
-void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
+void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -483,8 +271,6 @@ void TrainingApi::lastSets(const drogon::HttpRequestPtr& req, HttpCallback&& cb)
   Json::Value body(Json::objectValue);
   body["movements"] = toJson(training_->lastSets(*caller));
   cb(jsonResponse(body));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) try {
@@ -505,8 +291,7 @@ void TrainingApi::stats(const drogon::HttpRequestPtr& req, HttpCallback&& cb) tr
 // Idempotent on the session, not on a client-minted id. An expired share is replaced, so the reply
 // always carries the expiry of the link it hands over.
 void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                          const std::string& id) try {
-  requireGymWrite();
+                          const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -522,14 +307,11 @@ void TrainingApi::shareSession(const drogon::HttpRequestPtr& req, HttpCallback&&
   body["url"] = shareUrl(appBaseUrl_, share->token);
   body["expiresAt"] = Json::Value::UInt64(share->expiresAtMs);
   cb(jsonResponse(body));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // The row is the capability, so revoking deletes it. Nothing to revoke gets the absent-session 404.
 void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-                         const std::string& id) try {
-  requireGymWrite();
+                         const std::string& id) {
   std::optional<UserId> caller = callerOf(req, *auth_);
   if (!caller) {
     cb(error(drogon::k401Unauthorized, "sign in to open your training log"));
@@ -542,71 +324,18 @@ void TrainingApi::revokeShare(const drogon::HttpRequestPtr& req, HttpCallback&& 
   auto response = drogon::HttpResponse::newHttpResponse();
   response->setStatusCode(drogon::k204NoContent);
   cb(response);
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 // Resolves no caller: the path token is the whole credential. Revoked, expired and never-minted
 // answer one 404, byte for byte, and the body names no account and holds no id at any depth.
 void TrainingApi::sharedSession(const drogon::HttpRequestPtr&, HttpCallback&& cb,
-                           const std::string& token) try {
+                           const std::string& token) {
   std::optional<SharedSession> shared = training_->shared(token);
   if (!shared) {
     cb(error(drogon::k404NotFound, "no such session"));
     return;
   }
   cb(jsonResponse(toJson(*shared)));
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
-}
-
-void TrainingApi::correctSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb,
-    const std::string& id) try {
-  requireGymWrite();
-  const auto caller = callerOf(req, *auth_);
-  if (!caller) {
-    cb(error(drogon::k401Unauthorized, "sign in to correct your workout"));
-    return;
-  }
-  const auto json = req->getJsonObject();
-  if (!json) {
-    cb(error(drogon::k400BadRequest, "expected json"));
-    return;
-  }
-  try {
-    const auto outcome = training_->correctSession(*caller, SessionId{id},
-        parseSessionCorrection(*json, SessionId{id}));
-    switch (outcome.error) {
-      case CorrectionError::notFound:
-        cb(error(drogon::k404NotFound, "no such session")); return;
-      case CorrectionError::open:
-        cb(error(drogon::k409Conflict, "finish the workout before correcting it", "session-open")); return;
-      case CorrectionError::idTaken:
-        cb(error(drogon::k409Conflict, "that set id is already used", "set-id-taken")); return;
-      case CorrectionError::payloadConflict:
-        cb(error(drogon::k409Conflict, "that correction request has already been used", "correction-conflict")); return;
-      case CorrectionError::unknownExercise:
-        cb(error(drogon::k400BadRequest, "no such exercise", "unknown-exercise")); return;
-      case CorrectionError::overlap: {
-        Json::Value body(Json::objectValue);
-        body["error"] = "these times cross a session already in the log";
-        body["code"] = "session-overlap";
-        body["sessionId"] = outcome.overlapping->id.str();
-        body["session"] = toJson(*outcome.overlapping);
-        cb(jsonResponse(body, drogon::k409Conflict)); return;
-      }
-      case CorrectionError::none: break;
-    }
-    Json::Value body(Json::objectValue);
-    body["session"] = toJson(*outcome.session);
-    body["sets"] = toJson(outcome.sets);
-    body["replayed"] = outcome.replayed;
-    cb(jsonResponse(body));
-  } catch (const InvalidTraining& invalid) {
-    cb(error(drogon::k400BadRequest, invalid.what(), "invalid-correction"));
-  }
-} catch (const GymUnavailable& unavailable) {
-  cb(error(drogon::k503ServiceUnavailable, unavailable.what(), unavailable.code.c_str()));
 }
 
 }

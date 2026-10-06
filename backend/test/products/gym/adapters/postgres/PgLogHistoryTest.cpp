@@ -49,7 +49,7 @@ Routine pushA(Harness& h, const std::string& id) {
   const RoutineWriteOutcome outcome = h.program.createRoutine(
       h.user,
       RoutineWrite{RoutineId{id}, "Push A", 0,
-                   {RoutineEntry{1, ExerciseId{"bench-press"}, gym::fake::straight(5, 5, 82.5), 180}}, std::nullopt},
+                   {RoutineEntry{1, ExerciseId{"bench-press"}, gym::fake::straight(5, 5, 82.5), 180}}},
       std::nullopt);
   if (!outcome.routine) throw std::runtime_error("the door planned no " + id);
   return *outcome.routine;

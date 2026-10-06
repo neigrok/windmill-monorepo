@@ -73,7 +73,7 @@ RoutineEntry entryAt(int position, const std::string& exercise) {
 // The lifter's own routine, which a start freezes as its plan.
 Routine planned(Harness& h, const std::string& id, const std::string& name, std::vector<RoutineEntry> entries) {
   const RoutineWriteOutcome outcome =
-      h.program.createRoutine(h.user, RoutineWrite{RoutineId{id}, name, 0, std::move(entries), std::nullopt}, std::nullopt);
+      h.program.createRoutine(h.user, RoutineWrite{RoutineId{id}, name, 0, std::move(entries)}, std::nullopt);
   if (!outcome.routine) throw std::runtime_error("the door planned no " + id);
   return *outcome.routine;
 }
