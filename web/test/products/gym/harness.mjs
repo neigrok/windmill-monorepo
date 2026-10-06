@@ -158,10 +158,6 @@ export function browserWith() {
       globalThis.document.visibilityState = 'visible';
       (listeners.get('visibilitychange') ?? []).forEach((fn) => fn());
     },
-    reconnect: () => {
-      globalThis.navigator.onLine = true;
-      (listeners.get('online') ?? []).forEach((fn) => fn());
-    },
   };
 }
 

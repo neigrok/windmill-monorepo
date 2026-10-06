@@ -52,7 +52,7 @@ export async function stopOwnedServer({ child, port }, listener, { kill = proces
   assert.equal(listener(port), '', `port ${port} remained occupied after shutdown`);
 }
 
-export async function compareParity(fixture) {
+async function compareParity(fixture) {
   const { projectGym } = await import('../../../src/products/gym/syncProjections.js');
   const failures = [];
   for (const sample of fixture.samples) {
@@ -315,7 +315,7 @@ async function run() {
       await page.getByRole('link', { name: 'Fixture Web Edited', exact: false }).first().waitFor();
       assert.ok(await page.getByRole('status').filter({ hasText: 'Offline.' }).count()); e2e++;
       assert.deepEqual(pageErrors, []);
-      assert.deepEqual(gymRequests.filter((request) => !/^(GET \/v1\/gym\/exercises$|GET \/v1\/gym\/threads$)/.test(request)), [], 'web mirror and engine writes must use no replaced REST door');
+      assert.deepEqual(gymRequests.filter((request) => request !== 'GET /v1/gym/threads'), [], 'web mirror and engine writes must use no replaced REST door');
       await context.close();
       console.log(JSON.stringify({ gate: 'Playwright local stack', passed: e2e, total: 6, pending: 0, persistedGymOperations: 2, syncWriteLog: true, ports: [8094, 5181] }));
     }
