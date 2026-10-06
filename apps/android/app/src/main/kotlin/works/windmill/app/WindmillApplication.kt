@@ -108,8 +108,6 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         }
         val syncRuntime = SyncRuntime(engine, reportedTransport,
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"))
-        engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport)
-        auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)
         val training = EngineTraining(engine)
         val store = TrainingStore(
             controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
@@ -125,7 +123,8 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             }, telemetry = telemetry,
             localCoach = works.windmill.gym.store.LocalCoach(File(filesDir, works.windmill.gym.store.LocalCoach.fileName)),
         )
-        engineSession.beforeAccountChange = store::prepareEngineTransition
+        engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
+        auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)
         delivery = { replica, reply -> if (training.reportDelivery(replica, reply)) store.refreshEngine() }
         syncRuntime.launch(engineStorage)
         gym = GymRuntime(store, cachedOwner = { sessions.localSession.user?.id },

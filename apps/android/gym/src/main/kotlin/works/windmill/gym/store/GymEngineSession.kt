@@ -27,6 +27,8 @@ class GymEngineSession(
     val runtime: SyncRuntime,
     private val telemetry: Telemetry = Telemetry.None,
     private val transport: AutoCloseable? = null,
+    // Settles what the training store owes the replica in hand before another one is selected.
+    private val beforeAccountChange: suspend () -> Unit = {},
 ) : AuthLifecycle, AutoCloseable {
     var decision: SignInSession? by mutableStateOf(null)
         private set
@@ -35,7 +37,6 @@ class GymEngineSession(
     var decisionBusy by mutableStateOf(false)
         private set
     private var answer: CompletableDeferred<Unit>? = null
-    var beforeAccountChange: suspend () -> Unit = {}
 
     val anonymousCounts: Map<String, Int> get() {
         val snapshot = engine.snapshot()
