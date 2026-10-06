@@ -27,7 +27,7 @@ class ProgressWireTests {
                 Change.create(Gym.Types.set, NewID.Given(RecordID("heavyset")), mapOf("sessionId" to Json.of("session1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(100), "reps" to Json.of(12), "rpe" to Json.of(6), "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(20L))),
                 Change.create(Gym.Types.set, NewID.Given(RecordID("estimate")), mapOf("sessionId" to Json.of("session1"), "exerciseId" to Json.of("bench-press"), "weightKg" to Json.of(80), "reps" to Json.of(1), "rpe" to Json.Null, "kind" to Json.of("working"), "note" to Json.of(""), "completedAt" to Json.of(30L))),
             )))
-            val api = EngineTraining(engine) { error("Progress is an engine projection.") }
+            val api = EngineTraining(engine)
             assertEquals(StatsProgress(99, listOf(ProgressSession("session1", 10, listOf(MovementSessionFact("bench-press", 2,
                 PerformedFact("heavyset", 100.0, 12, 6.0), EstimatedFact("estimate", 80.0, 1, null, 80.0)))))), api.progress())
         }

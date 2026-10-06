@@ -8,10 +8,7 @@ import kotlinx.serialization.encodeToString
 import works.windmill.domain.kit.*
 import works.windmill.gym.domain.*
 import works.windmill.gym.domain.sync.*
-import works.windmill.gym.net.TrainingSyncing
 import works.windmill.platform.net.WindmillJson
-import works.windmill.platform.net.Refusal
-import works.windmill.platform.net.WindmillApiException
 import works.windmill.sync.api.ViewMode
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.Engine
@@ -42,7 +39,7 @@ import works.windmill.gym.domain.StatsProgress
 
 private val <E : Entity<E>> Id<E>.text: String get() = record.string ?: error("gym-string-identity")
 
-class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing?) : TrainingSyncing {
+class EngineTraining(val engine: Engine) {
     private val deliveryBlockers = mutableMapOf<String, Blocker>()
     val deliveryBlocker: Blocker? get() = synchronized(deliveryBlockers) { deliveryBlockers[engine.activeReplica()] }
     fun reportDelivery(replica: String, reply: Reply<SyncResponse>): Boolean = synchronized(deliveryBlockers) {
@@ -64,9 +61,7 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
         ZoneId.systemDefault().rules.getOffset(java.time.Instant.ofEpochMilli(at.ms)).totalSeconds
     }
     private val reader = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
-    var legacyUpdateRequired = false
-        private set
-    val updateRequired: Boolean get() = legacyUpdateRequired || engine.status.state.value.upgradeRequired
+    val imports = WorkoutImports(engine)
     val anonymous: Boolean get() = read { it.isAnonymous }
     val firstPullComplete: Boolean get() = read { it.firstPullComplete() }
     val notesReady: Boolean get() = anonymous || firstPullComplete
@@ -81,7 +76,7 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
         val wrapped = object : Action<L, T, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
-            override fun load(read: Reader) = withLegacyCatalogue(action, action.load(read), read)
+            override fun load(read: Reader) = action.load(read)
             override fun decide(loaded: L, ids: IDSource) = action.decide(loaded, ids)
         }
         return when (val outcome = run(wrapped)) {
@@ -90,73 +85,26 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             is Outcome.Refused -> throw refusal(outcome.refusal)
         }
     }
-    private fun cachedCatalogue(read: Reader): Catalogue {
-        val catalogue = Catalogue(read, ViewMode.stored)
-        if (read.isAnonymous || read.firstPullComplete()) return catalogue
-        val cached = cache<Exercise>("cache", "movements").filter { old -> catalogue.exercises.none { it.id.text == old.id } }
-            .map { old -> EngineExercise(Id(old.id, EngineExercise), old.name, old.pattern, old.equipment,
-                old.stepKg ?: ExerciseRules.defaultStepKg(old.equipment), old.aliases) }
-        return Catalogue(catalogue.exercises + cached)
-    }
-    @Suppress("UNCHECKED_CAST")
-    private fun <L, T> withLegacyCatalogue(action: Decider<L, T, GymRefusal>, loaded: L, read: Reader): L {
-        if (read.isAnonymous || read.firstPullComplete()) return loaded
-        if (loaded is TrainingState) return loaded.copy(catalogue = cachedCatalogue(read)) as L
-        if (action is StartSession && loaded is StartSession.Loaded) {
-            val cached = action.routineId?.let { id -> program().firstOrNull { it.id == id.text } }
-            val routine = loaded.routine ?: cached?.let { RoutineWrite(it).engine(null) }
-            return loaded.copy(state = loaded.state.copy(catalogue = cachedCatalogue(read)), routine = routine) as L
-        }
-        return loaded
-    }
-    private suspend fun <T> ancillary(body: suspend (TrainingSyncing) -> T): T = try {
-        body(rest() ?: throw WindmillApiException.Refused(401, Refusal("Sign in first.")))
-    } catch (failure: WindmillApiException.Refused) {
-        if (failure.status == 410 && failure.refusal.code == "client-update-required") legacyUpdateRequired = true
-        throw failure
-    }
-
-    private inline fun <reified T> cache(kind: String, field: String? = null): List<T> = LegacyGymMigration.cached(engine, kind).flatMap { source ->
-        val values = if (field == null) listOf(source) else (source[field] as? Json.Arr)?.values.orEmpty()
-        values.mapNotNull { value -> runCatching { WindmillJson.decodeFromString<T>(value.jcs) }.getOrNull() }
-    }
-    override suspend fun exercises(): List<Exercise> = catalogue()
     fun catalogue(): List<Exercise> = read { reader ->
         val aliases = reader.device("rack:aliases0")?.obj().orEmpty()
-        val served = Catalogue(reader).exercises.map { value -> value.ui().let { exercise ->
+        Catalogue(reader).exercises.map { value -> value.ui().let { exercise ->
             val phone = aliases[exercise.id]?.arr()?.map(Json::str).orEmpty()
             val pending = reader.repository(EngineExercise).record(value.id, ViewMode.drawn)?.isPending == true ||
                 reader.repository(ExerciseName).record(Id(value.id.record, ExerciseName), ViewMode.drawn)?.isPending == true
             val ordered = if (pending) phone + exercise.aliases else exercise.aliases + phone
             exercise.copy(aliases = ordered.filter { it != exercise.name }.distinct().take(5))
         } }
-        val available = if (reader.isAnonymous || reader.firstPullComplete()) served else {
-            val localIds = reader.repository(EngineExercise).all(ViewMode.drawn).mapTo(mutableSetOf()) { it.id.text } +
-                reader.repository(ExerciseName).all(ViewMode.drawn).map { it.id.text }
-            val held = cache<Exercise>("cache", "movements").filterNot { it.id in localIds }
-            served.filterNot { value -> held.any { it.id == value.id } } + held
-        }
-        LegacyGymMigration.edits(engine).filter { it.kind == "exercise" }.fold(available) { current, edit ->
-            val changed = edit.source?.let { WindmillJson.decodeFromString<Exercise>(it.jcs) }
-            current.filterNot { it.id == edit.id } + listOfNotNull(changed)
-        }
     }.sortedWith { a, b -> compareBytes(a.pattern, b.pattern).takeIf { it != 0 }
         ?: compareBytes(a.name, b.name).takeIf { it != 0 } ?: compareBytes(a.id, b.id) }
-    override suspend fun createExercise(write: ExerciseWrite): Exercise {
+    suspend fun createExercise(write: ExerciseWrite): Exercise {
         val value = EngineExercise(Id(write.id, EngineExercise), write.name, write.pattern, write.equipment,
             write.stepKg ?: ExerciseRules.defaultStepKg(write.equipment))
         val existing = read { it.repository(EngineExercise).find(value.id, ViewMode.drawn) }
         if (existing == null) apply(CreateExercise(value))
-        return exercises().first { it.id == write.id }
+        return catalogue().first { it.id == write.id }
     }
-    override suspend fun renameExercise(exerciseId: String, name: String): Exercise {
-        val old = catalogue().firstOrNull { it.id == exerciseId } ?: throw missing("That movement is no longer on the log.")
-        if (!anonymous && !firstPullComplete && read { it.repository(EngineExercise).find(Id(exerciseId, EngineExercise), ViewMode.drawn) } == null && old.custom) {
-            val changed = old.copy(name = ExerciseRules.name.apply(name, Path("name")),
-                aliases = ExerciseRules.renamedAliases(old.name, name, old.aliases))
-            LegacyGymMigration.deferEdit(engine, "exercise", exerciseId, Json.parse(WindmillJson.encodeToString(changed)), Json.parse(WindmillJson.encodeToString(old)))
-            return changed
-        }
+    suspend fun renameExercise(exerciseId: String, name: String): Exercise {
+        if (catalogue().none { it.id == exerciseId }) throw missing("That movement is no longer on the log.")
         val action = RenameExercise(Id(exerciseId, EngineExercise), name)
         apply(object : Action<Triple<RenameExercise.Loaded, Json?, Boolean>, Unit, GymRefusal> {
             override val scope = action.scope
@@ -177,21 +125,19 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                 return decision
             }
         })
-        LegacyGymMigration.discardRefusal(engine, exerciseId)
-        return exercises().first { it.id == exerciseId }
+        return catalogue().first { it.id == exerciseId }
     }
-    override suspend fun startSession(start: SessionStart): Session {
+    suspend fun startSession(start: SessionStart): Session {
         val open = read { TrainingLog(it).open }
-        if (start.joinOpenSession == false && open != null && open.id.text != start.id)
-            throw WindmillApiException.Refused(409, Refusal("A workout is already open. Finish it first.", code = "session-already-open"))
+        if (open != null && open.id.text != start.id) throw TrainingRefused("session-already-open", "A workout is already open. Finish it first.")
         val action = StartSession(Id(start.id, EngineSession), start.routineId?.let { Id(it, EngineRoutine) }, Instant(start.startedAt))
         val id = apply(object : Action<StartSession.Loaded, Id<EngineSession>, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
-            override fun load(read: Reader) = withLegacyCatalogue(action, action.load(read), read)
+            override fun load(read: Reader) = action.load(read)
             override fun decide(loaded: StartSession.Loaded, ids: IDSource): Decision<Id<EngineSession>, GymRefusal> {
                 val decision = action.decide(loaded, ids)
-                if (decision !is Decision.Write || start.joinOpenSession != false) return decision
+                if (decision !is Decision.Write) return decision
                 val command = requireNotNull(decision.plan.command)
                 val explicit = object : ServerCommand {
                     override val name = command.name
@@ -201,63 +147,29 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                 return Decision.Write(Plan(explicit, decision.plan.predictions), decision.result)
             }
         })
-        return session(id.text)?.session ?: throw WindmillApiException.Malformed
+        return session(id.text)?.session ?: error("The engine does not hold the record it just wrote.")
     }
-    override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
+    suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
         val value = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession), Id(write.exerciseId, EngineExercise),
             write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
         val existing = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }
         if (existing != null) {
             if (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt)
-                throw WindmillApiException.Refused(409, Refusal("that set id is already used", code = "set-id-taken"))
+                throw TrainingRefused("set-id-taken", "that set id is already used")
             return existing.ui()
         }
-        LegacyGymMigration.pendingOwnedStart(engine, sessionId)?.let { pending ->
-            pending.sets.firstOrNull { it.id == write.id }?.let { old ->
-                if (old.exerciseId != write.exerciseId || old.completedAtMs != write.completedAt)
-                    throw WindmillApiException.Refused(409, Refusal("that set id is already used", code = "set-id-taken"))
-                return old
-            }
-            val set = checkedPendingSet(sessionId, value.ui())
-            val entry = SetQueue.Entry(set, sessionId, needsPush = true, remints = 0)
-            if (LegacyGymMigration.retainPendingWorkout(engine, pending.copy(sets = pending.sets + set), listOf(entry), emptyList())) return set
-        }
-        val migration = LegacyGymMigration.operations(engine).firstOrNull { it.entry.set.id == write.id }
-        if (migration?.entry?.attempted == true && !anonymous && !firstPullComplete) throw WindmillApiException.Offline
         apply(AppendSet(value))
-        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: throw WindmillApiException.Malformed
+        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
     }
-    private fun checkedPendingSet(sessionId: String, set: TrainingSet): TrainingSet = read { reader ->
-        val value = EngineSet(Id(set.id, EngineSet), Id(sessionId, EngineSession), Id(set.exerciseId, EngineExercise),
-            set.weightKg, set.reps, set.kind.wire, set.rpe, set.note, Instant(set.completedAtMs), set.setNumber)
-        if (cachedCatalogue(reader).find(value.exerciseId) == null)
-            throw refusal(GymRefusal.of(Refused(RefusalCode(Gym.Codes.unknownExercise), value.id.ref, path = Refused.Path.predicted)))
-        try { Valid(value, EngineSet, at = reader.moment).value.ui() }
-        catch (invalid: Violation) { throw refusal(GymRefusal.of(invalid)) }
-    }
-    override suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
-        LegacyGymMigration.pendingOwnedStart(engine, sessionId)?.let { pending ->
-            val old = pending.sets.firstOrNull { it.id == setId } ?: throw missing("That set is no longer on the log.")
-            val next = checkedPendingSet(sessionId, fix.corrected(old))
-            val entry = (LegacyGymMigration.operations(engine).firstOrNull { it.sessionId == sessionId && it.entry.set.id == setId }?.entry
-                ?: SetQueue.Entry(next, sessionId, needsPush = true, remints = 0)).copy(set = next, needsPush = true, write = Owed.Fix)
-            if (LegacyGymMigration.retainPendingWorkout(engine, pending.copy(sets = pending.sets.map { if (it.id == setId) next else it }), listOf(entry), emptyList())) return next
-        }
+    suspend fun fixSet(sessionId: String, setId: String, fix: SetFix): TrainingSet {
         val old = read { it.repository(EngineSet).find(Id(setId, EngineSet), ViewMode.drawn) }
             ?.takeIf { it.sessionId.text == sessionId } ?: throw missing("That set is no longer on the log.")
         val next = old.copy(weightKg = fix.weightKg ?: old.weightKg, reps = fix.reps ?: old.reps,
             kind = fix.kind?.wire ?: old.kind, note = fix.note ?: old.note, rpe = if (fix.rpeNamed) fix.rpe else old.rpe)
         apply(CorrectSet(next))
-        return read { it.repository(EngineSet).find(next.id, ViewMode.drawn) }?.ui() ?: throw WindmillApiException.Malformed
+        return read { it.repository(EngineSet).find(next.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
     }
-    override suspend fun deleteSet(sessionId: String, setId: String) {
-        LegacyGymMigration.pendingOwnedStart(engine, sessionId)?.let { pending ->
-            val old = pending.sets.firstOrNull { it.id == setId } ?: return
-            val entry = (LegacyGymMigration.operations(engine).firstOrNull { it.sessionId == sessionId && it.entry.set.id == setId }?.entry
-                ?: SetQueue.Entry(old, sessionId, needsPush = true, remints = 0)).copy(needsPush = true, write = Owed.Delete)
-            if (LegacyGymMigration.retainPendingWorkout(engine, pending.copy(sets = pending.sets.filterNot { it.id == setId },
-                    deleted = (pending.deleted + setId).distinct()), listOf(entry), emptyList())) return
-        }
+    suspend fun deleteSet(sessionId: String, setId: String) {
         val id = Id(setId, EngineSet)
         val old = read { it.repository(EngineSet).find(id, ViewMode.drawn) } ?: return
         if (old.sessionId.text != sessionId) throw missing("That set is no longer on the log.")
@@ -272,48 +184,41 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             }
         })
     }
-    override suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
-        LegacyGymMigration.pendingOwnedStart(engine, sessionId)?.let { pending ->
-            if (finishedAtMs <= 0 || finishedAtMs !in pending.session.startedAtMs..SessionRules.maxInstantMs)
-                throw refusal(GymRefusal.of(Refused(RefusalCode(Gym.Codes.badInstant), Id(sessionId, EngineSession).ref, path = Refused.Path.predicted)))
-            val closed = pending.session.copy(finishedAtMs = finishedAtMs)
-            if (LegacyGymMigration.retainPendingWorkout(engine, pending.copy(session = closed), emptyList(), emptyList())) return closed
-        }
+    suspend fun finishSession(sessionId: String, finishedAtMs: Long): Session {
         apply(FinishSession(Id(sessionId, EngineSession), Instant(finishedAtMs)))
         return session(sessionId)?.session ?: throw missing("That workout is no longer on the log.")
     }
-    override suspend fun discardSession(sessionId: String) { apply(DiscardSession(Id(sessionId, EngineSession))) }
+    suspend fun discardSession(sessionId: String) { apply(DiscardSession(Id(sessionId, EngineSession))) }
+    // Before a sign-in, every signed-out workout is retained in the import journal for the account.
     fun prepareAdoption() {
         if (!anonymous) return
         for (detail in details()) {
             val deleted = read { reader -> reader.devices("rack:deletedSet").values.filter { it["sessionId"] == Json.of(detail.session.id) }
                 .map { it.member("setId").str() } }
-            val row = LocalLog.FinishedSession(detail.session, detail.sets, deleted)
-            if (detail.session.isOpen) LegacyGymMigration.retainWorkout(engine, row) else LegacyGymMigration.retainAndImport(engine, row)
+            imports.prepare(SavedWorkout(detail.session, detail.sets, deleted))
         }
     }
     fun openWorkout(): SessionDetail? {
-        val id = read { TrainingLog(it).open?.id?.text }
-        if (id != null) return details().firstOrNull { it.session.id == id }
-        return LegacyGymMigration.pendingOwnedStart(engine)?.let { SessionDetail(it.session, it.sets) }
+        val id = read { TrainingLog(it).open?.id?.text } ?: return null
+        return details().firstOrNull { it.session.id == id }
     }
     fun details(): List<SessionDetail> = read { reader ->
         val log = TrainingLog(reader)
-        val cachedStarts = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else LegacyGymMigration.cached(engine, "start")
+        val heldStarts = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else imports.startSources()
         val drawn = log.drawnSessions.map { session ->
             val sets = log.sets(session.id).map { it.ui() }
-            val held = cachedStarts.firstOrNull { it["session"]?.get("id") == session.id.json }?.get("entries")?.obj().orEmpty().values.mapNotNull { entry ->
-                runCatching { WindmillJson.decodeFromString<SetQueue.Entry>(entry.jcs) }.getOrNull()?.takeIf { it.write != Owed.Delete }?.set
+            val held = heldStarts.firstOrNull { it["session"]?.get("id") == session.id.json }?.get("entries")?.obj().orEmpty().values.mapNotNull { entry ->
+                runCatching { WindmillJson.decodeFromString<OwedSet>(entry.jcs) }.getOrNull()?.takeIf { it.write != Owed.Delete }?.set
             }.filter { reader.repository(EngineSet).record(Id(it.id, EngineSet), ViewMode.stored) == null }
             SessionDetail(session.ui(), (sets + held).distinctBy { it.id }.sortedWith(compareBy({ it.completedAtMs }, { it.id })))
         }
-        drawn + LegacyGymMigration.retainedWorkouts(engine).filter { pending -> drawn.none { it.session.id == pending.session.id } }
+        drawn + imports.retainedWorkouts().filter { pending -> drawn.none { it.session.id == pending.session.id } }
             .map { SessionDetail(it.session, it.sets.filterNot { set -> set.id in it.deleted }) }
     }
     fun pendingSetIds(): Set<String> = read { reader -> reader.source.drawn(EngineSet.type)
         .filter { it.isVisible && (reader.isAnonymous || it.isPending) }.mapTo(mutableSetOf()) { it.id.toString() } } +
-        LegacyGymMigration.operations(engine).filter { it.entry.write != Owed.Delete }.map { it.entry.set.id } +
-        LegacyGymMigration.retainedWorkouts(engine).flatMap { row -> row.sets.filterNot { it.id in row.deleted }.map { it.id } }
+        imports.operations().filter { it.entry.write != Owed.Delete }.map { it.entry.set.id } +
+        imports.retainedWorkouts().flatMap { row -> row.sets.filterNot { it.id in row.deleted }.map { it.id } }
     fun pendingSessionIds(): Set<String> = read { reader ->
         val sessions = reader.source.drawn(EngineSession.type).filter { it.isVisible && (reader.isAnonymous || it.isPending) }
             .mapTo(mutableSetOf()) { it.id.toString() }
@@ -324,9 +229,9 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             reader.repository(EngineSet).record(RecordID(value.member("setId").str()), ViewMode.drawn)?.isPending == true
         }.mapTo(sessions) { it.member("sessionId").str() }
         sessions
-    } + LegacyGymMigration.operations(engine).map { it.sessionId } + LegacyGymMigration.retainedWorkouts(engine).map { it.session.id }
-    override suspend fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
-        if (!anonymous && !firstPullComplete && details().isEmpty()) throw WindmillApiException.Offline
+    } + imports.operations().map { it.sessionId } + imports.retainedWorkouts().map { it.session.id }
+    fun sessions(limit: Int, before: Long?, beforeId: String?): List<SessionSummary> {
+        if (!anonymous && !firstPullComplete && details().isEmpty()) throw TrainingUnanswered
         val history = details()
         val names = if (anonymous) emptyMap() else catalogue().associate { it.id to it.name }
         return history.sortedWith(compareByDescending<SessionDetail> { it.session.startedAtMs }.thenByDescending { it.session.id })
@@ -337,25 +242,20 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                 summary.copy(closedItself = stale, exercises = summary.exercises.map { names[it] ?: it })
             }
     }
-    override suspend fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
-    override suspend fun review(sessionId: String): Review = EngineReadouts.review(
+    fun session(id: String): SessionDetail? = details().firstOrNull { it.session.id == id }
+    fun review(sessionId: String): Review = EngineReadouts.review(
         session(sessionId) ?: throw missing("That workout is no longer on the log."), details())
-    override suspend fun lastTime(exerciseId: String): LastTime {
-        if (catalogue().none { it.id == exerciseId }) throw WindmillApiException.Refused(400,
-            Refusal("That movement is not in the catalog.", code = "unknown-exercise"))
+    fun lastTime(exerciseId: String): LastTime {
+        if (catalogue().none { it.id == exerciseId }) throw TrainingRefused("unknown-exercise", "That movement is not in the catalog.")
         val known = LastTime.of(exerciseId, details())
-        if (!anonymous && !firstPullComplete && known.isFirstTime) throw WindmillApiException.Offline
+        if (!anonymous && !firstPullComplete && known.isFirstTime) throw TrainingUnanswered
         return known
     }
-    override suspend fun lastSets(): List<LastSet> {
+    fun lastSets(): List<LastSet> {
         val known = LastSet.of(details())
-        if (anonymous || firstPullComplete) return known
-        val sources = LegacyGymMigration.cached(engine, "cache")
-        val answered = sources.any { it["lastSets"] is Json.Arr }
-        if (!answered && known.isEmpty()) throw WindmillApiException.Offline
-        return (known + cache<LastSet>("cache", "lastSets")).groupBy { it.exerciseId }.values.map { rows -> rows.maxBy { it.atMs } }.sortedBy { it.exerciseId }
+        if (!anonymous && !firstPullComplete && known.isEmpty()) throw TrainingUnanswered
+        return known
     }
-    override suspend fun routines(): List<Routine> = program()
     fun program(): List<Routine> = read { reader ->
         val log = TrainingLog(reader)
         val decisions = reader.commands().filter { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) }
@@ -375,68 +275,46 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             value.ui(
             log.drawnSessions.filter { it.routineId == value.id }.maxOfOrNull { it.startedAt.ms },
             proposals.filter { it.routineId == value.id && it.state == "pending" }.maxWithOrNull(compareBy<EngineProposal> { proposalCreatedAt(it, reader) }.thenBy { it.id.text })?.ui(reader)) }
-        val held = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else cache<Routine>("cache", "routines").filter { value ->
-            reader.repository(EngineRoutine).record(Id(value.id, EngineRoutine), ViewMode.stored) == null
-        }
-        val available = LegacyGymMigration.edits(engine).filter { it.kind == "routine" }.fold(served + held) { current, edit ->
-            val write = edit.source?.let { WindmillJson.decodeFromString<RoutineWrite>(it.jcs) }
-            val base = current.firstOrNull { it.id == edit.id } ?: WindmillJson.decodeFromString<Routine>(edit.base.jcs)
-            val changed = write?.let { base.copy(name = it.name, position = it.position,
-                entries = it.entries.mapIndexed { index, entry -> RoutineEntry(index + 1, entry.exerciseId, entry.sets) }) }
-            current.filterNot { it.id == edit.id } + listOfNotNull(changed)
-        }
-        available.sortedWith(compareByDescending<Routine> { it.lastTrainedAtMs ?: Long.MIN_VALUE }.thenBy { it.position }.thenBy { it.id })
+        served.sortedWith(compareByDescending<Routine> { it.lastTrainedAtMs ?: Long.MIN_VALUE }.thenBy { it.position }.thenBy { it.id })
     }
-    override suspend fun routine(id: String): Routine? = routines().firstOrNull { it.id == id }
-    override suspend fun createRoutine(write: RoutineWrite): Routine {
+    fun routine(id: String): Routine? = program().firstOrNull { it.id == id }
+    suspend fun createRoutine(write: RoutineWrite): Routine {
         val value = write.engine(null)
         if (routine(write.id) == null) apply(saveRoutine(value))
-        return routine(write.id) ?: throw WindmillApiException.Malformed
+        return routine(write.id) ?: error("The engine does not hold the record it just wrote.")
     }
-    override suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine = writing { runner ->
+    suspend fun replaceRoutine(id: String, write: RoutineWrite): Routine = writing { runner ->
         val old = read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) }
-        if (old == null && !anonymous && !firstPullComplete) {
-            val cached = program().firstOrNull { it.id == id } ?: throw missing("That routine is no longer on the log.")
-            if (write.expectedRevision != null && write.expectedRevision != cached.revision) throw WindmillApiException.Refused(409, Refusal("That routine changed. Open it again.", code = "stale"))
-            LegacyGymMigration.deferEdit(engine, "routine", id, Json.parse(WindmillJson.encodeToString(write.copy(id = id))), Json.parse(WindmillJson.encodeToString(cached)))
-            return@writing program().first { it.id == id }
-        }
         if (old == null) throw missing("That routine is no longer on the log.")
         if (write.expectedRevision != null && old.revision != null && write.expectedRevision != old.revision)
-            throw WindmillApiException.Refused(409, Refusal("That routine changed. Open it again.", code = "stale"))
+            throw TrainingRefused("stale", "That routine changed. Open it again.")
         val draft = Draft.opening(old).edit { write.copy(id = id).engine(old) }
         when (val result = runner.save(draft, EngineRoutine, GymRefusal) {}) {
             is SaveResult.Refused -> throw refusal(result.refusal)
             is SaveResult.Failed -> throw result.error
             is SaveResult.Saved -> Unit
         }
-        LegacyGymMigration.discardRefusal(engine, id)
         read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) }!!.ui()
     }
-    override suspend fun deleteRoutine(id: String) {
-        if (!anonymous && !firstPullComplete && read { it.repository(EngineRoutine).find(Id(id, EngineRoutine), ViewMode.drawn) } == null) {
-            val cached = program().firstOrNull { it.id == id } ?: return
-            LegacyGymMigration.deferEdit(engine, "routine", id, null, Json.parse(WindmillJson.encodeToString(cached)))
-        } else apply(deleteRoutine(Id(id, EngineRoutine)))
-    }
-    override suspend fun proposal(id: String): Proposal? = read { reader ->
+    suspend fun deleteRoutine(id: String) { apply(deleteRoutine(Id(id, EngineRoutine))) }
+    fun proposal(id: String): Proposal? = read { reader ->
         val identity = Id(id, EngineProposal)
         val queued = reader.commands().any { it.command.name in setOf(Gym.Commands.applyProposal, Gym.Commands.dismissProposal) && it.command.args["proposalId"] == identity.json }
         if (queued) reader.confirmed(EngineProposal, identity)?.takeIf { it.isVisible }?.let { EngineProposal.decode(Fields(it)).ui(reader) }
         else reader.repository(EngineProposal).find(identity, ViewMode.drawn)?.ui(reader)
     }
-    override suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
-    override suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
+    suspend fun applyProposal(id: String) = decideProposal(id, applying = true)
+    suspend fun dismissProposal(id: String) = decideProposal(id, applying = false)
     private suspend fun decideProposal(id: String, applying: Boolean): ProposalDecision {
         val replica = engine.activeReplica()
         val status = engine.status.state.value
-        if (anonymous || status.authPaused) throw WindmillApiException.Refused(401, Refusal("Sign in again to decide this proposal."))
-        if (!status.online) throw WindmillApiException.Offline
+        if (anonymous || status.authPaused) throw TrainingRefused("sign-in", "Sign in again to decide this proposal.")
+        if (!status.online) throw TrainingUnanswered
         val before = engine.notices("gym").notices.value.map { it.id }.toSet()
         if (applying) apply(ApplyProposal(Id(id, EngineProposal))) else apply(DismissProposal(Id(id, EngineProposal)))
         return withTimeoutOrNull(15_000) {
             while (true) {
-                if (engine.activeReplica() != replica) throw WindmillApiException.Refused(409, Refusal("The account changed. Open this again."))
+                if (engine.activeReplica() != replica) throw TrainingRefused("account-changed", "The account changed. Open this again.")
                 engine.notices("gym").notices.value.firstOrNull { notice -> notice.id !in before &&
                     notice.content.command?.args?.get("proposalId") == Json.of(id) }?.let {
                     throw refusal(DomainNotice(it, engine.registry, GymRefusal).refusal)
@@ -453,19 +331,16 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                 delay(25)
             }
             @Suppress("UNREACHABLE_CODE") error("The receipt loop returns or is cancelled.")
-        } ?: throw WindmillApiException.Offline
+        } ?: throw TrainingUnanswered
     }
-    override suspend fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow())
-    override suspend fun record(exerciseId: String): MovementRecord? = exercises().firstOrNull { it.id == exerciseId }
-        ?.let { EngineReadouts.record(it, details(), routines(), engine.physNow()) }
-    override suspend fun preferences(): GymPreferences = settings()
+    fun progress(): StatsProgress = StatsProgress.of(details(), engine.physNow())
+    fun record(exerciseId: String): MovementRecord? = catalogue().firstOrNull { it.id == exerciseId }
+        ?.let { EngineReadouts.record(it, details(), program(), engine.physNow()) }
     fun settings(): GymPreferences = read { reader ->
-        val saved = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn)
-        if (saved == null && !reader.isAnonymous && !reader.firstPullComplete()) cache<GymPreferences>("cachePreferences").lastOrNull()?.let { return@read it }
-        val value = saved ?: Preferences()
+        val value = reader.repository(Preferences).find(Preferences().id, ViewMode.drawn) ?: Preferences()
         GymPreferences(Units.entries.first { it.wire == value.units }, value.confirmHaptic, value.confirmSound)
     }
-    override suspend fun savePreferences(document: GymPreferences): GymPreferences {
+    suspend fun savePreferences(document: GymPreferences): GymPreferences {
         val next = Preferences(units = document.units.wire, confirmHaptic = document.confirmHaptic, confirmSound = document.confirmSound)
         writing { runner ->
             val draft = runner.open(Preferences, next.id, Preferences()).edit { next }
@@ -475,11 +350,11 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                 is SaveResult.Saved -> Unit
             }
         }
-        return preferences()
+        return settings()
     }
-    override suspend fun notes(): List<Note> = read { reader -> reader.repository(EngineNote).all(ViewMode.drawn)
+    fun notes(): List<Note> = read { reader -> reader.repository(EngineNote).all(ViewMode.drawn)
         .mapIndexed { index, note -> Note(note.id.text, index, note.title, note.body, note.updatedAt?.ms ?: 0) } }
-    override suspend fun writeNote(id: String, write: NoteWrite): Note {
+    suspend fun writeNote(id: String, write: NoteWrite): Note {
         val next = EngineNote(Id(id, EngineNote), write.title, write.body)
         writing { runner ->
             val old = runner.open(EngineNote, next.id)
@@ -492,10 +367,10 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
         }
         return notes().firstOrNull { it.id == id } ?: notes().first { it.title == write.title.trim() && it.body == write.body.trim() }
     }
-    override suspend fun deleteNote(id: String) { apply(deleteNote(Id(id, EngineNote))) }
-    override suspend fun reorderNotes(order: List<String>): List<Note> {
+    suspend fun deleteNote(id: String) { apply(deleteNote(Id(id, EngineNote))) }
+    suspend fun reorderNotes(order: List<String>): List<Note> {
         if (order.distinct().size != order.size || order.toSet() != notes().map { it.id }.toSet())
-            throw WindmillApiException.Refused(409, Refusal("The notes changed. Read them again.", code = "stale"))
+            throw TrainingRefused("stale", "The notes changed. Read them again.")
         apply(object : Action<List<EngineNote>, Unit, GymRefusal> {
             override val scope = EngineNote.scope
             override val refusals = GymRefusal
@@ -509,90 +384,30 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
         })
         return notes()
     }
-    override suspend fun bodyweight(from: String?, to: String?): List<WeighIn> = weighins(from, to)
     fun weighins(from: String? = null, to: String? = null): List<WeighIn> = read { reader ->
-        val served = reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms ?: 0) } }
-        val held = if (reader.isAnonymous || reader.firstPullComplete()) emptyList() else cache<WeighIn>("cacheWeighin").filter { value ->
-            reader.repository(EngineWeighIn).record(Id(value.dateLocal, EngineWeighIn), ViewMode.stored) == null
-        }
-        val deleted = LegacyGymMigration.edits(engine).filter { it.kind == Gym.Types.weighin && it.source == null }.map { it.id }.toSet()
-        (served + held).filter { it.dateLocal !in deleted && (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }.sortedBy { it.dateLocal }
+        reader.repository(EngineWeighIn).all(ViewMode.drawn).mapNotNull { it.kg?.let { kg -> WeighIn(it.id.text, kg, it.recordedAt?.ms ?: 0) } }
+            .filter { (from == null || it.dateLocal >= from) && (to == null || it.dateLocal <= to) }.sortedBy { it.dateLocal }
     }
-    override suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn {
-        val day = LocalDay.parse(dateLocal) ?: throw WindmillApiException.Refused(400, Refusal(works.windmill.gym.domain.Bodyweight.notAForecast, code = "bad-instant"))
+    suspend fun putBodyweight(dateLocal: String, write: WeighInWrite): WeighIn {
+        val day = LocalDay.parse(dateLocal) ?: throw TrainingRefused("bad-instant", works.windmill.gym.domain.Bodyweight.notAForecast)
         val next = EngineWeighIn(day, write.weightKg, Instant(write.recordedAt))
         val old = read { it.repository(EngineWeighIn).find(next.id, ViewMode.drawn) }
-        if (old?.recordedAt == null || old.recordedAt!! <= next.recordedAt!!) {
-            val action = saveWeighIn(next)
-            apply(object : Action<Pair<SaveDraftLoaded<EngineWeighIn>, List<works.windmill.sync.api.DeviceWrite>>, Saved, GymRefusal> {
-                override val scope = action.scope
-                override val refusals = action.refusals
-                override fun load(read: Reader) = action.load(read) to LegacyGymMigration.resolveEditWrites(read.source, Gym.Types.weighin, dateLocal)
-                override fun decide(loaded: Pair<SaveDraftLoaded<EngineWeighIn>, List<works.windmill.sync.api.DeviceWrite>>, ids: IDSource): Decision<Saved, GymRefusal> {
-                    val decision = action.decide(loaded.first, ids)
-                    val write = when (decision) {
-                        is Decision.Write -> decision
-                        is Decision.Unchanged -> if (loaded.second.isEmpty()) return decision else Decision.Write(Plan(), decision.result)
-                        is Decision.Refuse -> return decision
-                    }
-                    loaded.second.forEach { write.plan.device(it.key, it.value) }
-                    return write
-                }
-            })
-        }
-        LegacyGymMigration.discardRefusal(engine, dateLocal)
-        return bodyweight(dateLocal, dateLocal).first()
+        if (old?.recordedAt == null || old.recordedAt!! <= next.recordedAt!!) apply(saveWeighIn(next))
+        return weighins(dateLocal, dateLocal).first()
     }
-    override suspend fun deleteBodyweight(dateLocal: String) {
-        if (!anonymous && !firstPullComplete && read { it.repository(EngineWeighIn).record(Id(dateLocal, EngineWeighIn), ViewMode.drawn) } == null) {
-            val cached = cache<WeighIn>("cacheWeighin").firstOrNull { it.dateLocal == dateLocal } ?: return
-            LegacyGymMigration.deferEdit(engine, Gym.Types.weighin, dateLocal, null, Json.parse(WindmillJson.encodeToString(cached)))
-        } else apply(deleteWeighIn(Id(dateLocal, EngineWeighIn)))
-    }
-    override suspend fun share(sessionId: String) = ancillary { it.share(sessionId) }
-    override suspend fun revokeShare(sessionId: String) = ancillary { it.revokeShare(sessionId) }
-    override suspend fun ask(question: AskQuestion) = ancillary { it.ask(question) }
-    override suspend fun stream(question: AskQuestion, onSnapshot: suspend (AskGeneration) -> Unit) = ancillary { it.stream(question, onSnapshot) }
-    override suspend fun stop(threadId: String, requestId: String) = ancillary { it.stop(threadId, requestId) }
-    override suspend fun uploadPhoto(threadId: String, photo: CoachAttachment, bytes: ByteArray, onProgress: (Float) -> Unit) = ancillary { it.uploadPhoto(threadId, photo, bytes, onProgress) }
-    override suspend fun photo(threadId: String, attachmentId: String) = ancillary { it.photo(threadId, attachmentId) }
-    override suspend fun threads() = ancillary { it.threads() }
-    override suspend fun thread(id: String) = ancillary { it.thread(id) }
-    override suspend fun threadPage(id: String, before: String?) = ancillary { it.threadPage(id, before) }
-    override suspend fun threadsPage(cursor: String?) = ancillary { it.threadsPage(cursor) }
-    override suspend fun deleteThread(id: String) = ancillary { it.deleteThread(id) }
-    override suspend fun grants() = ancillary { it.grants() }
-    override suspend fun mcpKeys() = ancillary { it.mcpKeys() }
+    suspend fun deleteBodyweight(dateLocal: String) { apply(deleteWeighIn(Id(dateLocal, EngineWeighIn))) }
 
-    suspend fun reconcileLegacyOperations() {
-        LegacyGymMigration.reconcileConfirmed(engine)
-        if (!anonymous && firstPullComplete) for (edit in LegacyGymMigration.edits(engine)) {
-            try {
-                when (edit.kind) {
-                    Gym.Types.weighin -> deleteBodyweight(edit.id)
-                    "exercise" -> {
-                        val requested = edit.source?.let { WindmillJson.decodeFromString<Exercise>(it.jcs) }
-                            ?: throw missing("That movement is no longer on the log.")
-                        renameExercise(edit.id, requested.name)
-                    }
-                    "routine" -> if (edit.source == null) apply(deleteRoutine(Id(edit.id, EngineRoutine))) else {
-                        val write = WindmillJson.decodeFromString<RoutineWrite>(edit.source!!.jcs)
-                        val base = WindmillJson.decodeFromString<Routine>(edit.base.jcs)
-                        replaceRoutine(edit.id, write.copy(expectedRevision = write.expectedRevision ?: base.revision))
-                    }
-                }
-                LegacyGymMigration.resolveEdit(engine, edit.token)
-            } catch (refused: WindmillApiException.Refused) {
-                LegacyGymMigration.refuseEdit(engine, edit.token, refused.refusal.code ?: "invalid")
-            }
-        }
-        if (anonymous || firstPullComplete) for (deletion in LegacyGymMigration.deletedSets(engine)) {
+    // Signed-out training prepared for this account: confirmed starts settle, then the sets an
+    // unfinished workout still owes follow it under their own ids.
+    suspend fun reconcileImports() {
+        imports.reconcileConfirmed()
+        if (anonymous || firstPullComplete) for (deletion in imports.deletedSets()) {
             deleteSet(deletion.sessionId, deletion.setId)
-            LegacyGymMigration.resolveDeletion(engine, deletion.token)
+            imports.resolveDeletion(deletion.token)
         }
-        for (operation in LegacyGymMigration.operations(engine)) {
+        for (operation in imports.operations()) {
             if (!anonymous && !firstPullComplete) continue
-            if (LegacyGymMigration.refusals(engine).any { it.id == operation.sessionId && it.session?.isOpen == true }) continue
+            if (imports.refusals().any { it.id == operation.sessionId && it.session?.isOpen == true }) continue
             if (!anonymous && read { it.confirmed(EngineSession, Id(operation.sessionId, EngineSession))?.isVisible != true }) continue
             val entry = operation.entry
             try {
@@ -603,9 +418,9 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
                     Owed.Fix -> fixSet(operation.sessionId, entry.set.id, SetFix(entry.set))
                     Owed.Delete -> deleteSet(operation.sessionId, entry.set.id)
                 }
-                LegacyGymMigration.resolveOperation(engine, operation.token)
-            } catch (refused: WindmillApiException.Refused) {
-                LegacyGymMigration.refuseOperation(engine, operation.token, refused.refusal.code ?: "invalid")
+                imports.resolveOperation(operation.token)
+            } catch (refused: TrainingRefused) {
+                imports.refuseOperation(operation.token, refused.code)
             }
         }
     }
@@ -618,70 +433,61 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             val id = subject.id.string ?: notice.id
             RefusedSet(id, (values["exerciseId"] as? Json.Str)?.value.orEmpty(),
                 (values["weightKg"] as? Json.Num)?.value ?: 0.0, (values["reps"] as? Json.Num)?.value?.toInt() ?: 0, reason)
-        } else RefusedClaim(notice.id, "Saved change", reason)
+        } else RefusedChange(notice.id, "Saved change", reason)
     }
     fun refusedNotes(): List<RefusedWrite> = engine.notices("gym").notices.value.mapNotNull { notice ->
         val domain = DomainNotice(notice, engine.registry, GymRefusal)
         val subject = domain.subject?.takeIf { it.type == EngineNote.type } ?: return@mapNotNull null
         val title = domain.values(subject)["title"]?.str().orEmpty()
-        RefusedClaim(notice.id, "Note: $title", refusal(domain.refusal).line)
+        RefusedChange(notice.id, "Note: $title", refusal(domain.refusal).line)
     }
     fun dismissRefusals() { for (notice in engine.notices("gym").notices.value) engine.dismissNotice(notice.id) }
 
-    fun commitAccepted(queue: SetQueue, entry: SetQueue.Entry): TrainingSet {
-        val write = SetWrite(entry.set)
-        val value = EngineSet(Id(write.id, EngineSet), Id(entry.sessionId, EngineSession), Id(write.exerciseId, EngineExercise),
+    // A set the logger accepted, committed together with the controls that consumed its offer.
+    fun commitAccepted(controls: WorkoutControls, set: TrainingSet, sessionId: String): TrainingSet {
+        val write = SetWrite(set)
+        val value = EngineSet(Id(write.id, EngineSet), Id(sessionId, EngineSession), Id(write.exerciseId, EngineExercise),
             write.weightKg, write.reps, write.kind.wire, completedAt = Instant(write.completedAt))
         val action = AppendSet(value)
         val runner = ActionRunner(engine, engine.registry, zone, object : ActionContext { override var insideRun = false })
         val existing = read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }
         if (existing != null && (existing.sessionId != value.sessionId || existing.exerciseId != value.exerciseId || existing.completedAt != value.completedAt))
-            throw WindmillApiException.Refused(409, Refusal("that set id is already used", code = "set-id-taken"))
-        if (existing == null) LegacyGymMigration.pendingOwnedStart(engine, entry.sessionId)?.let { pending ->
-            val checked = checkedPendingSet(entry.sessionId, entry.set)
-            val row = pending.copy(sets = (queue.sets(entry.sessionId).filterNot { it.id == checked.id } + checked)
-                .sortedWith(compareBy({ it.completedAtMs }, { it.id })))
-            if (LegacyGymMigration.retainPendingWorkout(engine, row, listOf(entry.copy(set = checked)), controls(queue))) return checked
-        }
+            throw TrainingRefused("set-id-taken", "that set id is already used")
         if (existing == null) when (val outcome = runner.run(object : Action<TrainingState, Id<EngineSet>, GymRefusal> {
             override val scope = action.scope
             override val refusals = action.refusals
-            override fun load(read: Reader) = action.load(read).let { if (read.isAnonymous || read.firstPullComplete()) it else it.copy(catalogue = cachedCatalogue(read)) }
+            override fun load(read: Reader) = action.load(read)
             override fun decide(loaded: TrainingState, ids: IDSource): Decision<Id<EngineSet>, GymRefusal> = when (val decision = action.decide(loaded, ids)) {
-                is Decision.Write -> decision.also { controls(queue).forEach { write -> it.plan.device(write.key, write.value) } }
+                is Decision.Write -> decision.also { controls(controls).forEach { write -> it.plan.device(write.key, write.value) } }
                 else -> decision
             }
         })) {
             is Outcome.Refused -> throw refusal(outcome.refusal)
             else -> Unit
         }
-        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: throw WindmillApiException.Malformed
+        return read { it.repository(EngineSet).find(value.id, ViewMode.drawn) }?.ui() ?: error("The engine does not hold the record it just wrote.")
     }
-    private fun controls(queue: SetQueue): List<works.windmill.sync.api.DeviceWrite> = queue.session?.let { session -> listOf(
-        works.windmill.sync.api.DeviceWrite("movementOrder:${session.id}", Json.Arr(queue.order.map(Json::of))),
-        works.windmill.sync.api.DeviceWrite("movement:${session.id}", queue.chosenMovement?.let(Json::of)),
-        works.windmill.sync.api.DeviceWrite("rack:${session.id}", Json.parse(WindmillJson.encodeToString(WorkoutState.serializer(), queue.workout))),
+    private fun controls(controls: WorkoutControls): List<works.windmill.sync.api.DeviceWrite> = controls.session?.let { session -> listOf(
+        works.windmill.sync.api.DeviceWrite("movementOrder:${session.id}", Json.Arr(controls.order.map(Json::of))),
+        works.windmill.sync.api.DeviceWrite("movement:${session.id}", controls.chosenMovement?.let(Json::of)),
+        works.windmill.sync.api.DeviceWrite("rack:${session.id}", Json.parse(WindmillJson.encodeToString(WorkoutState.serializer(), controls.workout))),
     ) }.orEmpty()
-    fun persistControls(queue: SetQueue) {
-        if (queue.engineReplica != engine.activeReplica()) return
-        val wanted = controls(queue)
+    fun persistControls(controls: WorkoutControls) {
+        if (controls.engineReplica != engine.activeReplica()) return
+        val wanted = controls(controls)
         if (engine.read(EngineSession.scope) { reader -> wanted.all { reader.device(it.key) == it.value } }) return
         engine.commit(EngineSession.scope) { reader ->
             val changed = wanted.filter { reader.device(it.key) != it.value }
             if (changed.isEmpty()) null to Unit else works.windmill.sync.api.Gesture(emptyList(), local = changed) to Unit
         }
     }
-    fun restoreControls(queue: SetQueue) {
-        val session = queue.session ?: return
-        val original = LegacyGymMigration.sourceSessionId(engine, session.id)
+    fun restoreControls(controls: WorkoutControls) {
+        val session = controls.session ?: return
         engine.read(EngineSession.scope) { reader ->
-            fun device(kind: String) = reader.device("$kind:${session.id}") ?: original?.let { reader.device("$kind:$it") }
-            device("movementOrder")?.arr()?.map(Json::str)?.let(queue::hold)
-            device("movement")?.str()?.let(queue::choose)
-            device("rack")?.let { value ->
-                val controls = WindmillJson.decodeFromString(WorkoutState.serializer(), value.jcs)
-                queue.control(controls.invalidate())
-            }
+            fun device(kind: String) = reader.device("$kind:${session.id}")
+            device("movementOrder")?.arr()?.map(Json::str)?.let(controls::hold)
+            device("movement")?.str()?.let(controls::choose)
+            device("rack")?.let { value -> controls.control(WindmillJson.decodeFromString(WorkoutState.serializer(), value.jcs).invalidate()) }
         }
     }
 
@@ -702,8 +508,8 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             change.before?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
             change.after?.let { ProposalTargets(it.sets.orEmpty().map { SetTarget(it.reps, it.weightKg) }) },
             if (change.kind == "removed") TrainingLog(reader).sets.count { it.exerciseId == change.exerciseId } else null) })
-    private fun missing(message: String) = WindmillApiException.Refused(404, Refusal(message, code = "unknown-record"))
-    private fun refusal(refusal: GymRefusal): WindmillApiException.Refused {
+    private fun missing(message: String) = TrainingRefused("unknown-record", message)
+    private fun refusal(refusal: GymRefusal): TrainingRefused {
         val (code, message) = when (refusal) {
             is GymRefusal.Invalid -> "invalid" to "Check ${refusal.violation.path.text.substringAfterLast('.')}."
             is GymRefusal.Stale -> "stale" to "That changed. Open it again."
@@ -721,7 +527,14 @@ class EngineTraining(val engine: Engine, private val rest: () -> TrainingSyncing
             is GymRefusal.ProposalSuperseded -> refusal.refused.code.text to "That proposal has been replaced."
             is GymRefusal.Other -> refusal.refused.code.text to "That change could not be saved."
         }
-        val status = when (code) { "unknown-record" -> 404; "invalid", "bad-instant", "unknown-exercise" -> 400; else -> 409 }
-        return WindmillApiException.Refused(status, Refusal(message, code = code))
+        return TrainingRefused(code, message)
     }
 }
+
+// A write the log's rules refuse, in the words a person reads: an expected answer, never a failure
+// to report.
+class TrainingRefused(val code: String, val line: String) : Exception()
+
+// What the replica cannot answer yet: the account's first pull, or the log's receipt for a decision,
+// has not arrived.
+data object TrainingUnanswered : Exception()

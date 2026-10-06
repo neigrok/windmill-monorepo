@@ -78,24 +78,6 @@ class PickerOptionsTests {
     }
 
     @Test
-    fun testAShortCatalogSaysSoOverTheRowsItDoesHave() {
-        val short = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
-                                           lastSets = emptyMap(), catalogUnread = true)
-        assertEquals(PickerOptions.catalogUnread, short.unread)
-        assertEquals("the rows it does have are still worth picking", 6, short.six.size)
-        assertNull(short.empty)
-
-        val typed = PickerOptions.matching(query = "Zottman Curl", catalog = TheSix.movements,
-                                           taken = emptyList(), catalogUnread = true)
-        assertNull(typed.empty)
-        assertEquals(PickerOptions.catalogUnread, typed.unread)
-
-        val landed = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
-                                            lastSets = emptyMap())
-        assertNull(landed.unread)
-    }
-
-    @Test
     fun testAMetaLineIsSaidOnlyByAnAnswerAndNeverByAMissingRead() {
         val unread = PickerOptions.matching(query = "", catalog = TheSix.movements, taken = emptyList(),
                                             lastSets = null)

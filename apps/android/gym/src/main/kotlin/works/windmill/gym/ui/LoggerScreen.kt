@@ -131,7 +131,7 @@ private sealed class LoggerSheet {
     data object Assembly : LoggerSheet()
     data object Picker : LoggerSheet()
     data class Deviation(val offer: DeviationOffer, val movement: String) : LoggerSheet()
-    data class Fix(val setId: String, val draftKey: String = setId) : LoggerSheet()
+    data class Fix(val setId: String) : LoggerSheet()
 }
 
 private val loggerSheetSaver = Saver<LoggerSheet?, String>(
@@ -140,7 +140,7 @@ private val loggerSheetSaver = Saver<LoggerSheet?, String>(
         LoggerSheet.Reps -> "reps"
         LoggerSheet.Assembly -> "assembly"
         LoggerSheet.Picker -> "picker"
-        is LoggerSheet.Fix -> "fix:${it.setId}:${it.draftKey}"
+        is LoggerSheet.Fix -> "fix:${it.setId}"
         else -> ""
     } },
     restore = { when {
@@ -148,7 +148,7 @@ private val loggerSheetSaver = Saver<LoggerSheet?, String>(
         it == "reps" -> LoggerSheet.Reps
         it == "assembly" -> LoggerSheet.Assembly
         it == "picker" -> LoggerSheet.Picker
-        it.startsWith("fix:") -> it.removePrefix("fix:").split(':').let { parts -> LoggerSheet.Fix(parts[0], parts.getOrElse(1) { parts[0] }) }
+        it.startsWith("fix:") -> LoggerSheet.Fix(it.removePrefix("fix:"))
         else -> null
     } },
 )
@@ -197,7 +197,7 @@ fun LoggerScreen(
     fun close() {
         store.editWorkout(false)
         scope.launch { sheetState.hide() }.invokeOnCompletion {
-            sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.draftKey}" else it.javaClass.simpleName) }
+            sheet?.let { sheetStates.removeState(if (it is LoggerSheet.Fix) "fix:${it.setId}" else it.javaClass.simpleName) }
             sheet = null
         }
     }
@@ -365,7 +365,6 @@ fun LoggerScreen(
                     subtitle = if (store.session?.plan == null) null else "nothing in this plan is left to walk",
                     firstSession = store.firstSession,
                     signedIn = isSignedIn,
-                    catalogUnread = store.catalogUnread,
                     onPick = { picked -> scope.launch { store.choose(picked) } },
                     onCreate = { name, equipment, id -> store.create(name, equipment, id) },
                     state = pickerState,
@@ -451,11 +450,7 @@ fun LoggerScreen(
     }
 
     // A fix for a set that has since left the ledger has nothing to stand on.
-    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == store.canonicalSetId(fix.setId) } }
-    LaunchedEffect(fixing?.id) {
-        val target = sheet as? LoggerSheet.Fix
-        if (target != null && fixing != null) sheet = target.copy(setId = fixing.id)
-    }
+    val fixing = (sheet as? LoggerSheet.Fix)?.let { fix -> store.todaySets.firstOrNull { it.id == fix.setId } }
     val open = sheet?.takeUnless { it is LoggerSheet.Fix && fixing == null }
     if (open != null) {
         ModalBottomSheet(
@@ -466,7 +461,7 @@ fun LoggerScreen(
             scrimColor = skin.scrim,
         ) {
             WindmillSheetWindow()
-            sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.draftKey}" else open.javaClass.simpleName) {
+            sheetStates.SaveableStateProvider(if (open is LoggerSheet.Fix) "fix:${open.setId}" else open.javaClass.simpleName) {
             when (open) {
                 LoggerSheet.Weight -> KeypadSheet(
                     KeypadEntry.Mode.Weight, weightKg,
@@ -492,7 +487,6 @@ fun LoggerScreen(
                     nowMs = nowMs,
                     sessions = store.recent,
                     title = "Add movement",
-                    catalogUnread = store.catalogUnread,
                     onPick = { move(it) },
                     onCreate = { name, equipment, id -> store.create(name, equipment, id) },
                     state = pickerState,
@@ -524,7 +518,6 @@ fun LoggerScreen(
                     WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
                         FixSheet(
                             set = set,
-                            draftKey = open.draftKey,
                             movement = Readout.movement(set.exerciseId, store.catalog),
                             setNumber = set.setNumber ?: (store.todaySets.indexOfFirst { it.id == set.id } + 1),
                             routine = store.session?.plan?.routine,

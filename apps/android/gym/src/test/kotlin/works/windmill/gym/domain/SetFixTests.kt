@@ -1,25 +1,22 @@
 package works.windmill.gym.domain
 
-import kotlinx.serialization.serializer
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import works.windmill.platform.net.WindmillJson
 
-// A fix names ONLY what it changes, because the log has no concurrency guard on a set: a sheet that
-// sent its whole state would silently clobber a note another device wrote while it stood open.
+// A fix names ONLY what it changes, because a set has no concurrency guard: a sheet that wrote its
+// whole state would silently clobber a note another device wrote while it stood open.
 //
-// Two of the five fields carry a clear, and the two clears are different shapes: `note: ""` clears a
-// note and `note: null` is a type error the log refuses, while `rpe: null` IS the clear. That is why
-// this type carries `rpeNamed` beside `rpe` and writes its own wire object — the encoder's
-// absent-is-null rule cannot say both things.
+// Two of the five fields carry a clear, and the two clears are different shapes: `note = ""` clears a
+// note, while clearing an rpe is a value and not an omission. That is why this type carries
+// `rpeNamed` beside `rpe`.
 //
 // The effort fields' own bytes are pinned here beside it — the bound, the counter, and the seat that
 // means nothing was said. Every one of those is a byte assertion and not a shape assertion, because
 // a rewording is the drift they exist to fail the build over.
-class SetFixWireTests {
+class SetFixTests {
     private val stored = TrainingSet(
         id = "set_1",
         exerciseId = "bench-press",
@@ -31,67 +28,56 @@ class SetFixWireTests {
         completedAtMs = 1_000,
     )
 
-    // Encoded the way `WindmillApi.encode` encodes it — reflectively, off the runtime class — so a
-    // serializer the plugin fails to hand back would fail here rather than on a phone.
-    private fun body(fix: SetFix): String =
-        WindmillJson.encodeToString(serializer(SetFix::class.java), fix)
-
     @Test
-    fun aSheetOpenedAndClosedWithNothingTouchedSendsAnEmptyObject() {
+    fun aSheetOpenedAndClosedWithNothingTouchedNamesNothing() {
         val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
                          rpe = 8.0, note = "felt heavy")
 
-        assertEquals("{}", body(fix))
+        assertEquals(SetFix(), fix)
         assertFalse(fix.moves(stored))
         assertEquals(stored, fix.corrected(stored))
     }
 
     @Test
-    fun onlyTheFieldThatMovedIsOnTheWire() {
+    fun onlyTheFieldThatMovedIsNamed() {
         val fix = SetFix(stored, weightKg = 85.0, reps = 5, kind = SetKind.Working,
                          rpe = 8.0, note = "felt heavy")
 
-        assertEquals("""{"weightKg":85.0}""", body(fix))
+        assertEquals(SetFix(weightKg = 85.0), fix)
         assertEquals(85.0, fix.corrected(stored).weightKg, 0.0)
         assertEquals("nothing else moved", "felt heavy", fix.corrected(stored).note)
         assertEquals(8.0, fix.corrected(stored).rpe)
     }
 
     @Test
-    fun clearingANoteSendsAnEmptyStringAndNeverANull() {
+    fun clearingANoteNamesAnEmptyNote() {
         val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
                          rpe = 8.0, note = "")
 
-        assertEquals("""{"note":""}""", body(fix))
-        assertFalse("a null there is a type error the log refuses",
-            body(fix).contains("null"))
+        assertEquals(SetFix(note = ""), fix)
         assertEquals("", fix.corrected(stored).note)
     }
 
     @Test
-    fun clearingAnRpeSendsAnExplicitNullBecauseThatIsWhatClearsIt() {
+    fun clearingAnRpeNamesItAsCleared() {
         val fix = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
                          rpe = null, note = "felt heavy")
 
-        assertEquals("""{"rpe":null}""", body(fix))
+        assertEquals(SetFix(rpeNamed = true, rpe = null), fix)
         assertNull(fix.corrected(stored).rpe)
 
         val untouched = SetFix(stored, weightKg = 82.5, reps = 5, kind = SetKind.Working,
                                rpe = 8.0, note = "felt heavy")
-        assertFalse("and not naming it at all leaves what is stored",
-            body(untouched).contains("rpe"))
+        assertFalse("and not naming it at all leaves what is stored", untouched.rpeNamed)
         assertEquals(8.0, untouched.corrected(stored).rpe)
     }
 
     @Test
-    fun everyFieldAtOnceGoesInOneObjectAndTheKindTravelsAsItsWireWord() {
+    fun everyFieldAtOnceIsOneFix() {
         val fix = SetFix(stored, weightKg = 100.0, reps = 3, kind = SetKind.Drop,
                          rpe = 9.5, note = "back-off")
 
-        assertEquals(
-            """{"weightKg":100.0,"reps":3,"kind":"drop","note":"back-off","rpe":9.5}""",
-            body(fix),
-        )
+        assertEquals(SetFix(100.0, 3, SetKind.Drop, "back-off", rpeNamed = true, rpe = 9.5), fix)
         assertEquals(
             stored.copy(weightKg = 100.0, reps = 3, kind = SetKind.Drop, rpe = 9.5, note = "back-off"),
             fix.corrected(stored),
@@ -103,16 +89,16 @@ class SetFixWireTests {
     fun theWeightIsReadOnTheLaddersGridAndNotOffRawDoubles() {
         val drifted = SetFix(stored, weightKg = 82.5000001, reps = 5, kind = SetKind.Working,
                              rpe = 8.0, note = "felt heavy")
-        assertEquals("{}", body(drifted))
+        assertEquals(SetFix(), drifted)
     }
 
-    // The claim replay is the one place a whole row travels: the shelf's copy must land on the
+    // An owed correction is the one place a whole row is restated: the phone's copy must land on the
     // account entire, so an rpe the lifter cleared on this device is named rather than omitted.
     @Test
-    fun theClaimsReplayRestatesTheWholeStoredRowRatherThanADiff() {
+    fun anOwedCorrectionRestatesTheWholeStoredRowRatherThanADiff() {
         val fix = SetFix(stored.copy(rpe = null, note = ""))
 
-        assertEquals("""{"weightKg":82.5,"reps":5,"kind":"working","note":"","rpe":null}""", body(fix))
+        assertEquals(SetFix(82.5, 5, SetKind.Working, "", rpeNamed = true, rpe = null), fix)
         assertTrue(fix.rpeNamed)
     }
 

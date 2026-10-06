@@ -8,14 +8,31 @@ import works.windmill.gym.domain.*
 import works.windmill.platform.Account
 import works.windmill.platform.User
 import works.windmill.platform.net.WindmillApi
+import works.windmill.platform.storage.AtomicDocument
+import works.windmill.platform.telemetry.Telemetry
 import works.windmill.sync.core.*
 import works.windmill.sync.engine.*
 import works.windmill.sync.modelserver.*
 import works.windmill.sync.schema.Gym
 import works.windmill.sync.schema.SyncSchema
 
-internal class EngineRoomFixture(val directory: File, val scope: CoroutineScope, snapshot: Json? = null,
-    private val rest: works.windmill.gym.net.TrainingSyncing? = null) : AutoCloseable {
+// One phone over the memory engine, composed the way the application composes it: the training
+// store reads and writes through the engine, and only Coach, shares and credential lists reach REST.
+internal class EngineRoomFixture(
+    val directory: File,
+    val scope: CoroutineScope,
+    snapshot: Json? = null,
+    private val rest: works.windmill.gym.net.GymRest? = null,
+    private val undoWindowMs: Long = Withheld.windowMs,
+    private val telemetry: Telemetry = Telemetry.None,
+    private val workoutClock: WorkoutClock? = null,
+    private val workoutAuthority: (String?) -> Boolean = { true },
+    private val localCoach: LocalCoach? = null,
+    private val elapsedNanos: () -> Long = System::nanoTime,
+    private val mintRoutine: () -> String = Ids::routine,
+    private val mintExercise: () -> String = Ids::exercise,
+    private val controlsWrite: (File, String) -> Unit = AtomicDocument::write,
+) : AutoCloseable {
     companion object {
         fun server(): ModelServer {
             val state = ServerState().apply {
@@ -33,14 +50,17 @@ internal class EngineRoomFixture(val directory: File, val scope: CoroutineScope,
     private var nextSession = 0
     private var nextSet = 0
     val engine = Engine.memory(SyncSchema.registry, snapshot, clock = object : EngineClock { override fun now() = now },
-        commandResultWrites = LegacyGymMigration.commandResultWrites, pendingDeviceWork = LegacyGymMigration.pendingDeviceWork,
-        rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue)
-    val training = EngineTraining(engine) { rest ?: error("Training data must use the engine.") }
+        commandResultWrites = WorkoutImports.commandResultWrites, pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+        rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
+    val training = EngineTraining(engine)
+    val controlsFile = File(directory, "control.json")
     val store = freshStore()
-    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(queue = SetQueue(File(directory, "control.json")), scope = scope,
-        now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
-        mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" },
-        engineTraining = training, sync = { training })
+    // As in the application: the REST doors answer only while an account is signed in.
+    fun freshStore(scope: CoroutineScope = this.scope) = TrainingStore(WorkoutControls(controlsFile, write = controlsWrite), training,
+        scope, rest = { rest.takeIf { selected != null } }, now = { ++now }, mintSession = { "session${(++nextSession).toString().padStart(2, '0')}" },
+        mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" }, mintRoutine = mintRoutine, mintExercise = mintExercise,
+        undoWindowMs = undoWindowMs, workoutClock = workoutClock ?: WorkoutClock { val at = ++now; WorkoutMoment(at, at, "local") },
+        workoutAuthority = workoutAuthority, telemetry = telemetry, elapsedNanos = elapsedNanos, localCoach = localCoach)
     fun account(id: String? = selected) = Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }),
         id?.let { User(it, "$it@example.com") }, verified = true)
     suspend fun select(id: String?) {

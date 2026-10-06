@@ -13,25 +13,25 @@ import works.windmill.sync.core.RecordKey
 import works.windmill.sync.api.Record
 import kotlin.concurrent.withLock
 
-fun Engine.confirmedLegacyRecords(context: CommitContext, scope: ScopeRef, type: String): List<Record> = lock.withLock {
+fun Engine.confirmedRecords(context: CommitContext, scope: ScopeRef, type: String): List<Record> = lock.withLock {
     ensureOpen()
     store.rows(context.replica, scope).filter { it.key.type == type }.mapNotNull { context.confirmed(type, it.key.id) }
 }
 
-fun Engine.unsubmittedLegacyGestures(context: CommitContext, scope: ScopeRef, records: Set<RecordKey>): List<String> = lock.withLock {
+fun Engine.unsubmittedGestures(context: CommitContext, scope: ScopeRef, records: Set<RecordKey>): List<String> = lock.withLock {
     ensureOpen()
     val replica = device.replicas.single { it.id == context.replica }
-    if (replica.state != "anon") throw CommitFailure.malformed("legacy-workout-bound")
+    if (replica.state != "anon") throw CommitFailure.malformed("supersede-bound")
     replica.entries().groupBy { it.gestureId }.filterValues { entries -> entries.any { entry -> entry.scope == scope && entry.deltas.any { it.key in records } } }
         .map { (gesture, entries) ->
             if (entries.any { it.scope != scope || it.state !in setOf("ready", "held") || it.intent.n != null ||
                     it.deltas.isEmpty() || it.deltas.any { delta -> delta.key !in records &&
-                        !(delta.lattice.life == null && delta.lattice.born != null && delta.lattice.fields.isEmpty() && delta.texts.isEmpty()) } }) throw CommitFailure.malformed("legacy-workout-mixed")
+                        !(delta.lattice.life == null && delta.lattice.born != null && delta.lattice.fields.isEmpty() && delta.texts.isEmpty()) } }) throw CommitFailure.malformed("supersede-mixed")
             gesture
         }
 }
 
-fun Engine.reconcileConfirmedLegacyCommand(context: CommitContext, scope: ScopeRef, gestureId: String, command: String, record: RecordKey): Boolean = lock.withLock {
+fun Engine.reconcileConfirmedCommand(context: CommitContext, scope: ScopeRef, gestureId: String, command: String, record: RecordKey): Boolean = lock.withLock {
     ensureOpen()
     val replica = device.replicas.single { it.id == context.replica }
     val known = context.confirmed(record.type, record.id)?.takeIf { it.isVisible && it.born != null } ?: return@withLock false
@@ -44,7 +44,7 @@ fun Engine.reconcileConfirmedLegacyCommand(context: CommitContext, scope: ScopeR
     true
 }
 
-private fun Engine.commitLegacyGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, at: Long): CommitOutcome {
+private fun Engine.commitPrerequisiteGesture(replica: ReplicaState, scope: ScopeRef, gesture: Gesture, at: Long): CommitOutcome {
     val outcome = commitGesture(replica, scope, gesture, at)
     if (outcome !is CommitOutcome.Committed || gesture.command == null) return outcome
     // Born-only updates require an alive parent at admission without changing its registers.
@@ -67,33 +67,12 @@ private fun Engine.commitLegacyGesture(replica: ReplicaState, scope: ScopeRef, g
     return outcome
 }
 
-fun <T> Engine.commitLegacy(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> = write { replica ->
+fun <T> Engine.commitWithPrerequisites(scope: ScopeRef, body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> = write { replica ->
     if (replica.state !in setOf("anon", "bound")) throw CommitFailure(CommitFailure.Kind.notWritable, replica.state)
     val reader = Reader(replica, scope, now(replica))
     val (gesture, value) = try { body(reader).also { reader.finish() } } finally { reader.end() }
     val outcome = gesture?.let {
-        try { commitLegacyGesture(replica, scope, it, reader.now) }
-        catch (_: IllegalArgumentException) { throw CommitFailure.malformed("invalid-value") }
-    }
-    outcome to value
-}
-
-fun <T> Engine.migrateLegacy(account: String?, scope: ScopeRef, activate: Boolean = false,
-    body: (CommitContext) -> Pair<Gesture?, T>): Pair<CommitOutcome?, T> = write(EngineOperation.storage) {
-    val target = device.replicas.firstOrNull { replica ->
-        if (account == null) replica.state == "anon" else replica.account == account
-    } ?: freshReplica(identities.replicaID(), account).also { replica ->
-        if (account != null && !activate) replica.meta = replica.meta.with("state" to works.windmill.sync.core.Json.of("dormant"))
-        device.replicas.add(replica)
-    }
-    if (activate) {
-        if (target.state == "dormant") target.meta = target.meta.with("state" to works.windmill.sync.core.Json.of("bound"))
-        activate(device.active, target)
-    }
-    val reader = Reader(target, scope, now(target))
-    val (gesture, value) = try { body(reader).also { reader.finish() } } finally { reader.end() }
-    val outcome = gesture?.let {
-        try { commitLegacyGesture(target, scope, it, now(target)) }
+        try { commitPrerequisiteGesture(replica, scope, it, reader.now) }
         catch (_: IllegalArgumentException) { throw CommitFailure.malformed("invalid-value") }
     }
     outcome to value

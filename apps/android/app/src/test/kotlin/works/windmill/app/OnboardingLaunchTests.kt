@@ -16,13 +16,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalClaimConsent
 import works.windmill.gym.store.LocalCoach
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.store.WorkoutControls
 import works.windmill.platform.telemetry.Telemetry
 
 @RunWith(RobolectricTestRunner::class)
@@ -63,7 +58,7 @@ class OnboardingLaunchTests {
     @Test
     fun startupSnapshotPrecedesStoresCreatedByApplicationInitialization() {
         val launch = OnboardingLaunch(context, telemetry)
-        File(context.filesDir, DeviceCopy.fileName).writeText("application startup fixture")
+        File(context.filesDir, WorkoutControls.fileName).writeText("application startup fixture")
         assertTrue(launch.firstLaunch(hasAccount = false, deepLink = false))
         assertFalse(OnboardingLaunch(context, telemetry).firstLaunch(hasAccount = false, deepLink = false))
         assertEquals(emptyList<String>(), failures)
@@ -86,8 +81,7 @@ class OnboardingLaunchTests {
 
     @Test
     fun everyGymShelfSuppressesIncludingEmptyCorruptAndInterruptedWrites() {
-        val names = listOf(DeviceCopy.fileName, LocalBodyweight.fileName, LocalClaimConsent.fileName,
-            LocalCoach.fileName, LocalLog.fileName, LocalPreferences.fileName, SetQueue.fileName)
+        val names = listOf(LocalCoach.fileName, WorkoutControls.fileName)
         for (name in names) {
             for (suffix in listOf("", ".tmp", ".bak")) {
                 for (contents in listOf("", "corrupt", "{\"shelves\":{\"u.other\":{}}}")) {
@@ -105,7 +99,7 @@ class OnboardingLaunchTests {
 
     @Test
     fun unreadableGymShelfIsStillEvidenceOfExistingData() {
-        val file = File(context.filesDir, LocalLog.fileName)
+        val file = File(context.filesDir, WorkoutControls.fileName)
         assertTrue(file.mkdir())
         assertFalse(OnboardingLaunch(context, telemetry).firstLaunch(hasAccount = false, deepLink = false))
         assertEquals(emptyList<String>(), failures)

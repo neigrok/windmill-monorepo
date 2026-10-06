@@ -25,13 +25,11 @@ import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performSemanticsAction
 import androidx.compose.ui.test.performTextClearance
 import androidx.compose.ui.test.performTextReplacement
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Rule
@@ -44,14 +42,7 @@ import org.robolectric.shadows.ShadowDialog
 import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.domain.TargetEntry
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
 
 // The target sheet's head: the count's refusals under it, the open line's one sentence, and the
 // two keyboard rules — the sheet paints in the same place on every open, and Back with the
@@ -68,29 +59,14 @@ class TargetSheetTests {
     private val pushA = RoutineDraft(name = "Push A").adding("bench-press")
         .targeting("bench-press", List(3) { SetTarget(8, 60.0) })
 
-    private fun store(scope: CoroutineScope): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { null },
-        )
-        runBlocking {
-            store.connect(Account(api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }), user = null))
-        }
-        return store
-    }
-
-    private fun editor(scope: CoroutineScope, opening: RoutineDraft): () -> RoutineDraft {
-        val store = store(scope)
+    // Signed out, so the catalog is the anonymous replica's: the seeds by name and equipment.
+    private fun editor(room: EngineRoomFixture, opening: RoutineDraft): () -> RoutineDraft {
+        runBlocking { room.select(null) }
         var draft by mutableStateOf(opening)
         compose.setContent {
             RoutineBuilder(
                 draft = draft,
-                store = store,
+                store = room.store,
                 saving = false,
                 onDraft = { draft = it },
                 onSave = {},
@@ -132,24 +108,25 @@ class TargetSheetTests {
     @Test
     fun testTheCountsRefusalsAreSaidUnderTheHeadAndTheCommitWaitsForThem() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA)
-        openTheSheet()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA)
+            openTheSheet()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("0")
-        compose.onNodeWithText(TargetEntry.zeroTarget).assertIsDisplayed()
-        compose.onNode(hasText("Set") and hasClickAction()).assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("0")
+            compose.onNodeWithText(TargetEntry.zeroTarget).assertIsDisplayed()
+            compose.onNode(hasText("Set") and hasClickAction()).assertIsNotEnabled()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("21")
-        compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
-        compose.onNodeWithText(TargetEntry.zeroTarget).assertDoesNotExist()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("21")
+            compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
+            compose.onNodeWithText(TargetEntry.zeroTarget).assertDoesNotExist()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("2.5")
-        compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("2.5")
+            compose.onNodeWithText(TargetEntry.outsideSets).assertIsDisplayed()
 
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
-        compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
-        compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
-        scope.cancel()
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            compose.onNodeWithText(TargetEntry.outsideSets).assertDoesNotExist()
+            compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // The head writes every row, so a fault typed there is the head's and is said once, under the
@@ -157,31 +134,32 @@ class TargetSheetTests {
     @Test
     fun testAFaultTypedIntoTheHeadIsSaidOnceUnderTheHeadField() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA)
-        openTheSheet()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA)
+            openTheSheet()
 
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("101")
-        compose.onAllNodesWithText(TargetEntry.outsideReps).assertCountEquals(1)
-        val said = compose.onNodeWithText(TargetEntry.outsideReps).fetchSemanticsNode().positionInRoot.y
-        val head = compose.onNodeWithContentDescription("Reps target").fetchSemanticsNode().positionInRoot.y
-        val row1 = compose.onNodeWithContentDescription("Set 1 reps").fetchSemanticsNode().positionInRoot.y
-        assertTrue("under the head field and above row 1", said > head && said < row1)
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("101")
+            compose.onAllNodesWithText(TargetEntry.outsideReps).assertCountEquals(1)
+            val said = compose.onNodeWithText(TargetEntry.outsideReps).fetchSemanticsNode().positionInRoot.y
+            val head = compose.onNodeWithContentDescription("Reps target").fetchSemanticsNode().positionInRoot.y
+            val row1 = compose.onNodeWithContentDescription("Set 1 reps").fetchSemanticsNode().positionInRoot.y
+            assertTrue("under the head field and above row 1", said > head && said < row1)
 
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("5")
-        compose.onNodeWithContentDescription("Weight target").performTextReplacement("82.5.0")
-        compose.onNodeWithText(TargetEntry.onePoint).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
-        compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
-        compose.onNodeWithContentDescription("Weight target").performTextReplacement("eighty")
-        compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("5")
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("82.5.0")
+            compose.onNodeWithText(TargetEntry.onePoint).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("501")
+            compose.onNodeWithText(TargetEntry.overWeight).assertIsDisplayed()
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("eighty")
+            compose.onNodeWithText(TargetEntry.notANumber).assertIsDisplayed()
 
-        // With every field readable nothing stands where the refusal was: a comma and a point both
-        // read, and no sentence says so.
-        compose.onNodeWithContentDescription("Weight target").performTextReplacement("100")
-        compose.onNodeWithText(TargetEntry.notANumber).assertDoesNotExist()
-        compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
-        compose.onNodeWithText("Set · 3 × 5 · 100").assertIsDisplayed()
-        scope.cancel()
+            // With every field readable nothing stands where the refusal was: a comma and a point both
+            // read, and no sentence says so.
+            compose.onNodeWithContentDescription("Weight target").performTextReplacement("100")
+            compose.onNodeWithText(TargetEntry.notANumber).assertDoesNotExist()
+            compose.onNodeWithText("comma or point", substring = true).assertDoesNotExist()
+            compose.onNodeWithText("Set · 3 × 5 · 100").assertIsDisplayed()
+        } } finally { scope.cancel() }
     }
 
     // A movement added from the picker opens on the open line. 15-the-routine pins the sentence on
@@ -191,38 +169,40 @@ class TargetSheetTests {
     @Test
     fun testTheOpenLineSaysWhatItMeansAboveTheFieldsWhereTheLifterDecidesIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, RoutineDraft(name = "Push A").adding("bench-press"))
-        openTheSheet()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, RoutineDraft(name = "Push A").adding("bench-press"))
+            openTheSheet()
 
-        compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(1)
-        val sentence = compose.onNodeWithText(TargetEntry.openLine).fetchSemanticsNode().positionInRoot.y
-        val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot.y
-        assertTrue("and above the fields", sentence < sets)
-        compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
-        compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()
+            compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(1)
+            val sentence = compose.onNodeWithText(TargetEntry.openLine).fetchSemanticsNode().positionInRoot.y
+            val sets = compose.onNodeWithContentDescription("Sets target").fetchSemanticsNode().positionInRoot.y
+            assertTrue("and above the fields", sentence < sets)
+            compose.onNodeWithContentDescription("Reps target").assertIsNotEnabled()
+            compose.onNodeWithContentDescription("Weight target").assertIsNotEnabled()
 
-        // It goes the moment the line names a count, and comes back when the count is cleared.
-        compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
-        compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(0)
-        compose.onNodeWithContentDescription("Sets target").performTextClearance()
-        compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(1)
-        scope.cancel()
+            // It goes the moment the line names a count, and comes back when the count is cleared.
+            compose.onNodeWithContentDescription("Sets target").performTextReplacement("3")
+            compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(0)
+            compose.onNodeWithContentDescription("Sets target").performTextClearance()
+            compose.onAllNodesWithText(TargetEntry.openLine).assertCountEquals(1)
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testAClearedLoadIsLastTimeAndTheOthersStillWrite() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val draft = editor(scope, pushA)
-        openTheSheet()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            val draft = editor(room, pushA)
+            openTheSheet()
 
-        compose.onNodeWithContentDescription("Weight target").performTextClearance()
-        compose.onNodeWithContentDescription("Reps target").performTextReplacement("5")
-        compose.onNodeWithText("Set · 3 × 5").performClick()
+            compose.onNodeWithContentDescription("Weight target").performTextClearance()
+            compose.onNodeWithContentDescription("Reps target").performTextReplacement("5")
+            compose.onNodeWithText("Set · 3 × 5").performClick()
 
-        compose.runOnIdle {
-            assertEquals("a cleared load means `last time`", List(3) { SetTarget(5) }, draft().entry("bench-press")!!.sets)
-        }
-        scope.cancel()
+            compose.runOnIdle {
+                assertEquals("a cleared load means `last time`", List(3) { SetTarget(5) }, draft().entry("bench-press")!!.sets)
+            }
+        } } finally { scope.cancel() }
     }
 
     // The sheet's window is padded by whatever keyboard is up when it opens, and the keyboard
@@ -232,32 +212,34 @@ class TargetSheetTests {
     @Test
     fun testTheScreenGivesUpItsKeyboardAsTheSheetRises() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, RoutineDraft().adding("bench-press"))
-        compose.waitForIdle()
-        compose.onNodeWithContentDescription("Routine name").assertIsFocused()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, RoutineDraft().adding("bench-press"))
+            compose.waitForIdle()
+            compose.onNodeWithContentDescription("Routine name").assertIsFocused()
 
-        openTheSheet()
-        compose.onNodeWithContentDescription("Routine name").assertIsNotFocused()
-        scope.cancel()
+            openTheSheet()
+            compose.onNodeWithContentDescription("Routine name").assertIsNotFocused()
+        } } finally { scope.cancel() }
     }
 
     @Test
     fun testTheSheetsFieldsStandInTheSamePlaceOnTwoConsecutiveOpens() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA)
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA)
 
-        openTheSheet()
-        val first = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
-        compose.onNodeWithContentDescription("Sets target").performClick()
-        keyboardOverTheSheet(up = true)
-        val lifted = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
-        assertTrue("the keyboard lifts the sheet while it stands", lifted < first)
-        dismissTheSheet()
+            openTheSheet()
+            val first = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
+            compose.onNodeWithContentDescription("Sets target").performClick()
+            keyboardOverTheSheet(up = true)
+            val lifted = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
+            assertTrue("the keyboard lifts the sheet while it stands", lifted < first)
+            dismissTheSheet()
 
-        openTheSheet()
-        val second = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
-        assertEquals("the same place on the next open", first, second)
-        scope.cancel()
+            openTheSheet()
+            val second = compose.onNodeWithContentDescription("Sets target").getBoundsInRoot().top
+            assertEquals("the same place on the next open", first, second)
+        } } finally { scope.cancel() }
     }
 
     // Back with the keyboard up puts the keyboard down and leaves the sheet; with it down, Back is
@@ -265,20 +247,21 @@ class TargetSheetTests {
     @Test
     fun testBackWithTheKeyboardUpDismissesOnlyTheKeyboard() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        editor(scope, pushA)
-        openTheSheet()
-        compose.onNodeWithContentDescription("Sets target").performClick()
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            editor(room, pushA)
+            openTheSheet()
+            compose.onNodeWithContentDescription("Sets target").performClick()
 
-        keyboardOverTheSheet(up = true)
-        compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
-        compose.waitForIdle()
-        compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
+            keyboardOverTheSheet(up = true)
+            compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
+            compose.waitForIdle()
+            compose.onNodeWithText("Set · 3 × 8 · 60").assertIsDisplayed()
 
-        keyboardOverTheSheet(up = false)
-        compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Set · ", substring = true).fetchSemanticsNodes().isEmpty()
-        }
-        scope.cancel()
+            keyboardOverTheSheet(up = false)
+            compose.runOnIdle { ShadowDialog.getLatestDialog().onBackPressed() }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Set · ", substring = true).fetchSemanticsNodes().isEmpty()
+            }
+        } } finally { scope.cancel() }
     }
 }

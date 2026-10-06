@@ -2,11 +2,6 @@ package works.windmill.gym.net
 
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.delay
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonArray
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import kotlinx.serialization.json.long
 import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -30,8 +25,10 @@ import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetWrite
 import works.windmill.gym.domain.TopSet
 import works.windmill.gym.domain.TrainingSet
-import works.windmill.gym.store.Verdict
+import works.windmill.gym.store.TrainingRefused
 import works.windmill.gym.store.EngineTraining
+import works.windmill.gym.store.WorkoutImports
+import works.windmill.gym.domain.Session
 import works.windmill.sync.engine.*
 import works.windmill.sync.schema.SyncSchema
 import works.windmill.sync.schema.Gym
@@ -45,7 +42,6 @@ import works.windmill.platform.auth.MemorySessions
 import works.windmill.platform.auth.UserResponse
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException
-import works.windmill.platform.net.WindmillJson
 
 @FixMethodOrder(MethodSorters.NAME_ASCENDING)
 class LiveWireTests {
@@ -56,7 +52,7 @@ class LiveWireTests {
         private val transport by lazy { HTTPTransport(base.toString(), SyncSchema.registry.version.toInt()) }
         private val probeClock = object : EngineClock { override fun now() = System.currentTimeMillis() }
         private val engine by lazy { Engine.memory(SyncSchema.registry, clock = probeClock) }
-        private val adapter by lazy { EngineTraining(engine) { GymHttp(api) } }
+        private val adapter by lazy { EngineTraining(engine) }
         private var connected = false
         private suspend fun response(reply: Reply<SyncResponse>): SyncResponse = when (reply) {
             is Reply.Answer -> reply.value
@@ -66,47 +62,66 @@ class LiveWireTests {
         private fun pending(key: RecordKey) = engine.read(ScopeRef(Gym.scope)) {
             it.drawn(key.type, key.id)?.isPending == true
         }
-        private suspend fun drain(key: RecordKey? = null) {
+        private suspend fun drain(key: RecordKey? = null) = drain(engine) { adapter.firstPullComplete && (key == null || !pending(key)) }
+        private suspend fun drain(phone: Engine, settled: () -> Boolean) {
             val deadline = System.nanoTime() + 15_000_000_000L
             while (System.nanoTime() < deadline) {
                 // This transport probe has no runtime to release the normal undo hold.
-                engine.releaseHeld()
-                val pushed = engine.nextPush()
+                phone.releaseHeld()
+                val pushed = phone.nextPush()
                 if (pushed != null) {
                     val send = probeClock.reading()
                     val reply = response(transport.push(pushed, checkNotNull(bearer)))
-                    engine.onPushResponse(pushed, reply, RequestTiming(send, probeClock.reading()))
+                    phone.onPushResponse(pushed, reply, RequestTiming(send, probeClock.reading()))
                 }
-                val pull = checkNotNull(engine.pullRequest(listOf(ScopeRef(Gym.scope))))
+                val pull = checkNotNull(phone.pullRequest(listOf(ScopeRef(Gym.scope))))
                 val send = probeClock.reading()
-                engine.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
-                if (adapter.firstPullComplete && (key == null || !pending(key))) return
+                phone.onPullResponse(pull, response(transport.pull(pull, bearer)), RequestTiming(send, probeClock.reading()))
+                if (settled()) return
                 delay(100)
             }
             error("The probe failed to settle through /v1/sync.")
         }
-        private val wire by lazy { object : TrainingSyncing by adapter {
-            override suspend fun createRoutine(write: RoutineWrite): works.windmill.gym.domain.Routine {
-                adapter.createRoutine(write); drain(RecordKey(Gym.Types.routine, RecordID(write.id))); return checkNotNull(adapter.routine(write.id))
+        // As the application signs a phone in: hello, then the account's own decision, adding what
+        // the phone holds when both sides hold training.
+        private suspend fun signIn(phone: Engine) {
+            val send = probeClock.reading()
+            val hello = response(transport.hello(bearer))
+            assertEquals(200, hello.status)
+            phone.onHello(hello, RequestTiming(send, probeClock.reading()))
+            val body = checkNotNull(hello.body)
+            val account = body.member("as").str()
+            val holds = body.member("holdsRecords").obj().mapValues { it.value.bool() }
+            val question = phone.signIn(account, holds)
+            if (!question.member("complete").bool()) {
+                val pins = question.member("due").arr().associate { due ->
+                    due.member("product").str() to due.member("counted").arr().map { it.str() } }
+                assertTrue(phone.signIn(account, holds, mapOf("gym" to "add"), pins).member("complete").bool())
             }
-            override suspend fun replaceRoutine(id: String, write: RoutineWrite): works.windmill.gym.domain.Routine {
-                adapter.replaceRoutine(id, write); drain(RecordKey(Gym.Types.routine, RecordID(id))); return checkNotNull(adapter.routine(id))
-            }
-            override suspend fun startSession(start: SessionStart): works.windmill.gym.domain.Session {
-                val session = adapter.startSession(start); drain(RecordKey(Gym.Types.session, RecordID(session.id))); return checkNotNull(adapter.session(session.id)).session
-            }
-            override suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
-                adapter.appendSet(sessionId, write)
-                val key = RecordKey(Gym.Types.set, RecordID(write.id))
-                if (pending(key)) drain(key)
-                return checkNotNull(adapter.session(sessionId)).sets.first { it.id == write.id }
-            }
-            override suspend fun finishSession(sessionId: String, finishedAtMs: Long): works.windmill.gym.domain.Session {
-                adapter.finishSession(sessionId, finishedAtMs); drain(RecordKey(Gym.Types.session, RecordID(sessionId))); return checkNotNull(adapter.session(sessionId)).session
-            }
-            override suspend fun discardSession(sessionId: String) { adapter.discardSession(sessionId); drain(RecordKey(Gym.Types.session, RecordID(sessionId))) }
-            override suspend fun deleteRoutine(id: String) { adapter.deleteRoutine(id); drain(RecordKey(Gym.Types.routine, RecordID(id))) }
-        } }
+            phone.subscribe(ScopeRef(Gym.scope))
+        }
+        private val rest by lazy { GymHttp(api) }
+        // Each write commits to the replica and is then carried through /v1/sync until the log holds it.
+        private suspend fun createRoutine(write: RoutineWrite): works.windmill.gym.domain.Routine {
+            adapter.createRoutine(write); drain(RecordKey(Gym.Types.routine, RecordID(write.id))); return checkNotNull(adapter.routine(write.id))
+        }
+        private suspend fun replaceRoutine(id: String, write: RoutineWrite): works.windmill.gym.domain.Routine {
+            adapter.replaceRoutine(id, write); drain(RecordKey(Gym.Types.routine, RecordID(id))); return checkNotNull(adapter.routine(id))
+        }
+        private suspend fun startSession(start: SessionStart): works.windmill.gym.domain.Session {
+            val session = adapter.startSession(start); drain(RecordKey(Gym.Types.session, RecordID(session.id))); return checkNotNull(adapter.session(session.id)).session
+        }
+        private suspend fun appendSet(sessionId: String, write: SetWrite): TrainingSet {
+            adapter.appendSet(sessionId, write)
+            val key = RecordKey(Gym.Types.set, RecordID(write.id))
+            if (pending(key)) drain(key)
+            return checkNotNull(adapter.session(sessionId)).sets.first { it.id == write.id }
+        }
+        private suspend fun finishSession(sessionId: String, finishedAtMs: Long): works.windmill.gym.domain.Session {
+            adapter.finishSession(sessionId, finishedAtMs); drain(RecordKey(Gym.Types.session, RecordID(sessionId))); return checkNotNull(adapter.session(sessionId)).session
+        }
+        private suspend fun discardSession(sessionId: String) { adapter.discardSession(sessionId); drain(RecordKey(Gym.Types.session, RecordID(sessionId))) }
+        private suspend fun deleteRoutine(id: String) { adapter.deleteRoutine(id); drain(RecordKey(Gym.Types.routine, RecordID(id))) }
         @JvmStatic @AfterClass fun closeProbe() { if (connected) { transport.close(); engine.close() } }
 
         private val tag = "%08x".format(java.security.SecureRandom().nextInt())
@@ -124,6 +139,11 @@ class LiveWireTests {
 
         private var openedA: works.windmill.gym.domain.Session? = null
         private var storedWorking: TrainingSet? = null
+
+        private val importedId = "ses_probe_a${tag}3"
+        private val importedSetId = "set_probe_a${tag}i"
+        private val startC = startA - 1_800_000
+        private val finishC = startC + 120_000
     }
 
     @Before
@@ -134,13 +154,7 @@ class LiveWireTests {
         )
         assumeTrue("WM_WIRE_BEARER not set — no probe session to speak as", bearer != null)
         if (!connected) runBlocking {
-            val send = probeClock.reading()
-            val hello = response(transport.hello(bearer))
-            assertEquals(200, hello.status)
-            engine.onHello(hello, RequestTiming(send, probeClock.reading()))
-            val body = checkNotNull(hello.body)
-            engine.signIn(body.member("as").str(), body.member("holdsRecords").obj().mapValues { it.value.bool() })
-            engine.subscribe(ScopeRef(Gym.scope))
+            signIn(engine)
             connected = true
             drain()
         }
@@ -148,7 +162,7 @@ class LiveWireTests {
 
     @Test
     fun t01_theCatalogDecodesAllSixtyFourSeeds() = runBlocking {
-        val catalog = wire.exercises()
+        val catalog = adapter.catalogue()
         assertEquals(64, catalog.count { !it.custom })
         assertEquals(
             Exercise("farmers-carry", "Farmers Carry", "carry", "dumbbell", 2.0, false),
@@ -164,7 +178,7 @@ class LiveWireTests {
             RoutineEntryWrite("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())),
             RoutineEntryWrite("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))),
         ))
-        val created = wire.createRoutine(write)
+        val created = createRoutine(write)
         assertEquals(routineId, created.id)
         assertEquals("Probe Day A", created.name)
         assertEquals(
@@ -175,19 +189,19 @@ class LiveWireTests {
             created.entries,
         )
 
-        assertEquals(created, wire.routine(routineId))
+        assertEquals(created, adapter.routine(routineId))
 
-        val replaced = wire.replaceRoutine(routineId, RoutineWrite(created))
+        val replaced = replaceRoutine(routineId, RoutineWrite(created))
         assertEquals(created, replaced)
-        assertEquals(created, wire.routine(routineId))
+        assertEquals(created, adapter.routine(routineId))
 
-        assertTrue(wire.routines().any { it.id == routineId })
-        assertNull("an absent routine folds to null, never throws", wire.routine("rt_probe_a_gone404"))
+        assertTrue(adapter.program().any { it.id == routineId })
+        assertNull("an absent routine folds to null, never throws", adapter.routine("rt_probe_a_gone404"))
     }
 
     @Test
     fun t03_aStartFreezesThePlanAndSetsComeBackNumbered() = runBlocking {
-        val opened = wire.startSession(SessionStart(sessionAId, startA, routineId))
+        val opened = startSession(SessionStart(sessionAId, startA, routineId))
         openedA = opened
         assertEquals(sessionAId, opened.id)
         assertEquals(startA, opened.startedAtMs)
@@ -199,13 +213,13 @@ class LiveWireTests {
         assertEquals(PlanEntry("bench-press", listOf(SetTarget(), SetTarget(), SetTarget())), plan.entry("bench-press"))
         assertEquals(PlanEntry("back-squat", listOf(SetTarget(5, 100.0), SetTarget(5, 100.0))), plan.entry("back-squat"))
 
-        val warmup = wire.appendSet(sessionAId,
+        val warmup = appendSet(sessionAId,
             SetWrite(warmupId, "bench-press", 40.0, 8, SetKind.Warmup, startA + 60_000))
         assertEquals(
             TrainingSet(warmupId, "bench-press", 1, 40.0, 8, SetKind.Warmup, null, "", startA + 60_000),
             warmup,
         )
-        val working = wire.appendSet(sessionAId,
+        val working = appendSet(sessionAId,
             SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000))
         assertEquals(
             TrainingSet(workingId, "bench-press", 2, 82.5, 5, SetKind.Working, null, "", startA + 120_000),
@@ -217,39 +231,35 @@ class LiveWireTests {
     @Test
     fun t04_aReplayOfTheSameSetIdAnswersTheStoredRowByteForSame() = runBlocking {
         val write = SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000)
-        val replayed = wire.appendSet(sessionAId, write)
+        val replayed = appendSet(sessionAId, write)
         assertEquals(storedWorking, replayed)
         val rawOnce = engine.snapshot()
-        val twice = wire.appendSet(sessionAId, write)
+        val twice = appendSet(sessionAId, write)
         assertEquals(replayed, twice)
         assertEquals(rawOnce, engine.snapshot())
     }
 
     @Test
     fun t05_finishClosesReviewReadsAndAFreshSetIsDropped() = runBlocking {
-        val closed = wire.finishSession(sessionAId, finishA)
+        val closed = finishSession(sessionAId, finishA)
         assertEquals(sessionAId, closed.id)
         assertEquals(finishA, closed.finishedAtMs)
         assertTrue(!closed.isOpen)
 
-        val replayed = wire.appendSet(sessionAId,
+        val replayed = appendSet(sessionAId,
             SetWrite(workingId, "bench-press", 82.5, 5, SetKind.Working, startA + 120_000))
         assertEquals(storedWorking, replayed)
 
         try {
-            wire.appendSet(sessionAId,
+            appendSet(sessionAId,
                 SetWrite("set_probe_a${tag}x", "bench-press", 85.0, 3, SetKind.Working, finishA + 1_000))
             fail("a fresh set into a finished session must refuse")
-        } catch (refused: WindmillApiException.Refused) {
-            assertEquals(409, refused.status)
-            assertEquals("session-finished", refused.refusal.code)
-            assertEquals(
-                Verdict.Dropped("the session closed before this set reached it"),
-                Verdict.refusing(RefusalFacts(refused)),
-            )
+        } catch (refused: TrainingRefused) {
+            assertEquals("session-finished", refused.code)
+            assertEquals("That workout has finished.", refused.line)
         }
 
-        val review = wire.review(sessionAId)
+        val review = adapter.review(sessionAId)
         assertEquals(finishA - startA, review.stats.durationMs)
         assertEquals(1, review.stats.workingSets)
         assertNotNull(review.stats.topE1rm)
@@ -261,14 +271,14 @@ class LiveWireTests {
 
     @Test
     fun t06_lastTimeAnswersHistoryOrTheBareMovement() = runBlocking {
-        val trained = wire.lastTime("bench-press")
+        val trained = adapter.lastTime("bench-press")
         assertEquals("bench-press", trained.exerciseId)
         assertTrue(!trained.isFirstTime)
         assertEquals(sessionAId, trained.session!!.id)
         assertEquals("Probe Day A", trained.routine)
         assertEquals(listOf(storedWorking), trained.sets)
 
-        val untouched = wire.lastTime("suitcase-carry")
+        val untouched = adapter.lastTime("suitcase-carry")
         assertEquals("suitcase-carry", untouched.exerciseId)
         assertTrue("no history means session and sets are omitted TOGETHER", untouched.isFirstTime)
         assertNull(untouched.session)
@@ -276,42 +286,35 @@ class LiveWireTests {
         assertEquals(emptyList<TrainingSet>(), untouched.sets)
 
         try {
-            wire.lastTime("probe-not-a-movement")
-            fail("an unknown movement is a 400, never folded to null")
-        } catch (refused: WindmillApiException.Refused) {
-            assertEquals(400, refused.status)
-            assertEquals("unknown-exercise", refused.refusal.code)
+            adapter.lastTime("probe-not-a-movement")
+            fail("an unknown movement is refused, never folded to null")
+        } catch (refused: TrainingRefused) {
+            assertEquals("unknown-exercise", refused.code)
         }
     }
 
     @Test
     fun t07_theLadderSpeaksOverTheRealWire() = runBlocking {
-        val opened = wire.startSession(SessionStart(sessionBId, startB))
+        val opened = startSession(SessionStart(sessionBId, startB))
         assertEquals(sessionBId, opened.id)
         assertNull("an ad-hoc start carries no routine", opened.routineId)
         assertNull(opened.plan)
 
         try {
-            wire.appendSet(sessionBId,
+            appendSet(sessionBId,
                 SetWrite(workingId, "back-squat", 100.0, 5, SetKind.Working, startB + 30_000))
             fail("an id spent in another session must refuse")
-        } catch (refused: WindmillApiException.Refused) {
-            assertEquals(409, refused.status)
-            assertEquals("set-id-taken", refused.refusal.code)
-            assertEquals(Verdict.Remint("that set id is already used"), Verdict.refusing(RefusalFacts(refused)))
+        } catch (refused: TrainingRefused) {
+            assertEquals("set-id-taken", refused.code)
+            assertEquals("that set id is already used", refused.line)
         }
 
         try {
-            wire.appendSet(sessionBId,
+            appendSet(sessionBId,
                 SetWrite("set_probe_a${tag}z", "probe-not-a-movement", 60.0, 5, SetKind.Working, startB + 40_000))
             fail("a movement outside the catalog must refuse")
-        } catch (refused: WindmillApiException.Refused) {
-            assertEquals(400, refused.status)
-            assertEquals("unknown-exercise", refused.refusal.code)
-            assertEquals(
-                Verdict.Refused("that movement is not in the catalog"),
-                Verdict.refusing(RefusalFacts(refused)),
-            )
+        } catch (refused: TrainingRefused) {
+            assertEquals(Gym.Codes.unknownExercise, refused.code)
         }
 
         val unauthorized = response(transport.push(works.windmill.sync.core.Json.objectOf(
@@ -322,14 +325,14 @@ class LiveWireTests {
             assertEquals(Reply.Unreachable, offline.hello(bearer))
         }
 
-        wire.appendSet(sessionBId, SetWrite(squatId, "back-squat", 100.0, 5, SetKind.Working, startB + 60_000))
-        wire.finishSession(sessionBId, finishB)
+        appendSet(sessionBId, SetWrite(squatId, "back-squat", 100.0, 5, SetKind.Working, startB + 60_000))
+        finishSession(sessionBId, finishB)
         Unit
     }
 
     @Test
     fun t08_theLogPagesOnBothHalvesOfTheCursor() = runBlocking {
-        val pageOne = wire.sessions(limit = 1, before = null, beforeId = null)
+        val pageOne = adapter.sessions(limit = 1, before = null, beforeId = null)
         assertEquals(1, pageOne.size)
         val newest = pageOne[0]
         assertEquals(sessionBId, newest.id)
@@ -342,7 +345,7 @@ class LiveWireTests {
         assertEquals(TopSet(100.0, 5), newest.topSet)
         assertEquals(false, newest.closedItself)
 
-        val pageTwo = wire.sessions(limit = 1, before = newest.startedAtMs, beforeId = newest.id)
+        val pageTwo = adapter.sessions(limit = 1, before = newest.startedAtMs, beforeId = newest.id)
         assertEquals(1, pageTwo.size)
         val older = pageTwo[0]
         assertEquals(sessionAId, older.id)
@@ -351,17 +354,17 @@ class LiveWireTests {
         assertEquals(TopSet(82.5, 5), older.topSet)
         assertEquals("Probe Day A", older.plan!!.routine)
 
-        val detail = wire.session(sessionAId)
+        val detail = adapter.session(sessionAId)
         assertNotNull(detail)
         assertEquals(sessionAId, detail!!.session.id)
         assertEquals(finishA, detail.session.finishedAtMs)
         assertEquals(listOf(warmupId, workingId), detail.sets.map { it.id })
-        assertNull("an absent session folds to null", wire.session("ses_probe_a_gone404"))
+        assertNull("an absent session folds to null", adapter.session("ses_probe_a_gone404"))
     }
 
     @Test
     fun t09_theRecordReadsOneMovementWholeAndFoldsAnAbsentOneToNull() = runBlocking {
-        val bench = wire.record("bench-press")
+        val bench = adapter.record("bench-press")
         assertNotNull(bench)
         assertEquals("bench-press", bench!!.exercise.id)
         assertEquals("Bench Press", bench.exercise.name)
@@ -381,22 +384,22 @@ class LiveWireTests {
         assertEquals(listOf(workingId), day.sets.map { it.id })
 
         assertNull("an absent movement folds to null, exactly as an absent session does",
-            wire.record("probe-not-a-movement"))
+            adapter.record("probe-not-a-movement"))
     }
 
     @Test
     fun t10_aShareIsMintedOnceAndRevokedIsGone() = runBlocking {
-        val minted = wire.share(sessionBId)
+        val minted = rest.share(sessionBId)
         assertTrue(minted.token.isNotEmpty())
         assertTrue(minted.expiresAtMs > System.currentTimeMillis())
         assertNotNull("the server composes the url; the client only renders it", minted.url)
         assertTrue(minted.url!!.endsWith("/#/gym/shared/${minted.token}"))
 
-        assertEquals("share is idempotent on the session", minted, wire.share(sessionBId))
+        assertEquals("share is idempotent on the session", minted, rest.share(sessionBId))
 
-        wire.revokeShare(sessionBId)
+        rest.revokeShare(sessionBId)
         try {
-            wire.revokeShare(sessionBId)
+            rest.revokeShare(sessionBId)
             fail("nothing to revoke answers 404, and the client does not fold it")
         } catch (refused: WindmillApiException.Refused) {
             assertEquals(404, refused.status)
@@ -405,13 +408,41 @@ class LiveWireTests {
 
     @Test
     fun t11_theProbeRowsAreCleanedUp() = runBlocking {
-        wire.discardSession(sessionAId)
-        wire.discardSession(sessionBId)
-        wire.deleteRoutine(routineId)
-        assertNull(wire.session(sessionAId))
-        assertNull(wire.session(sessionBId))
-        assertNull(wire.routine(routineId))
-        assertTrue(wire.sessions(50, null, null).none { it.id == sessionAId || it.id == sessionBId })
+        discardSession(sessionAId)
+        discardSession(sessionBId)
+        deleteRoutine(routineId)
+        assertNull(adapter.session(sessionAId))
+        assertNull(adapter.session(sessionBId))
+        assertNull(adapter.routine(routineId))
+        assertTrue(adapter.sessions(50, null, null).none { it.id == sessionAId || it.id == sessionBId })
+    }
+
+    // Signed-out training is prepared as an import before the sign-in and lands on the account whole,
+    // with the phone's own ids.
+    @Test
+    fun t12_aSignedOutWorkoutLandsOnTheAccountAsAnImportAtSignIn() = runBlocking {
+        Engine.memory(SyncSchema.registry, clock = probeClock, commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork, rewriteDeviceValue = WorkoutImports.rewriteDeviceValue).use { phone ->
+            val signedOut = EngineTraining(phone)
+            signedOut.startSession(SessionStart(importedId, startC))
+            signedOut.appendSet(importedId, SetWrite(importedSetId, "back-squat", 60.0, 5, SetKind.Working, startC + 60_000))
+            signedOut.finishSession(importedId, finishC)
+            signedOut.prepareAdoption()
+            assertEquals(listOf(importedId), signedOut.imports.retainedWorkouts().map { it.session.id })
+
+            signIn(phone)
+            drain(phone) { signedOut.firstPullComplete && signedOut.imports.retainedWorkouts().isEmpty() }
+            assertEquals(emptyList<String>(), signedOut.imports.refusals().map { it.id })
+        }
+
+        drain(RecordKey(Gym.Types.session, RecordID(importedId)))
+        val landed = checkNotNull(adapter.session(importedId))
+        assertEquals(Session(importedId, startC, finishC), landed.session)
+        assertEquals(listOf(TrainingSet(importedSetId, "back-squat", 1, 60.0, 5, SetKind.Working, null, "", startC + 60_000)),
+            landed.sets)
+
+        discardSession(importedId)
+        assertNull(adapter.session(importedId))
     }
 
     @Test
@@ -441,20 +472,5 @@ class LiveWireTests {
 
         val me = WindmillApi(base, { captured }).get<UserResponse>("/v1/me").user
         assertEquals(user, me)
-    }
-}
-
-// Not gated: the open line's wire shape needs no server to pin.
-class OpenLineWireTests {
-    @Test
-    fun anOpenLineTravelsAsNoSetsKeyAndReadsBackOpen() {
-        assertEquals(
-            """{"exerciseId":"face-pull"}""",
-            WindmillJson.encodeToString(RoutineEntryWrite.serializer(), RoutineEntryWrite("face-pull")),
-        )
-        val read = WindmillJson.decodeFromString(
-            RoutineEntry.serializer(), """{"position":2,"exerciseId":"face-pull"}""")
-        assertEquals(RoutineEntry(2, "face-pull"), read)
-        assertTrue(read.isOpen)
     }
 }

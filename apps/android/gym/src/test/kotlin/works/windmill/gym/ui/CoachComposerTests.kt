@@ -38,7 +38,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -52,17 +52,9 @@ import org.robolectric.annotation.Implements
 import org.robolectric.shadows.ShadowKeyCharacterMap
 import works.windmill.gym.domain.CoachAttachment
 import works.windmill.gym.domain.CoachDraft
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.LocalCoach
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.storage.AtomicDocument
 
 @RunWith(RobolectricTestRunner::class)
@@ -72,30 +64,21 @@ class CoachComposerTests {
     @get:Rule val compose = createComposeRule()
     @get:Rule val tmp = TemporaryFolder()
 
-    fun store(scope: CoroutineScope, localCoach: LocalCoach = LocalCoach(File(tmp.root, "coach.json"))): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { FakeTraining() },
-            localCoach = localCoach,
-        )
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "user-a", email = "a@example.com", name = "A"),
-            ))
+    private val rooms = mutableListOf<EngineRoomFixture>()
+
+    @After
+    fun closeRooms() = rooms.forEach(EngineRoomFixture::close)
+
+    private fun signedIn(scope: CoroutineScope, localCoach: LocalCoach = LocalCoach(File(tmp.root, "coach.json"))): EngineRoomFixture =
+        EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest(), localCoach = localCoach).also { room ->
+            rooms += room
+            runBlocking { room.select("user-a") }
         }
-        return store
-    }
 
     @Test
     fun touchDoubleTapSelectsAWordAndDraftNotificationsPreserveItUntilAnExternalClear() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
+        val store = signedIn(scope).store
         val draft = CoachDraft("alpha bravo charlie")
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.saveCoachDraft("thread-a", draft)
@@ -130,7 +113,7 @@ class CoachComposerTests {
     @Test
     fun latestEditAndPhotoSurviveUploadCancellationAndHiddenInputWhileAsking() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
+        val store = signedIn(scope).store
         val photo = CoachAttachment("attachment-a", "image/png", 1, 1, 3)
         store.saveCoachDraft("thread-a", CoachDraft("Old caption", photo))
         var busy by mutableStateOf(false)
@@ -168,7 +151,8 @@ class CoachComposerTests {
     @Test
     fun threadAndAccountChangesKeepEachDraftWithItsOwner() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
+        val room = signedIn(scope)
+        val store = room.store
         store.saveCoachDraft("thread-a", CoachDraft("First thread"))
         store.saveCoachDraft("thread-b", CoachDraft("Second thread"))
         var thread by mutableStateOf("thread-a")
@@ -187,12 +171,7 @@ class CoachComposerTests {
         assertEquals("First thread edited", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
 
         compose.runOnIdle {
-            runBlocking {
-                store.connect(Account(
-                    api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                    user = User(id = "user-b", email = "b@example.com", name = "B"),
-                ))
-            }
+            runBlocking { room.select("user-b") }
             account = "user-b"
         }
         assertEquals("", field.fetchSemanticsNode().config[SemanticsProperties.EditableText].text)
@@ -213,7 +192,7 @@ class CoachComposerTests {
             if (!diskAvailable) throw IOException("Disk full")
             AtomicDocument.write(file, text)
         }
-        val store = store(scope, localCoach)
+        val store = signedIn(scope, localCoach).store
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {
             CoachComposer(store, "thread-a", "", false,
@@ -242,7 +221,7 @@ class CoachComposerTests {
     @Config(shadows = [CoachShortcutKeys::class])
     fun keyboardUndoAndRedoImmediatelySendAndPersistTheVisibleText() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope)
+        val store = signedIn(scope).store
         store.saveCoachDraft("thread-a", CoachDraft("First question"))
         val sent = mutableListOf<CoachDraft>()
         compose.setContent {

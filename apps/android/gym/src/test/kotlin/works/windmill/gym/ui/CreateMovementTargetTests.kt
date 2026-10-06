@@ -29,14 +29,12 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTextReplacement
-import java.io.File
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -52,14 +50,7 @@ import works.windmill.gym.domain.RoutineDraft
 import works.windmill.gym.domain.SetTarget
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.net.WindmillApi
+import works.windmill.gym.store.EngineRoomFixture
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
@@ -70,17 +61,16 @@ class CreateMovementTargetTests {
     @Test
     fun createRestoresItsTargetAndAddsTheCompleteSchemeInOneDraftChange() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        try {
-            val store = TrainingStore(SetQueue(File(tmp.root, "queue.json")), DeviceCopy(File(tmp.root, "catalog.json")),
-                LocalLog(File(tmp.root, "local.json")), LocalPreferences(File(tmp.root, "prefs.json")),
-                LocalBodyweight(File(tmp.root, "bodyweight.json")), scope, sync = { null })
-            runBlocking { store.connect(Account(WindmillApi("https://windmill.works".toHttpUrl(), { null }), null)) }
+        try { EngineRoomFixture(tmp.newFolder(), scope).use { room ->
+            room.now = System.currentTimeMillis()
+            runBlocking { room.select(null) }
+            room.store.observeEngine()
             var draft by mutableStateOf(RoutineDraft(name = "Pull"))
             val changes = mutableListOf<RoutineDraft>()
             val restorer = StateRestorationTester(compose)
             restorer.setContent {
                 GymMaterial {
-                    RoutineBuilder(draft, store, false, { draft = it; changes += it }, {}, {}, {})
+                    RoutineBuilder(draft, room.store, false, { draft = it; changes += it }, {}, {}, {})
                 }
             }
             compose.onNodeWithText("Add movement").performClick()
@@ -104,7 +94,7 @@ class CreateMovementTargetTests {
             compose.onNodeWithText("Ramp up").performScrollTo().performClick()
             compose.onNodeWithText("Add to routine").performClick()
             compose.runOnIdle {
-                val exercise = store.catalog.single { it.custom }
+                val exercise = room.store.catalog.single { it.custom }
                 assertEquals("Meadows 🏋 row", exercise.name)
                 assertEquals(listOf(RoutineDraft(name = "Pull").adding(exercise.id,
                     listOf(SetTarget(11, 20.0), SetTarget(11, 25.0), SetTarget(11, 30.0)))), changes)
@@ -114,7 +104,7 @@ class CreateMovementTargetTests {
             compose.onNodeWithContentDescription("Set 2 load").assertTextEquals("25")
             compose.onNodeWithContentDescription("Set 3 load").assertTextEquals("30")
             compose.onNodeWithText("Set · 3 sets").assertIsDisplayed()
-        } finally {
+        } } finally {
             scope.cancel()
         }
     }

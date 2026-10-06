@@ -1,5 +1,6 @@
 package works.windmill.gym.store
 
+import kotlin.time.Duration.Companion.minutes
 import java.io.File
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.runTest
@@ -29,15 +30,15 @@ class EngineLifecycleStoreTests {
         Account(api, id?.let { User(it, "$it@example.com") }, verified = verified)
     private fun engine(snapshot: Json? = null) = Engine.memory(SyncSchema.registry, snapshot,
         clock = object : EngineClock { override fun now() = clockMs },
-        commandResultWrites = LegacyGymMigration.commandResultWrites,
-        pendingDeviceWork = LegacyGymMigration.pendingDeviceWork,
-        rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue)
+        commandResultWrites = WorkoutImports.commandResultWrites,
+        pendingDeviceWork = WorkoutImports.pendingDeviceWork,
+        rewriteDeviceValue = WorkoutImports.rewriteDeviceValue)
     private data class Room(val gym: EngineTraining, val store: TrainingStore)
     private fun TestScope.room(engine: Engine): Room {
-        val gym = EngineTraining(engine) { error("Gym training must use the engine.") }
-        return Room(gym, TrainingStore(queue = SetQueue(File(tmp.root, "control.json")), scope = backgroundScope,
+        val gym = EngineTraining(engine)
+        return Room(gym, TrainingStore(WorkoutControls(File(tmp.root, "control.json")), gym, backgroundScope,
             now = { ++clockMs }, mintSession = { "session${++nextSession}" }, mintSet = { "set${(++nextSet).toString().padStart(5, '0')}" },
-            undoWindowMs = 0, sync = { gym }, engineTraining = gym))
+            undoWindowMs = 0))
     }
     private suspend fun Room.workout(weight: Double = 82.5, movement: String = "bench-press", finish: Boolean = true): Session {
         val opened = (store.start() as GymResult.Ok).value
@@ -53,18 +54,8 @@ class EngineLifecycleStoreTests {
         store.connect(account(id))
     }
     private fun finished(start: Long = clockMs - 10_000, finish: Long = clockMs - 5_000) =
-        LocalLog.FinishedSession(Session("session1", start, finish), listOf(TrainingSet("set00001", "bench-press",
+        SavedWorkout(Session("session1", start, finish), listOf(TrainingSet("set00001", "bench-press",
             weightKg = 82.5, reps = 5, completedAtMs = start + 1_000)))
-    private fun oldShelf(row: LocalLog.FinishedSession = finished()) {
-        val session = row.session
-        File(tmp.root, LocalLog.fileName).writeText("""{"finished":[{"session":{"id":"${session.id}","startedAt":${session.startedAtMs},"finishedAt":${session.finishedAtMs}},"sets":[{"id":"set00001","exerciseId":"bench-press","weightKg":82.5,"reps":5,"completedAt":${row.sets.single().completedAtMs}}]}]}""")
-    }
-    private fun oldLive() {
-        File(tmp.root, SetQueue.fileName).writeText("""{"session":{"id":"session1","startedAt":${clockMs - 10_000}},"entries":{"set00001":{"set":{"id":"set00001","exerciseId":"bench-press","weightKg":82.5,"reps":5,"completedAt":${clockMs - 9_000}},"sessionId":"session1","needsPush":true,"remints":0,"attempted":true}}}""")
-    }
-    private fun sources(engine: Engine) = engine.read(LegacyGymMigration.scope) { reader ->
-        reader.devices(LegacyGymMigration.journalPrefix).values.flatMap { it.member("items").obj().values }
-    }
     private fun outbox(engine: Engine) = engine.snapshot().member("replicas").arr().flatMap { it["outbox"]?.arr().orEmpty() }
 
     @Test fun customMovementSurvivesRelaunchAndAddWithTheSameIdentity() = runTest {
@@ -104,34 +95,6 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    @Test fun strictDuplicateImportKeepsTheOriginalIdInsteadOfReminting() = runTest {
-        engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
-            gym.startSession(SessionStart("session1", clockMs - 20_000))
-            gym.finishSession("session1", clockMs - 15_000)
-            LocalLog(File(tmp.root, LocalLog.fileName)).hold(finished())
-            LegacyGymMigration(tmp.root, engine).run()
-            val refusal = LegacyGymMigration.refusals(engine).single()
-            assertEquals("session1", refusal.session!!.id)
-            assertEquals(finished().sets, refusal.sets)
-            assertEquals(listOf("session1"), gym.sessions(50, null, null).map { it.id })
-            assertEquals(0, outbox(engine).count { it.member("intent")["cmd"]?.get("name") == Json.of(Gym.Commands.importSession) })
-        }
-    }
-
-    @Test fun strictImportNeverFilesHistoryIntoAnotherOpenWorkout() = runTest {
-        engine().use { engine ->
-            val gym = EngineTraining(engine) { null }
-            gym.startSession(SessionStart("session2", clockMs - 20_000))
-            LocalLog(File(tmp.root, LocalLog.fileName)).hold(finished())
-            LegacyGymMigration(tmp.root, engine).run()
-            assertEquals(emptyList<TrainingSet>(), gym.session("session2")!!.sets)
-            val source = sources(engine).single().member("source")
-            assertEquals(Json.of("session1"), source.member("session").member("id"))
-            assertEquals(Json.of("set00001"), source.member("sets").arr().single().member("id"))
-        }
-    }
-
     @Test fun offlineAddKeepsTheWholeWorkoutDurableUntilConnectivityReturns() = runTest {
         val first = engine(); val room = room(first); room.store.connect(account())
         val session = room.workout(); room.add(first)
@@ -147,11 +110,11 @@ class EngineLifecycleStoreTests {
     @Test fun anUnfixedStrictRefusalCanRetryRepeatedlyWithoutAlteringItsSource() = runTest {
         engine().use { engine ->
             val source = finished(clockMs + 1_000, clockMs + 5_000)
-            LocalLog(File(tmp.root, LocalLog.fileName)).hold(source)
-            LegacyGymMigration(tmp.root, engine).run()
-            repeat(3) { LegacyGymMigration.retry(engine, source.session.id) }
-            assertEquals(source.session, LegacyGymMigration.refusals(engine).single().session)
-            assertEquals(source.sets, LegacyGymMigration.refusals(engine).single().sets)
+            val imports = WorkoutImports(engine)
+            imports.prepare(source)
+            repeat(3) { imports.retry(source.session.id) }
+            assertEquals(source.session, imports.refusals().single().session)
+            assertEquals(source.sets, imports.refusals().single().sets)
             assertTrue(outbox(engine).isEmpty())
         }
     }
@@ -182,30 +145,34 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    @Test fun migrationRefusalSurvivesRelaunchWithoutAFormerClaimScreen() = runTest {
-        val first = engine(); oldShelf(); LegacyGymMigration(tmp.root, first).run()
-        val original = LegacyGymMigration.refusals(first).single()
+    @Test fun importRefusalSurvivesRelaunchWithoutAFormerClaimScreen() = runTest {
+        val first = engine(); WorkoutImports(first).prepare(finished(clockMs + 1_000, clockMs + 5_000))
+        val original = WorkoutImports(first).refusals().single()
         val snapshot = first.snapshot(); first.close()
         engine(snapshot).use { restored ->
             val room = room(restored); room.store.connect(account())
-            assertEquals(original, LegacyGymMigration.refusals(restored).single())
+            assertEquals(original, WorkoutImports(restored).refusals().single())
             assertEquals(listOf(original.session!!.id), room.store.recent.map { it.id })
         }
     }
 
-    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest {
+    // Two hundred and one engine commits make this the slowest store test; it keeps a generous clock.
+    @Test fun tooManyImportedSetsRefuseTheWholeWorkoutWithoutDroppingAnyRows() = runTest(timeout = 5.minutes) {
         engine().use { engine ->
-            val row = finished().copy(sets = (1..201).map { finished().sets.single().copy(id = "set${it.toString().padStart(5, '0')}") })
-            LocalLog(File(tmp.root, LocalLog.fileName)).hold(row)
-            LegacyGymMigration(tmp.root, engine).run()
-            assertEquals(row.sets, LegacyGymMigration.refusals(engine).single().sets)
+            val gym = EngineTraining(engine)
+            gym.startSession(SessionStart("session1", clockMs - 300_000))
+            repeat(201) { gym.appendSet("session1", SetWrite("set${it.toString().padStart(5, '0')}", "bench-press", 82.5, 5, SetKind.Working, clockMs - 299_000 + it)) }
+            gym.finishSession("session1", clockMs - 1_000)
+            val row = gym.session("session1")!!
+            gym.prepareAdoption()
+            assertEquals(row.sets, WorkoutImports(engine).refusals().single().sets)
             engine.read(ScopeRef(Gym.scope)) { reader ->
                 assertNull(reader.drawn(Gym.Types.session, RecordID(row.session.id)))
                 assertNull(reader.confirmed(Gym.Types.session, RecordID(row.session.id)))
                 assertTrue(reader.drawn(Gym.Types.set).isEmpty())
                 assertTrue(reader.stored(Gym.Types.set).isEmpty())
             }
-            assertEquals(SessionDetail(row.session, row.sets), EngineTraining(engine) { null }.session(row.session.id))
+            assertEquals(SessionDetail(row.session, row.sets), EngineTraining(engine).session(row.session.id))
             assertTrue(outbox(engine).isEmpty())
         }
     }
@@ -287,9 +254,9 @@ class EngineLifecycleStoreTests {
             val before = room.gym.session(session.id)
             engine.failNextCommit()
             assertNotNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertFalse(room.gym.preferences().confirmSound)
+            assertEquals(before, room.gym.session(session.id)); assertFalse(room.gym.settings().confirmSound)
             assertNull(room.store.savePreferences(GymPreferences(confirmSound = true)))
-            assertEquals(before, room.gym.session(session.id)); assertTrue(room.gym.preferences().confirmSound)
+            assertEquals(before, room.gym.session(session.id)); assertTrue(room.gym.settings().confirmSound)
         }
     }
 
@@ -375,83 +342,4 @@ class EngineLifecycleStoreTests {
         }
     }
 
-    @Test fun aShelfWithoutSeatMarkersBelongsOnlyToTheAccountHeldAtUpgrade() = runTest {
-        engine().use { engine ->
-            oldShelf(); LegacyGymMigration(tmp.root, engine, "A").run()
-            assertEquals("session1", EngineTraining(engine) { null }.sessions(50, null, null).single().id)
-            engine.signOut("keep"); engine.signIn("B", mapOf("gym" to false))
-            assertTrue(EngineTraining(engine) { null }.details().isEmpty())
-            engine.signOut("keep"); engine.signIn("A", mapOf("gym" to false))
-            assertEquals("session1", EngineTraining(engine) { null }.sessions(50, null, null).single().id)
-        }
-    }
-
-    @Test fun aQuarantinedShelfCanBeRetriedOnlyAfterChoosingAVerifiedAccount() = runTest {
-        engine().use { engine ->
-            oldShelf(); LegacyGymMigration(tmp.root, engine).run()
-            assertEquals("identity-unresolved", LegacyGymMigration.refusals(engine).single().code)
-            engine.signIn("A", mapOf("gym" to false)); LegacyGymMigration.retry(engine, "session1")
-            assertEquals(finished().session, EngineTraining(engine) { null }.session("session1")!!.session)
-            assertEquals(finished().sets.map { it.id }, EngineTraining(engine) { null }.session("session1")!!.sets.map { it.id })
-        }
-    }
-
-    @Test fun anonymousRetryCannotAdoptQuarantinedHistory() = runTest {
-        engine().use { engine ->
-            val original = finished()
-            oldShelf(original); LegacyGymMigration(tmp.root, engine).run()
-            assertThrows(IllegalStateException::class.java) { LegacyGymMigration.retry(engine, "session1") }
-            assertEquals("identity-unresolved", LegacyGymMigration.refusals(engine).single().code)
-            engine.read(ScopeRef(Gym.scope)) { reader ->
-                assertNull(reader.drawn(Gym.Types.session, RecordID(original.session.id)))
-                assertNull(reader.confirmed(Gym.Types.session, RecordID(original.session.id)))
-                assertNull(reader.drawn(Gym.Types.set, RecordID(original.sets.single().id)))
-                assertNull(reader.confirmed(Gym.Types.set, RecordID(original.sets.single().id)))
-            }
-            assertEquals(SessionDetail(original.session, original.sets), EngineTraining(engine) { null }.session("session1"))
-            assertTrue(outbox(engine).isEmpty())
-        }
-    }
-
-    @Test fun quarantinedAttemptedSetsCannotBeFiledIntoAnAnonymousOpenWorkout() = runTest {
-        engine().use { engine ->
-            val gym = EngineTraining(engine) { null }; gym.startSession(SessionStart("session2", clockMs - 20_000))
-            val previousOutbox = outbox(engine)
-            val original = SessionDetail(Session("session1", clockMs - 10_000), listOf(TrainingSet("set00001", "bench-press",
-                weightKg = 82.5, reps = 5, completedAtMs = clockMs - 9_000)))
-            oldLive(); LegacyGymMigration(tmp.root, engine).run()
-            assertThrows(IllegalStateException::class.java) { LegacyGymMigration.retry(engine, "session1") }
-            assertEquals(emptyList<TrainingSet>(), gym.session("session2")!!.sets)
-            engine.read(ScopeRef(Gym.scope)) { reader ->
-                assertNull(reader.drawn(Gym.Types.session, RecordID(original.session.id)))
-                assertNull(reader.confirmed(Gym.Types.session, RecordID(original.session.id)))
-                assertNull(reader.drawn(Gym.Types.set, RecordID(original.sets.single().id)))
-                assertNull(reader.confirmed(Gym.Types.set, RecordID(original.sets.single().id)))
-            }
-            assertEquals(original, gym.session("session1"))
-            assertEquals(previousOutbox, outbox(engine))
-            assertTrue(sources(engine).any { it["sourceSeat"] == Json.of("quarantine") || it["code"] == Json.of("identity-unresolved") })
-        }
-    }
-
-    @Test fun aQuarantinedLiveWorkoutIsRetainedAndStillOfferedForAccountChoice() = runTest {
-        engine().use { engine ->
-            oldLive(); val original = File(tmp.root, SetQueue.fileName).readText(); LegacyGymMigration(tmp.root, engine).run()
-            val refusal = LegacyGymMigration.refusals(engine).first { it.id == "session1" }
-            assertEquals("identity-unresolved", refusal.code); assertTrue(refusal.session!!.isOpen)
-            assertEquals("session1", refusal.session!!.id)
-            assertEquals(original, File(tmp.root, SetQueue.fileName).readText()); assertTrue(outbox(engine).isEmpty())
-        }
-    }
-
-    @Test fun aLiveWorkoutWithoutSeatMarkersKeepsItsOwnerIdsAndAttemptedSet() = runTest {
-        engine().use { engine ->
-            oldLive(); LegacyGymMigration(tmp.root, engine, "A").run()
-            val room = room(engine); room.store.connect(account("A"))
-            assertEquals("session1", room.store.session!!.id)
-            assertEquals(listOf("set00001"), room.store.sets.map { it.id })
-            assertEquals(listOf(82.5), room.store.sets.map { it.weightKg })
-            assertTrue(room.gym.session("session1")!!.session.isOpen)
-        }
-    }
 }

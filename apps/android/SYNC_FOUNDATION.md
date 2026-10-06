@@ -2,8 +2,9 @@
 
 A1 provides the Kotlin sync engine, domain kit and gym domain surface. The Gradle build enforces
 client and kit corpus coverage, mandatory properties, replay fault coverage, schema freshness and
-strict layering. A2 now composes that engine into the shipping gym, migrates the device stores and
-uses engine account decisions. See [the app verification loop](README.md#local-verification).
+strict layering. A2 composes that engine into the shipping gym, imports signed-out workouts at
+sign-in and uses engine account decisions. See
+[the app verification loop](README.md#local-verification).
 
 ## A1 module baseline
 
@@ -165,8 +166,8 @@ commits and forbids pushing.
 
 ## Remaining and verification limits
 
-A2 implements product lifecycle, transport/token/fork-guard/telemetry composition, UI and device
-store migration. Its installed-app evidence and limits are recorded separately. Nightly replay
+A2 implements product lifecycle, transport/token/fork-guard/telemetry composition and UI. Its
+installed-app evidence and limits are recorded separately. Nightly replay
 against the real backend/Postgres remains unwired; its CI workflow is outside this territory.
 Physical power loss and Android writer latency were not verified in the A1 gate. Hosted Linux CI
 was not run because pushing is forbidden. Native Robolectric SQLite

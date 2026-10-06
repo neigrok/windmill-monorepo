@@ -27,7 +27,6 @@ import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleOwner
 import androidx.lifecycle.LifecycleRegistry
 import androidx.lifecycle.compose.LocalLifecycleOwner
-import java.io.File
 import java.time.LocalDate
 import java.time.ZoneId
 import kotlinx.coroutines.CoroutineScope
@@ -35,7 +34,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
+import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -47,18 +46,11 @@ import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.LogLevel
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.net.GymRest
 import kotlinx.coroutines.CompletableDeferred
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.TrainingStore
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 
 // The two-state screen, drawn from the two reads: what a grant reaches as three rows of facts, one
 // caption, one action, one disclosure closed by default — and the connected list where there is one.
@@ -87,24 +79,16 @@ class ConnectedLogScreenTests {
     private fun ms(date: String): Long =
         LocalDate.parse(date).atStartOfDay(ZoneId.systemDefault()).toInstant().toEpochMilli()
 
-    private fun store(scope: CoroutineScope, server: TrainingSyncing, signedIn: Boolean): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { if (it.isSignedIn) server else null },
-        )
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = if (signedIn) User(id = "u1", email = "sam@example.com", name = "Sam") else null,
-            ))
+    private val rooms = mutableListOf<EngineRoomFixture>()
+
+    @After
+    fun closeRooms() = rooms.forEach(EngineRoomFixture::close)
+
+    private fun room(scope: CoroutineScope, rest: GymRest, signedIn: Boolean): EngineRoomFixture =
+        EngineRoomFixture(tmp.newFolder(), scope, rest = rest).also { room ->
+            rooms += room
+            runBlocking { room.select(if (signedIn) "u1" else null) }
         }
-        return store
-    }
 
     private fun screen(
         store: TrainingStore,
@@ -136,7 +120,7 @@ class ConnectedLogScreenTests {
     fun testNothingConnectedDrawsTheHeadTheThreeRowsTheCaptionAndTheActionAndNothingElse() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val opened = mutableListOf<String>()
-        screen(store(scope, FakeTraining(), signedIn = true), signedIn = true, opened)
+        screen(room(scope, FakeGymRest(), signedIn = true).store, signedIn = true, opened)
 
         assertEquals(52, words(firstPaint))
         assertEquals(110, words(firstPaint + ConnectedLog.how))
@@ -162,7 +146,7 @@ class ConnectedLogScreenTests {
     @Test
     fun testHowThisWorksOpensInPlaceWithTheFiveLinesAndClosesAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        screen(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+        screen(room(scope, FakeGymRest(), signedIn = true).store, signedIn = true)
         fun state(said: String) = SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, said)
 
         compose.onNodeWithText(ConnectedLog.disclosure).performScrollTo().assert(state("closed")).performClick()
@@ -180,9 +164,10 @@ class ConnectedLogScreenTests {
     @Test
     fun testTheTwoScreensShareOneReadPerSeatAndOnlyAReturnAPullOrANewSeatReadsAgain() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read")
-        val store = store(scope, server, signedIn = true)
+        val room = room(scope, server, signedIn = true)
+        val store = room.store
         val app = object : LifecycleOwner {
             override val lifecycle = LifecycleRegistry(this)
         }
@@ -230,12 +215,7 @@ class ConnectedLogScreenTests {
         compose.waitForIdle()
         compose.runOnIdle { assertEquals(6, credentialReads()) }
 
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = User(id = "u2", email = "kim@example.com", name = "Kim"),
-            ))
-        }
+        runBlocking { room.select("u2") }
         compose.waitForIdle()
         compose.runOnIdle { assertEquals(8, credentialReads()) }
         scope.cancel()
@@ -248,7 +228,7 @@ class ConnectedLogScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val opened = mutableListOf<String>()
         val signIns = mutableListOf<String>()
-        screen(store(scope, FakeTraining(), signedIn = false), signedIn = false, opened, signIns)
+        screen(room(scope, FakeGymRest(), signedIn = false).store, signedIn = false, opened, signIns)
 
         compose.onNodeWithText(ConnectedLog.head).assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
@@ -266,13 +246,13 @@ class ConnectedLogScreenTests {
     @Test
     fun testSomethingConnectedListsEachCredentialAndOpensTheShellToManageThem() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop",
             grantedMs = ms(LocalDate.now().year.toString() + "-08-12"), scope = "gym:read gym:write gym:delete")
         server.grants += OAuthGrant(clientId = "c2", name = "", grantedMs = ms("2025-12-01"), scope = "")
         server.keys += McpKey(id = "k1", name = "", createdMs = ms("2025-07-04"))
         val opened = mutableListOf<String>()
-        screen(store(scope, server, signedIn = true), signedIn = true, opened)
+        screen(room(scope, server, signedIn = true).store, signedIn = true, opened)
 
         compose.onNodeWithText(ConnectedLog.connectedHead).assertIsDisplayed()
         compose.onNodeWithText("Claude Desktop").assertIsDisplayed()
@@ -298,10 +278,10 @@ class ConnectedLogScreenTests {
     @Test
     fun testARefusedReadDrawsOneUnreadRowAndTheInvitationStillStands() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
+        val server = FakeGymRest()
         server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read")
         server.refuseKeys = IllegalStateException("down")
-        val store = store(scope, server, signedIn = true)
+        val store = room(scope, server, signedIn = true).store
         screen(store, signedIn = true)
 
         compose.onNodeWithText(ConnectedLog.unavailable).assertIsDisplayed()
@@ -322,7 +302,7 @@ class ConnectedLogScreenTests {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val release = CompletableDeferred<Unit>()
         var reads = 0
-        val server = object : TrainingSyncing by FakeTraining() {
+        val server = object : GymRest by FakeGymRest() {
             override suspend fun grants(): List<OAuthGrant> {
                 reads++
                 if (reads == 1) { release.await(); throw IllegalStateException("unavailable") }
@@ -330,7 +310,7 @@ class ConnectedLogScreenTests {
             }
             override suspend fun mcpKeys() = listOf(McpKey("same", "Static", 2L))
         }
-        val store = store(scope, server, signedIn = true)
+        val store = room(scope, server, signedIn = true).store
         screen(store, signedIn = true)
         compose.onNodeWithText("Reading your connections…").assertIsDisplayed()
         compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()

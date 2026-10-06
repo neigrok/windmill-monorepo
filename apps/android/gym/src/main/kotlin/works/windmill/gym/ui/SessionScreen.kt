@@ -195,7 +195,6 @@ fun SessionScreen(
     var review by remember(summary.id) { mutableStateOf<Review?>(null) }
     var read by remember(summary.id) { mutableStateOf(false) }
     var fixing by rememberSaveable(summary.id) { mutableStateOf<String?>(null) }
-    var fixSetId by rememberSaveable(summary.id) { mutableStateOf<String?>(null) }
     val fixStates = rememberSaveableStateHolder()
     // Half of the review's key — the session's id does not change when its sets do.
     var corrected by remember(summary.id) { mutableStateOf(0) }
@@ -249,7 +248,6 @@ fun SessionScreen(
         scope.launch { sheetState.hide() }.invokeOnCompletion {
             fixing?.let(fixStates::removeState)
             fixing = null
-            fixSetId = null
         }
     }
 
@@ -277,15 +275,15 @@ fun SessionScreen(
                     MovementCard(
                         movement = movement,
                         onOpenMovement = onOpenMovement,
-                        onFix = { fixing = it; fixSetId = it },
+                        onFix = { fixing = it },
                         onDelete = { row -> store.withhold(Deletion.Set(readId, row)) },
                     )
                 }
             }
-            if (setsFailure != null || currentDetail?.let(store::retainedSessionFailure) != null) {
+            setsFailure?.let { failure ->
                 item("failure") {
                     Text(
-                        (currentDetail?.let(store::retainedSessionFailure) ?: setsFailure)!!.line("the saved sets are shown"),
+                        failure.line("the saved sets are shown"),
                         style = GymType.numeral(13),
                         color = skin.inkDim,
                     )
@@ -331,9 +329,8 @@ fun SessionScreen(
     }
 
     val open = movements.orEmpty().firstNotNullOfOrNull { movement ->
-        movement.rows.firstOrNull { it.id == (fixSetId ?: fixing)?.let(store::canonicalSetId) }?.let { movement.movement to it }
+        movement.rows.firstOrNull { it.id == fixing }?.let { movement.movement to it }
     }
-    LaunchedEffect(open?.second?.id) { if (open != null) fixSetId = open.second.id }
     if (open != null) {
         ModalBottomSheet(
             onDismissRequest = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() },
@@ -348,7 +345,6 @@ fun SessionScreen(
             WindmillSheetBack(onDismiss = { if (!fixBusy) cancelFixEntry?.invoke() ?: close() }) {
                 FixSheet(
                     set = row.set,
-                    draftKey = fixing ?: row.id,
                     movement = movement,
                     setNumber = row.number,
                     routine = standing.plan?.routine,

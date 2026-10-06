@@ -87,7 +87,7 @@ import works.windmill.gym.store.FinishOutcome
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
+import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.AskAbsentStance
 import works.windmill.gym.ui.AskScreen
@@ -273,7 +273,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         notifications?.refreshCapabilities()
     }
 
-    // The committed detail survives process replacement after the queue closes.
+    // The committed detail survives process replacement after the workout closes.
     var finished by rememberSaveable(stateSaver = remember(telemetry) { finishedSaver(telemetry) }) { mutableStateOf<FinishedSession?>(null) }
     val currentAccount by rememberUpdatedState(account)
     var finishFailure by remember { mutableStateOf<String?>(null) }
@@ -551,14 +551,10 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         store.clearDeleteRefused()
     }
 
-    // ON_STOP is the second net behind ON_PAUSE: owed sets go out and held deletes, which are the
-    // room's alone, are let go.
+    // On ON_STOP the held deletes, which are the room's alone, are let go.
     val lifecycleOwner = LocalLifecycleOwner.current
     DisposableEffect(lifecycleOwner) {
         val watcher = LifecycleEventObserver { _, event ->
-            if (event == Lifecycle.Event.ON_PAUSE || event == Lifecycle.Event.ON_STOP) {
-                scope.launch { store.flushPendingSets() }
-            }
             // The transient goes down with what it was offering: an Undo left standing over an act
             // that was let go would offer a way back to something that never happened.
             if (event == Lifecycle.Event.ON_STOP && store.abandonWithheld()) {
@@ -569,7 +565,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
         onDispose {
             lifecycleOwner.lifecycle.removeObserver(watcher)
             store.abandonWithheld()
-
         }
     }
 
@@ -627,8 +622,6 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     finished = FinishedSession(ended.detail.session, ended.detail.sets, review = null,
                         isFirst = store.allSessions.size <= 1, routinePosition = store.allRoutines.size, reviewRead = false)
                 }
-                is FinishOutcome.Stranded ->
-                    note = "${Readout.setCount(ended.count)} still on this device — the session stays open until they land"
                 is FinishOutcome.Failed ->
                     note = ended.why.line("the session is still open")
             }
@@ -924,7 +917,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                         } else {
                             null
                         },
-                        failure = finishFailure ?: store.retainedSessionFailure(canonical)?.line("the log couldn’t keep this workout"),
+                        failure = finishFailure,
                     )
                     }
                 }
@@ -963,8 +956,8 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
             val loggerTransient = live && standing == null
             val engineSession = LocalGymEngineSession.current
             val engineStatus = engineSession?.engine?.status?.state?.collectAsState()?.value
-            val migrationRefusals = remember(engineSession, engineStatus, screen) {
-                engineSession?.let { LegacyGymMigration.refusals(it.engine) }.orEmpty()
+            val importRefusals = remember(engineSession, engineStatus, screen) {
+                engineSession?.let { WorkoutImports(it.engine).refusals() }.orEmpty()
             }
 
             Scaffold(
@@ -989,9 +982,9 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                                 )
                             }
                             if (railUp) {
-                                if (migrationRefusals.isNotEmpty()) TextButton(
+                                if (importRefusals.isNotEmpty()) TextButton(
                                     onClick = { look(Away.Settings) }, modifier = Modifier.fillMaxWidth(),
-                                ) { Text("Saved workouts need review (${migrationRefusals.size})", color = skin.alarmInk) }
+                                ) { Text("Saved workouts need review (${importRefusals.size})", color = skin.alarmInk) }
                                 TabRail(
                                     current = tab,
                                     onPick = { picked ->

@@ -22,11 +22,11 @@ import works.windmill.gym.notification.AndroidWorkoutClock
 import works.windmill.gym.notification.WorkoutNotificationHost
 import works.windmill.gym.notification.WorkoutNotifications
 import works.windmill.gym.store.GymRuntime
-import works.windmill.gym.store.SetQueue
+import works.windmill.gym.store.WorkoutControls
 import works.windmill.gym.store.TrainingStore
 import works.windmill.gym.store.EngineTraining
 import works.windmill.gym.store.GymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
+import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.net.GymHttp
 import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.auth.AuthStore
@@ -88,10 +88,9 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
         val initial = Engine.memory(SyncSchema.registry, identities = identities).use { it.snapshot() }
         val engine = AndroidSqlite.open(File(filesDir, "sync-replica.sqlite"), SyncSchema.registry, initial,
             AndroidClock(this), identities, identities.actorID(), telemetry = engineTelemetry,
-            rewriteDeviceValue = LegacyGymMigration.rewriteDeviceValue,
-            commandResultWrites = LegacyGymMigration.commandResultWrites,
-            pendingDeviceWork = LegacyGymMigration.pendingDeviceWork)
-        LegacyGymMigration(filesDir, engine, owner, telemetry).run()
+            rewriteDeviceValue = WorkoutImports.rewriteDeviceValue,
+            commandResultWrites = WorkoutImports.commandResultWrites,
+            pendingDeviceWork = WorkoutImports.pendingDeviceWork)
         val engineStorage = EngineStorage(this, SecretVault.onThisDevice(telemetry))
         if (owner != null) sessions.read()?.let { engineStorage.save(owner, it) }
         val transport = HTTPTransport(baseUrl.toString(), SyncSchema.version.toInt(), engineTelemetry)
@@ -111,20 +110,19 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
             engineStorage, BuildConfig.VERSION_NAME, products = listOf("gym"))
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)
-        val training = EngineTraining(engine) {
-            (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) }
-        }
+        val training = EngineTraining(engine)
         val store = TrainingStore(
-            queue = SetQueue(File(filesDir, SetQueue.fileName), owner, telemetry = telemetry),
-            scope = scope, workoutClock = clock, workoutAuthority = { selectedOwner ->
+            controls = WorkoutControls(File(filesDir, WorkoutControls.fileName), owner, telemetry = telemetry),
+            training = training,
+            scope = scope,
+            rest = { (auth.status as? AuthStatus.SignedIn)?.let { GymHttp(auth.accountApi(it.user)) } },
+            workoutClock = clock, workoutAuthority = { selectedOwner ->
                 when (val current = sessions.localSession) {
                     LocalSession.Absent -> selectedOwner == null
                     is LocalSession.Owned -> selectedOwner == current.user.id
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
-            sync = { training },
-            engineTraining = training,
             localCoach = works.windmill.gym.store.LocalCoach(File(filesDir, works.windmill.gym.store.LocalCoach.fileName)),
         )
         engineSession.beforeAccountChange = store::prepareEngineTransition
