@@ -10,7 +10,6 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.withContext
 import works.windmill.platform.User
 import works.windmill.platform.auth.AuthLifecycle
-import works.windmill.platform.net.ClientUpdate
 import works.windmill.platform.net.WindmillApiException
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.telemetry.Telemetry
@@ -69,7 +68,6 @@ class GymEngineSession(
             throw cancelled
         }
         catch (failure: EngineError) {
-            if (failure.code == EngineError.Code.upgradeRequired) ClientUpdate.required()
             telemetry.event("gym_sign_in_decision", mapOf("outcome" to failure.code.name))
             if (failure.code == EngineError.Code.unreachable) throw WindmillApiException.Offline
             if (failure.code == EngineError.Code.upgradeRequired)

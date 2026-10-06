@@ -7,8 +7,6 @@ import java.net.UnknownHostException
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.SerializationException
@@ -208,12 +206,6 @@ class WindmillApi(
             return configured.toHttpUrlOrNull() ?: "https://windmill.works".toHttpUrl()
         }
     }
-}
-
-object ClientUpdate {
-    private val state = MutableStateFlow(false)
-    val required: StateFlow<Boolean> = state
-    fun required() { state.value = true }
 }
 
 data class Captured<Reply>(val reply: Reply, val session: String?)

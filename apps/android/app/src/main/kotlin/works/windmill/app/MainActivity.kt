@@ -61,7 +61,6 @@ import works.windmill.platform.auth.LocalSession
 import works.windmill.platform.ClientUpdateDestination
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
-import works.windmill.platform.net.ClientUpdate
 import works.windmill.gym.store.LocalGymEngineSession
 import works.windmill.gym.store.gymLineageCounts
 import works.windmill.sync.engine.LineageAnswer
@@ -251,15 +250,14 @@ internal fun Root(runtime: WindmillApplication, introduction: Boolean, onIntrodu
 private fun EngineAccountDecision(runtime: WindmillApplication) {
     val session = runtime.engineSession
     val sync by session.engine.status.state.collectAsState()
-    val retired by ClientUpdate.required.collectAsState()
     val uri = LocalUriHandler.current
     val update = LocalClientUpdateDestination.current
     val scope = rememberCoroutineScope()
-    LaunchedEffect(sync.upgradeRequired, retired) {
-        if (sync.upgradeRequired || retired) runtime.telemetry.event("client_update_required",
+    LaunchedEffect(sync.upgradeRequired) {
+        if (sync.upgradeRequired) runtime.telemetry.event("client_update_required",
             mapOf("state" to "shown", "status" to "426"))
     }
-    if (sync.upgradeRequired || retired) {
+    if (sync.upgradeRequired) {
         var shown by remember { mutableStateOf(true) }
         var updateFailure by remember { mutableStateOf<String?>(null) }
         if (shown) AlertDialog(onDismissRequest = {

@@ -49,7 +49,6 @@ import works.windmill.gym.store.ImportRefusal
 import works.windmill.gym.store.SavedWorkout
 import works.windmill.gym.store.WorkoutImports
 import works.windmill.gym.store.gymLineageCounts
-import works.windmill.platform.net.ClientUpdate
 import works.windmill.platform.LocalClientUpdateDestination
 import works.windmill.platform.open
 import works.windmill.platform.telemetry.LocalTelemetry
@@ -186,7 +185,6 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     val scope = rememberCoroutineScope()
     val status by session.engine.status.state.collectAsState()
     val telemetry = LocalTelemetry.current
-    val retired by ClientUpdate.required.collectAsState()
     val uri = LocalUriHandler.current
     val update = LocalClientUpdateDestination.current
     var revision by remember(session) { mutableIntStateOf(0) }
@@ -196,7 +194,7 @@ private fun DeviceTrainingRow(store: TrainingStore, isSignedIn: Boolean, onAccou
     var updateFailure by remember(session) { mutableStateOf<String?>(null) }
     val imports = remember(session) { WorkoutImports(session.engine) }
     val refused = remember(session, revision, status) { imports.refusals() }
-    if (status.upgradeRequired || retired) SettingCard {
+    if (status.upgradeRequired) SettingCard {
         Text("Update required", style = WindmillFont.body(15, FontWeight.Bold), color = skin.alarmInk)
         Caption("Update Windmill to keep syncing. Your work is saved on this phone.")
         TextButton(onClick = {
