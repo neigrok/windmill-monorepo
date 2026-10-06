@@ -221,7 +221,7 @@ export function useTrainingLog() {
   };
   return {
     phase, revision: records, progress,
-    session, sets, catalog, summaries, preferences,
+    session, sets: sets.filter((set) => !hidden('set').has(set.id)), catalog, summaries, preferences,
     older: { status: summaries.length < depth ? 'end' : 'more', load: () => setDepth((count) => count + LOG_PAGE) },
     createMovement, renameMovement, say, transient, held: withheld.current, hidden, gone,
     withhold, undoWithheld, dropWithheld, writtenAgain,

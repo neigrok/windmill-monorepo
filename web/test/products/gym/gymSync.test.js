@@ -104,8 +104,8 @@ test('notes append; a move writes only the moved note order register', async (t)
   await api.moveNote('note000003', null);
   assert.deepEqual((await api.notes()).map(({ id }) => id), ['note000003', 'note000001', 'note000002']);
   const before = structuredClone(engine.device.activeReplica.outbox);
-  await assert.rejects(api.moveNote('note000099', null));
-  await assert.rejects(api.moveNote('note000001', 'note000099'));
+  await assert.rejects(api.moveNote('note000099', null), { code: 'unknown-record' });
+  await assert.rejects(api.moveNote('note000001', 'note000099'), { code: 'unknown-record' });
   assert.deepEqual(engine.device.activeReplica.outbox, before);
 });
 

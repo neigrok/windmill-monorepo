@@ -7,8 +7,10 @@ retain their original register guards. Deletes commit durable held deaths; Undo 
 IDs, and the engine owns release and restart. Coach, shares and account exports use their REST doors
 in `gymApi.js`. The account gate remains in `GymApp`.
 
-Reads project the engine's stored view, so a held delete hides its row through the room's
-`log.hidden` but never changes what a screen says about the account. A write the log refuses before
+Reads project the engine's stored view, so a held delete never changes what a screen says about the
+account. The window decides what is drawn through the room's `log.hidden`: rows, the screen of the
+held record itself, the count heading the log and the live session's sets. Records, last times and
+progress keep counting a held delete until its release. A write the log refuses before
 storing it is a `GymRefusal` (`errors.js`) carrying the engine's code, the sentence a screen shows
 and, for an overlap, the crossed session; `failureReason` finishes the sentence for any failure.
 

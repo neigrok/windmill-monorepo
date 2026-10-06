@@ -252,7 +252,7 @@ test('the home’s empty stance and its new routine action read the store: a hel
   assert.equal(build().length, 1, 'the store took it, and only now is the offer honest');
 });
 
-test('leaving the room takes its Undo with it, and the engine still lets the delete go on its own clock', async (t) => {
+test('a delete held when the room unmounts goes on the engine’s clock, and a room drawn after it went offers nothing back', async (t) => {
   t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
   browserWith();
   const gym = await gymAccount(t, [pushA()]);
@@ -262,8 +262,8 @@ test('leaving the room takes its Undo with it, and the engine still lets the del
   await settle();
   assert.deepEqual(findByClass(home.screen(), 'gym-routine-name').map(textOf), []);
 
-  // Out of the gym and into another product, four seconds in. The delete is already on the device;
-  // the room that offered it back is what goes, and no clock of its own outlives it.
+  // Out of the gym and into another product, four seconds in. The delete is already on the device,
+  // and the engine releases it at the end of its hold whether or not a room is drawn.
   t.mock.timers.tick(4000);
   home.view.unmount();
   t.mock.timers.tick(UNDO_MS * 2);
@@ -580,6 +580,104 @@ test('a detail discard taken back never reaches the store', async (t) => {
   assert.deepEqual(gym.owed(), []);
 });
 
+test('a session reopened inside its discard window reads as gone on its detail and its review, and offers no second discard', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await gymAccount(t, [shortSession()]);
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { SessionDetail } = await loadScreen('products/gym/Log.jsx');
+  const { FinishScreen } = await loadScreen('products/gym/Finish.jsx');
+  const view = renderHook(t, () => {
+    const log = useTrainingLog();
+    return { log, detail: SessionDetail({ id: 'session0001', log }), review: reviewWithShort(FinishScreen({ id: 'session0001', log })) };
+  }, { live: true });
+  await settle();
+  const said = (tree) => findByClass(tree, 'gym-quiet').map(textOf);
+  assert.equal(findByClass(view.tree.detail, 'gym-short-discard').length, 1);
+
+  findByClass(view.tree.detail, 'gym-short-discard')[0].props.onClick();
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0001']);
+  assert.deepEqual(said(view.tree.detail), ['This session isn’t in your log.']);
+  assert.equal(findByClass(view.tree.detail, 'gym-short-discard').length, 0, 'no second discard over a held one');
+  assert.deepEqual(said(view.tree.review.review), ['That session isn’t in your log.']);
+  assert.equal(view.tree.review.short, null);
+
+  view.tree.log.transient.action.run();
+  await settle();
+  assert.deepEqual(gym.owed(), []);
+  assert.equal(findByClass(view.tree.detail, 'gym-short-discard').length, 1, 'Undo puts the session back on its own screen');
+  assert.notEqual(view.tree.review.short, null);
+});
+
+test('a routine reopened inside its delete window reads as gone in its editor, and Undo opens it again', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const gym = await gymAccount(t, [pushA()]);
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const { RoutinesList, RoutineEditor } = await loadScreen('products/gym/Routines.jsx');
+  const view = renderHook(t, () => {
+    const log = useTrainingLog();
+    return { log, home: RoutinesList({ log }), editor: RoutineEditor({ id: 'routinePushA', log }) };
+  }, { live: true });
+  await settle();
+  assert.equal(findByClass(view.tree.editor, 'gym-plan-name')[0].props.value, 'Push A');
+
+  menuOf(view.tree.home).props.items.find((item) => item.label === 'Delete').run();
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete routine routinePushA']);
+  assert.deepEqual(findByClass(view.tree.editor, 'gym-quiet').map(textOf), ['This routine isn’t in your program.']);
+  assert.equal(findByClass(view.tree.editor, 'gym-plan-name').length, 0, 'nothing to save over a held delete');
+
+  view.tree.log.transient.action.run();
+  await settle();
+  assert.deepEqual(gym.owed(), []);
+  assert.equal(findByClass(view.tree.editor, 'gym-plan-name')[0].props.value, 'Push A');
+});
+
+test('the count over the log follows its rows: a held session leaves it, and Undo puts it back', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const workout = (id, daysAgo) => {
+    const startedAt = NOW - daysAgo * 86_400_000;
+    return [confirmed('session', id, { startedAt, finishedAt: startedAt + 3_600_000 }),
+      confirmed('set', `${id}set`, { sessionId: id, exerciseId: 'bench-press', setNumber: 1, weightKg: 60, reps: 5, kind: 'working', completedAt: startedAt + 600_000, note: '' })];
+  };
+  const gym = await gymAccount(t, [...workout('session0001', 2), ...workout('session0002', 1)]);
+  const logScreen = await roomWith(t, 'products/gym/Log.jsx', ({ LogList }, log) => LogList({ log }));
+  const count = () => findByClass(logScreen.screen(), 'gym-log-count').map(textOf);
+  assert.deepEqual(count(), ['2 workouts · 2 sets · 10 reps · loads in kg']);
+
+  logScreen.log().withhold({ kind: 'session', id: 'session0002', engineDeath: { type: 'session', id: 'session0002' }, line: 'Session deleted.' });
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete session session0002']);
+  assert.deepEqual(count(), ['1 workout · 1 sets · 5 reps · loads in kg']);
+
+  logScreen.log().transient.action.run();
+  await settle();
+  assert.deepEqual(count(), ['2 workouts · 2 sets · 10 reps · loads in kg']);
+});
+
+test('the live session’s sets follow the window: a held set leaves the mirror, and Undo puts it back', async (t) => {
+  t.mock.timers.enable({ apis: ['Date', 'setTimeout'], now: NOW });
+  browserWith();
+  const set = (id, completedAt) => confirmed('set', id, { sessionId: 'sessionPhone', exerciseId: 'bench-press', setNumber: Number(id.at(-1)), weightKg: 60, reps: 5, kind: 'working', completedAt, note: '' });
+  const gym = await gymAccount(t, [confirmed('session', 'sessionPhone', { startedAt: NOW - 600_000 }), set('set0000001', NOW - 400_000), set('set0000002', NOW - 200_000)]);
+  const { useTrainingLog } = await loadScreen('products/gym/useTrainingLog.js');
+  const view = renderHook(t, () => useTrainingLog(), { live: true });
+  await settle();
+  assert.deepEqual(view.log.sets.map((each) => each.id), ['set0000001', 'set0000002']);
+
+  view.log.withhold({ kind: 'set', id: 'set0000002', engineDeath: { type: 'set', id: 'set0000002' }, line: '60 × 5 is out of the log.' });
+  await settle();
+  assert.deepEqual(gym.owed(), ['held delete set set0000002']);
+  assert.deepEqual(view.log.sets.map((each) => each.id), ['set0000001']);
+
+  view.log.transient.action.run();
+  await settle();
+  assert.deepEqual(view.log.sets.map((each) => each.id), ['set0000001', 'set0000002']);
+});
+
 test('a detail discard the device cannot keep says the session was not discarded, in the review’s own words', async (t) => {
   browserWith();
   const gym = await gymAccount(t, [shortSession()]);
@@ -743,8 +841,7 @@ test('a note delete is one press, leaves the editor in the same act, and is held
 
   t.mock.timers.tick(UNDO_MS);
   await settle();
-  // The release takes the note out of the store, so the list is read again — and a reorder sent
-  // afterwards carries the store's own list rather than an id the store no longer has.
+  // The release takes the note out of the store, so the list is read again and counts what it holds.
   assert.deepEqual(gym.owed(), ['ready delete note note000001']);
   assert.equal(noteCount(notes.screen()), 2, 'the list was read again from the store');
   assert.deepEqual(noteList(notes.screen()).props.notes.map((note) => note.title), ['Note 0', 'Note 2']);

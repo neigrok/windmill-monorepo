@@ -15,7 +15,7 @@ import { SESSION_DELETED } from './review.js';
 import { ShareWorkout } from './share/ShareWorkout.jsx';
 import { useGymRead } from './useGymRead.js';
 import { useGymApi } from './gymSync.js';
-import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, workoutTotals, yearsOf } from './logbook/history.js';
+import { collapsedScheme, emptyHistoryLine, historyHref, historyQuery, historyTotals, withoutRows, workoutTotals, yearsOf } from './logbook/history.js';
 import { useHistory, useHistoryDates } from './logbook/useHistory.js';
 import { DateJump } from './logbook/DateJump.jsx';
 import { weightUnit } from './units.js';
@@ -115,7 +115,7 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
         <HistoryFilter label="Movement" value={filters.exercise} onChange={(exercise) => moveFilter({ exercise })} options={exerciseOptions} />
         <HistoryFilter label="Routine" value={filters.routine} onChange={(routine) => moveFilter({ routine })} options={routineOptions} />
       </div>
-      {history.data?.summary && <p className="gym-log-count">{historyTotals(history.data.summary)}</p>}
+      {history.data?.summary && <p className="gym-log-count">{historyTotals(withoutRows(history.data.summary, (history.data.sessions ?? []).filter((session) => hidden.has(session.id))))}</p>}
       {history.phase === 'loading' && !history.data && <p className="gym-quiet">Opening the log…</p>}
       {history.failure && <p className="gym-read-failed">The log didn’t load. <Button size="sm" variant="secondary" onClick={history.retry}>Retry</Button></p>}
       {history.phase === 'ready' && stored.length === 0 && !noMatches && <p className="gym-quiet">No sessions yet.</p>}
@@ -234,7 +234,8 @@ export function SessionDetail({ id, log, embedded = false, from = '#/gym/log', e
   };
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the session…</p>;
-  if (view.phase === 'absent') {
+  // A session its delete window holds is gone from its own screen, as its row is from the log.
+  if (view.phase === 'absent' || log.hidden('session').has(id)) {
     return (
       <>
         {!embedded && <Back href={from}>The log</Back>}

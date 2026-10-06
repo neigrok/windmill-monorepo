@@ -27,7 +27,8 @@ export function FinishScreen({ id, log }) {
   );
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the review…</p>;
-  if (view.phase === 'absent') {
+  // A session its delete window holds is gone from its review, as its row is from the log.
+  if (view.phase === 'absent' || log.hidden('session').has(id)) {
     return (
       <>
         <Back href="#/gym/log">The log</Back>

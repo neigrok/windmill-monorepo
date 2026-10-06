@@ -123,7 +123,8 @@ export function RoutineEditor({ id, log }) {
   useEffect(() => () => dropWithheld('entry'), [dropWithheld]);
 
   if (view.phase === 'loading') return <p className="gym-quiet">Opening the routine…</p>;
-  if (view.phase === 'absent') {
+  // A routine its delete window holds is gone from its own screen, as its row is from the home.
+  if (view.phase === 'absent' || (!fresh && log.hidden('routine').has(id))) {
     return (
       <>
         <Back href={ROUTINES_HREF}>Routines</Back>
