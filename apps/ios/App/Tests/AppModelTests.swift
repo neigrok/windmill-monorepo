@@ -40,10 +40,9 @@ import SyncTesting
 
   func workoutSettled(_ model: AppModel, _ id: ID<Session>) async throws {
     for _ in 0..<200 {
-      model.refresh()
       let settled = try model.runner.read(Gym.scope) { try $0.confirmed(Session.self, id) != nil }
-      let queued = try model.runtime!.store.read { try $0.device().activeReplica.outbox.contains { $0.scope == Gym.scope && $0.isQueued } }
-      if settled && !queued { return }
+      let pending = try model.runtime!.store.read { try $0.device().activeReplica.outbox.contains { $0.scope == Gym.scope } }
+      if settled && !pending { model.refresh(); return }
       try await Task.sleep(for: .milliseconds(50))
     }
     throw AppFailure(message: "Gym writes did not settle")
@@ -77,7 +76,7 @@ import SyncTesting
     #expect(local.currentAdoption?.product == "gym")
     await local.adopt(.add)
     await local.runtime?.engine.start()
-    try await workoutSettled(local, accountWorkout)
+    try await workoutSettled(local, finished)
     local.refresh()
     #expect(local.account == identity.account)
     #expect(local.gym.sessions.contains { $0.id == finished && !$0.isOpen })
