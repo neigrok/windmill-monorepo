@@ -48,11 +48,11 @@ public:
   FinishOutcome finish(const UserId&, const SessionId&, std::uint64_t) override;
   DiscardOutcome discard(const UserId&, const SessionId&) override;
 
-  RoutineWriteOutcome createRoutine(const Routine&, std::optional<ProposalDoor>) override;
+  RoutineWriteOutcome createRoutine(const UserId&, const RoutineWrite&, std::optional<ProposalDoor>) override;
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override;
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                      const std::string&, const ProposalSource&) override;
-  ExerciseInsertOutcome createExercise(const UserId&, const Exercise&) override;
+  ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override;
   NoteWriteOutcome saveInsight(const Note&) override;
 
 private:

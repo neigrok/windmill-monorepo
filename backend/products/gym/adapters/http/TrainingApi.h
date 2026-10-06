@@ -24,7 +24,8 @@ using HttpCallback = std::function<void(const drogon::HttpResponsePtr&)>;
 // spent; 503 is the engine's and retryable; 500 is the server's and retryable.
 class TrainingApi {
 public:
-  TrainingApi(std::shared_ptr<TrainingService> training, std::shared_ptr<AuthService> auth,
+  TrainingApi(std::shared_ptr<TrainingService> training, std::shared_ptr<GymWriteDoor> door,
+              std::shared_ptr<AuthService> auth,
               std::string appBaseUrl);
 
   void importSession(const drogon::HttpRequestPtr& req, HttpCallback&& cb);   // POST /v1/gym/sessions/import
@@ -50,6 +51,7 @@ public:
 
 private:
   std::shared_ptr<TrainingService> training_;
+  std::shared_ptr<GymWriteDoor> door_;
   std::string appBaseUrl_;   // where the browser app is served
   std::shared_ptr<AuthService> auth_;
 };

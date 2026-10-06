@@ -33,7 +33,7 @@ Routine dayOf(const UserId& owner, const std::string& id, const std::string& nam
 
 // create_routine, the MCP tool's write.
 RoutineWriteOutcome mcpCreate(doortest::Harness& h, const Routine& day) {
-  return h.program.createRoutine(day.user, RoutineWrite{day.id, day.name, day.position, day.entries},
+  return h.door.createRoutine(day.user, RoutineWrite{day.id, day.name, day.position, day.entries},
                                  ProposalDoor::mcp);
 }
 
@@ -158,7 +158,7 @@ TEST(pg_gym_an_open_routine_line_round_trips_with_no_set_rows) {
   CHECK_EQ(setRowsOf("rt_pg000001", 2), 0);
   CHECK_EQ(setRowsOf("rt_pg000001", 1), 5);
   const StartOutcome started =
-      h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, RoutineId{"rt_pg000001"}});
+      h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, RoutineId{"rt_pg000001"}});
   REQUIRE(started.session.has_value());
   const std::optional<Session> logged = h.repo.log.session(h.user, SessionId{"ses_pg000001"});
   const PlanSnapshot frozen{"Heavy Thursday", {PlanEntry{ExerciseId{"bench-press"}, fake::straight(5, 5, 82.5), 180},
@@ -210,7 +210,7 @@ TEST(pg_gym_a_routine_entry_naming_no_movement_is_refused_and_leaves_no_row) {
 TEST(pg_gym_a_routine_entry_may_not_name_another_accounts_private_movement) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  REQUIRE(h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
+  REQUIRE(h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
                                                           Pattern::squat, Equipment::barbell, 2.5})
               .exercise.has_value());
   const Routine stored = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
@@ -256,9 +256,9 @@ TEST(pg_gym_routine_delete_cascades_its_lines_and_leaves_every_session_its_snaps
   const std::uint64_t t1 = 1'700'000'000'123;
   h.clock.now = t1 + 1'000;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, RoutineId{"rt_pg000001"}})
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, RoutineId{"rt_pg000001"}})
               .session.has_value());
-  REQUIRE(h.training.finish(h.user, SessionId{"ses_pg000001"}, t1 + 1'000).session.has_value());
+  REQUIRE(h.door.finish(h.user, SessionId{"ses_pg000001"}, t1 + 1'000).session.has_value());
 
   h.kill(h.user, "routine", "rt_pg000001");
   h.kill(h.user, "routine", "rt_pg000001");
@@ -286,13 +286,13 @@ TEST(pg_gym_routines_are_listed_most_recently_trained_first) {
                              dayOf(h.user, "rt_pg000003", "Legs", {entryAt(1, "back-squat")}),
                              dayOf(h.other, "rt_pg000004", "Theirs", {entryAt(1, "bench-press")})})
     REQUIRE(mcpCreate(h, day).routine.has_value());
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, RoutineId{"rt_pg000002"}})
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, RoutineId{"rt_pg000002"}})
               .session.has_value());
-  REQUIRE(h.training.finish(h.user, SessionId{"ses_pg000001"}, t1 + 1'000).session.has_value());
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000002"}, t1 + 10'000, false,
+  REQUIRE(h.door.finish(h.user, SessionId{"ses_pg000001"}, t1 + 1'000).session.has_value());
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000002"}, t1 + 10'000, false,
                                                 RoutineId{"rt_pg000001"}})
               .session.has_value());
-  REQUIRE(h.training.finish(h.user, SessionId{"ses_pg000002"}, t1 + 11'000).session.has_value());
+  REQUIRE(h.door.finish(h.user, SessionId{"ses_pg000002"}, t1 + 11'000).session.has_value());
 
   CHECK_EQ(h.repo.program.routines(h.user),
            (std::vector<Routine>{
@@ -309,7 +309,7 @@ TEST(pg_gym_a_routines_history_is_its_proposals_and_its_creation_in_one_read) {
   const Routine base = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press"), entryAt(2, "back-squat")});
   CHECK_EQ(GymDoor::refusal(phoneWrite(h, base, true)), "");
   const ProposalWrite heavier = proposalOf("prop_pg000001", "rt_pg000001", {benchAt(87.5, 3)});
-  REQUIRE(h.program.propose(h.user, heavier).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, heavier).proposal.has_value());
   // A second day, made by an AGENT: the door rides onto its creation row.
   h.clock.now = kNow + 1'000;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000002", "Typed for me", {entryAt(1, "bench-press")})).routine.has_value());
@@ -337,7 +337,7 @@ TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
        RoutineEntry{2, ExerciseId{"back-squat"}, fake::straight(3, std::nullopt, std::nullopt), std::nullopt}});
   const RoutineProposal minted = mintedFrom(base, incoming, kNow);
 
-  const ProposalMintOutcome stored = h.program.propose(h.user, incoming);
+  const ProposalMintOutcome stored = h.door.propose(h.user, incoming);
 
   CHECK(stored.error == ProposalMintError::none);
   REQUIRE(stored.proposal.has_value());
@@ -357,10 +357,10 @@ TEST(pg_gym_blank_stored_routine_and_proposal_names_read_as_stored) {
   const Routine pushDay = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
   const Routine pullDay = dayOf(h.user, "rt_pg000002", "Pull A", {entryAt(1, "back-squat")}, 1);
   REQUIRE(mcpCreate(h, pushDay).routine.has_value());
-  REQUIRE(h.program.createRoutine(h.user, RoutineWrite{pullDay.id, pullDay.name, pullDay.position, pullDay.entries},
+  REQUIRE(h.door.createRoutine(h.user, RoutineWrite{pullDay.id, pullDay.name, pullDay.position, pullDay.entries},
                                   ProposalDoor::ask).routine.has_value());
   const ProposalWrite heavier = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
-  REQUIRE(h.program.propose(h.user, heavier).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, heavier).proposal.has_value());
   {
     PgLease lease{*doortest::pool()};
     pqxx::work txn{*lease};
@@ -375,10 +375,10 @@ TEST(pg_gym_blank_stored_routine_and_proposal_names_read_as_stored) {
   const Routine pull{Stored{}, pullDay.id, h.user, "", 1, pullDay.entries};
   const RoutineProposal minted = mintedFrom(pushDay, heavier, kNow);
 
-  CHECK_EQ(h.program.routines(h.user), (std::vector<Routine>{push, pull}));
-  CHECK_EQ(h.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>(push));
-  CHECK_EQ(h.program.routineCreation(h.user, RoutineId{"rt_pg000002"}), std::optional<Routine>(pull));
-  CHECK_EQ(h.program.proposal(h.user, ProposalId{"prop_pg00001"}),
+  CHECK_EQ(h.repo.program.routines(h.user), (std::vector<Routine>{push, pull}));
+  CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>(push));
+  CHECK_EQ(h.repo.program.routineCreation(h.user, RoutineId{"rt_pg000002"}), std::optional<Routine>(pull));
+  CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"}),
            std::optional<RoutineProposal>(
                RoutineProposal{Stored{}, minted.head, minted.baseRevision, "", "\xE3\x80\x80", minted.changes}));
 }
@@ -388,11 +388,11 @@ TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
 
-  const ProposalMintOutcome second = h.program.propose(h.user, proposalOf("prop_pg00002", "rt_pg000001", {benchAt(90.0, 3)}));
+  const ProposalMintOutcome second = h.door.propose(h.user, proposalOf("prop_pg00002", "rt_pg000001", {benchAt(90.0, 3)}));
   const ProposalMintOutcome ask =
-      h.program.propose(h.user, proposalOf("prop_pg00003", "rt_pg000001", {benchAt(92.5, 3)}, ProposalDoor::ask));
+      h.door.propose(h.user, proposalOf("prop_pg00003", "rt_pg000001", {benchAt(92.5, 3)}, ProposalDoor::ask));
 
   CHECK(second.error == ProposalMintError::none);
   CHECK(ask.error == ProposalMintError::none);
@@ -435,7 +435,7 @@ TEST(pg_gym_a_legacy_superseded_row_says_only_that_until_the_routine_moves) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
   Json::Value settle(Json::objectValue);
   settle["state"] = "superseded";
   settle["settledAt"] = Json::UInt64(kNow);
@@ -460,10 +460,10 @@ TEST(pg_gym_a_replayed_mint_reads_back_the_stored_proposal) {
   const Routine base = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
   REQUIRE(mcpCreate(h, base).routine.has_value());
   const ProposalWrite incoming = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
-  REQUIRE(h.program.propose(h.user, incoming).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, incoming).proposal.has_value());
   h.clock.now = kNow + 60'000;
 
-  const ProposalMintOutcome replayed = h.program.propose(h.user, incoming);
+  const ProposalMintOutcome replayed = h.door.propose(h.user, incoming);
 
   CHECK(replayed.error == ProposalMintError::none);
   CHECK_EQ(replayed.proposal, std::optional<RoutineProposal>(mintedFrom(base, incoming, kNow)));
@@ -478,14 +478,14 @@ TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unsee
   const Routine base = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
   REQUIRE(mcpCreate(h, base).routine.has_value());
   REQUIRE(mcpCreate(h, dayOf(h.other, "rt_pg000009", "Their plan", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
+  REQUIRE(h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"pg-their-zercher"}, "Their Zercher Squat",
                                                           Pattern::squat, Equipment::barbell, 2.5})
               .exercise.has_value());
-  REQUIRE(h.program.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
 
-  const ProposalMintOutcome spent = h.program.propose(h.user, proposalOf("prop_pg00009", "rt_pg000001", {benchAt(87.5, 3)}));
-  const ProposalMintOutcome theirs = h.program.propose(h.user, proposalOf("prop_pg00002", "rt_pg000009", {benchAt(87.5, 3)}));
-  const ProposalMintOutcome unseen = h.program.propose(
+  const ProposalMintOutcome spent = h.door.propose(h.user, proposalOf("prop_pg00009", "rt_pg000001", {benchAt(87.5, 3)}));
+  const ProposalMintOutcome theirs = h.door.propose(h.user, proposalOf("prop_pg00002", "rt_pg000009", {benchAt(87.5, 3)}));
+  const ProposalMintOutcome unseen = h.door.propose(
       h.user, proposalOf("prop_pg00003", "rt_pg000001",
                          {RoutineEntry{1, ExerciseId{"pg-their-zercher"}, fake::straight(3, 8, 100.0), 180}}));
 
@@ -495,7 +495,7 @@ TEST(pg_gym_a_proposal_is_refused_for_a_spent_id_an_unknown_routine_and_an_unsee
   // The refused mint wrote nothing: no header, no lines, and the next mint lands.
   CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_pg00003"}), std::optional<RoutineProposal>());
   const ProposalWrite next = proposalOf("prop_pg00004", "rt_pg000001", {benchAt(87.5, 3)});
-  const ProposalMintOutcome landed = h.program.propose(h.user, next);
+  const ProposalMintOutcome landed = h.door.propose(h.user, next);
   CHECK(landed.error == ProposalMintError::none);
   CHECK_EQ(landed.proposal, std::optional<RoutineProposal>(mintedFrom(base, next, kNow)));
 }
@@ -506,11 +506,11 @@ TEST(pg_gym_a_refused_mint_leaves_the_pending_card_it_could_not_replace) {
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
   REQUIRE(mcpCreate(h, dayOf(h.other, "rt_pg000009", "Their plan", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
 
-  const ProposalMintOutcome stranger = h.program.propose(h.user, proposalOf("prop_pg00009", "rt_pg000001", {benchAt(90.0, 3)}));
-  const ProposalMintOutcome reused = h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(95.0, 3)}));
+  const ProposalMintOutcome stranger = h.door.propose(h.user, proposalOf("prop_pg00009", "rt_pg000001", {benchAt(90.0, 3)}));
+  const ProposalMintOutcome reused = h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(95.0, 3)}));
 
   CHECK(stranger.error == ProposalMintError::idTaken);
   CHECK(reused.error == ProposalMintError::idReused);
@@ -529,7 +529,7 @@ TEST(pg_gym_a_put_that_lands_the_same_document_moves_no_revision_and_settles_no_
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
   h.clock.now = kNow + 60'000;
 
   CHECK_EQ(GymDoor::refusal(phoneWrite(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")}))), "");
@@ -558,7 +558,7 @@ TEST(pg_gym_applying_a_proposal_writes_the_document_moves_the_revision_and_dates
   REQUIRE(mcpCreate(h, base).routine.has_value());
   const ProposalWrite incoming = proposalOf(
       "prop_pg00001", "rt_pg000001", {benchAt(87.5, 3), entryAt(2, "back-squat", fake::straight(3, 8, 100.0), 240)});
-  REQUIRE(h.program.propose(h.user, incoming).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, incoming).proposal.has_value());
   const Routine becomes = dayOf(h.user, "rt_pg000001", "Push A",
                                 {benchAt(87.5, 3), entryAt(2, "back-squat", fake::straight(3, 8, 100.0), 240)}, 0,
                                 std::nullopt, 2);
@@ -582,7 +582,7 @@ TEST(pg_gym_the_lifters_own_write_supersedes_a_pending_proposal_and_the_tap_refu
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
   const Routine rewritten = dayOf(h.user, "rt_pg000001", "Push A",
                                   {entryAt(1, "bench-press", fake::straight(5, 5, 85.0), 180)}, 0, std::nullopt, 2);
 
@@ -609,7 +609,7 @@ TEST(pg_gym_dismissing_keeps_the_card_and_refuses_the_other_decision) {
   const Routine base = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
   REQUIRE(mcpCreate(h, base).routine.has_value());
   const ProposalWrite incoming = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
-  REQUIRE(h.program.propose(h.user, incoming).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, incoming).proposal.has_value());
   RoutineProposal dismissed = mintedFrom(base, incoming, kNow);
   dismissed.head.state = ProposalState::dismissed;
   dismissed.head.settledAtMs = kNow + 60'000;
@@ -634,12 +634,12 @@ TEST(pg_gym_a_removed_line_counts_the_sets_it_keeps_at_read_time) {
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
   h.clock.now = kNow + 120'000;
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
   for (const auto& [id, at] : {std::pair{"set_pg000001", kNow + 60'000}, std::pair{"set_pg000002", kNow + 120'000}})
-    REQUIRE(h.training.append(h.user, SessionId{"ses_pg000001"},
+    REQUIRE(h.door.append(h.user, SessionId{"ses_pg000001"},
                               SetWrite{SetId{id}, ExerciseId{"bench-press"}, 82.5, 8, SetKind::working, std::nullopt, "", at})
                 .set.has_value());
-  REQUIRE(h.program.proposeRemoval(h.user, ProposalId{"prop_pg00001"}, RoutineId{"rt_pg000001"}, "Drop it.",
+  REQUIRE(h.door.proposeRemoval(h.user, ProposalId{"prop_pg00001"}, RoutineId{"rt_pg000001"}, "Drop it.",
                                    ProposalSource{ProposalDoor::mcp, "", "", std::nullopt})
               .proposal.has_value());
 
@@ -657,7 +657,7 @@ TEST(pg_gym_applying_a_removal_takes_the_routine_and_its_ledger_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.proposeRemoval(h.user, ProposalId{"prop_pg00001"}, RoutineId{"rt_pg000001"}, "Drop it.",
+  REQUIRE(h.door.proposeRemoval(h.user, ProposalId{"prop_pg00001"}, RoutineId{"rt_pg000001"}, "Drop it.",
                                    ProposalSource{ProposalDoor::mcp, "", "", std::nullopt})
               .proposal.has_value());
 
@@ -677,7 +677,7 @@ TEST(pg_gym_a_proposal_another_account_holds_resolves_to_nothing_on_every_door) 
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.other, "rt_pg000009", "Their plan", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.other, proposalOf("prop_pg00009", "rt_pg000009", {benchAt(87.5, 3)})).proposal);
   const Routine theirs = h.repo.program.routine(h.other, RoutineId{"rt_pg000009"}).value();
   const RoutineProposal waiting = h.repo.program.proposal(h.other, ProposalId{"prop_pg00009"}).value();
 
@@ -695,7 +695,7 @@ TEST(pg_gym_deleting_a_routine_takes_its_proposals_with_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   REQUIRE(mcpCreate(h, dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")})).routine.has_value());
-  REQUIRE(h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
+  REQUIRE(h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)})).proposal);
 
   h.kill(h.user, "routine", "rt_pg000001");
 
@@ -754,7 +754,7 @@ TEST(pg_gym_a_proposal_carries_a_ramp_on_both_sides_and_an_open_line_reads_back_
   incoming.summary = "Top single up.";
   const RoutineProposal minted = mintedFrom(base, incoming, kNow);
 
-  const ProposalMintOutcome stored = h.program.propose(h.user, incoming);
+  const ProposalMintOutcome stored = h.door.propose(h.user, incoming);
   const std::optional<RoutineProposal> read = h.repo.program.proposal(h.user, ProposalId{"prop_pg00001"});
 
   CHECK(stored.error == ProposalMintError::none);
@@ -780,11 +780,11 @@ TEST(pg_gym_a_proposal_replay_matches_the_scheme_set_for_set) {
   oneSetOff[2] = SetTarget{3, 92.5};
   const ProposalWrite incoming = proposalOf("prop_pg00001", "rt_pg000001", {entryAt(1, "bench-press", fake::ramp(), 180)});
   const RoutineProposal minted = mintedFrom(base, incoming, kNow);
-  REQUIRE(h.program.propose(h.user, incoming).proposal.has_value());
+  REQUIRE(h.door.propose(h.user, incoming).proposal.has_value());
 
-  const ProposalMintOutcome replayed = h.program.propose(h.user, incoming);
+  const ProposalMintOutcome replayed = h.door.propose(h.user, incoming);
   const ProposalMintOutcome moved =
-      h.program.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {entryAt(1, "bench-press", oneSetOff, 180)}));
+      h.door.propose(h.user, proposalOf("prop_pg00001", "rt_pg000001", {entryAt(1, "bench-press", oneSetOff, 180)}));
 
   CHECK(replayed.error == ProposalMintError::none);
   CHECK_EQ(replayed.proposal, std::optional<RoutineProposal>(minted));

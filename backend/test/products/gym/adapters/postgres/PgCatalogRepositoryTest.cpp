@@ -64,13 +64,13 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   doortest::Harness h;
   const Exercise mine{ExerciseId{"pg-zercher-squat"}, "Zercher Squat", Pattern::squat, Equipment::machine, 5.0, true};
 
-  const ExerciseInsertOutcome created = h.catalog.createExercise(
+  const ExerciseInsertOutcome created = h.door.createExercise(
       h.user, ExerciseWrite{mine.id, mine.name, Pattern::squat, Equipment::machine, 5.0});
-  const ExerciseInsertOutcome replayed = h.catalog.createExercise(
+  const ExerciseInsertOutcome replayed = h.door.createExercise(
       h.user, ExerciseWrite{mine.id, "Renamed mid-flight", Pattern::squat, Equipment::machine, 5.0});
-  const ExerciseInsertOutcome theirs = h.catalog.createExercise(
+  const ExerciseInsertOutcome theirs = h.door.createExercise(
       h.other, ExerciseWrite{mine.id, "Theirs", Pattern::squat, Equipment::machine, 5.0});
-  const ExerciseInsertOutcome seedSlug = h.catalog.createExercise(
+  const ExerciseInsertOutcome seedSlug = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"bench-press"}, "My Bench", Pattern::press, Equipment::barbell, 2.5});
 
   CHECK(created.error == ExerciseInsertError::none);
@@ -88,11 +88,11 @@ TEST(pg_gym_create_exercise_is_the_callers_alone_and_a_spent_id_is_refused) {
   for (const Exercise& exercise : h.repo.catalog.catalog(h.user)) (exercise.custom ? owned : seen).push_back(exercise);
   CHECK_EQ(owned, std::vector<Exercise>{mine});
   CHECK_EQ(seen, seeds);
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
-  CHECK(h.training.append(h.user, SessionId{"ses_pg000001"},
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, kNow, false, std::nullopt}).session);
+  CHECK(h.door.append(h.user, SessionId{"ses_pg000001"},
                           SetWrite{SetId{"set_pg000001"}, mine.id, 60.0, 8, SetKind::working, std::nullopt, "", kNow})
             .error == AppendError::none);
-  CHECK(h.program.createRoutine(h.user, RoutineWrite{RoutineId{"rt_pg000001"}, "Push A", 0,
+  CHECK(h.door.createRoutine(h.user, RoutineWrite{RoutineId{"rt_pg000001"}, "Push A", 0,
                                                      {entryAt(1, "pg-zercher-squat")}},
                                 ProposalDoor::mcp)
             .error == RoutineWriteError::none);
@@ -105,9 +105,9 @@ TEST(pg_gym_the_step_band_the_domain_enforces_is_exactly_what_the_column_holds) 
   const Exercise ceiling{ExerciseId{"pg-heavy-step"}, "Heavy Step", Pattern::squat, Equipment::machine, kMaxStepKg, true};
   const Exercise floorStep{ExerciseId{"pg-fine-step"}, "Fine Step", Pattern::isolation, Equipment::cable, kMinStepKg, true};
 
-  const ExerciseInsertOutcome top = h.catalog.createExercise(
+  const ExerciseInsertOutcome top = h.door.createExercise(
       h.user, ExerciseWrite{ceiling.id, ceiling.name, Pattern::squat, Equipment::machine, kMaxStepKg});
-  const ExerciseInsertOutcome fine = h.catalog.createExercise(
+  const ExerciseInsertOutcome fine = h.door.createExercise(
       h.user, ExerciseWrite{floorStep.id, floorStep.name, Pattern::isolation, Equipment::cable, kMinStepKg});
 
   CHECK(top.error == ExerciseInsertError::none);
@@ -152,7 +152,7 @@ TEST(pg_gym_renaming_a_seed_is_one_accounts_alone_and_leaves_the_global_row_unto
 TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_a_seed_renamed_back_keeps_its_line) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  const Exercise zercher = h.catalog.createExercise(
+  const Exercise zercher = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_pg000001"}, "Zercher Squat", Pattern::squat, Equipment::barbell, 2.5})
       .exercise.value();
   const Exercise seed = movementOf(h.repo.catalog.catalog(h.user), "back-squat");
@@ -179,7 +179,7 @@ TEST(pg_gym_renaming_your_own_movement_edits_its_row_and_a_seed_renamed_back_kee
 TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_off) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  const Exercise hammer = h.catalog.createExercise(
+  const Exercise hammer = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_pg000001"}, "Hammer row", Pattern::pull, Equipment::machine, 2.5})
       .exercise.value();
   const Exercise seed = movementOf(h.repo.catalog.catalog(h.user), "back-squat");
@@ -206,7 +206,7 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
 TEST(pg_gym_a_blank_stored_movement_name_reads_as_stored) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  REQUIRE(h.catalog.createExercise(
+  REQUIRE(h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_pg000001"}, "Sled push", Pattern::carry, Equipment::machine, 5.0}).exercise);
   GymDoor::requireOk(phoneRename(h, h.user, "back-squat", "Low-bar Squat", true));
   {
@@ -221,7 +221,7 @@ TEST(pg_gym_a_blank_stored_movement_name_reads_as_stored) {
   const Exercise squat{Stored{}, ExerciseId{"back-squat"}, "\xC2\xA0", Pattern::squat, Equipment::barbell, 2.5, false,
                        {"Back Squat"}};
 
-  const std::vector<Exercise> catalog = h.catalog.catalog(h.user);
+  const std::vector<Exercise> catalog = h.repo.catalog.catalog(h.user);
 
   CHECK_EQ(catalog.size(), static_cast<std::size_t>(65));
   CHECK_EQ(movementOf(catalog, "ex_pg000001"), sled);
@@ -238,12 +238,12 @@ TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   doortest::Harness h;
   const std::uint64_t t1 = kNow;
   h.clock.now = t1 + 2'000;
-  REQUIRE(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, std::nullopt}).session);
-  REQUIRE(h.training.append(h.user, SessionId{"ses_pg000001"},
+  REQUIRE(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false, std::nullopt}).session);
+  REQUIRE(h.door.append(h.user, SessionId{"ses_pg000001"},
                             SetWrite{SetId{"set_pg000001"}, ExerciseId{"back-squat"}, 100, 5, SetKind::working,
                                      std::nullopt, "", t1 + 1'000})
               .set);
-  REQUIRE(h.training.finish(h.user, SessionId{"ses_pg000001"}, t1 + 2'000).session);
+  REQUIRE(h.door.finish(h.user, SessionId{"ses_pg000001"}, t1 + 2'000).session);
   GymDoor::requireOk(phoneRename(h, h.user, "back-squat", "Low-bar Squat", true));
   h.repo.log.insertShare(SessionShare{SessionId{"ses_pg000001"}, h.user, "tok_pg000001", t1 + 30ull * 86'400'000}, t1);
 

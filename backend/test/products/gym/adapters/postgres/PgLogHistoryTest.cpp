@@ -25,13 +25,13 @@ SetWrite bench(const std::string& id, double weightKg, std::uint64_t completedAt
 Session started(Harness& h, const UserId& user, const std::string& id, std::uint64_t atMs,
                 std::optional<RoutineId> routine = std::nullopt) {
   h.clock.now = std::max(h.clock.now, atMs);
-  const StartOutcome outcome = h.training.start(user, SessionStart{SessionId{id}, atMs, false, routine});
+  const StartOutcome outcome = h.door.start(user, SessionStart{SessionId{id}, atMs, false, routine});
   if (!outcome.session) throw std::runtime_error("the door started no " + id);
   return *outcome.session;
 }
 
 Set logged(Harness& h, const UserId& user, const std::string& session, const SetWrite& set) {
-  const AppendOutcome outcome = h.training.append(user, SessionId{session}, set);
+  const AppendOutcome outcome = h.door.append(user, SessionId{session}, set);
   if (!outcome.set) throw std::runtime_error("the door logged no " + set.id.str());
   return *outcome.set;
 }
@@ -39,14 +39,14 @@ Set logged(Harness& h, const UserId& user, const std::string& session, const Set
 // A finish the lifter makes at `atMs`: the clock stands there too, as the door lands a later finish at its own now.
 Session finished(Harness& h, const UserId& user, const std::string& session, std::uint64_t atMs) {
   h.clock.now = std::max(h.clock.now, atMs);
-  const FinishOutcome outcome = h.training.finish(user, SessionId{session}, atMs);
+  const FinishOutcome outcome = h.door.finish(user, SessionId{session}, atMs);
   if (!outcome.session) throw std::runtime_error("the door finished no " + session);
   return *outcome.session;
 }
 
 // Push A as the agent wrote it: one bench line, five sets of five at 82.5, three minutes' rest.
 Routine pushA(Harness& h, const std::string& id) {
-  const RoutineWriteOutcome outcome = h.program.createRoutine(
+  const RoutineWriteOutcome outcome = h.door.createRoutine(
       h.user,
       RoutineWrite{RoutineId{id}, "Push A", 0,
                    {RoutineEntry{1, ExerciseId{"bench-press"}, gym::fake::straight(5, 5, 82.5), 180}}},
@@ -166,7 +166,7 @@ TEST(pg_gym_log_snapshots_freeze_safe_facts_while_live_links_follow_corrections)
   REQUIRE(liveAfter);
   CHECK_EQ(wm::dump(toJson(frozenAfter->page)), snapshot);
   CHECK_EQ(liveAfter->page.summary.tonnageKg, 760.0);
-  REQUIRE_EQ(h.training.discard(h.user, SessionId{"ses_history01"}), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, SessionId{"ses_history01"}), DiscardOutcome::done);
   CHECK_EQ(h.repo.log.sharedHistory(frozen.token, {}, at + 4'000)->page.summary.sessions, 1);
   CHECK_EQ(h.repo.log.sharedHistory(live.token, {}, at + 4'000)->page.summary.sessions, 0);
   const auto rows = rowsOf("SELECT workout::text FROM gym_log_share_sessions WHERE share_id='share_snapshot'");
@@ -299,7 +299,7 @@ TEST(pg_gym_correction_replaces_a_workout_atomically_preserves_plan_and_replays_
   CHECK_EQ(revisions[3]["set_id"].as<std::string>(), "set_correct03");
   CHECK_EQ(revisions[3]["weight_kg"].as<double>(), 90.0);
   CHECK(!revisions[3]["deleted"].as<bool>());
-  REQUIRE_EQ(h.training.discard(h.user, id), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, id), DiscardOutcome::done);
   CHECK_EQ(GymDoor::refusal(h.door.command(h.user, "gym.correctSession", request)), "record-dead");
 }
 

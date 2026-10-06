@@ -30,14 +30,14 @@ namespace wm::gym {
 void registerRoutes(drogon::HttpAppFramework& app, const GymDeps& deps) {
   WriteRoutes routes(app, "gym");
   auto training =
-      std::make_shared<TrainingApi>(deps.trainingService, deps.authService, deps.appBaseUrl);
+      std::make_shared<TrainingApi>(deps.trainingService, deps.door, deps.authService, deps.appBaseUrl);
   auto catalog =
-      std::make_shared<CatalogApi>(deps.catalogService, deps.trainingService, deps.authService);
-  auto program = std::make_shared<ProgramApi>(deps.programService, deps.authService);
+      std::make_shared<CatalogApi>(deps.catalog, deps.trainingService, deps.authService);
+  auto program = std::make_shared<ProgramApi>(deps.program, deps.authService);
   auto preferences = std::make_shared<PreferencesApi>(deps.preferences, deps.authService);
   auto threads = std::make_shared<ThreadsApi>(deps.threadService, deps.authService, deps.askService);
   if (deps.onShutdown) deps.onShutdown([threads] { threads->stop(); });
-  auto notes = std::make_shared<NotesApi>(deps.notesService, deps.authService);
+  auto notes = std::make_shared<NotesApi>(deps.notes, deps.authService);
   auto bodyweight = std::make_shared<BodyweightApi>(deps.bodyweight, deps.authService);
 
   // THE RETIRED WRITE PATHS. Android 0.5.0 to 0.10.0 still send these; every client after them

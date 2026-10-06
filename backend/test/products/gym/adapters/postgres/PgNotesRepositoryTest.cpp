@@ -139,7 +139,7 @@ TEST(pg_gym_a_blank_stored_note_title_reads_as_stored) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt.", appendKeys(1)[0])), "");
-  REQUIRE(h.notes.saveInsight(Note{NoteId{"note_pg00002"}, h.user, "Goal", "A 140 squat."}).note.has_value());
+  REQUIRE(h.door.saveInsight(Note{NoteId{"note_pg00002"}, h.user, "Goal", "A 140 squat."}).note.has_value());
   {
     PgLease lease{*doortest::pool()};
     pqxx::work txn{*lease};
@@ -149,10 +149,10 @@ TEST(pg_gym_a_blank_stored_note_title_reads_as_stored) {
     txn.commit();
   }
 
-  CHECK_EQ(h.notes.notes(h.user),
+  CHECK_EQ(h.repo.notes.notes(h.user),
            (std::vector<Note>{Note{Stored{}, NoteId{"note_pg00001"}, h.user, "", "Blunt.", 0, kNow},
                               Note{Stored{}, NoteId{"note_pg00002"}, h.user, "\xEF\xBB\xBF", "A 140 squat.", 1, kNow}}));
-  CHECK_EQ(h.notes.noteSave(h.user, NoteId{"note_pg00002"}),
+  CHECK_EQ(h.repo.notes.noteSave(h.user, NoteId{"note_pg00002"}),
            std::optional<Note>(Note{Stored{}, NoteId{"note_pg00002"}, h.user, "", "A 140 squat.", 1, kNow}));
 }
 
@@ -227,28 +227,28 @@ TEST(pg_gym_insight_save_survives_lost_ack_user_edit_and_delete_without_overwrit
   const Note input{NoteId{"note_coach01"}, h.user, "Schedule", "I train on Monday and Thursday."};
 
   h.clock.now = kNow + 1;
-  const NoteWriteOutcome first = h.notes.saveInsight(input);
+  const NoteWriteOutcome first = h.door.saveInsight(input);
   REQUIRE(first.note.has_value());
   CHECK_EQ(*first.note, (Note{input.id, h.user, input.title, input.body, 1, kNow + 1}));
   h.clock.now = kNow + 2;
-  CHECK_EQ(h.notes.saveInsight(input).note, first.note);
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
   CHECK_EQ(h.repo.notes.notes(h.user), (std::vector<Note>{hand, *first.note}));
-  CHECK_FALSE(h.notes.noteSave(h.other, input.id).has_value());
+  CHECK_FALSE(h.repo.notes.noteSave(h.other, input.id).has_value());
   h.clock.now = kNow + 3;
-  CHECK(h.notes.saveInsight(Note{input.id, h.other, input.title, input.body}).error == NoteWriteError::idTaken);
+  CHECK(h.door.saveInsight(Note{input.id, h.other, input.title, input.body}).error == NoteWriteError::idTaken);
   h.clock.now = kNow + 4;
   GymDoor::requireOk(phoneNote(h, h.user, input.id.str(), "Schedule", "I now train on Tuesday."));
   h.clock.now = kNow + 5;
-  CHECK_EQ(h.notes.saveInsight(input).note, first.note);
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
   CHECK_EQ(h.repo.notes.notes(h.user),
            (std::vector<Note>{hand, Note{input.id, h.user, "Schedule", "I now train on Tuesday.", 1, kNow + 4}}));
   h.kill(h.user, "note", input.id.str());
   h.clock.now = kNow + 6;
-  CHECK_EQ(h.notes.saveInsight(input).note, first.note);
-  CHECK_EQ(h.notes.noteSave(h.user, input.id), first.note);
+  CHECK_EQ(h.door.saveInsight(input).note, first.note);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, input.id), first.note);
   CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{hand});
   h.clock.now = kNow + 7;
-  CHECK(h.notes.saveInsight(Note{NoteId{"note_hand001"}, h.user, "Changed", "Not allowed"}).error ==
+  CHECK(h.door.saveInsight(Note{NoteId{"note_hand001"}, h.user, "Changed", "Not allowed"}).error ==
         NoteWriteError::idTaken);
   CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{hand});
 }
@@ -263,11 +263,11 @@ TEST(pg_gym_insight_exact_text_deduplicates_at_capacity_and_concurrent_saves_app
   std::exception_ptr firstError, secondError;
   std::thread first([&] {
     ready.count_down(); start.wait();
-    try { a = h.notes.saveInsight(input); } catch (...) { firstError = std::current_exception(); }
+    try { a = h.door.saveInsight(input); } catch (...) { firstError = std::current_exception(); }
   });
   std::thread second([&] {
     ready.count_down(); start.wait();
-    try { b = h.notes.saveInsight(input); } catch (...) { secondError = std::current_exception(); }
+    try { b = h.door.saveInsight(input); } catch (...) { secondError = std::current_exception(); }
   });
   ready.wait(); start.count_down(); first.join(); second.join();
   REQUIRE(!firstError);
@@ -277,13 +277,13 @@ TEST(pg_gym_insight_exact_text_deduplicates_at_capacity_and_concurrent_saves_app
   CHECK_EQ(a.note, b.note);
   CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{*a.note});
   for (int at = 1; at < 10; ++at)
-    REQUIRE(h.notes.saveInsight(Note{NoteId{"note_full00" + std::to_string(at)}, h.user, "Title " + std::to_string(at), ""})
+    REQUIRE(h.door.saveInsight(Note{NoteId{"note_full00" + std::to_string(at)}, h.user, "Title " + std::to_string(at), ""})
                 .note.has_value());
-  const NoteWriteOutcome duplicate = h.notes.saveInsight(Note{NoteId{"note_dupe001"}, h.user, input.title, input.body});
+  const NoteWriteOutcome duplicate = h.door.saveInsight(Note{NoteId{"note_dupe001"}, h.user, input.title, input.body});
   CHECK_EQ(duplicate.note, a.note);
   CHECK_EQ(h.repo.notes.notes(h.user).size(), 10u);
-  CHECK(h.notes.saveInsight(Note{NoteId{"note_new0001"}, h.user, "New insight", "Different."}).error ==
+  CHECK(h.door.saveInsight(Note{NoteId{"note_new0001"}, h.user, "New insight", "Different."}).error ==
         NoteWriteError::full);
-  CHECK_FALSE(h.notes.noteSave(h.user, NoteId{"note_new0001"}).has_value());
-  CHECK(h.notes.saveInsight(Note{input.id, h.user, "Different", "Changed payload."}).error == NoteWriteError::idTaken);
+  CHECK_FALSE(h.repo.notes.noteSave(h.user, NoteId{"note_new0001"}).has_value());
+  CHECK(h.door.saveInsight(Note{input.id, h.user, "Different", "Changed payload."}).error == NoteWriteError::idTaken);
 }

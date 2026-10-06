@@ -39,92 +39,92 @@ Json::Value phoneNote(doortest::Harness& h, const UserId& owner, const std::stri
 TEST(gym_record_engine_routine_doors_keep_replay_revision_and_spent_identity) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  const auto created = h.program.createRoutine(h.user, routineWrite(), ProposalDoor::mcp);
+  const auto created = h.door.createRoutine(h.user, routineWrite(), ProposalDoor::mcp);
   REQUIRE(created.routine);
   CHECK_EQ(created.error, RoutineWriteError::none);
   CHECK_EQ(created.routine->revision, 1);
-  CHECK_EQ(h.program.createRoutine(h.user, routineWrite("routine_0001", "Ignored replay"), ProposalDoor::mcp).routine,
+  CHECK_EQ(h.door.createRoutine(h.user, routineWrite("routine_0001", "Ignored replay"), ProposalDoor::mcp).routine,
            created.routine);
   Json::Value renamed(Json::objectValue);
   renamed["name"] = "Changed";
   GymDoor::requireOk(h.admit(h.user, {GymDoor::delta("routine", "routine_0001", renamed)}));
-  CHECK_EQ(h.program.routine(h.user, RoutineId{"routine_0001"}).value().revision, 2);
+  CHECK_EQ(h.repo.program.routine(h.user, RoutineId{"routine_0001"}).value().revision, 2);
   h.kill(h.user, "routine", "routine_0001");
   auto edit = routineWrite("routine_0001", "Changed");
-  CHECK_EQ(h.program.createRoutine(h.user, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
-  CHECK_EQ(h.program.createRoutine(h.other, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.user, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.other, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
   edit.entries = {RoutineEntry{1, ExerciseId{"."}, {}, std::nullopt}};
-  CHECK_EQ(h.program.createRoutine(h.user, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
-  CHECK_EQ(h.program.createRoutine(h.other, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.user, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.other, edit, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
 }
 
 TEST(gym_record_engine_routines_translate_unknown_exercise_and_foreign_ids) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   auto missing = routineWrite(); missing.entries = {RoutineEntry{1, ExerciseId{"unknown-move"}, {}, std::nullopt}};
-  CHECK_EQ(h.program.createRoutine(h.user, missing, ProposalDoor::mcp).error, RoutineWriteError::unknownExercise);
+  CHECK_EQ(h.door.createRoutine(h.user, missing, ProposalDoor::mcp).error, RoutineWriteError::unknownExercise);
   auto malformed = missing; malformed.entries = {RoutineEntry{1, ExerciseId{"."}, {}, std::nullopt}};
-  CHECK_EQ(h.program.createRoutine(h.user, malformed, ProposalDoor::mcp).error, RoutineWriteError::unknownExercise);
-  REQUIRE(h.program.createRoutine(h.user, routineWrite(), ProposalDoor::mcp).routine);
-  CHECK_EQ(h.program.createRoutine(h.other, routineWrite(), ProposalDoor::mcp).error, RoutineWriteError::idTaken);
-  CHECK_EQ(h.program.createRoutine(h.other, malformed, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
-  CHECK_EQ(h.program.createRoutine(h.user, malformed, ProposalDoor::mcp).error, RoutineWriteError::none);
+  CHECK_EQ(h.door.createRoutine(h.user, malformed, ProposalDoor::mcp).error, RoutineWriteError::unknownExercise);
+  REQUIRE(h.door.createRoutine(h.user, routineWrite(), ProposalDoor::mcp).routine);
+  CHECK_EQ(h.door.createRoutine(h.other, routineWrite(), ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.other, malformed, ProposalDoor::mcp).error, RoutineWriteError::idTaken);
+  CHECK_EQ(h.door.createRoutine(h.user, malformed, ProposalDoor::mcp).error, RoutineWriteError::none);
 }
 
 TEST(gym_record_engine_proposal_mint_translates_identity_replay_and_refusals) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  CHECK_EQ(h.program.propose(h.user, proposalWrite()).error, ProposalMintError::unknownRoutine);
-  REQUIRE(h.program.createRoutine(h.user, routineWrite(), ProposalDoor::mcp).routine);
-  const auto minted = h.program.propose(h.user, proposalWrite());
+  CHECK_EQ(h.door.propose(h.user, proposalWrite()).error, ProposalMintError::unknownRoutine);
+  REQUIRE(h.door.createRoutine(h.user, routineWrite(), ProposalDoor::mcp).routine);
+  const auto minted = h.door.propose(h.user, proposalWrite());
   REQUIRE(minted.proposal);
-  CHECK_EQ(h.program.propose(h.user, proposalWrite()).proposal, minted.proposal);
+  CHECK_EQ(h.door.propose(h.user, proposalWrite()).proposal, minted.proposal);
   auto reused = proposalWrite(); reused.summary = "Another document";
-  CHECK_EQ(h.program.propose(h.user, reused).error, ProposalMintError::idReused);
-  REQUIRE(h.program.createRoutine(h.other, routineWrite("routine_0002"), ProposalDoor::mcp).routine);
+  CHECK_EQ(h.door.propose(h.user, reused).error, ProposalMintError::idReused);
+  REQUIRE(h.door.createRoutine(h.other, routineWrite("routine_0002"), ProposalDoor::mcp).routine);
   auto foreign = proposalWrite(); foreign.routine = RoutineId{"routine_0002"};
-  CHECK_EQ(h.program.propose(h.other, foreign).error, ProposalMintError::idTaken);
+  CHECK_EQ(h.door.propose(h.other, foreign).error, ProposalMintError::idTaken);
   auto noChange = proposalWrite("proposal_002"); noChange.name.reset();
-  CHECK_EQ(h.program.propose(h.user, noChange).error, ProposalMintError::noChange);
+  CHECK_EQ(h.door.propose(h.user, noChange).error, ProposalMintError::noChange);
   auto unknown = proposalWrite("proposal_003"); unknown.entries = {RoutineEntry{1, ExerciseId{"unknown-move"}, {}, std::nullopt}};
-  CHECK_EQ(h.program.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
+  CHECK_EQ(h.door.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
   unknown.entries = {RoutineEntry{1, ExerciseId{"."}, {}, std::nullopt}};
-  CHECK_EQ(h.program.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
+  CHECK_EQ(h.door.propose(h.user, unknown).error, ProposalMintError::unknownExercise);
 }
 
 TEST(gym_record_engine_catalog_create_rounds_its_step_and_refuses_taken_and_seed_ids) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const ExerciseWrite incoming{ExerciseId{"exercise_001"}, "Custom press", Pattern::press, Equipment::barbell, std::nullopt};
-  const auto created = h.catalog.createExercise(h.user, incoming);
+  const auto created = h.door.createExercise(h.user, incoming);
   REQUIRE(created.exercise);
-  CHECK_EQ(h.catalog.createExercise(h.user, incoming).exercise, created.exercise);
-  const auto rounded = h.catalog.createExercise(h.user, ExerciseWrite{ExerciseId{"exercise_002"}, "Precise step", Pattern::press, Equipment::barbell, 1.234});
+  CHECK_EQ(h.door.createExercise(h.user, incoming).exercise, created.exercise);
+  const auto rounded = h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"exercise_002"}, "Precise step", Pattern::press, Equipment::barbell, 1.234});
   REQUIRE(rounded.exercise);
   CHECK_EQ(rounded.exercise->stepKg, 1.23);
-  CHECK_EQ(h.catalog.createExercise(h.other, incoming).error, ExerciseInsertError::idTaken);
-  CHECK_EQ(h.catalog.createExercise(h.user, ExerciseWrite{ExerciseId{"dip"}, "Taken seed", Pattern::press, Equipment::bodyweight, std::nullopt}).error, ExerciseInsertError::idTaken);
+  CHECK_EQ(h.door.createExercise(h.other, incoming).error, ExerciseInsertError::idTaken);
+  CHECK_EQ(h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"dip"}, "Taken seed", Pattern::press, Equipment::bodyweight, std::nullopt}).error, ExerciseInsertError::idTaken);
 }
 
 TEST(gym_record_engine_insight_receipts_preserve_snapshot_after_edit_and_delete) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Note incoming{NoteId{"note_0000001"}, h.user, "Constraint", "Keep sessions short"};
-  const auto saved = h.notes.saveInsight(incoming);
+  const auto saved = h.door.saveInsight(incoming);
   REQUIRE(saved.note);
-  CHECK_EQ(h.notes.noteSave(h.user, incoming.id), saved.note);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, incoming.id), saved.note);
   GymDoor::requireOk(phoneNote(h, h.user, incoming.id.str(), "Edited", "Changed"));
-  CHECK_EQ(h.notes.saveInsight(incoming).note, saved.note);
-  CHECK_EQ(h.notes.saveInsight(Note{incoming.id, h.user, "Different", "Text"}).error, NoteWriteError::idTaken);
+  CHECK_EQ(h.door.saveInsight(incoming).note, saved.note);
+  CHECK_EQ(h.door.saveInsight(Note{incoming.id, h.user, "Different", "Text"}).error, NoteWriteError::idTaken);
   h.kill(h.user, "note", incoming.id.str());
-  CHECK_EQ(h.notes.saveInsight(incoming).note, saved.note);
-  CHECK(h.notes.notes(h.user).empty());
-  const auto first = h.notes.saveInsight(Note{NoteId{"note_second1"}, h.user, "Duplicate", "Same text"});
+  CHECK_EQ(h.door.saveInsight(incoming).note, saved.note);
+  CHECK(h.repo.notes.notes(h.user).empty());
+  const auto first = h.door.saveInsight(Note{NoteId{"note_second1"}, h.user, "Duplicate", "Same text"});
   REQUIRE(first.note);
-  const auto duplicate = h.notes.saveInsight(Note{NoteId{"note_third01"}, h.user, "Duplicate", "Same text"});
+  const auto duplicate = h.door.saveInsight(Note{NoteId{"note_third01"}, h.user, "Duplicate", "Same text"});
   CHECK_EQ(duplicate.note, first.note);
-  CHECK_EQ(h.notes.noteSave(h.user, NoteId{"note_third01"}), first.note);
-  CHECK_EQ(h.notes.notes(h.user).size(), 1U);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, NoteId{"note_third01"}), first.note);
+  CHECK_EQ(h.repo.notes.notes(h.user).size(), 1U);
 }
 
 namespace {
@@ -135,7 +135,7 @@ void insightReceiptRace(bool remove) {
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   txn.exec("lock table gym_note_saves in share mode");
-  auto save = std::async(std::launch::async, [&] { return h.notes.saveInsight(incoming); });
+  auto save = std::async(std::launch::async, [&] { return h.door.saveInsight(incoming); });
   int waiting = 0;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
   while (std::chrono::steady_clock::now() < deadline) {
@@ -145,8 +145,8 @@ void insightReceiptRace(bool remove) {
   }
   CHECK_EQ(waiting, 1);
   // No reader sees the note without its receipt, and a phone's edit or delete queues behind the save.
-  CHECK(h.notes.notes(h.user).empty());
-  CHECK(!h.notes.noteSave(h.user, incoming.id));
+  CHECK(h.repo.notes.notes(h.user).empty());
+  CHECK(!h.repo.notes.noteSave(h.user, incoming.id));
   auto change = std::async(std::launch::async, [&] {
     if (remove) h.kill(h.user, "note", incoming.id.str());
     else GymDoor::requireOk(phoneNote(h, h.user, incoming.id.str(), "Edited", "Changed"));
@@ -158,9 +158,9 @@ void insightReceiptRace(bool remove) {
   REQUIRE(saved.note);
   CHECK_EQ(saved.note->title, incoming.title);
   CHECK_EQ(saved.note->body, incoming.body);
-  CHECK_EQ(h.notes.noteSave(h.user, incoming.id), saved.note);
-  CHECK_EQ(h.notes.saveInsight(incoming).note, saved.note);
-  const auto standing = h.notes.notes(h.user);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, incoming.id), saved.note);
+  CHECK_EQ(h.door.saveInsight(incoming).note, saved.note);
+  const auto standing = h.repo.notes.notes(h.user);
   if (remove) CHECK(standing.empty());
   else {
     REQUIRE_EQ(standing.size(), 1U);
@@ -204,11 +204,11 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_note_and_scope) {
   FailingInsightReceipt inject;
   const Note incoming{NoteId{"note_atomic1"}, h.user, "Constraint", "Keep sessions short"};
   bool failed = false;
-  try { h.notes.saveInsight(incoming); }
+  try { h.door.saveInsight(incoming); }
   catch (const std::runtime_error&) { failed = true; }
   CHECK(failed);
-  CHECK(h.notes.notes(h.user).empty());
-  CHECK(!h.notes.noteSave(h.user, incoming.id));
+  CHECK(h.repo.notes.notes(h.user).empty());
+  CHECK(!h.repo.notes.noteSave(h.user, incoming.id));
   PgLease lease{*doortest::pool()};
   pqxx::work txn{*lease};
   CHECK_EQ(txn.exec("select count(*) from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym"})[0][0].as<int>(), 0);
@@ -218,11 +218,11 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_note_and_scope) {
 TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_replicas) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  const auto original = h.notes.saveInsight(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
+  const auto original = h.door.saveInsight(Note{NoteId{"note_original1"}, h.user, "Constraint", "Same text"});
   REQUIRE(original.note);
   const Note duplicate{NoteId{"note_duplicate1"}, h.user, "Constraint", "Same text"};
-  CHECK_EQ(h.notes.saveInsight(duplicate).note, original.note);
-  CHECK_EQ(h.notes.noteSave(h.user, duplicate.id), original.note);
+  CHECK_EQ(h.door.saveInsight(duplicate).note, original.note);
+  CHECK_EQ(h.repo.notes.noteSave(h.user, duplicate.id), original.note);
   const auto state = [&] {
     PgLease lease{*doortest::pool()};
     pqxx::work txn{*lease};
@@ -232,7 +232,7 @@ TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_rep
   REQUIRE_EQ(reserved.size(), 1U);
   CHECK_EQ(reserved[0]["seq"].as<int>(), 2);
   CHECK_EQ(reserved[0]["alias_seq"].as<int>(), 2);
-  CHECK_EQ(h.notes.saveInsight(duplicate).note, original.note);
+  CHECK_EQ(h.door.saveInsight(duplicate).note, original.note);
   CHECK_EQ(state()[0]["seq"].as<int>(), 2);
   CHECK(doortest::scopeConsistent(h.user));
   GymDoor::requireOk(phoneNote(h, h.user, "note_nextwrite1", "Next", "Other text", sync::between(sync::between(std::nullopt, std::nullopt), std::nullopt)));
@@ -260,7 +260,7 @@ TEST(gym_record_engine_insight_duplicate_receipt_reserves_alias_for_feed_and_rep
   REQUIRE(refused);
   CHECK_EQ(refused->result["code"].asString(), "id-spent");
   CHECK_EQ(state()[0]["seq"].as<int>(), 3);
-  CHECK_EQ(h.notes.notes(h.user).size(), 2U);
+  CHECK_EQ(h.repo.notes.notes(h.user).size(), 2U);
   CHECK(doortest::scopeConsistent(h.user));
   CHECK(h.failures.messages.empty());
 }
@@ -274,19 +274,19 @@ TEST(gym_record_engine_insight_receipt_failure_rolls_back_alias_reservation_and_
   {
     FailingInsightReceipt inject;
     bool failed = false;
-    try { h.notes.saveInsight(duplicate); }
+    try { h.door.saveInsight(duplicate); }
     catch (const std::runtime_error&) { failed = true; }
     CHECK(failed);
   }
-  CHECK_EQ(h.notes.notes(h.user), std::vector<Note>{original});
-  CHECK(!h.notes.noteSave(h.user, duplicate.id));
+  CHECK_EQ(h.repo.notes.notes(h.user), std::vector<Note>{original});
+  CHECK(!h.repo.notes.noteSave(h.user, duplicate.id));
   {
     PgLease lease{*doortest::pool()};
     pqxx::work txn{*lease};
     CHECK_EQ(txn.exec("select seq from sync_scopes where key=$1", pqxx::params{"acct:" + h.user.str() + "/gym"})[0][0].as<int>(), 1);
     CHECK_EQ(txn.exec("select count(*) from sync_spent where type='note' and id=$1", pqxx::params{duplicate.id.str()})[0][0].as<int>(), 0);
   }
-  CHECK_EQ(h.notes.saveInsight(duplicate).note, std::optional<Note>(original));
+  CHECK_EQ(h.door.saveInsight(duplicate).note, std::optional<Note>(original));
   CHECK(doortest::scopeConsistent(h.user));
   CHECK_EQ(h.failures.messages.size(), 1U);
 }
@@ -391,8 +391,8 @@ TEST(gym_record_engine_insight_global_receipt_race_has_one_owner_and_snapshot) {
   pqxx::work txn{*lease};
   txn.exec("lock table gym_note_saves in share mode");
   const NoteId receiptId{"note_race001"};
-  auto owner = std::async(std::launch::async, [&] { return h.notes.saveInsight(Note{receiptId, h.user, "Constraint", "Same text"}); });
-  auto other = std::async(std::launch::async, [&] { return h.notes.saveInsight(Note{receiptId, h.other, "Constraint", "Same text"}); });
+  auto owner = std::async(std::launch::async, [&] { return h.door.saveInsight(Note{receiptId, h.user, "Constraint", "Same text"}); });
+  auto other = std::async(std::launch::async, [&] { return h.door.saveInsight(Note{receiptId, h.other, "Constraint", "Same text"}); });
   int waiting = 0;
   int idWaiting = 0;
   const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(2);
@@ -411,12 +411,12 @@ TEST(gym_record_engine_insight_global_receipt_race_has_one_owner_and_snapshot) {
   CHECK_EQ((ownerResult.error == NoteWriteError::idTaken) + (otherResult.error == NoteWriteError::idTaken), 1);
   if (ownerResult.error == NoteWriteError::none) {
     CHECK_EQ(ownerResult.note, std::optional<Note>(ownerNote));
-    CHECK_EQ(h.notes.noteSave(h.user, receiptId), std::optional<Note>(ownerNote));
-    CHECK(!h.notes.noteSave(h.other, receiptId));
+    CHECK_EQ(h.repo.notes.noteSave(h.user, receiptId), std::optional<Note>(ownerNote));
+    CHECK(!h.repo.notes.noteSave(h.other, receiptId));
   } else {
     CHECK_EQ(otherResult.note, std::optional<Note>(otherNote));
-    CHECK_EQ(h.notes.noteSave(h.other, receiptId), std::optional<Note>(otherNote));
-    CHECK(!h.notes.noteSave(h.user, receiptId));
+    CHECK_EQ(h.repo.notes.noteSave(h.other, receiptId), std::optional<Note>(otherNote));
+    CHECK(!h.repo.notes.noteSave(h.user, receiptId));
   }
   CHECK(h.failures.messages.empty());
 }

@@ -12,9 +12,6 @@
 #include "products/gym/adapters/postgres/PgNotesRepository.h"
 #include "products/gym/adapters/postgres/PgBodyweightRepository.h"
 #include "products/gym/adapters/postgres/PgPreferencesRepository.h"
-#include "products/gym/application/CatalogService.h"
-#include "products/gym/application/NotesService.h"
-#include "products/gym/application/ProgramService.h"
 #include "products/gym/application/ThreadService.h"
 #include "products/gym/application/TrainingService.h"
 #include "test/platform/Fakes.h"
@@ -96,7 +93,7 @@ struct Repositories {
   PgBodyweightRepository bodyweight{pool()};
 };
 
-// A shared_ptr that owns nothing, for the adapters that hold their services that way.
+// A shared_ptr that owns nothing, for the adapters that hold their collaborators that way.
 template <class T>
 std::shared_ptr<T> borrowed(T& held) {
   return std::shared_ptr<T>(std::shared_ptr<void>{}, &held);
@@ -114,11 +111,8 @@ struct Harness {
   sync::NullChangeFeed feed;
   GymDoor door{pool(), clock, failures, repo.log, repo.program, repo.catalog, sync::productCatalog(), feed};
   TrainingService training{repo.log, clock, tokens, door};
-  CatalogService catalog{repo.catalog, door};
-  ProgramService program{repo.program, door};
-  NotesService notes{repo.notes, door};
   ThreadService threads{repo.threads, clock, door};
-  GymTools tools{training, catalog, program, notes, repo.bodyweight, "https://windmill.works"};
+  GymTools tools{training, door, repo.catalog, repo.program, repo.notes, repo.bodyweight, "https://windmill.works"};
 
   Harness() {
     PgLease lease{*pool()};

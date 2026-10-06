@@ -32,23 +32,14 @@ struct LogRow {
   bool operator==(const LogRow&) const = default;
 };
 
-// The HTTP adapter, the MCP tools and Coach talk to this, never to the repository. Every write goes
-// through the door, which admits it as the engine's intent and answers with the resolved row, so a
-// replayed or double-tapped caller sees the winning truth in one round trip. No cron, no sweep:
-// before every read whose answer a close rewrites, the door closes a workout gone stale, and admits
-// nothing when none has.
-// The token generator serves one write: minting a workout share's secret.
+// Derived log reads and sharing. Before every read whose answer a close rewrites, the door closes
+// a workout gone stale, and admits nothing when none has.
+// The token generator mints share secrets.
 class TrainingService {
 public:
   TrainingService(LogRepository& log, Clock& clock, TokenGenerator& tokens, GymWriteDoor& door);
 
-  StartOutcome start(const UserId& user, const SessionStart& incoming);
-  AppendOutcome append(const UserId& user, const SessionId& session, const SetWrite& incoming);
-  BatchLogOutcome appendSets(const UserId& user, const SessionId& session, const std::vector<SetWrite>& sets);
-  // Leaves the open session alone and refuses a span crossing a finished one (`overlap`).
-  BatchLogOutcome importSession(const UserId& user, const SessionImport& incoming);
   std::vector<SessionRows> sessions(const UserId& user, const std::vector<SessionId>& ids);
-  FinishOutcome finish(const UserId& user, const SessionId& session, std::uint64_t finishedAtMs);
 
   std::vector<LogRow> log(const UserId& user, const LogCursor& cursor);
   std::optional<SessionDetail> detail(const UserId& user, const SessionId& session);
@@ -60,7 +51,6 @@ public:
 
   // An absent review is an absent session.
   std::optional<Review> review(const UserId& user, const SessionId& session);
-  DiscardOutcome discard(const UserId& user, const SessionId& session);
 
   HistoryPage history(const UserId& user, const HistoryQuery& query);
   std::optional<LogShare> shareLog(const UserId& user, const std::string& id, LogShareMode mode,

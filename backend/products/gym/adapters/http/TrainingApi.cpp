@@ -54,9 +54,10 @@ bool ifNoneMatchAccepts(const std::string& header, std::string_view tag) {
 }
 }
 
-TrainingApi::TrainingApi(std::shared_ptr<TrainingService> training,
+TrainingApi::TrainingApi(std::shared_ptr<TrainingService> training, std::shared_ptr<GymWriteDoor> door,
                          std::shared_ptr<AuthService> auth, std::string appBaseUrl)
-    : training_(std::move(training)), auth_(std::move(auth)), appBaseUrl_(std::move(appBaseUrl)) {}
+    : training_(std::move(training)), door_(std::move(door)), appBaseUrl_(std::move(appBaseUrl)),
+      auth_(std::move(auth)) {}
 
 // A past workout written whole: it lands with every set or not at all, and answers in the shape
 // `GET /v1/gym/sessions/{id}` does — 201 when it landed now, 200 when this exact import landed
@@ -76,7 +77,7 @@ void TrainingApi::importSession(const drogon::HttpRequestPtr& req, HttpCallback&
   BatchLogOutcome outcome;
   try {
     incoming = parseSessionImport(*json);
-    outcome = training_->importSession(*caller, *incoming);
+    outcome = door_->importSession(*caller, *incoming);
   } catch (const InvalidTraining& refused) {
     cb(error(drogon::k400BadRequest, refused.what()));
     return;

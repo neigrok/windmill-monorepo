@@ -31,10 +31,7 @@ struct MemoryHarness {
   wm::fake::FakeTokens tokens;
   ReadOnlyDoor door;
   TrainingService training{repo.log, clock, tokens, door};
-  CatalogService catalog{repo.catalog, door};
-  ProgramService program{repo.program, door};
-  NotesService notes{repo.notes, door};
-  GymTools tools{training, catalog, program, notes, repo.bodyweight, "https://windmill.works"};
+  GymTools tools{training, door, repo.catalog, repo.program, repo.notes, repo.bodyweight, "https://windmill.works"};
 
   MemoryHarness() {
     repo.db.seed(benchPress());
@@ -88,7 +85,7 @@ struct Agent {
 
 // The Push A day the lifter built by hand: one bench line, 5 × 5 at 82.5, three minutes' rest.
 void createPushA(doortest::Harness& h) {
-  CHECK_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId(), "Push A", 0, {benchEntry()}}, std::nullopt).error,
+  CHECK_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId(), "Push A", 0, {benchEntry()}}, std::nullopt).error,
            RoutineWriteError::none);
 }
 
@@ -1105,7 +1102,7 @@ TEST(gym_a_routine_read_with_list_routines_goes_straight_back_through_propose_ro
            std::string(R"([{"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
                        R"({"reps":5,"weightKg":82.5},{"reps":5,"weightKg":82.5},)"
                        R"({"reps":5,"weightKg":85.0}])"));
-  CHECK_EQ(h.program.routines(h.user), std::vector<Routine>{Routine(rtId(), h.user, "Push A", 0, {benchEntry()})});
+  CHECK_EQ(h.repo.program.routines(h.user), std::vector<Routine>{Routine(rtId(), h.user, "Push A", 0, {benchEntry()})});
 }
 
 // Moving ONE set of a ramp is one retargeted line, and the diff hands over both whole schemes rather
@@ -1114,7 +1111,7 @@ TEST(gym_moving_one_set_of_a_ramp_is_one_retargeted_line_carrying_both_whole_sch
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
   const Agent me{h.tools, h.user};
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId(), "Lower A", 0,
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId(), "Lower A", 0,
                                                            {RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}}},
                                      std::nullopt).error,
              RoutineWriteError::none);
@@ -1140,11 +1137,11 @@ TEST(gym_moving_one_set_of_a_ramp_is_one_retargeted_line_carrying_both_whole_sch
   CHECK_EQ(stored("select id from gym_proposals"), std::vector<std::string>{"prop_00000001"});
   std::vector<SetTarget> moved = ramp();
   moved[3] = SetTarget{1, 102.5};
-  const std::optional<RoutineProposal> stored = h.program.proposal(h.user, ProposalId{"prop_00000001"});
+  const std::optional<RoutineProposal> stored = h.repo.program.proposal(h.user, ProposalId{"prop_00000001"});
   REQUIRE(stored.has_value());
   CHECK_EQ(stored->changes[0].before, std::optional<EntryTargets>(EntryTargets{ramp(), 180}));
   CHECK_EQ(stored->changes[0].after, std::optional<EntryTargets>(EntryTargets{moved, 180}));
-  CHECK_EQ(h.program.routine(h.user, rtId())->entries[0].sets, ramp());
+  CHECK_EQ(h.repo.program.routine(h.user, rtId())->entries[0].sets, ramp());
 }
 
 // Nothing an agent can call changes an existing routine: the stored rows are compared whole, before and after.
@@ -1153,13 +1150,13 @@ TEST(gym_proposing_a_change_writes_nothing_to_the_program) {
   doortest::Harness h;
   const Agent me{h.tools, h.user};
   createPushA(h);
-  const std::vector<Routine> before = h.program.routines(h.user);
+  const std::vector<Routine> before = h.repo.program.routines(h.user);
 
   const ToolResult minted =
       me.propose("prop_00000001", "rt_00000001", oneEntry("bench-press", straight(5, 3, 87.5)));
 
   REQUIRE(!minted.isError);
-  CHECK_EQ(h.program.routines(h.user), before);
+  CHECK_EQ(h.repo.program.routines(h.user), before);
   // The receipt is not shaped like a write: no routine in it, and the state says so.
   CHECK(body(minted)["routine"].isNull());
   CHECK_EQ(body(minted)["proposal"]["state"].asString(), std::string("pending"));
@@ -1185,7 +1182,7 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
 
   REQUIRE(!second.isError);
   const std::vector<ProposalHead> heads =
-      h.program.proposals(h.user, ProposalQuery{std::nullopt, false});
+      h.repo.program.proposalHeads(h.user, ProposalQuery{std::nullopt, false});
   REQUIRE_EQ(heads.size(), std::size_t{2});
   CHECK_EQ(heads[0].id, ProposalId{"prop_00000002"});
   CHECK_EQ(heads[0].state, ProposalState::pending);
@@ -1193,7 +1190,7 @@ TEST(gym_a_second_proposal_supersedes_the_first_and_the_first_stays_in_the_histo
   CHECK_EQ(heads[1].state, ProposalState::superseded);
   CHECK_EQ(heads[1].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
   // And only one of them is what a card draws.
-  CHECK_EQ(h.program.proposals(h.user, ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
+  CHECK_EQ(h.repo.program.proposalHeads(h.user, ProposalQuery{std::nullopt, true}).size(), std::size_t{1});
 }
 
 // The transport resolves a connection — id and registered name — and the tool stores both on the proposal.
@@ -1211,7 +1208,7 @@ TEST(gym_a_proposal_minted_over_a_connection_carries_that_connections_id_and_nam
 
   REQUIRE(!minted.isError);
   REQUIRE_EQ(stored("select id from gym_proposals"), std::vector<std::string>{"prop_00000001"});
-  CHECK((h.program.proposal(h.user, ProposalId{"prop_00000001"})->head.source ==
+  CHECK((h.repo.program.proposal(h.user, ProposalId{"prop_00000001"})->head.source ==
          ProposalSource{ProposalDoor::mcp, "cli_x", "Claude Desktop", std::nullopt}));
   const Json::Value& source = body(minted)["proposal"]["source"];
   CHECK_EQ(source["door"].asString(), std::string("mcp"));
@@ -1246,7 +1243,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
   REQUIRE(!proposeAs("prop_00000003", 92.5, claude).isError);
 
   const std::vector<ProposalHead> heads =
-      h.program.proposals(h.user, ProposalQuery{std::nullopt, false});
+      h.repo.program.proposalHeads(h.user, ProposalQuery{std::nullopt, false});
   REQUIRE_EQ(heads.size(), std::size_t{3});
   CHECK_EQ(heads[0].id, ProposalId{"prop_00000003"});
   CHECK_EQ(heads[0].state, ProposalState::pending);
@@ -1255,7 +1252,7 @@ TEST(gym_two_connections_each_hold_a_pending_proposal_on_one_routine_and_one_con
   CHECK_EQ(heads[2].id, ProposalId{"prop_00000001"});
   CHECK_EQ(heads[2].state, ProposalState::superseded);
   CHECK_EQ(heads[2].settledAtMs, std::optional<std::uint64_t>(h.clock.now));
-  CHECK_EQ(h.program.proposals(h.user, ProposalQuery{std::nullopt, true}).size(), std::size_t{2});
+  CHECK_EQ(h.repo.program.proposalHeads(h.user, ProposalQuery{std::nullopt, true}).size(), std::size_t{2});
 }
 
 // A replay reads back the proposal it already minted: the id is the idempotency key here as everywhere.
@@ -1289,7 +1286,7 @@ TEST(gym_a_proposal_id_resent_with_a_different_document_is_refused_rather_than_a
   CHECK(message(second).find("DIFFERENT proposal") != std::string::npos);
   CHECK(message(second).find("NOTHING WAS MINTED") != std::string::npos);
   CHECK_EQ(stored("select id from gym_proposals"), std::vector<std::string>{"prop_00000001"});
-  const std::optional<RoutineProposal> standing = h.program.proposal(h.user, ProposalId{"prop_00000001"});
+  const std::optional<RoutineProposal> standing = h.repo.program.proposal(h.user, ProposalId{"prop_00000001"});
   REQUIRE(standing.has_value());
   CHECK_EQ(standing->head.state, ProposalState::pending);
   CHECK_EQ(standing->changes[0].after,
@@ -1370,7 +1367,7 @@ TEST(gym_create_routine_lands_and_sends_an_existing_day_to_the_proposal_door) {
 
   CHECK(again.isError);
   CHECK(message(again).find("propose_routine_change") != std::string::npos);
-  CHECK_EQ(h.program.routine(h.user, rtId())->name, std::string("Push A"));   // the edit did not land
+  CHECK_EQ(h.repo.program.routine(h.user, rtId())->name, std::string("Push A"));   // the edit did not land
 }
 
 // A line with no `sets` is OPEN and the rack decides; the created day names the door it came through.
@@ -1388,9 +1385,9 @@ TEST(gym_create_routine_takes_an_open_line_and_the_history_names_the_door) {
 
   REQUIRE(!created.isError);
   CHECK_FALSE(body(created)["entries"][0].isMember("sets"));   // omitted: the line asks at the rack
-  CHECK_EQ(h.program.routine(h.user, rtId())->entries[0].sets, std::vector<SetTarget>{});
+  CHECK_EQ(h.repo.program.routine(h.user, rtId())->entries[0].sets, std::vector<SetTarget>{});
   const std::vector<RoutineEvent> history =
-      h.program.routineHistory(h.user, RoutineId{"rt_00000001"});
+      h.repo.program.routineHistory(h.user, RoutineId{"rt_00000001"});
   REQUIRE_EQ(history.size(), std::size_t{1});
   CHECK_EQ(history[0].door, std::optional<ProposalDoor>(ProposalDoor::mcp));
   CHECK_EQ(history[0].movements, std::optional<int>(1));
@@ -1421,7 +1418,7 @@ TEST(gym_create_routine_lands_a_ramp_and_list_routines_reads_the_five_sets_back_
   REQUIRE_EQ(body(listed)["routines"].size(), 1u);
   CHECK_EQ(dump(body(listed)["routines"][0]["entries"]),
            std::string(R"([{"exerciseId":"back-squat","position":1,"sets":)") + kRampJson + "}]");
-  CHECK_EQ(h.program.routines(h.user),
+  CHECK_EQ(h.repo.program.routines(h.user),
            std::vector<Routine>{Routine(rtId(), h.user, "Lower A", 0,
                                         {RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), std::nullopt}})});
 }
@@ -1455,8 +1452,8 @@ TEST(gym_a_replayed_create_routine_matches_the_scheme_set_by_set) {
                        "day of the program that already stands is not this tool's to rewrite: send "
                        "it to propose_routine_change, which hands the lifter a typed diff and "
                        "changes nothing until they tap Apply."));
-  CHECK_EQ(h.program.routine(h.user, rtId())->entries[0].sets, ramp());
-  CHECK_EQ(h.program.routine(h.user, rtId())->revision, 1);
+  CHECK_EQ(h.repo.program.routine(h.user, rtId())->entries[0].sets, ramp());
+  CHECK_EQ(h.repo.program.routine(h.user, rtId())->revision, 1);
 }
 
 // The plan a workout starts under is a COPY of the routine's scheme, and the session read hands it
@@ -1637,7 +1634,7 @@ TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
   doortest::Harness h;
   const Agent me{h.tools, h.user};
   createPushA(h);
-  const std::vector<Routine> before = h.program.routines(h.user);
+  const std::vector<Routine> before = h.repo.program.routines(h.user);
   Json::Value args(Json::objectValue);
   args["id"] = "prop_00000001";
   args["routineId"] = "rt_00000001";
@@ -1646,7 +1643,7 @@ TEST(gym_proposing_a_removal_deletes_nothing_and_draws_what_would_go) {
   const ToolResult minted = me.call("propose_routine_removal", args);
 
   REQUIRE(!minted.isError);
-  CHECK_EQ(h.program.routines(h.user), before);
+  CHECK_EQ(h.repo.program.routines(h.user), before);
   const Json::Value& proposal = body(minted)["proposal"];
   CHECK_EQ(proposal["intent"].asString(), std::string("remove"));
   CHECK_EQ(proposal["state"].asString(), std::string("pending"));
@@ -1766,7 +1763,7 @@ TEST(gym_read_alone_cannot_mint_a_proposal) {
                             ToolCaller{h.user, parseToolScope("gym:read gym:write")})
                   .isError);
   CHECK_EQ(stored("select id from gym_proposals"), std::vector<std::string>{"prop_00000001"});
-  CHECK_EQ(h.program.routines(h.user), std::vector<Routine>{Routine(rtId(), h.user, "Push A", 0, {benchEntry()})});
+  CHECK_EQ(h.repo.program.routines(h.user), std::vector<Routine>{Routine(rtId(), h.user, "Push A", 0, {benchEntry()})});
 }
 
 // A removal is `gym:delete`'s: the three levels are a grant vocabulary and none implies another.
@@ -1934,7 +1931,7 @@ TEST(gym_import_session_is_independent_of_the_live_workout_and_never_restores_a_
   CHECK_FALSE(me.call("import_session", args).isError);
   CHECK_EQ(stored("select id from gym_sessions order by id"),
            (std::vector<std::string>{"ses_import01", "ses_live0001"}));
-  CHECK(h.training.discard(h.user, SessionId{"ses_import01"}) == DiscardOutcome::done);
+  CHECK(h.door.discard(h.user, SessionId{"ses_import01"}) == DiscardOutcome::done);
   CHECK_EQ(body(me.call("import_session", args)), parse(R"({"sessionId":"ses_import01","applied":true,"imported":false,"replayed":true,"sessionDeleted":true,"sets":[{"id":"set_import01","status":"deleted"}]})"));
   CHECK_EQ(stored("select id from gym_sessions"), std::vector<std::string>{"ses_live0001"});
   args["sets"][0]["reps"] = 6;
@@ -1966,7 +1963,7 @@ TEST(gym_imported_ids_stay_spent_through_single_tool_paths_after_deletion) {
   const Agent me{h.tools, h.user};
   const Json::Value args = parse(R"({"id":"ses_import01","startedAt":1000,"finishedAt":3000,"sets":[{"id":"set_import01","exerciseId":"bench-press","weightKg":80,"reps":5,"completedAt":2000}]})");
   CHECK_FALSE(me.call("import_session", args).isError);
-  CHECK(h.training.discard(h.user, SessionId{"ses_import01"}) == DiscardOutcome::done);
+  CHECK(h.door.discard(h.user, SessionId{"ses_import01"}) == DiscardOutcome::done);
   CHECK_EQ(message(me.start("ses_import01", h.clock.now)),
       std::string("start_session: that workout id is already spent. Inspect list_sessions to reconcile the log; "
                   "preserve deleted workouts. Retry only with the original id and body. "
@@ -2107,7 +2104,7 @@ TEST(gym_save_note_is_append_only_owner_scoped_and_granted_as_a_write) {
   CHECK(me.call("save_note", changed).isError);
   CHECK_EQ(stored("select id from gym_notes order by id"),
            (std::vector<std::string>{"note_hand001", "note_save001"}));
-  CHECK_EQ(h.notes.notes(h.user)[0].body, std::string("Keep this first."));
+  CHECK_EQ(h.repo.notes.notes(h.user)[0].body, std::string("Keep this first."));
   h.kill(h.user, "note", "note_save001");
   CHECK_EQ(body(me.call("save_note", input)), expected);
   CHECK_EQ(stored("select id from gym_notes"), std::vector<std::string>{"note_hand001"});

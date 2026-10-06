@@ -65,17 +65,17 @@ struct Coach : doortest::Harness {
   int asked = 0;
 
   Coach() {
-    training.start(user, SessionStart{session, 1'700'000'000'000});
-    training.append(user, session,
+    door.start(user, SessionStart{session, 1'700'000'000'000});
+    door.append(user, session,
                SetWrite{setId(), ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt,
                         "", 1'700'000'300'000});
-    training.finish(user, session, 1'700'000'900'000);
+    door.finish(user, session, 1'700'000'900'000);
   }
 
   void subscribe() { subs.subscribe(user, "active"); }
 
   void seedRoutine(const RoutineId& id = rtId(), const std::string& name = "Push A", int position = 0) {
-    program.createRoutine(user, RoutineWrite{id, name, position, {benchEntry()}}, std::nullopt);
+    door.createRoutine(user, RoutineWrite{id, name, position, {benchEntry()}}, std::nullopt);
   }
 
   // ask() answers on a worker thread when it runs and inline when it refuses; both land here.
@@ -396,7 +396,7 @@ TEST(a_proposal_ask_mints_is_recorded_by_id_and_carries_its_own_door) {
   REQUIRE_EQ(hands.proposals().size(), 1u);
   CHECK_EQ(hands.proposals()[0], std::string("prop_00000001"));
   CHECK_EQ(minted.payload["proposal"]["source"]["door"].asString(), std::string("ask"));
-  const std::optional<Routine> standing = h.program.routine(h.user, rtId());
+  const std::optional<Routine> standing = h.repo.program.routine(h.user, rtId());
   REQUIRE(standing.has_value());
   CHECK_EQ(standing->entries, std::vector<RoutineEntry>{benchEntry()});
 }
@@ -435,7 +435,7 @@ TEST(a_lifter_with_a_workout_open_is_refused_before_anything_is_spent) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
   h.clock.now = 1'700'100'000'000;
-  h.training.start(h.user, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
+  h.door.start(h.user, SessionStart{SessionId{"ses_22222222"}, 1'700'100'000'000});
 
   const AskReply reply = h.question("what should I do next?");
 
@@ -447,7 +447,7 @@ TEST(a_stale_workout_the_four_hour_rule_closes_does_not_hold_ask_shut) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Coach h;
   h.clock.now = 1'700'100'000'000;
-  h.training.start(h.user, SessionStart{SessionId{"ses_33333333"}, 1'700'100'000'000});
+  h.door.start(h.user, SessionStart{SessionId{"ses_33333333"}, 1'700'100'000'000});
   h.clock.now = 1'700'100'000'000 + 5 * 60 * 60 * 1000;  // five hours later, nothing logged since
 
   const AskReply reply = h.question("how has my squat moved?");
@@ -904,7 +904,7 @@ TEST(a_proposal_minted_in_a_conversation_carries_that_conversation) {
   CHECK(h.question(thread, "heavier triples please", h.user).refusal == AskRefusal::none);
 
   const std::optional<RoutineProposal> minted =
-      h.program.proposal(h.user, ProposalId{"prop_00000009"});
+      h.repo.program.proposal(h.user, ProposalId{"prop_00000009"});
   REQUIRE(minted.has_value());
   CHECK(minted->head.source.door == ProposalDoor::ask);
   REQUIRE(minted->head.source.thread.has_value());
@@ -935,7 +935,7 @@ TEST(a_proposal_from_the_mcp_door_carries_no_conversation) {
   h.tools.callTool("propose_routine_change", propose, agent);
 
   const std::optional<RoutineProposal> minted =
-      h.program.proposal(h.user, ProposalId{"prop_00000010"});
+      h.repo.program.proposal(h.user, ProposalId{"prop_00000010"});
   REQUIRE(minted.has_value());
   CHECK(minted->head.source.door == ProposalDoor::mcp);
   CHECK_FALSE(minted->head.source.thread.has_value());

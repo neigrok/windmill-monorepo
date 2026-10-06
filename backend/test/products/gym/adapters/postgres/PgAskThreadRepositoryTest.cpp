@@ -42,11 +42,11 @@ ProposalWrite askedFor(const std::string& id, const std::string& routine, const 
 
 // A finished workout under a routine, as the MCP session tools log it: one working bench set.
 Session trained(doortest::Harness& h, const std::string& id, const std::string& routine, const std::string& set) {
-  h.training.start(h.user, SessionStart{SessionId{id}, kNow - 9000, false, RoutineId{routine}}).session.value();
-  h.training.append(h.user, SessionId{id},
+  h.door.start(h.user, SessionStart{SessionId{id}, kNow - 9000, false, RoutineId{routine}}).session.value();
+  h.door.append(h.user, SessionId{id},
                     SetWrite{SetId{set}, ExerciseId{"bench-press"}, 80, 8, SetKind::working, std::nullopt, "", kNow - 1000})
       .set.value();
-  h.training.finish(h.user, SessionId{id}, kNow).session.value();
+  h.door.finish(h.user, SessionId{id}, kNow).session.value();
   return Session{SessionId{id}, h.user, kNow - 9000, kNow, RoutineId{routine}, pushA(), ClosedBy::finish};
 }
 
@@ -124,13 +124,13 @@ TEST(pg_gym_an_empty_thread_is_discarded_and_one_with_turns_is_not) {
 TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  REQUIRE(h.program.createRoutine(h.user, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(h.user, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
   h.repo.threads.openThread(h.user, ThreadId{"thr_pg000001"}, "older", kNow);
   h.repo.threads.appendTurns(h.user, ThreadId{"thr_pg000001"}, {{true, "older", kNow}, {false, "answered", kNow}});
   h.repo.threads.openThread(h.user, ThreadId{"thr_pg000002"}, "newer", kNow + 1'000);
   h.repo.threads.appendTurns(h.user, ThreadId{"thr_pg000002"},
                              {{true, "newer", kNow + 1'000}, {false, "answered", kNow + 1'000}});
-  REQUIRE(h.program.propose(h.user, askedFor("prop_pg00001", "rt_pg000001", ThreadId{"thr_pg000002"})).proposal);
+  REQUIRE(h.door.propose(h.user, askedFor("prop_pg00001", "rt_pg000001", ThreadId{"thr_pg000002"})).proposal);
 
   const std::vector<AskThread> listed = h.repo.threads.threads(h.user);
   REQUIRE_EQ(listed.size(), 2u);
@@ -150,11 +150,11 @@ TEST(pg_gym_the_thread_list_is_newest_first_and_carries_what_each_one_proposed) 
 TEST(pg_gym_deleting_a_thread_leaves_the_change_it_applied_in_the_routines_history) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   doortest::Harness h;
-  REQUIRE(h.program.createRoutine(h.user, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(h.user, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
   const std::string question = "Bench has been stuck at 82.5 for three weeks. What do you see?";
   h.repo.threads.openThread(h.user, ThreadId{"thr_pg000001"}, question, kNow);
   h.repo.threads.appendTurns(h.user, ThreadId{"thr_pg000001"}, {{true, question, kNow}, {false, "Try heavier triples.", kNow}});
-  REQUIRE(h.program.propose(h.user, askedFor("prop_pg00001", "rt_pg000001", ThreadId{"thr_pg000001"})).proposal);
+  REQUIRE(h.door.propose(h.user, askedFor("prop_pg00001", "rt_pg000001", ThreadId{"thr_pg000001"})).proposal);
   Json::Value apply(Json::objectValue);
   apply["proposalId"] = "prop_pg00001";
   GymDoor::requireOk(h.door.command(h.user, "gym.applyProposal", apply));
@@ -185,7 +185,7 @@ TEST(pg_coach_evidence_survives_corrections_renames_and_deletion_of_its_source) 
   doortest::Harness& h = desk.h;
   const wm::UserId owner = h.user;
   const ThreadId thread{"thr_evidence1"};
-  REQUIRE(h.program.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
   const Session session = trained(h, "ses_evidence1", "rt_pg000001", "set_evidence1");
   desk.agent.plan = {{"list_sessions", wm::parse("{}")},
       {"get_session", wm::parse(R"({"sessionId":"ses_evidence1"})")}};
@@ -283,8 +283,8 @@ TEST(pg_coach_removal_keeps_evidence_and_marks_missing_decisions_unknown_in_deta
   doortest::Harness& h = desk.h;
   const wm::UserId owner = h.user;
   const ThreadId thread{"thr_removal01"};
-  REQUIRE(h.program.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
-  REQUIRE(h.program.createRoutine(owner, dayOf("rt_pg000002", "Push B"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(owner, dayOf("rt_pg000002", "Push B"), ProposalDoor::mcp).routine);
   const Session session = trained(h, "ses_removal01", "rt_pg000001", "set_removal01");
   const auto performed = h.repo.log.setsOf(session.id);
   desk.agent.plan = {{"get_session", wm::parse(R"({"sessionId":"ses_removal01"})")},
@@ -373,9 +373,9 @@ TEST(pg_coach_history_ignores_malformed_receipts_without_changing_valid_evidence
   const wm::UserId owner = h.user;
   const ThreadId validThread{"thr_valid0001"};
   const ThreadId invalidThread{"thr_invalid01"};
-  REQUIRE(h.program.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
+  REQUIRE(h.door.createRoutine(owner, dayOf("rt_pg000001", "Push A"), ProposalDoor::mcp).routine);
   threads.openThread(owner, validThread, "Valid answer", kNow);
-  REQUIRE(h.program.propose(owner, askedFor("prop_valid001", "rt_pg000001", validThread)).proposal);
+  REQUIRE(h.door.propose(owner, askedFor("prop_valid001", "rt_pg000001", validThread)).proposal);
   AnswerReceipt accepted;
   accepted.proposals = {"prop_valid001"};
   threads.appendTurns(owner, validThread, {{true, "Valid answer", kNow},

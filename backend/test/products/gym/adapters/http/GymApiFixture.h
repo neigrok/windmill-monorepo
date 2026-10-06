@@ -46,18 +46,14 @@ struct Harness {
   ReadOnlyDoor door;
   std::shared_ptr<TrainingService> trainingService =
       std::make_shared<TrainingService>(repo.log, clock, tokens, door);
-  std::shared_ptr<CatalogService> catalogService = std::make_shared<CatalogService>(repo.catalog, door);
-  std::shared_ptr<ProgramService> programService =
-      std::make_shared<ProgramService>(repo.program, door);
   std::shared_ptr<ThreadService> threadService =
       std::make_shared<ThreadService>(repo.threads, clock, door);
-  std::shared_ptr<NotesService> notesService = std::make_shared<NotesService>(repo.notes, door);
-  TrainingApi training{trainingService, auth, "https://windmill.works"};
-  CatalogApi catalog{catalogService, trainingService, auth};
-  ProgramApi program{programService, auth};
+  TrainingApi training{trainingService, doortest::borrowed(door), auth, "https://windmill.works"};
+  CatalogApi catalog{doortest::borrowed(repo.catalog), trainingService, auth};
+  ProgramApi program{doortest::borrowed(repo.program), auth};
   PreferencesApi preferences{doortest::borrowed(repo.preferences), auth};
   ThreadsApi threads{threadService, auth};
-  NotesApi notes{notesService, auth};
+  NotesApi notes{doortest::borrowed(repo.notes), auth};
   BodyweightApi bodyweight{doortest::borrowed(repo.bodyweight), auth};
 
   Harness() {
@@ -93,8 +89,8 @@ struct DoorApis : doortest::Harness {
   FakeSessionRevocations revocations;
   std::shared_ptr<AuthService> auth =
       std::make_shared<AuthService>(authRepo, email, tokens, clock, oauth, footprint, revocations, "https://windmill.works");
-  TrainingApi trainingApi{doortest::borrowed(training), auth, "https://windmill.works"};
-  ProgramApi programApi{doortest::borrowed(program), auth};
+  TrainingApi trainingApi{doortest::borrowed(training), doortest::borrowed(door), auth, "https://windmill.works"};
+  ProgramApi programApi{doortest::borrowed(repo.program), auth};
   ThreadsApi threadsApi{doortest::borrowed(threads), auth};
 
   // The cookie stays good for a day of the shared clock, so a case may move it past a stale close.

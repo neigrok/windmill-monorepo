@@ -145,10 +145,7 @@ add_library(windmill_gym
   products/gym/domain/Note.cpp
   products/gym/domain/Bodyweight.cpp
   products/gym/application/TrainingService.cpp
-  products/gym/application/CatalogService.cpp
-  products/gym/application/ProgramService.cpp
-  products/gym/application/ThreadService.cpp
-  products/gym/application/NotesService.cpp)
+  products/gym/application/ThreadService.cpp)
 target_include_directories(windmill_gym PUBLIC ${CMAKE_SOURCE_DIR})
 target_link_libraries(windmill_gym PUBLIC windmill_platform)
 
@@ -607,9 +604,9 @@ test/products/journal/adapters/llm/AnthropicSegmenterTest.cpp
   test/products/gym/adapters/llm/AnthropicAskTest.cpp
   test/products/gym/application/AskServiceTest.cpp
   test/products/gym/application/TrainingServiceTest.cpp
-  test/products/gym/application/ProgramServiceTest.cpp
-  test/products/gym/application/CatalogServiceTest.cpp
-  test/products/gym/application/NotesServiceTest.cpp
+  test/products/gym/sync/adapters/postgres/GymProgramDoorTest.cpp
+  test/products/gym/sync/adapters/postgres/GymCatalogDoorTest.cpp
+  test/products/gym/sync/adapters/postgres/GymNotesDoorTest.cpp
   test/products/gym/adapters/postgres/PgLogHistoryTest.cpp
   test/products/gym/adapters/postgres/PgLogRepositoryTest.cpp
   test/products/gym/adapters/postgres/PgCatalogRepositoryTest.cpp

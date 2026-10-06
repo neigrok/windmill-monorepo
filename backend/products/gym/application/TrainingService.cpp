@@ -7,43 +7,10 @@ namespace wm::gym {
 TrainingService::TrainingService(LogRepository& log, Clock& clock, TokenGenerator& tokens, GymWriteDoor& door)
     : log_(log), clock_(clock), tokens_(tokens), door_(door) {}
 
-// Idempotent by the caller's own id, which resolves first; only then does the open session enter, and
-// the caller's intent decides join or refusal. The plan is frozen from the engine's own routine only on
-// the path that CREATES a session, and only a creating start is held to the clock.
-StartOutcome TrainingService::start(const UserId& user, const SessionStart& incoming) {
-  return door_.start(user, incoming);
-}
-
-// No stale close here: a background flush replays offline sets into whatever session they belong to,
-// however stale. An absent and another's session are the same fact. The replay is resolved before the
-// finished refusal, so an already-durable set answers with itself however the session ended.
-AppendOutcome TrainingService::append(const UserId& user, const SessionId& session,
-                                      const SetWrite& incoming) {
-  return door_.append(user, session, incoming);
-}
-
-BatchLogOutcome TrainingService::appendSets(const UserId& user, const SessionId& session,
-                                            const std::vector<SetWrite>& incoming) {
-  return door_.appendSets(user, session, incoming);
-}
-
-// The span, then each set against it; staleness is settled first, so a workout walked away from counts
-// as the finished thing it is.
-BatchLogOutcome TrainingService::importSession(const UserId& user, const SessionImport& incoming) {
-  return door_.importSession(user, incoming);
-}
-
 std::vector<SessionRows> TrainingService::sessions(const UserId& user, const std::vector<SessionId>& ids) {
   if (ids.empty() || ids.size() > 50) throw InvalidTraining("sessionIds must contain 1 to 50 ids");
   door_.closeStale(user);
   return log_.sessions(user, ids);
-}
-
-// A finish is permanent once it is the lifter's word — first-writer-wins between finishes, and only a
-// stale close yields to one — so the instant is checked against the stored session before it lands.
-FinishOutcome TrainingService::finish(const UserId& user, const SessionId& session,
-                                      std::uint64_t finishedAtMs) {
-  return door_.finish(user, session, finishedAtMs);
 }
 
 // A record is judged against the history BEFORE its session, so the walk runs oldest first over rows
@@ -100,12 +67,6 @@ std::optional<Review> TrainingService::review(const UserId& user, const SessionI
   std::optional<Session> stored = log_.session(user, session);
   if (!stored) return std::nullopt;
   return wm::gym::review(*stored, log_.setsOf(session), log_.historyFor(user, *stored));
-}
-
-// A session still running is refused: deleting a workout somebody is still logging into destroys the
-// sets in flight. Staleness is settled elsewhere, not here.
-DiscardOutcome TrainingService::discard(const UserId& user, const SessionId& session) {
-  return door_.discard(user, session);
 }
 
 // Staleness IS settled first: the answer counts finished sessions only.

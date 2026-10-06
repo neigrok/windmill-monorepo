@@ -1,7 +1,7 @@
 #pragma once
 
-#include "products/gym/application/CatalogService.h"
-#include "products/gym/application/ProgramService.h"
+#include "products/gym/ports/GymWriteDoor.h"
+#include "products/gym/ports/ProgramRepository.h"
 #include "products/gym/application/TrainingService.h"
 #include "products/gym/domain/Bodyweight.h"
 #include "products/gym/domain/Note.h"

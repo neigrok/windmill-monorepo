@@ -9,7 +9,7 @@
 
 namespace wm::gym {
 
-NotesApi::NotesApi(std::shared_ptr<NotesService> notes, std::shared_ptr<AuthService> auth)
+NotesApi::NotesApi(std::shared_ptr<NotesRepository> notes, std::shared_ptr<AuthService> auth)
     : notes_(std::move(notes)), auth_(std::move(auth)) {}
 
 void NotesApi::listNotes(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {

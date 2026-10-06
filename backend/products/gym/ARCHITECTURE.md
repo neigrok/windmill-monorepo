@@ -43,8 +43,7 @@ ports/        LogRepository (sessions · sets · the two shares) · CatalogRepos
               ProgramRepository (routines + the ledger) · AskThreadRepository ·
               PreferencesRepository · NotesRepository · BodyweightRepository · AskAgent ·
               GymWriteDoor (every server write and its outcomes)
-application/  TrainingService · CatalogService · ProgramService · ThreadService · NotesService ·
-              AskService
+application/  TrainingService · ThreadService · AskService
 adapters/     json/{TrainingJson,HistoryJson} · postgres/PgGymRows.h + seven Pg repositories ·
               http/{Training,TrainingHistory,Catalog,Program,Preferences,Threads,Notes,Bodyweight,Ask}Api ·
               mcp/{GymToolCatalog,GymTools} · llm/AnthropicAsk
@@ -76,10 +75,10 @@ Every gym write the server makes for a lifter — the MCP gym tools, Coach, `POS
 /v1/gym/sessions/import` and the lazy close of a workout walked away from — goes through
 `GymDoor`, the one `GymWriteDoor` implementation, as a server-origin intent (engine §6.3). It builds
 its own `PgSyncStore`, server clock, `Admission` and four-thread `gym-sync` worker pool beside the
-engine's, and publishes committed changes to the same live channel. `TrainingService`,
-`CatalogService`, `ProgramService`, `NotesService` and `ThreadService` take `GymWriteDoor&`; the
-settings and the weigh-ins hold no rule and no server write, so their adapters read
-`PreferencesRepository` and `BodyweightRepository` directly.
+engine's, and publishes committed changes to the same live channel. `GymTools` and `TrainingApi`
+write through `GymWriteDoor`; `TrainingService` uses it for stale closes and `ThreadService` for
+proposal unlinking. Catalog, program, notes, settings and weigh-in reads use their repository ports
+directly.
 
 ## 3. Schema
 
@@ -530,15 +529,15 @@ four hours of the last activity, staying at that activity when the tap came late
 
 ## 5. Services and the write path
 
-Five services, one per repository port that carries a rule or a write, none holding another:
-`TrainingService` (`LogRepository&`, the clock, the token mint and the door), `CatalogService` (+
-door), `ProgramService` (+ door), `ThreadService` (+ clock, door), `NotesService` (+ door);
-`AskService` stands above them (§12). The two read-only aggregates have no service:
-`PreferencesApi` reads `PreferencesRepository` and answers the defaults where no row stands, and
-`BodyweightApi` and `list_bodyweight` read `BodyweightRepository`. Each HTTP adapter and `GymTools`
-takes only what it reads. A service's write is one `GymWriteDoor` call, after the argument shaping
-that is the service's own (`CatalogService` applies `defaultStepKg` when a movement names no step;
-`ProgramService` builds the `Routine`, whose constructor is the whole validation). Each write answers
+`TrainingService` derives log answers, settles stale sessions and manages shares over
+`LogRepository`, the clock, the token mint and `GymWriteDoor`. `ThreadService` dates conversation
+writes, bounds message pages and unlinks proposals before thread deletion. `AskService` runs Coach
+(§12). Catalog, program, notes, settings and weigh-in reads use their repository ports directly;
+`PreferencesApi` answers the domain defaults where no row stands.
+
+`GymTools` and the import handler call `GymWriteDoor` directly. Its request structs live beside the
+port; the concrete door applies `defaultStepKg` when a movement names no step and builds the
+`Routine`, whose constructor validates the document, before admitting either write. Each write answers
 with a small outcome from `ports/GymWriteDoor.h` — `StartOutcome`, `AppendOutcome`,
 `BatchLogOutcome`, `FinishOutcome`, `DiscardOutcome`, `RoutineWriteOutcome`, `ProposalMintOutcome`,
 `ExerciseInsertOutcome`, `NoteWriteOutcome` — a resolved row plus a typed refusal. **Flow control
@@ -979,10 +978,10 @@ in-process).
 - **No tool edits or deletes a logged set either**: *no agent may edit or delete a logged set —
   not under `gym:write`, not under `gym:delete`, not at any level a future grant invents.*
   `GymWriteDoor` has no such method, and `GymToolsTest` pins the absent names.
-- **Every tool goes through a service** — `TrainingService`, `CatalogService`, `ProgramService`,
-  `NotesService` — but `list_bodyweight`, which reads `BodyweightRepository`; no tool reads a thread
-  or the settings, and Notes offers `list_notes` and append-only `save_note`. No tool writes a
-  weigh-in: it is a fact only the lifter observed, and `list_bodyweight` is the one door.
+- **Every record write goes through `GymWriteDoor`.** Tools read catalog, program, notes and
+  bodyweight through their repository ports; log reads and shares use `TrainingService`. No tool
+  reads a thread or the settings, and Notes offers `list_notes` and append-only `save_note`. No tool
+  writes a weigh-in: it is a fact only the lifter observed, and `list_bodyweight` is the one door.
   `GymToolsTest` pins that the only tool whose name says bodyweight is the read, that it is
   `gym:read`, and that every write-shaped name misses the dispatcher and leaves the rows untouched.
   **`propose_routine_create` does not exist and `GymToolsTest` pins the absence by name.** A
@@ -1103,7 +1102,7 @@ documentation.
 `ports/AskAgent.h` · `application/AskService` · `adapters/llm/AnthropicAsk` · `adapters/http/AskApi` ·
 `domain/ReadReceipt` · `domain/Thread` · `platform/adapters/llm/AgentLoop.h`
 
-Coach uses the same services and tools as external MCP assistants through a restricted host.
+Coach uses the same tools and write door as external MCP assistants through a restricted host.
 Machine identifiers retain `Ask` (`AskService`, `/v1/gym/ask`, `ask-*` error codes); user-facing
 copy calls it Coach. Clients preserve server error text and branch on machine codes.
 

@@ -44,7 +44,9 @@ Json::Value proposalFields(const RoutineProposal& proposal) {
 
 }
 
-RoutineWriteOutcome GymDoor::createRoutine(const Routine& incoming, std::optional<ProposalDoor> byAgent) {
+RoutineWriteOutcome GymDoor::createRoutine(const UserId& user, const RoutineWrite& write,
+                                          std::optional<ProposalDoor> byAgent) {
+  const Routine incoming{write.id, user, write.name, write.position, write.entries};
   std::optional<Routine> held;
   RoutineWriteError error = RoutineWriteError::none;
   const Json::Value result = execute(incoming.user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
@@ -125,7 +127,9 @@ ProposalMintOutcome GymDoor::mintProposal(const UserId& user, const ProposalId& 
   return {held ? held : program_.proposal(user, id), ProposalMintError::none};
 }
 
-ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const Exercise& incoming) {
+ExerciseInsertOutcome GymDoor::createExercise(const UserId& user, const ExerciseWrite& write) {
+  const Exercise incoming{write.id, write.name, write.pattern, write.equipment,
+                          write.stepKg.value_or(defaultStepKg(write.equipment)), true};
   std::optional<Exercise> held;
   const Json::Value result = execute(user, [&](sync::SyncTxn& txn) -> std::optional<Json::Value> {
     for (const auto& exercise : catalog_.catalog(user)) if (exercise.id == incoming.id && exercise.custom) { held = exercise; return std::nullopt; }

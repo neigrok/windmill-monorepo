@@ -389,14 +389,14 @@ TEST(gym_session_detail_if_none_match_reads_the_rfc_9110_forms) {
 TEST(gym_deleted_session_ids_cannot_recreate_records_or_reuse_the_dead_etag) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000}).session);
-  REQUIRE(h.training.append(h.user, sid("ses_11111111"), setWrite("set_11111111", 82.5, 1'700'000'060'000)).set);
-  REQUIRE(h.training.finish(h.user, sid("ses_11111111"), 1'700'000'180'000).session);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000}).session);
+  REQUIRE(h.door.append(h.user, sid("ses_11111111"), setWrite("set_11111111", 82.5, 1'700'000'060'000)).set);
+  REQUIRE(h.door.finish(h.user, sid("ses_11111111"), 1'700'000'180'000).session);
   const std::string dead = tagOf(readSession(h.trainingApi, "ses_11111111", "s-door"));
-  REQUIRE_EQ(h.training.discard(h.user, sid("ses_11111111")), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, sid("ses_11111111")), DiscardOutcome::done);
 
   const StartOutcome recreate =
-      h.training.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'030'000});
+      h.door.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'030'000});
   CHECK_EQ(recreate.error, StartError::idTaken);
   CHECK_FALSE(recreate.session);
   const auto absent = readSession(h.trainingApi, "ses_11111111", "s-door", dead);
@@ -475,11 +475,11 @@ TEST(gym_last_omits_the_routine_for_a_session_trained_ad_hoc) {
 TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000}).session);
-  REQUIRE(h.training.append(h.user, sid("ses_11111111"), setWrite("set_11111111", 82.5, 1'700'000'060'000)).set);
-  REQUIRE(h.training.finish(h.user, sid("ses_11111111"), 1'700'000'100'000).session);
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_22222222"), 1'700'000'110'000}).session);
-  REQUIRE(h.training.append(h.user, sid("ses_22222222"), setWrite("set_22222222", 100.0, 1'700'000'120'000)).set);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000}).session);
+  REQUIRE(h.door.append(h.user, sid("ses_11111111"), setWrite("set_11111111", 82.5, 1'700'000'060'000)).set);
+  REQUIRE(h.door.finish(h.user, sid("ses_11111111"), 1'700'000'100'000).session);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_22222222"), 1'700'000'110'000}).session);
+  REQUIRE(h.door.append(h.user, sid("ses_22222222"), setWrite("set_22222222", 100.0, 1'700'000'120'000)).set);
   h.clock.now = 1'700'000'120'000 + kAutoCloseMs;   // the live workout reads as idle past the window
 
   drogon::HttpRequestPtr request = getRequest("/v1/gym/last", "s-door");
@@ -487,7 +487,7 @@ TEST(gym_last_never_closes_the_live_session_it_is_prefilling) {
   drogon::HttpResponsePtr prefill = send(h.trainingApi, &TrainingApi::lastTime, request);
   const std::optional<Session> live = h.repo.log.session(h.user, sid("ses_22222222"));
   const AppendOutcome next =
-      h.training.append(h.user, sid("ses_22222222"), setWrite("set_33333333", 102.5, 1'700'000'130'000));
+      h.door.append(h.user, sid("ses_22222222"), setWrite("set_33333333", 102.5, 1'700'000'130'000));
 
   CHECK_EQ(prefill->getStatusCode(), drogon::k200OK);
   CHECK_EQ(bodyOf(prefill)["session"]["id"].asString(), std::string("ses_11111111"));
@@ -546,10 +546,10 @@ TEST(gym_last_without_a_session_is_401) {
 TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
 
-  const StartOutcome started = h.training.start(
+  const StartOutcome started = h.door.start(
       h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")});
   drogon::HttpResponsePtr detail = readSession(h.trainingApi, "ses_11111111", "s-door");
 
@@ -571,12 +571,12 @@ TEST(gym_start_from_a_routine_carries_the_frozen_plan_on_every_read) {
 TEST(gym_start_from_a_routine_freezes_the_ramp_into_the_plan) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.user,
+  REQUIRE_EQ(h.door.createRoutine(h.user,
                                      RoutineWrite{rtId("rt_11111111"), "Lower A", 0,
                                                   {RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
 
-  const StartOutcome started = h.training.start(
+  const StartOutcome started = h.door.start(
       h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")});
   drogon::HttpResponsePtr detail = readSession(h.trainingApi, "ses_11111111", "s-door");
 
@@ -960,7 +960,7 @@ drogon::HttpResponsePtr sendImport(DoorApis& h, const Json::Value& body) {
 TEST(gym_import_from_a_routine_is_201_with_the_plan_frozen_and_the_routine_left_alone) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   const std::string routineBefore = dump(bodyOf(
       send(h.programApi, &ProgramApi::getRoutine, getRequest("/v1/gym/routines/rt_11111111", "s-door"), "rt_11111111")));
@@ -1016,7 +1016,7 @@ TEST(gym_import_without_a_routine_is_201_ad_hoc_and_a_replay_is_200_with_the_sto
 TEST(gym_import_leaves_the_open_session_alone_even_where_their_times_cross) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_live0001"), 1'699'995'000'000}).session);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_live0001"), 1'699'995'000'000}).session);
 
   drogon::HttpResponsePtr response =
       sendImport(h, importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
@@ -1035,12 +1035,12 @@ TEST(gym_import_leaves_the_open_session_alone_even_where_their_times_cross) {
 TEST(gym_import_replayed_after_the_hour_filled_in_is_still_200_and_a_changed_body_still_id_taken) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_live0001"), 1'699'995'000'000}).session);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_live0001"), 1'699'995'000'000}).session);
   const Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
                                       {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
   REQUIRE_EQ(sendImport(h, body)->getStatusCode(), drogon::k201Created);
   // The live workout ends inside the imported hour, and now it is a finished session in the way.
-  REQUIRE(h.training.finish(h.user, sid("ses_live0001"), 1'699'996'000'000).session);
+  REQUIRE(h.door.finish(h.user, sid("ses_live0001"), 1'699'996'000'000).session);
   Json::Value changed = body;
   changed["sets"][0]["reps"] = 9;
 
@@ -1060,9 +1060,9 @@ TEST(gym_import_replayed_after_the_hour_filled_in_is_still_200_and_a_changed_bod
 TEST(gym_import_crossing_a_finished_session_is_409_session_overlap_naming_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_before01"), 1'699'990'000'000}).session);
-  REQUIRE(h.training.append(h.user, sid("ses_before01"), setWrite("set_before011", 82.5, 1'699'990'060'000)).set);
-  REQUIRE(h.training.finish(h.user, sid("ses_before01"), 1'699'993'600'000).session);
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_before01"), 1'699'990'000'000}).session);
+  REQUIRE(h.door.append(h.user, sid("ses_before01"), setWrite("set_before011", 82.5, 1'699'990'060'000)).set);
+  REQUIRE(h.door.finish(h.user, sid("ses_before01"), 1'699'993'600'000).session);
 
   drogon::HttpResponsePtr response =
       sendImport(h, importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
@@ -1084,7 +1084,7 @@ TEST(gym_import_crossing_a_finished_session_is_409_session_overlap_naming_it) {
 TEST(gym_import_with_a_spent_session_id_is_409_session_id_taken_whoever_spent_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE(h.training.start(h.other, SessionStart{sid("ses_taken001"), 1'699'000'000'000}).session);
+  REQUIRE(h.door.start(h.other, SessionStart{sid("ses_taken001"), 1'699'000'000'000}).session);
   const Json::Value mine = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
                                       {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
   REQUIRE_EQ(sendImport(h, mine)->getStatusCode(), drogon::k201Created);
@@ -1129,7 +1129,7 @@ TEST(gym_import_with_a_spent_set_id_is_409_set_id_taken_and_lands_nothing) {
 TEST(gym_import_naming_a_routine_the_caller_cannot_read_is_404) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.other, RoutineWrite{rtId("rt_theirs01"), "Legs", 0, {benchEntry()}},
+  REQUIRE_EQ(h.door.createRoutine(h.other, RoutineWrite{rtId("rt_theirs01"), "Legs", 0, {benchEntry()}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   Json::Value theirs = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000, {});
   theirs["routineId"] = "rt_theirs01";
@@ -1196,7 +1196,7 @@ TEST(gym_import_replayed_after_the_workout_was_discarded_is_409_and_never_brings
   const Json::Value body = importBody("ses_import01", 1'699'992'800'000, 1'699'996'400'000,
                                       {setBody("set_import01", "bench-press", 60, 1'699'993'400'000)});
   REQUIRE_EQ(sendImport(h, body)->getStatusCode(), drogon::k201Created);
-  REQUIRE_EQ(h.training.discard(h.user, sid("ses_import01")), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, sid("ses_import01")), DiscardOutcome::done);
 
   drogon::HttpResponsePtr response = sendImport(h, body);
 
@@ -1273,10 +1273,10 @@ TEST(gym_atomic_correction_keeps_the_frozen_plan_clears_rpe_and_refreshes_the_na
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
   h.clock.now = 1'700'000'100'000;
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId("rt_original1"), "Original routine", 0, {benchEntry()}},
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId("rt_original1"), "Original routine", 0, {benchEntry()}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   const SessionId id{"ses_correct01"};
-  REQUIRE_EQ(h.training.importSession(h.user, SessionImport{id, 1'700'000'000'000, 1'700'000'003'000, rtId("rt_original1"),
+  REQUIRE_EQ(h.door.importSession(h.user, SessionImport{id, 1'700'000'000'000, 1'700'000'003'000, rtId("rt_original1"),
       {SetWrite{setId("set_correct01"), ExerciseId{"bench-press"}, 80, 8, SetKind::working, 8, "private",
                 1'700'000'001'000}}}).error, BatchLogError::none);
   const auto before = readSession(h.trainingApi, id.str(), "s-door");

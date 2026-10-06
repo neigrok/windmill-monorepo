@@ -30,16 +30,16 @@ struct Kept {
 // One account's gym over the real door, on a clock the engine reads too; every test perturbs one thing.
 struct Harness : wm::gym::doortest::Harness {
   StartOutcome startAt(std::uint64_t ms, std::string id = "ses_00000001") {
-    return training.start(user, SessionStart{sid(std::move(id)), ms});
+    return door.start(user, SessionStart{sid(std::move(id)), ms});
   }
 
   StartOutcome startFrom(std::uint64_t ms, std::string id, std::string routine) {
-    return training.start(user, SessionStart{sid(std::move(id)), ms, true, rtId(std::move(routine))});
+    return door.start(user, SessionStart{sid(std::move(id)), ms, true, rtId(std::move(routine))});
   }
 
   // Backfill: create exactly this session, which is not now.
   StartOutcome startExactly(std::uint64_t ms, std::string id) {
-    return training.start(user, SessionStart{sid(std::move(id)), ms, false});
+    return door.start(user, SessionStart{sid(std::move(id)), ms, false});
   }
 
   RoutineWrite pushAWrite(std::vector<RoutineEntry> entries = {benchEntry()},
@@ -49,7 +49,7 @@ struct Harness : wm::gym::doortest::Harness {
 
   // The LIFTER's door: the create a phone makes, naming no agent.
   RoutineWriteOutcome create(const RoutineWrite& incoming) {
-    return program.createRoutine(user, incoming, std::nullopt);
+    return door.createRoutine(user, incoming, std::nullopt);
   }
 
   SetWrite bench(std::string id, double weightKg, std::uint64_t completedAtMs) {
@@ -74,28 +74,28 @@ struct Harness : wm::gym::doortest::Harness {
                int sets, std::optional<std::string> routine = std::nullopt) {
     const std::uint64_t held = clock.now;
     clock.now = std::max(held, startedAtMs);
-    training.start(user, SessionStart{sid(session), startedAtMs, true,
+    door.start(user, SessionStart{sid(session), startedAtMs, true,
                                       routine ? std::optional<RoutineId>(rtId(*routine)) : std::nullopt});
     for (const SetWrite& set : squats(session, startedAtMs, weightKg, reps, sets))
-      training.append(user, sid(session), set);
+      door.append(user, sid(session), set);
     clock.now = std::max(held, startedAtMs + 3'600'000);
-    training.finish(user, sid(session), startedAtMs + 3'600'000);
+    door.finish(user, sid(session), startedAtMs + 3'600'000);
     clock.now = held;
   }
 
   // A finished workout of squats written whole, the way an agent imports one.
   void imported(const std::string& session, std::uint64_t startedAtMs, std::uint64_t finishedAtMs,
                 double weightKg, int reps, int sets) {
-    training.importSession(user, SessionImport{sid(session), startedAtMs, finishedAtMs, std::nullopt,
+    door.importSession(user, SessionImport{sid(session), startedAtMs, finishedAtMs, std::nullopt,
                                                squats(session, startedAtMs, weightKg, reps, sets)});
   }
 
   // A workout of squats still running: started at its instant, never finished, and settled by no read yet.
   void running(const std::string& session, std::uint64_t startedAtMs, double weightKg, int reps,
                int sets) {
-    training.start(user, SessionStart{sid(session), startedAtMs, false});
+    door.start(user, SessionStart{sid(session), startedAtMs, false});
     for (const SetWrite& set : squats(session, startedAtMs, weightKg, reps, sets))
-      training.append(user, sid(session), set);
+      door.append(user, sid(session), set);
   }
 
   std::vector<LogRow> logBefore(std::uint64_t beforeMs, int limit = 50) {
@@ -249,7 +249,7 @@ TEST(start_double_tap_with_two_ids_joins_the_first_taps_session) {
 TEST(start_refuses_a_session_id_that_belongs_to_another_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid(), h.clock.now - 5'000});   // another lifter's
+  h.door.start(h.other, SessionStart{sid(), h.clock.now - 5'000});   // another lifter's
 
   StartOutcome started = h.startAt(h.clock.now);
 
@@ -263,7 +263,7 @@ TEST(start_replay_of_an_already_finished_start_returns_the_stored_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.finish(h.user, sid(), h.clock.now + 1'000);
+  h.door.finish(h.user, sid(), h.clock.now + 1'000);
 
   StartOutcome replayed = h.startAt(h.clock.now);
 
@@ -295,7 +295,7 @@ TEST(start_auto_closes_a_stale_session_at_its_last_set_instant) {
   const std::uint64_t firstStart = h.clock.now;
   h.startAt(firstStart, "ses_00000001");
   const std::uint64_t lastSetAt = h.clock.now + 60'000;
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, lastSetAt));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, lastSetAt));
   h.clock.now = lastSetAt + kAutoCloseMs;
 
   h.startAt(h.clock.now, "ses_00000002");
@@ -362,7 +362,7 @@ TEST(append_to_a_missing_session_is_not_found) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
 
-  AppendOutcome outcome = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, 1'000));
+  AppendOutcome outcome = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, 1'000));
 
   CHECK(outcome.error == AppendError::notFound);
   CHECK_FALSE(outcome.set.has_value());
@@ -375,7 +375,7 @@ TEST(append_to_anothers_session_is_the_same_not_found) {
   h.startAt(h.clock.now);
 
   AppendOutcome outcome =
-      h.training.append(h.other, sid(), h.bench("set_00000001", 80.0, h.clock.now));
+      h.door.append(h.other, sid(), h.bench("set_00000001", 80.0, h.clock.now));
 
   CHECK(outcome.error == AppendError::notFound);
   CHECK_EQ(h.sets(), std::vector<Set>{});
@@ -385,10 +385,10 @@ TEST(append_of_a_new_set_to_a_finished_session_is_finished) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.finish(h.user, sid(), h.clock.now + 1'000);
+  h.door.finish(h.user, sid(), h.clock.now + 1'000);
 
   AppendOutcome outcome =
-      h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now));
+      h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now));
 
   CHECK(outcome.error == AppendError::finished);
   CHECK_FALSE(outcome.set.has_value());
@@ -400,16 +400,16 @@ TEST(append_of_owed_sets_reopens_a_stale_close_and_moves_the_finish_forward) {
   Harness h;
   const std::uint64_t lastNight = h.clock.now;
   h.startAt(lastNight);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, lastNight + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, lastNight + 60'000));
   h.clock.now += kAutoCloseMs + 3'600'000;   // a read the next morning settles it stale…
   h.training.log(h.user, LogCursor{kMaxInstantMs, std::nullopt, 10});
   REQUIRE_EQ(h.repo.log.session(h.user, sid()),
              std::optional<Session>(Session(sid(), h.user, lastNight, lastNight + 60'000, std::nullopt,
                                             std::nullopt, ClosedBy::stale)));
 
-  AppendOutcome second = h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, lastNight + 120'000));
-  AppendOutcome third = h.training.append(h.user, sid(), h.bench("set_00000003", 85.0, lastNight + 180'000));
-  AppendOutcome tomorrow = h.training.append(h.user, sid(), h.bench("set_00000004", 60.0, h.clock.now));
+  AppendOutcome second = h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, lastNight + 120'000));
+  AppendOutcome third = h.door.append(h.user, sid(), h.bench("set_00000003", 85.0, lastNight + 180'000));
+  AppendOutcome tomorrow = h.door.append(h.user, sid(), h.bench("set_00000004", 60.0, h.clock.now));
 
   CHECK(second.error == AppendError::none);
   CHECK(third.error == AppendError::none);
@@ -432,15 +432,15 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
   Harness h;
   h.startAt(h.clock.now);
   const std::uint64_t t0 = h.clock.now;
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, t0 + 600'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, t0 + 600'000));
   h.clock.now = t0 + 5 * 3'600'000;
   h.training.detail(h.user, sid());                                    // the mirror settles it stale
   REQUIRE_EQ(h.repo.log.session(h.user, sid()),
              std::optional<Session>(Session(sid(), h.user, t0, t0 + 600'000, std::nullopt, std::nullopt,
                                             ClosedBy::stale)));
 
-  FinishOutcome finished = h.training.finish(h.user, sid(), t0 + 2 * 3'600'000);
-  AppendOutcome after = h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, t0 + 3 * 3'600'000));
+  FinishOutcome finished = h.door.finish(h.user, sid(), t0 + 2 * 3'600'000);
+  AppendOutcome after = h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, t0 + 3 * 3'600'000));
 
   CHECK(finished.error == FinishError::none);
   CHECK_EQ(finished.session, std::optional<Session>(Session(sid(), h.user, t0, t0 + 2 * 3'600'000,
@@ -450,20 +450,20 @@ TEST(finish_upgrades_a_stale_close_so_the_lifters_word_ends_the_workout) {
                                           8, SetKind::working, std::nullopt, "", t0 + 600'000)});
   // A finish EARLIER than the stale close keeps the later instant, and still becomes the lifter's word.
   h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
+  h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 600'000));
   const std::uint64_t t1 = h.clock.now;
   h.clock.now = t1 + 5 * 3'600'000;
   h.training.detail(h.user, sid("ses_00000002"));
-  FinishOutcome early = h.training.finish(h.user, sid("ses_00000002"), t1 + 60'000);
+  FinishOutcome early = h.door.finish(h.user, sid("ses_00000002"), t1 + 60'000);
   CHECK_EQ(early.session, std::optional<Session>(Session(sid("ses_00000002"), h.user, t1, t1 + 600'000,
                                                          std::nullopt, std::nullopt, ClosedBy::finish)));
   // A tap hours after the last set keeps the end at that set; only the word changes.
   h.startAt(h.clock.now, "ses_00000003");
-  h.training.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 80.0, h.clock.now + 600'000));
+  h.door.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 80.0, h.clock.now + 600'000));
   const std::uint64_t t2 = h.clock.now;
   h.clock.now = t2 + 5 * 3'600'000;
   h.training.detail(h.user, sid("ses_00000003"));
-  FinishOutcome late = h.training.finish(h.user, sid("ses_00000003"), h.clock.now);
+  FinishOutcome late = h.door.finish(h.user, sid("ses_00000003"), h.clock.now);
   CHECK_EQ(late.session, std::optional<Session>(Session(sid("ses_00000003"), h.user, t2, t2 + 600'000,
                                                         std::nullopt, std::nullopt, ClosedBy::finish)));
 }
@@ -472,10 +472,10 @@ TEST(append_after_the_lifters_own_finish_never_lands_however_close) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.training.finish(h.user, sid(), h.clock.now + 120'000);
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.door.finish(h.user, sid(), h.clock.now + 120'000);
 
-  AppendOutcome late = h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 90'000));
+  AppendOutcome late = h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 90'000));
 
   CHECK(late.error == AppendError::finished);
   CHECK_EQ(h.sets(), std::vector<Set>{Set(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0,
@@ -489,11 +489,11 @@ TEST(append_replays_an_already_stored_set_across_the_finish_boundary) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome landed = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.training.finish(h.user, sid(), h.clock.now + 1'000);
+  AppendOutcome landed = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.door.finish(h.user, sid(), h.clock.now + 1'000);
 
   AppendOutcome replayed =
-      h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+      h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
                    std::nullopt, "", h.clock.now + 1);
@@ -506,14 +506,14 @@ TEST(append_replays_an_already_stored_set_across_the_finish_boundary) {
 TEST(append_refuses_a_set_id_minted_by_another_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
-  h.training.append(h.other, sid("ses_00000002"),
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
+  h.door.append(h.other, sid("ses_00000002"),
                     SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 142.5, 3, SetKind::working,
                              std::optional<double>(9.5), "knee felt off, deload next week", h.clock.now});
   h.startAt(h.clock.now);
 
   AppendOutcome outcome =
-      h.training.append(h.user, sid(), h.bench("set_00000001", 7.5, h.clock.now + 1));
+      h.door.append(h.user, sid(), h.bench("set_00000001", 7.5, h.clock.now + 1));
 
   CHECK(outcome.error == AppendError::idTaken);
   CHECK_FALSE(outcome.set.has_value());   // never the stranger's row, not even to say it exists
@@ -529,11 +529,11 @@ TEST(append_refuses_a_set_id_the_same_lifter_spent_in_another_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
+  h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
   h.startAt(h.clock.now + 3, "ses_00000002");
 
-  AppendOutcome outcome = h.training.append(
+  AppendOutcome outcome = h.door.append(
       h.user, sid("ses_00000002"),
       SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 222.5, 9, SetKind::working,
                std::nullopt, "", h.clock.now + 4});
@@ -552,7 +552,7 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
   Harness h;
   h.startAt(h.clock.now);
 
-  AppendOutcome outcome = h.training.append(
+  AppendOutcome outcome = h.door.append(
       h.user, sid(),
       SetWrite{setId("set_00000001"), ExerciseId{"zercher-squat"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 1});
@@ -567,11 +567,11 @@ TEST(append_of_a_movement_no_catalog_holds_is_unknown_exercise) {
 TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"ex_22222222"}, "Their Zercher Squat",
+  h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"ex_22222222"}, "Their Zercher Squat",
                                                   Pattern::squat, Equipment::barbell, 2.5});
   h.startAt(h.clock.now);
 
-  AppendOutcome refused = h.training.append(
+  AppendOutcome refused = h.door.append(
       h.user, sid(),
       SetWrite{setId("set_00000001"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 1});
@@ -580,8 +580,8 @@ TEST(append_naming_another_accounts_private_movement_is_unknown_exercise) {
   CHECK_FALSE(refused.set.has_value());
   CHECK_EQ(h.sets(), std::vector<Set>{});
 
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
-  AppendOutcome mine = h.training.append(
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
+  AppendOutcome mine = h.door.append(
       h.other, sid("ses_00000002"),
       SetWrite{setId("set_00000002"), ExerciseId{"ex_22222222"}, 100.0, 5, SetKind::working,
                std::nullopt, "", h.clock.now + 2});
@@ -596,7 +596,7 @@ TEST(append_into_a_finished_workout_is_refused_by_admission_too_and_answers_fini
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.finish(h.user, sid(), h.clock.now + 1'000);
+  h.door.finish(h.user, sid(), h.clock.now + 1'000);
   Json::Value fields(Json::objectValue);
   fields["sessionId"] = sid().str();
   fields["exerciseId"] = "bench-press";
@@ -608,7 +608,7 @@ TEST(append_into_a_finished_workout_is_refused_by_admission_too_and_answers_fini
 
   const std::string pushed =
       GymDoor::refusal(h.admit(h.user, {GymDoor::delta("set", "set_00000001", fields, true)}));
-  AppendOutcome refused = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome refused = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   CHECK_EQ(pushed, std::string("session-finished"));
   CHECK(refused.error == AppendError::finished);
@@ -623,9 +623,9 @@ TEST(append_numbers_max_plus_one_per_exercise_across_interleaving) {
   SetWrite squat{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5, SetKind::working,
                  std::nullopt, "", h.clock.now + 2};
 
-  AppendOutcome bench1 = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  AppendOutcome squat1 = h.training.append(h.user, sid(), squat);
-  AppendOutcome bench2 = h.training.append(h.user, sid(), h.bench("set_00000003", 82.5, h.clock.now + 3));
+  AppendOutcome bench1 = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome squat1 = h.door.append(h.user, sid(), squat);
+  AppendOutcome bench2 = h.door.append(h.user, sid(), h.bench("set_00000003", 82.5, h.clock.now + 3));
 
   REQUIRE(bench1.set.has_value());
   REQUIRE(squat1.set.has_value());
@@ -639,11 +639,11 @@ TEST(append_replay_returns_the_stored_row_byte_for_byte) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome first = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome first = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   // The replay arrives with a different weight — the flush queue re-sending after a lost reply.
   AppendOutcome replayed =
-      h.training.append(h.user, sid(), h.bench("set_00000001", 90.0, h.clock.now + 99));
+      h.door.append(h.user, sid(), h.bench("set_00000001", 90.0, h.clock.now + 99));
 
   const Set stored(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
                    std::nullopt, "", h.clock.now + 1);
@@ -658,8 +658,8 @@ TEST(finish_is_idempotent_and_keeps_the_first_instant) {
   Harness h;
   h.startAt(h.clock.now);
 
-  FinishOutcome first = h.training.finish(h.user, sid(), h.clock.now + 1'000);
-  FinishOutcome replayed = h.training.finish(h.user, sid(), h.clock.now + 2'000);
+  FinishOutcome first = h.door.finish(h.user, sid(), h.clock.now + 1'000);
+  FinishOutcome replayed = h.door.finish(h.user, sid(), h.clock.now + 2'000);
 
   CHECK(first.error == FinishError::none);
   CHECK_EQ(first.session, std::optional<Session>(Session(sid(), h.user, h.clock.now, h.clock.now + 1'000,
@@ -667,7 +667,7 @@ TEST(finish_is_idempotent_and_keeps_the_first_instant) {
   CHECK(replayed.error == FinishError::none);
   CHECK_EQ(replayed.session, first.session);
 
-  FinishOutcome unknown = h.training.finish(h.user, SessionId{"ses_unknown1"}, h.clock.now + 1);
+  FinishOutcome unknown = h.door.finish(h.user, SessionId{"ses_unknown1"}, h.clock.now + 1);
   CHECK(unknown.error == FinishError::notFound);
   CHECK_FALSE(unknown.session.has_value());
 }
@@ -677,14 +677,14 @@ TEST(finish_of_a_session_the_engine_holds_dead_is_not_found_and_never_an_empty_n
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.finish(h.user, sid(), h.clock.now + 1'000);
-  REQUIRE(h.training.discard(h.user, sid()) == DiscardOutcome::done);
+  h.door.finish(h.user, sid(), h.clock.now + 1'000);
+  REQUIRE(h.door.discard(h.user, sid()) == DiscardOutcome::done);
   Json::Value args(Json::objectValue);
   args["sessionId"] = sid().str();
   args["finishedAt"] = Json::UInt64(h.clock.now + 2'000);
 
   const std::string pushed = GymDoor::refusal(h.door.command(h.user, "gym.finish", args));
-  FinishOutcome outcome = h.training.finish(h.user, sid(), h.clock.now + 2'000);
+  FinishOutcome outcome = h.door.finish(h.user, sid(), h.clock.now + 2'000);
 
   CHECK_EQ(pushed, std::string("record-dead"));
   CHECK(outcome.error == FinishError::notFound);
@@ -698,9 +698,9 @@ TEST(finish_refuses_an_instant_the_session_could_not_have_ended_at) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started);
 
-  FinishOutcome zero = h.training.finish(h.user, sid(), 0);
-  FinishOutcome beforeStart = h.training.finish(h.user, sid(), started - 1);
-  FinishOutcome pastTheCeiling = h.training.finish(h.user, sid(), kMaxInstantMs + 1);
+  FinishOutcome zero = h.door.finish(h.user, sid(), 0);
+  FinishOutcome beforeStart = h.door.finish(h.user, sid(), started - 1);
+  FinishOutcome pastTheCeiling = h.door.finish(h.user, sid(), kMaxInstantMs + 1);
 
   CHECK(zero.error == FinishError::badInstant);
   CHECK(beforeStart.error == FinishError::badInstant);
@@ -708,7 +708,7 @@ TEST(finish_refuses_an_instant_the_session_could_not_have_ended_at) {
   CHECK_FALSE(zero.session.has_value());
   CHECK_EQ(h.sessions(), std::vector<Session>{Session(sid(), h.user, started)});
 
-  FinishOutcome atTheStart = h.training.finish(h.user, sid(), started);   // a workout with one rep
+  FinishOutcome atTheStart = h.door.finish(h.user, sid(), started);   // a workout with one rep
   CHECK(atTheStart.error == FinishError::none);
   CHECK_EQ(atTheStart.session, std::optional<Session>(Session(sid(), h.user, started, started, std::nullopt,
                                                               std::nullopt, ClosedBy::finish)));
@@ -733,11 +733,11 @@ TEST(log_lists_newest_first_with_counts_and_sorted_names) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.training.finish(h.user, sid(), h.clock.now + 3);
+  h.door.finish(h.user, sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
 
@@ -758,17 +758,17 @@ TEST(log_carries_the_top_working_set_of_each_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 8,
                              SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000004"), ExerciseId{"back-squat"}, 140.0, 1,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 4});
-  h.training.finish(h.user, sid(), h.clock.now + 5);
+  h.door.finish(h.user, sid(), h.clock.now + 5);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");   // nothing logged into it yet
 
@@ -783,17 +783,17 @@ TEST(log_counts_the_working_sets_apart_from_every_set_and_sums_what_they_moved) 
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 60.0, 10,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.training.append(h.user, sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
-  h.training.finish(h.user, sid(), h.clock.now + 5);
+  h.door.append(h.user, sid(), h.bench("set_00000004", 82.5, h.clock.now + 4));   // 82.5 × 8
+  h.door.finish(h.user, sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -808,19 +808,19 @@ TEST(log_gives_an_assisted_or_bodyweight_set_no_tonnage_rather_than_letting_it_s
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, -20.0, 10,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.training.finish(h.user, sid(), h.clock.now + 3);
+  h.door.finish(h.user, sid(), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"),
+  h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 0.0, 9,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.training.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
+  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -836,22 +836,22 @@ TEST(log_puts_the_domains_estimate_on_the_row_and_omits_it_where_there_is_no_est
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.training.finish(h.user, sid(), h.clock.now + 2);
+  h.door.finish(h.user, sid(), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"),
+  h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 0.0, 9,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.training.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
+  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000003");   // warmed up and nothing else
-  h.training.append(h.user, sid("ses_00000003"),
+  h.door.append(h.user, sid("ses_00000003"),
                     SetWrite{setId("set_00000003"), ExerciseId{"bench-press"}, 40.0, 10,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.training.finish(h.user, sid("ses_00000003"), h.clock.now + 2);
+  h.door.finish(h.user, sid("ses_00000003"), h.clock.now + 2);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -868,15 +868,15 @@ TEST(log_and_the_finish_screen_agree_on_a_session_whose_back_offs_beat_its_top_s
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
   for (int number = 2; number <= 4; ++number)
-    h.training.append(h.user, sid(),
+    h.door.append(h.user, sid(),
                       SetWrite{setId("set_0000000" + std::to_string(number)),
                                ExerciseId{"back-squat"}, 95.0, 10, SetKind::working, std::nullopt,
                                "", h.clock.now + static_cast<std::uint64_t>(number)});
-  h.training.finish(h.user, sid(), h.clock.now + 5);
+  h.door.finish(h.user, sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
   std::optional<Review> finished = h.training.review(h.user, sid());
@@ -894,19 +894,19 @@ TEST(log_reads_the_stores_per_load_projection_and_lands_where_a_walk_over_every_
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000001"), ExerciseId{"back-squat"}, 95.0, 6,
                              SetKind::working, std::nullopt, "", h.clock.now + 1});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 95.0, 10,
                              SetKind::working, std::nullopt, "", h.clock.now + 2});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000003"), ExerciseId{"back-squat"}, 95.0, 8,
                              SetKind::working, std::nullopt, "", h.clock.now + 3});
-  h.training.append(h.user, sid(),
+  h.door.append(h.user, sid(),
                     SetWrite{setId("set_00000004"), ExerciseId{"bench-press"}, 60.0, 12,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 4});
-  h.training.finish(h.user, sid(), h.clock.now + 5);
+  h.door.finish(h.user, sid(), h.clock.now + 5);
 
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10);
 
@@ -927,12 +927,12 @@ TEST(log_says_which_sessions_the_four_hour_rule_closed) {
   Harness h;
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
-  h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 60'000));
+  h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 60'000));
   h.clock.now = started + 3'600'000;
-  h.training.finish(h.user, sid("ses_00000001"), started + 3'600'000);   // a tap, an hour later
+  h.door.finish(h.user, sid("ses_00000001"), started + 3'600'000);   // a tap, an hour later
   h.clock.now = started + 10'000'000;
   h.startAt(h.clock.now, "ses_00000002");   // left running, and never touched again
-  h.training.append(h.user, sid("ses_00000002"),
+  h.door.append(h.user, sid("ses_00000002"),
                     h.bench("set_00000002", 80.0, h.clock.now + 60'000));
   const std::uint64_t abandoned = h.clock.now + 60'000;
   h.clock.now = abandoned + kAutoCloseMs;   // the next log read settles it
@@ -974,7 +974,7 @@ TEST(log_pages_across_a_tied_start_instant_without_losing_a_session) {
            {"ses_00000001", tied + 3}, {"ses_00000002", tied + 2}, {"ses_00000003", tied + 2},
            {"ses_00000004", tied + 1}}) {
     h.startAt(startedAtMs, id);
-    h.training.finish(h.user, sid(id), tied + 4);
+    h.door.finish(h.user, sid(id), tied + 4);
   }
 
   std::vector<LogRow> first = h.training.log(h.user, LogCursor{tied + 9, std::nullopt, 2});
@@ -998,8 +998,8 @@ TEST(detail_returns_the_session_with_its_sets_in_completion_order) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  AppendOutcome second = h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 2));
-  AppendOutcome first = h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  AppendOutcome second = h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 2));
+  AppendOutcome first = h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 1));
 
   std::optional<SessionDetail> detail = h.training.detail(h.user, sid());
 
@@ -1016,7 +1016,7 @@ TEST(detail_settles_a_stale_open_session_at_its_last_set_and_leaves_the_close_re
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
   h.clock.now += kAutoCloseMs + 3'600'000;
 
   std::optional<SessionDetail> detail = h.training.detail(h.user, sid());
@@ -1024,7 +1024,7 @@ TEST(detail_settles_a_stale_open_session_at_its_last_set_and_leaves_the_close_re
   REQUIRE(detail.has_value());
   CHECK_EQ(detail->session.finishedAtMs, std::optional<std::uint64_t>(h.clock.now - kAutoCloseMs - 3'600'000 + 60'000));
   CHECK(detail->session.closedBy == std::optional<ClosedBy>(ClosedBy::stale));
-  AppendOutcome owed = h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now - kAutoCloseMs - 3'600'000 + 120'000));
+  AppendOutcome owed = h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now - kAutoCloseMs - 3'600'000 + 120'000));
   CHECK(owed.error == AppendError::none);
 }
 
@@ -1032,18 +1032,18 @@ TEST(last_time_is_the_most_recent_finished_session_never_the_open_one) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
+  h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
   AppendOutcome top =
-      h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 82.5, h.clock.now + 1));
+      h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 82.5, h.clock.now + 1));
   AppendOutcome backOff =
-      h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 2));
-  h.training.finish(h.user, sid("ses_00000002"), h.clock.now + 3);
+      h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 80.0, h.clock.now + 2));
+  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 3);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000003");
-  h.training.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 100.0, h.clock.now + 1));
+  h.door.append(h.user, sid("ses_00000003"), h.bench("set_00000004", 100.0, h.clock.now + 1));
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
 
@@ -1063,19 +1063,19 @@ TEST(last_time_is_the_working_block_in_set_order_and_never_the_warmups) {
   Harness h;
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Bench day"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.training.append(h.user, sid("ses_00000001"),
+  h.door.append(h.user, sid("ses_00000001"),
                     SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, 40.0, 10,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 1});
   AppendOutcome first =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000002", 82.5, h.clock.now + 2));
   AppendOutcome second =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000003", 82.5, h.clock.now + 3));
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000003", 82.5, h.clock.now + 3));
   AppendOutcome third =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
-  h.training.append(h.user, sid("ses_00000001"),
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000004", 80.0, h.clock.now + 4));
+  h.door.append(h.user, sid("ses_00000001"),
                     SetWrite{setId("set_00000005"), ExerciseId{"back-squat"}, 100.0, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 5});
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 6);
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 6);
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
 
@@ -1095,14 +1095,14 @@ TEST(last_time_steps_over_a_session_that_only_warmed_this_movement_up) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   AppendOutcome worked =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
   h.clock.now += 10'000;
   h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"),
+  h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000002"), ExerciseId{"bench-press"}, 40.0, 10,
                              SetKind::warmup, std::nullopt, "", h.clock.now + 1});
-  h.training.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
+  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
 
@@ -1118,14 +1118,14 @@ TEST(last_time_never_reaches_into_another_accounts_log) {
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
   AppendOutcome mine =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
-  h.training.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now + 10});
-  AppendOutcome stranger = h.training.append(
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
+  h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now + 10});
+  AppendOutcome stranger = h.door.append(
       h.other, sid("ses_00000009"),
       SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 142.5, 3, SetKind::working,
                std::nullopt, "", h.clock.now + 20});
-  h.training.finish(h.other, sid("ses_00000009"), h.clock.now + 30);
+  h.door.finish(h.other, sid("ses_00000009"), h.clock.now + 30);
 
   LastTimeOutcome ours = h.training.lastTime(h.user, ExerciseId{"bench-press"});
   LastTimeOutcome theirs = h.training.lastTime(h.other, ExerciseId{"bench-press"});
@@ -1147,9 +1147,9 @@ TEST(last_time_of_a_first_ever_movement_is_a_fact_and_of_an_unknown_one_is_a_fau
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.training.finish(h.user, sid(), h.clock.now + 2);
-  h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"landmine-press"}, "Landmine Press",
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.door.finish(h.user, sid(), h.clock.now + 2);
+  h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"landmine-press"}, "Landmine Press",
                                                   Pattern::press, Equipment::barbell, 2.5});
 
   LastTimeOutcome firstEver = h.training.lastTime(h.user, ExerciseId{"back-squat"});
@@ -1171,17 +1171,17 @@ TEST(last_time_never_closes_the_session_the_lifter_is_in) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
   AppendOutcome lastWeek =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, started + 1));
-  h.training.finish(h.user, sid("ses_00000001"), started + 2);
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, started + 1));
+  h.door.finish(h.user, sid("ses_00000001"), started + 2);
   const std::uint64_t liveSetAt = started + 4;
   h.clock.now = started + 3;
   h.startAt(h.clock.now, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 100.0, liveSetAt));
+  h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 100.0, liveSetAt));
   h.clock.now = liveSetAt + kAutoCloseMs;   // the live workout now reads as idle past the window
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
   AppendOutcome next =
-      h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 102.5, h.clock.now + 1));
+      h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000003", 102.5, h.clock.now + 1));
 
   REQUIRE(last.lastTime.has_value());
   REQUIRE(lastWeek.set.has_value());
@@ -1201,14 +1201,14 @@ TEST(last_time_sees_a_stale_session_once_the_log_read_has_settled_it) {
   const std::uint64_t started = h.clock.now;
   h.startAt(started, "ses_00000001");
   AppendOutcome older =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 1));
-  h.training.finish(h.user, sid("ses_00000001"), started + 2);
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 80.0, started + 1));
+  h.door.finish(h.user, sid("ses_00000001"), started + 2);
   const std::uint64_t abandonedStart = started + 10'000;
   const std::uint64_t abandonedSetAt = abandonedStart + 1;
   h.clock.now = abandonedStart;
   h.startAt(abandonedStart, "ses_00000002");
   AppendOutcome abandoned =
-      h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 82.5, abandonedSetAt));
+      h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 82.5, abandonedSetAt));
   h.clock.now = abandonedSetAt + kAutoCloseMs;
 
   LastTimeOutcome beforeTheLogRead = h.training.lastTime(h.user, ExerciseId{"bench-press"});
@@ -1234,13 +1234,13 @@ TEST(last_time_is_the_newest_session_even_when_an_older_one_holds_a_future_stamp
   const std::uint64_t day = 86'400'000;
   const std::uint64_t weekAgo = h.clock.now;
   h.startAt(weekAgo, "ses_00000001");
-  h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
-  h.training.finish(h.user, sid("ses_00000001"), weekAgo + 1'000);
+  h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 60.0, weekAgo + 30 * day));
+  h.door.finish(h.user, sid("ses_00000001"), weekAgo + 1'000);
   h.clock.now = weekAgo + 7 * day;
   h.startAt(h.clock.now, "ses_00000002");
   AppendOutcome yesterday =
-      h.training.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 100.0, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
+      h.door.append(h.user, sid("ses_00000002"), h.bench("set_00000002", 100.0, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000002"), h.clock.now + 2);
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"bench-press"});
   std::vector<LogRow> listed = h.logBefore(h.clock.now + 10'000);
@@ -1260,8 +1260,8 @@ TEST(last_time_names_the_routine_the_session_was_trained_under_not_the_one_store
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   AppendOutcome landed =
-      h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
+      h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 2);
   Json::Value renamed(Json::objectValue);
   renamed["name"] = "Bench day";
 
@@ -1313,7 +1313,7 @@ TEST(a_routine_line_with_no_rep_target_survives_the_write_and_the_freeze) {
   CHECK(created.error == RoutineWriteError::none);
   REQUIRE(created.routine.has_value());
   CHECK_EQ(created.routine->entries[0].sets, straight(3, std::nullopt, std::nullopt));
-  std::optional<Routine> stored = h.program.routine(h.user, rtId());
+  std::optional<Routine> stored = h.repo.program.routine(h.user, rtId());
   REQUIRE(stored.has_value());
   CHECK_EQ(stored->entries[0].sets, straight(3, std::nullopt, std::nullopt));
   CHECK(started.error == StartError::none);
@@ -1348,7 +1348,7 @@ TEST(start_from_a_routine_holding_a_ramp_freezes_the_ramp_set_for_set) {
 TEST(start_naming_a_routine_this_account_cannot_read_is_refused) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.program.createRoutine(h.other, h.pushAWrite({benchEntry()}, "rt_00000002", "Their plan"), std::nullopt);
+  h.door.createRoutine(h.other, h.pushAWrite({benchEntry()}, "rt_00000002", "Their plan"), std::nullopt);
 
   StartOutcome unknown = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
   StartOutcome theirs = h.startFrom(h.clock.now, "ses_00000001", "rt_00000002");
@@ -1386,7 +1386,7 @@ TEST(start_replay_keeps_the_plan_the_session_was_started_under) {
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   h.create(h.pushAWrite({benchEntry()}, "rt_00000002", "Legs"));
   StartOutcome first = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 1);
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 1);
 
   StartOutcome replayed = h.startFrom(h.clock.now, "ses_00000001", "rt_00000002");
 
@@ -1427,12 +1427,12 @@ TEST(start_resolves_its_own_id_before_it_ever_looks_at_a_routine) {
   Harness h;
   h.create(h.pushAWrite({benchEntry()}, "rt_00000001", "Push A"));
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 1);
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 1);
   h.startFrom(h.clock.now + 10, "ses_00000002", "rt_00000001");   // and this one stays open
   h.kill(h.user, "routine", "rt_00000001");
 
   StartOutcome finishedReplay = h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  StartOutcome willNotJoin = h.training.start(
+  StartOutcome willNotJoin = h.door.start(
       h.user, SessionStart{sid("ses_00000003"), h.clock.now + 20, false, rtId("rt_00000001")});
 
   const PlanSnapshot pushA{"Push A", {PlanEntry{ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180}}};
@@ -1449,8 +1449,8 @@ TEST(start_resolves_its_own_id_before_it_ever_looks_at_a_routine) {
 TEST(review_of_a_missing_or_anothers_session_is_the_same_absence) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now - 3'600'000});
-  h.training.finish(h.other, sid("ses_00000002"), h.clock.now);
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now - 3'600'000});
+  h.door.finish(h.other, sid("ses_00000002"), h.clock.now);
 
   CHECK_EQ(h.training.review(h.user, sid("ses_00000001")), std::optional<Review>());
   CHECK_EQ(h.training.review(h.user, sid("ses_00000002")), std::optional<Review>());
@@ -1518,9 +1518,9 @@ TEST(discard_refuses_a_session_that_is_still_running) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 1));
 
-  DiscardOutcome refused = h.training.discard(h.user, sid());
+  DiscardOutcome refused = h.door.discard(h.user, sid());
 
   CHECK(refused == DiscardOutcome::open);
   CHECK_EQ(h.sessions(), std::vector<Session>{Session(sid(), h.user, h.clock.now)});
@@ -1533,8 +1533,8 @@ TEST(discard_takes_the_session_and_its_sets_and_asking_twice_is_the_same_fact) {
   Harness h;
   h.trained("ses_00000001", h.clock.now - 3'600'000, 100, 5, 4);
 
-  DiscardOutcome first = h.training.discard(h.user, sid("ses_00000001"));
-  DiscardOutcome again = h.training.discard(h.user, sid("ses_00000001"));
+  DiscardOutcome first = h.door.discard(h.user, sid("ses_00000001"));
+  DiscardOutcome again = h.door.discard(h.user, sid("ses_00000001"));
 
   CHECK(first == DiscardOutcome::done);
   CHECK(again == DiscardOutcome::notFound);
@@ -1545,10 +1545,10 @@ TEST(discard_takes_the_session_and_its_sets_and_asking_twice_is_the_same_fact) {
 TEST(discard_never_reaches_another_accounts_session) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now - 3'600'000});
-  h.training.finish(h.other, sid("ses_00000002"), h.clock.now);
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now - 3'600'000});
+  h.door.finish(h.other, sid("ses_00000002"), h.clock.now);
 
-  DiscardOutcome theirs = h.training.discard(h.user, sid("ses_00000002"));
+  DiscardOutcome theirs = h.door.discard(h.user, sid("ses_00000002"));
 
   CHECK(theirs == DiscardOutcome::notFound);   // absent and forbidden are one answer
   CHECK_EQ(h.sessions(), std::vector<Session>{Session(sid("ses_00000002"), h.other, h.clock.now - 3'600'000,
@@ -1562,7 +1562,7 @@ TEST(statistics_draws_a_point_per_finished_session_and_leaves_the_open_one_out) 
   h.trained("ses_00000001", h.clock.now - 2 * kWeek, 100, 5, 4);
   h.trained("ses_00000002", h.clock.now - kWeek, 105, 5, 4);
   h.startAt(h.clock.now, "ses_00000003");   // today's workout, still being logged into
-  h.training.append(h.user, sid("ses_00000003"),
+  h.door.append(h.user, sid("ses_00000003"),
                     SetWrite{setId("set_99999999"), ExerciseId{"back-squat"}, 110, 5,
                              SetKind::working, std::nullopt, "", h.clock.now + 60'000});
 
@@ -1581,7 +1581,7 @@ TEST(statistics_settles_a_session_the_four_hour_rule_already_ended) {
   Harness h;
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.startAt(began, "ses_00000001");
-  h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
+  h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 82.5, began + 60'000));
 
   Statistics answer = h.training.statistics(h.user);
 
@@ -1594,7 +1594,7 @@ TEST(statistics_settles_a_session_the_four_hour_rule_already_ended) {
 TEST(statistics_never_reaches_another_accounts_log) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.importSession(h.other, SessionImport{sid("ses_00000002"), h.clock.now - kWeek,
+  h.door.importSession(h.other, SessionImport{sid("ses_00000002"), h.clock.now - kWeek,
                                                   h.clock.now - kWeek + 3'600'000, std::nullopt,
                                                   {SetWrite{setId("set_00000002"), ExerciseId{"back-squat"}, 200,
                                                             5, SetKind::working, std::nullopt, "",
@@ -1612,17 +1612,17 @@ TEST(progress_settles_stale_work_and_reads_only_finished_working_sessions_for_th
   CHECK_EQ(h.training.progress(h.other), (StatsProgress{h.clock.now, {}}));
   const std::uint64_t began = h.clock.now - 6 * 3'600'000;
   h.startExactly(began - 2'000, "ses_00000003");
-  h.training.finish(h.user, sid("ses_00000003"), began);
+  h.door.finish(h.user, sid("ses_00000003"), began);
   h.startExactly(began - 1'000, "ses_00000002");
-  h.training.append(h.user, sid("ses_00000002"), SetWrite{setId("set_00000002"), ExerciseId{"bench-press"},
+  h.door.append(h.user, sid("ses_00000002"), SetWrite{setId("set_00000002"), ExerciseId{"bench-press"},
                                                           100, 8, SetKind::warmup, std::nullopt, "", began});
-  h.training.finish(h.user, sid("ses_00000002"), began);
-  h.training.start(h.other, SessionStart{sid("ses_00000004"), began});
-  h.training.append(h.other, sid("ses_00000004"), SetWrite{setId("set_00000004"), ExerciseId{"bench-press"},
+  h.door.finish(h.user, sid("ses_00000002"), began);
+  h.door.start(h.other, SessionStart{sid("ses_00000004"), began});
+  h.door.append(h.other, sid("ses_00000004"), SetWrite{setId("set_00000004"), ExerciseId{"bench-press"},
                                                            200, 8, SetKind::working, 8, "", began + 60'000});
-  h.training.finish(h.other, sid("ses_00000004"), began + 60'000);
+  h.door.finish(h.other, sid("ses_00000004"), began + 60'000);
   h.startAt(began, "ses_00000001");
-  REQUIRE(h.training.append(h.user, sid("ses_00000001"),
+  REQUIRE(h.door.append(h.user, sid("ses_00000001"),
       SetWrite{setId("set_00000001"), ExerciseId{"bench-press"}, -10, 8,
                SetKind::working, std::nullopt, "", began + 60'000}).set);
 
@@ -1665,10 +1665,10 @@ TEST(progress_omits_a_current_workout_until_finish) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now, "ses_00000001");
-  REQUIRE(h.training.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 90, h.clock.now)).set);
+  REQUIRE(h.door.append(h.user, sid("ses_00000001"), h.bench("set_00000001", 90, h.clock.now)).set);
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {}}));
 
-  h.training.finish(h.user, sid("ses_00000001"), h.clock.now + 1'000);
+  h.door.finish(h.user, sid("ses_00000001"), h.clock.now + 1'000);
   CHECK_EQ(h.training.progress(h.user), (StatsProgress{h.clock.now, {
       {sid("ses_00000001"), h.clock.now, {{ExerciseId{"bench-press"}, 1,
           {setId("set_00000001"), 90, 8, std::nullopt},
@@ -1694,8 +1694,8 @@ TEST(share_is_idempotent_on_the_session) {
 TEST(share_of_an_absent_or_another_accounts_session_is_one_answer) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
-  h.training.finish(h.other, sid("ses_00000002"), h.clock.now + 1);
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
+  h.door.finish(h.other, sid("ses_00000002"), h.clock.now + 1);
 
   CHECK_FALSE(h.training.share(h.user, sid("ses_00000009")));
   CHECK_FALSE(h.training.share(h.user, sid("ses_00000002")));
@@ -1785,8 +1785,8 @@ TEST(shared_session_never_settles_the_owners_open_session) {
 TEST(revoke_never_reaches_another_accounts_share) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
-  h.training.finish(h.other, sid("ses_00000002"), h.clock.now + 1);
+  h.door.start(h.other, SessionStart{sid("ses_00000002"), h.clock.now});
+  h.door.finish(h.other, sid("ses_00000002"), h.clock.now + 1);
   std::optional<SessionShare> theirs = h.training.share(h.other, sid("ses_00000002"));
   REQUIRE(theirs);
 
@@ -1907,7 +1907,7 @@ TEST(a_fix_rewrites_the_stored_set_and_keeps_the_version_it_replaced) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
   Json::Value fix(Json::objectValue);
   fix["weightKg"] = 80.0;
   fix["reps"] = 5;
@@ -1926,9 +1926,9 @@ TEST(a_fix_never_reaches_another_accounts_set) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.training.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
-  h.training.append(h.other, sid("ses_00000009"),
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
+  h.door.append(h.other, sid("ses_00000009"),
                     SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3, SetKind::working,
                              std::nullopt, "", h.clock.now});
   Json::Value fix(Json::objectValue);
@@ -1950,8 +1950,8 @@ TEST(a_deleted_set_leaves_the_log_and_is_kept_marked_deleted) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.training.append(h.user, sid(), h.bench("set_00000002", 85.0, h.clock.now + 120'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000002", 85.0, h.clock.now + 120'000));
 
   h.kill(h.user, "set", "set_00000001");
 
@@ -1967,9 +1967,9 @@ TEST(deleting_a_set_twice_is_the_same_silence_and_reaches_nobody_elses) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.training.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
-  h.training.append(h.other, sid("ses_00000009"),
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.door.start(h.other, SessionStart{sid("ses_00000009"), h.clock.now});
+  h.door.append(h.other, sid("ses_00000009"),
                     SetWrite{setId("set_00000009"), ExerciseId{"bench-press"}, 100.0, 3, SetKind::working,
                              std::nullopt, "", h.clock.now});
 
@@ -1990,12 +1990,12 @@ TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
   h.kill(h.user, "set", "set_00000002");
 
   AppendOutcome replayed =
-      h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+      h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
 
   const Set standing(setId("set_00000001"), sid(), ExerciseId{"bench-press"}, 1, 80.0, 8, SetKind::working,
                      std::nullopt, "", h.clock.now + 60'000);
@@ -2006,8 +2006,8 @@ TEST(a_deleted_set_is_never_logged_again_by_the_queue_that_replays_it) {
                                                 82.5, 8, SetKind::working, std::nullopt, "",
                                                 h.clock.now + 120'000),
                                             true}}));
-  h.training.finish(h.user, sid(), h.clock.now + 300'000);
-  CHECK(h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000)).error ==
+  h.door.finish(h.user, sid(), h.clock.now + 300'000);
+  CHECK(h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000)).error ==
         AppendError::deleted);
   CHECK_EQ(h.sets(), std::vector<Set>{standing});
 }
@@ -2017,12 +2017,12 @@ TEST(a_delete_leaves_the_numbers_alone_and_the_next_set_never_reuses_one) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
   h.startAt(h.clock.now);
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
-  h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
-  h.training.append(h.user, sid(), h.bench("set_00000003", 85.0, h.clock.now + 180'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  h.door.append(h.user, sid(), h.bench("set_00000003", 85.0, h.clock.now + 180'000));
 
   h.kill(h.user, "set", "set_00000002");
-  AppendOutcome next = h.training.append(h.user, sid(), h.bench("set_00000004", 87.5,
+  AppendOutcome next = h.door.append(h.user, sid(), h.bench("set_00000004", 87.5,
                                                                 h.clock.now + 240'000));
 
   REQUIRE(next.set.has_value());
@@ -2041,9 +2041,9 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
   Harness h;
   h.create(h.pushAWrite());
   h.startFrom(h.clock.now, "ses_00000001", "rt_00000001");
-  h.training.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
-  h.training.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
-  const std::optional<Routine> planned = h.program.routine(h.user, rtId());
+  h.door.append(h.user, sid(), h.bench("set_00000001", 82.5, h.clock.now + 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000002", 82.5, h.clock.now + 120'000));
+  const std::optional<Routine> planned = h.repo.program.routine(h.user, rtId());
   REQUIRE(planned.has_value());
   Json::Value fix(Json::objectValue);
   fix["weightKg"] = 60.0;
@@ -2056,7 +2056,7 @@ TEST(fixing_and_deleting_a_set_never_touch_the_frozen_plan_or_the_routine) {
            std::optional<Session>(Session(sid(), h.user, h.clock.now, std::nullopt, rtId(),
                                           PlanSnapshot{"Push A", {PlanEntry{ExerciseId{"bench-press"},
                                                                             straight(5, 5, 82.5), 180}}})));
-  CHECK_EQ(h.program.routine(h.user, rtId()), planned);
+  CHECK_EQ(h.repo.program.routine(h.user, rtId()), planned);
   CHECK_EQ(planned->name, std::string("Push A"));
 }
 
@@ -2069,15 +2069,15 @@ TEST(a_correction_moves_the_record_and_every_read_that_stands_on_it) {
   h.clock.now = week1;  // a week on, the second squat day starts under a clock that agrees
   h.startAt(week1, "ses_00000002");
   for (int number = 1; number <= 3; ++number)
-    h.training.append(h.user, sid("ses_00000002"),
+    h.door.append(h.user, sid("ses_00000002"),
                       SetWrite{setId("set_0000002" + std::to_string(number)),
                                ExerciseId{"back-squat"}, 100, 5, SetKind::working, std::nullopt, "",
                                week1 + static_cast<std::uint64_t>(number) * 60'000});
-  h.training.append(h.user, sid("ses_00000002"),
+  h.door.append(h.user, sid("ses_00000002"),
                     SetWrite{setId("set_00000024"), ExerciseId{"back-squat"}, 120, 5,
                              SetKind::working, std::nullopt, "", week1 + 240'000});
   h.clock.now = week1 + 3'600'000;   // the lifter taps finish an hour in, and corrects the workout after
-  h.training.finish(h.user, sid("ses_00000002"), week1 + 3'600'000);
+  h.door.finish(h.user, sid("ses_00000002"), week1 + 3'600'000);
   const std::optional<Review> before = h.training.review(h.user, sid("ses_00000002"));
   REQUIRE(before.has_value());
   REQUIRE(before->record.has_value());   // 120 kg, the PR
@@ -2146,10 +2146,10 @@ TEST(import_settles_a_walked_away_session_first_so_its_span_is_in_the_way) {
   Harness h;
   const std::uint64_t startedAt = h.clock.now;
   h.startAt(startedAt, "ses_00000001");
-  h.training.append(h.user, sid(), h.bench("set_00000001", 80.0, startedAt + 30 * 60'000));
+  h.door.append(h.user, sid(), h.bench("set_00000001", 80.0, startedAt + 30 * 60'000));
   h.clock.now = startedAt + 30 * 60'000 + kAutoCloseMs;
 
-  const BatchLogOutcome crossing = h.training.importSession(
+  const BatchLogOutcome crossing = h.door.importSession(
       h.user, SessionImport{sid("ses_00000002"), startedAt + 10 * 60'000, startedAt + 20 * 60'000,
                             std::nullopt, {h.bench("set_00000002", 60.0, startedAt + 15 * 60'000)}});
 

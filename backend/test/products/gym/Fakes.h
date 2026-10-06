@@ -1173,11 +1173,11 @@ struct ReadOnlyDoor : GymWriteDoor {
   BatchLogOutcome importSession(const UserId&, const SessionImport&) override { refuse(); }
   FinishOutcome finish(const UserId&, const SessionId&, std::uint64_t) override { refuse(); }
   DiscardOutcome discard(const UserId&, const SessionId&) override { refuse(); }
-  RoutineWriteOutcome createRoutine(const Routine&, std::optional<ProposalDoor>) override { refuse(); }
+  RoutineWriteOutcome createRoutine(const UserId&, const RoutineWrite&, std::optional<ProposalDoor>) override { refuse(); }
   ProposalMintOutcome propose(const UserId&, const ProposalWrite&) override { refuse(); }
   ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&, const std::string&,
                                      const ProposalSource&) override { refuse(); }
-  ExerciseInsertOutcome createExercise(const UserId&, const Exercise&) override { refuse(); }
+  ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) override { refuse(); }
   NoteWriteOutcome saveInsight(const Note&) override { refuse(); }
 };
 

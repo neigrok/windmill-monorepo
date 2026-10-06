@@ -388,9 +388,9 @@ TEST(gym_training_a_settling_read_writes_only_a_real_stale_close) {
   readEverything();
   CHECK_EQ(lines, std::vector<std::string>{});
 
-  REQUIRE(h.training.start(h.user, startAt("session_quiet1", at)).session);
+  REQUIRE(h.door.start(h.user, startAt("session_quiet1", at)).session);
   h.clock.now = at + 60'000;
-  REQUIRE(h.training.append(h.user, SessionId{"session_quiet1"}, setAt("set_quiet0001", at + 60'000)).set);
+  REQUIRE(h.door.append(h.user, SessionId{"session_quiet1"}, setAt("set_quiet0001", at + 60'000)).set);
   h.clock.now = at + 60'000 + kAutoCloseMs - 1;
   lines.clear();
   readEverything();
@@ -415,7 +415,7 @@ TEST(gym_training_engine_stale_settle_is_a_command) {
   if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
   Harness h;
   const auto at = h.clock.now;
-  REQUIRE(h.training.start(h.user, startAt("session_stale1", at)).session);
+  REQUIRE(h.door.start(h.user, startAt("session_stale1", at)).session);
   h.clock.now += kAutoCloseMs;
   CHECK(!h.training.openSession(h.user));
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"session_stale1"}),

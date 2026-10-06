@@ -100,7 +100,7 @@ TEST(gym_a_set_with_no_rep_target_omits_it_in_and_out) {
   body["entries"] = Json::Value(Json::arrayValue);
   body["entries"].append(dip);
   REQUIRE(!h.call("create_routine", body).isError);
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")})
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")})
               .session);
 
   drogon::HttpResponsePtr routine =
@@ -137,7 +137,7 @@ TEST(gym_a_routine_saves_with_an_open_line_and_the_plan_freezes_it_open) {
   open["exerciseId"] = "dip";
   body["entries"].append(open);
   REQUIRE(!h.call("create_routine", body).isError);
-  REQUIRE(h.training.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")})
+  REQUIRE(h.door.start(h.user, SessionStart{sid("ses_11111111"), 1'700'000'000'000, true, rtId("rt_11111111")})
               .session);
 
   drogon::HttpResponsePtr routine =
@@ -241,13 +241,13 @@ TEST(gym_a_proposal_reads_as_a_typed_row_level_diff) {
 TEST(gym_a_proposal_moving_one_set_of_a_ramp_is_one_row_carrying_both_whole_schemes) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.user,
+  REQUIRE_EQ(h.door.createRoutine(h.user,
                                      RoutineWrite{rtId("rt_11111111"), "Lower A", 0,
                                                   {RoutineEntry{1, ExerciseId{"back-squat"}, ramp(), 180}}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   std::vector<SetTarget> heavier = ramp();
   heavier[3] = SetTarget{1, 102.5};
-  const ProposalMintOutcome minted = h.program.propose(
+  const ProposalMintOutcome minted = h.door.propose(
       h.user, ProposalWrite{ProposalId{"prop_11111111"}, rtId("rt_11111111"), std::nullopt,
                             "A heavier single.",
                             {RoutineEntry{1, ExerciseId{"back-squat"}, heavier, 180}},
@@ -278,9 +278,9 @@ TEST(gym_a_proposal_moving_one_set_of_a_ramp_is_one_row_carrying_both_whole_sche
 TEST(gym_a_routine_the_lifter_rewrote_refuses_the_proposal_that_predates_it) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   DoorApis h;
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, {benchEntry()}},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
-  REQUIRE(h.program.propose(h.user, ProposalWrite{ProposalId{"prop_11111111"}, rtId("rt_11111111"), std::nullopt,
+  REQUIRE(h.door.propose(h.user, ProposalWrite{ProposalId{"prop_11111111"}, rtId("rt_11111111"), std::nullopt,
                                                   "Heavier triples.", {benchAt(87.5, 3)},
                                                   ProposalSource{ProposalDoor::mcp, "", ""}})
               .error == ProposalMintError::none);
@@ -365,14 +365,14 @@ TEST(gym_change_count_is_rows_that_are_not_kept_plus_a_rename_never_fields) {
       RoutineEntry{1, ExerciseId{"bench-press"}, straight(5, 5, 82.5), 180},
       RoutineEntry{2, ExerciseId{"back-squat"}, straight(3, 8, 100.0), 240},
       RoutineEntry{3, ExerciseId{"dip"}, straight(3, std::nullopt, std::nullopt), 120}};
-  REQUIRE_EQ(h.program.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, base},
+  REQUIRE_EQ(h.door.createRoutine(h.user, RoutineWrite{rtId("rt_11111111"), "Push A", 0, base},
                                      ProposalDoor::mcp).error, RoutineWriteError::none);
   // One row moving its whole scheme and its rest, two kept, and a rename.
   const std::vector<RoutineEntry> proposed{
       RoutineEntry{1, ExerciseId{"bench-press"}, straight(5, 3, 90.0), 240},
       RoutineEntry{2, ExerciseId{"back-squat"}, straight(3, 8, 100.0), 240},
       RoutineEntry{3, ExerciseId{"dip"}, straight(3, std::nullopt, std::nullopt), 120}};
-  const ProposalMintOutcome minted = h.program.propose(
+  const ProposalMintOutcome minted = h.door.propose(
       h.user, ProposalWrite{ProposalId{"prop_11111111"}, rtId("rt_11111111"), "Push A — heavy",
                             "Heavier triples.", proposed,
                             ProposalSource{ProposalDoor::mcp, "", ""}});
@@ -395,7 +395,7 @@ TEST(gym_change_count_is_rows_that_are_not_kept_plus_a_rename_never_fields) {
   CHECK_EQ(heads["proposals"][0]["changeCount"].asInt(), whole["changeCount"].asInt());
 
   // The same document with no rename: the moved scheme and rest are still ONE change.
-  const ProposalMintOutcome fieldsOnly = h.program.propose(
+  const ProposalMintOutcome fieldsOnly = h.door.propose(
       h.user, ProposalWrite{ProposalId{"prop_22222222"}, rtId("rt_11111111"), std::nullopt,
                             "Heavier triples.", proposed,
                             ProposalSource{ProposalDoor::mcp, "", ""}});
@@ -419,7 +419,7 @@ TEST(gym_change_count_is_rows_that_are_not_kept_plus_a_rename_never_fields) {
       RoutineEntry{2, ExerciseId{"dip"}, straight(3, std::nullopt, std::nullopt), 120},
       RoutineEntry{3, ExerciseId{"back-squat"}, straight(3, 8, 100.0), 240},
       RoutineEntry{4, ExerciseId{"bench-press"}, straight(3, 10, 60.0), 90}};
-  const ProposalMintOutcome addedOne = h.program.propose(
+  const ProposalMintOutcome addedOne = h.door.propose(
       h.user, ProposalWrite{ProposalId{"prop_33333333"}, rtId("rt_11111111"), std::nullopt,
                             "A second bench line.", reshaped,
                             ProposalSource{ProposalDoor::mcp, "", ""}});

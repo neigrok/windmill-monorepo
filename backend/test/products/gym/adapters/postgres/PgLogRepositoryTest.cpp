@@ -42,13 +42,13 @@ SetWrite squat(const std::string& id, double weightKg, int reps, std::uint64_t c
 Session started(Harness& h, const UserId& user, const std::string& id, std::uint64_t atMs,
                 std::optional<RoutineId> routine = std::nullopt) {
   h.clock.now = std::max(h.clock.now, atMs);
-  const StartOutcome outcome = h.training.start(user, SessionStart{SessionId{id}, atMs, false, routine});
+  const StartOutcome outcome = h.door.start(user, SessionStart{SessionId{id}, atMs, false, routine});
   if (!outcome.session) throw std::runtime_error("the door started no " + id);
   return *outcome.session;
 }
 
 Set logged(Harness& h, const UserId& user, const std::string& session, const SetWrite& set) {
-  const AppendOutcome outcome = h.training.append(user, SessionId{session}, set);
+  const AppendOutcome outcome = h.door.append(user, SessionId{session}, set);
   if (!outcome.set) throw std::runtime_error("the door logged no " + set.id.str());
   return *outcome.set;
 }
@@ -56,7 +56,7 @@ Set logged(Harness& h, const UserId& user, const std::string& session, const Set
 // A finish the lifter makes at `atMs`: the clock stands there too, as the door lands a later finish at its own now.
 Session finished(Harness& h, const UserId& user, const std::string& session, std::uint64_t atMs) {
   h.clock.now = std::max(h.clock.now, atMs);
-  const FinishOutcome outcome = h.training.finish(user, SessionId{session}, atMs);
+  const FinishOutcome outcome = h.door.finish(user, SessionId{session}, atMs);
   if (!outcome.session) throw std::runtime_error("the door finished no " + session);
   return *outcome.session;
 }
@@ -73,14 +73,14 @@ RoutineEntry entryAt(int position, const std::string& exercise) {
 // The lifter's own routine, which a start freezes as its plan.
 Routine planned(Harness& h, const std::string& id, const std::string& name, std::vector<RoutineEntry> entries) {
   const RoutineWriteOutcome outcome =
-      h.program.createRoutine(h.user, RoutineWrite{RoutineId{id}, name, 0, std::move(entries)}, std::nullopt);
+      h.door.createRoutine(h.user, RoutineWrite{RoutineId{id}, name, 0, std::move(entries)}, std::nullopt);
   if (!outcome.routine) throw std::runtime_error("the door planned no " + id);
   return *outcome.routine;
 }
 
 void movement(Harness& h, const UserId& user, const std::string& id, const std::string& name) {
   const ExerciseInsertOutcome outcome =
-      h.catalog.createExercise(user, ExerciseWrite{ExerciseId{id}, name, Pattern::squat, Equipment::barbell, 2.5});
+      h.door.createExercise(user, ExerciseWrite{ExerciseId{id}, name, Pattern::squat, Equipment::barbell, 2.5});
   if (!outcome.exercise) throw std::runtime_error("the door created no " + id);
 }
 
@@ -124,8 +124,8 @@ TEST(pg_gym_session_lifecycle_start_is_idempotent_and_one_open_holds) {
   CHECK_EQ(h.repo.log.open(h.user), std::optional<Session>(open));
 
   // The replay answers with the session it started; a second id is refused while one is open, and lands nowhere.
-  CHECK_EQ(h.training.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false}).session, std::optional<Session>(open));
-  CHECK_EQ(h.training.start(h.user, SessionStart{SessionId{"ses_pg000002"}, t1 + 5, false}).error, StartError::alreadyOpen);
+  CHECK_EQ(h.door.start(h.user, SessionStart{SessionId{"ses_pg000001"}, t1, false}).session, std::optional<Session>(open));
+  CHECK_EQ(h.door.start(h.user, SessionStart{SessionId{"ses_pg000002"}, t1 + 5, false}).error, StartError::alreadyOpen);
   CHECK_EQ(h.repo.log.open(h.user), std::optional<Session>(open));
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"ses_pg000002"}), std::optional<Session>());
 
@@ -209,7 +209,7 @@ TEST(pg_gym_progress_preserves_tied_session_identity_and_current_corrections_and
   h.kill(h.user, "set", "set_pg000001");
   expected.erase(expected.begin());
   CHECK_EQ(h.repo.log.progressHistory(h.user), expected);
-  REQUIRE_EQ(h.training.discard(h.user, SessionId{"ses_pg000002"}), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, SessionId{"ses_pg000002"}), DiscardOutcome::done);
   CHECK_EQ(h.repo.log.progressHistory(h.user), std::vector<ProgressSet>{});
 }
 
@@ -230,7 +230,7 @@ TEST(pg_gym_progress_has_no_session_or_age_cap_and_keeps_each_raw_set) {
       expected.push_back(ProgressSet{SessionId{session}, start, ExerciseId{"bench-press"},
           PerformedFact{SetId{set}, weightKg, 1, std::nullopt}});
     }
-    REQUIRE_EQ(h.training.importSession(h.user, SessionImport{SessionId{session}, start, start + 60'000, std::nullopt, sets}).error,
+    REQUIRE_EQ(h.door.importSession(h.user, SessionImport{SessionId{session}, start, start + 60'000, std::nullopt, sets}).error,
                BatchLogError::none);
   }
 
@@ -257,7 +257,7 @@ TEST(pg_gym_set_write_numbers_max_plus_one_and_replay_returns_stored) {
                        SetKind::working, std::nullopt, "", t1 + 3'000));
 
   // A replay with a drifted weight is handed the ORIGINAL stored row, byte-for-byte.
-  const AppendOutcome replayed = h.training.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000001", 90.0, t1 + 99'000));
+  const AppendOutcome replayed = h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000001", 90.0, t1 + 99'000));
   CHECK(replayed.error == AppendError::none);
   CHECK_EQ(replayed.set, std::optional<Set>(bench1));
 
@@ -279,7 +279,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
                "knee felt off, deload next week", t1 + 1'000});
 
   // Another account mints the same id into ITS own session.
-  const AppendOutcome theirs = h.training.append(h.other, SessionId{"ses_pg000002"},
+  const AppendOutcome theirs = h.door.append(h.other, SessionId{"ses_pg000002"},
       lift("set_pg000001", "lateral-raise", 7.5, 15, t1 + 2'000));
 
   CHECK(theirs.error == AppendError::idTaken);
@@ -290,7 +290,7 @@ TEST(pg_gym_a_set_id_spent_in_another_session_resolves_to_nothing) {
   // The same lifter reusing one of their own spent ids in a later session: the same refusal.
   finished(h, h.user, "ses_pg000001", t1 + 3'000);
   started(h, h.user, "ses_pg000003", t1 + 4'000);
-  const AppendOutcome reused = h.training.append(h.user, SessionId{"ses_pg000003"},
+  const AppendOutcome reused = h.door.append(h.user, SessionId{"ses_pg000003"},
       lift("set_pg000001", "back-squat", 222.5, 9, t1 + 5'000));
 
   CHECK(reused.error == AppendError::idTaken);
@@ -307,7 +307,7 @@ TEST(pg_gym_a_set_naming_a_movement_no_catalog_holds_is_refused_as_a_value) {
   started(h, h.user, "ses_pg000001", t1);
   const Set landed = logged(h, h.user, "ses_pg000001", bench("set_pg000001", 82.5, t1 + 1'000));
 
-  const AppendOutcome unknown = h.training.append(h.user, SessionId{"ses_pg000001"},
+  const AppendOutcome unknown = h.door.append(h.user, SessionId{"ses_pg000001"},
       lift("set_pg000002", "pg-no-such-movement", 60.0, 5, t1 + 2'000));
 
   CHECK(unknown.error == AppendError::unknownExercise);
@@ -327,7 +327,7 @@ TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
   movement(h, h.other, "pg-their-zercher", "Their Zercher Squat");
   started(h, h.user, "ses_pg000001", t1);
 
-  const AppendOutcome refused = h.training.append(h.user, SessionId{"ses_pg000001"},
+  const AppendOutcome refused = h.door.append(h.user, SessionId{"ses_pg000001"},
       lift("set_pg000001", "pg-their-zercher", 60.0, 5, t1 + 1'000));
 
   CHECK(refused.error == AppendError::unknownExercise);
@@ -335,7 +335,7 @@ TEST(pg_gym_a_set_may_not_name_another_accounts_private_movement) {
   CHECK_EQ(h.repo.log.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
   // It is a scope and never a claim the movement does not exist: its owner logs it as normal.
   started(h, h.other, "ses_pg000002", t1);
-  CHECK(h.training.append(h.other, SessionId{"ses_pg000002"},
+  CHECK(h.door.append(h.other, SessionId{"ses_pg000002"},
                           lift("set_pg000002", "pg-their-zercher", 60.0, 5, t1 + 1'000)).error == AppendError::none);
 }
 
@@ -352,8 +352,8 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
            std::optional<Session>(Session{SessionId{"ses_pg000001"}, h.user, t1, t1 + 1'000, std::nullopt,
                                           std::nullopt, ClosedBy::stale}));
 
-  const AppendOutcome owed = h.training.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 85.0, t1 + 600'000));
-  const AppendOutcome tomorrow = h.training.append(h.user, SessionId{"ses_pg000001"},
+  const AppendOutcome owed = h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 85.0, t1 + 600'000));
+  const AppendOutcome tomorrow = h.door.append(h.user, SessionId{"ses_pg000001"},
       bench("set_pg000003", 60.0, t1 + 600'000 + kAutoCloseMs + 1));
 
   CHECK(owed.error == AppendError::none);
@@ -379,7 +379,7 @@ TEST(pg_gym_a_late_set_continues_a_stale_close_and_never_a_finish) {
   started(h, h.user, "ses_pg000002", t1 + 900'000);
   logged(h, h.user, "ses_pg000002", bench("set_pg000004", 82.5, t1 + 901'000));
   finished(h, h.user, "ses_pg000002", t1 + 902'000);
-  const AppendOutcome afterFinish = h.training.append(h.user, SessionId{"ses_pg000002"},
+  const AppendOutcome afterFinish = h.door.append(h.user, SessionId{"ses_pg000002"},
       bench("set_pg000005", 85.0, t1 + 901'500));
   CHECK(afterFinish.error == AppendError::finished);
 }
@@ -397,7 +397,7 @@ TEST(pg_gym_parallel_appends_to_one_session_mint_distinct_numbers) {
   for (int n = 0; n < 6; ++n)
     flush.emplace_back([&h, &failed, &thrown, n, t1] {
       try {
-        h.training.append(h.user, SessionId{"ses_pg000001"},
+        h.door.append(h.user, SessionId{"ses_pg000001"},
                           lift("set_pg00001" + std::to_string(n), "deadlift", 100.0, 5, t1 + 1'000 + n));
       } catch (const std::exception& error) {
         std::lock_guard<std::mutex> hold(failed);
@@ -954,9 +954,9 @@ TEST(pg_gym_discard_takes_the_session_and_every_set_with_it) {
   logged(h, h.user, "ses_pg000001", bench("set_pg000002", 82.5, t1 + 2'000));
   finished(h, h.user, "ses_pg000001", t1 + 3'000);
 
-  CHECK_EQ(h.training.discard(h.other, SessionId{"ses_pg000001"}), DiscardOutcome::notFound);
-  CHECK_EQ(h.training.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
-  CHECK_EQ(h.training.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::notFound);
+  CHECK_EQ(h.door.discard(h.other, SessionId{"ses_pg000001"}), DiscardOutcome::notFound);
+  CHECK_EQ(h.door.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
+  CHECK_EQ(h.door.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::notFound);
 
   CHECK_EQ(h.repo.log.session(h.user, SessionId{"ses_pg000001"}), std::optional<Session>());
   CHECK_EQ(h.repo.log.setsOf(SessionId{"ses_pg000001"}), std::vector<Set>{});
@@ -1130,11 +1130,11 @@ TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bri
   h.kill(h.user, "set", "set_pg000002");
 
   // The queue's own bytes, re-sent: same id, same values, same session.
-  const AppendOutcome replayed = h.training.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 82.5, t1 + 2'000));
+  const AppendOutcome replayed = h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 82.5, t1 + 2'000));
   CHECK_EQ(replayed.set, std::optional<Set>());
   CHECK(replayed.error == AppendError::deleted);
   // And it is refused whatever else the caller changes about the body, because the ID is the fact.
-  CHECK(h.training.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 60.0, t1 + 9'000)).error ==
+  CHECK(h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 60.0, t1 + 9'000)).error ==
         AppendError::deleted);
 
   std::vector<std::string> live;
@@ -1145,7 +1145,7 @@ TEST(pg_gym_a_deleted_sets_id_is_spent_for_good_and_a_replayed_append_cannot_bri
            static_cast<std::size_t>(1));
   // A closed workout does not change the answer, and does not get to answer FIRST.
   finished(h, h.user, "ses_pg000001", t1 + 5'000);
-  CHECK(h.training.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 82.5, t1 + 2'000)).error ==
+  CHECK(h.door.append(h.user, SessionId{"ses_pg000001"}, bench("set_pg000002", 82.5, t1 + 2'000)).error ==
         AppendError::deleted);
 }
 
@@ -1162,10 +1162,10 @@ TEST(pg_gym_a_deleted_id_is_spent_globally_with_owner_scoped_refusals) {
   started(h, h.other, "ses_pg000003", t1 + 10'000);
 
   // The same account, a different workout: still spent.
-  CHECK(h.training.append(h.user, SessionId{"ses_pg000002"}, bench("set_pg000001", 80.0, t1 + 11'000)).error ==
+  CHECK(h.door.append(h.user, SessionId{"ses_pg000002"}, bench("set_pg000001", 80.0, t1 + 11'000)).error ==
         AppendError::deleted);
   // Another account receives the generic collision refusal, never the deletion detail.
-  const AppendOutcome landed = h.training.append(h.other, SessionId{"ses_pg000003"},
+  const AppendOutcome landed = h.door.append(h.other, SessionId{"ses_pg000003"},
       lift("set_pg000001", "bench-press", 60.0, 5, t1 + 11'000));
   CHECK_FALSE(landed.set.has_value());
   CHECK(landed.error == AppendError::idTaken);
@@ -1221,7 +1221,7 @@ TEST(pg_gym_discarding_a_session_takes_its_revisions_with_it) {
   CHECK_EQ(kept[1][1].as<double>(), 85.0);
   CHECK(kept[1][2].as<bool>());
 
-  REQUIRE_EQ(h.training.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
+  REQUIRE_EQ(h.door.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
 
   CHECK_EQ(sql("SELECT 1 FROM gym_set_revisions WHERE user_id = $1::uuid", pqxx::params{h.user.str()}).size(),
            static_cast<std::size_t>(0));
@@ -1400,7 +1400,7 @@ TEST(pg_gym_discarding_a_session_takes_its_share_with_it) {
   h.repo.log.insertShare(SessionShare{SessionId{"ses_pg000001"}, h.user, "pg-tok-doomed", now + kShareLifetimeMs}, now);
   CHECK(h.repo.log.sharedSession("pg-tok-doomed", now + 1));
 
-  CHECK_EQ(h.training.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
+  CHECK_EQ(h.door.discard(h.user, SessionId{"ses_pg000001"}), DiscardOutcome::done);
 
   CHECK_FALSE(h.repo.log.sharedSession("pg-tok-doomed", now + 1));
 }
@@ -1522,14 +1522,14 @@ TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) 
   const SetWrite first = bench("set_batch001", 80, now + 1'000);
   SetWrite last = bench("set_batch002", 82.5, now + 2'000);
   last.exercise = ExerciseId{"missing"};
-  const auto rejected = h.training.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
+  const auto rejected = h.door.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
   CHECK(rejected.error == BatchLogError::unknownExercise);
   CHECK_EQ(rejected.errorIndex, std::optional<std::size_t>{1});
   CHECK(h.repo.log.setsOf(SessionId{"ses_batch001"}).empty());
   CHECK_EQ(sql("SELECT count(*) FROM gym_write_receipts WHERE user_id=$1::uuid AND kind='set'",
                pqxx::params{h.user.str()})[0][0].as<int>(), 0);
   last.exercise = ExerciseId{"bench-press"};
-  const auto created = h.training.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
+  const auto created = h.door.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
   CHECK(created.error == BatchLogError::none);
   REQUIRE_EQ(created.sets.size(), 2u);
   REQUIRE(created.sets[0].current.has_value());
@@ -1538,7 +1538,7 @@ TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) 
   CHECK_EQ(created.sets[1].current->setNumber, 2);
   fixed(h, "set_batch001", sync::parseJson(R"({"reps":3})"));
   h.kill(h.user, "set", "set_batch002");
-  const auto replay = h.training.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
+  const auto replay = h.door.appendSets(h.user, SessionId{"ses_batch001"}, {first, last});
   CHECK(replay.replayed);
   REQUIRE_EQ(replay.sets.size(), 2u);
   REQUIRE(replay.sets[0].current.has_value());
@@ -1546,7 +1546,7 @@ TEST(pg_gym_set_batch_rolls_back_rows_and_receipts_on_an_invalid_last_exercise) 
   CHECK_FALSE(replay.sets[1].current.has_value());
   SetWrite changed = first;
   changed.reps = 3;
-  CHECK(h.training.appendSets(h.user, SessionId{"ses_batch001"}, {changed, last}).error == BatchLogError::payloadConflict);
+  CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"}, {changed, last}).error == BatchLogError::payloadConflict);
 }
 
 TEST(pg_gym_completed_import_is_atomic_retry_safe_and_cannot_be_recreated_through_single_writes) {
@@ -1558,23 +1558,23 @@ TEST(pg_gym_completed_import_is_atomic_retry_safe_and_cannot_be_recreated_throug
   SetWrite bad = bench("set_import02", 80, now - 4'000);
   bad.exercise = ExerciseId{"absent"};
   const SessionImport rejected{SessionId{"ses_import01"}, now - 10'000, now - 1'000, std::nullopt, {first, bad}};
-  CHECK(h.training.importSession(h.user, rejected).error == BatchLogError::unknownExercise);
+  CHECK(h.door.importSession(h.user, rejected).error == BatchLogError::unknownExercise);
   CHECK_FALSE(h.repo.log.session(h.user, SessionId{"ses_import01"}).has_value());
   const SessionImport imported{SessionId{"ses_import01"}, now - 10'000, now - 1'000, std::nullopt, {first}};
-  CHECK(h.training.importSession(h.user, imported).error == BatchLogError::none);
+  CHECK(h.door.importSession(h.user, imported).error == BatchLogError::none);
   CHECK_EQ(h.repo.log.open(h.user), std::optional<Session>{live});
-  CHECK(h.training.importSession(h.user, imported).replayed);
-  CHECK_EQ(h.training.discard(h.user, imported.id), DiscardOutcome::done);
-  CHECK(h.training.importSession(h.user, imported).sessionDeleted);
+  CHECK(h.door.importSession(h.user, imported).replayed);
+  CHECK_EQ(h.door.discard(h.user, imported.id), DiscardOutcome::done);
+  CHECK(h.door.importSession(h.user, imported).sessionDeleted);
   finished(h, h.user, live.id.str(), now + 1'000);
-  CHECK_EQ(h.training.start(h.user, SessionStart{imported.id, now, false}).error, StartError::idTaken);
+  CHECK_EQ(h.door.start(h.user, SessionStart{imported.id, now, false}).error, StartError::idTaken);
   CHECK_FALSE(h.repo.log.session(h.user, imported.id).has_value());
   started(h, h.user, "ses_new00001", now);
   SetWrite resurrection = first;
   resurrection.completedAtMs = now;
-  CHECK(h.training.append(h.user, SessionId{"ses_new00001"}, resurrection).error == AppendError::deleted);
+  CHECK(h.door.append(h.user, SessionId{"ses_new00001"}, resurrection).error == AppendError::deleted);
   CHECK(h.repo.log.setsOf(SessionId{"ses_new00001"}).empty());
-  CHECK(h.training.importSession(h.user, imported).sessionDeleted);
+  CHECK(h.door.importSession(h.user, imported).sessionDeleted);
 }
 
 TEST(pg_gym_batch_and_single_writes_serialize_set_numbers_under_the_same_session_lock) {
@@ -1588,12 +1588,12 @@ TEST(pg_gym_batch_and_single_writes_serialize_set_numbers_under_the_same_session
   AppendOutcome single{std::nullopt, AppendError::notFound};
   std::thread one([&] {
     while (!go.load()) std::this_thread::yield();
-    batch = h.training.appendSets(h.user, SessionId{"ses_batch001"},
+    batch = h.door.appendSets(h.user, SessionId{"ses_batch001"},
         {bench("set_batch001", 80, now + 1'000), bench("set_batch002", 80, now + 2'000)});
   });
   std::thread two([&] {
     while (!go.load()) std::this_thread::yield();
-    single = h.training.append(h.user, SessionId{"ses_batch001"}, bench("set_single01", 80, now + 1'500));
+    single = h.door.append(h.user, SessionId{"ses_batch001"}, bench("set_single01", 80, now + 1'500));
   });
   go = true;
   one.join();
@@ -1614,26 +1614,26 @@ TEST(pg_gym_batch_hashes_the_same_precision_the_store_holds) {
   started(h, h.user, "ses_batch001", now);
   h.clock.now = now + 2'000;
   const SetWrite approximate = bench("set_batch001", 82.5000000001, now + 1'000);
-  const auto first = h.training.appendSets(h.user, SessionId{"ses_batch001"}, {approximate});
+  const auto first = h.door.appendSets(h.user, SessionId{"ses_batch001"}, {approximate});
   CHECK(first.error == BatchLogError::none);
   const SetWrite exact = bench("set_batch001", 82.5, now + 1'000);
-  CHECK(h.training.appendSets(h.user, SessionId{"ses_batch001"}, {exact}).replayed);
+  CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"}, {exact}).replayed);
   SetWrite single = approximate;
   single.id = SetId{"set_single01"};
   single.rpe = 7.1000000001;
-  REQUIRE(h.training.append(h.user, SessionId{"ses_batch001"}, single).set.has_value());
+  REQUIRE(h.door.append(h.user, SessionId{"ses_batch001"}, single).set.has_value());
   single.weightKg = 82.5;
   single.rpe = 7.1;
-  CHECK(h.training.appendSets(h.user, SessionId{"ses_batch001"}, {single}).replayed);
+  CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"}, {single}).replayed);
   SetWrite halfCent = single;
   halfCent.id = SetId{"set_half0001"};
   halfCent.weightKg = 1.005;
   halfCent.rpe = 7.05;
-  const auto stored = h.training.append(h.user, SessionId{"ses_batch001"}, halfCent);
+  const auto stored = h.door.append(h.user, SessionId{"ses_batch001"}, halfCent);
   REQUIRE(stored.set.has_value());
   CHECK_EQ(stored.set->weightKg, 1.01);
   CHECK_EQ(stored.set->rpe, std::optional<double>{7.1});
-  CHECK(h.training.appendSets(h.user, SessionId{"ses_batch001"},
+  CHECK(h.door.appendSets(h.user, SessionId{"ses_batch001"},
                               {SetWrite{stored.set->id, stored.set->exercise, stored.set->weightKg, stored.set->reps,
                                         stored.set->kind, stored.set->rpe, stored.set->note, stored.set->completedAtMs}})
             .replayed);
@@ -1652,11 +1652,11 @@ TEST(pg_gym_single_and_import_compete_for_one_durable_set_id_across_sessions) {
   AppendOutcome single{std::nullopt, AppendError::notFound};
   std::thread one([&] {
     while (!go.load()) std::this_thread::yield();
-    imported = h.training.importSession(h.user, historical);
+    imported = h.door.importSession(h.user, historical);
   });
   std::thread two([&] {
     while (!go.load()) std::this_thread::yield();
-    single = h.training.append(h.user, live.id, singleSet);
+    single = h.door.append(h.user, live.id, singleSet);
   });
   go = true;
   one.join();
@@ -1664,14 +1664,14 @@ TEST(pg_gym_single_and_import_compete_for_one_durable_set_id_across_sessions) {
   const bool importWon = imported.error == BatchLogError::none;
   CHECK_EQ(single.error == AppendError::none, !importWon);
   if (importWon) {
-    REQUIRE_EQ(h.training.discard(h.user, historical.id), DiscardOutcome::done);
-    CHECK(h.training.importSession(h.user, historical).sessionDeleted);
-    CHECK(h.training.append(h.user, live.id, singleSet).error == AppendError::deleted);
+    REQUIRE_EQ(h.door.discard(h.user, historical.id), DiscardOutcome::done);
+    CHECK(h.door.importSession(h.user, historical).sessionDeleted);
+    CHECK(h.door.append(h.user, live.id, singleSet).error == AppendError::deleted);
   } else {
     finished(h, h.user, live.id.str(), now + 2'000);
-    REQUIRE_EQ(h.training.discard(h.user, live.id), DiscardOutcome::done);
-    CHECK(h.training.importSession(h.user, historical).error == BatchLogError::payloadConflict);
-    CHECK_EQ(h.training.start(h.user, SessionStart{live.id, now, false}).error, StartError::idTaken);
+    REQUIRE_EQ(h.door.discard(h.user, live.id), DiscardOutcome::done);
+    CHECK(h.door.importSession(h.user, historical).error == BatchLogError::payloadConflict);
+    CHECK_EQ(h.door.start(h.user, SessionStart{live.id, now, false}).error, StartError::idTaken);
     CHECK_FALSE(h.repo.log.session(h.user, live.id).has_value());
   }
   CHECK_FALSE(h.repo.log.setOf(h.user, singleSet.id).has_value());
@@ -1683,21 +1683,21 @@ TEST(pg_gym_an_import_crossing_a_finished_session_is_refused_naming_it_and_a_rep
   const std::uint64_t now = 1'700'000'000'000;
   const SessionImport first{SessionId{"ses_first001"}, now - 20'000, now - 10'000, std::nullopt,
                             {bench("set_first001", 80, now - 15'000)}};
-  CHECK(h.training.importSession(h.user, first).error == BatchLogError::none);
+  CHECK(h.door.importSession(h.user, first).error == BatchLogError::none);
   // Another account's hour and this account's open session are nobody's obstacle.
-  CHECK(h.training.importSession(h.other, SessionImport{SessionId{"ses_theirs01"}, now - 9'000, now - 7'000, std::nullopt, {}})
+  CHECK(h.door.importSession(h.other, SessionImport{SessionId{"ses_theirs01"}, now - 9'000, now - 7'000, std::nullopt, {}})
             .error == BatchLogError::none);
   started(h, h.user, "ses_open0001", now - 8'500);
 
   const SessionImport crossing{SessionId{"ses_cross001"}, now - 12'000, now - 9'000, std::nullopt, {}};
-  const BatchLogOutcome refused = h.training.importSession(h.user, crossing);
+  const BatchLogOutcome refused = h.door.importSession(h.user, crossing);
   CHECK(refused.error == BatchLogError::overlap);
   CHECK_EQ(refused.overlapping, h.repo.log.session(h.user, first.id));
   CHECK_FALSE(h.repo.log.session(h.user, crossing.id).has_value());
   // Touching ends crosses nothing, and the exact replay of the first answers as itself.
-  CHECK(h.training.importSession(h.user, SessionImport{SessionId{"ses_touch001"}, now - 10'000, now - 8'000, std::nullopt, {}})
+  CHECK(h.door.importSession(h.user, SessionImport{SessionId{"ses_touch001"}, now - 10'000, now - 8'000, std::nullopt, {}})
             .error == BatchLogError::none);
-  CHECK(h.training.importSession(h.user, first).replayed);
+  CHECK(h.door.importSession(h.user, first).replayed);
 }
 
 // Different imports into one hour, all in flight at once: the account's scope queues them, so exactly one lands.
@@ -1716,7 +1716,7 @@ TEST(pg_gym_imports_racing_into_one_hour_land_exactly_one) {
                                  now - 20'000 + static_cast<std::uint64_t>(at), now - 10'000, std::nullopt, {}};
       together.arrive_and_wait();
       try {
-        answers[at] = h.training.importSession(h.user, racing).error;
+        answers[at] = h.door.importSession(h.user, racing).error;
       } catch (const std::exception& failed) {
         thrown[at] = failed.what();
       }

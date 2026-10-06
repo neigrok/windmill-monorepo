@@ -10,7 +10,7 @@
 
 namespace wm::gym {
 
-ProgramApi::ProgramApi(std::shared_ptr<ProgramService> program, std::shared_ptr<AuthService> auth)
+ProgramApi::ProgramApi(std::shared_ptr<ProgramRepository> program, std::shared_ptr<AuthService> auth)
     : program_(std::move(program)), auth_(std::move(auth)) {}
 
 void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& cb) {
@@ -21,7 +21,7 @@ void ProgramApi::listRoutines(const drogon::HttpRequestPtr& req, HttpCallback&& 
   }
   Json::Value body(Json::objectValue);
   body["routines"] = toJson(program_->routines(*caller),
-                            program_->proposals(*caller, ProposalQuery{std::nullopt, true}));
+                            program_->proposalHeads(*caller, ProposalQuery{std::nullopt, true}));
   cb(jsonResponse(body));
 }
 
@@ -39,7 +39,7 @@ void ProgramApi::getRoutine(const drogon::HttpRequestPtr& req, HttpCallback&& cb
   }
   // Newest first, so the first pending head is the one a card draws.
   std::optional<ProposalHead> pending;
-  for (const ProposalHead& head : program_->proposals(*caller, ProposalQuery{RoutineId{id}, true}))
+  for (const ProposalHead& head : program_->proposalHeads(*caller, ProposalQuery{RoutineId{id}, true}))
     if (!pending) pending = head;
   Json::Value body = toJson(*routine, pending);
   body["history"] = toJson(program_->routineHistory(*caller, RoutineId{id}));
@@ -58,7 +58,7 @@ void ProgramApi::listProposals(const drogon::HttpRequestPtr& req, HttpCallback&&
   if (!routine.empty()) query.routine = RoutineId{routine};
   query.pendingOnly = req->getParameter("state") == "pending";
   Json::Value body(Json::objectValue);
-  body["proposals"] = toJson(program_->proposals(*caller, query));
+  body["proposals"] = toJson(program_->proposalHeads(*caller, query));
   cb(jsonResponse(body));
 }
 

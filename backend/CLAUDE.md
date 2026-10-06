@@ -85,9 +85,10 @@ writer of gym and journal client data. Every gym write the server makes for a li
 tools, Coach, `POST /v1/gym/sessions/import`, the lazy close of a workout walked away from, and the
 proposal unlink a Coach conversation's delete makes — goes through `GymDoor`, the one `GymWriteDoor`,
 as a server-origin intent; it builds its own admission stack and four-thread worker pool beside the
-engine's. `TrainingService`, `CatalogService`, `ProgramService`, `NotesService` and `ThreadService`
-take the door; the gym repositories only read, but for shares and Coach threads. No server door writes
-a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
+engine's. `GymTools` and the import handler take the door directly; `TrainingService` uses it for
+stale closes and `ThreadService` for proposal unlinking. Catalog, program, notes, settings and
+weigh-in reads use repository ports directly. The gym repositories only read, but for shares and
+Coach threads. No server door writes a journal page: `JournalRepository` only reads, and `JournalFeed` hands each committed page to the
 `PageWatcher` (echo derivation) after the live feed, reporting a failure of either after the commit.
 
 The admission corpus of both products runs over fakes and over Postgres, and so do journal's revision

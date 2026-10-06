@@ -116,7 +116,7 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   proposal.removeMember("position");
   proposal["routineId"] = routineId;
   REQUIRE(!proposals.callTool("propose_routine_change", proposal, caller).isError);
-  const auto stored = h.program.proposal(h.user, ProposalId{"prop_coach001"});
+  const auto stored = h.repo.program.proposal(h.user, ProposalId{"prop_coach001"});
   REQUIRE(stored);
   CHECK_EQ(stored->head.source.door, ProposalDoor::ask);
   CHECK_EQ(stored->head.source.thread, std::optional<ThreadId>{thread});
@@ -126,13 +126,13 @@ TEST(gym_engine_real_coach_records_keep_provenance_and_thread_delete_admits_unli
   const auto busy = send(h.threadsApi, &ThreadsApi::deleteThread, deleteRequest("/v1/gym/threads/" + thread.str(), "s-door"), thread.str());
   CHECK_EQ(busy->getStatusCode(), drogon::k409Conflict);
   CHECK_EQ(h.seq(), before);
-  CHECK_EQ(h.program.proposal(h.user, ProposalId{"prop_coach001"})->head.source.thread, std::optional<ThreadId>{thread});
+  CHECK_EQ(h.repo.program.proposal(h.user, ProposalId{"prop_coach001"})->head.source.thread, std::optional<ThreadId>{thread});
   lease.reset();
   const auto removed = send(h.threadsApi, &ThreadsApi::deleteThread, deleteRequest("/v1/gym/threads/" + thread.str(), "s-door"), thread.str());
   REQUIRE_EQ(removed->getStatusCode(), drogon::k204NoContent);
   CHECK(h.seq() > before);
   CHECK_FALSE(h.threads.thread(h.user, thread));
-  const auto orphan = h.program.proposal(h.user, ProposalId{"prop_coach001"});
+  const auto orphan = h.repo.program.proposal(h.user, ProposalId{"prop_coach001"});
   REQUIRE(orphan);
   CHECK_FALSE(orphan->head.source.thread);
   PgLease connection{*doortest::pool()};

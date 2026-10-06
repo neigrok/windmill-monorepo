@@ -47,6 +47,23 @@ struct SessionImport {
   std::vector<SetWrite> sets;
 };
 
+// A routine travels whole; its entry positions are the order they arrive in.
+struct RoutineWrite {
+  RoutineId id;
+  std::string name;
+  int position;
+  std::vector<RoutineEntry> entries;
+};
+
+// An omitted step takes the equipment's domain default.
+struct ExerciseWrite {
+  ExerciseId id;
+  std::string name;
+  Pattern pattern;
+  Equipment equipment;
+  std::optional<double> stepKg;
+};
+
 // The proposal's id is the caller's to mint, so a lost reply is replayed rather than turned into a
 // second proposal. `name` absent keeps the routine's name; `source` is provenance, carried on the write.
 struct ProposalWrite {
@@ -162,11 +179,11 @@ public:
   virtual BatchLogOutcome importSession(const UserId&, const SessionImport&) = 0;
   virtual FinishOutcome finish(const UserId&, const SessionId&, std::uint64_t) = 0;
   virtual DiscardOutcome discard(const UserId&, const SessionId&) = 0;
-  virtual RoutineWriteOutcome createRoutine(const Routine&, std::optional<ProposalDoor>) = 0;
+  virtual RoutineWriteOutcome createRoutine(const UserId&, const RoutineWrite&, std::optional<ProposalDoor>) = 0;
   virtual ProposalMintOutcome propose(const UserId&, const ProposalWrite&) = 0;
   virtual ProposalMintOutcome proposeRemoval(const UserId&, const ProposalId&, const RoutineId&,
                                              const std::string&, const ProposalSource&) = 0;
-  virtual ExerciseInsertOutcome createExercise(const UserId&, const Exercise&) = 0;
+  virtual ExerciseInsertOutcome createExercise(const UserId&, const ExerciseWrite&) = 0;
   virtual NoteWriteOutcome saveInsight(const Note&) = 0;
 };
 

@@ -10,7 +10,7 @@
 
 namespace wm::gym {
 
-CatalogApi::CatalogApi(std::shared_ptr<CatalogService> catalog,
+CatalogApi::CatalogApi(std::shared_ptr<CatalogRepository> catalog,
                        std::shared_ptr<TrainingService> training, std::shared_ptr<AuthService> auth)
     : catalog_(std::move(catalog)), training_(std::move(training)), auth_(std::move(auth)) {}
 

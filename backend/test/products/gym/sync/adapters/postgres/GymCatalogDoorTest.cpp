@@ -124,10 +124,10 @@ TEST(create_exercise_takes_the_equipments_default_step_and_joins_the_callers_cat
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
 
-  ExerciseInsertOutcome created = h.catalog.createExercise(
+  ExerciseInsertOutcome created = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat,
                             Equipment::machine, std::nullopt});
-  ExerciseInsertOutcome stated = h.catalog.createExercise(
+  ExerciseInsertOutcome stated = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_22222222"}, "Landmine Press", Pattern::press,
                             Equipment::barbell, 1.25});
 
@@ -136,27 +136,27 @@ TEST(create_exercise_takes_the_equipments_default_step_and_joins_the_callers_cat
                                        Equipment::machine, 5.0, true));
   CHECK_EQ(stated.exercise->stepKg, 1.25);
   // The catalog read serves the seeds plus the caller's own, never another's.
-  CHECK_EQ(h.catalog.catalog(h.user), seedsWith({*stated.exercise, *created.exercise}));
-  CHECK_EQ(h.catalog.catalog(h.other), seedCatalog());
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedsWith({*stated.exercise, *created.exercise}));
+  CHECK_EQ(h.repo.catalog.catalog(h.other), seedCatalog());
 }
 
 // A spent id is refused; the caller's OWN id replays the movement already under it.
 TEST(create_exercise_refuses_a_spent_id_and_replays_the_callers_own) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  ExerciseInsertOutcome first = h.catalog.createExercise(
+  ExerciseInsertOutcome first = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat", Pattern::squat,
                             Equipment::barbell, std::nullopt});
-  h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"ex_99999999"}, "Their Movement",
+  h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"ex_99999999"}, "Their Movement",
                                                   Pattern::pull, Equipment::cable, 2.5});
 
-  ExerciseInsertOutcome seedSlug = h.catalog.createExercise(
+  ExerciseInsertOutcome seedSlug = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"bench-press"}, "My Bench", Pattern::press,
                             Equipment::barbell, std::nullopt});
-  ExerciseInsertOutcome theirs = h.catalog.createExercise(
+  ExerciseInsertOutcome theirs = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_99999999"}, "My Movement", Pattern::pull,
                             Equipment::cable, std::nullopt});
-  ExerciseInsertOutcome replayed = h.catalog.createExercise(
+  ExerciseInsertOutcome replayed = h.door.createExercise(
       h.user, ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat (renamed)", Pattern::squat,
                             Equipment::barbell, std::nullopt});
 
@@ -166,24 +166,24 @@ TEST(create_exercise_refuses_a_spent_id_and_replays_the_callers_own) {
   CHECK_FALSE(theirs.exercise.has_value());   // never the stranger's row, not even to say it exists
   CHECK(replayed.error == ExerciseInsertError::none);
   CHECK_EQ(*replayed.exercise, *first.exercise);
-  CHECK_EQ(h.catalog.catalog(h.user), seedsWith({*first.exercise}));
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedsWith({*first.exercise}));
 }
 
 TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.catalog.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
+  h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"ex_11111111"}, "Zercher Squat",
                                                  Pattern::squat, Equipment::barbell, std::nullopt});
-  RoutineWriteOutcome created = h.program.createRoutine(
+  RoutineWriteOutcome created = h.door.createRoutine(
       h.user,
       RoutineWrite{rtId(), "Push A", 0, {RoutineEntry{1, ExerciseId{"ex_11111111"}, straight(3, 8, 60.0), 120}}},
       std::nullopt);
-  h.training.start(h.user, SessionStart{sid(), h.clock.now, true, rtId()});
-  AppendOutcome landed = h.training.append(
+  h.door.start(h.user, SessionStart{sid(), h.clock.now, true, rtId()});
+  AppendOutcome landed = h.door.append(
       h.user, sid(),
       SetWrite{setId(), ExerciseId{"ex_11111111"}, 60.0, 8, SetKind::working, std::nullopt, "",
                h.clock.now + 1});
-  h.training.finish(h.user, sid(), h.clock.now + 2);
+  h.door.finish(h.user, sid(), h.clock.now + 2);
 
   LastTimeOutcome last = h.training.lastTime(h.user, ExerciseId{"ex_11111111"});
   LastTimeOutcome theirs = h.training.lastTime(h.other, ExerciseId{"ex_11111111"});
@@ -199,12 +199,12 @@ TEST(a_created_movement_can_be_logged_and_planned_like_a_seeded_one) {
 TEST(catalog_serves_seeds_plus_own_customs_ordered_by_pattern_then_name) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.catalog.createExercise(h.user, ExerciseWrite{ExerciseId{"landmine-press"}, "Landmine Press",
+  h.door.createExercise(h.user, ExerciseWrite{ExerciseId{"landmine-press"}, "Landmine Press",
                                                  Pattern::press, Equipment::barbell, std::nullopt});
-  h.catalog.createExercise(h.other, ExerciseWrite{ExerciseId{"zercher-squat"}, "Zercher Squat",
+  h.door.createExercise(h.other, ExerciseWrite{ExerciseId{"zercher-squat"}, "Zercher Squat",
                                                   Pattern::squat, Equipment::barbell, std::nullopt});
 
-  std::vector<Exercise> mineListed = h.catalog.catalog(h.user);
+  std::vector<Exercise> mineListed = h.repo.catalog.catalog(h.user);
 
   CHECK_EQ(mineListed, seedsWith({Exercise{ExerciseId{"landmine-press"}, "Landmine Press", Pattern::press,
                                            Equipment::barbell, 2.5, true}}));
@@ -214,13 +214,13 @@ TEST(catalog_serves_seeds_plus_own_customs_ordered_by_pattern_then_name) {
 TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  h.training.start(h.user, SessionStart{sid(), h.clock.now, true});
+  h.door.start(h.user, SessionStart{sid(), h.clock.now, true});
   for (int number = 1; number <= 4; ++number)
-    h.training.append(h.user, sid(),
+    h.door.append(h.user, sid(),
                       SetWrite{setId("set_0000000" + std::to_string(number)), ExerciseId{"back-squat"}, 100,
                                5, SetKind::working, std::nullopt, "",
                                h.clock.now + static_cast<std::uint64_t>(number) * 60'000});
-  h.training.finish(h.user, sid(), h.clock.now + 3'600'000);
+  h.door.finish(h.user, sid(), h.clock.now + 3'600'000);
 
   CHECK_EQ(GymDoor::refusal(renamed(h, h.user, "exerciseName", "back-squat", "Low-bar Squat")), std::string());
 
@@ -229,8 +229,8 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
     if (seed.id == ExerciseId{"back-squat"})
       seed = Exercise{ExerciseId{"back-squat"}, "Low-bar Squat", Pattern::squat, Equipment::barbell, 2.5,
                       false, {"Back Squat"}};
-  CHECK_EQ(h.catalog.catalog(h.user), inCatalogOrder(named));
-  CHECK_EQ(h.catalog.catalog(h.other), seedCatalog());
+  CHECK_EQ(h.repo.catalog.catalog(h.user), inCatalogOrder(named));
+  CHECK_EQ(h.repo.catalog.catalog(h.other), seedCatalog());
   std::vector<LogRow> listed = h.training.log(h.user, LogCursor{h.clock.now + 604'800'000, std::nullopt, 50});
   REQUIRE_EQ(listed.size(), static_cast<std::size_t>(1));
   CHECK_EQ(listed[0].summary.exerciseNames, std::vector<std::string>{"Low-bar Squat"});
@@ -240,7 +240,7 @@ TEST(renaming_a_seed_is_this_accounts_alone_and_the_id_never_moves) {
 TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bound) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
   Harness h;
-  ExerciseInsertOutcome theirs = h.catalog.createExercise(
+  ExerciseInsertOutcome theirs = h.door.createExercise(
       h.other, ExerciseWrite{ExerciseId{"ex_00000002"}, "Theirs", Pattern::squat, Equipment::barbell, 2.5});
 
   CHECK_EQ(GymDoor::refusal(renamed(h, h.user, "exercise", "ex_00000002", "Mine")), std::string("unknown-record"));
@@ -249,6 +249,6 @@ TEST(a_rename_refuses_a_movement_this_account_cannot_see_and_a_name_past_the_bou
                                     std::string(kMaxNameLength + 1, 'x'))),
            std::string("invalid"));
 
-  CHECK_EQ(h.catalog.catalog(h.user), seedCatalog());
-  CHECK_EQ(h.catalog.catalog(h.other), seedsWith({*theirs.exercise}));
+  CHECK_EQ(h.repo.catalog.catalog(h.user), seedCatalog());
+  CHECK_EQ(h.repo.catalog.catalog(h.other), seedsWith({*theirs.exercise}));
 }
