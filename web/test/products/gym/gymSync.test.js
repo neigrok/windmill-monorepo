@@ -71,7 +71,8 @@ test('v5 authoritative gym fields and independent routine creation snapshots sur
   assert.deepEqual({ baseRevision: proposal.baseRevision, baseName: proposal.baseName, changeCount: proposal.changeCount }, { baseRevision: 6, baseName: 'Frozen lower', changeCount: 2 });
   assert.deepEqual((await resumed.notes()).map(({ id, position, title, body, updatedAt }) => ({ id, position, title, body, updatedAt })), [{ id: 'note000001', position: 0, title: 'Edited', body: '', updatedAt: 500 }]);
   await resumed.holdDeath('routine', routine.id);
-  assert.equal(await resumed.routine(routine.id), null);
+  assert.equal(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routine').life[0], 'dead');
+  assert.equal((await resumed.routine(routine.id)).id, routine.id, 'a held delete stays in the store until its release');
   assert.equal(registry.type('routineCreation').field('snapshot').writer, 'server');
   assert.deepEqual(opened.engine.observe('self/gym').getSnapshot().drawn.find((row) => row.t === 'routineCreation').f.snapshot[0], receipt);
   assert.equal(opened.engine.device.activeReplica.outbox.some((entry) => entry.intent.d.some((delta) => delta.t === 'routineCreation')), false);

@@ -49,7 +49,7 @@ export function gymRefusal(code, detail, projection) {
 export function createGymApi(engine, { event = gymStep, failure = gymFailure } = {}) {
   const replica = engine.activeReplica();
   const snapshot = () => engine.observe(SCOPE).getSnapshot();
-  const project = (rows = snapshot().drawn, now = Date.now()) => projectGym(rows, {
+  const project = (rows = snapshot().stored, now = Date.now()) => projectGym(rows, {
     now, timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   });
   const attachBase = (value, t, id) => {
@@ -87,7 +87,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   const api = { ...gymApi, ready: true, sync: true };
   for (const name of READS) api[name] = async (...args) => {
     try {
-    const value = project(name === 'notes' || name === 'bodyweight' ? snapshot().stored : snapshot().drawn)[name](...args);
+    const value = project()[name](...args);
     if (name === 'routine') return attachBase(value, 'routine', args[0]);
     if (name === 'routines') return value.map((routine) => attachBase(routine, 'routine', routine.id));
     if (name === 'notes') return value.map((note) => attachBase(note, 'note', note.id));

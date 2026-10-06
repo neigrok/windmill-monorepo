@@ -23,7 +23,7 @@ export function useTrainingLog({ api: injected } = {}) {
   const [, redrawWindow] = useState(0);
   const spoke = useRef(0);
   const [injectedData, setInjectedData] = useState(null);
-  const projection = useMemo(() => projectGym(records.drawn, {
+  const projection = useMemo(() => projectGym(records.stored, {
     timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
   }), [records, expiry]);
   const ready = api.ready !== false && (Boolean(injected) || records.firstPullComplete || records.drawn.length > 0);
@@ -37,7 +37,7 @@ export function useTrainingLog({ api: injected } = {}) {
     if (page.length === 0) break;
   }
   if (injectedData) summaries.splice(0, summaries.length, ...injectedData.summaries);
-  const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+  const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
   const detail = open ? projection.session(open.id) : null;
   const session = detail?.session.finishedAt == null ? detail?.session ?? null : null;
   const sets = session ? detail.sets : [];
@@ -46,9 +46,9 @@ export function useTrainingLog({ api: injected } = {}) {
   const progress = ready ? { phase: 'ready', data: projection.progress() } : { phase: 'loading', data: null };
   useEffect(() => { spellWeightsIn(preferences.units); }, [preferences.units]);
   useEffect(() => {
-    const open = records.drawn.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
+    const open = records.stored.find((row) => row.t === 'session' && row.life?.[0] !== 'dead' && row.f?.finishedAt === undefined);
     if (!open) return undefined;
-    const activity = Math.max(open.f.startedAt[0], ...records.drawn.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
+    const activity = Math.max(open.f.startedAt[0], ...records.stored.filter((row) => row.t === 'set' && row.life?.[0] !== 'dead' && row.f?.sessionId?.[0] === open.id).map((row) => row.f.completedAt[0]));
     const remaining = activity + 4 * 3600_000 - Date.now();
     if (remaining <= 0) return undefined;
     const timer = setTimeout(() => expire((count) => count + 1), remaining);
