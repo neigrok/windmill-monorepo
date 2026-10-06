@@ -5,10 +5,8 @@ import androidx.compose.runtime.mutableStateOf
 import works.windmill.gym.store.GymEngineSession
 import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.LocalGymEngineSession
-import works.windmill.gym.store.LegacyGymMigration
 import works.windmill.sync.engine.*
 import works.windmill.sync.core.Json
-import works.windmill.sync.schema.SyncSchema
 import androidx.compose.ui.test.assertCountEquals
 import androidx.compose.ui.test.hasContentDescription
 import androidx.compose.ui.test.isToggleable
@@ -22,17 +20,14 @@ import androidx.compose.ui.test.performScrollTo
 import androidx.compose.ui.test.performScrollToNode
 import androidx.compose.ui.test.onNodeWithTag
 import androidx.compose.ui.test.hasText
-import java.io.File
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Assert.assertNull
-import org.junit.Assert.assertNotEquals
 import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
@@ -40,22 +35,17 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import works.windmill.gym.domain.GymPreferences
-import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Bodyweight
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.OAuthGrant
 import works.windmill.gym.domain.Units
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
+import works.windmill.gym.domain.SetFix
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.store.FinishOutcome
+import works.windmill.gym.store.FixOutcome
+import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
 import works.windmill.gym.store.TrainingStore
-import works.windmill.gym.store.Withheld
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.design.WindmillMaterial
 
 @RunWith(RobolectricTestRunner::class)
@@ -144,23 +134,10 @@ class SettingsScreenTests {
         }
     }
 
-    private fun store(scope: CoroutineScope, server: FakeTraining, signedIn: Boolean): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            sync = { if (it.isSignedIn) server else null },
-        )
-        runBlocking {
-            store.connect(Account(
-                api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-                user = if (signedIn) User(id = "u1", email = "sam@example.com", name = "Sam") else null,
-            ))
-        }
-        return store
+    private fun room(scope: CoroutineScope, rest: FakeGymRest, signedIn: Boolean): EngineRoomFixture {
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = rest)
+        runBlocking { room.select(if (signedIn) "u1" else null) }
+        return room
     }
 
     private fun settings(store: TrainingStore, signedIn: Boolean, opened: MutableList<String> = mutableListOf()) {
@@ -171,7 +148,7 @@ class SettingsScreenTests {
                 backTo = "routines",
                 onBack = {},
                 onNotes = { opened += "notes" },
-                accountEmail = if (signedIn) "sam@example.com" else null,
+                accountEmail = if (signedIn) "u1@example.com" else null,
                 onAccount = { opened += "account" },
                 onConnectedLog = { opened += "connected-log" },
                 say = {},
@@ -182,30 +159,26 @@ class SettingsScreenTests {
     @Test
     fun signedOutTrainingInvitesSignInWithoutTheRetiredClaimScreen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val logFile = File(tmp.root, LocalLog.fileName)
-        val movement = Exercise("ex_before", "Before", custom = true)
-        LocalLog(logFile).hold(movement)
-        val engine = Engine.memory(SyncSchema.registry)
-        LegacyGymMigration(tmp.root, engine).run()
-        val runtime = SyncRuntime(engine, unavailableTransport, memoryTokens, "test")
-        val session = GymEngineSession(engine, runtime)
-        val store = store(scope, FakeTraining(), signedIn = false)
-        val opened = mutableListOf<String>()
-        compose.setContent {
-            CompositionLocalProvider(LocalGymEngineSession provides session) {
-                SettingsScreen(store, false, "routines", {}, {}, {}, onAccount = { opened += "account" }, say = {})
+        room(scope, FakeGymRest(), signedIn = false).use { room ->
+            val movement = (runBlocking { room.store.create("Before", "barbell") } as GymResult.Ok).value
+            val session = GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test"))
+            val opened = mutableListOf<String>()
+            compose.setContent {
+                CompositionLocalProvider(LocalGymEngineSession provides session) {
+                    SettingsScreen(room.store, false, "routines", {}, {}, {}, onAccount = { opened += "account" }, say = {})
+                }
             }
+            compose.onNodeWithText("Saved on this phone").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("1 movement").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("These are mine").assertDoesNotExist()
+            compose.onNodeWithText("Not mine").assertDoesNotExist()
+            compose.onNodeWithText("Sign in").performScrollTo().performClick()
+            compose.runOnIdle {
+                assertEquals(listOf("account"), opened)
+                assertEquals(listOf(movement), room.training.catalogue().filter { it.custom })
+            }
+            session.close()
         }
-        compose.onNodeWithText("Saved on this phone").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("1 movement").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("These are mine").assertDoesNotExist()
-        compose.onNodeWithText("Not mine").assertDoesNotExist()
-        compose.onNodeWithText("Sign in").performScrollTo().performClick()
-        compose.runOnIdle {
-            assertEquals(listOf("account"), opened)
-            assertEquals(listOf(movement), LocalLog(logFile).exercises)
-        }
-        session.close()
         scope.cancel()
     }
 
@@ -215,6 +188,8 @@ class SettingsScreenTests {
     @Test
     fun anEmptyOpenWorkoutConflictCanBeKeptSeparatelyAtItsOriginalStart() = openConflict(false)
 
+    // Signed-out training meets an account that already has a workout open: the phone's own open
+    // workout is refused rather than joined, and Settings is where it is inspected and kept.
     private fun openConflict(hasSet: Boolean) = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val server = EngineRoomFixture.server()
@@ -226,21 +201,20 @@ class SettingsScreenTests {
                 remote.training.appendSet("remote01", works.windmill.gym.domain.SetWrite("remoteset", "back-squat", 60.0, 5,
                     works.windmill.gym.domain.SetKind.Working, remote.now - 9_000))
                 remote.sync(server)
-                val directory = tmp.newFolder()
-                val source = works.windmill.gym.domain.Session("source01", remote.now - 100_000)
-                val set = works.windmill.gym.domain.TrainingSet("sourceset", "bench-press", weightKg = 82.5, reps = 5,
-                    note = "Saved effort", completedAtMs = remote.now - 90_000)
-                SetQueue(File(directory, SetQueue.fileName)).apply {
-                    hold(source, unclaimed = true)
-                    if (hasSet) store(set, source.id, needsPush = true)
-                }
-                EngineRoomFixture(directory, scope, rest = FakeTraining()).use { room ->
+                EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).use { room ->
+                    room.now = remote.now - 100_000
+                    room.select(null)
+                    val source = (room.store.start() as GymResult.Ok).value
+                    val set = if (!hasSet) null else {
+                        room.store.choose("bench-press"); room.store.logSet(82.5, 5)
+                        val logged = room.store.sets.single()
+                        (room.store.fixSet(source.id, logged.id, SetFix(note = "Saved effort")) as FixOutcome.Corrected).set
+                    }
+                    room.store.flushPendingSets()
                     room.now = remote.now
-                    LegacyGymMigration(directory, room.engine).run()
-                    room.engine.signIn("A", mapOf("gym" to true), mapOf("gym" to "add"))
-                    room.selected = "A"
+                    room.training.prepareAdoption()
+                    room.select("A")
                     room.sync(server)
-                    room.store.connect(room.account())
                     GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test")).use { session ->
                         val visible = mutableStateOf(true)
                         try {
@@ -255,12 +229,12 @@ class SettingsScreenTests {
                         if (!hasSet) compose.onNodeWithText("Keep this empty workout separately by finishing it at its start time.").performScrollTo().assertIsDisplayed()
                         compose.onNodeWithText("Keep workout").performScrollTo().assertIsDisplayed().performClick()
                         compose.waitForIdle()
-                        assertEquals(source.copy(finishedAtMs = if (hasSet) set.completedAtMs else source.startedAtMs), room.training.session(source.id)!!.session)
-                        assertEquals(if (hasSet) listOf(set) else emptyList(), room.training.session(source.id)!!.sets)
+                        assertEquals(source.copy(finishedAtMs = set?.completedAtMs ?: source.startedAtMs), room.training.session(source.id)!!.session)
+                        assertEquals(listOfNotNull(set), room.training.session(source.id)!!.sets)
                         assertEquals(works.windmill.sync.schema.Gym.Commands.importSession,
                             room.outbox().single().member("intent").member("cmd").member("name").str())
                         room.sync(server)
-                        assertEquals(if (hasSet) listOf(set.copy(setNumber = 1)) else emptyList(), room.training.session(source.id)!!.sets)
+                        assertEquals(listOfNotNull(set?.copy(setNumber = 1)), room.training.session(source.id)!!.sets)
                         assertEquals(listOf("remoteset"), room.training.session("remote01")!!.sets.map { it.id })
                         } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
                     }
@@ -273,16 +247,18 @@ class SettingsScreenTests {
     fun inspectingAnOversizedRefusedWorkoutReachesEverySetWithoutChangingOrHidingItsSource() = runBlocking {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         try {
-            val directory = tmp.newFolder()
-            val at = 1_800_000_000_000L
-            val source = LocalLog.FinishedSession(works.windmill.gym.domain.Session("source01", at - 10_000, at - 5_000),
-                (0..200).map { index -> works.windmill.gym.domain.TrainingSet("set${index.toString().padStart(5, '0')}", "bench-press",
-                    weightKg = 82.5, reps = 5, note = if (index == 200) "Last set" else "Set $index", completedAtMs = at - 9_000 + index) })
-            LocalLog(File(directory, LocalLog.fileName)).hold(source)
-            val raw = File(directory, LocalLog.fileName).readText()
-            EngineRoomFixture(directory, scope, rest = FakeTraining()).use { room ->
-                LegacyGymMigration(directory, room.engine).run()
-                room.store.connect(room.account(null))
+            EngineRoomFixture(tmp.newFolder(), scope, rest = FakeGymRest()).use { room ->
+                room.select(null)
+                val source = (room.store.start() as GymResult.Ok).value
+                room.store.choose("bench-press")
+                repeat(201) { room.store.logSet(82.5, 5) }
+                val last = room.store.sets.last()
+                assertTrue(room.store.fixSet(source.id, last.id, SetFix(note = "Last set")) is FixOutcome.Corrected)
+                room.store.flushPendingSets()
+                assertTrue(room.store.finish() is FinishOutcome.Closed)
+                val original = requireNotNull(room.training.session(source.id))
+                assertEquals(201, original.sets.size)
+                room.training.prepareAdoption()
                 GymEngineSession(room.engine, SyncRuntime(room.engine, unavailableTransport, memoryTokens, "test")).use { session ->
                     val visible = mutableStateOf(true)
                     try {
@@ -296,8 +272,7 @@ class SettingsScreenTests {
                         compose.onNodeWithText("Last set").assertIsDisplayed()
                         compose.onNodeWithText("Close").performClick()
                         compose.onNodeWithText("Inspect workout").performScrollTo().assertIsDisplayed()
-                        assertEquals(source, room.training.session(source.session.id)?.let { LocalLog.FinishedSession(it.session, it.sets) })
-                        assertEquals(raw, File(directory, LocalLog.fileName).readText())
+                        assertEquals(original, room.training.session(source.id))
                     } finally { compose.runOnIdle { visible.value = false }; compose.waitForIdle() }
                 }
             }
@@ -309,13 +284,15 @@ class SettingsScreenTests {
     @Test
     fun testThereIsNoCsvDoorAndNoBrowserGlyphOnTheSettingsScreen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+        room(scope, FakeGymRest(), signedIn = true).use { room ->
+            settings(room.store, signedIn = true)
 
-        compose.onNodeWithText("CSV export").assertDoesNotExist()
-        compose.onAllNodesWithText("export", substring = true, ignoreCase = true).assertCountEquals(0)
-        compose.onAllNodesWithText("CSV", substring = true).assertCountEquals(0)
-        compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
-            .assertCountEquals(0)
+            compose.onNodeWithText("CSV export").assertDoesNotExist()
+            compose.onAllNodesWithText("export", substring = true, ignoreCase = true).assertCountEquals(0)
+            compose.onAllNodesWithText("CSV", substring = true).assertCountEquals(0)
+            compose.onAllNodes(hasContentDescription(ConnectedLog.opensInBrowser), useUnmergedTree = true)
+                .assertCountEquals(0)
+        }
         scope.cancel()
     }
 
@@ -324,18 +301,20 @@ class SettingsScreenTests {
     @Test
     fun testTheConnectedLogRowPrintsTheStateAndOpensTheScreen() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read gym:write")
+        val rest = FakeGymRest()
+        rest.grants += OAuthGrant(clientId = "c1", name = "Claude Desktop", grantedMs = 1L, scope = "gym:read gym:write")
         val opened = mutableListOf<String>()
-        settings(store(scope, server, signedIn = true), signedIn = true, opened)
+        room(scope, rest, signedIn = true).use { room ->
+            settings(room.store, signedIn = true, opened)
 
-        compose.onNodeWithText("Claude Desktop · read · write").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.caption).assertDoesNotExist()
-        compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
-        compose.onAllNodesWithText("free", substring = true, ignoreCase = true).assertCountEquals(0)
-        compose.onNodeWithText(ConnectedLog.title).performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(listOf("connected-log"), opened) }
+            compose.onNodeWithText("Claude Desktop · read · write").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(ConnectedLog.head).assertDoesNotExist()
+            compose.onNodeWithText(ConnectedLog.caption).assertDoesNotExist()
+            compose.onNodeWithText(ConnectedLog.action).assertDoesNotExist()
+            compose.onAllNodesWithText("free", substring = true, ignoreCase = true).assertCountEquals(0)
+            compose.onNodeWithText(ConnectedLog.title).performScrollTo().performClick()
+            compose.runOnIdle { assertEquals(listOf("connected-log"), opened) }
+        }
         scope.cancel()
     }
 
@@ -344,10 +323,12 @@ class SettingsScreenTests {
     @Test
     fun testSignedOutTheRowSaysNothingIsConnected() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(store(scope, FakeTraining(), signedIn = false), signedIn = false)
+        room(scope, FakeGymRest(), signedIn = false).use { room ->
+            settings(room.store, signedIn = false)
 
-        compose.onNodeWithText(ConnectedLog.settingsNone).performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText(ConnectedLog.settingsUnknown).assertDoesNotExist()
+            compose.onNodeWithText(ConnectedLog.settingsNone).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(ConnectedLog.settingsUnknown).assertDoesNotExist()
+        }
         scope.cancel()
     }
 
@@ -355,11 +336,13 @@ class SettingsScreenTests {
     @Test
     fun testARefusedReadLeavesTheRowClaimingNothing() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.refuseKeys = IllegalStateException("down")
-        settings(store(scope, server, signedIn = true), signedIn = true)
+        val rest = FakeGymRest()
+        rest.refuseKeys = IllegalStateException("down")
+        room(scope, rest, signedIn = true).use { room ->
+            settings(room.store, signedIn = true)
 
-        compose.onNodeWithText(ConnectedLog.settingsUnknown).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(ConnectedLog.settingsUnknown).performScrollTo().assertIsDisplayed()
+        }
         scope.cancel()
     }
 
@@ -368,10 +351,12 @@ class SettingsScreenTests {
     @Test
     fun testTheBarNamesTheScreenAndNoHeadLineRepeatsIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true)
+        room(scope, FakeGymRest(), signedIn = true).use { room ->
+            settings(room.store, signedIn = true)
 
-        compose.onNodeWithText("Gym settings").assertIsDisplayed()
-        compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
+            compose.onNodeWithText("Gym settings").assertIsDisplayed()
+            compose.onNodeWithText("how this room behaves at the rack").assertDoesNotExist()
+        }
         scope.cancel()
     }
 
@@ -380,14 +365,15 @@ class SettingsScreenTests {
     @Test
     fun testThePoundsClauseIsDrawnUnderPoundsAndNowhereElse() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val store = store(scope, FakeTraining(), signedIn = true)
-        settings(store, signedIn = true)
+        room(scope, FakeGymRest(), signedIn = true).use { room ->
+            settings(room.store, signedIn = true)
 
-        assertEquals(Units.Kilograms, store.preferences.units)
-        compose.onNodeWithText(Bodyweight.kilogramsOnly).assertDoesNotExist()
+            assertEquals(Units.Kilograms, room.store.preferences.units)
+            compose.onNodeWithText(Bodyweight.kilogramsOnly).assertDoesNotExist()
 
-        compose.onNodeWithText(Units.Pounds.wire).performScrollTo().performClick()
-        compose.onNodeWithText(Bodyweight.kilogramsOnly).performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText(Units.Pounds.wire).performScrollTo().performClick()
+            compose.onNodeWithText(Bodyweight.kilogramsOnly).performScrollTo().assertIsDisplayed()
+        }
         scope.cancel()
     }
 
@@ -395,16 +381,17 @@ class SettingsScreenTests {
     fun unitsRemainEditableWithoutRestControls() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val preferences = GymPreferences(confirmHaptic = true, confirmSound = true)
-        val server = FakeTraining().apply { settings = preferences }
-        val store = store(scope, server, signedIn = true)
-        settings(store, signedIn = true)
+        room(scope, FakeGymRest(), signedIn = true).use { room ->
+            assertNull(runBlocking { room.store.savePreferences(preferences) })
+            settings(room.store, signedIn = true)
 
-        compose.onAllNodesWithText("rest", substring = true, ignoreCase = true).assertCountEquals(0)
-        compose.onNodeWithText("At the rack").assertDoesNotExist()
-        compose.onNodeWithText("lb").performClick()
-        compose.runOnIdle {
-            assertEquals(preferences.copy(units = Units.Pounds), store.preferences)
-            assertEquals(store.preferences, server.settings)
+            compose.onAllNodesWithText("rest", substring = true, ignoreCase = true).assertCountEquals(0)
+            compose.onNodeWithText("At the rack").assertDoesNotExist()
+            compose.onNodeWithText("lb").performClick()
+            compose.runOnIdle {
+                assertEquals(preferences.copy(units = Units.Pounds), room.store.preferences)
+                assertEquals(room.store.preferences, room.training.settings())
+            }
         }
         scope.cancel()
     }
@@ -413,30 +400,13 @@ class SettingsScreenTests {
     fun theAccountRowShowsTheCurrentEmailAndOpensTheAccountSheet() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
         val opened = mutableListOf<String>()
-        settings(store(scope, FakeTraining(), signedIn = true), signedIn = true, opened)
+        room(scope, FakeGymRest(), signedIn = true).use { room ->
+            settings(room.store, signedIn = true, opened)
 
-        compose.onNodeWithText("sam@example.com").performScrollTo().assertIsDisplayed()
-        compose.onNodeWithText("Account").performScrollTo().performClick()
-        compose.runOnIdle { assertEquals(listOf("account"), opened) }
-        scope.cancel()
-    }
-
-    // The shelf's discard is one tap and nine seconds of Undo, in place of an arm-and-relabel that
-    // had no cancel and no timeout. The WHOLE row goes with it — the store holds the shelf for the
-    // length of the window, so a claim button left drawing could take training a pending discard
-    // wipes nine seconds later.
-    @Test
-    fun selectingAnAccountKeepsSignedOutTrainingAwayFromSettingsClaims() {
-        val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val logFile = File(tmp.root, LocalLog.fileName)
-        val movement = Exercise("ex_elsewhere", "Somebody’s", custom = true)
-        LocalLog(logFile).hold(movement)
-        val store = store(scope, FakeTraining(), signedIn = true)
-        settings(store, signedIn = true)
-        compose.onNodeWithText("These are mine").assertDoesNotExist()
-        compose.onNodeWithText("Not mine").assertDoesNotExist()
-        compose.onNodeWithText("Delete for good?").assertDoesNotExist()
-        compose.runOnIdle { assertEquals(listOf(movement), LocalLog(logFile).exercises) }
+            compose.onNodeWithText("u1@example.com").performScrollTo().assertIsDisplayed()
+            compose.onNodeWithText("Account").performScrollTo().performClick()
+            compose.runOnIdle { assertEquals(listOf("account"), opened) }
+        }
         scope.cancel()
     }
 

@@ -1713,7 +1713,7 @@ class TrainingStore(
         val request = ++connectedRead
         val seat = owner
         val log = gym
-        if (log == null) {
+        if (log == null || seat == null) {
             connectedLog = ConnectedLogState.None
             return connectedLog
         }
