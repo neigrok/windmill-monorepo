@@ -2,7 +2,6 @@ import { IndexedDBStore } from './store.js';
 import { TabLeadership } from './leadership.js';
 import { HttpTransport, LiveChannel } from './transport.js';
 import { syncTelemetry } from './telemetry.js';
-import { API_BASE } from '../../shell/apiBase.js';
 import { registry as composedRegistry } from './schema.js';
 import { CONSTANTS } from './core/constants.js';
 import { compareRecords, recordKey } from './core/rows.js';
@@ -40,7 +39,7 @@ export class BrowserSyncEngine {
     document = globalThis.document, window = globalThis.window, timers = globalThis, now = Date.now,
     monotonic = () => Math.floor(performance.now()), newReplicaId = replicaId, newActor = actorId,
     draw = secureDraw, limits = CONSTANTS, appVersion = import.meta.env?.VITE_RELEASE ?? '1', liveHint = () => false,
-    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base = API_BASE }) {
+    pendingDeviceWork = () => [], onPushResult = () => {}, credentials, base }) {
     Object.assign(this, { store, registry, navigator, document, window, timers, now, monotonic,
       newReplicaId, newActor, draw, appVersion, liveHint, pendingDeviceWork, onPushResult, credentials });
     this.limits = { ...CONSTANTS, ...limits };

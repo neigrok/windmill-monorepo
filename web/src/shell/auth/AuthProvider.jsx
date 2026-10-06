@@ -1,4 +1,5 @@
 import React, { createContext, useCallback, useContext, useEffect, useRef, useState, useSyncExternalStore } from 'react';
+import { API_BASE } from '../apiBase.js';
 import { fetchMe, logout } from './AuthClient.js';
 import { DeviceSeat } from './accountChange.js';
 import { PRODUCTS } from '../products.js';
@@ -161,7 +162,7 @@ export default function AuthProvider({ children }) {
   useEffect(() => {
     let alive = true;
     const hooks = PRODUCTS.map((product) => product.sync ?? {});
-    syncSession.open({ credentials: { clear: async (account) => {
+    syncSession.open({ base: API_BASE, credentials: { clear: async (account) => {
       const current = await fetchMe();
       if (current === undefined) throw new Error('cookie-cleanup-unavailable');
       if (current?.id === account) await logout();

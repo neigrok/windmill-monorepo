@@ -29,7 +29,8 @@ replica changes after durable commits and persisted-page suspension, restoration
 Persisted restores reopen IndexedDB and coordination with the same observations and listeners;
 the shell refreshes account state after restoration. Views and transport are injectable and product-neutral.
 
-HTTP uses the session cookie; anonymous pulls explicitly omit credentials. The `credentials` port
+HTTP goes to the `base` origin the engine's owner passes (same-origin when none) and uses the session
+cookie; anonymous pulls explicitly omit credentials. The `credentials` port
 belongs to the session owner: `clear(account)` removes the credential after a completed sign-out.
 The engine stores no tokens. The shell owns the cookie session and pinned account decisions. Finished sign-out durably records cookie cleanup until the credentials port succeeds. Sign-in uses a fresh
 hello and pins Add/Discard decisions. Same-account refreshes preserve held work until its deadline
