@@ -1,17 +1,25 @@
-package works.windmill.gym.domain
+package works.windmill.gym.sharing
 
+import kotlinx.serialization.SerialName
+import kotlinx.serialization.Serializable
+import works.windmill.gym.domain.Readout
 import works.windmill.gym.store.GymResult
 import works.windmill.gym.store.WriteFailure
 
-// The expiry is printed from the server's reply, never counted off this device's clock.
+@Serializable
+data class SessionShare(
+    val token: String,
+    val url: String? = null,
+    @SerialName("expiresAt") val expiresAtMs: Long,
+)
 
-class CoachDoors(
+class WorkoutShareActions(
     val origin: String,
     val mint: suspend (String) -> GymResult<SessionShare>,
     val revoke: suspend (String) -> WriteFailure?,
 )
 
-object Coach {
+object WorkoutSharing {
     const val offer = "Anyone with the link can read this workout.\nIncludes set notes and effort.\nLinks last 30 days. End sharing anytime."
 
     data class Card(

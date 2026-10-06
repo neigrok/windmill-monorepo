@@ -1,5 +1,6 @@
 package works.windmill.gym.ui
 
+import works.windmill.gym.sharing.WorkoutShareCard
 import works.windmill.platform.design.WindmillSheetBack
 import works.windmill.platform.design.WindmillSheetWindow
 import androidx.compose.foundation.background
@@ -54,7 +55,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.CoachDoors
+import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.domain.Exercise
 import works.windmill.gym.domain.Ladder
 import works.windmill.gym.domain.PlanEntry
@@ -179,7 +180,7 @@ private fun sessionDetailSaver(telemetry: Telemetry) = Saver<SessionDetail?, Str
 fun SessionScreen(
     summary: SessionSummary,
     store: TrainingStore,
-    coach: CoachDoors,
+    sharing: WorkoutShareActions,
     backTo: String,
     onBack: () -> Unit,
     say: (String?) -> Unit,
@@ -385,7 +386,7 @@ fun SessionScreen(
         sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = skin.surface, scrimColor = skin.scrim) {
             WindmillSheetWindow()
-        CoachShareCard(coach, readId)
+        WorkoutShareCard(sharing, readId)
     }
 
 }

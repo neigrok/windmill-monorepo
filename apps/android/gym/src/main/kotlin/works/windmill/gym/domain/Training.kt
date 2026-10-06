@@ -480,12 +480,6 @@ data class MovementRecord(
     }
 }
 
-@Serializable
-data class SessionShare(
-    val token: String,
-    val url: String? = null,
-    @SerialName("expiresAt") val expiresAtMs: Long,
-)
 
 data class SetWrite(
     val id: String,

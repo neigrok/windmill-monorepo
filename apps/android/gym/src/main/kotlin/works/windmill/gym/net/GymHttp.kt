@@ -28,7 +28,7 @@ import works.windmill.gym.coach.ReadTally
 import works.windmill.gym.coach.AskThread
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.domain.SessionShare
+import works.windmill.gym.sharing.SessionShare
 import works.windmill.platform.net.Refusal
 import works.windmill.platform.net.WindmillApi
 import works.windmill.platform.net.WindmillApiException

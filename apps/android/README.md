@@ -98,6 +98,7 @@ threads, attachments, shares and connected-log credentials use REST, through `Gy
 retries and streaming; `TrainingStore` composes it with the current account, shared Undo windows and
 routine refresh. `LocalCoach` retains account-scoped drafts, request identities and partial replies;
 retry retains identity and Stop preserves completed work. Shared HTTP framing lives in `net/GymHttp.kt`.
+`sharing/` owns public workout links and their card; sharing a workout does not involve a Coach conversation.
 
 Notes live with the account. They retain an unread state until the account's first pull
 completes; subsequent pulls refresh the open notebook, and refused saves show their refusal.

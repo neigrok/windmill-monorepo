@@ -69,8 +69,8 @@ import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.coach.CoachDraft
 import works.windmill.gym.coach.AskExchange
 import works.windmill.gym.domain.Bodyweight
-import works.windmill.gym.domain.Coach
-import works.windmill.gym.domain.CoachDoors
+import works.windmill.gym.sharing.WorkoutSharing
+import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.domain.ConnectedLog
 import works.windmill.gym.domain.Ids
 import works.windmill.gym.domain.LiveOrder
@@ -803,7 +803,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
     key(seat) {
         if (account.resolved && account.user?.id.orEmpty() == seat) {
             val origin = account.origin
-            val coach = remember(origin) { CoachDoors(origin, store::share, store::revokeShare) }
+            val sharing = remember(origin) { WorkoutShareActions(origin, store::share, store::revokeShare) }
             val lookedAtIds = lookedAt.split(' ').filter { it.isNotEmpty() }.toSet()
             val clipboard = LocalClipboardManager.current
 
@@ -814,7 +814,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                     note = null
                     when (val minted = store.share(sessionId)) {
                         is GymResult.Ok -> {
-                            clipboard.setText(AnnotatedString(Coach.link(minted.value, origin)))
+                            clipboard.setText(AnnotatedString(WorkoutSharing.link(minted.value, origin)))
                             transient.showSnackbar(
                                 "Link copied — anyone who has it can read this workout",
                                 duration = SnackbarDuration.Long,
@@ -1071,7 +1071,7 @@ fun GymRoom(account: Account, store: TrainingStore, notifications: WorkoutNotifi
                             summary = standing.summary,
                             seed = standing.detail,
                             store = store,
-                            coach = coach,
+                            sharing = sharing,
                             backTo = beneath,
                             onBack = { back() },
                             say = { note = it },

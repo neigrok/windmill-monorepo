@@ -122,7 +122,7 @@ class WindmillApplication : Application(), WorkoutNotificationHost {
                     is LocalSession.Unresolved -> false
                 }
             }, telemetry = telemetry,
-            localCoach = works.windmill.gym.coach.LocalCoach(File(filesDir, works.windmill.gym.coach.LocalCoach.fileName)),
+            localCoach = LocalCoach(File(filesDir, LocalCoach.fileName)),
         )
         engineSession = GymEngineSession(engine, syncRuntime, telemetry, transport, beforeAccountChange = store::prepareEngineTransition)
         auth = AuthStore(baseUrl, sessions, telemetry = telemetry, lifecycle = engineSession)

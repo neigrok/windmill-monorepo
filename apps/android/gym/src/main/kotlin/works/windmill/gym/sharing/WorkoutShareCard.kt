@@ -1,5 +1,8 @@
-package works.windmill.gym.ui
+package works.windmill.gym.sharing
 
+import works.windmill.gym.ui.GymTap
+import works.windmill.gym.ui.GymType
+import works.windmill.gym.ui.LocalGymColors
 import androidx.compose.ui.semantics.Role
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -29,34 +32,32 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
-import works.windmill.gym.domain.Coach
-import works.windmill.gym.domain.CoachDoors
 import works.windmill.gym.store.GymResult
 import works.windmill.platform.design.WindmillFont
 import works.windmill.platform.design.WindmillRadius
 import works.windmill.platform.design.WindmillSpace
 
 @Composable
-fun CoachShareCard(coach: CoachDoors, sessionId: String) {
+fun WorkoutShareCard(sharing: WorkoutShareActions, sessionId: String) {
     val skin = LocalGymColors.current
     val scope = rememberCoroutineScope()
     val clipboard = LocalClipboardManager.current
-    var state by remember(sessionId) { mutableStateOf<Coach.State>(Coach.State.Closed()) }
-    val card = Coach.card(state, coach.origin)
+    var state by remember(sessionId) { mutableStateOf<WorkoutSharing.State>(WorkoutSharing.State.Closed()) }
+    val card = WorkoutSharing.card(state, sharing.origin)
 
     fun act() {
         val standing = state
-        if (standing is Coach.State.Live) {
-            clipboard.setText(AnnotatedString(Coach.link(standing.share, coach.origin)))
-            state = state.after(Coach.Event.Copied)
+        if (standing is WorkoutSharing.State.Live) {
+            clipboard.setText(AnnotatedString(WorkoutSharing.link(standing.share, sharing.origin)))
+            state = state.after(WorkoutSharing.Event.Copied)
             return
         }
         scope.launch {
-            state = state.after(Coach.Event.Asked)
-            when (val minted = coach.mint(sessionId)) {
-                is GymResult.Ok -> state = state.after(Coach.Event.Minted(minted.value))
+            state = state.after(WorkoutSharing.Event.Asked)
+            when (val minted = sharing.mint(sessionId)) {
+                is GymResult.Ok -> state = state.after(WorkoutSharing.Event.Minted(minted.value))
                 is GymResult.Failed ->
-                    state = state.after(Coach.Event.MintFailed(minted.why.line("the link wasn’t made")))
+                    state = state.after(WorkoutSharing.Event.MintFailed(minted.why.line("the link wasn’t made")))
             }
         }
     }
@@ -64,15 +65,15 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
     // A revoke that did not happen leaves the link LIVE and says so.
     fun revokeLink() {
         val live = state
-        if (live !is Coach.State.Live) return
+        if (live !is WorkoutSharing.State.Live) return
         scope.launch {
-            state = state.after(Coach.Event.Asked)
-            val why = coach.revoke(sessionId)
+            state = state.after(WorkoutSharing.Event.Asked)
+            val why = sharing.revoke(sessionId)
             if (why == null) {
-                state = state.after(Coach.Event.Revoked)
+                state = state.after(WorkoutSharing.Event.Revoked)
                 return@launch
             }
-            state = live.after(Coach.Event.RevokeFailed(why.line("the link is still live")))
+            state = live.after(WorkoutSharing.Event.RevokeFailed(why.line("the link is still live")))
         }
     }
 
@@ -121,7 +122,7 @@ fun CoachShareCard(coach: CoachDoors, sessionId: String) {
                 .fillMaxWidth()
                 .heightIn(min = 64.dp)
                 .background(skin.accent, RoundedCornerShape(16.dp))
-                .clickable(enabled = state != Coach.State.Working, role = Role.Button) { act() },
+                .clickable(enabled = state != WorkoutSharing.State.Working, role = Role.Button) { act() },
         ) {
             Text(
                 card.action,

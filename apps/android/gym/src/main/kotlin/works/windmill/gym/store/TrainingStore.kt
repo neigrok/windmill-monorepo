@@ -8,8 +8,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.async
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.coroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -57,7 +55,7 @@ import works.windmill.gym.domain.Session
 import works.windmill.gym.domain.SessionDetail
 import works.windmill.gym.domain.SessionStart
 import works.windmill.gym.domain.SessionSummary
-import works.windmill.gym.domain.SessionShare
+import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.domain.SetFix
 import works.windmill.gym.domain.SetKind
 import works.windmill.gym.domain.SetTarget

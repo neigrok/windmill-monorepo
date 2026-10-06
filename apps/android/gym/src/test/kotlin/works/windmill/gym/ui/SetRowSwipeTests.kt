@@ -26,7 +26,7 @@ import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.CoachDoors
+import works.windmill.gym.sharing.WorkoutShareActions
 import works.windmill.gym.domain.SessionSummary
 import works.windmill.gym.store.Deletion
 import works.windmill.gym.store.EngineRoomFixture
@@ -49,7 +49,7 @@ class SetRowSwipeTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    private val doors = CoachDoors(
+    private val doors = WorkoutShareActions(
         origin = "https://windmill.works",
         mint = { error("no link is minted here") },
         revoke = { error("no link is revoked here") },
@@ -89,7 +89,7 @@ class SetRowSwipeTests {
                 SessionScreen(
                     summary = summary,
                     store = room.store,
-                    coach = doors,
+                    sharing = doors,
                     backTo = "The log",
                     onBack = {},
                     say = {},

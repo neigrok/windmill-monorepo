@@ -7,7 +7,7 @@ import works.windmill.gym.coach.AskThread
 import works.windmill.gym.coach.CoachAttachment
 import works.windmill.gym.domain.McpKey
 import works.windmill.gym.domain.OAuthGrant
-import works.windmill.gym.domain.SessionShare
+import works.windmill.gym.sharing.SessionShare
 import works.windmill.gym.coach.ThreadPage
 
 // The gym's doors that stay on REST beside the engine: Coach conversations, session shares and the
