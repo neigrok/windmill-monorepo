@@ -154,9 +154,9 @@ export function ReadOnlyLog({ token = null, preview = null, hash = '', onReady =
     const scope = shareHistoryScope(preview, query);
     if (scope.from >= scope.until) return Promise.resolve({ sessions: [], summary: { sessions: 0, sets: 0, reps: 0, tonnageKg: 0 }, months: [], exercises: [], routines: [], next: null });
     return localApi.history({ ...scope, projection: 'progress' });
-  }, sync: Boolean(preview), ready: !preview || Boolean(localApi?.ready) }), [token, preview, localApi]);
-  const history = useHistory(filters, 0, api);
-  const dates = useHistoryDates(filters, 0, api);
+  }, live: Boolean(preview), ready: !preview || Boolean(localApi?.ready) }), [token, preview, localApi]);
+  const history = useHistory(filters, api);
+  const dates = useHistoryDates(filters, api);
   useEffect(() => { onReady?.(history.phase === 'ready'); }, [history.phase, onReady]);
   useEffect(() => {
     if (preview && history.phase === 'ready' && !initialSelection.current && wide) {

@@ -3,9 +3,12 @@ import { useSyncRecords } from '../../../platform/sync/react.js';
 import { useGymApi } from '../gymSync.js';
 import { historyScope } from './history.js';
 
-export function useHistory(filters, revision = 0, suppliedApi = null) {
-  const localApi = useGymApi();
-  const api = suppliedApi ?? localApi;
+// `reader` answers `history(query)`: the log's own over the replica unless a caller hands another, such
+// as a shared log's door. A live reader reads again whenever the replica changes; the log's own is live.
+export function useHistory(filters, reader = null) {
+  const log = useGymApi();
+  const api = reader ?? log;
+  const live = reader ? reader.live : true;
   const records = useSyncRecords('self/gym');
   const [view, setView] = useState({ phase: 'loading', data: null, failure: false, more: 'idle', scope: null });
   const [attempt, setAttempt] = useState(0);
@@ -24,7 +27,7 @@ export function useHistory(filters, revision = 0, suppliedApi = null) {
       phase: loadedScope.current === scope && current.data ? 'ready' : 'loading', failure: false }));
     (async () => {
       let data = await api.history({ ...JSON.parse(scope), timeZone, limit: Math.min(200, limit) });
-      while (limit > 200 && (!suppliedApi || api.sync) && data.sessions.length < limit && data.next) {
+      while (limit > 200 && live && data.sessions.length < limit && data.next) {
         if (mine !== epoch.current) return;
         const page = await api.history({ ...JSON.parse(scope), ...data.next, timeZone, limit: Math.min(200, limit - data.sessions.length) });
         if (!page.sessions.length || (page.next?.before === data.next.before && page.next?.beforeId === data.next.beforeId)) throw new Error('History page did not advance.');
@@ -38,7 +41,7 @@ export function useHistory(filters, revision = 0, suppliedApi = null) {
       if (mine === epoch.current) setView((current) => ({ ...current, phase: 'failed', failure: true }));
     });
     return () => { epoch.current += 1; };
-  }, [api, scope, revision, attempt, timeZone, suppliedApi && !api.sync ? null : records]);
+  }, [api, scope, attempt, timeZone, live ? records : null]);
   const load = useCallback(async () => {
     if (!view.data?.next || pendingPage.current !== null || view.phase !== 'ready') return;
     const token = {};
@@ -64,9 +67,10 @@ export function useHistory(filters, revision = 0, suppliedApi = null) {
   return { ...view, ...(view.scope !== scope ? { phase: 'loading', data: null, failure: false } : {}), retry: () => setAttempt((value) => value + 1), load };
 }
 
-export function useHistoryDates(filters, revision = 0, suppliedApi = null) {
-  const localApi = useGymApi();
-  const api = suppliedApi ?? localApi;
+export function useHistoryDates(filters, reader = null) {
+  const log = useGymApi();
+  const api = reader ?? log;
+  const live = reader ? reader.live : true;
   const records = useSyncRecords('self/gym');
   const [view, setView] = useState({ months: [], failure: false });
   const [attempt, setAttempt] = useState(0);
@@ -80,6 +84,6 @@ export function useHistoryDates(filters, revision = 0, suppliedApi = null) {
       if (current) setView({ months: data.months, failure: false });
     }).catch(() => { if (current) setView({ months: [], failure: true }); });
     return () => { current = false; };
-  }, [api, scope, revision, attempt, timeZone, suppliedApi && !api.sync ? null : records]);
+  }, [api, scope, attempt, timeZone, live ? records : null]);
   return { ...view, retry: () => setAttempt((value) => value + 1) };
 }

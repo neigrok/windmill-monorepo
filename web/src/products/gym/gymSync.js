@@ -100,7 +100,7 @@ export function createGymApi(engine, { event = gymStep, failure = gymFailure } =
   const fieldsOfRoutine = ({ name, position = 0, entries }) => ({ name, position,
     entries: entries.map(({ exerciseId, sets, restSeconds }) => ({ exerciseId,
       ...(sets === undefined ? {} : { sets }), ...(restSeconds == null ? {} : { restSeconds }) })) });
-  const api = { sync: true };
+  const api = {};
   for (const name of READS) api[name] = async (...args) => {
     try {
     const value = project()[name](...args);

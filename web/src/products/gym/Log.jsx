@@ -29,8 +29,8 @@ export function LogList({ log, hash = '#/gym/log', sessionId = null, fixSetId = 
   const indexPosition = useRef({ node: null, key: null, pending: false });
   const indexPositions = positions ?? localPositions.current;
   const indexKey = historyHref(filters, { selected: null });
-  const history = useHistory(filters, log.revision);
-  const dates = useHistoryDates(filters, log.revision);
+  const history = useHistory(filters);
+  const dates = useHistoryDates(filters);
   const hidden = log.hidden('session');
   const stored = (history.data?.sessions ?? []).filter((session) => !log.gone('session').has(session.id));
   const sessions = (history.data?.sessions ?? []).filter((session) => !hidden.has(session.id));

@@ -240,7 +240,7 @@ export function useTrainingLog() {
     dismiss: spoken.undoable ? null : dismissToast,
   };
   return {
-    phase, revision: records, progress,
+    phase, progress,
     session, sets: sets.filter((set) => !hidden('set').has(set.id)), catalog, summaries, preferences,
     older: { status: summaries.length < depth ? 'end' : 'more', load: () => setDepth((count) => count + LOG_PAGE) },
     createMovement, renameMovement, say, transient, held, hidden, gone,

@@ -136,7 +136,7 @@ function TrainingRoom({ hash, inShell, user, status, onSignIn, onSignOut }) {
           {screen === 'threads' && <ThreadsList log={log} accountId={account?.id} />}
           {screen === 'thread' && <ThreadDetail key={`${account?.id}-${threadIdOf(hash)}`} id={threadIdOf(hash)} log={log} accountId={account?.id} />}
           {screen === 'notes' && <Notes log={log} />}
-          {screen === 'share-log' && <LogShareScreen log={log} />}
+          {screen === 'share-log' && <LogShareScreen />}
         </main>
       </div>
       <TabBar screen={tabOf(screen)} />
