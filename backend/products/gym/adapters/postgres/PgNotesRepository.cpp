@@ -18,10 +18,11 @@ constexpr std::string_view kNoteColumns =
     "id, user_id, title, body, position, "
     "(extract(epoch from updated_at) * 1000)::bigint AS updated_ms";
 
-// The column checks carry the entity's three bounds, so a stored row rebuilds without a refusal.
+// As stored: the column checks carry the entity's three bounds, and a blank title reads as it trims.
 template <typename Row>
 Note noteFrom(const Row& row) {
-  return Note{NoteId{row["id"].template as<std::string>()},
+  return Note{Stored{},
+              NoteId{row["id"].template as<std::string>()},
               UserId{row["user_id"].template as<std::string>()},
               row["title"].template as<std::string>(),
               row["body"].template as<std::string>(),
@@ -51,7 +52,7 @@ std::optional<Note> PgNotesRepository::noteSave(const UserId& user, const NoteId
                                     id.str(), user.str());
   if (rows.empty()) return std::nullopt;
   const auto value = parse(rows[0][0].as<std::string>());
-  return Note{NoteId{value["id"].asString()}, user, value["title"].asString(), value["body"].asString(),
+  return Note{Stored{}, NoteId{value["id"].asString()}, user, value["title"].asString(), value["body"].asString(),
               value["position"].asInt(), value["updatedAt"].asUInt64()};
 }
 

@@ -134,6 +134,28 @@ TEST(pg_gym_notes_delete_closes_the_gap_and_reorder_replaces_the_whole_order) {
   CHECK_EQ(titlesOf(h.repo.notes, h.other), std::vector<std::string>{"Theirs"});
 }
 
+// A blank title the store holds reads as stored, on the list and on the insight's receipt: never a 500.
+TEST(pg_gym_a_blank_stored_note_title_reads_as_stored) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  CHECK_EQ(GymDoor::refusal(phoneNote(h, h.user, "note_pg00001", "Tone", "Blunt.", appendKeys(1)[0])), "");
+  REQUIRE(h.notes.saveInsight(Note{NoteId{"note_pg00002"}, h.user, "Goal", "A 140 squat."}).note.has_value());
+  {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("UPDATE gym_notes SET title = '   ' WHERE id = 'note_pg00001'");
+    txn.exec("UPDATE gym_notes SET title = $1 WHERE id = 'note_pg00002'", pqxx::params{"\xEF\xBB\xBF"});   // U+FEFF
+    txn.exec("UPDATE gym_note_saves SET note = jsonb_set(note, '{title}', '\" \"') WHERE id = 'note_pg00002'");
+    txn.commit();
+  }
+
+  CHECK_EQ(h.notes.notes(h.user),
+           (std::vector<Note>{Note{Stored{}, NoteId{"note_pg00001"}, h.user, "", "Blunt.", 0, kNow},
+                              Note{Stored{}, NoteId{"note_pg00002"}, h.user, "\xEF\xBB\xBF", "A 140 squat.", 1, kNow}}));
+  CHECK_EQ(h.notes.noteSave(h.user, NoteId{"note_pg00002"}),
+           std::optional<Note>(Note{Stored{}, NoteId{"note_pg00002"}, h.user, "", "A 140 squat.", 1, kNow}));
+}
+
 TEST(pg_gym_notes_cascade_with_the_account) {
   if (!std::getenv("WM_PG_TEST")) SKIP(kNeedsPostgres);
   reset();

@@ -161,6 +161,28 @@ TEST(routine_construction_guards_the_id_the_name_and_the_position) {
   }));
 }
 
+// A write refuses a name blank by admission's own test; a read builds the routine the store holds.
+TEST(routine_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+  const auto written = [](const std::string& name) {
+    return refusal([&] { Routine{RoutineId{"rt_00000001"}, wm::UserId{"u1"}, name, 0, {bench(1)}}; });
+  };
+  CHECK_EQ(written(""), std::string("a routine needs a name"));
+  CHECK_EQ(written(" \t "), std::string("a routine needs a name"));
+  CHECK_EQ(written("\xE2\x80\x83\xEF\xBB\xBF"), std::string("a routine needs a name"));   // U+2003, U+FEFF
+
+  const Routine stored{Stored{}, RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "   ", 0, {bench(1)},
+                       std::optional<std::uint64_t>(1'700'000'000'000), 3};
+  CHECK_EQ(stored.id, RoutineId{"rt_00000001"});
+  CHECK_EQ(stored.user, wm::UserId{"u1"});
+  CHECK_EQ(stored.name, std::string(""));
+  CHECK_EQ(stored.position, 0);
+  CHECK_EQ(stored.entries, (std::vector<RoutineEntry>{bench(1)}));
+  CHECK_EQ(stored.lastTrainedAtMs, std::optional<std::uint64_t>(1'700'000'000'000));
+  CHECK_EQ(stored.revision, 3);
+  CHECK_EQ(refusal([] { Routine{Stored{}, RoutineId{"rt_00000001"}, wm::UserId{"u1"}, "   ", 0, {}}; }),
+           std::string("a routine needs at least one movement"));
+}
+
 TEST(routine_construction_refuses_a_document_with_no_entries) {
   CHECK(rejects([] { pushA({}); }));
 }

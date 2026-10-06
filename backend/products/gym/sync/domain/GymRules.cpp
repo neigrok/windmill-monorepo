@@ -2,6 +2,7 @@
 
 #include "platform/domain/sync/Digest.h"
 #include "platform/domain/sync/Jcs.h"
+#include "platform/domain/sync/TextMerge.h"
 
 #include <algorithm>
 #include <chrono>
@@ -52,6 +53,12 @@ bool created(const Change& change) { return change.after.alive() && !change.wasA
 bool died(const Change& change) { return !change.after.alive() && change.wasAlive(); }
 bool changed(const Change& change, const std::string& field) {
   return change.after.alive() && change.wasAlive() && !same(value(&*change.stored, field), value(&change.after, field));
+}
+
+// A.2 display names: one created or changed to a blank one is `invalid`, whoever writes it. A stored one stands.
+bool blankNamed(const Change& change, const std::string& field) {
+  const Json::Value name = value(&change.after, field);
+  return name.isString() && isBlank(name.asString()) && (created(change) || changed(change, field));
 }
 
 Delta deltaFor(const Row& row) {
@@ -334,6 +341,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
         continue;
       }
       if (!after.alive()) continue;
+      if (blankNamed(change, "name")) throw Refusal(code::invalid);
       if (created(change) || changed(change, "entries")) {
         const Json::Value entries = value(&after, "entries");
         if (!entries.isArray() || entries.empty()) throw Refusal(code::invalid);
@@ -361,12 +369,14 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
     }
     if (after.t == "exercise") {
       if (died(change) || (created(change) && value(&after, "stepKg").isNull())) throw Refusal(code::invalid);
+      if (blankNamed(change, "name")) throw Refusal(code::invalid);
       if (changed(change, "name")) append(fields(after, object({{"aliases", renamed(value(&after, "aliases"), value(&*change.stored, "name"), value(&after, "name"))}})));
       continue;
     }
     if (after.t == "exerciseName") {
       const Json::Value seed = facts.books["seeds"][after.id.column()];
       if (seed.isNull()) throw Refusal(code::invalid);
+      if (blankNamed(change, "name")) throw Refusal(code::invalid);
       Json::Value before = value(change.stored ? &*change.stored : nullptr, "name");
       Json::Value next = value(&after, "name");
       if (before.isNull()) before = seed["name"];
@@ -382,8 +392,11 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       if (after.alive() && after.id.column() > date) throw Refusal("bad-instant");
       continue;
     }
-    if (after.t == "note" && (created(change) || changed(change, "title") || changed(change, "body")))
-      append(fields(after, object({{"updatedAt", Json::UInt64(now)}})));
+    if (after.t == "note") {
+      if (blankNamed(change, "title")) throw Refusal(code::invalid);
+      if (created(change) || changed(change, "title") || changed(change, "body")) append(fields(after, object({{"updatedAt", Json::UInt64(now)}})));
+      continue;
+    }
     if (after.t != "proposal" || !created(change)) continue;
     futureProposals.erase(after.id.column());
     if (!server && (value(&after, "door") != "ask" || !value(&after, "connection").asString().empty() || !value(&after, "agent").asString().empty())) throw Refusal(code::invalid);
@@ -404,7 +417,7 @@ std::vector<Delta> checkGym(const GymFacts& facts, const std::vector<Change>& ch
       entry["exerciseId"] = line["exerciseId"];
       proposed.append(entry);
     }
-    if (value(&after, "intent") == "remove" ? !proposed.empty() : proposed.empty() || proposed.size() > 50 || value(&after, "proposedName").asString().empty()) throw Refusal(code::invalid);
+    if (value(&after, "intent") == "remove" ? !proposed.empty() : proposed.empty() || proposed.size() > 50 || isBlank(value(&after, "proposedName").asString())) throw Refusal(code::invalid);
     for (const Json::Value& entry : proposed) {
       if (entry.isMember("sets") && entry["sets"].empty()) throw Refusal(code::invalid);
     }

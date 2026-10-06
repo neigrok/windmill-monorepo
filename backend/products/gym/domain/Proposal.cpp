@@ -1,5 +1,7 @@
 #include "products/gym/domain/Proposal.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <algorithm>
 #include <cstddef>
 #include <utility>
@@ -49,6 +51,14 @@ EntryTargets targetsOf(const RoutineEntry& entry) {
 
 RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::string baseName,
                                  std::string proposedName, std::vector<RoutineChange> changes)
+    : RoutineProposal(Stored{}, std::move(head), baseRevision, std::move(baseName),
+                      std::move(proposedName), std::move(changes)) {
+  if (sync::isBlank(this->baseName) || sync::isBlank(this->proposedName))
+    throw InvalidTraining("a proposal names the routine on both sides");
+}
+
+RoutineProposal::RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,
+                                 std::string proposedName, std::vector<RoutineChange> changes)
     : head(std::move(head)), baseRevision(baseRevision), baseName(trimmedName(std::move(baseName))),
       proposedName(trimmedName(std::move(proposedName))), changes(std::move(changes)) {
   if (!wellFormedId(this->head.id.str())) throw InvalidTraining("bad proposal id");
@@ -64,9 +74,6 @@ RoutineProposal::RoutineProposal(ProposalHead head, int baseRevision, std::strin
       (*this->head.settledAtMs == 0 || *this->head.settledAtMs > kMaxInstantMs))
     throw InvalidTraining("a proposal was settled at an instant");
   if (baseRevision < 1) throw InvalidTraining("a proposal stands on a revision from 1");
-  // Both names are display names and go through the display-name rule, then the column's ceiling.
-  if (this->baseName.empty() || this->proposedName.empty())
-    throw InvalidTraining("a proposal names the routine on both sides");
   if (this->baseName.size() > kMaxNameLength || this->proposedName.size() > kMaxNameLength)
     throw InvalidTraining("routine name too long");
   if (!storableText(this->proposedName))

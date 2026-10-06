@@ -35,11 +35,6 @@ CodePoint codePointAt(std::string_view text, std::size_t at) {
   return CodePoint{value, length};
 }
 
-// A token is a maximal run, so its first code point tells whether it is whitespace.
-bool isBlank(std::string_view token) {
-  return !token.empty() && isWhitespace(codePointAt(token, 0).value);
-}
-
 // ECMAScript trimEnd and trimStart: a text's trailing or leading whitespace is its last or first token.
 std::string_view trimEnd(std::string_view text) {
   const std::vector<std::string> tokens = tokenize(text);
@@ -174,6 +169,15 @@ std::optional<std::string> baseTextOf(std::string_view head, Seq headRev, const 
   return std::string();
 }
 
+}
+
+bool isBlank(std::string_view text) {
+  for (std::size_t at = 0; at < text.size();) {
+    const CodePoint point = codePointAt(text, at);
+    if (!isWhitespace(point.value)) return false;
+    at += point.length;
+  }
+  return true;
 }
 
 std::vector<std::string> tokenize(std::string_view text) {

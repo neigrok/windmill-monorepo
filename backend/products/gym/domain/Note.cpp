@@ -1,5 +1,7 @@
 #include "products/gym/domain/Note.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <algorithm>
 #include <utility>
 
@@ -71,6 +73,13 @@ std::string trimmedText(std::string text) {
 
 Note::Note(NoteId id, UserId user, std::string title, std::string body, int position,
            std::uint64_t updatedAtMs)
+    : Note(Stored{}, std::move(id), std::move(user), std::move(title), std::move(body), position,
+           updatedAtMs) {
+  if (sync::isBlank(this->title)) throw InvalidTraining("a note needs a title");
+}
+
+Note::Note(Stored, NoteId id, UserId user, std::string title, std::string body, int position,
+           std::uint64_t updatedAtMs)
     : id(std::move(id)), user(std::move(user)), title(trimmedText(std::move(title))),
       body(trimmedText(std::move(body))), position(position), updatedAtMs(updatedAtMs) {
   // Unreadable before unstorable: a NUL or a bad byte is refused as a note nobody can read, with
@@ -79,7 +88,6 @@ Note::Note(NoteId id, UserId user, std::string title, std::string body, int posi
   if (this->user.empty()) throw InvalidTraining("a note belongs to an account");
   if (!storableText(this->title) || !storableText(this->body))
     throw InvalidTraining("could not read that note");
-  if (this->title.empty()) throw InvalidTraining("a note needs a title");
   if (codePoints(this->title) > kMaxNoteTitleChars)
     throw InvalidTraining("a title runs to 60 characters");
   if (this->body.size() > kMaxNoteBodyBytes) throw InvalidTraining("a note runs to 500 bytes");

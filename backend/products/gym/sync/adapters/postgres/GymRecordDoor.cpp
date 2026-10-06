@@ -159,7 +159,7 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
     if (rows.empty()) return false;
     if (!rows[0][1].as<bool>()) { error = NoteWriteError::idTaken; return true; }
     const Json::Value json = sync::parseJson(rows[0][0].as<std::string>());
-    saved = Note{NoteId{json["id"].asString()}, incoming.user, json["title"].asString(), json["body"].asString(), json["position"].asInt(), json["updatedAt"].asUInt64()};
+    saved = Note{Stored{}, NoteId{json["id"].asString()}, incoming.user, json["title"].asString(), json["body"].asString(), json["position"].asInt(), json["updatedAt"].asUInt64()};
     if (saved->title != incoming.title || saved->body != incoming.body) error = NoteWriteError::idTaken;
     return true;
   };
@@ -172,7 +172,7 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
     const auto standing = sync::sqlOf(txn).exec("select id,title,body,position,(extract(epoch from updated_at)*1000)::bigint as updated_ms from gym_notes where user_id=$1::uuid order by position for update", pqxx::params{incoming.user.str()});
     for (const auto& note : standing) {
       if (note["title"].as<std::string>() != incoming.title || note["body"].as<std::string>() != incoming.body) continue;
-      saved = Note{NoteId{note["id"].as<std::string>()}, incoming.user, note["title"].as<std::string>(), note["body"].as<std::string>(), note["position"].as<int>(), note["updated_ms"].as<std::uint64_t>()};
+      saved = Note{Stored{}, NoteId{note["id"].as<std::string>()}, incoming.user, note["title"].as<std::string>(), note["body"].as<std::string>(), note["position"].as<int>(), note["updated_ms"].as<std::uint64_t>()};
       break;
     }
     if (!saved && recordTaken(txn, incoming.user, "note", incoming.id.str())) { error = NoteWriteError::idTaken; return std::nullopt; }
@@ -182,7 +182,7 @@ NoteWriteOutcome GymDoor::saveInsight(const Note& incoming) {
       if (!saved) {
         const auto rows = sql.exec("select title,body,position,(extract(epoch from updated_at)*1000)::bigint as updated_ms from gym_notes where id=$1 and user_id=$2::uuid", pqxx::params{incoming.id.str(), incoming.user.str()});
         if (rows.empty()) throw std::logic_error("admitted insight note is missing");
-        saved = Note{incoming.id, incoming.user, rows[0]["title"].as<std::string>(), rows[0]["body"].as<std::string>(), rows[0]["position"].as<int>(), rows[0]["updated_ms"].as<std::uint64_t>()};
+        saved = Note{Stored{}, incoming.id, incoming.user, rows[0]["title"].as<std::string>(), rows[0]["body"].as<std::string>(), rows[0]["position"].as<int>(), rows[0]["updated_ms"].as<std::uint64_t>()};
       }
       const auto inserted = sql.exec("insert into gym_note_saves(id,user_id,note) values($1,$2::uuid,$3::jsonb) on conflict do nothing returning id", pqxx::params{incoming.id.str(), incoming.user.str(), sync::jcs(toJson(*saved))});
       if (inserted.empty() && (!receipt(*txnPtr) || error != NoteWriteError::none)) throw sync::Refusal("id-taken");

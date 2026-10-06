@@ -153,6 +153,7 @@ struct GymUnavailable : std::runtime_error {
 class GymWriteDoor {
 public:
   virtual ~GymWriteDoor() = default;
+  // Admits the close only when the open workout isStale; with nothing stale it writes nothing.
   virtual void closeStale(const UserId&) = 0;
   virtual void unlinkThread(const UserId&, const ThreadId&) = 0;
   virtual StartOutcome start(const UserId&, const SessionStart&) = 0;

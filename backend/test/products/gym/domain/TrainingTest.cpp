@@ -19,14 +19,17 @@ Set set(double weightKg, int reps, SetKind kind = SetKind::working,
              weightKg, reps, kind, rpe, std::move(note), 1'700'000'000'000};
 }
 
-bool rejects(const std::function<void()>& build) {
+// The sentence the constructor refused with, or empty when it built.
+std::string refusal(const std::function<void()>& build) {
   try {
     build();
-    return false;
-  } catch (const InvalidTraining&) {
-    return true;
+    return "";
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
+
+bool rejects(const std::function<void()>& build) { return !refusal(build).empty(); }
 
 Session openSession(std::uint64_t startedAtMs) {
   return Session{SessionId{"ses_00000001"}, wm::UserId{"u1"}, startedAtMs};
@@ -196,6 +199,30 @@ TEST(exercise_construction_guards_the_name_and_the_step) {
            ExerciseId{"dip"});
 }
 
+// A write refuses a name blank by admission's own test, past the ASCII trim; a read builds what the store holds.
+TEST(exercise_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+  const auto written = [](const std::string& name) {
+    return refusal([&] { Exercise{ExerciseId{"ex_11111111"}, name, Pattern::squat, Equipment::barbell, 2.5, true}; });
+  };
+  const auto stored = [](const std::string& name) {
+    return Exercise{Stored{}, ExerciseId{"ex_11111111"}, name, Pattern::squat, Equipment::barbell, 2.5, true};
+  };
+  CHECK_EQ(written(""), std::string("an exercise needs a name"));
+  CHECK_EQ(written(" \t\n"), std::string("an exercise needs a name"));
+  CHECK_EQ(written("\xC2\xA0\xE3\x80\x80"), std::string("an exercise needs a name"));   // U+00A0, U+3000
+  CHECK_EQ(written("\xE2\x80\x8B"), std::string(""));                                    // U+200B is not whitespace
+
+  CHECK_EQ(stored("   "), Exercise(Stored{}, ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 2.5, true));
+  CHECK_EQ(stored("   ").name, std::string(""));
+  CHECK_EQ(stored("\xC2\xA0").name, std::string("\xC2\xA0"));
+  CHECK_EQ(stored(" Prowler "), Exercise(ExerciseId{"ex_11111111"}, "Prowler", Pattern::squat, Equipment::barbell, 2.5, true));
+  // Every other check still stands on a read.
+  CHECK_EQ(refusal([] { Exercise{Stored{}, ExerciseId{""}, "", Pattern::squat, Equipment::barbell, 2.5, true}; }),
+           std::string("an exercise needs an id"));
+  CHECK_EQ(refusal([] { Exercise{Stored{}, ExerciseId{"ex_11111111"}, "", Pattern::squat, Equipment::barbell, 0, true}; }),
+           std::string("step out of range"));
+}
+
 // step_kg is numeric(4,2): above the ceiling the column overflows, below 0.01 it rounds to 0.00.
 TEST(exercise_step_is_bounded_by_what_its_column_can_hold) {
   const auto stepOf = [](double stepKg) {
@@ -266,6 +293,27 @@ TEST(can_start_at_refuses_a_start_past_the_clocks_allowance) {
   const std::uint64_t now = 1'700'000'000'000;
   CHECK_FALSE(canStartAt(now + kMaxClockAheadMs + 1, now));  // one ms past it
   CHECK_FALSE(canStartAt(now + 24ull * 60 * 60 * 1000, now)); // "tomorrow"
+}
+
+// GymRules' rule: four hours past the last set, else past the start; a clock behind it is never stale.
+TEST(is_stale_counts_four_hours_from_the_last_activity) {
+  const std::uint64_t t = 1'700'000'000'000;
+  const Session open = openSession(t);
+  const auto setAt = [](std::uint64_t completedAtMs, const char* id) {
+    return Set{SetId{id}, SessionId{"ses_00000001"}, ExerciseId{"bench-press"}, 1, 60, 5, SetKind::working,
+               std::nullopt, "", completedAtMs};
+  };
+  CHECK_FALSE(isStale(open, {}, t + kAutoCloseMs - 1));   // just under, counted from the start
+  CHECK(isStale(open, {}, t + kAutoCloseMs));              // exactly four hours
+  CHECK_FALSE(isStale(open, {}, t - 1));                   // now before the last activity
+
+  const std::vector<Set> sets{setAt(t + 3'600'000, "set_00000002"), setAt(t + 60'000, "set_00000001")};
+  CHECK_FALSE(isStale(open, sets, t + kAutoCloseMs));                    // the latest set, not the start
+  CHECK_FALSE(isStale(open, sets, t + 3'600'000 + kAutoCloseMs - 1));
+  CHECK(isStale(open, sets, t + 3'600'000 + kAutoCloseMs));
+  CHECK_FALSE(isStale(open, sets, t + 3'600'000 - 1));                   // the clock behind the last set
+  // A set stamped before the start is still the last activity, as the engine reads it.
+  CHECK(isStale(open, {setAt(t - 60'000, "set_00000003")}, t - 60'000 + kAutoCloseMs));
 }
 
 // A set lands in a STALE close within four hours of it; an absent closedBy reads as a finish.

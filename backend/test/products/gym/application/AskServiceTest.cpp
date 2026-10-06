@@ -1486,16 +1486,12 @@ TEST(coach_write_completion_and_issue_share_request_without_private_content) {
   installWriteSink({});
 
   CHECK_FALSE(reply.answer.ok);
-  // The open-workout check settles a stale workout through the door first: its close is admitted (and
-  // logged) under the ask's own request id even when nothing was stale.
+  // The open-workout check finds nothing stale and admits nothing, so the ask's own line is the only one.
   std::vector<std::string> lines;
   for (const WriteCompletion& completion : completions)
     lines.push_back(completion.operation + " " + completion.product + " " + completion.door + " " + completion.outcome);
-  CHECK_EQ(lines, (std::vector<std::string>{"sync.command.gym.closeStale gym command ok",
-                                            "sync.admit gym server-origin ok",
-                                            "gym.server_call gym server-origin ok",
-                                            "ask.run gym Coach failed"}));
-  REQUIRE_EQ(completions.size(), 4u);
+  CHECK_EQ(lines, (std::vector<std::string>{"ask.run gym Coach failed"}));
+  REQUIRE_EQ(completions.size(), 1u);
   const WriteCompletion& run = completions.back();
   CHECK(run.durationMs >= 0);
   REQUIRE_EQ(h.reports->requestIds.size(), 1u);

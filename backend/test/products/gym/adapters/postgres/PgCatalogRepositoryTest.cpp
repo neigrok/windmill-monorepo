@@ -202,6 +202,36 @@ TEST(pg_gym_a_rename_keeps_the_old_name_as_an_alias_and_renaming_back_takes_it_o
            named(seed, "Eight", {"Seven", "Six", "Five", "Four", "Three"}));
 }
 
+// A blank name the store holds reads as stored, on the catalog and on the movement's record: never a 500.
+TEST(pg_gym_a_blank_stored_movement_name_reads_as_stored) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  REQUIRE(h.catalog.createExercise(
+      h.user, ExerciseWrite{ExerciseId{"ex_pg000001"}, "Sled push", Pattern::carry, Equipment::machine, 5.0}).exercise);
+  GymDoor::requireOk(phoneRename(h, h.user, "back-squat", "Low-bar Squat", true));
+  {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("UPDATE gym_exercises SET name = '   ' WHERE id = 'ex_pg000001'");
+    txn.exec("UPDATE gym_exercise_names SET name = $2 WHERE user_id = $1::uuid AND exercise_id = 'back-squat'",
+             pqxx::params{h.user.str(), "\xC2\xA0"});   // U+00A0, past the ASCII trim
+    txn.commit();
+  }
+  const Exercise sled{Stored{}, ExerciseId{"ex_pg000001"}, "", Pattern::carry, Equipment::machine, 5.0, true};
+  const Exercise squat{Stored{}, ExerciseId{"back-squat"}, "\xC2\xA0", Pattern::squat, Equipment::barbell, 2.5, false,
+                       {"Back Squat"}};
+
+  const std::vector<Exercise> catalog = h.catalog.catalog(h.user);
+
+  CHECK_EQ(catalog.size(), static_cast<std::size_t>(65));
+  CHECK_EQ(movementOf(catalog, "ex_pg000001"), sled);
+  CHECK_EQ(movementOf(catalog, "back-squat"), squat);
+  CHECK_EQ(h.training.movementRecord(h.user, ExerciseId{"ex_pg000001"}),
+           std::optional<MovementRecord>(MovementRecord{sled, {}, 0, std::nullopt, std::nullopt, {}, {}, {}}));
+  CHECK_EQ(h.training.movementRecord(h.user, ExerciseId{"back-squat"}),
+           std::optional<MovementRecord>(MovementRecord{squat, {}, 0, std::nullopt, std::nullopt, {}, {}, {}}));
+}
+
 // Every read prints the CALLER's name for a movement; a workout share resolves against its OWNER.
 TEST(pg_gym_every_read_that_names_a_movement_names_it_as_the_caller_does) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");

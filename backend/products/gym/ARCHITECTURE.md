@@ -435,10 +435,19 @@ restSeconds? — an empty `sets` is `open`; in a `SetTarget` an absent reps is `
 - **Every free text goes through `storableText`**: no NUL (Postgres `text` stops at one) and
   well-formed UTF-8 only (Postgres refuses the rest mid-transaction, which would otherwise leave as
   the retryable house 500).
-- **Display names go through `trimmedName`**, then must be non-empty and at most `kMaxNameLength`
-  (240) **bytes** — the unit the column counts. Clients cap at 60 characters, and 60 UTF-8 characters
-  never exceed 240 bytes, so the client's cap is the one a lifter meets in every script. Trimming
-  makes `"   "` the empty name it is and `" Back Squat "` the seed's own name.
+- **Display names go through `trimmedName`**, then must be at most `kMaxNameLength` (240) **bytes**
+  — the unit the column counts. Clients cap at 60 characters, and 60 UTF-8 characters never exceed
+  240 bytes, so the client's cap is the one a lifter meets in every script. Trimming makes
+  `" Back Squat "` the seed's own name.
+- **A blank display name is refused on every write and read as stored.** A name is blank when every
+  code point is whitespace, the set engine §6.11 tokenises on (`sync::isBlank`). Admission refuses a
+  routine name, a movement name, a seed's renamed name, a note title or a revision's `proposedName`
+  created or changed to a blank one `invalid`, for every writer (engine A.2); admission keeps a name
+  as it arrives, so a phone's `" Prowler "` lands as written. The write constructors refuse a blank
+  name with their own sentences (`an exercise needs a name`, `a routine needs a name`, `a note needs
+  a title`), so a door answers it before the engine sees it. A read builds what the store holds: the
+  Postgres mappers use the constructors tagged `Stored`, which run every check but that one, so a
+  blank name already stored stands until it next changes and reads as its trimmed self.
 - **A ladder step is bounded to `[kMinStepKg, kMaxStepKg]` = `[0.01, 99.99]`**, both ends of
   `step_kg numeric(4,2)` and of the registry's `stepKg`.
 - **A routine**: at least one entry, at most `kMaxRoutineEntries` (50), positions `1..n` in order,
@@ -458,8 +467,8 @@ doors decide before admitting, and `sync/domain/GymRules` for what admission dec
 
 - **The stale close** — an open session with no activity for four hours (`kAutoCloseMs` in
   `domain/Training.h`, `kStaleMs` in GymRules) is over, and it ended at its last set; a session with
-  no sets ended when it began. The command `gym.closeStale` writes it: `finishedAt` at that last
-  activity, `closedBy` `stale`.
+  no sets ended when it began. `isStale` asks it of an open session and its sets; the command
+  `gym.closeStale` writes it: `finishedAt` at that last activity, `closedBy` `stale`.
 - `canFinishAt` — a workout cannot end before it began, at zero, or past what the store can hold;
   `gym.finish` refuses a finish at zero or before the start `bad-instant`.
 - `canStartAt` — a device's clock is the truth about the past, never the future: a start more than
@@ -473,8 +482,11 @@ doors decide before admitting, and `sync/domain/GymRules` for what admission dec
   is accepted, and the finish moves forward to it. Nothing lands after the lifter's own finish:
   admission refuses such a set `session-finished`.
 
-The stale close is applied **lazily**: `GymDoor::closeStale` admits `gym.closeStale` before every
-read whose answer a close rewrites, and `gym.start` and `gym.importSession` run the same close first.
+The stale close is applied **lazily**: before every read whose answer a close rewrites,
+`GymDoor::closeStale` reads the open session and its sets and admits `gym.closeStale` only when
+`isStale` says it has gone stale; the command checks again under the scope lock. A read with nothing
+stale admits nothing, opens no transaction and logs no write line. `gym.start` and
+`gym.importSession` run the same close first.
 **No cron, no sweep, no heartbeat**: gym arms zero tickers.
 
 What settles: `start` and `importSession`, from a phone or a door; and the reads `log` (`GET
@@ -898,7 +910,7 @@ between a door's read and its admission reaches the engine's own refusal.
 | `propose`, `proposeRemoval` · `propose_routine_change`, `propose_routine_removal` | the routine absent or another account's → `unknownRoutine`; a change that moves nothing → `noChange`; a proposal under the id, another account's → `idTaken`, the caller's → the replay of the same document or `idReused`; the id spent elsewhere → `idTaken`; a changed line outside the caller's catalog → `unknownExercise`; else a `proposal` create carrying the diff and its provenance | `id-taken`, `id-spent` → `idTaken`; `unknown-record` → `unknownRoutine`; `unknown-exercise` → `unknownExercise` |
 | `createExercise` · `create_exercise` | the caller's custom movement under the id → it; else an `exercise` create, `stepKg` at the column's precision | `id-taken`, `id-spent` → `idTaken` |
 | `saveInsight` · `save_note` | its `gym_note_saves` receipt, the caller's with this text → the saved note, else `idTaken`; a note under the id that is another account's or holds other text → `idTaken`; a standing note with this title and body → that note, the id spent, at ten too; the id held or spent → `idTaken`; ten notes → `full`; else a `note` create after the last `ord`, its receipt written before the commit | `cap` → `full`; `id-taken`, `id-spent` → `idTaken` |
-| `closeStale` · every settling read, `start`, `importSession` | — (`gym.closeStale`) | none mapped |
+| `closeStale` · every settling read, `start`, `importSession` | before the call: the open session and its sets; none open, or not `isStale` → nothing admitted; else `gym.closeStale` | none mapped |
 | `unlinkThread` · a Coach conversation's delete | the proposals naming the thread, none → nothing admitted; else `threadId = null` on each | none mapped |
 
 An engine refusal a door does not map is `GymUnavailable` (`gym-engine-unavailable`); an internal

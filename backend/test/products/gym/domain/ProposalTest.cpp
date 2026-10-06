@@ -49,14 +49,17 @@ ProposalHead head(ProposalIntent intent = ProposalIntent::revise, int changes = 
                       std::nullopt};
 }
 
-bool rejects(const std::function<void()>& build) {
+// The sentence the constructor refused with, or empty when it built.
+std::string refusal(const std::function<void()>& build) {
   try {
     build();
-    return false;
-  } catch (const InvalidTraining&) {
-    return true;
+    return "";
+  } catch (const InvalidTraining& refused) {
+    return refused.what();
   }
 }
+
+bool rejects(const std::function<void()>& build) { return !refusal(build).empty(); }
 }
 
 TEST(classify_calls_the_log_a_record_whatever_it_touches) {
@@ -265,6 +268,25 @@ TEST(proposal_refuses_what_it_could_never_be_applied_as) {
   CHECK(rejects([&] {
     RoutineProposal{head(ProposalIntent::remove), 1, "Push A", "Push A", ok};
   }));
+}
+
+// A write refuses a blank name on either side by admission's own test; a read builds what the store holds.
+TEST(proposal_write_refuses_a_blank_name_and_a_stored_one_reads_as_it_trims) {
+  const std::vector<RoutineChange> ok =
+      changesBetween({line(1, "bench-press")}, {line(1, "bench-press", straight(5, 3, 87.5))});
+  const std::string sentence = "a proposal names the routine on both sides";
+  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "", ok}; }), sentence);
+  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "   ", "Push A", ok}; }), sentence);
+  CHECK_EQ(refusal([&] { RoutineProposal{head(), 1, "Push A", "\xC2\xA0", ok}; }), sentence);   // U+00A0
+
+  const RoutineProposal stored{Stored{}, head(), 2, "   ", "\xE3\x80\x80", ok};   // U+3000
+  CHECK_EQ(stored.head, head());
+  CHECK_EQ(stored.baseRevision, 2);
+  CHECK_EQ(stored.baseName, std::string(""));
+  CHECK_EQ(stored.proposedName, std::string("\xE3\x80\x80"));
+  CHECK_EQ(stored.changes, ok);
+  CHECK_EQ(refusal([&] { RoutineProposal{Stored{}, head(), 0, "", "", ok}; }),
+           std::string("a proposal stands on a revision from 1"));
 }
 
 TEST(proposal_refuses_a_removed_line_in_the_middle_of_the_run) {

@@ -3,6 +3,7 @@
 
 #include "products/gym/adapters/json/TrainingJson.h"
 #include "platform/application/WorkerPool.h"
+#include "platform/application/WriteObservation.h"
 #include "platform/adapters/postgres/PgSyncStore.h"
 #include "products/gym/sync/adapters/postgres/PgGym.h"
 #include "products/gym/sync/GymRegistry.h"
@@ -365,6 +366,51 @@ TEST(gym_training_engine_parent_refusal_is_an_absent_session_at_the_door) {
   });
   CHECK_EQ(GymDoor::refusal(result), "parent-dead");
   CHECK_EQ(h.door.append(h.user, SessionId{"session_absent"}, set).error, AppendError::notFound);
+  CHECK(h.failures.messages.empty());
+}
+
+// A settling read admits the close only when the open workout has gone stale: until then it opens no
+// transaction and logs no write line, and the close it does admit logs the command's lines once.
+TEST(gym_training_a_settling_read_writes_only_a_real_stale_close) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("requires WM_SYNC_DATABASE_URL");
+  Harness h;
+  const auto at = h.clock.now;
+  std::vector<std::string> lines;
+  installWriteSink([&](const WriteCompletion& completion) {
+    lines.push_back(completion.operation + " " + completion.product + " " + completion.door + " " + completion.outcome);
+  });
+  const auto readEverything = [&] {
+    h.training.openSession(h.user);
+    h.training.log(h.user, LogCursor{h.clock.now + 1, std::nullopt, 50});
+    h.training.detail(h.user, SessionId{"session_quiet1"});
+    h.training.sessions(h.user, {SessionId{"session_quiet1"}});
+    h.training.statistics(h.user);
+    h.training.progress(h.user);
+    h.training.movementRecord(h.user, ExerciseId{"dip"});
+  };
+  readEverything();
+  CHECK_EQ(lines, std::vector<std::string>{});
+
+  REQUIRE(h.training.start(h.user, startAt("session_quiet1", at)).session);
+  h.clock.now = at + 60'000;
+  REQUIRE(h.training.append(h.user, SessionId{"session_quiet1"}, setAt("set_quiet0001", at + 60'000)).set);
+  h.clock.now = at + 60'000 + kAutoCloseMs - 1;
+  lines.clear();
+  readEverything();
+  CHECK_EQ(lines, std::vector<std::string>{});
+  CHECK(h.training.openSession(h.user).has_value());
+
+  h.clock.now = at + 60'000 + kAutoCloseMs;
+  CHECK_EQ(h.training.openSession(h.user), std::optional<Session>());
+  readEverything();
+  installWriteSink({});
+  CHECK_EQ(lines, (std::vector<std::string>{"sync.publish gym background ok",
+                                            "sync.command.gym.closeStale gym command ok",
+                                            "sync.admit gym server-origin ok",
+                                            "gym.server_call gym server-origin ok"}));
+  CHECK_EQ(h.repo.log.session(h.user, SessionId{"session_quiet1"}),
+           std::optional<Session>(Session{SessionId{"session_quiet1"}, h.user, at, at + 60'000, std::nullopt,
+                                          std::nullopt, ClosedBy::stale}));
   CHECK(h.failures.messages.empty());
 }
 

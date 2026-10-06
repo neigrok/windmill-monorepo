@@ -50,6 +50,9 @@ struct Routine {
   Routine(RoutineId id, UserId user, std::string name, int position,
           std::vector<RoutineEntry> entries,
           std::optional<std::uint64_t> lastTrainedAtMs = std::nullopt, int revision = 1);
+  Routine(Stored, RoutineId id, UserId user, std::string name, int position,
+          std::vector<RoutineEntry> entries,
+          std::optional<std::uint64_t> lastTrainedAtMs = std::nullopt, int revision = 1);
 
   bool operator==(const Routine&) const = default;
 };

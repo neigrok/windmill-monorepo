@@ -1,5 +1,7 @@
 #include "products/gym/domain/Routine.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <cstddef>
 #include <utility>
 
@@ -21,13 +23,19 @@ RoutineEntry::RoutineEntry(int position, ExerciseId exercise, std::vector<SetTar
 Routine::Routine(RoutineId id, UserId user, std::string name, int position,
                  std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs,
                  int revision)
+    : Routine(Stored{}, std::move(id), std::move(user), std::move(name), position,
+              std::move(entries), lastTrainedAtMs, revision) {
+  if (sync::isBlank(this->name)) throw InvalidTraining("a routine needs a name");
+}
+
+Routine::Routine(Stored, RoutineId id, UserId user, std::string name, int position,
+                 std::vector<RoutineEntry> entries, std::optional<std::uint64_t> lastTrainedAtMs,
+                 int revision)
     : id(std::move(id)), user(std::move(user)), name(trimmedName(std::move(name))),
       position(position), entries(std::move(entries)), lastTrainedAtMs(lastTrainedAtMs),
       revision(revision) {
   if (!wellFormedId(this->id.str())) throw InvalidTraining("bad routine id");
   if (this->user.empty()) throw InvalidTraining("a routine belongs to an account");
-  // Trimmed by the one rule both display names go through.
-  if (this->name.empty()) throw InvalidTraining("a routine needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("routine name too long");
   // A NUL would store the name as its own head, and non-UTF-8 bytes would be refused by the column
   // mid-transaction as a retryable 500.

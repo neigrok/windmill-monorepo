@@ -84,7 +84,8 @@ template <typename Row>
 Routine routineFrom(const Row& row, std::vector<RoutineEntry> entries) {
   std::optional<std::uint64_t> lastTrained;
   if (!row["last_trained_ms"].is_null()) lastTrained = instantFrom(row["last_trained_ms"]);
-  return Routine{RoutineId{row["id"].template as<std::string>()},
+  return Routine{Stored{},
+                 RoutineId{row["id"].template as<std::string>()},
                  UserId{row["user_id"].template as<std::string>()},
                  row["name"].template as<std::string>(),
                  row["position"].template as<int>(),
@@ -188,7 +189,7 @@ std::optional<RoutineProposal> loadProposal(pqxx::work& txn, const UserId& user,
         change.loggedSets = count["logged"].as<int>();
 
   const ProposalHead head = headFrom(rows[0]);
-  return RoutineProposal{head, rows[0]["base_revision"].as<int>(),
+  return RoutineProposal{Stored{}, head, rows[0]["base_revision"].as<int>(),
                          rows[0]["base_name"].as<std::string>(),
                          rows[0]["proposed_name"].as<std::string>(), std::move(changes)};
 }
@@ -288,7 +289,7 @@ std::optional<Routine> PgProgramRepository::routineCreation(const UserId& user, 
                                     id.str(), user.str());
   if (rows.empty()) return std::nullopt;
   const auto document = parseRoutineWrite(parse(rows[0][0].as<std::string>()));
-  return Routine{document.id, user, document.name, document.position, document.entries};
+  return Routine{Stored{}, document.id, user, document.name, document.position, document.entries};
 }
 
 std::vector<ProposalHead> PgProgramRepository::proposalHeads(const UserId& user,

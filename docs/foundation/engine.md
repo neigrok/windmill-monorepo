@@ -2632,8 +2632,9 @@ and a server read shows it as stored rather than failing.
   must be a seed or the owner's; otherwise `unknown-exercise`.
 
 **Commands.** `gym.closeStale` (`beforePull`, §2.4) runs first inside `gym.start` and
-`gym.importSession`, before every pull of an existing `self/gym`, and before the server reads that
-settle staleness ([gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md) §4.2 lists them).
+`gym.importSession`, before every pull of an existing `self/gym`, and, when the open session has gone
+stale, before the server reads that settle staleness ([gym ARCHITECTURE](../../backend/products/gym/ARCHITECTURE.md)
+§4.2 lists them); a read with nothing stale admits nothing.
 It is the only writer of `closedBy = stale`.
 
 - **`gym.start {id: ref<session>, routineId?: ref<routine>, startedAt: time, joinOpenSession}`.**

@@ -350,6 +350,39 @@ TEST(pg_gym_a_proposal_round_trips_its_typed_diff_with_every_absence_intact) {
            std::optional<EntryTargets>(EntryTargets{fake::straight(3, std::nullopt, std::nullopt), std::nullopt}));
 }
 
+// Blank names the store holds read as stored: the routines, one routine, its Coach creation and a proposal.
+TEST(pg_gym_blank_stored_routine_and_proposal_names_read_as_stored) {
+  if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");
+  doortest::Harness h;
+  const Routine pushDay = dayOf(h.user, "rt_pg000001", "Push A", {entryAt(1, "bench-press")});
+  const Routine pullDay = dayOf(h.user, "rt_pg000002", "Pull A", {entryAt(1, "back-squat")}, 1);
+  REQUIRE(mcpCreate(h, pushDay).routine.has_value());
+  REQUIRE(h.program.createRoutine(h.user, RoutineWrite{pullDay.id, pullDay.name, pullDay.position, pullDay.entries},
+                                  ProposalDoor::ask).routine.has_value());
+  const ProposalWrite heavier = proposalOf("prop_pg00001", "rt_pg000001", {benchAt(87.5, 3)});
+  REQUIRE(h.program.propose(h.user, heavier).proposal.has_value());
+  {
+    PgLease lease{*doortest::pool()};
+    pqxx::work txn{*lease};
+    txn.exec("UPDATE gym_routines SET name = '   ' WHERE id IN ('rt_pg000001', 'rt_pg000002')");
+    txn.exec("UPDATE gym_routine_creations SET routine = jsonb_set(routine, '{name}', '\"\\t\"') "
+             "WHERE routine_id = 'rt_pg000002'");
+    txn.exec("UPDATE gym_proposals SET base_name = '   ', proposed_name = $1 WHERE id = 'prop_pg00001'",
+             pqxx::params{"\xE3\x80\x80"});   // U+3000, past the ASCII trim
+    txn.commit();
+  }
+  const Routine push{Stored{}, pushDay.id, h.user, "", 0, pushDay.entries};
+  const Routine pull{Stored{}, pullDay.id, h.user, "", 1, pullDay.entries};
+  const RoutineProposal minted = mintedFrom(pushDay, heavier, kNow);
+
+  CHECK_EQ(h.program.routines(h.user), (std::vector<Routine>{push, pull}));
+  CHECK_EQ(h.program.routine(h.user, RoutineId{"rt_pg000001"}), std::optional<Routine>(push));
+  CHECK_EQ(h.program.routineCreation(h.user, RoutineId{"rt_pg000002"}), std::optional<Routine>(pull));
+  CHECK_EQ(h.program.proposal(h.user, ProposalId{"prop_pg00001"}),
+           std::optional<RoutineProposal>(
+               RoutineProposal{Stored{}, minted.head, minted.baseRevision, "", "\xE3\x80\x80", minted.changes}));
+}
+
 // A second proposal from the same door settles the first, and the replaced row says so even once the routine moves.
 TEST(pg_gym_one_pending_proposal_per_routine_and_door_and_the_old_one_drops_into_history) {
   if (!std::getenv("WM_PG_TEST")) SKIP("set WM_PG_TEST=1 for Postgres");

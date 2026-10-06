@@ -35,7 +35,8 @@ struct LogRow {
 // The HTTP adapter, the MCP tools and Coach talk to this, never to the repository. Every write goes
 // through the door, which admits it as the engine's intent and answers with the resolved row, so a
 // replayed or double-tapped caller sees the winning truth in one round trip. No cron, no sweep:
-// staleness is settled lazily through the door, before every read whose answer a close rewrites.
+// before every read whose answer a close rewrites, the door closes a workout gone stale, and admits
+// nothing when none has.
 // The token generator serves one write: minting a workout share's secret.
 class TrainingService {
 public:

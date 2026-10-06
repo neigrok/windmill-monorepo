@@ -50,7 +50,8 @@ Exercise exerciseFrom(const Row& row) {
   const Json::Value stored = parse(row["aliases"].template as<std::string>());
   for (const Json::Value& alias : stored)
     if (alias.isString()) aliases.push_back(alias.asString());
-  return Exercise{ExerciseId{row["id"].template as<std::string>()},
+  return Exercise{Stored{},
+                  ExerciseId{row["id"].template as<std::string>()},
                   row["name"].template as<std::string>(),
                   patternFromStored(row["pattern"].template as<std::string>()),
                   equipmentFromStored(row["equipment"].template as<std::string>()),

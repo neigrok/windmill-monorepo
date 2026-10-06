@@ -122,6 +122,8 @@ struct RoutineProposal {
 
   RoutineProposal(ProposalHead head, int baseRevision, std::string baseName,
                   std::string proposedName, std::vector<RoutineChange> changes);
+  RoutineProposal(Stored, ProposalHead head, int baseRevision, std::string baseName,
+                  std::string proposedName, std::vector<RoutineChange> changes);
 
   bool operator==(const RoutineProposal&) const = default;
 };

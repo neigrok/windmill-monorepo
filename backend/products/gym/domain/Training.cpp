@@ -1,5 +1,7 @@
 #include "products/gym/domain/Training.h"
 
+#include "platform/domain/sync/TextMerge.h"
+
 #include <algorithm>
 #include <cmath>
 #include <set>
@@ -156,11 +158,16 @@ double defaultStepKg(Equipment equipment) {
 
 Exercise::Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
                    double stepKg, bool custom, std::vector<std::string> aliases)
+    : Exercise(Stored{}, std::move(id), std::move(name), pattern, equipment, stepKg, custom,
+               std::move(aliases)) {
+  if (sync::isBlank(this->name)) throw InvalidTraining("an exercise needs a name");
+}
+
+Exercise::Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment,
+                   double stepKg, bool custom, std::vector<std::string> aliases)
     : id(std::move(id)), name(trimmedName(std::move(name))), pattern(pattern),
       equipment(equipment), stepKg(stepKg), custom(custom), aliases(std::move(aliases)) {
   if (this->id.empty()) throw InvalidTraining("an exercise needs an id");
-  // Trimmed first, so a name of nothing but blanks is refused here.
-  if (this->name.empty()) throw InvalidTraining("an exercise needs a name");
   if (this->name.size() > kMaxNameLength) throw InvalidTraining("exercise name too long");
   // A NUL truncates a name to its own head; non-UTF-8 bytes are refused by Postgres mid-transaction,
   // which would leave as a retryable 500 for a name that can never land.
@@ -267,6 +274,13 @@ std::optional<ClosedBy> closedByFromStored(std::string_view text) {
   if (text == "stale") return ClosedBy::stale;
   if (text == "finish") return ClosedBy::finish;
   return std::nullopt;
+}
+
+bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs) {
+  std::optional<std::uint64_t> latestSetMs;
+  for (const Set& set : sets) latestSetMs = std::max(latestSetMs.value_or(set.completedAtMs), set.completedAtMs);
+  const std::uint64_t lastActivityMs = latestSetMs.value_or(open.startedAtMs);
+  return nowMs >= lastActivityMs && nowMs - lastActivityMs >= kAutoCloseMs;
 }
 
 bool lateSetLands(const Session& session, std::uint64_t completedAtMs) {

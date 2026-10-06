@@ -65,6 +65,10 @@ constexpr std::size_t kMaxSetNoteBytes = 4000;
 // Trims the ends before the ceiling is measured. ASCII whitespace only.
 std::string trimmedName(std::string text);
 
+// A write refuses a blank display name (sync::isBlank, admission's test); a read builds what the store
+// holds through the constructors tagged Stored, which run every other check: a stored blank name stands.
+struct Stored {};
+
 // Two ways a string does not survive a Postgres `text` column: a NUL, and bytes that are not
 // well-formed UTF-8 (a lone surrogate half included). Both are refused at construction, as a 400.
 bool storableText(std::string_view text);
@@ -93,6 +97,8 @@ struct Exercise {
   std::vector<std::string> aliases;
 
   Exercise(ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
+           bool custom, std::vector<std::string> aliases = {});
+  Exercise(Stored, ExerciseId id, std::string name, Pattern pattern, Equipment equipment, double stepKg,
            bool custom, std::vector<std::string> aliases = {});
 
   bool operator==(const Exercise&) const = default;
@@ -198,9 +204,14 @@ struct SetBatch {
 };
 
 // An open session with no activity for four hours is over, and it ended at its last set, not when
-// the server noticed. A session with no sets ended when it began. The engine's gym.closeStale applies
-// it lazily, before a start and before every read whose answer a close rewrites.
+// the server noticed. A session with no sets ended when it began. The engine's gym.closeStale writes
+// the close; a start and an import run it inside their own command, and a read admits it only when
+// isStale says the open session has gone stale.
 constexpr std::uint64_t kAutoCloseMs = 4ull * 60 * 60 * 1000;
+
+// GymRules' rule exactly: the last activity is the latest set's completedAt, else the start, and the
+// session is stale once now stands kAutoCloseMs or more past it. A now before it is never stale.
+bool isStale(const Session& open, const std::vector<Set>& sets, std::uint64_t nowMs);
 
 // A workout cannot end before it began, at zero, or past what the store can hold. The first write to
 // finished_at is permanent.

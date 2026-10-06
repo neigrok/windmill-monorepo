@@ -158,6 +158,8 @@ Json::Value GymDoor::command(const UserId& user, const std::string& name, const 
 }
 
 void GymDoor::closeStale(const UserId& user) {
+  const std::optional<Session> open = log_.open(user);
+  if (!open || !isStale(*open, log_.setsOf(open->id), impl_->now.nowMs())) return;
   requireOk(command(user, "gym.closeStale", Json::Value(Json::objectValue)));
 }
 

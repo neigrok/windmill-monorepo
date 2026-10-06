@@ -88,6 +88,23 @@ TEST(a_note_trims_unicode_whitespace_at_both_ends_and_nowhere_else) {
   CHECK_EQ(refusal([] { note("Tone\xE2\x80", ""); }), std::string("could not read that note"));
 }
 
+// A write refuses a title blank by admission's own test, past the note's trim; a read builds the stored note.
+TEST(a_note_write_refuses_a_blank_title_and_a_stored_one_reads_as_it_trims) {
+  CHECK_EQ(refusal([] { note("\xEF\xBB\xBF", "Blunt."); }), std::string("a note needs a title"));   // U+FEFF
+  CHECK_EQ(refusal([] { note("\xE2\x80\x8B", "Blunt."); }), std::string(""));                      // U+200B is not whitespace
+
+  const Note stored{Stored{}, NoteId{"note_00000001"}, kLifter, "  \n", "Blunt.", 3, 1'700'000'000'000};
+  CHECK_EQ(stored.id, NoteId{"note_00000001"});
+  CHECK_EQ(stored.user, kLifter);
+  CHECK_EQ(stored.title, std::string(""));
+  CHECK_EQ(stored.body, std::string("Blunt."));
+  CHECK_EQ(stored.position, 3);
+  CHECK_EQ(stored.updatedAtMs, 1'700'000'000'000u);
+  CHECK_EQ(Note(Stored{}, NoteId{"note_00000001"}, kLifter, "\xEF\xBB\xBF", "").title, std::string("\xEF\xBB\xBF"));
+  CHECK_EQ(refusal([] { Note{Stored{}, NoteId{"note_00000001"}, kLifter, "", "", 10}; }),
+           std::string("a note sits at a position from 0 to 9"));
+}
+
 // Sixty CHARACTERS, the column's char_length: an accented title of sixty letters builds.
 TEST(a_title_runs_to_sixty_characters_counted_as_code_points) {
   const std::string sixtyAscii(60, 'a');
