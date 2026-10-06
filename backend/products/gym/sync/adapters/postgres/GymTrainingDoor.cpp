@@ -112,7 +112,7 @@ StartOutcome GymDoor::start(const UserId& user, const SessionStart& incoming) {
       answer.error = StartError::unknownRoutine;
       return std::nullopt;
     }
-    Session{incoming.id, user, incoming.startedAtMs, std::nullopt, incoming.routine};
+    Session{incoming.id, user, incoming.startedAtMs, std::nullopt, incoming.routine};  // throws on a malformed id or instant
     return intent("gym.start", args);
   });
   const auto code = refusal(result);
