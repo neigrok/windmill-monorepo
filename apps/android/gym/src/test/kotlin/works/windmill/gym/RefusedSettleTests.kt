@@ -4,19 +4,20 @@ import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onAllNodesWithText
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.performClick
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.swipeLeft
-import java.io.File
 import android.os.Looper
-import android.os.SystemClock
 import java.io.IOException
 import java.time.Duration
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.runBlocking
-import okhttp3.HttpUrl.Companion.toHttpUrl
 import org.junit.Assert.assertEquals
 import org.junit.Rule
 import org.junit.Test
@@ -25,20 +26,13 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.Shadows.shadowOf
 import org.robolectric.annotation.Config
-import works.windmill.gym.domain.Ids
-import works.windmill.gym.domain.RoutineDraft
-import works.windmill.gym.net.FakeTraining
-import works.windmill.gym.store.DeviceCopy
-import works.windmill.gym.store.LocalBodyweight
-import works.windmill.gym.store.LocalLog
-import works.windmill.gym.store.LocalPreferences
-import works.windmill.gym.store.SetQueue
-import works.windmill.gym.store.TrainingStore
+import works.windmill.gym.domain.AskThread
+import works.windmill.gym.domain.Threads
+import works.windmill.gym.net.FakeGymRest
+import works.windmill.gym.net.TrainingSyncing
+import works.windmill.gym.store.EngineRoomFixture
 import works.windmill.gym.store.Withheld
 import works.windmill.gym.ui.GymMaterial
-import works.windmill.platform.Account
-import works.windmill.platform.User
-import works.windmill.platform.net.WindmillApi
 
 // The one thing the room says about a settle, and it is a failure. A delete that failed must never
 // look like one that worked, so the room owes three things at once when a window closes on a log
@@ -50,6 +44,8 @@ import works.windmill.platform.net.WindmillApi
 // key the effect was running under, and an effect that changes its own key cancels itself: eleven
 // seconds after a refused delete the screen still read `Push Day deleted.` with `Undo`, while the
 // log still held the routine.
+//
+// A conversation is the delete the log can still refuse after its window: it goes over the wire.
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [35], qualifiers = "w412dp-h915dp-xhdpi")
 class RefusedSettleTests {
@@ -59,81 +55,73 @@ class RefusedSettleTests {
     @get:Rule
     val tmp = TemporaryFolder()
 
-    // The shipped nine seconds, whole. Every clock this test reads is the LOOPER's — the store
-    // stamps its windows off `SystemClock.uptimeMillis` and `delay` on the main dispatcher counts
-    // down the same one — so nine seconds cost nothing and `idleFor` is what spends them. A window
-    // measured against the wall clock instead would be the machine's to close: the swipe's dismiss
-    // animation and the recomposition behind it take however long this runner takes, and a shortened
-    // span turns that into whether the transient is still on screen when the next line reads it.
+    // The room flushes through the engine as it leaves, so the screen goes before the engine closes.
+    private var showing by mutableStateOf(true)
+
+    // The shipped nine seconds, whole. The window's clock runs on the main dispatcher, which counts
+    // down the LOOPER's clock, so nine seconds cost nothing and `idleFor` is what spends them.
     private val window = Withheld.windowMs
-
-    private val account = Account(
-        api = WindmillApi(baseUrl = "https://windmill.works".toHttpUrl(), credential = { null }),
-        user = User(id = "u1", email = "sam@example.com", name = "Sam"),
-    )
-
-    private fun program(scope: CoroutineScope, server: FakeTraining): TrainingStore {
-        val store = TrainingStore(
-            queue = SetQueue(File(tmp.root, "queue.json")),
-            deviceCopy = DeviceCopy(File(tmp.root, "catalog.json")),
-            localLog = LocalLog(File(tmp.root, "local.json")),
-            localPreferences = LocalPreferences(File(tmp.root, "prefs.json")),
-            localBodyweight = LocalBodyweight(File(tmp.root, "bodyweight.json")),
-            scope = scope,
-            now = SystemClock::uptimeMillis,
-            mintSession = { "ses_1" },
-            mintSet = Ids::set,
-            undoWindowMs = window,
-            sync = { if (it.isSignedIn) server else null },
-        )
-        runBlocking {
-            store.connect(account)
-            store.saveRoutine(RoutineDraft(name = "Push Day").adding("bench-press"))
-        }
-        return store
-    }
 
     @Test
     fun testARefusedSettleIsSaidOnceAndTakesTheWayBackDownWithIt() {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main)
-        val server = FakeTraining()
-        server.refuseRoutineDelete = IOException("the log is down")
-        val store = program(scope, server)
-        compose.setContent { GymMaterial { GymRoom(account, store) } }
-        compose.waitForIdle()
-
-        // The swipe's dismiss finishes, then the row goes and the transient arrives — three
-        // recompositions the gesture does not wait for, so the arrival is WAITED FOR rather than
-        // read at a chosen moment.
-        compose.onNodeWithText("Push Day").performTouchInput { swipeLeft() }
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText("Push Day deleted.").fetchSemanticsNodes().isNotEmpty()
+        val server = FakeGymRest()
+        server.conversations["thr_1"] = AskThread(id = "thr_1", title = "why is my bench stalled?")
+        var deletes = 0
+        val log = object : TrainingSyncing by server {
+            override suspend fun deleteThread(id: String) {
+                deletes += 1
+                throw IOException("the log is down")
+            }
         }
-        compose.onNodeWithText("Push Day deleted.").assertIsDisplayed()
-        compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
+        val room = EngineRoomFixture(tmp.newFolder(), scope, rest = log)
+        try {
+            runBlocking { room.select("u1") }
+            val store = room.store
+            compose.setContent { if (showing) GymMaterial { GymRoom(room.account(), store) } }
+            compose.waitForIdle()
+            compose.onNodeWithText("Coach").performClick()
+            compose.onNodeWithText(Threads.door).performClick()
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("why is my bench stalled?").fetchSemanticsNodes().isNotEmpty()
+            }
 
-        // The window closes, the log is asked, and it says no. The clock is the store's own and it
-        // runs on the main looper, so the looper is what carries the nine seconds here.
-        shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(window + 1))
-        compose.waitForIdle()
-        compose.runOnIdle { assertEquals("the window closed", 0, store.withheld.size) }
+            // The swipe's dismiss finishes, then the row goes and the transient arrives — three
+            // recompositions the gesture does not wait for, so the arrival is WAITED FOR rather than
+            // read at a chosen moment.
+            compose.onNodeWithText("why is my bench stalled?").performTouchInput { swipeLeft() }
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText("Conversation deleted.", substring = true).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText("Conversation deleted.", substring = true).assertIsDisplayed()
+            compose.onNodeWithText(Withheld.undo).assertIsDisplayed()
 
-        val said = "the log didn’t answer — Push Day is still in your program"
-        compose.waitUntil(10_000) {
-            compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty()
+            // The window closes, the log is asked, and it says no. The clock is the store's own and it
+            // runs on the main looper, so the looper is what carries the nine seconds here.
+            shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(window + 1))
+            compose.waitForIdle()
+            compose.runOnIdle { assertEquals("the window closed", 0, store.withheld.size) }
+
+            val said = "the log didn’t answer — that conversation is still here"
+            compose.waitUntil(10_000) {
+                compose.onAllNodesWithText(said).fetchSemanticsNodes().isNotEmpty()
+            }
+            compose.onNodeWithText(said).assertIsDisplayed()
+            // The transient's state agrees with the store's: nothing is held, so nothing offers a way
+            // back to it, and the row is on the screen where the lifter left it.
+            compose.onNodeWithText("Conversation deleted.", substring = true).assertDoesNotExist()
+            compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
+            compose.onNodeWithText("why is my bench stalled?").assertIsDisplayed()
+
+            compose.runOnIdle {
+                assertEquals("asked once, not once every window", 1, deletes)
+                assertEquals("and the conversation is still the lifter's", listOf("thr_1"), store.threads.map { it.id })
+            }
+        } finally {
+            compose.runOnIdle { showing = false }
+            compose.waitForIdle()
+            scope.cancel()
+            room.close()
         }
-        compose.onNodeWithText(said).assertIsDisplayed()
-        // The transient's state agrees with the store's: nothing is held, so nothing offers a way
-        // back to it, and the row is on the screen where the lifter left it.
-        compose.onNodeWithText("Push Day deleted.").assertDoesNotExist()
-        compose.onNodeWithText(Withheld.undo).assertDoesNotExist()
-        compose.onNodeWithText("Push Day").assertIsDisplayed()
-
-        compose.runOnIdle {
-            assertEquals("asked once, not once every window",
-                1, server.calls.count { it == "deleteRoutine" })
-            assertEquals("and the routine is still the lifter's", 1, store.routines.size)
-        }
-        scope.cancel()
     }
 }
