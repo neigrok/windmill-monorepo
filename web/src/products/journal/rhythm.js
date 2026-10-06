@@ -1,6 +1,8 @@
 // The adaptive part of a nudge, computed on the device. Only the next instant and its day cross to the
 // server; the histogram of hours never leaves. With no page history, an evening default.
 
+import { localDay } from './localDay.js';
+
 const DEFAULT_HOUR = 20;
 const MIN_LEAD_MS = 20 * 60 * 60 * 1000;   // at least ~a day out — tomorrow's rhythm, not this moment
 
@@ -17,13 +19,6 @@ export function modalHour(hours, fallback = DEFAULT_HOUR) {
   return best;
 }
 
-function localDayOf(date) {
-  const y = date.getFullYear();
-  const m = String(date.getMonth() + 1).padStart(2, '0');
-  const d = String(date.getDate()).padStart(2, '0');
-  return `${y}-${m}-${d}`;
-}
-
 // The next knock: the usual hour, on the soonest day at least a lead-time away. `now` is ms, passed in.
 export function nextNudge(pages, now, minLeadMs = MIN_LEAD_MS) {
   const hours = pages
@@ -33,5 +28,5 @@ export function nextNudge(pages, now, minLeadMs = MIN_LEAD_MS) {
   const at = new Date(now);
   at.setHours(hour, 0, 0, 0);
   while (at.getTime() - now < minLeadMs) at.setDate(at.getDate() + 1);
-  return { nextDueAt: at.getTime(), slotDay: localDayOf(at), hour };
+  return { nextDueAt: at.getTime(), slotDay: localDay(at), hour };
 }

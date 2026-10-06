@@ -109,7 +109,7 @@ export function EchoMargin({ echoes, page }) {
   const entrance = played.current.at;
 
   // The panel quotes a passage, so it must be located in the live page first — the guard the tab runs.
-  // Run on the ADDRESSED page rather than on the one being shown: a network check has no reason to
+  // Run on the ADDRESSED page rather than on the one being shown: a re-location has no reason to
   // wait out a fade, and the page being checked is the one about to be drawn.
   useEffect(() => { if (echoes.marginDay) verify(echoes.marginDay); }, [verify, echoes.marginDay]);
 

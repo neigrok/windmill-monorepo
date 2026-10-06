@@ -5,8 +5,7 @@ import React, { useState } from 'react';
 import { captureError } from '../../../telemetry/sentry.js';
 import { Button } from '../../../design-system';
 import { styles } from '../../../shell/settings/Section.jsx';
-import { dropUnclaimedPages, unclaimedPages } from '../pages.js';
-import { restoreUnclaimedPages } from '../pages.js';
+import { dropUnclaimedPages, restoreUnclaimedPages, unclaimedPages } from '../pages.js';
 
 function words(body) {
   const count = body.trim() ? body.trim().split(/\s+/).length : 0;

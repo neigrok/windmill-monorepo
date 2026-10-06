@@ -14,7 +14,7 @@ const SWAP_MS = KINDLE_MS / 2;
 // What is behind the tab, said at EVERY width. It is the only place a reader who cannot see the face
 // learns how much a page holds, and it is also the whole of what an arrival announces: one
 // vocabulary, not two, and never a word that would make the light a notification.
-export function passagesBehind(count) {
+function passagesBehind(count) {
   return `${count} ${count === 1 ? 'passage' : 'passages'} you wrote before`;
 }
 
